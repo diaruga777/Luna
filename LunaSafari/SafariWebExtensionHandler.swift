@@ -113,6 +113,15 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                     payload["day"] = answer.day
                 }
             }
+        case "comparableSellers":
+            // "Is this cheaper somewhere else, right now?" — asked once per
+            // product page, after `productSnapshot` has already recorded it.
+            // A second round trip rather than a rider on the first because the
+            // answer may take seconds (a live fan-out) while the history pill's
+            // does not, and a page should not wait to learn what it already
+            // knows. Completes from a Task — see `comparableSellers(…)`.
+            comparableSellers(message: message, context: context)
+            return
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SharedSafariURL.record(urlString)
@@ -189,6 +198,29 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let first = await group.next() ?? nil
             group.cancelAll()
             return first ?? []
+        }
+    }
+
+    // MARK: - Alternative sellers (product hosts only)
+
+    /// Answers the page with the lowest CURRENT price for this product on
+    /// another retailer, or with nothing.
+    ///
+    /// The second asynchronous branch, and the same contract as `resolveMedia`:
+    /// the context outlives `beginRequest` and every path completes it exactly
+    /// once — `ComparableSellerFinder` carries its own wall-clock budget, so
+    /// even a fan-out that never lands settles the page's promise.
+    private func comparableSellers(message: [String: Any]?, context: NSExtensionContext) {
+        guard Self.hostHandlesProducts,
+              let snapshot = message?["snapshot"] as? [String: Any],
+              let record = SharedProductSnapshots.makeRecord(from: snapshot, now: Date())
+        else {
+            complete(context, with: ComparableSellerFinder.messagePayload(for: nil))
+            return
+        }
+        Task {
+            let answer = await ComparableSellerFinder.answer(forPageSnapshot: record)
+            self.complete(context, with: ComparableSellerFinder.messagePayload(for: answer))
         }
     }
 

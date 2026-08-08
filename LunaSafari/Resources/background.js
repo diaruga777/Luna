@@ -160,6 +160,25 @@ browser.runtime.onMessage.addListener(function (message) {
                 return { hasHistory: false, isTracked: false, amount: null, currency: null, day: null };
             });
     }
+    if (message.type === "comparableSellers") {
+        // The alternative-seller lookup: stored prices first, then a
+        // constrained live fan-out. `found: false` — a lookup that found
+        // nothing, a page the host app doesn't handle, or a failure — is the
+        // page's cue to fall back to today's history-pill rules.
+        return browser.runtime.sendNativeMessage("application.id",
+            { type: "comparableSellers", snapshot: message.snapshot })
+            .then(function (resp) {
+                if (!(resp && resp.found && resp.url)) { return { found: false }; }
+                return {
+                    found: true,
+                    price: resp.price || null,
+                    currency: resp.currency || null,
+                    sellerName: resp.sellerName || "",
+                    url: resp.url
+                };
+            })
+            .catch(function () { return { found: false }; });
+    }
 });
 
 syncBypassRuleset();

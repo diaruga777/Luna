@@ -180,4 +180,52 @@ final class SharedProductSnapshotsTests: XCTestCase {
         let background = Self.extensionSource("LunaSafari/Resources/background.js")
         XCTAssertTrue(background.contains("productSnapshot"))
     }
+
+    // MARK: - The alternative-seller lookup writes through the same store
+
+    /// A price the constrained fan-out fetched is not a second kind of thing:
+    /// it goes in through `SharedProductSnapshots.record`, the ONE write path,
+    /// so it prunes with everything else and feeds the "Was $X" pill and a
+    /// later save's seeded history without a second file.
+    func testTheSellerLookupWritesItsResultsThroughTheSnapshotStore() {
+        let finder = Self.extensionSource("LunaSafari/ComparableSellerFinder.swift")
+        XCTAssertFalse(finder.isEmpty, "LunaSafari/ComparableSellerFinder.swift not found")
+        XCTAssertTrue(
+            finder.contains("SharedProductSnapshots.record("),
+            "fetched comparison results must be recorded through the shared store")
+        XCTAssertTrue(
+            finder.contains("snapshotPayload"),
+            "the record payload should be LunaPriceCompare's, not a Safari-local shape")
+        XCTAssertTrue(
+            finder.contains("SellerFanOutProfile.constrained"),
+            "the appex must run the constrained profile, never the full one")
+    }
+
+    func testTheHandlerRelaysTheSellerLookupAndGatesItOnProductSupport() {
+        let handler = Self.extensionSource("LunaSafari/SafariWebExtensionHandler.swift")
+        XCTAssertTrue(handler.contains("\"comparableSellers\""))
+        XCTAssertTrue(handler.contains("ComparableSellerFinder.answer("))
+        let background = Self.extensionSource("LunaSafari/Resources/background.js")
+        XCTAssertTrue(background.contains("comparableSellers"))
+        let content = Self.extensionSource("LunaSafari/Resources/content.js")
+        XCTAssertTrue(content.contains("type: \"comparableSellers\""))
+    }
+
+    /// The finder must give up BEFORE the handler's own notion of too-long, so
+    /// the page's promise settles with a real answer rather than a timeout.
+    func testTheFindersBudgetSitsInsideTheHandlersNativeBudget() throws {
+        let finder = Self.extensionSource("LunaSafari/ComparableSellerFinder.swift")
+        let handler = Self.extensionSource("LunaSafari/SafariWebExtensionHandler.swift")
+        let finderBudget = try XCTUnwrap(
+            Self.firstDouble(after: "static let budget: TimeInterval = ", in: finder))
+        let handlerBudget = try XCTUnwrap(
+            Self.firstDouble(after: "resolveTimeout: TimeInterval = ", in: handler))
+        XCTAssertLessThan(finderBudget, handlerBudget)
+    }
+
+    private static func firstDouble(after marker: String, in source: String) -> Double? {
+        guard let range = source.range(of: marker) else { return nil }
+        let digits = source[range.upperBound...].prefix { $0.isNumber || $0 == "." }
+        return Double(digits)
+    }
 }

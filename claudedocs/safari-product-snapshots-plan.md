@@ -309,6 +309,38 @@ handling productSnapshot — implementer's choice, but keep one page-side extrac
 
 ---
 
+## Feature 4 — the alternative-seller pill (added 2026-08-08, price-comparison B3)
+
+A later feature reuses this one's whole apparatus, and the contract between them
+is worth stating here rather than only in `claudedocs/safari-extension.md`:
+
+- **The snapshot store gained a second writer.** The constrained fan-out
+  (`LunaSafari/ComparableSellerFinder.swift`) records every seller page it
+  verifies through `SharedProductSnapshots.record`, the same one write path the
+  `productSnapshot` message uses — a fan-out result has exactly the Record shape
+  (named product, price, currency, one retailer's URL, keyed identifiers). So
+  Feature 1's dedupe-by-`(url, day)`, its 365-day/2000-record prune and Feature
+  3's matching all apply to fetched prices with no change, and a price found for
+  a seller pill becomes "Was $X" material on the next visit.
+- **The matching tiers gained a second reader.** `SharedProductMatching.matches`
+  answers "is this stored price about the page's product?" for both features;
+  the freshness filter on top of it is Feature 4's alone.
+- **Feature 3's rule is deliberately NOT Feature 4's.** The history pill accepts
+  any matched point in the last 365 days, because it is a claim about the past.
+  The seller pill accepts only points under 24h old, because it is a claim about
+  now (`FreshComparablePrices`, LunaPriceCompare — which is where it lives so a
+  test can execute it; the appex is not compiled into LunaTests, see the note in
+  "Deviations" below).
+- **They share one slot and never coexist.** `finishSellerLookup` either fills
+  the seller pill or removes it and calls `renderProductPills` unchanged, so
+  Feature 3's behaviour is the literal fallback rather than a re-implementation
+  of it.
+- **The soft-nav gap noted below still binds**, and now for three pills rather
+  than two: if a product-page SPA retry is ever added, the seller pill and its
+  one-shot flag need including in it.
+
+---
+
 ## Identifier research summary (for the record, goes in the doc)
 
 Matching strength order: GTIN family (gtin8/12/14, gtin13=EAN, UPC=gtin12; ISBN for books) is

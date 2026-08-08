@@ -63,21 +63,6 @@ public enum MoonHorizonStyle {
         return path
     }
 
-    /// The horizon from the left edge up to a progress fraction — the lit
-    /// stretch the pulse travels. (de Casteljau split of the quadratic at t.)
-    static func horizonPath(toFraction fraction: CGFloat, in rect: CGRect) -> CGPath {
-        let t = min(1, max(0, fraction))
-        let (start, control, _) = horizonControlPoints(in: rect)
-        let path = CGMutablePath()
-        path.move(to: start)
-        path.addQuadCurve(
-            to: point(atFraction: t, in: rect),
-            control: CGPoint(
-                x: start.x + (control.x - start.x) * t,
-                y: start.y + (control.y - start.y) * t))
-        return path
-    }
-
     /// The closed region below the horizon (the moon's surface), for a faint fill.
     public static func surfacePath(in rect: CGRect) -> CGPath {
         let (start, control, end) = horizonControlPoints(in: rect)
@@ -122,12 +107,57 @@ public enum MoonHorizonStyle {
     static let pulseBloomInnerAlpha: CGFloat = 0.55
     static let pulseBloomOuterAlpha: CGFloat = 0.16
     static let pulseCycleDuration: TimeInterval = 2.6
-    static let pulseTravelDuration: TimeInterval = 1.1
-    /// Fade-in at launch / fade-out into the merge, at either end of the travel.
+    /// The pulse's speed, in fractions of the bar's width per second, is
+    /// `pulseBaseSpeed + pulseAcceleration × seconds alive` — a function of AGE,
+    /// not of how much of the lit stretch is left. That distinction is the whole
+    /// point: a fixed-duration animation aimed at where the head was when it
+    /// launched has to swallow every point the head gains afterwards in whatever
+    /// time remains, which is felt as a crawl followed by a teleport. Chasing at
+    /// an accelerating speed instead means the pulse always closes the real gap,
+    /// and the acceleration is spread over the whole travel. Tuned so a pulse
+    /// crossing half the bar takes ~1.1s and arrives ~4× faster than it left.
+    static let pulseBaseSpeed: CGFloat = 0.18
+    static let pulseAcceleration: CGFloat = 0.55
+    /// A pulse that somehow never catches the head gives up rather than living
+    /// forever. Unreachable in practice — the head is bounded at 1 and the pulse
+    /// isn't — so this is a backstop, not a timing knob.
+    static let pulseMaximumLifetime: TimeInterval = 8
+    /// Fade-in at launch, over the first of these seconds of travel.
     static let pulseFadeDuration: TimeInterval = 0.15
+    /// How close (in points) the pulse gets before the merge starts: the flare
+    /// lights and the pulse dissolves into the sun over the last of the gap.
+    /// Halved down on a lit stretch too short to spare it.
+    static let pulseMergeDistance: CGFloat = 10
     static let pulseFlareDuration: TimeInterval = 0.45
     /// Below this fraction there's no lit stretch worth traveling.
     static let pulseMinimumFraction: CGFloat = 0.05
+    /// SwiftUI/WidgetKit only. That renderer re-derives the pulse's position from
+    /// *live* progress on every render (`travel × progress`), so a fixed-length
+    /// keyframe track can't fall behind the head the way a UIKit path animation
+    /// baked against a snapshot could.
+    static let pulseTravelDuration: TimeInterval = 1.1
+}
+
+/// The traveling pulse's kinematics, kept out of the view so the chase can be
+/// reasoned about — and tested — without a display link. It knows only how long
+/// it has been alive; where it is going is the caller's business, re-read every
+/// frame.
+struct MoonHorizonPulseChase {
+
+    /// How far along the bar the pulse is, as a fraction of its width.
+    private(set) var fraction: CGFloat = 0
+    /// Seconds since launch. The speed is a function of this and nothing else.
+    private(set) var age: TimeInterval = 0
+
+    /// Fractions of the bar's width per second, right now.
+    var speed: CGFloat {
+        MoonHorizonStyle.pulseBaseSpeed + MoonHorizonStyle.pulseAcceleration * CGFloat(age)
+    }
+
+    mutating func advance(by elapsed: TimeInterval) {
+        age += max(0, elapsed)
+        fraction = min(1, fraction + speed * CGFloat(max(0, elapsed)))
+    }
 }
 
 // MARK: - UIKit
@@ -138,8 +168,11 @@ public enum MoonHorizonStyle {
 /// progress. Spans whatever width it's given. While in a window (and progress
 /// is mid-flight), a dimmer point of light periodically sweeps in from the left
 /// and merges with the sun in a brief flare — a heartbeat that shows something
-/// is happening even when the fraction itself isn't moving. Skipped under
-/// Reduce Motion.
+/// is happening even when the fraction itself isn't moving. That pulse is a
+/// per-frame chase rather than a Core Animation path: it re-reads the sun's
+/// drawn position every frame and speeds up the longer it has been traveling,
+/// so it merges where the sun actually is on a bar whose progress is still
+/// climbing. Skipped under Reduce Motion.
 public final class MoonHorizonProgressBar: UIView {
 
     private let surfaceLayer = CAShapeLayer()
@@ -162,6 +195,18 @@ public final class MoonHorizonProgressBar: UIView {
     /// The brief burst where pulse and head merge, brighter than either alone.
     private let flareLayer = CAGradientLayer()
     private var pulseTimer: Timer?
+    /// The in-flight pulse is stepped frame by frame rather than handed to Core
+    /// Animation, so every frame can re-read where the head actually is.
+    private var pulseDisplayLink: CADisplayLink?
+    private var pulse = MoonHorizonPulseChase()
+    private var pulseLastTick: CFTimeInterval = 0
+    private var pulseDidFlare = false
+    /// Whether the pulse has ever been a real distance BEHIND the drawn head.
+    /// Until it has, "the pulse has caught the head" means the head hasn't
+    /// arrived yet — a bar still easing toward a fraction set a moment ago —
+    /// and merging on that would flare at the left edge the instant the pulse
+    /// launched.
+    private var pulseDidChase = false
 
     public private(set) var progress: Float = 0
     /// Whether an activity point periodically travels from the start to the
@@ -172,7 +217,7 @@ public final class MoonHorizonProgressBar: UIView {
             guard showsActivityPulse != oldValue else { return }
             updatePulseTimer()
             if !showsActivityPulse {
-                pulseLayer.removeAllAnimations()
+                endPulse()
                 flareLayer.removeAllAnimations()
             }
         }
@@ -256,7 +301,10 @@ public final class MoonHorizonProgressBar: UIView {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { pulseTimer?.invalidate() }
+    deinit {
+        pulseTimer?.invalidate()
+        pulseDisplayLink?.invalidate()
+    }
 
     public override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: 20)
@@ -271,6 +319,7 @@ public final class MoonHorizonProgressBar: UIView {
         if window == nil || !showsActivityPulse {
             pulseTimer?.invalidate()
             pulseTimer = nil
+            endPulse()
         } else if pulseTimer == nil {
             let timer = Timer.scheduledTimer(
                 withTimeInterval: MoonHorizonStyle.pulseCycleDuration, repeats: true
@@ -321,50 +370,103 @@ public final class MoonHorizonProgressBar: UIView {
         CATransaction.commit()
     }
 
-    /// One pulse cycle: a dim point of light launches from the left edge,
-    /// accelerates along the lit stretch, and merges with the head in a flare.
+    /// Whether a pulse can be shown at all right now — a pulse already in flight
+    /// is abandoned the moment this stops holding.
+    private var pulseIsPresentable: Bool {
+        showsActivityPulse && window != nil && !isHidden && alpha > 0.01
+            && bounds.width > 0 && !UIAccessibility.isReduceMotionEnabled
+    }
+
+    /// Where the sun is *on screen* right now, as a fraction of the bar's width.
+    /// Not `progress`: that value can be a third of a second ahead of the drawn
+    /// point while `setProgress(animated:)` eases toward it, and merging with a
+    /// head that isn't there yet is as visible as merging with one that has
+    /// already moved on. `x` is exactly linear in this curve's Bézier parameter
+    /// (the control point sits at the horizontal midpoint), so a fraction of the
+    /// width and a fraction of the path are the same number.
+    private var presentedHeadFraction: CGFloat {
+        guard bounds.width > 0 else { return 0 }
+        let x = (headCoreLayer.presentation() ?? headCoreLayer).position.x
+        return min(1, max(0, (x - bounds.minX) / bounds.width))
+    }
+
+    /// One pulse cycle: a dim point of light launches from the left edge and
+    /// accelerates along the lit stretch until it catches the sun, merging into
+    /// it in a flare. It chases the head rather than a snapshot of it, so a bar
+    /// whose progress advances mid-flight still merges where the sun actually is.
     private func firePulse() {
-        guard showsActivityPulse, window != nil, !isHidden, alpha > 0.01,
-              !UIAccessibility.isReduceMotionEnabled else { return }
-        let fraction = CGFloat(progress)
-        guard fraction > MoonHorizonStyle.pulseMinimumFraction, fraction < 1,
-            bounds.width > 0
+        guard pulseDisplayLink == nil, pulseIsPresentable,
+            CGFloat(progress) > MoonHorizonStyle.pulseMinimumFraction, progress < 1
         else { return }
 
-        let travel = MoonHorizonStyle.pulseTravelDuration
-        let fade = MoonHorizonStyle.pulseFadeDuration
+        pulse = MoonHorizonPulseChase()
+        pulseDidFlare = false
+        pulseDidChase = false
+        pulseLastTick = CACurrentMediaTime()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pulseLayer.opacity = 0
+        pulseLayer.position = MoonHorizonStyle.point(atFraction: 0, in: bounds)
+        CATransaction.commit()
 
-        let move = CAKeyframeAnimation(keyPath: "position")
-        move.path = MoonHorizonStyle.horizonPath(toFraction: fraction, in: bounds)
-        move.calculationMode = .paced
-        move.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        move.duration = travel
+        let link = CADisplayLink(target: self, selector: #selector(advancePulse(_:)))
+        link.add(to: .main, forMode: .common)
+        pulseDisplayLink = link
+    }
 
-        let glow = CAKeyframeAnimation(keyPath: "opacity")
-        glow.values = [0, 1, 1, 0]
-        glow.keyTimes = [
-            0, NSNumber(value: fade / travel), NSNumber(value: 1 - fade / travel), 1,
-        ]
-        glow.duration = travel
+    @objc private func advancePulse(_ link: CADisplayLink) {
+        guard pulseIsPresentable else { return endPulse() }
 
-        let group = CAAnimationGroup()
-        group.animations = [move, glow]
-        group.duration = travel
-        pulseLayer.add(group, forKey: "pulse")
+        let now = CACurrentMediaTime()
+        // Cap the step so a stalled run loop (a modal presentation, a slow frame)
+        // doesn't hand the pulse a jump the eye reads as the very artefact this
+        // replaced.
+        let elapsed = min(max(0, now - pulseLastTick), 1.0 / 15)
+        pulseLastTick = now
+        pulse.advance(by: elapsed)
 
-        // The merge flare, timed so it swells as the pulse fades into the head.
-        // Scheduled (rather than pre-positioned) so it lands on wherever the
-        // head actually is by then, even if progress advanced mid-flight.
-        DispatchQueue.main.asyncAfter(deadline: .now() + travel - fade) { [weak self] in
-            self?.fireMergeFlare()
+        let headFraction = presentedHeadFraction
+        let gap = (headFraction - pulse.fraction) * bounds.width
+        // On a short lit stretch the full merge distance would be most of the
+        // journey, so the pulse would fade before it ever read as traveling.
+        let mergeDistance = max(
+            1, min(MoonHorizonStyle.pulseMergeDistance, headFraction * bounds.width / 2))
+
+        if gap > mergeDistance { pulseDidChase = true }
+        if pulseDidChase, gap <= mergeDistance, !pulseDidFlare {
+            pulseDidFlare = true
+            fireMergeFlare(at: headFraction)
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // Clamped to the head so the pulse slides under the sun rather than past it.
+        pulseLayer.position = MoonHorizonStyle.point(
+            atFraction: min(pulse.fraction, headFraction), in: bounds)
+        let fadeIn = min(1, CGFloat(pulse.age / MoonHorizonStyle.pulseFadeDuration))
+        let dissolve = pulseDidChase ? min(1, max(0, gap / mergeDistance)) : 1
+        pulseLayer.opacity = Float(fadeIn * dissolve)
+        CATransaction.commit()
+
+        if (pulseDidChase && gap <= 0) || pulse.age >= MoonHorizonStyle.pulseMaximumLifetime {
+            endPulse()
         }
     }
 
-    private func fireMergeFlare() {
+    private func endPulse() {
+        pulseDisplayLink?.invalidate()
+        pulseDisplayLink = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pulseLayer.opacity = 0
+        CATransaction.commit()
+    }
+
+    private func fireMergeFlare(at headFraction: CGFloat) {
         guard showsActivityPulse, window != nil, bounds.width > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        flareLayer.position = MoonHorizonStyle.point(atFraction: CGFloat(progress), in: bounds)
+        flareLayer.position = MoonHorizonStyle.point(atFraction: headFraction, in: bounds)
         CATransaction.commit()
 
         let flash = CAKeyframeAnimation(keyPath: "opacity")

@@ -36,10 +36,30 @@ public struct Seller: Codable, Equatable, Hashable, Identifiable, Sendable {
     public let tier: Int
     /// Whether the search-URL template has been checked against the live site.
     public let verified: Bool
+    /// Whether this retailer's search RESULTS are drawn by client-side
+    /// JavaScript, so the served markup carries no product links at all.
+    ///
+    /// Additive and optional: an entry written before this field existed decodes
+    /// with `nil`, which reads as "not known to be client-rendered" — the
+    /// pre-existing behaviour. Measured, not assumed: Target's US search page is
+    /// 123KB and Walmart's 248KB, and both contain zero product URLs.
+    public let searchIsClientRendered: Bool?
+
+    /// Whether a static-only context should skip this seller entirely.
+    public var searchRequiresRendering: Bool { searchIsClientRendered == true }
+
+    /// The currency this storefront transacts in, derived from its region.
+    ///
+    /// Needed because a client-rendered PDP ships a BARE NUMBER in its app
+    /// state — Target's `current_retail`, Walmart's `currentPrice.price` — with
+    /// no currency anywhere near it. Guessing from the TLD would call every
+    /// `.com` American; the storefront's own region is the honest answer.
+    public var regionCurrency: String? { SellerDirectory.currencies[region.uppercased()] }
 
     public init(
         id: String, name: String, region: String, domain: String, searchURL: String,
-        acceptsGTIN: Bool?, marketplace: Bool, categories: [String], tier: Int, verified: Bool
+        acceptsGTIN: Bool?, marketplace: Bool, categories: [String], tier: Int, verified: Bool,
+        searchIsClientRendered: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -51,6 +71,7 @@ public struct Seller: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.categories = categories
         self.tier = tier
         self.verified = verified
+        self.searchIsClientRendered = searchIsClientRendered
     }
 
     /// The concrete search URL for `query`, or nil when the template is
@@ -92,6 +113,13 @@ public struct SellerDirectory: Codable, Equatable, Sendable {
     }
 
     static let queryPlaceholder = "{query}"
+
+    /// Transaction currency per directory region. Every region in the shipped
+    /// file is covered; `SellerDirectoryTests` pins that.
+    public static let currencies: [String: String] = [
+        "US": "USD", "GB": "GBP", "CA": "CAD", "AU": "AUD", "NZ": "NZD",
+        "IE": "EUR", "IN": "INR", "SG": "SGD", "ZA": "ZAR",
+    ]
 
     /// RFC 3986 unreserved characters — everything else is escaped, so a product
     /// name containing `&`, `?`, `#`, `/` or a space cannot break out of the

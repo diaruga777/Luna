@@ -117,7 +117,31 @@ public struct ProductMetadataExtractor {
         return ProductMetadata(
             name: fields.name, price: price, imageURL: fields.imageURL,
             brand: fields.brand, productID: fields.productID,
-            identifiers: fields.identifiers)
+            identifiers: enrichedIdentifiers(fields.identifiers, url: url, html: html))
+    }
+
+    /// Fills identifier gaps from retailer markup that publishes no structured
+    /// data at all.
+    ///
+    /// Amazon is the whole of it today, and it is not a small case: it publishes
+    /// no JSON-LD `Product`, so a save from the most important retailer in the
+    /// feature produced NO keyed identifiers, and its alternative-seller fan-out
+    /// then had nothing to verify any candidate against. The ISBN/UPC/EAN, the
+    /// "Item model number" and the brand are plain text in the product-details
+    /// table, and for books the ASIN in the URL IS the ISBN-10.
+    ///
+    /// The reader is `AmazonProductDetails` in LunaPriceMetadata — the same code
+    /// the lean comparison engine runs, so the two tiers cannot disagree about
+    /// what an Amazon page says. Structured extraction still WINS: this only
+    /// fills what came back empty.
+    private func enrichedIdentifiers(
+        _ identifiers: ProductIdentifiers, url: URL, html: String
+    ) -> ProductIdentifiers {
+        guard AmazonStorefronts.storefront(for: url.host) != nil else { return identifiers }
+        let details = AmazonProductDetails.identifiers(inHTML: html, url: url)
+        guard !details.isEmpty else { return identifiers }
+        return identifiers.merging(ProductIdentifiers(
+            gtin: details.gtin, mpn: details.mpn, brand: details.brand))
     }
 
     /// The single price source: the first matching host rule, else the generic

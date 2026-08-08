@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaModels
+import os
 import LunaPriceCompare
 import LunaURLClassification
 
@@ -50,6 +51,9 @@ enum ComparableSellerFinder {
     /// (15s) is the inner one; the margin covers container reads and the
     /// snapshot write-back.
     static let budget: TimeInterval = 18
+
+    private static let log = Logger(
+        subsystem: "com.hsanabria.luna.safari", category: "SellerComparison")
 
     // MARK: - Entry point
 
@@ -166,6 +170,13 @@ enum ComparableSellerFinder {
             richResolve: nil
         ).run(SellerFanOutRequest(
             sourceURL: sourceURL, productName: page.name, identifiers: identifiers))
+
+        // ONE line. The app writes the whole per-candidate story to its
+        // shareable diagnostic log (`SellerComparisonRunner.logCategory`); an
+        // appex with a hard memory ceiling and a 20s budget gets the summary,
+        // which is still the difference between "the pill never appears" and a
+        // reason it never appears.
+        log.info("\(outcome.compactLogLine, privacy: .public)")
 
         for result in outcome.results {
             SharedProductSnapshots.record(result.snapshotPayload, now: now)

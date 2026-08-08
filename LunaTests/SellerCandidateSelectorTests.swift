@@ -223,7 +223,13 @@ final class SellerCandidateSelectorTests: XCTestCase {
 
     // MARK: - Per-seller query
 
-    func testGTINQueryOnlyForSellersKnownToAcceptIt() {
+    /// Every seller the directory does not mark as REFUSING barcodes is asked by
+    /// identifier first. That is not optimism: when the source declares a GTIN,
+    /// name-only matching is refused outright, so a candidate reached by a name
+    /// search can only be verified if its page publishes structured identifiers —
+    /// which most real pages do not. Asking by identifier is what makes the
+    /// `.gtinInPage` evidence tier available at all.
+    func testGTINIsTheFirstQuestionUnlessTheSellerRefusesBarcodes() {
         let identifiers = ProductIdentifiers(gtin: "0194644090876")
         XCTAssertEqual(
             SellerCandidateSelector.query(
@@ -234,12 +240,45 @@ final class SellerCandidateSelectorTests: XCTestCase {
             SellerCandidateSelector.query(
                 for: seller("b", acceptsGTIN: nil), identifiers: identifiers,
                 productName: "Sony Headphones"),
-            "Sony Headphones", "unknown GTIN support is not a licence to search by digits")
+            "0194644090876", "unknown barcode support means untried, not refused")
         XCTAssertEqual(
             SellerCandidateSelector.query(
-                for: seller("c", acceptsGTIN: true),
+                for: seller("c", acceptsGTIN: false), identifiers: identifiers,
+                productName: "Sony Headphones"),
+            "Sony Headphones")
+        XCTAssertEqual(
+            SellerCandidateSelector.query(
+                for: seller("d", acceptsGTIN: true),
                 identifiers: ProductIdentifiers(gtin: "ISBN-080442957X"),
                 productName: "Sony Headphones"),
             "Sony Headphones", "a non-numeric id is not a GTIN search")
+    }
+
+    /// A shop of UNKNOWN barcode support gets a second question; one KNOWN to
+    /// take barcodes does not, because a second request is how a bot wall gets
+    /// tripped.
+    func testOnlyUnknownSellersGetTheNameFallback() {
+        let identifiers = ProductIdentifiers(gtin: "0194644090876")
+        XCTAssertEqual(
+            SellerCandidateSelector.queries(
+                for: seller("unknown", acceptsGTIN: nil), identifiers: identifiers,
+                productName: "Sony Headphones"),
+            ["0194644090876", "Sony Headphones"])
+        XCTAssertEqual(
+            SellerCandidateSelector.queries(
+                for: seller("known", acceptsGTIN: true), identifiers: identifiers,
+                productName: "Sony Headphones"),
+            ["0194644090876"])
+    }
+
+    /// The query is the CLEANED name — searching another retailer for the string
+    /// "Amazon.com" returns nothing on the first page of every shop in the
+    /// directory.
+    func testTheNameQueryDropsTheSourceStorefrontsChrome() {
+        XCTAssertEqual(
+            SellerCandidateSelector.query(
+                for: seller("a", acceptsGTIN: false), identifiers: ProductIdentifiers(),
+                productName: "Amazon.com: Atomic Habits: An Easy Way"),
+            "Atomic Habits: An Easy Way")
     }
 }

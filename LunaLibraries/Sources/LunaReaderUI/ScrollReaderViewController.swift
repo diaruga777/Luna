@@ -1229,7 +1229,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // going rather than restarting — unless a position was explicitly
         // carried in from another reader mode.
         if center.currentItemInfo?.itemID == item.id,
-           center.currentSnapshot.isAudiblyPlaying,
+           center.isAudiblyPlaying,
            explicitResumeWordIndex == nil {
             VoiceFirstRunPrompt.showIfNeeded(from: self)
             return
@@ -1556,7 +1556,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if suspended {
             if let center = ReaderAudioLauncher.center,
                center.currentItemInfo?.itemID == item.id,
-               center.currentSnapshot.isAudiblyPlaying {
+               center.isAudiblyPlaying {
                 resumesAudioAfterLinkPreview = true
                 center.pause()
             } else if speech?.isPlaying == true {
@@ -1748,7 +1748,7 @@ extension ScrollReaderViewController: ReaderPlaybackPausable {
     public func pauseForExclusivePlayback() {
         if let center = ReaderAudioLauncher.center,
            center.currentItemInfo?.itemID == item.id,
-           center.currentSnapshot.isAudiblyPlaying {
+           center.isAudiblyPlaying {
             center.pause()
             return
         }

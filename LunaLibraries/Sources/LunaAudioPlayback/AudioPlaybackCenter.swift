@@ -216,7 +216,11 @@ public final class AudioPlaybackCenter {
             ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
     }
 
-    private var isAudiblyPlaying: Bool {
+    /// True during `.playing`/`.announcing`, false for `.idle`/`.paused` — the
+    /// one bit most observers actually want, without paying for the rest of
+    /// `currentSnapshot` (which estimates duration/elapsed from the current
+    /// script and engine clock) just to read it.
+    public var isAudiblyPlaying: Bool {
         switch state {
         case .playing, .announcing: return true
         case .idle, .paused: return false

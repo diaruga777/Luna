@@ -810,7 +810,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         showCurrentWord()
         persistPosition()
         if isAudioMode, let center = ReaderAudioLauncher.center {
-            let shouldRemainPaused = !center.currentSnapshot.isAudiblyPlaying
+            let shouldRemainPaused = !center.isAudiblyPlaying
             let token = engine.tokenIndex(forFrameIndex: index) ?? index
             center.play(item: article.item, content: article.content, fromWordIndex: token)
             if shouldRemainPaused {
@@ -839,7 +839,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     @objc private func toggleControlPlayback() {
         if isAudioMode, let center = ReaderAudioLauncher.center {
             if center.currentItemInfo?.itemID == article.item.id,
-               center.currentSnapshot.isAudiblyPlaying {
+               center.isAudiblyPlaying {
                 center.pause()
             } else if center.currentItemInfo?.itemID == article.item.id {
                 center.resume()
@@ -898,7 +898,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
 
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didChangeState state: AudioPlaybackState) {
         guard isAudioMode, center.currentItemInfo?.itemID == article.item.id else { return }
-        let playing = center.currentSnapshot.isAudiblyPlaying
+        let playing = center.isAudiblyPlaying
         playPauseButton.configuration?.image = UIImage(systemName: playing ? "pause.fill" : "play.fill")
         playPauseButton.accessibilityLabel = playing
             ? L10n.string("Reader_rsvp_pauseAccessibilityLabel") : L10n.string("Reader_rsvp_playAccessibilityLabel")

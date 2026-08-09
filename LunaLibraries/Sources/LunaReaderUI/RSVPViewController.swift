@@ -463,7 +463,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// silent mode and whenever the center isn't voicing this item.
     private func syncPlaybackStateToCenter() {
         guard let center = speechCenter, isViewLoaded else { return }
-        let playingMine = centerOwnsItem && center.currentSnapshot.isAudiblyPlaying
+        let playingMine = centerOwnsItem && center.isAudiblyPlaying
         isPlaying = playingMine
         updateContextVisibility(animated: false)
     }
@@ -1060,7 +1060,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 if previewIsActive {
                     self.wasPlayingBeforeLinkPreview = self.isPlaying
                     if let center = self.speechCenter, self.centerOwnsItem,
-                       center.currentSnapshot.isAudiblyPlaying {
+                       center.isAudiblyPlaying {
                         center.pause()
                     } else if self.isPlaying {
                         self.pause()
@@ -1468,7 +1468,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func playViaCenter(_ center: AudioPlaybackCenter) {
         ReaderPlaybackArbiter.claim(self)
         if centerOwnsItem {
-            if center.currentSnapshot.isAudiblyPlaying { return }
+            if center.isAudiblyPlaying { return }
             if case .paused = center.state { center.resume(); return }
         }
         if currentIndex >= engine.words.count - 1 {
@@ -1551,7 +1551,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     @objc private func togglePlayPause() {
         if let center = speechCenter {
-            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying {
+            if centerOwnsItem, center.isAudiblyPlaying {
                 center.pause()
             } else {
                 play()
@@ -1572,7 +1572,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// The full-screen tap: pause-only, never a toggle.
     @objc private func surfaceTapped() {
         if let center = speechCenter {
-            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying { center.pause() }
+            if centerOwnsItem, center.isAudiblyPlaying { center.pause() }
             return
         }
         if isPlaying { pause() }
@@ -1895,7 +1895,7 @@ extension RSVPViewController: ReaderPlaybackPausable {
     /// word timer.
     public func pauseForExclusivePlayback() {
         if let center = speechCenter, centerOwnsItem,
-           center.currentSnapshot.isAudiblyPlaying {
+           center.isAudiblyPlaying {
             center.pause()
         } else if isPlaying {
             pause()

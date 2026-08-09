@@ -36,7 +36,7 @@ final class UndownloadedMediaCardTests: XCTestCase {
             mediaKind: .video, title: "Clip", resolveKind: "x", phase: phase,
             progress: progress, thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil, resumeDataFileName: nil,
-            rangeStartSeconds: nil, rangeEndSeconds: nil, resolvedVideoID: nil,
+            timeRange: nil, resolvedVideoID: nil,
             youtubeVisitorData: nil, errorMessage: errorMessage, errorKind: errorKind,
             resolveAttempts: 0, mediaAttempts: 0, suspendDeadline: nil,
             ownership: .downloader).downloaderSnapshot

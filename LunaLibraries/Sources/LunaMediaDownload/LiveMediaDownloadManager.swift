@@ -392,8 +392,7 @@ public final class LiveMediaDownloadManager: NSObject {
             expectedByteCount: asset.estimatedByteCount,
             receivedByteCount: nil,
             resumeDataFileName: nil,
-            rangeStartSeconds: nil,
-            rangeEndSeconds: nil,
+            timeRange: nil,
             resolvedVideoID: nil,
             youtubeVisitorData: nil,
             errorMessage: nil,
@@ -426,8 +425,7 @@ public final class LiveMediaDownloadManager: NSObject {
             expectedByteCount: nil,
             receivedByteCount: nil,
             resumeDataFileName: nil,
-            rangeStartSeconds: nil,
-            rangeEndSeconds: nil,
+            timeRange: nil,
             resolvedVideoID: nil,
             youtubeVisitorData: nil,
             errorMessage: nil,
@@ -439,8 +437,7 @@ public final class LiveMediaDownloadManager: NSObject {
         )
         if let youtube = YouTubeLink(url: gated.sourceURL) {
             job.resolvedVideoID = youtube.videoID
-            job.rangeStartSeconds = youtube.timeRange?.startSeconds
-            job.rangeEndSeconds = youtube.timeRange?.endSeconds
+            job.timeRange = youtube.timeRange
         }
         if let directAsset = MediaAsset.direct(url: gated.sourceURL) {
             job.resolveKind = "direct"
@@ -516,8 +513,7 @@ public final class LiveMediaDownloadManager: NSObject {
         job.mediaKind = asset.kind
         job.fileExtension = MediaFileDownloader.fileExtension(for: asset, mimeType: nil)
         job.expectedByteCount = expected
-        job.rangeStartSeconds = asset.timeRange?.startSeconds
-        job.rangeEndSeconds = asset.timeRange?.endSeconds
+        job.timeRange = asset.timeRange
         job.phase = .downloading
         job.errorMessage = nil
         store.upsert(job)
@@ -654,8 +650,7 @@ public final class LiveMediaDownloadManager: NSObject {
             if let storageError = MediaDownloadPreflight.storageError(
                 expectedByteCount: job.expectedByteCount,
                 directory: JobStore.directory,
-                requiresProcessingCopy: job.rangeStartSeconds != nil
-                    || job.rangeEndSeconds != nil
+                requiresProcessingCopy: job.timeRange?.isEffective == true
             ) {
                 await failJob(job, message: storageError.message)
                 return
@@ -790,8 +785,7 @@ public final class LiveMediaDownloadManager: NSObject {
             if let storageError = MediaDownloadPreflight.storageError(
                 expectedByteCount: job.expectedByteCount,
                 directory: JobStore.directory,
-                requiresProcessingCopy: job.rangeStartSeconds != nil
-                    || job.rangeEndSeconds != nil
+                requiresProcessingCopy: job.timeRange?.isEffective == true
             ) {
                 await failJob(job, message: storageError.message)
                 return
@@ -1091,13 +1085,10 @@ public final class LiveMediaDownloadManager: NSObject {
             guard let videoID = job.resolvedVideoID
                 ?? URL(string: job.sourceURLString).flatMap(YouTubeLink.init(url:))?.videoID
             else { return nil }
-            let range = MediaTimeRange(
-                startSeconds: job.rangeStartSeconds ?? 0,
-                endSeconds: job.rangeEndSeconds)
             return YouTubePlayerResponseParser.asset(
                 from: data,
                 videoID: videoID,
-                timeRange: range.isEffective ? range : nil)
+                timeRange: job.timeRange?.isEffective == true ? job.timeRange : nil)
         case .youtubeClip, .youtubeWatch, .youtubePlayerJavaScript:
             return nil
         case nil:
@@ -1203,12 +1194,9 @@ public final class LiveMediaDownloadManager: NSObject {
             let destination = JobStore.downloadURL(fileName: "\(job.id).\(ext)")
             do {
                 if FileManager.default.fileExists(atPath: staging.path) {
-                    let range = MediaTimeRange(
-                        startSeconds: job.rangeStartSeconds ?? 0,
-                        endSeconds: job.rangeEndSeconds)
                     let processed = try await MediaVideoTrimmer.trimIfNeeded(
                         fileURL: staging,
-                        timeRange: (job.mediaKind ?? .image) == .video ? range : nil)
+                        timeRange: (job.mediaKind ?? .image) == .video ? job.timeRange : nil)
                     try? FileManager.default.removeItem(at: destination)
                     try FileManager.default.moveItem(at: processed, to: destination)
                     if processed != staging {
@@ -1339,8 +1327,7 @@ public final class LiveMediaDownloadManager: NSObject {
            let clip = YouTubeClipParser.descriptor(fromHTML: html),
            let watchURL = YouTubeLink.watchURL(videoID: clip.videoID) {
             job.resolvedVideoID = clip.videoID
-            job.rangeStartSeconds = clip.timeRange.startSeconds
-            job.rangeEndSeconds = clip.timeRange.endSeconds
+            job.timeRange = clip.timeRange
             job.resolveKind = ResolveKind.youtubeWatch.rawValue
             store.upsert(job)
             startTask(
@@ -1594,8 +1581,7 @@ public final class LiveMediaDownloadManager: NSObject {
             if let storageError = MediaDownloadPreflight.storageError(
                 expectedByteCount: freshJob.expectedByteCount,
                 directory: JobStore.directory,
-                requiresProcessingCopy: freshJob.rangeStartSeconds != nil
-                    || freshJob.rangeEndSeconds != nil
+                requiresProcessingCopy: freshJob.timeRange?.isEffective == true
             ) {
                 await failJob(freshJob, message: storageError.message)
                 return
@@ -1646,8 +1632,7 @@ public final class LiveMediaDownloadManager: NSObject {
             if let storageError = MediaDownloadPreflight.storageError(
                 expectedByteCount: retryJob.expectedByteCount,
                 directory: JobStore.directory,
-                requiresProcessingCopy: retryJob.rangeStartSeconds != nil
-                    || retryJob.rangeEndSeconds != nil
+                requiresProcessingCopy: retryJob.timeRange?.isEffective == true
             ) {
                 await failJob(retryJob, message: storageError.message)
                 return

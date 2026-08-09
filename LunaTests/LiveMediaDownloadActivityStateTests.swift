@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaModels
 import LunaURLClassification
 @testable import LunaMediaDownload
 import XCTest
@@ -25,7 +26,7 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
             resolveKind: nil, phase: phase, progress: 0.5,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
-            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
+            resumeDataFileName: nil, timeRange: nil,
             resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0, suspendDeadline: nil)
     }

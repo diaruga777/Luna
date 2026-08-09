@@ -50,8 +50,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     var receivedByteCount: Int64?
     var resumeDataFileName: String?
     /// Optional source-requested range (notably YouTube timestamp/clip links).
-    var rangeStartSeconds: Double?
-    var rangeEndSeconds: Double?
+    var timeRange: MediaTimeRange?
     /// The underlying YouTube video id after a `/clip/` URL has been expanded.
     /// Persisting it lets a later resolver stage survive a process relaunch.
     var resolvedVideoID: String?
@@ -83,7 +82,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         fileExtension: String? = nil,
         expectedByteCount: Int64? = nil, receivedByteCount: Int64? = nil,
         resumeDataFileName: String? = nil,
-        rangeStartSeconds: Double? = nil, rangeEndSeconds: Double? = nil,
+        timeRange: MediaTimeRange? = nil,
         resolvedVideoID: String? = nil, youtubeVisitorData: String? = nil,
         errorMessage: String? = nil, errorKind: ErrorKind? = nil,
         resolveAttempts: Int, mediaAttempts: Int,
@@ -103,8 +102,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         self.expectedByteCount = expectedByteCount
         self.receivedByteCount = receivedByteCount
         self.resumeDataFileName = resumeDataFileName
-        self.rangeStartSeconds = rangeStartSeconds
-        self.rangeEndSeconds = rangeEndSeconds
+        self.timeRange = timeRange
         self.resolvedVideoID = resolvedVideoID
         self.youtubeVisitorData = youtubeVisitorData
         self.errorMessage = errorMessage
@@ -119,6 +117,8 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         case id, sourceURLString, assetURLString, mediaKind, title, creator, resolveKind
         case phase, progress, thumbnailFileName, fileExtension
         case expectedByteCount, receivedByteCount, resumeDataFileName
+        case timeRange
+        // Legacy on-disk keys from before the pair was unified into `timeRange`.
         case rangeStartSeconds, rangeEndSeconds
         case resolvedVideoID, youtubeVisitorData
         case errorMessage, errorKind, resolveAttempts, mediaAttempts, suspendDeadline, ownership
@@ -141,8 +141,15 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         expectedByteCount = try c.decodeIfPresent(Int64.self, forKey: .expectedByteCount)
         receivedByteCount = try c.decodeIfPresent(Int64.self, forKey: .receivedByteCount)
         resumeDataFileName = try c.decodeIfPresent(String.self, forKey: .resumeDataFileName)
-        rangeStartSeconds = try c.decodeIfPresent(Double.self, forKey: .rangeStartSeconds)
-        rangeEndSeconds = try c.decodeIfPresent(Double.self, forKey: .rangeEndSeconds)
+        if let range = try c.decodeIfPresent(MediaTimeRange.self, forKey: .timeRange) {
+            timeRange = range
+        } else if let legacyStart = try c.decodeIfPresent(Double.self, forKey: .rangeStartSeconds) {
+            timeRange = MediaTimeRange(
+                startSeconds: legacyStart,
+                endSeconds: try c.decodeIfPresent(Double.self, forKey: .rangeEndSeconds))
+        } else {
+            timeRange = nil
+        }
         resolvedVideoID = try c.decodeIfPresent(String.self, forKey: .resolvedVideoID)
         youtubeVisitorData = try c.decodeIfPresent(String.self, forKey: .youtubeVisitorData)
         errorMessage = try c.decodeIfPresent(String.self, forKey: .errorMessage)
@@ -169,8 +176,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encodeIfPresent(expectedByteCount, forKey: .expectedByteCount)
         try c.encodeIfPresent(receivedByteCount, forKey: .receivedByteCount)
         try c.encodeIfPresent(resumeDataFileName, forKey: .resumeDataFileName)
-        try c.encodeIfPresent(rangeStartSeconds, forKey: .rangeStartSeconds)
-        try c.encodeIfPresent(rangeEndSeconds, forKey: .rangeEndSeconds)
+        try c.encodeIfPresent(timeRange, forKey: .timeRange)
         try c.encodeIfPresent(resolvedVideoID, forKey: .resolvedVideoID)
         try c.encodeIfPresent(youtubeVisitorData, forKey: .youtubeVisitorData)
         try c.encodeIfPresent(errorMessage, forKey: .errorMessage)

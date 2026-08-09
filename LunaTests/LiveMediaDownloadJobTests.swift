@@ -128,6 +128,29 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertNil(try decodedKind(forLegacyMediaKind: "unknown"))
     }
 
+    /// `timeRange` used to be shredded into two top-level `rangeStartSeconds`/
+    /// `rangeEndSeconds` fields. An in-flight job written before the update
+    /// must still decode its range (and a job with neither key decodes nil,
+    /// not a zero-start range).
+    func testLegacyRangeSecondsKeysDecodeIntoTimeRange() throws {
+        let withRange = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+            + #""mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","#
+            + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"#
+            + #""rangeStartSeconds":12.5,"rangeEndSeconds":42,"#
+            + #""errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"#
+            + #""suspendDeadline":null}"#
+        let job = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(withRange.utf8))
+        XCTAssertEqual(job.timeRange, MediaTimeRange(startSeconds: 12.5, endSeconds: 42))
+
+        let withoutRange = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+            + #""mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","#
+            + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"#
+            + #""errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"#
+            + #""suspendDeadline":null}"#
+        let bare = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(withoutRange.utf8))
+        XCTAssertNil(bare.timeRange)
+    }
+
     func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
         XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
             phase: .resolving, hasActiveTask: false))
@@ -166,7 +189,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             resolveKind: "x", phase: .resolving, progress: 0,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
-            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
+            resumeDataFileName: nil, timeRange: nil,
             resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)

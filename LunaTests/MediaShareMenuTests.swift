@@ -81,7 +81,10 @@ final class MediaShareMenuTests: XCTestCase {
             copyLink: { fired.append("copy") },
             shareLink: { fired.append("link") },
             shareFile: { fired.append("file") })
-        for row in rows { row.action() }
+        for row in rows {
+            guard case .tap(let action) = row.behavior else { continue }
+            action()
+        }
         XCTAssertEqual(fired, ["copy", "link", "file"])
     }
 

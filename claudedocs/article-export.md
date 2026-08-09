@@ -163,8 +163,8 @@ Both go through `AppReaderShareProvider` (`Luna/Social/AppReaderProviders.swift`
   button skips the option list and presents the format picker directly
   (`presentExportOnlyShare`).
 
-`ReaderShareSheet.Row` (LunaSocialUI) carries `children` for this: a row with
-children renders as a nested `UIMenu` off the share button, or — in the
+`ReaderShareSheet.Row` (LunaSocialUI) is `.action`/`.submenu` for this: a
+`.submenu` row renders as a nested `UIMenu` off the share button, or — in the
 bottom-sheet fallback — dismisses and presents a second sheet titled "Export
 as…". Nesting keeps one row for a choice most shares never touch instead of
 doubling the top-level list.

@@ -418,6 +418,7 @@ enum OnboardingStrings {
         static let actionButtonPressWave = Definition(
             shared: "onboarding.press.wave")
         static let switcherCorner = Definition(shared: "onboarding.switcher.corner")
+        static let safariShatter = Definition(shared: "onboarding.safari.shatter")
         static let moonReveal = Definition(shared: "moonReveal")
         static let opaqueGlyphReveal = Definition(shared: "opaqueGlyphReveal")
     }

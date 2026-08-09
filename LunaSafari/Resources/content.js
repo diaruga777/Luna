@@ -1674,9 +1674,11 @@
     // when both are within 24h and it has never confirmed before (the decision
     // lives in Swift — see SharedSafariURL.shouldCelebrateSetup). Here we only
     // render it, tell the native side it was seen, and hand the page back after
-    // five seconds so a pill can still appear if this page earns one.
+    // twenty seconds so it can read as a genuine completion state before a
+    // pill can still appear if this page earns one. A document refresh tears
+    // it down immediately rather than making it survive navigation.
     var SETUP_CELEBRATION_ID = "luna-setup-celebration";
-    var SETUP_CELEBRATION_DURATION = 5000;
+    var SETUP_CELEBRATION_DURATION = 20000;
 
     function presentSetupCelebration(context, onDismiss) {
         if (document.getElementById(SETUP_CELEBRATION_ID)) { return; }
@@ -1788,6 +1790,10 @@
         }
 
         (document.body || document.documentElement).appendChild(overlay);
+        // Refreshing replaces the document anyway, but explicitly dismissing
+        // keeps the in-memory state honest during Safari's page-cache and
+        // navigation transitions. Do not run the pill callback while leaving.
+        window.addEventListener("pagehide", function () { dismiss(false); }, { once: true });
         timer = setTimeout(function () { dismiss(true); }, SETUP_CELEBRATION_DURATION);
     }
 

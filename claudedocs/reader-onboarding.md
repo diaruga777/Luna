@@ -368,14 +368,11 @@ climbing front. Three things ride it:
 1. **The clutter crumbles.** Every obstruction becomes ~11pt still tiles that
    detach exactly as the front reaches them and fly off (`prepareCleanUp` /
    `animatePreparedShatterPieces`).
-2. **The content blooms where it stands.** It is NOT re-occluded and re-revealed:
-   the page was legible under the clutter, so blanking it out to hand it back read
-   as a glitch. Each element runs a light-only pass (`prepareToBloomAgain` /
-   `bloom`) — the intro's own `GlyphPixelBloomView` emitter with no occluder
-   behind it, so `MoonRevealContentView` has none at all and `MoonRevealLineView`
-   keeps its occluded `reveal` only for the intro. The bloom trails the tile front
-   by `contentBloomLag` (0.26s, about a beat and a half of a tile's flight): light
-   arriving under grains still in the air is simply crumbled over.
+2. **The content stays still.** It is already visible beneath the clutter, so the
+   cleanup never blooms, re-occludes, or otherwise animates it; only obstruction
+   tiles move. All tile flights are committed in one Core Animation transaction
+   before the sweep begins, avoiding a new render-server commit and stutter when
+   the front reaches a large popup.
 3. **The browser bar leaves.** `SafariReplicaViewController.setBrowserBarVisible`
    slides the mock address field out with the Manage Extensions sheet — the lesson
    has nothing left to point at in it, and a URL field standing under a finished

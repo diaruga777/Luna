@@ -1136,6 +1136,22 @@ final class MoonRevealLineView: UIView {
         }
     }
 
+    /// Replaces the line with rich text while preserving the same glyph-mask
+    /// source in the final and illumination labels. Safari's explainer uses
+    /// this for its feature list followed by ordinary paragraphs.
+    func setStyledText(_ text: NSAttributedString, accessibilityText: String) {
+        guard accessibilityLabel != accessibilityText
+                || styledText?.isEqual(to: text) != true
+        else { return }
+        styledText = text
+        apply(text: accessibilityText, to: finalLabel)
+        apply(text: accessibilityText, to: illuminationMaskLabel)
+        accessibilityLabel = accessibilityText
+        if !didStartSweep {
+            setNeedsLayout()
+        }
+    }
+
     private func apply(text: String, to label: UILabel) {
         if let styledText {
             label.attributedText = styledText

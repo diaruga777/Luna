@@ -87,8 +87,12 @@ hand-mirror.
 The first time an app's extension ever runs after that app sent the user off to
 enable it, the content script takes the whole window instead of offering a pill:
 "Nice! / You're all set up" over a tinted semi-transparent scrim, with a "Return
-to `<app name>`" button. It dismisses itself after 5s and hands the page back, so
-a pill can still appear if that page earns one.
+to `<app name>`" button. It dismisses itself after 20s and hands the page back, so
+a pill can still appear if that page earns one. A page refresh dismisses it
+immediately. Once the overlay is attached, its native handler sends the App Group
+Darwin notification `safariCelebrationPresented`; a running onboarding app uses
+that signal to stop its Safari setup-guide PiP video without waiting for Safari to
+return to the foreground.
 
 The premise it disproves is worth stating, because it shapes everything here: a
 Safari extension's **JavaScript** cannot read the container app's state, but its

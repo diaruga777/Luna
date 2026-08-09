@@ -20,6 +20,12 @@ enum SharedSafariURL {
     static let sharedSafariSetupKey = "setup.safari.hasRun.shared"
     static let centralSafariSetupKey = "setup.safari.hasRun.luna"
     static let setupStatusDarwinNotification = "\(appGroupID).setupStatusChanged"
+    /// Sent only after the confirmation overlay was attached to the Safari
+    /// page. The main app listens while its setup guide is in PiP so it can
+    /// stop the guide at the exact hand-off, rather than waiting for Safari to
+    /// foreground the app again.
+    static let safariCelebrationDarwinNotification =
+        "\(appGroupID).safariCelebrationPresented"
 
     static func record(_ urlString: String) {
         let defaults = UserDefaults(suiteName: appGroupID)
@@ -98,6 +104,10 @@ enum SharedSafariURL {
     /// again. Written when the overlay actually renders, not when it's decided.
     static func recordCelebrationShown(surface: String) {
         UserDefaults(suiteName: appGroupID)?.set(true, forKey: celebrationShownKey(surface))
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(safariCelebrationDarwinNotification as CFString),
+            nil, nil, true)
     }
 
     private static func isRecent(_ date: Date, now: Date) -> Bool {

@@ -15,6 +15,13 @@ import Foundation
 public final class LunaSetupStatusStore {
     public static let shared = LunaSetupStatusStore()
     public static let didChange = Notification.Name("LunaSetupStatusStore.didChange")
+    /// The Safari extension has put its one-shot setup confirmation on the
+    /// current page. This is deliberately separate from `didChange`: setup
+    /// completion can arrive when the extension first runs, whereas the
+    /// onboarding video's PiP guide must stop only once the confirmation is
+    /// actually visible in Safari.
+    public static let safariCelebrationPresented = Notification.Name(
+        "LunaSetupStatusStore.safariCelebrationPresented")
 
     public static let sharedSafariKey = "setup.safari.hasRun.shared"
     public static let centralSafariKey = "setup.safari.hasRun.luna"
@@ -61,6 +68,9 @@ public final class LunaSetupStatusStore {
 
     private static var darwinNotificationName: String {
         "\(AppConfig.appGroupID).setupStatusChanged"
+    }
+    private static var safariCelebrationDarwinNotificationName: String {
+        "\(AppConfig.appGroupID).safariCelebrationPresented"
     }
     private static var isObservingCrossProcessChanges = false
 
@@ -260,6 +270,19 @@ public final class LunaSetupStatusStore {
                 }
             },
             darwinNotificationName as CFString,
+            nil,
+            .deliverImmediately)
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            nil,
+            { _, _, _, _, _ in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: LunaSetupStatusStore.safariCelebrationPresented,
+                        object: nil)
+                }
+            },
+            safariCelebrationDarwinNotificationName as CFString,
             nil,
             .deliverImmediately)
     }

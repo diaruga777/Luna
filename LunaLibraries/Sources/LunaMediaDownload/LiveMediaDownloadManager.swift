@@ -827,7 +827,7 @@ public final class LiveMediaDownloadManager: NSObject {
         }
     }
 
-    public func reapExpiredSuspensions() async {
+    func reapExpiredSuspensions() async {
         let now = Date()
         for job in store.jobs()
             where job.phase == .suspended && (job.suspendDeadline ?? .distantPast) <= now {

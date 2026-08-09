@@ -23,7 +23,7 @@ public enum NotificationManager {
     public static let typePendingRequest = "pendingRequest"
     /// An accepted friend's share was imported — tapping it just opens the app;
     /// these are cleared when the user reaches the reading list.
-    public static let typeShareReceived = "shareReceived"
+    private static let typeShareReceived = "shareReceived"
     private static let receivedIdentifierPrefix = "shareReceived-"
 
     /// Requests alert/sound authorization (no-op if already decided).

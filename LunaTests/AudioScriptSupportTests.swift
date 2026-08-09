@@ -136,27 +136,14 @@ final class AudioScriptSupportTests: XCTestCase {
         XCTAssertEqual(script.totalWordCount, 0)
     }
 
-    func testScriptRoundTripsThroughCodable() throws {
-        let content = ArticleContent(title: "Title", blocks: [block(.paragraph, "Round trip this.")])
-        let script = AudioScript(passthrough: content)
-        let data = try JSONEncoder().encode(script)
-        let decoded = try JSONDecoder().decode(AudioScript.self, from: data)
-        XCTAssertEqual(decoded, script)
-    }
-
     // MARK: - AudioScriptStoreTests tests
-
-    func testScriptFileNameDerivesFromContentFileName() {
-        XCTAssertEqual(
-            AudioScriptStore.scriptFileName(forContentFileName: "ABCD.json"), "ABCD.audioScript.json")
-    }
 
     func testMissingCacheReturnsNil() {
         XCTAssertNil(store.load(forContentFileName: "missing.json"))
     }
 
     func testSaveThenLoadRoundTrips() {
-        let envelope = AudioScriptCacheEnvelope(script: makeScript(), refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: makeScript(), refinementState: .heuristicOnly)
         store.save(envelope, forContentFileName: "ABCD.json")
 
         let loaded = store.load(forContentFileName: "ABCD.json")
@@ -164,28 +151,28 @@ final class AudioScriptSupportTests: XCTestCase {
     }
 
     func testSavedFileLivesAlongsideTheContentFileInTheArticlesDirectory() {
-        let envelope = AudioScriptCacheEnvelope(script: makeScript(), refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: makeScript(), refinementState: .heuristicOnly)
         store.save(envelope, forContentFileName: "ABCD.json")
 
         let expectedURL = tempDirectory.appendingPathComponent("ABCD.audioScript.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: expectedURL.path))
     }
 
-    func testRefinedAndPermanentlyFailedFlagsRoundTrip() {
-        let refinedEnvelope = AudioScriptCacheEnvelope(script: makeScript(), refined: true, llmPermanentlyFailed: false)
+    func testRefinedAndPermanentlyFailedStatesRoundTrip() {
+        let refinedEnvelope = AudioScriptCacheEnvelope(script: makeScript(), refinementState: .refined)
         store.save(refinedEnvelope, forContentFileName: "refined.json")
-        XCTAssertEqual(store.load(forContentFileName: "refined.json")?.refined, true)
+        XCTAssertEqual(store.load(forContentFileName: "refined.json")?.refinementState, .refined)
 
-        let failedEnvelope = AudioScriptCacheEnvelope(script: makeScript(), refined: false, llmPermanentlyFailed: true)
+        let failedEnvelope = AudioScriptCacheEnvelope(script: makeScript(), refinementState: .permanentlyFailed)
         store.save(failedEnvelope, forContentFileName: "failed.json")
-        XCTAssertEqual(store.load(forContentFileName: "failed.json")?.llmPermanentlyFailed, true)
+        XCTAssertEqual(store.load(forContentFileName: "failed.json")?.refinementState, .permanentlyFailed)
     }
 
     func testVersionMismatchIsTreatedAsAbsent() {
         let staleScript = AudioScript(
             spokenBlocks: [.init(blockIndex: 0, text: "Hello world")],
             totalWordCount: 2, builderVersion: AudioScript.heuristicBuilderVersion + 1)
-        let envelope = AudioScriptCacheEnvelope(script: staleScript, refined: true, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: staleScript, refinementState: .refined)
         store.save(envelope, forContentFileName: "ABCD.json")
 
         XCTAssertNil(store.load(forContentFileName: "ABCD.json"), "a builder-version mismatch must rebuild, not use stale content")
@@ -195,7 +182,7 @@ final class AudioScriptSupportTests: XCTestCase {
         let passthroughScript = AudioScript(
             spokenBlocks: [.init(blockIndex: 0, text: "Hello world")],
             totalWordCount: 2, builderVersion: AudioScript.passthroughBuilderVersion)
-        let envelope = AudioScriptCacheEnvelope(script: passthroughScript, refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: passthroughScript, refinementState: .heuristicOnly)
         store.save(envelope, forContentFileName: "ABCD.json")
 
         XCTAssertNil(store.load(forContentFileName: "ABCD.json"))
@@ -222,8 +209,10 @@ final class AudioScriptSupportTests: XCTestCase {
         XCTAssertTrue(wrote)
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
         XCTAssertNotNil(cached)
-        XCTAssertEqual(cached?.refined, false, "save-time writes are heuristics-only, never refined")
-        XCTAssertEqual(cached?.llmPermanentlyFailed, false)
+        // `refined == false` and `llmPermanentlyFailed == false` used to be
+        // asserted separately; they were the same fact (a fresh save-time
+        // write is always heuristics-only), so this is now one assertion.
+        XCTAssertEqual(cached?.refinementState, .heuristicOnly, "save-time writes are heuristics-only")
         XCTAssertEqual(cached?.script.spokenBlocks.map(\.blockIndex), [1], "the byline should be dropped")
     }
 
@@ -252,7 +241,7 @@ final class AudioScriptSupportTests: XCTestCase {
         let content = readableContent()
         let existing = AudioScript(spokenBlocks: [], totalWordCount: 0, builderVersion: AudioScript.heuristicBuilderVersion)
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: existing, refined: true, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: existing, refinementState: .refined),
             forContentFileName: item.contentFileName!)
 
         let wrote = ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded(

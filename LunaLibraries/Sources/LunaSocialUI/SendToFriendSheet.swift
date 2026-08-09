@@ -52,7 +52,7 @@ public enum SendToFriendSheet {
 
     /// Writes the URL to the pasteboard and fires the success haptic — the part that
     /// must happen synchronously the instant the user taps, before any menu dismissal.
-    public static func copyToPasteboard(urlString: String) {
+    private static func copyToPasteboard(urlString: String) {
         UIPasteboard.general.string = urlString
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
@@ -63,7 +63,7 @@ public enum SendToFriendSheet {
     /// noticeable lag between picking Copy link and being told about it. A toast is
     /// an ordinary non-interactive subview, so it can go up immediately, even while
     /// a menu is still wiping away.
-    public static func presentCopiedConfirmation(from presenter: UIViewController) {
+    private static func presentCopiedConfirmation(from presenter: UIViewController) {
         LunaToast.show(L10n.string("Sharing_sendToFriend_copiedToast"), from: presenter)
     }
 

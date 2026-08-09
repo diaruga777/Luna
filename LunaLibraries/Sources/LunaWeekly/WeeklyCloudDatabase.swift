@@ -30,13 +30,13 @@ public protocol WeeklyCloudDatabase: Sendable {
 
 /// Record type / field names. Written once so the dashboard schema in
 /// `claudedocs/save-of-the-week.md` has exactly one source to match.
-public enum WeeklyCloudSchema {
-    public static let saveRecordType = "WeeklySave"
-    public static let proposalRecordType = "WeeklySaveProposal"
-    public static let kindField = "kind"
-    public static let urlField = "url"
-    public static let dateField = "date"
-    public static let signatureField = "signature"
+enum WeeklyCloudSchema {
+    static let saveRecordType = "WeeklySave"
+    static let proposalRecordType = "WeeklySaveProposal"
+    static let kindField = "kind"
+    static let urlField = "url"
+    static let dateField = "date"
+    static let signatureField = "signature"
 }
 
 /// The real client. Its `CKContainer` is created lazily on FIRST USE: building

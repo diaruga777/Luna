@@ -87,7 +87,6 @@ final class URLUnwrapperTests: XCTestCase {
             + "&target_url=https%3A%2F%2Ftechcrunch.com%2F2026%2F06%2F09%2Fstory%2F")
         let result = URLUnwrapper.unwrapOffline(fbrpc)
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .facebook)
         XCTAssertEqual(result.url.absoluteString, "https://techcrunch.com/2026/06/09/story/")
     }
 
@@ -116,7 +115,6 @@ final class URLUnwrapperTests: XCTestCase {
             .replacingOccurrences(of: "=", with: "")
         let result = URLUnwrapper.unwrapOffline(url("https://news.google.com/rss/articles/\(id)?oc=5"))
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .googleNews)
         XCTAssertEqual(result.url.absoluteString, publisher)
     }
 
@@ -132,7 +130,6 @@ final class URLUnwrapperTests: XCTestCase {
         let ordinary = url("https://www.nytimes.com/2026/06/20/world/story.html")
         let result = URLUnwrapper.unwrapOffline(ordinary)
         XCTAssertFalse(result.didUnwrap)
-        XCTAssertNil(result.wrapper)
         XCTAssertEqual(result.url.absoluteString, ordinary.absoluteString)
     }
 
@@ -159,7 +156,6 @@ final class URLUnwrapperTests: XCTestCase {
             + "?sourceCode=TAWEB_MRE170_a_TWT&dest=\(article)"
             + "&memtype=anonymous&mode=premium&v21=GROUPA-Segment-1-NOSCORE"))
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .interstitial)
         XCTAssertEqual(result.url.absoluteString, article)
     }
 
@@ -189,7 +185,6 @@ final class URLUnwrapperTests: XCTestCase {
         let result = URLUnwrapper.unwrapOffline(url(
             "https://www.theaustralian.com.au/subscribe/news/1/?dest=https://evil.example/x"))
         XCTAssertFalse(result.didUnwrap)
-        XCTAssertNil(result.wrapper)
     }
 
     /// `www.` ↔ bare and login-subdomain ↔ site both count as same-site.
@@ -233,13 +228,14 @@ final class URLUnwrapperTests: XCTestCase {
     }
 
     /// Registered last precisely so it can't shadow the host-keyed handlers, whose
-    /// hosts it would otherwise match (its matcher accepts every http(s) URL).
+    /// hosts it would otherwise match (its matcher accepts every http(s) URL) — the
+    /// behavioral fingerprint checked here, since a handler carries no identity.
     func testInterstitialIsLastAndShadowsNoOtherHandler() {
-        XCTAssertEqual(URLUnwrapper.handlers.last?.kind, .interstitial)
+        XCTAssertTrue(URLUnwrapper.handlers.last?.matches("https", "example.com") ?? false)
         let googleNews = URLUnwrapper.unwrapOffline(url(
             "https://news.google.com/articles/"
             + "CBMiK2h0dHBzOi8vd3d3LmJiYy5jb20vbmV3cy93b3JsZC0xMjM0NTY30gEA"))
-        XCTAssertEqual(googleNews.wrapper, .googleNews)
+        XCTAssertEqual(googleNews.url.absoluteString, "https://www.bbc.com/news/world-1234567")
     }
 
     /// `unwrapsToDifferentPage` is what the Safari / action-extension hand-offs use
@@ -302,7 +298,6 @@ final class URLUnwrapperTests: XCTestCase {
         UnwrapMockProtocol.routes = [("apple.news", 200, Data(html.utf8), nil)]
         let result = await URLUnwrapper.unwrap(url("https://apple.news/AONYnIYXuSh"), session: UnwrapMockProtocol.session())
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .appleNews)
         XCTAssertEqual(result.url.absoluteString, "https://www.weatherzone.com.au/news/story/1")
     }
 
@@ -314,7 +309,6 @@ final class URLUnwrapperTests: XCTestCase {
             session: UnwrapMockProtocol.session())
 
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .appleNews)
         XCTAssertEqual(result.url.absoluteString, "https://www.reuters.com/legal/litigation/story")
     }
 
@@ -338,7 +332,6 @@ final class URLUnwrapperTests: XCTestCase {
         ]
         let result = await URLUnwrapper.unwrap(url("https://news.google.com/read/\(id)"), session: UnwrapMockProtocol.session())
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .googleNews)
         XCTAssertEqual(result.url.absoluteString, "https://real.example.com/article-42")
     }
 
@@ -347,7 +340,6 @@ final class URLUnwrapperTests: XCTestCase {
         UnwrapMockProtocol.routes = [("nyti.ms", 200, Data(), finalURL)]
         let result = await URLUnwrapper.unwrap(url("https://nyti.ms/abc"), session: UnwrapMockProtocol.session())
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .shortener)
         XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
     }
 
@@ -364,7 +356,6 @@ final class URLUnwrapperTests: XCTestCase {
             session: UnwrapMockProtocol.session())
 
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .shortener)
         XCTAssertEqual(result.url.absoluteString, "https://www.wsj.com/finance/investing/story-ef4f7feb")
     }
 
@@ -376,7 +367,6 @@ final class URLUnwrapperTests: XCTestCase {
         let result = await URLUnwrapper.unwrap(
             url("https://amzn.asia/d/086QqAGn"), session: UnwrapMockProtocol.session())
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .shortener)
         XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
     }
 
@@ -390,7 +380,6 @@ final class URLUnwrapperTests: XCTestCase {
         let result = await URLUnwrapper.unwrap(
             url("https://share.google/wiwUM80egUfLflHCI"), session: UnwrapMockProtocol.session())
         XCTAssertTrue(result.didUnwrap)
-        XCTAssertEqual(result.wrapper, .googleShare)
         XCTAssertEqual(result.url.host, "www.google.com")
         XCTAssertEqual(result.url.path, "/search")
         // Tracking params are stripped from the canonical result; shopping markers stay.

@@ -175,7 +175,7 @@ final class SellerComparisonTests: XCTestCase {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(), for: item.id)
         installRunner(results: [])
-        _ = await SellerComparison.runAndAttach(
+        _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertNil(store.item(withID: item.id)?.priceTracker?.pendingComparison)
     }
@@ -211,7 +211,7 @@ final class SellerComparisonTests: XCTestCase {
             return SellerFanOutOutcome(
                 results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
         }
-        _ = await SellerComparison.runAndAttach(
+        _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(countsSeenDuringTheRun, [2, 3], "persisted as each one landed")
     }
@@ -229,7 +229,7 @@ final class SellerComparisonTests: XCTestCase {
         installRunner(results: [result(domain: "a.example", price: "50"),
                                 result(domain: "b.example", price: "60")])
 
-        _ = await SellerComparison.runAndAttach(
+        _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
 
         let saved = store.item(withID: item.id)!.priceTracker!
@@ -258,7 +258,7 @@ final class SellerComparisonTests: XCTestCase {
                 self.store.updatePriceTracker(live, for: item.id)
             })
 
-        _ = await SellerComparison.runAndAttach(
+        _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
 
         let saved = store.item(withID: item.id)!.priceTracker!
@@ -290,7 +290,7 @@ final class SellerComparisonTests: XCTestCase {
         store.savePriceTracker(tracker(price: "100", currency: "USD"), for: item.id)
         installRunner(results: [result(domain: "a.example", price: "1", currency: "GBP"),
                                 result(domain: "b.example", price: "140", currency: "USD")])
-        _ = await SellerComparison.runAndAttach(
+        _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         let saved = store.item(withID: item.id)!.priceTracker!
         XCTAssertEqual(saved.stores.count, 3)
@@ -377,7 +377,7 @@ final class SellerComparisonTests: XCTestCase {
     func testWithNoRunnerInstalledNothingIsAttachedAndNothingFails() async {
         SellerComparisonRunner.installed = nil
         let item = store.add(urlString: "https://source.example/p/1")
-        let added = await SellerComparison.runAndAttach(
+        let added = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(added, 0)
     }
@@ -386,7 +386,7 @@ final class SellerComparisonTests: XCTestCase {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(), for: item.id)
         installRunner(results: [result(domain: "a.example", price: "80")])
-        let added = await SellerComparison.runAndAttach(
+        let added = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(added, 1)
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 2)
@@ -395,27 +395,6 @@ final class SellerComparisonTests: XCTestCase {
     // MARK: - The opportunistic completion hooks
 
     /// A refresh cycle opens by finishing whatever a dead process left behind.
-    /// It is the right moment for two reasons: the app is already awake with
-    /// the network, and the sellers a fan-out attaches arrive priced — so
-    /// running it FIRST spares the refresh from fetching them again, and the
-    /// baseline it settles is what this cycle's alert decisions are made
-    /// against.
-    func testARefreshCycleFinishesPendingComparisonsBeforeItRefreshes() async {
-        let coordinator = PriceRefreshCoordinator(
-            refresher: PriceRefresher(store: store, priceFetcher: MockPriceFetcher()))
-        var order: [String] = []
-        coordinator.pendingComparisonCompletion = {
-            order.append("comparisons")
-            return 1
-        }
-        let item = store.add(urlString: "https://source.example/p/1")
-        store.savePriceTracker(tracker(), for: item.id)
-
-        _ = await coordinator.refreshAndNotify()
-
-        XCTAssertEqual(order, ["comparisons"])
-    }
-
     /// The sweep both hooks call: it takes every tracker carrying a marker, and
     /// nothing else.
     func testTheSweepPicksUpEveryPendingTrackerAndSkipsTheRest() async {
@@ -499,5 +478,20 @@ final class SellerComparisonTests: XCTestCase {
             return SellerFanOutOutcome(
                 results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
         }
+    }
+
+    /// The whole save-time leg, START TO FINISH, for a tracker already persisted
+    /// under `itemID` — `begin` + `complete` are the live production API; this
+    /// test-only helper just chains them the way `beginAndRunInBackground` and
+    /// `ProductIntentHandoff` each do inline, without detaching a background task.
+    @discardableResult
+    private func runAndAttach(
+        itemID: UUID, sourceURL: URL, store: ReadingListStore, now: Date = Date()
+    ) async -> Int {
+        if store.item(withID: itemID)?.priceTracker?.pendingComparison == nil {
+            guard SellerComparison.begin(itemID: itemID, sourceURL: sourceURL, store: store, now: now)
+            else { return 0 }
+        }
+        return await SellerComparison.complete(itemID: itemID, store: store, now: now)
     }
 }

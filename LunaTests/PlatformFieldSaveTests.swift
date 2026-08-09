@@ -12,20 +12,6 @@ import XCTest
 
 final class PlatformFieldSaveTests: XCTestCase {
 
-    func testResultRetainsResolvedURLWhenSaveOutcomeHasNoURL() {
-        let urlString = "https://www.tiktok.com/@luna/video/123"
-        let result = PlatformFieldSave.Result(
-            resolvedURLString: urlString,
-            outcome: .completed(savedURLString: nil))
-
-        XCTAssertEqual(result.resolvedURLString, urlString)
-        if case .completed(let savedURLString) = result.outcome {
-            XCTAssertNil(savedURLString)
-        } else {
-            XCTFail("Expected completed outcome")
-        }
-    }
-
     private func assertMissingValues(
         platform: ContentPlatform, fields: [String], file: StaticString = #filePath, line: UInt = #line
     ) async {

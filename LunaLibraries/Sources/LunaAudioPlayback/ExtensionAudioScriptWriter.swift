@@ -39,7 +39,7 @@ public enum ExtensionAudioScriptWriter {
 
         let heuristicResult = AudioTrimHeuristics.classify(content)
         let script = heuristicResult.heuristicScript(for: content)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .heuristicOnly)
         scriptStore.save(envelope, forContentFileName: contentFileName)
         return true
     }

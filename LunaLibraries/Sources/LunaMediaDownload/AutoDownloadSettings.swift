@@ -25,7 +25,10 @@ public enum AutoDownloadSettings {
     /// Defaults to ON so new installs use Photos-backed storage automatically.
     /// Surfaced to the user as `MediaStorageOption.photos` (see
     /// `MediaStorageSettings`), which is mutually exclusive with local retention.
-    public static var autoSaveDownloadsToPhotos: Bool {
+    /// The setter is module-internal: `MediaStorageSettings.option` is the only
+    /// mutator, so it can never fall out of sync with the retention pref it pairs
+    /// with (see the deleted `.never` re-normalizations this used to need).
+    public internal(set) static var autoSaveDownloadsToPhotos: Bool {
         get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }
     }
@@ -34,8 +37,9 @@ public enum AutoDownloadSettings {
 
     /// Whether Downloader-owned downloads should be deferred while on cellular.
     /// Defaults to OFF (download on any network). Manual per-item retries
-    /// (tap/long-press/viewer download button) always bypass this.
-    public static var wifiOnlyDownloads: Bool {
+    /// (tap/long-press/viewer download button) always bypass this. The setter
+    /// is module-internal: `policy` is the only mutator.
+    public internal(set) static var wifiOnlyDownloads: Bool {
         get { (defaults.object(forKey: wifiOnlyDownloadsKey) as? Bool) ?? false }
         set { defaults.set(newValue, forKey: wifiOnlyDownloadsKey) }
     }
@@ -75,8 +79,9 @@ public enum AutoDownloadSettings {
     private static let autoDownloadMediaKey = "autoDownloadMediaInPreview"
 
     /// Whether the action extension's media preview should auto-download inline.
-    /// Defaults to ON (no stored value reads as enabled).
-    public static var autoDownloadMediaInPreview: Bool {
+    /// Defaults to ON (no stored value reads as enabled). The setter is
+    /// module-internal: `policy` is the only mutator.
+    public internal(set) static var autoDownloadMediaInPreview: Bool {
         get { (defaults.object(forKey: autoDownloadMediaKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: autoDownloadMediaKey) }
     }

@@ -154,30 +154,3 @@ public enum MediaDownloadStorage {
     }
 }
 
-/// Orchestrates resolve → download → save for a social post's first media item.
-public protocol MediaDownloading {
-    /// Resolves the post's media, downloads the FIRST item, and saves it to Photos.
-    /// Reports coarse 0…1 progress via `onProgress`. Returns the saved item's kind;
-    /// throws `MediaDownloadError` on any failure.
-    func downloadFirstMediaToPhotos(
-        from url: URL, onProgress: @escaping (Double) -> Void
-    ) async throws -> MediaAsset.Kind
-
-    /// Resolves the post's media, downloads the FIRST item, and moves it into
-    /// Luna Downloader's app-owned saved-media library.
-    func downloadFirstMediaToAppStorage(
-        from url: URL, title: String?, onProgress: @escaping (Double) -> Void
-    ) async throws -> SavedMediaItem
-
-    /// Resolves the post's media and downloads the FIRST item to a local file
-    /// WITHOUT saving to Photos (so the action extension can show it inline and let
-    /// the user decide whether to keep it). Streams to disk for memory safety.
-    /// Reports coarse 0…1 progress; throws `MediaDownloadError` on any failure.
-    func downloadFirstMediaToFile(
-        from url: URL, onProgress: @escaping (Double) -> Void
-    ) async throws -> DownloadedMedia
-
-    /// Saves an already-downloaded media file to Photos (add-only). Requests
-    /// authorization first; throws `MediaDownloadError` on failure.
-    func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws -> String
-}

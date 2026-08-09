@@ -439,6 +439,28 @@ scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff re
 > justify. A green partial run is not a green suite: finish with a full
 > `scripts/run_tests.sh --fresh`.
 
+> **The test value bar: a test must assert BEHAVIOR.** Three sweeps (Aug 2026)
+> deleted every test that only re-states production source — constant echoes
+> (a literal copy of a prod constant/table/string/format), synthesized-Codable
+> roundtrips, stub tautologies, duplicates of a stronger sibling, and
+> source-text greps of same-build Swift whose string is not the call site.
+> Don't write new ones; the plan docs with the worked examples are
+> `claudedocs/audit/test-value-sweep-2026-08.md` and `tree-shake-2026-08.md`
+> (whose "Deferred" list is the standing backlog of type-level refactors).
+> The EXEMPT pins are cross-ARTIFACT consistency checks and stay: `*Parity*`
+> suites, `KindCompositionRootTests`, `LocalizableStringsTests`, the two
+> geometry suites, `StageRegistryTests`, `WaveKernelSourceTests`, and
+> source-text pins against the unlinked `LunaSafari/` hand-copies (e.g.
+> `SafariSetupCelebrationTests` — the "unused" Swift readers in
+> `LunaSetupStatusStore` are that suite's parity anchor, not dead code; same
+> for `ProductSnapshotStore.makeSnapshot`). A production seam
+> (`…ForTesting`, settable static, injected closure) may exist ONLY while a
+> behavior-asserting test uses it — a seam whose tests die dies with them.
+> **The package declares NO test targets**: `LunaLibraries/Tests/` was deleted
+> 2026-08-09 (its suites never ran; the ONE suite is the `LunaTests` bundle
+> hosted on the central app). Never re-add a `.testTarget` — that also means
+> a fresh worktree builds with no `mkdir` workaround.
+
 > **Looking at a screen, rather than testing it: `-LunaStage`.** Any app boots
 > straight into any named screen in any named state — populated, empty, frozen
 > mid-load, errored — with stubbed data and nothing to set up, so reviewing or

@@ -41,8 +41,43 @@ public final class WeeklySaveStore {
     public static let kindKey = "kind"
 
     private struct Payload: Codable {
-        var displays: [String: WeeklySaveDisplay]
+        var displays: [WeeklySaveKind: WeeklySaveDisplay]
         var seenProposalIDs: [String]
+
+        private enum CodingKeys: String, CodingKey {
+            case displays, seenProposalIDs
+        }
+
+        init(displays: [WeeklySaveKind: WeeklySaveDisplay], seenProposalIDs: [String]) {
+            self.displays = displays
+            self.seenProposalIDs = seenProposalIDs
+        }
+
+        /// `displays` round-trips through a plain `[String: WeeklySaveDisplay]`
+        /// on the wire. `Dictionary`'s synthesized `Codable` only special-cases
+        /// `String`/`Int` keys as a JSON object — any other key type, including
+        /// a `String`-backed enum, falls back to encoding as an alternating
+        /// key/value ARRAY. Coding through the raw form here keeps
+        /// `weeklySaves.json` byte-identical to before `displays` was keyed by
+        /// `WeeklySaveKind` instead of its raw value. A key this build doesn't
+        /// recognize (already-garbled JSON, or a kind a newer build added) is
+        /// dropped rather than failing the whole decode.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let rawDisplays = try container.decode([String: WeeklySaveDisplay].self, forKey: .displays)
+            displays = rawDisplays.reduce(into: [:]) { result, entry in
+                guard let kind = WeeklySaveKind(rawValue: entry.key) else { return }
+                result[kind] = entry.value
+            }
+            seenProposalIDs = try container.decode([String].self, forKey: .seenProposalIDs)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            let rawDisplays = Dictionary(uniqueKeysWithValues: displays.map { ($0.key.rawValue, $0.value) })
+            try container.encode(rawDisplays, forKey: .displays)
+            try container.encode(seenProposalIDs, forKey: .seenProposalIDs)
+        }
     }
 
     private let fileURL: URL?
@@ -62,7 +97,7 @@ public final class WeeklySaveStore {
     /// The live entry for a kind, or nil when there is none or it has aged out.
     public func display(for kind: WeeklySaveKind) -> WeeklySaveDisplay? {
         lock.lock(); defer { lock.unlock() }
-        guard let display = payload.displays[kind.rawValue],
+        guard let display = payload.displays[kind],
               !display.save.isExpired(now: now())
         else { return nil }
         return display
@@ -76,8 +111,8 @@ public final class WeeklySaveStore {
 
     public func setDisplay(_ display: WeeklySaveDisplay, for kind: WeeklySaveKind) {
         lock.lock()
-        let changed = payload.displays[kind.rawValue] != display
-        payload.displays[kind.rawValue] = display
+        let changed = payload.displays[kind] != display
+        payload.displays[kind] = display
         if changed { persistLocked() }
         lock.unlock()
         if changed { postChange(kind) }
@@ -85,7 +120,7 @@ public final class WeeklySaveStore {
 
     public func clear(kind: WeeklySaveKind) {
         lock.lock()
-        let changed = payload.displays.removeValue(forKey: kind.rawValue) != nil
+        let changed = payload.displays.removeValue(forKey: kind) != nil
         if changed { persistLocked() }
         lock.unlock()
         if changed { postChange(kind) }

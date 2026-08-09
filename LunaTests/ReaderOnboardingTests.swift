@@ -21,7 +21,7 @@ import LunaModels
 import LunaDesignSystem
 import LunaReaderUI
 import LunaShareSurface
-import LunaStorage
+@testable import LunaStorage
 import XCTest
 @testable import Luna
 
@@ -318,11 +318,6 @@ final class ReaderOnboardingTests: XCTestCase {
 
     // MARK: - Layout / hit-test guards
 
-    func testOnboardingLayoutStartsAtOneThirdOfItsContainer() {
-        let bounds = CGRect(x: 10, y: 20, width: 300, height: 600)
-        XCTAssertEqual(AppOnboardingLayout.contentTop(in: bounds), 220)
-    }
-
     func testSettingsOpenerReportsExhaustedFallbacks() {
         var opened: Bool?
         SystemSettingsLink.openFirstAvailable([]) { opened = $0 }
@@ -366,49 +361,6 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertLessThanOrEqual(
             bubble.bounds.width, OnboardingMessageBubble.maxWidth,
             "The bubble keeps iMessage's width cap")
-    }
-
-    /// The intro's setup block mounts its two actions plus the paste row, and
-    /// nothing of the reveal's staging shadows them once they go live.
-    @MainActor
-    func testIntroActionsAreMountedAndHittable() throws {
-        let intro = OnboardingIntroCardContentViewController(
-            introCopy: OnboardingIntroCopy(
-                initialText: "You want to read more.",
-                finalText: "Let’s make that happen."))
-        intro.loadViewIfNeeded()
-
-        let window = UIWindow(frame: CGRect(
-            origin: .zero, size: AppLaunchGeometry.referenceSize))
-        window.rootViewController = intro
-        window.makeKeyAndVisible()
-        intro.view.frame = window.bounds
-        intro.view.layoutIfNeeded()
-        defer { window.isHidden = true }
-
-        let buttons = intro.view.descendants(of: UIButton.self)
-        let safari = try XCTUnwrap(buttons.first {
-            $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
-        })
-        XCTAssertTrue(buttons.contains {
-            $0.accessibilityLabel == OnboardingStrings.Intro.shortcutAction.value()
-        })
-        // Paste stays in both states, and the system draws its control:
-        // nothing of ours is painted over it.
-        let pasteControl = try XCTUnwrap(
-            intro.view.descendants(of: UIPasteControl.self).first)
-        XCTAssertEqual(pasteControl.layer.opacity, 1)
-
-        for action in intro.view.descendants(of: UIControl.self) {
-            action.alpha = 1
-        }
-        intro.setActionsEnabled(true)
-        let point = window.convert(
-            CGPoint(x: safari.bounds.midX, y: safari.bounds.midY), from: safari)
-        let hit = window.hitTest(point, with: nil)
-        XCTAssertTrue(
-            hit === safari || hit?.isDescendant(of: safari) == true,
-            "Safari intro action is shadowed by \(String(describing: hit))")
     }
 
     /// The Safari lesson end to end, in the REAL hierarchy — the one place the

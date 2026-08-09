@@ -9,10 +9,11 @@ import Foundation
 /// these are produced by `BypassStrategySelector` and consumed by `BypassRunner`
 /// (silent, URLSession path) and `ArchiveWebReaderViewController` (WKWebView path).
 ///
-/// Each case is either `runsSilently` — a URLSession request transform usable in the
-/// background ingest path — or WKWebView-only (user-visible, needs a real
-/// browser/JS/CAPTCHA). The split is explicit in the type so the resolver and the web
-/// reader can each filter to the strategies they can actually run.
+/// Each case is either a URLSession request transform usable in the background
+/// ingest path, or WKWebView-only (user-visible, needs a real browser/JS/CAPTCHA):
+/// `.directUnlock` and `.archiveToday` are the two WKWebView-only cases: every
+/// consumer that needs the split (`BypassPlan`, `BypassRunner`) switches on those
+/// two cases directly rather than through a shared predicate.
 public enum BypassStrategy: Equatable {
     /// Re-parse the HTML we already have, lifting the full body out of a
     /// `<script type="application/ld+json">` `articleBody`. Zero network. Silent.
@@ -59,17 +60,6 @@ public enum BypassStrategy: Equatable {
     /// archive.is snapshot via the interactive WKWebView reader. WKWebView-only,
     /// always the terminal (most expensive/hostile) strategy.
     case archiveToday
-
-    /// Whether this strategy can run in the background URLSession path. The
-    /// WKWebView strategies (`directUnlock`, `archiveToday`) are not silent.
-    public var runsSilently: Bool {
-        switch self {
-        case .archiveToday, .directUnlock:
-            return false
-        default:
-            return true
-        }
-    }
 }
 
 /// Crawler identities a paywall may whitelist for SEO/social. `xForwardedFor`

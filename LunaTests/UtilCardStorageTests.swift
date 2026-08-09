@@ -1,5 +1,5 @@
 import LunaModels
-import LunaStorage
+@testable import LunaStorage
 import XCTest
 
 final class UtilCardStorageTests: XCTestCase {
@@ -61,7 +61,6 @@ final class UtilCardStorageTests: XCTestCase {
             status.previouslyConfiguredShortcutApp(excluding: .downloader),
             .reader)
         XCTAssertNil(status.previouslyConfiguredShortcutApp(excluding: .reader))
-        XCTAssertTrue(status.anyShortcutHasRun)
     }
 
     func testShortcutRunPostsSetupStatusChange() {

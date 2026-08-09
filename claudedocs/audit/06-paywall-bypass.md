@@ -13,6 +13,14 @@ the bypass test suite.
 > publisher-agnostic; `isNYTHost` kept only as a classification helper). This audit uses
 > the current names.
 
+> **Status note:** §3's proposal has since shipped — the actual `BypassStrategy` no longer
+> has a `runsSilently` field; it was replaced exactly as §3.1 describes, by the
+> `SilentStrategy`/`WebStrategy` split inside `BypassPlan` (see `claudedocs/readers.md`'s
+> Bypass-pipeline section and `BypassPlan.swift`/`BypassStrategySelector.swift`). Every
+> `runsSilently`/`.thirdPartyWeb`/`BypassRuleTable` reference in §§1–2 below describes the
+> PRE-refactor code and is kept as the historical record that motivated the change, not
+> the current shape.
+
 ---
 
 ## 1. Current-state map

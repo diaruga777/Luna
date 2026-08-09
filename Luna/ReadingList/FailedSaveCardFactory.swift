@@ -50,15 +50,25 @@ enum FailedSaveCardFactory {
         FailedSaveCardModel(
             itemID: item.id,
             url: item.url,
-            urlText: FailedSaveNaming.displayURL(item.url, rawURLString: item.urlString),
-            isRescuing: URLRescueCoordinator.shared.isRescuing(item.id),
-            progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0,
-            // A `.notContent` failure has no article for the model to find, so the
-            // card shows the terminal apology rather than offering an attempt it
-            // would only spend proving that.
-            canRescue: URLRescueCoordinator.engine?.isAvailable() == true
-                && (SaveFailureStore.shared.record(for: item.id)?.reason?.isWorthRescuing ?? true),
-            hasSpentAIAttempt: SaveFailureStore.shared.hasSpentAIAttempt(item.id))
+            urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
+            rescueState: rescueState(for: item))
+    }
+
+    /// A running rescue takes precedence over the terminal states — there is
+    /// nothing useful to show alongside a bar that's already moving.
+    private static func rescueState(for item: ReadingListItem) -> FailedSaveCardModel.RescueState {
+        if URLRescueCoordinator.shared.isRescuing(item.id) {
+            return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
+        }
+        if SaveFailureStore.shared.hasSpentAIAttempt(item.id) {
+            return .spent
+        }
+        // A `.notContent` failure has no article for the model to find, so the
+        // card shows the terminal apology rather than offering an attempt it
+        // would only spend proving that.
+        let canRescue = URLRescueCoordinator.engine?.isAvailable() == true
+            && (SaveFailureStore.shared.record(for: item.id)?.reason?.isWorthRescuing ?? true)
+        return canRescue ? .idle : .unavailable
     }
 
     /// The deck's title for a failed card. The card body no longer shows a

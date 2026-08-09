@@ -104,11 +104,9 @@ final class SiteUnlockTests: XCTestCase {
 
     func testWSJRuleIsRefererDrudge() throws {
         let rule = try XCTUnwrap(SiteUnlockRules.rule(for: url("https://www.wsj.com/articles/x-c609beb1")))
-        XCTAssertEqual(rule.refererCustom, "https://www.drudgereport.com/")
+        XCTAssertEqual(rule.refererSpoof, .custom("https://www.drudgereport.com/"))
         XCTAssertEqual(rule.allowCookies, true)
-        XCTAssertEqual(rule.csDompurify, true)
-        XCTAssertNil(rule.useragent)
-        XCTAssertNil(rule.useragentCustom)
+        XCTAssertNil(rule.userAgentSpoof)
     }
 
     func testSubdomainAndBareHostBothMatchWSJ() {
@@ -119,7 +117,7 @@ final class SiteUnlockTests: XCTestCase {
 
     func testNYTUsesBlockRegexAndInspectionToolUA() throws {
         let rule = try XCTUnwrap(SiteUnlockRules.rule(for: url("https://www.nytimes.com/2026/07/01/x.html")))
-        XCTAssertEqual(rule.useragentCustom, "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)")
+        XCTAssertEqual(rule.userAgentSpoof, .custom("Mozilla/5.0 (compatible; Google-InspectionTool/1.0)"))
         XCTAssertFalse(rule.blockRegex?.isEmpty ?? true)
     }
 
@@ -139,7 +137,7 @@ final class SiteUnlockTests: XCTestCase {
         // FT has no allow_cookies — cookies ARE stripped there ("absence is meaningful").
         let rule = try XCTUnwrap(SiteUnlockRules.rule(for: url("https://www.ft.com/content/abc")))
         XCTAssertNil(rule.allowCookies)
-        XCTAssertEqual(rule.referer, "google")
+        XCTAssertEqual(rule.refererSpoof, .origin(.google))
     }
 
     func testEveryPortedRegexCompiles() {

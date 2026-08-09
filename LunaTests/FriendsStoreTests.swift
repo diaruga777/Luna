@@ -29,7 +29,6 @@ final class FriendsStoreTests: XCTestCase {
         store.add(email: "Alice@Example.com", name: "Alice")
         XCTAssertEqual(store.items().count, 1)
         // Email is normalized (lowercased) and used as the identifier.
-        XCTAssertTrue(store.isFriend("alice@example.com"))
         XCTAssertEqual(store.friend(withEmail: "alice@example.com")?.displayName, "Alice")
 
         store.remove(email: "alice@example.com")
@@ -117,5 +116,11 @@ final class FriendsStoreTests: XCTestCase {
         XCTAssertTrue(Friend.isValidEmail("a@b.com"))
         XCTAssertFalse(Friend.isValidEmail("not-an-email"))
         XCTAssertFalse(Friend.isValidEmail("a@b"))
+    }
+
+    func testNormalizedValidLowercasesTrimsAndDropsInvalidAddresses() {
+        XCTAssertEqual(
+            Friend.normalizedValid([" A@B.com ", "not-an-email", "c@d.com", "a@b"]),
+            ["a@b.com", "c@d.com"])
     }
 }

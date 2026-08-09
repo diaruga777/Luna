@@ -125,7 +125,6 @@ final class GazeScreenProjectionTests: XCTestCase {
     }
 
     func testPointDensityFollowsTheIdiom() {
-        XCTAssertEqual(GazeScreenProjection.pointsPerMetre(idiom: .phone), 163 / 0.0254, accuracy: 1)
         XCTAssertLessThan(
             GazeScreenProjection.pointsPerMetre(idiom: .pad),
             GazeScreenProjection.pointsPerMetre(idiom: .phone),

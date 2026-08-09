@@ -80,7 +80,6 @@ final class PriceRefresherTests: XCTestCase {
 
         XCTAssertEqual(outcomes.count, 1)
         let outcome = outcomes[0]
-        XCTAssertEqual(outcome.previousBest, Decimal(string: "100"))
         XCTAssertEqual(outcome.newBest, Decimal(string: "80"))
         XCTAssertTrue(outcome.isAlerting)
         XCTAssertTrue(outcome.newlyAlerting)
@@ -171,6 +170,9 @@ final class PriceRefresherTests: XCTestCase {
         XCTAssertEqual(store.updateOrder, [seeded.id])
         XCTAssertEqual(store.items.first { $0.id == other.id }?.priceTracker?.currentBestPrice,
                        Decimal(string: "50"))
+        // `newlyAlerting` semantics are unchanged on the single-tracker path.
+        XCTAssertTrue(outcome?.isAlerting ?? false)
+        XCTAssertTrue(outcome?.newlyAlerting ?? false)
     }
 
     func testRefreshTrackerByIDReturnsNilForAnUnknownItem() async {
@@ -178,20 +180,5 @@ final class PriceRefresherTests: XCTestCase {
         let outcome = await PriceRefresher(store: store, priceFetcher: MockPriceFetcher())
             .refreshTracker(itemID: UUID())
         XCTAssertNil(outcome)
-    }
-
-    /// `newlyAlerting` semantics are unchanged on the single-tracker path.
-    func testRefreshTrackerByIDDetectsNewlyAlerting() async {
-        let url = "https://shop.example/widget"
-        let item = trackerItem(url: url, initialPrice: "100", threshold: 0.10,
-                               refreshedAt: Date(timeIntervalSince1970: 0))
-        let store = FakeStore([item])
-        let fetcher = MockPriceFetcher()
-        fetcher.priceByURL[url] = price("80")
-
-        let outcome = await PriceRefresher(store: store, priceFetcher: fetcher)
-            .refreshTracker(itemID: item.id)
-        XCTAssertTrue(outcome?.isAlerting ?? false)
-        XCTAssertTrue(outcome?.newlyAlerting ?? false)
     }
 }

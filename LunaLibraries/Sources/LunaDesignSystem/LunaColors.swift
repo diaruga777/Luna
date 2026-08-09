@@ -26,7 +26,6 @@ public enum LunaColors {
 
     public static let groupedBackground = background
     public static let secondaryGroupedBackground = secondaryBackground
-    public static let tertiaryGroupedBackground = tertiaryBackground
 
     /// Both appearances are dark, so text is light in both. Predawn text is a
     /// hair softer than dark mode's pure white, matching its lifted sky.
@@ -38,7 +37,6 @@ public enum LunaColors {
     public static let separator = dynamic(
         dark: UIColor(white: 1, alpha: 0.18),
         light: UIColor(white: 1, alpha: 0.16))
-    public static let opaqueSeparator = night(dark: 0.22, predawn: 0.24)
 
     /// The failure accent: a failed card's rim glow, its detail line, and its
     /// destructive affordances. `.systemRed` is tuned for white surfaces and

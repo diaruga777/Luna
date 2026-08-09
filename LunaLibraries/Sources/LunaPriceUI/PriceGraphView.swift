@@ -75,10 +75,12 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    #if DEBUG
     /// Lets an enclosing vertical scroll view defer to the handle's drag. The
     /// recognizer is attached only to the small handle, so requiring it to fail
     /// does not delay ordinary scrolling elsewhere on the card.
-    public var thresholdDragGestureRecognizer: UIPanGestureRecognizer { thresholdPan }
+    var thresholdDragGestureRecognizer: UIPanGestureRecognizer { thresholdPan }
+    #endif
 
     /// Backwards-compatible graph-only configuration (email snapshots and callers
     /// that do not own an alert threshold).

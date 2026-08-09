@@ -12,7 +12,7 @@ import SwiftSoup
 ///
 /// Every other paywall signal Luna has keys off the body being *thin*
 /// (`PaywallDetector.shortBodyThreshold`, `ArticleContent.readableBodyThreshold`) or
-/// off the publisher declaring the lock in metadata (`HTMLClassification.declaresPaywall`).
+/// off the publisher declaring the lock in metadata (`PaywallDetector.htmlDeclaresLocked`).
 /// A generous-preview site trips neither: `theparisreview.org` serves ~12 000 characters
 /// of a ~50 000-character interview with no `isAccessibleForFree`, no
 /// `article:content_tier`, and no JSON-LD `articleBody` — so the truncated preview read

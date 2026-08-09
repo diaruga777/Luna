@@ -265,10 +265,10 @@ enum MediaItemActions {
     ) -> [ReaderShareSheet.Row] {
         var rows = linkRows(copyLink: copyLink, shareLink: shareLink)
         if case .undownloaded = item.storageState {} else {
-            rows.append(.init(
+            rows.append(.action(
                 title: shareFileTitle(for: item.kind),
                 systemImage: shareFileSymbol(for: item.kind),
-                isPrimary: false, action: shareFile))
+                action: shareFile))
         }
         return rows
     }
@@ -279,10 +279,10 @@ enum MediaItemActions {
         shareLink: @escaping () -> Void
     ) -> [ReaderShareSheet.Row] {
         [
-            .init(title: L10n.string("Common_copyLink"), systemImage: "doc.on.doc",
-                  isPrimary: false, action: copyLink),
-            .init(title: L10n.string("Common_shareLink"), systemImage: "square.and.arrow.up",
-                  isPrimary: false, action: shareLink),
+            .action(title: L10n.string("Common_copyLink"), systemImage: "doc.on.doc",
+                    action: copyLink),
+            .action(title: L10n.string("Common_shareLink"), systemImage: "square.and.arrow.up",
+                    action: shareLink),
         ]
     }
 

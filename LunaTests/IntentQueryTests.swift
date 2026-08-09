@@ -4,7 +4,6 @@
 //
 
 import LunaIntents
-import LunaIntents
 import XCTest
 @testable import Luna
 

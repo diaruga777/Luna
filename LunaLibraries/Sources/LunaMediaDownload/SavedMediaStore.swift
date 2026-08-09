@@ -657,7 +657,7 @@ public final class SavedMediaStore {
     /// non-Downloader start path), and a discarded save must not keep suppressing
     /// its own replacement.
     @discardableResult
-    public func discardSaveWithDeletedPhotosBacking(_ itemID: UUID) -> Bool {
+    func discardSaveWithDeletedPhotosBacking(_ itemID: UUID) -> Bool {
         lock.lock()
         let items = loadUnlocked()
         guard let index = items.firstIndex(where: { $0.id == itemID }),

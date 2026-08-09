@@ -80,6 +80,13 @@ public struct Friend: Codable, Equatable {
         let domain = email[email.index(after: at)...]
         return domain.contains(".") && !domain.hasSuffix(".") && !email.contains(" ")
     }
+
+    /// Normalizes a batch of typed/pasted addresses and drops the invalid
+    /// ones — the `map(normalize).filter(isValidEmail)` pair every send path
+    /// (friend shares, recent-recipient recording) repeated on its own.
+    public static func normalizedValid(_ raw: [String]) -> [String] {
+        raw.map(normalize).filter(isValidEmail)
+    }
 }
 
 /// Persists the friends list as JSON in the App Group container (shared by all
@@ -112,8 +119,6 @@ public final class FriendsStore {
         let normalized = Friend.normalize(email)
         return items().first { $0.email == normalized }
     }
-
-    public func isFriend(_ email: String) -> Bool { friend(withEmail: email) != nil }
 
     public func isBlocked(_ email: String) -> Bool { friend(withEmail: email)?.isBlocked == true }
 

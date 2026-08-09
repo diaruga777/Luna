@@ -33,21 +33,25 @@ public enum SiteUnlockSilent {
         case none
     }
 
-    static let googleReferer = "https://www.google.com/"
+    static let googleReferer = RefererOrigin.google.url
 
     /// The request transform for `rule` (request-level techniques only).
     public static func fetchKind(for rule: SiteUnlockRule) -> FetchKind {
-        if let agent = crawler(for: rule) {
-            return .userAgent(agent.userAgent, xForwardedFor: agent.xForwardedFor)
+        if let userAgentSpoof = rule.userAgentSpoof {
+            switch userAgentSpoof {
+            case .crawler(let agent):
+                return .userAgent(agent.userAgent, xForwardedFor: agent.xForwardedFor)
+            case .custom(let custom):
+                return .userAgent(custom, xForwardedFor: nil)
+            }
         }
-        if let custom = rule.useragentCustom {
-            return .userAgent(custom, xForwardedFor: nil)
-        }
-        if let custom = rule.refererCustom {
-            return .referer(custom)
-        }
-        if rule.referer == "google" {
-            return .referer(googleReferer)
+        if let refererSpoof = rule.refererSpoof {
+            switch refererSpoof {
+            case .origin(let origin):
+                return .referer(origin.url)
+            case .custom(let custom):
+                return .referer(custom)
+            }
         }
         // Only cookies to reset and no UA/referer lever → a fresh cookieless visit.
         if rule.allowCookies != true,
@@ -55,16 +59,6 @@ public enum SiteUnlockSilent {
             return .freshSession
         }
         return .none
-    }
-
-    /// The crawler identity a rule names, or nil.
-    static func crawler(for rule: SiteUnlockRule) -> CrawlerAgent? {
-        switch rule.useragent {
-        case "googlebot": return .googlebotDesktop
-        case "bingbot": return .bingbot
-        case "facebookbot": return .facebookbot
-        default: return nil
-        }
     }
 
     /// Fetches `url` applying `rule`'s silent request technique, or nil when the rule

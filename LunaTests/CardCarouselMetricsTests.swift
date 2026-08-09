@@ -97,14 +97,6 @@ final class CardCarouselMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.scale(forSlotOffset: -3), 0.92)
     }
 
-    func testCenteredCardFrameIsCentered() {
-        let metrics = CardCarouselMetrics.resolve(containerSize: CGSize(width: 400, height: 800))
-        let frame = metrics.centeredCardFrame()
-        XCTAssertEqual(frame.midX, 200, accuracy: 0.01)
-        XCTAssertEqual(frame.midY, 400, accuracy: 0.01)
-        XCTAssertEqual(frame.size, metrics.cardSize)
-    }
-
     /// The bar lives INSIDE the card's bottom edge now — over the video, backed
     /// by the controller's scrim — leaving the runway beneath the card to the
     /// thumbnail strip.
@@ -185,11 +177,6 @@ final class CarouselScrubberMathTests: XCTestCase {
         let imageView = try XCTUnwrap(firstImageView(in: scrubber))
         let item = try XCTUnwrap(imageView.superview)
         XCTAssertEqual(imageView.frame, item.bounds)
-    }
-
-    func testMiniCardsReserveSelectionAndShadowRunway() {
-        let scrubber = CarouselScrubberView()
-        XCTAssertEqual(scrubber.preferredHeight, 96)
     }
 
     func testIndexMapsLocationAcrossThumbnails() {
@@ -375,14 +362,6 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
 
     func testDownloaderTapOneCardUsesEclipse() async throws {
         try await assertScrubberTapEclipse(from: 3, to: 4)
-    }
-
-    func testDownloaderTapTwoCardsStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(from: 3, to: 5)
-    }
-
-    func testDownloaderTapTwoCardsBackwardStagesTargetAndUsesEclipse() async throws {
-        try await assertScrubberTapEclipse(from: 3, to: 1)
     }
 
     private func assertScrubberTapEclipse(

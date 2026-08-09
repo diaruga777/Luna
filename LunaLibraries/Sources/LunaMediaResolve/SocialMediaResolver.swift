@@ -670,10 +670,6 @@ public enum InstagramMediaParser {
         return []
     }
 
-    /// Unescapes the JSON/HTML-encoded URLs Instagram embeds in markup.
-    public static func unescape(_ string: String) -> String {
-        LunaMediaResolve.unescape(string)
-    }
 }
 
 /// Parses a Facebook reel/video/post page into a single media asset (video preferred).

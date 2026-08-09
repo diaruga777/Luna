@@ -216,39 +216,6 @@ final class EmailAccountTests: XCTestCase {
         wait(for: [clearExpectation], timeout: 1)
     }
 
-    // MARK: - EmailAccountStore: a second store over a different suite (standing in for "real") is unaffected
-
-    func testSecondStoreOverDifferentSuiteIsUnaffected() {
-        let otherSuiteName = "EmailAccountStoreTests.other.\(UUID().uuidString)"
-        let otherDefaults = UserDefaults(suiteName: otherSuiteName)!
-        let otherCredentialStorage = InMemoryCredentialStorage()
-        let otherStore = EmailAccountStore(defaults: otherDefaults, credentialStorage: otherCredentialStorage)
-        defer { otherDefaults.removePersistentDomain(forName: otherSuiteName) }
-
-        XCTAssertFalse(otherStore.isConfigured)
-
-        store.save(makeAccount(), credential: .appPassword("secret"))
-
-        // The "real" stand-in never saw the write.
-        XCTAssertFalse(otherStore.isConfigured)
-        XCTAssertNil(otherStore.account)
-        XCTAssertNil(otherStore.credential)
-
-        // Sanity: the store under test really did save.
-        XCTAssertTrue(store.isConfigured)
-    }
-
-    // MARK: - EmailAccountStore: KeychainCredentialStorage wraps CredentialKeychain unchanged
-
-    func testKeychainCredentialStorageIsTheDefault() {
-        // EmailAccountStore.shared (no explicit credentialStorage) must resolve to
-        // the real Keychain-backed implementation — verified indirectly: creating a
-        // store with the default argument doesn't throw/crash and the type is the
-        // documented default. This guards the public API's default value.
-        let defaultStore = EmailAccountStore(defaults: defaults)
-        XCTAssertFalse(defaultStore.isConfigured)
-    }
-
     // MARK: - EmailAuthenticationState
 
     func testTypedAuthenticationFailureMarksAccountForRecovery() async {
@@ -551,12 +518,12 @@ private struct StubTransport: EmailTransport {
     }
 
     func fetchShares(
-        after cursor: MailCursor?,
+        after cursor: MailCursor,
         extraSenders: [String],
         extraSubjects: [String]
     ) async throws -> FetchResult {
         try resolve()
-        return FetchResult(messages: [], cursor: cursor ?? MailCursor())
+        return FetchResult(messages: [], cursor: cursor)
     }
 
     func markRead(_ messageIDs: [String]) async throws {

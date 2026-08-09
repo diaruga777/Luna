@@ -7,9 +7,30 @@ import LunaIntents
 import XCTest
 
 final class ProvideContextOnScreenURLTests: XCTestCase {
+    /// `resolveText`, flattened to the single-URL case — `collapseText` was
+    /// itself only this flattening with 0 production callers (`plan` reads
+    /// `resolveText` directly), so it was deleted; kept here as the shape most
+    /// of these tests want to assert against.
+    private func collapseText(
+        _ value: String?, isSafari: Bool, isEnabled: Bool = true
+    ) -> String? {
+        guard case let .single(urlString) = ProvideContextOnScreenURL.resolveText(
+            value, isSafari: isSafari, isEnabled: isEnabled)
+        else { return nil }
+        return urlString
+    }
+
+    /// `resolve`, flattened the same way `collapse` used to.
+    private func collapse(_ values: [String]?, isSafari: Bool) -> String? {
+        guard case let .single(urlString) = ProvideContextOnScreenURL.resolve(
+            values, isSafari: isSafari)
+        else { return nil }
+        return urlString
+    }
+
     func testDisabledIgnoresOtherwiseValidURL() {
         XCTAssertNil(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "https://example.com/article",
                 isSafari: false,
                 isEnabled: false
@@ -18,14 +39,14 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
     }
 
     func testNilAndEmptyInputsDoNotProduceURL() {
-        XCTAssertNil(ProvideContextOnScreenURL.collapse(nil, isSafari: false))
-        XCTAssertNil(ProvideContextOnScreenURL.collapse([], isSafari: false))
-        XCTAssertNil(ProvideContextOnScreenURL.collapse([""], isSafari: false))
+        XCTAssertNil(collapse(nil, isSafari: false))
+        XCTAssertNil(collapse([], isSafari: false))
+        XCTAssertNil(collapse([""], isSafari: false))
     }
 
     func testLongestCompatiblePrefixWins() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapse(
+            collapse(
                 [
                     "https://example.com/post",
                     "https://example.com/post/123",
@@ -37,7 +58,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testShortcutTextInputDecodesNewlineSeparatedURLs() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 """
                 https://example.com/post
                 https://example.com/post/123
@@ -49,14 +70,14 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testShortcutTextInputStillRejectsDivergentURLs() {
         XCTAssertNil(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "https://example.com/one\r\nhttps://example.com/two",
                 isSafari: false))
     }
 
     func testShortcutTextInputExtractsURLsFromWrappedList() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 #"URLs: ["https://example.com/post", "https://example.com/post/123"]"#,
                 isSafari: false),
             "https://example.com/post/123")
@@ -67,7 +88,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
         // current-app classification.
         let arbitraryAppIsSafari = AppNamePlatform.isSafari(forAppName: "Notes")
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "On-screen URL: https://example.com/post/123",
                 isSafari: arbitraryAppIsSafari),
             "https://example.com/post/123")
@@ -76,7 +97,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
     func testSignalInputCollapsesHTTPHostIntoHTTPSPageURL() {
         let signalIsSafari = AppNamePlatform.isSafari(forAppName: "Signal")
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "https://www.tiktok.com/t/ZP8Gqx5p5/ http://www.tiktok.com",
                 isSafari: signalIsSafari),
             "https://www.tiktok.com/t/ZP8Gqx5p5/")
@@ -84,7 +105,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testShortcutTextInputExtractsCommaDelimitedURLs() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "https://example.com/post,https://example.com/post/123",
                 isSafari: false),
             "https://example.com/post/123")
@@ -92,7 +113,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testShortcutTextInputTrimsPresentationPunctuation() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "Detected (https://example.com/post).",
                 isSafari: false),
             "https://example.com/post")
@@ -100,13 +121,13 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testShortcutTextInputRequiresAnExtractedURL() {
         XCTAssertNil(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "Get On-Screen URLs returned one item", isSafari: false))
     }
 
     func testContainedSubsetCollapsesIntoCompleteURL() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapse(
+            collapse(
                 ["example.com/post/123", "https://example.com/post/123"],
                 isSafari: false),
             "https://example.com/post/123")
@@ -114,14 +135,14 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testSingleCompleteURLIsAccepted() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapse(
+            collapse(
                 ["https://www.tiktok.com/@luna/video/123"], isSafari: false),
             "https://www.tiktok.com/@luna/video/123")
     }
 
     func testValuesNotContainedInOneResultAreRejected() {
         XCTAssertNil(
-            ProvideContextOnScreenURL.collapse(
+            collapse(
                 ["https://example.com/one", "https://example.com/two"],
                 isSafari: false))
     }
@@ -138,14 +159,14 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             "https://example.com/a path",
         ] {
             XCTAssertNil(
-                ProvideContextOnScreenURL.collapse([value], isSafari: false),
+                collapse([value], isSafari: false),
                 "expected rejection for \(value)")
         }
     }
 
     func testSafariUsesCompleteOnScreenURL() {
         XCTAssertEqual(
-            ProvideContextOnScreenURL.collapseText(
+            collapseText(
                 "https://example.com/post", isSafari: true),
             "https://example.com/post")
     }

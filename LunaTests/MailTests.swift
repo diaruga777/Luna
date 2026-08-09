@@ -135,6 +135,72 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(IncomingMailSettings.subjectFilters, ["B"])
     }
 
+    // MARK: - IncomingMailSettings (cursor)
+
+    /// The cursor's own key plus the three legacy keys it used to be shredded
+    /// into — cleared before each of these tests and restored after, since
+    /// they all live in `UserDefaults.standard`.
+    private static let cursorKeys = [
+        "incomingMailCursor", "incomingMailLastUID",
+        "incomingMailUIDValidity", "incomingMailCursorToken",
+    ]
+
+    private func withClearedCursorKeys(_ body: () -> Void) {
+        let defaults = UserDefaults.standard
+        let previous = Self.cursorKeys.map { defaults.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(Self.cursorKeys, previous) {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        for key in Self.cursorKeys { defaults.removeObject(forKey: key) }
+        body()
+    }
+
+    func testCursorRoundTrips() {
+        withClearedCursorKeys {
+            IncomingMailSettings.cursor = .imap(uid: 42, uidValidity: 7)
+            XCTAssertEqual(IncomingMailSettings.cursor, .imap(uid: 42, uidValidity: 7))
+
+            IncomingMailSettings.cursor = .graph(token: "2026-01-01T00:00:00Z")
+            XCTAssertEqual(IncomingMailSettings.cursor, .graph(token: "2026-01-01T00:00:00Z"))
+        }
+    }
+
+    /// An in-flight IMAP account's cursor, written under the three legacy keys
+    /// before the JSON blob existed, must still read back as the equivalent
+    /// typed cursor — and only once: the migrated value is persisted under the
+    /// new key immediately, so a second read no longer needs the legacy keys.
+    func testLegacyIMAPCursorKeysMigrateOnFirstRead() {
+        withClearedCursorKeys {
+            let defaults = UserDefaults.standard
+            defaults.set(42, forKey: "incomingMailLastUID")
+            defaults.set(7, forKey: "incomingMailUIDValidity")
+
+            XCTAssertEqual(IncomingMailSettings.cursor, .imap(uid: 42, uidValidity: 7))
+
+            defaults.removeObject(forKey: "incomingMailLastUID")
+            defaults.removeObject(forKey: "incomingMailUIDValidity")
+            XCTAssertEqual(IncomingMailSettings.cursor, .imap(uid: 42, uidValidity: 7))
+        }
+    }
+
+    /// A legacy Graph-only installation (no IMAP uid ever recorded) migrates
+    /// its token into `.graph`.
+    func testLegacyGraphCursorTokenMigrates() {
+        withClearedCursorKeys {
+            UserDefaults.standard.set("2026-01-01T00:00:00Z", forKey: "incomingMailCursorToken")
+            XCTAssertEqual(IncomingMailSettings.cursor, .graph(token: "2026-01-01T00:00:00Z"))
+        }
+    }
+
+    /// A fresh install (none of the legacy keys were ever set) reads as `.fresh`.
+    func testNoLegacyKeysReadsAsFresh() {
+        withClearedCursorKeys {
+            XCTAssertEqual(IncomingMailSettings.cursor, .fresh)
+        }
+    }
+
     // MARK: - MIMEMessage
 
     private func sampleMessage(subject: String = "Hello") -> MIMEMessage {

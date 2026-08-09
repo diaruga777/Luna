@@ -244,9 +244,15 @@ public enum XPostExtractor {
     static func imageBlocks(from post: XPostPayload.Post) -> [ArticleContent.Block] {
         (post.media?.photos ?? []).compactMap { photo in
             guard let url = photo.url?.trimmedNonEmptyValue else { return nil }
+            let size: ArticleContent.BlockImageSize?
+            if let width = photo.width, let height = photo.height {
+                size = ArticleContent.BlockImageSize(width: width, height: height)
+            } else {
+                size = nil
+            }
             return ArticleContent.Block(
                 kind: .image, text: "", links: [], imageURLString: url,
-                imageWidth: photo.width, imageHeight: photo.height)
+                imageSize: size)
         }
     }
 

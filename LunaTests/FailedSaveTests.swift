@@ -71,15 +71,6 @@ final class SaveFailureReasonTests: XCTestCase {
         XCTAssertFalse(SaveFailureReason.noMediaFound.isWorthRetrying)
     }
 
-    func testReasonSurvivesACodableRoundTrip() throws {
-        // The sidecar persists these, so a coding regression would silently wipe
-        // every stored reason on the next launch.
-        for reason in [SaveFailureReason.httpStatus(429), .network("nope"),
-                       .unsupportedDocument("epub"), .offline] {
-            let data = try JSONEncoder().encode(reason)
-            XCTAssertEqual(try JSONDecoder().decode(SaveFailureReason.self, from: data), reason)
-        }
-    }
 }
 
 final class FailedSaveNamingTests: XCTestCase {
@@ -121,25 +112,6 @@ final class FailedSaveNamingTests: XCTestCase {
         XCTAssertEqual(FailedSaveNaming.displayTitle(url: nil), "Untitled")
     }
 
-    func testSiteNamePrefersTheFetchedPublisherName() {
-        XCTAssertEqual(
-            FailedSaveNaming.displaySiteName(url: url, siteName: "The Example"),
-            "The Example")
-        XCTAssertEqual(FailedSaveNaming.displaySiteName(url: url), "example.com")
-        XCTAssertNil(FailedSaveNaming.displaySiteName(url: nil))
-    }
-
-    /// The card shows WHICH url failed, so the path and query must survive —
-    /// only the scheme is dropped as noise.
-    func testDisplayURLDropsOnlyTheScheme() {
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(URL(string: "https://a.com/b?c=d")!),
-            "a.com/b?c=d")
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(URL(string: "http://a.com/b")!), "a.com/b")
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(nil, rawURLString: "not a url"), "not a url")
-    }
 }
 
 final class PageMetadataFetcherTests: XCTestCase {
@@ -340,7 +312,10 @@ final class FailedSaveCardFactoryTests: XCTestCase {
         for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
             let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
             XCTAssertEqual(model.urlText, "example.com/broken")
-            XCTAssertFalse(model.isRescuing)
+            // Not checking canRescue/hasSpentAIAttempt (now .unavailable vs .idle):
+            // canRescue depends on the shared, test-order-sensitive
+            // URLRescueCoordinator.engine, same as before this refactor.
+            XCTAssertFalse(model.rescueState.isRunning)
         }
     }
 

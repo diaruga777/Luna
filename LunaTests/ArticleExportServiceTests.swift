@@ -4,12 +4,11 @@
 //
 
 import LunaReadingList
-import LunaSend
+@testable import LunaSend
 import LunaStorage
 import LunaModels
 import UIKit
 import XCTest
-import UniformTypeIdentifiers
 @testable import Luna
 
 final class ArticleExportServiceTests: XCTestCase {
@@ -139,33 +138,6 @@ final class ArticleExportServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url).prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
     }
 
-    func testWriteEPUBProducesValidZipFileWithSanitizedName() throws {
-        let item = readyItem(title: "Hello: World?", url: "https://example.com/a")
-        let url = try ArticleExportService(store: store).writeEPUB(for: item)
-
-        XCTAssertEqual(url.pathExtension, "epub")
-        let data = try Data(contentsOf: url)
-        XCTAssertFalse(data.isEmpty)
-        // EPUB is a ZIP archive — starts with the local file header signature.
-        XCTAssertEqual(Array(data.prefix(4)), [0x50, 0x4B, 0x03, 0x04])
-        // Disallowed filename characters are stripped.
-        XCTAssertFalse(url.lastPathComponent.contains(":"))
-        XCTAssertFalse(url.lastPathComponent.contains("?"))
-    }
-
-    func testItemProviderAdvertisesEPUBType() throws {
-        let item = readyItem(title: "Doc", url: "https://example.com/b")
-        let provider = try ArticleExportService(store: store).itemProvider(for: item)
-        XCTAssertTrue(provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier))
-    }
-
-    func testWriteEPUBThrowsWithoutContent() {
-        let pending = store.add(urlString: "https://example.com/c") // no content saved
-        XCTAssertThrowsError(try ArticleExportService(store: store).writeEPUB(for: pending)) { error in
-            XCTAssertEqual(error as? ArticleExportService.ExportError, .noContent)
-        }
-    }
-
     // MARK: - Every format
 
     /// Each format writes a non-empty file under its own extension, off the one
@@ -183,8 +155,10 @@ final class ArticleExportServiceTests: XCTestCase {
             XCTAssertFalse(isDirectory.boolValue, "every share item must be a regular file")
             let data = try Data(contentsOf: url)
             XCTAssertFalse(data.isEmpty, "\(format)")
-            if format == .document {
-                XCTAssertEqual(data.prefix(4), Data([0x50, 0x4B, 0x03, 0x04]))
+            if format == .document || format == .epub {
+                // Both DOCX and EPUB are ZIP archives — starts with the local
+                // file header signature.
+                XCTAssertEqual(data.prefix(4), Data([0x50, 0x4B, 0x03, 0x04]), "\(format)")
             }
             XCTAssertFalse(url.lastPathComponent.contains(":"), "\(format)")
             stems.insert(url.deletingPathExtension().lastPathComponent)
@@ -215,15 +189,6 @@ final class ArticleExportServiceTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix("Doc\n"))
         XCTAssertFalse(text.contains("# "))
         XCTAssertTrue(text.contains("Body text."))
-    }
-
-    func testItemProviderAdvertisesRequestedFormatType() throws {
-        let item = readyItem(title: "Doc", url: "https://example.com/h")
-        let service = ArticleExportService(store: store)
-        XCTAssertTrue(try service.itemProvider(.pdf, for: item)
-            .hasItemConformingToTypeIdentifier(UTType.pdf.identifier))
-        XCTAssertTrue(try service.itemProvider(.plainText, for: item)
-            .hasItemConformingToTypeIdentifier(UTType.plainText.identifier))
     }
 
     /// A still-locked or media item has no stored content, so NO format can be

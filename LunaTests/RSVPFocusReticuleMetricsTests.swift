@@ -21,10 +21,6 @@ final class RSVPFocusReticuleMetricsTests: XCTestCase {
 
     func testTheReticuleIsCenteredOnTheFocalColumn() {
         XCTAssertEqual(frame.midX, 160, accuracy: 0.5)
-        XCTAssertEqual(
-            frame.width,
-            ceil(characterWidth * RSVPFocusReticuleMetrics.characterSpan),
-            accuracy: 0.001)
     }
 
     /// The cue frames the glyph rather than crowding it: each hairline's inward

@@ -20,7 +20,7 @@ final class CaptureIntentMetadataTests: XCTestCase {
             urlString: "https://example.com/article",
             action: .saveNew,
             isDoubleSave: false,
-            doubleSaveActionSurface: "reader",
+            doubleSaveActionSurface: .reader,
             attemptDate: date)
         let media = IntentMediaCheckpoint(
             asset: MediaAsset(

@@ -49,7 +49,7 @@ public struct AuthenticationStateTrackingTransport: EmailTransport {
     }
 
     public func fetchShares(
-        after cursor: MailCursor?,
+        after cursor: MailCursor,
         extraSenders: [String],
         extraSubjects: [String]
     ) async throws -> FetchResult {

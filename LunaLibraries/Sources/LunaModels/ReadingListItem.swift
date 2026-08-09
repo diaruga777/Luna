@@ -128,11 +128,8 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var sendFailureCounts: [String: Int]
     /// Earliest retry time for each destination's queued send.
     public var sendNextAttemptDates: [String: Date]
-    /// Last delivery error detail for each destination, used for diagnostics and
-    /// the one-shot terminal-failure toast.
+    /// Last delivery error detail for each destination, used for diagnostics.
     public var sendLastErrors: [String: String]
-    /// Terminal send failures that still need to be surfaced to the user.
-    public var pendingSendFailureNotices: [String: Bool]
     /// When the user last pressed save for this URL while it was already in the
     /// list (the double-save-to-send detection window).
     public var lastSaveAttemptDate: Date?
@@ -203,9 +200,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         return isShareable || isDocument
     }
 
-    /// Only items with a real web URL can be sent to other users.
-    public var canShareToFriends: Bool { isShareable }
-
     /// Send status for one destination.
     public func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
     /// Last delivery time for one destination.
@@ -240,7 +234,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.sendFailureCounts = [:]
         self.sendNextAttemptDates = [:]
         self.sendLastErrors = [:]
-        self.pendingSendFailureNotices = [:]
         self.lastSaveAttemptDate = nil
         self.platform = nil
         self.platformItemID = nil
@@ -301,7 +294,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.sendFailureCounts = [:]
         self.sendNextAttemptDates = [:]
         self.sendLastErrors = [:]
-        self.pendingSendFailureNotices = [:]
         self.lastSaveAttemptDate = nil
         self.platform = platform
         self.platformItemID = platformItemID
@@ -404,7 +396,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         sendFailureCounts = try container.decodeIfPresent([String: Int].self, forKey: .sendFailureCounts) ?? [:]
         sendNextAttemptDates = try container.decodeIfPresent([String: Date].self, forKey: .sendNextAttemptDates) ?? [:]
         sendLastErrors = try container.decodeIfPresent([String: String].self, forKey: .sendLastErrors) ?? [:]
-        pendingSendFailureNotices = try container.decodeIfPresent([String: Bool].self, forKey: .pendingSendFailureNotices) ?? [:]
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
         platform = Self.tolerant(ContentPlatform.self, container, .platform)
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)

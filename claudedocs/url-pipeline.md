@@ -184,11 +184,13 @@ Every surface builds an `IngestInput`, calls `IngestPipeline.process`, and prese
 - **dead per-module `PlatformModule.classify`** (8 bodies + the protocol requirement) — modules
   keep rendering + `metadataFetcher`; `PlatformRecognizer` is the recognition authority.
 - **`PlatformClassifier`** collapsed to a thin shim over `PlatformRecognizer` (one rule table,
-  no duplicate host/path ladder). `PlatformRegistry.detect` / `NonTextualContent.detect` go
-  through it transitively (kept as shims their call sites — PasteboardSuggester, MediaDownload,
-  module rendering — still use).
+  no duplicate host/path ladder). `NonTextualContent.detect` goes through it transitively
+  (kept as a shim its call sites — PasteboardSuggester, MediaDownload, module rendering —
+  still use). `PlatformRegistry.detect` was later removed outright (see "Last shims removed"
+  below) once nothing called it.
 - **`ArticleFetcher.hardPaywallHosts`** (the parallel Set) — `isHardPaywallHost` now derives
-  from `BypassRuleTable.rule(for:) != nil` (single host source).
+  from `Classifier.isHardPaywallHost`'s `hardPaywallNewsSites` table (single host source;
+  `BypassRuleTable` was itself later deleted as test-retained-only).
 - Remaining `NewsAggregatorUnwrapper.normalizedIncomingURL*` call-sites (share VC, intents)
   repointed to `URLUnwrapper.unwrapOffline`; the pure parsers stay (backing `URLUnwrapper`),
   the async `unwrap`/`normalized*` remain as test-covered shims.
@@ -244,10 +246,15 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
 ### Last shims removed
 
 - **`PlatformClassifier` (+ `PlatformClassification` + `PlatformClassifierTests`)** —
-  DELETED. Every caller (`PlatformRegistry.detect`, `PasteboardSuggester`,
-  `SocialMediaResolver`, `NonTextualContent.detect`, `BypassGate`, `MediaDownload`,
-  `MediaAutoDownloader`) now calls `PlatformRecognizer.recognize` directly. Host-variant
-  coverage lives in `PlatformRecognizerTests` (the deleted tests were a strict subset).
+  DELETED. Every caller (`SocialMediaResolver`, `NonTextualContent.detect`, `BypassGate`,
+  `MediaDownload`, `MediaAutoDownloader`) now calls `PlatformRecognizer.recognize`
+  directly. Host-variant coverage lives in `PlatformRecognizerTests` (the deleted tests
+  were a strict subset).
+  (`PlatformRegistry.detect` was one more such shim over `PlatformRecognizer` with no
+  remaining caller of its own — deleted; `PlatformRegistry` now only maps a platform to
+  its rendering module. `PasteboardSuggester` no longer calls it either — the pasteboard
+  candidate-evaluation flow this list once named it for was itself dead code, collapsed
+  away in the August 2026 tree-shake, leaving only its `platformPreviewArt` seam.)
 - **`NewsAggregatorUnwrapper.unwrap` (async) / `normalizedIncomingURL` /
   `normalizedIncomingURLString`** — DELETED (no production callers left; tests covered by
   `URLUnwrapperTests`). The enum keeps ONLY the pure wrapper parsers that `URLUnwrapper`'s

@@ -134,9 +134,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public var availableModes: [ReadingListItem.ReaderMode] { orderedModes }
     /// Whether this layer's embedded reader currently renders with read-aloud on.
     public var isAudioOn: Bool { audioOn }
-    /// Whether this layer's page is already a saved reading-list item (drives
-    /// Save-vs-Share in the trailing chrome slot).
-    public var isSavedInLibrary: Bool { isAlreadySaved }
     /// Whether a share provider exists (without one the save/share slot is empty).
     public var offersSaveShare: Bool { shareProvider != nil }
 

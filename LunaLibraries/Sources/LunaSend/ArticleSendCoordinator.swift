@@ -31,11 +31,6 @@ public protocol ArticleDestination {
     func send(epubData: Data, fileName: String, title: String) async throws
 }
 
-/// Emails an article's EPUB to the configured Kindle address.
-public protocol ArticleEmailSending {
-    func sendArticle(epubData: Data, fileName: String, title: String) async throws
-}
-
 /// Supplies the `EmailTransport` for the connected account. LunaSend sits below
 /// LunaMailTransport (which builds the transport), so the app installs this at
 /// launch; it stays nil in contexts that never send (extensions), meaning email
@@ -44,9 +39,9 @@ public enum ArticleEmailTransportProvider {
     public static var make: () -> EmailTransport? = { nil }
 }
 
-/// Production sender: builds the article's MIME message and hands it to the
-/// connected email account's transport.
-public final class AccountEmailSender: ArticleEmailSending {
+/// Builds the article's MIME message and hands it to the connected email
+/// account's transport.
+public final class AccountEmailSender {
 
     public struct NotConfiguredError: Error {}
 
@@ -78,11 +73,9 @@ public final class KindleDestination: ArticleDestination {
     public let id = ArticleDestinationID.kindle
     public let displayName = L10n.string("Common_kindle")
 
-    private let sender: ArticleEmailSending
+    private let sender = AccountEmailSender()
 
-    public init(sender: ArticleEmailSending? = nil) {
-        self.sender = sender ?? AccountEmailSender()
-    }
+    public init() {}
 
     public var isConfigured: Bool { KindleSendSettings.isConfigured }
 

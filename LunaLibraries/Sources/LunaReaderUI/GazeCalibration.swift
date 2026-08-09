@@ -57,8 +57,6 @@ public struct GazeCalibration {
         self.recentreRate = recentreRate
     }
 
-    public var isEstablished: Bool { offset != nil }
-
     /// Opens (or reopens) a warm-up. An established offset stays in force
     /// while the new anchor collects, so re-anchoring never leaves a gap in
     /// coverage.

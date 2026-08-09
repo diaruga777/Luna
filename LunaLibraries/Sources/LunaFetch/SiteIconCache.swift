@@ -138,7 +138,7 @@ public final class SiteIconCache {
     /// Decodes icon bytes, picking the LARGEST frame of a multi-size .ico
     /// (UIImage(data:) takes the first, often the 16px one), then downscales
     /// to the cache ceiling.
-    public static func decodedIcon(from data: Data) -> UIImage? {
+    static func decodedIcon(from data: Data) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0
         else { return nil }

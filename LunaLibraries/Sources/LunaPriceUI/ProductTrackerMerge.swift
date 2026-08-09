@@ -20,11 +20,6 @@ import LunaStorage
 /// the SAME GTIN. `mergeIfPossible` is what both callers now ask first.
 public enum ProductTrackerMerge {
 
-    /// Test seam: which snapshots history-seeding matches against. Production
-    /// reads the shared App Group file. Shared with every caller, so a test
-    /// stubbing this once covers the in-app and extension paths identically.
-    public static var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
-
     public enum Outcome: Equatable {
         /// No existing tracker matched `product` — the caller should create a
         /// new one (each caller's own way: the app awaits an image download,
@@ -48,7 +43,8 @@ public enum ProductTrackerMerge {
     @discardableResult
     public static func mergeIfPossible(
         product: ProductInfo, url: URL, excludingItemID: UUID, store: ReadingListStore,
-        comparisonStarter: (UUID, URL, ReadingListStore) -> Void
+        comparisonStarter: (UUID, URL, ReadingListStore) -> Void,
+        snapshots: [ProductSnapshot] = ProductSnapshotStore.shared.load()
     ) -> Outcome {
         let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
             guard let tracker = $0.priceTracker, $0.id != excludingItemID else { return nil }
@@ -72,7 +68,8 @@ public enum ProductTrackerMerge {
         let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
         matched.identifiers = matched.identifiers.merging(
             product.identifiers.merging(ProductIdentifiers(brand: product.brand)))
-        seedHistoryFromSnapshots(into: &matched, candidate: product, candidateURL: url)
+        seedHistoryFromSnapshots(
+            into: &matched, candidate: product, candidateURL: url, snapshots: snapshots)
         for storeListing in newStores { matched.upsertStore(storeListing) }
         store.updatePriceTracker(matched, for: matchID)
 
@@ -100,9 +97,9 @@ public enum ProductTrackerMerge {
     /// a passive snapshot with an offer-level `gtin13` is exactly the kind of
     /// history a share-sheet save should fold in too.
     public static func seedHistoryFromSnapshots(
-        into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL
+        into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL,
+        snapshots: [ProductSnapshot] = ProductSnapshotStore.shared.load()
     ) {
-        let snapshots = snapshotProvider()
         guard !snapshots.isEmpty else { return }
         let matched = SnapshotMatcher.matchingSnapshots(
             for: candidate, candidateURL: candidateURL,

@@ -41,9 +41,9 @@ public struct RSVPEngine {
     /// share) for each entry of `words`. Splitting long tokens
     /// adds frames, so frame indices drift from the shared cross-mode space;
     /// these two maps convert both ways at the RSVP boundary.
-    public let sourceTokenIndices: [Int]
+    let sourceTokenIndices: [Int]
     /// First frame index for each source token.
-    public let firstFrameIndexByToken: [Int]
+    let firstFrameIndexByToken: [Int]
 
     /// `maxCharactersPerWord` splits over-long words into multiple frames that
     /// fit the focal column (default `.max` = never split; used by tests).

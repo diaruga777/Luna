@@ -40,7 +40,7 @@ public enum PlatformFieldSave {
     }
 
     public static func save(
-        platform: ContentPlatform, fields: [String], doubleSaveActionSurface: String?,
+        platform: ContentPlatform, fields: [String], doubleSaveActionSurface: DoubleSaveSurface?,
         saveTimeout: TimeInterval = IntentSaveTimeout.standard,
         attemptDate: Date = Date(),
         onResolvedURL: ((String) -> Void)? = nil
@@ -98,7 +98,7 @@ public enum PlatformFieldSave {
     }
 
     private static func saveResolvedURL(
-        _ url: URL, doubleSaveActionSurface: String?, saveTimeout: TimeInterval,
+        _ url: URL, doubleSaveActionSurface: DoubleSaveSurface?, saveTimeout: TimeInterval,
         attemptDate: Date, onResolvedURL: ((String) -> Void)?
     ) async -> Result {
         let urlString = url.absoluteString

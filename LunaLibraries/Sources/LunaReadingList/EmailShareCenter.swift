@@ -75,9 +75,7 @@ public final class EmailShareCenter {
     private func deliver(
         urlString: String, title: String?, item: ReadingListItem?, to emails: [String]
     ) async throws {
-        let recipients = emails
-            .map(Friend.normalize)
-            .filter(Friend.isValidEmail)
+        let recipients = Friend.normalizedValid(emails)
         guard !recipients.isEmpty else { throw ShareError.noRecipients }
         guard let account = accountStore.account, let transport = MailTransportFactory.make(store: accountStore)
         else { throw ShareError.notConfigured }

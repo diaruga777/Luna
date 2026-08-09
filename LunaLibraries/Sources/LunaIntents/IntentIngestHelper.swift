@@ -96,7 +96,7 @@ public enum IntentIngestHelper {
     /// intents make.
     public static func handleSavePress(
         urlString: String,
-        doubleSaveActionSurface surface: String?,
+        doubleSaveActionSurface surface: DoubleSaveSurface?,
         timeout: TimeInterval = IntentSaveTimeout.standard,
         attemptDate: Date = Date()
     ) async -> ActionButtonSaveOutcome {
@@ -116,7 +116,7 @@ public enum IntentIngestHelper {
     /// second press and changing the already-decided double-save semantics.
     public static func prepareSavePress(
         urlString: String,
-        doubleSaveActionSurface surface: String?,
+        doubleSaveActionSurface surface: DoubleSaveSurface?,
         attemptDate: Date = Date()
     ) -> PreparedSavePress? {
         ReadingListIngestor.shared.prepareSavePress(
@@ -211,7 +211,7 @@ public enum IntentIngestHelper {
 
     /// Runs `handleSavePress` raced against `timeout`; nil ⇒ timed out.
     private static func savePressRacingTimeout(
-        urlString: String, doubleSaveActionSurface: String?, timeout: TimeInterval,
+        urlString: String, doubleSaveActionSurface: DoubleSaveSurface?, timeout: TimeInterval,
         attemptDate: Date
     ) async -> ReadingListIngestor.SavePressResult? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }

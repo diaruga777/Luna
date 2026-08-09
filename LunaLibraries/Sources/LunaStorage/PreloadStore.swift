@@ -14,26 +14,11 @@ public enum PreloadKind: String, Codable {
     case unrepresentable  // paywalled (silent bypass failed) / failed — no content
 }
 
-public enum PreloadState: String, Codable { case loaded, failed }
-
-/// The platform descriptor for a `.platform` preload (so the viewer can show it
-/// without re-recognizing).
-public struct PreloadPlatform: Codable, Equatable {
-    public var platform: String
-    public var itemID: String?
-
-    public init(platform: String, itemID: String?) {
-        self.platform = platform
-        self.itemID = itemID
-    }
-}
-
 /// One entry in the shared preload cache, keyed by the canonical URL's hash.
 public struct PreloadEntry: Codable, Equatable {
     public var urlString: String
     public var kind: PreloadKind
     public var contentFile: String?
-    public var platform: PreloadPlatform?
     /// Last time this page was successfully loaded/refreshed into the preload cache.
     /// nil means the entry predates this field and may be refreshed once on open.
     public var lastLoadedAt: Date?
@@ -43,22 +28,25 @@ public struct PreloadEntry: Codable, Equatable {
     /// Hashed keys of outbound links discovered on this page (for subtree
     /// teardown). Empty for non-article kinds.
     public var children: [String]
-    public var state: PreloadState
 
     public init(
         urlString: String, kind: PreloadKind, contentFile: String? = nil,
-        platform: PreloadPlatform? = nil, lastLoadedAt: Date? = nil,
-        owners: Set<String>, children: [String], state: PreloadState
+        lastLoadedAt: Date? = nil,
+        owners: Set<String>, children: [String]
     ) {
         self.urlString = urlString
         self.kind = kind
         self.contentFile = contentFile
-        self.platform = platform
         self.lastLoadedAt = lastLoadedAt
         self.owners = owners
         self.children = children
-        self.state = state
     }
+
+    /// Whether the crawl reached this URL successfully — an article or a
+    /// resolved platform link, as opposed to `.unrepresentable`. Fully
+    /// determined by `kind`; there used to be a separately-stored `state`
+    /// that this always agreed with.
+    public var loadedSuccessfully: Bool { kind != .unrepresentable }
 }
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
@@ -217,7 +205,7 @@ public final class PreloadStore {
             SharedDiagnosticLog.record("cache HIT (memory) \(url.absoluteString)", category: "preload-tap")
             return boxed.content
         }
-        guard let entry = synchronousEntry(for: url), entry.kind == .article, entry.state == .loaded,
+        guard let entry = synchronousEntry(for: url), entry.kind == .article,
               let file = entry.contentFile else {
             SharedDiagnosticLog.record("cache MISS \(url.absoluteString)", category: "preload-tap")
             return nil
@@ -244,7 +232,7 @@ public final class PreloadStore {
     public func articleContent(for url: URL) -> ArticleContent? {
         let cacheKey = Self.key(for: url) as NSString
         if let boxed = memoryCache.object(forKey: cacheKey) { return boxed.content }
-        guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded,
+        guard let entry = entry(for: url), entry.kind == .article,
               let file = entry.contentFile,
               let data = try? Data(contentsOf: contentURL(fileName: file)),
               let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
@@ -256,7 +244,7 @@ public final class PreloadStore {
     public func articleRefreshDue(
         for url: URL, now: Date = Date(), minimumAge: TimeInterval
     ) -> Bool {
-        guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded
+        guard let entry = entry(for: url), entry.kind == .article
         else { return false }
         guard let lastLoadedAt = entry.lastLoadedAt else { return true }
         return now.timeIntervalSince(lastLoadedAt) >= minimumAge
@@ -265,11 +253,11 @@ public final class PreloadStore {
     // MARK: - Writes
 
     /// Records a loaded/failed preload result for `url`, owned by `rootID`, returning
-    /// the stored entry. `content`/`platform` are persisted per `kind`.
+    /// the stored entry. `content` is persisted only for `kind == .article`.
     @discardableResult
     public func record(
         url: URL, rootID: UUID, kind: PreloadKind,
-        content: ArticleContent? = nil, platform: PreloadPlatform? = nil,
+        content: ArticleContent? = nil,
         children: [URL] = []
     ) -> PreloadEntry {
         let key = Self.key(for: url)
@@ -285,14 +273,12 @@ public final class PreloadStore {
         let entry: PreloadEntry = mutate { index in
             var entry = index[key] ?? PreloadEntry(
                 urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
-                platform: platform, lastLoadedAt: kind == .unrepresentable ? nil : now,
-                owners: [], children: childKeys, state: .loaded)
+                lastLoadedAt: kind == .unrepresentable ? nil : now,
+                owners: [], children: childKeys)
             entry.kind = kind
             if contentFile != nil { entry.contentFile = contentFile }
-            if platform != nil { entry.platform = platform }
             entry.children = childKeys
-            entry.state = (kind == .unrepresentable) ? .failed : .loaded
-            if entry.state == .loaded { entry.lastLoadedAt = now }
+            if entry.loadedSuccessfully { entry.lastLoadedAt = now }
             entry.owners.insert(rootID.uuidString)
             index[key] = entry
             return entry

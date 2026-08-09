@@ -6,10 +6,10 @@
 import Foundation
 
 /// Time granularity the graph buckets into as the span grows.
-public enum PriceGraphBucket: Equatable {
+enum PriceGraphBucket: Equatable {
     case day, week, month, year
 
-    public var calendarComponent: Calendar.Component {
+    var calendarComponent: Calendar.Component {
         switch self {
         case .day: return .day
         case .week: return .weekOfYear
@@ -57,7 +57,7 @@ public enum PriceHistory {
     }
 
     /// The bucket granularity for a span of `days`.
-    public static func bucket(forSpanDays days: Int) -> PriceGraphBucket {
+    static func bucket(forSpanDays days: Int) -> PriceGraphBucket {
         switch days {
         case ..<61: return .day        // up to ~2 months: every day
         case ..<366: return .week      // up to ~1 year: weekly

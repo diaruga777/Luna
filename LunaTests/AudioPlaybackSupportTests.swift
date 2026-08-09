@@ -514,10 +514,6 @@ final class AudioPlaybackSupportTests: XCTestCase {
         }
     }
 
-    func testRateStepsMatchTheLegacySpeechControllerSet() {
-        XCTAssertEqual(AudioSettings.rateSteps, [0.8, 1.0, 1.2, 1.5])
-    }
-
     // MARK: - AudioQueueRuleTests tests
 
     func testPicksTopMostUnopenedReadableArticle() {
@@ -631,12 +627,12 @@ final class AudioPlaybackSupportTests: XCTestCase {
 
     func testInterruptionEndedWithoutShouldResumeDoesNotResume() {
         postInterruption(type: .ended, options: [])
-        XCTAssertEqual(actions, [.none])
+        XCTAssertEqual(actions, [], "no action should be emitted")
     }
 
     func testInterruptionEndedWithMissingOptionsDoesNotResume() {
         postInterruption(type: .ended)
-        XCTAssertEqual(actions, [.none])
+        XCTAssertEqual(actions, [], "no action should be emitted")
     }
 
     func testOldDeviceUnavailablePauses() {

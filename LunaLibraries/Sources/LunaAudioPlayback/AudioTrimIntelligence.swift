@@ -146,7 +146,7 @@ public enum AudioTrimIntelligence {
     public struct RefinementResult {
         public var additionalDroppedIndices: Set<Int>
         /// `guardrailViolation`: this article must never be retried again —
-        /// callers persist this via `AudioScriptCacheEnvelope.llmPermanentlyFailed`.
+        /// callers persist this via `AudioScriptCacheEnvelope.RefinementState.permanentlyFailed`.
         public var permanentFailure: Bool
 
         public init(additionalDroppedIndices: Set<Int> = [], permanentFailure: Bool = false) {

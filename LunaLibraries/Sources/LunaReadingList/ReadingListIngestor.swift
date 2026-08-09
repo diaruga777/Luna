@@ -82,7 +82,7 @@ public final class ReadingListIngestor {
     ///
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
     /// as a normal article even if its page would otherwise be classified as a price
-    /// tracker. Used by the "Read instead" override on the price-tracking editor.
+    /// tracker. Used when a rescue directive's hint is `.article` (`RescueDirectiveApplier`).
     ///
     /// The per-app content gate (`SurfaceSupport`) runs on the classified
     /// outcome before ANY store write: a foreign-kind save is discarded (item
@@ -444,12 +444,12 @@ public final class ReadingListIngestor {
         public let urlString: String
         public let action: Action
         public let isDoubleSave: Bool
-        public let doubleSaveActionSurface: String?
+        public let doubleSaveActionSurface: DoubleSaveSurface?
         public let attemptDate: Date
 
         public init(
             itemID: UUID, urlString: String, action: Action,
-            isDoubleSave: Bool, doubleSaveActionSurface: String?, attemptDate: Date
+            isDoubleSave: Bool, doubleSaveActionSurface: DoubleSaveSurface?, attemptDate: Date
         ) {
             self.itemID = itemID
             self.urlString = urlString
@@ -465,7 +465,7 @@ public final class ReadingListIngestor {
     /// an App Intent handoff and execute later in another intent process.
     public func prepareSavePress(
         urlString: String, source: CaptureSource = .manual,
-        doubleSaveActionSurface: String? = nil,
+        doubleSaveActionSurface: DoubleSaveSurface? = nil,
         attemptDate: Date = Date()
     ) -> PreparedSavePress? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
@@ -479,12 +479,15 @@ public final class ReadingListIngestor {
                 abs(attemptDate.timeIntervalSince($0))
                     < SavePressPolicy.intentDoublePressWindow
             } ?? false)
+        let regime: SavePressPolicy.SavePressRegime = doubleSaveActionSurface
+            .flatMap(Self.resolvedIntentAction(forSurface:))
+            .map(SavePressPolicy.SavePressRegime.actionButton)
+            ?? .inApp(doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [])
         let decision = SavePressPolicy.decide(
             existingItem: existing,
             previousPressDate: reservation.previousPressDate,
             now: attemptDate,
-            doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
-            intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
+            regime: regime)
         return PreparedSavePress(
             itemID: reservation.item.id,
             urlString: urlString,
@@ -578,7 +581,7 @@ public final class ReadingListIngestor {
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
                                 trustsPrefetchedHTML: Bool = false,
-                                doubleSaveActionSurface: String? = nil,
+                                doubleSaveActionSurface: DoubleSaveSurface? = nil,
                                 attemptDate: Date = Date()) async -> SavePressResult {
         guard let prepared = prepareSavePress(
             urlString: urlString, source: source,
@@ -610,7 +613,7 @@ public final class ReadingListIngestor {
     /// double save. "Send to Kindle" without a configured Kindle degrades the
     /// same way.
     private static func resolvedIntentAction(
-        forSurface surface: String
+        forSurface surface: DoubleSaveSurface
     ) -> SavePressPolicy.IntentAction? {
         switch DoubleSaveActionStore.shared.action(forSurface: surface) {
         case .nothing:
@@ -623,18 +626,6 @@ public final class ReadingListIngestor {
             guard let format = action.exportFormat else { return .doNothing }
             return .exportArticle(format: format)
         }
-    }
-
-    /// Saves `urlString` as a normal article, bypassing product-page detection. Used
-    /// by the price-tracking editor's "Read instead" override: a URL that WAS
-    /// classified as a tracker is re-saved here as a plain article (it must not be
-    /// re-detected back into a tracker). Adds a fresh item when none exists, then
-    /// ingests it with detection forced off.
-    public func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
-        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
-        let urlString = url.absoluteString
-        let item = store.item(forURLString: urlString) ?? store.add(urlString: urlString, source: source)
-        await ingest(item, forceArticle: true)
     }
 
     /// Saves a NEW URL whose article content was already fetched (the pasteboard

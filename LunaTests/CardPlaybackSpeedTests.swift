@@ -240,17 +240,6 @@ final class CardPlaybackSpeedTests: XCTestCase {
         XCTAssertEqual(pillFrame.minX, bar.minX, accuracy: 0.5)
     }
 
-    /// Local playback must start the instant the card centers — the player is
-    /// configured to never trade start latency for stall insurance.
-    @MainActor
-    func testVideoPlayerDoesNotWaitToMinimizeStalling() {
-        let content = VideoCardContentViewController(
-            fileURL: URL(fileURLWithPath: "/dev/null"))
-        content.loadViewIfNeeded()
-
-        XCTAssertFalse(content.playerForTesting.automaticallyWaitsToMinimizeStalling)
-    }
-
     @MainActor
     func testPillLabelsReadAsMultiples() {
         XCTAssertEqual(PlaybackSpeed.label(for: 1), "1×")

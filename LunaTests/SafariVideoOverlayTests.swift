@@ -556,7 +556,7 @@ final class SafariVideoOverlayContractTests: XCTestCase {
     /// A payload-free drain link, like `rescue`: nothing about the media rides
     /// the URL, so it can't truncate and the foreground drain is equivalent.
     func testTheDrainLinkCarriesNoPayload() throws {
-        let link = try XCTUnwrap(LunaDeepLink.resolvedMediaLink(scheme: LunaDeepLink.downloaderScheme))
+        let link = try XCTUnwrap(URL(string: "lunadownloader://\(LunaDeepLink.resolvedMediaHost)"))
         XCTAssertEqual(link.absoluteString, "lunadownloader://resolvedmedia")
         XCTAssertNil(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
     }
@@ -636,15 +636,6 @@ final class SafariVideoOverlayContractTests: XCTestCase {
 
         let still = MediaAsset(url: URL(string: "https://pbs.twimg.com/a.jpg")!, kind: .image)
         XCTAssertFalse(still.isDirectlyPlayable)
-    }
-
-    func testFirstDirectlyPlayableSkipsStillsInACarousel() {
-        let carousel = [
-            MediaAsset(url: URL(string: "https://cdn.example.com/1.jpg")!, kind: .image),
-            MediaAsset(url: URL(string: "https://cdn.example.com/2.mp4")!, kind: .video),
-        ]
-        XCTAssertEqual(carousel.firstDirectlyPlayable?.url.absoluteString, "https://cdn.example.com/2.mp4")
-        XCTAssertNil([MediaAsset]().firstDirectlyPlayable)
     }
 
     // MARK: - Reddit keeps its pill

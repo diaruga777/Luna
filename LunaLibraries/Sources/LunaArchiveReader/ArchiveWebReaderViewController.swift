@@ -43,14 +43,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         case unattended
     }
 
-    /// Why an unattended attempt stopped without an article.
-    public enum GiveUpReason: Equatable {
-        /// A CAPTCHA or bot gate is up — unsolvable without the user.
-        case challenge
-        /// archive.today is rate-limiting, or the page can't be archived.
-        case unavailable
-    }
-
     private let articleURL: URL
     private let itemID: UUID?
     private let store: ReadingListStore
@@ -171,7 +163,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     public var onOpenInBrowser: ((URL) -> Void)?
     /// `.unattended` only: the attempt has stopped and no article was saved. Called
     /// at most once, and never alongside `onExtracted`.
-    public var onGaveUp: ((GiveUpReason) -> Void)?
+    public var onGaveUp: (() -> Void)?
     /// Set once either outcome has been reported, so the poll timer's in-flight
     /// probes can't report a second one.
     private var didReportOutcome = false
@@ -360,9 +352,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// view keeps its genuine Safari User-Agent.
     private static func directUnlockReferer(for url: URL) -> String? {
         guard let rule = SiteUnlockRules.rule(for: url) else { return nil }
-        if let custom = rule.refererCustom { return custom }
-        if rule.referer == "google" { return "https://www.google.com/" }
-        return nil
+        switch rule.refererSpoof {
+        case .origin(let origin): return origin.url
+        case .custom(let custom): return custom
+        case nil: return nil
+        }
     }
 
     /// Resolves the specific newest archive.today snapshot via the TimeMap in
@@ -633,14 +627,15 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             if self.didShowTerminalMessage { return }
             SharedDiagnosticLog.record(
                 "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
+            let probed = ProbedStage(rawProbe: stage)
             // Nobody can solve a CAPTCHA in an unattended run, so meeting one ends
             // the attempt rather than waiting forever behind a cover.
-            if self.mode == .unattended, stage == "challenge" {
-                self.giveUp(.challenge)
+            if self.mode == .unattended, probed == .challenge {
+                self.giveUp("challenge")
                 return
             }
             // Reveal the web view ONLY for the CAPTCHA; cover every automated step.
-            self.loadingOverlay.isHidden = (stage == "challenge")
+            self.loadingOverlay.isHidden = (probed == .challenge)
             // Stall guard: if the overlay has covered the page for too long without
             // progress (e.g. a homepage whose submit token never appears), surface
             // the rate-limit guidance so the user isn't stranded on "Unlocking…".
@@ -652,9 +647,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             }
             // Track how long we've sat on the "enable JS / ad blocker" gate so
             // `decideStage` can give up on it after a brief tolerance.
-            self.blockedPollCount = (stage == "blocked") ? self.blockedPollCount + 1 : 0
+            self.blockedPollCount = (probed == .blocked) ? self.blockedPollCount + 1 : 0
             switch Self.decideStage(
-                stage,
+                probed,
                 didLeaveHomepage: self.didLeaveHomepage,
                 isSubmittingHomepage: self.isSubmittingHomepage,
                 hasResolvedSnapshot: self.resolvedSnapshotURL != nil,
@@ -684,6 +679,33 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         }
     }
 
+    /// A probe's raw JS-evaluated string, parsed ONCE. `checkStage`'s probe returns
+    /// one of `error`/`blocked`/`homepage`/`challenge`/`content-root`/`waiting`;
+    /// `checkDirectBypassStage`'s own probe only ever returns `challenge`/
+    /// `content-root`, or the page's own visible text — `.text` carries that raw
+    /// text so `isJavaScriptRequiredGate` can still inspect it.
+    public enum ProbedStage: Equatable {
+        case error
+        case blocked
+        case homepage
+        case challenge
+        case contentRoot
+        case waiting
+        case text(String)
+
+        public init(rawProbe: String) {
+            switch rawProbe {
+            case "error": self = .error
+            case "blocked": self = .blocked
+            case "homepage": self = .homepage
+            case "challenge": self = .challenge
+            case "content-root": self = .contentRoot
+            case "waiting": self = .waiting
+            default: self = .text(rawProbe)
+            }
+        }
+    }
+
     /// What `checkStage` should do for a probed page `stage`, given flow state.
     /// Pure + `Equatable` so the decision is unit-testable without a live web view.
     ///
@@ -700,30 +722,34 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     }
 
     public static func decideStage(
-        _ stage: String,
+        _ stage: ProbedStage,
         didLeaveHomepage: Bool,
         isSubmittingHomepage: Bool,
         hasResolvedSnapshot: Bool,
         blockedCount: Int = 0,
         blockedLimit: Int = 3
     ) -> StageDecision {
-        if stage == "challenge" { return .challenge }
-        if stage == "blocked" {
+        switch stage {
+        case .challenge:
+            return .challenge
+        case .blocked:
             // archive.today's "enable JS / disable ad blocker" gate doesn't clear in
             // a WKWebView (JS is on; we add no blocker). Tolerate a transient flash,
             // then treat as terminal so the user falls back to real Safari.
             return blockedCount >= blockedLimit ? .cannotArchive : .wait
-        }
-        // archive.today's "Error -32602: Invalid InterceptionId" (the capture session
-        // went stale) — terminal; retrying/solving won't help, so show the error.
-        if stage == "error" { return .cannotArchive }
-        if stage == "homepage", isSubmittingHomepage {
+        case .error:
+            // archive.today's "Error -32602: Invalid InterceptionId" (the capture
+            // session went stale) — terminal; retrying/solving won't help.
+            return .cannotArchive
+        case .homepage:
+            if isSubmittingHomepage { return .wait }
+            if !didLeaveHomepage { return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage }
+            return .wait
+        case .contentRoot:
+            return didLeaveHomepage ? .attemptExtract : .wait
+        case .waiting, .text:
             return .wait
         }
-        if stage == "homepage", !didLeaveHomepage {
-            return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage
-        }
-        return stage == "content-root" && didLeaveHomepage ? .attemptExtract : .wait
     }
 
     /// The direct-unlock pre-stage readiness probe, exposed so its behaviour is
@@ -807,15 +833,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting,
                   !self.didReportOutcome else { return }
             let text = (result as? String) ?? ""
+            let probed = ProbedStage(rawProbe: text)
             // A CAPTCHA is up on the site itself → reveal the page so the user can
             // solve it, and PAUSE the pre-stage timeout while they do (so it doesn't
             // give up and fall through to archive.today mid-solve). Unattended,
             // there is no one to reveal it to: stop and leave the save locked.
-            if text == "challenge", self.mode == .unattended {
-                self.giveUp(.challenge)
+            if probed == .challenge, self.mode == .unattended {
+                self.giveUp("challenge")
                 return
             }
-            if text == "challenge" {
+            if probed == .challenge {
                 if !self.loadingOverlay.isHidden {
                     SharedDiagnosticLog.record(
                         "archive: pre-stage CAPTCHA → revealing page for the user", category: "archive")
@@ -850,7 +877,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                 self.advanceToNextPreStage()
                 return
             }
-            guard text == "content-root" else { return }
+            guard probed == .contentRoot else { return }
             self.isExtracting = true
             self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
         }
@@ -1010,9 +1037,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     self.pollTimer?.invalidate()
                     // There IS something to affirm now: the article is saved.
                     self.setExitButton(symbol: "checkmark")
-                    if Self.uncoversPageAfterExtraction(
-                        hasExtractedHandler: self.onExtracted != nil)
-                    {
+                    // Only for a controller that is STAYING. An `onExtracted` handler
+                    // means the opposite: the very next thing that happens is whoever
+                    // set it taking this controller away — the app dismisses the modal
+                    // and opens the item's own reader, the extensions swap it out of
+                    // their nav stack — and uncovering first plays the raw
+                    // archive/publisher page under the whole of that animation.
+                    // Whatever the cover is showing when the unlock lands (its own
+                    // spinner, or the page the user just solved a CAPTCHA on) is simply
+                    // what leaves with it.
+                    if self.onExtracted == nil {
                         self.loadingOverlay.isHidden = true
                     } else {
                         // The cover is staying up through the dismissal, so it is
@@ -1033,20 +1067,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                 }
             }
         }
-    }
-
-    /// Whether a successful unlock takes the cover off the page.
-    ///
-    /// Only for a controller that is STAYING. An `onExtracted` handler means the
-    /// opposite: the very next thing that happens is whoever set it taking this
-    /// controller away — the app dismisses the modal and opens the item's own
-    /// reader, the extensions swap it out of their nav stack — and uncovering
-    /// first plays the raw archive/publisher page under the whole of that
-    /// animation. Whatever the cover is showing when the unlock lands (its own
-    /// spinner, or the page the user just solved a CAPTCHA on) is simply what
-    /// leaves with it.
-    public static func uncoversPageAfterExtraction(hasExtractedHandler: Bool) -> Bool {
-        !hasExtractedHandler
     }
 
     /// Captures the fully-loaded, unlocked page now on screen as the item's
@@ -1081,8 +1101,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
 
     /// Ends an unattended attempt: stop polling, stop loading, and report once.
     /// Nothing is written and nothing is shown — the item keeps the state the
-    /// silent tier left it in.
-    private func giveUp(_ reason: GiveUpReason) {
+    /// silent tier left it in. `reason` is diagnostics-only — `onGaveUp`'s sole
+    /// subscriber only cares THAT the attempt ended, never why.
+    private func giveUp(_ reason: String) {
         guard mode == .unattended, !didReportOutcome else { return }
         didReportOutcome = true
         pollTimer?.invalidate()
@@ -1092,7 +1113,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         SharedDiagnosticLog.record(
             "archive: unattended attempt gave up (\(reason)) for \(articleURL.absoluteString)",
             category: "archive")
-        onGaveUp?(reason)
+        onGaveUp?()
     }
 
     /// archive.today is rate-limiting the network — solving the CAPTCHA won't pass.
@@ -1132,7 +1153,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // is reported to the caller instead.
         guard mode == .interactive else {
             didShowTerminalMessage = true
-            giveUp(.unavailable)
+            giveUp("unavailable")
             return
         }
         didShowTerminalMessage = true

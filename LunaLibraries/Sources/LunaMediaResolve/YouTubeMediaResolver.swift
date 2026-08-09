@@ -311,7 +311,7 @@ public struct YouTubeMediaResolver {
 
     /// yt-dlp's current no-token player fallback. Versions newer than 1.65 can
     /// return SABR-only responses, so keep this exact client/version pairing.
-    public static let androidVRClientVersion = "1.65.10"
+    static let androidVRClientVersion = "1.65.10"
     public static let androidVRUserAgent =
         "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
         "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"

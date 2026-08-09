@@ -63,7 +63,7 @@ final class PreloadStoreTests: XCTestCase {
         let entry = PreloadEntry(
             urlString: PreloadStore.canonicalString(for: u), kind: .article,
             contentFile: "\(key).json", lastLoadedAt: nil,
-            owners: [UUID().uuidString], children: [], state: .loaded)
+            owners: [UUID().uuidString], children: [])
         let data = try JSONEncoder().encode([key: entry])
         try data.write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
         try JSONEncoder().encode(article("Legacy"))
@@ -83,7 +83,7 @@ final class PreloadStoreTests: XCTestCase {
         let entry = PreloadEntry(
             urlString: PreloadStore.canonicalString(for: u), kind: .article,
             contentFile: "\(key).json", lastLoadedAt: Date(timeIntervalSinceNow: -49 * 60 * 60),
-            owners: [UUID().uuidString], children: [], state: .loaded)
+            owners: [UUID().uuidString], children: [])
         let data = try JSONEncoder().encode([key: entry])
         try data.write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
 
@@ -156,7 +156,8 @@ final class PreloadStoreTests: XCTestCase {
     func testUnrepresentableStoresNoFile() {
         let u = url("https://paywall.example/x")
         let e = store.record(url: u, rootID: UUID(), kind: .unrepresentable)
-        XCTAssertEqual(e.state, .failed)
+        XCTAssertEqual(e.kind, .unrepresentable)
+        XCTAssertFalse(e.loadedSuccessfully)
         XCTAssertNil(e.contentFile)
         XCTAssertNil(store.articleContent(for: u))
     }

@@ -111,8 +111,20 @@ final class ArticleExtractorTests: XCTestCase {
         let images = content.blocks.filter { $0.kind == .image }
         XCTAssertEqual(images.count, 1)
         XCTAssertEqual(images.first?.imageURLString, "https://example.com/wp-content/uploads/hero-photo.png")
-        XCTAssertEqual(images.first?.imageWidth, 1600)
-        XCTAssertEqual(images.first?.imageHeight, 900)
+        XCTAssertEqual(images.first?.imageSize, ArticleContent.BlockImageSize(width: 1600, height: 900))
+    }
+
+    /// On-disk JSON written before `imageWidth`/`imageHeight` were unified into
+    /// `imageSize` must still decode into the paired type.
+    func testDecodesLegacyImageWidthHeightKeysIntoImageSize() throws {
+        let legacyJSON = """
+        {"kind":"image","text":"","links":[],
+         "imageURLString":"https://example.com/hero.png",
+         "imageWidth":1600,"imageHeight":900}
+        """
+        let block = try JSONDecoder().decode(
+            ArticleContent.Block.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(block.imageSize, ArticleContent.BlockImageSize(width: 1600, height: 900))
     }
 
     func testPrependsMetadataHeroImageAndUsesLazyResponsiveBodyImages() throws {
@@ -225,28 +237,6 @@ final class ArticleExtractorTests: XCTestCase {
 
     /// Real-page smoke test: parses saved copies of actual news pages when the
     /// fixtures are present on the host (skipped otherwise, e.g. in CI).
-    func testExtractsRealWorldFixtures() throws {
-        // path: minimum plausible extracted length for that page.
-        let fixtures = [
-            ("/tmp/fixture-verge.html", 500),
-            ("/tmp/fixture-ars.html", 500),
-            ("/tmp/fixture-int.html", 4000),
-        ]
-        for (path, minimum) in fixtures {
-            guard let html = try? String(contentsOfFile: path, encoding: .utf8) else {
-                continue
-            }
-            do {
-                let content = try extractor.extract(html: html, baseURL: baseURL)
-                XCTAssertGreaterThan(
-                    content.wholeText.count, minimum,
-                    "thin extraction for \(path): got \(content.wholeText.count)")
-            } catch {
-                XCTFail("extraction threw for \(path): \(error)")
-            }
-        }
-    }
-
     /// An archived WSJ snapshot ships the real article body alongside a
     /// subscription gate and a long reader-comments thread. The comment thread
     /// holds far more `<p>` text than the article, so the old layer choice fell

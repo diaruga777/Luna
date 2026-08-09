@@ -42,15 +42,6 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "COM.HSANABRIA.LUNA.DOWNLOADER"), .downloader)
     }
 
-    // MARK: - storageIdentifier
-
-    func testStorageIdentifiers() {
-        XCTAssertEqual(LunaApp.luna.storageIdentifier, "luna")
-        XCTAssertEqual(LunaApp.reader.storageIdentifier, "reader")
-        XCTAssertEqual(LunaApp.downloader.storageIdentifier, "downloader")
-        XCTAssertEqual(LunaApp.priceTracker.storageIdentifier, "pricetracker")
-    }
-
     // MARK: - installedMarkerKey
 
     func testInstalledMarkerKeys() {

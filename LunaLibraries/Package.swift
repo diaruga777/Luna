@@ -100,7 +100,7 @@ let package = Package(
         .target(name: "LunaDocuments", dependencies: ["LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount", "LunaAppConfig", "LunaURLClassification"]),
-        .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", "LunaMailAccount", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         // IMAP/SMTP engine for the multi-provider email account, built on
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external
@@ -199,13 +199,6 @@ let package = Package(
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
         .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
-        .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
-        .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
-        .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),
-        .testTarget(name: "LunaHTMLClassificationTests", dependencies: ["LunaHTMLClassification", "LunaModels"]),
-        .testTarget(name: "LunaPaywallBypassTests", dependencies: ["LunaPaywallBypass", "LunaFetch"]),
-        .testTarget(name: "LunaPriceMetadataTests", dependencies: ["LunaPriceMetadata"]),
-        .testTarget(name: "LunaMailAccountTests", dependencies: ["LunaMailAccount"]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

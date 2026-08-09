@@ -114,14 +114,6 @@ final class MoonHorizonProgressTests: XCTestCase {
 
     // MARK: - The bar itself
 
-    /// Playback surfaces turn the pulse off; download surfaces leave it on.
-    func testActivityPulseDefaultsOnAndCanBeDisabled() {
-        let bar = MoonHorizonProgressBar()
-        XCTAssertTrue(bar.showsActivityPulse)
-        bar.showsActivityPulse = false
-        XCTAssertFalse(bar.showsActivityPulse)
-    }
-
     /// Progress is clamped and reported to VoiceOver as a percentage.
     func testSetProgressClampsAndAnnounces() {
         let bar = MoonHorizonProgressBar()

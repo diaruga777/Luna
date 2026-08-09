@@ -32,7 +32,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         presenter = ExtensionProductPresenter()
-        ProductTrackerMerge.snapshotProvider = { [] }
+        presenter.snapshotProvider = { [] }
     }
 
     override func tearDown() {

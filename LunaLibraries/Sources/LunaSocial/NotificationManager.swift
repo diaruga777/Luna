@@ -23,7 +23,7 @@ public enum NotificationManager {
     public static let typePendingRequest = "pendingRequest"
     /// An accepted friend's share was imported — tapping it just opens the app;
     /// these are cleared when the user reaches the reading list.
-    public static let typeShareReceived = "shareReceived"
+    private static let typeShareReceived = "shareReceived"
     private static let receivedIdentifierPrefix = "shareReceived-"
 
     /// Requests alert/sound authorization (no-op if already decided).
@@ -58,20 +58,11 @@ public enum NotificationManager {
         }
     }
 
-    /// Whether the permission prompt has EVER been shown (granted or denied), from
-    /// the shared App-Group latch — synchronous, and readable from an `.appex`.
-    /// Features that must decide *before* the user has opted in (a new price
-    /// tracker's alert threshold) read this; `refreshAuthorizationRequestedState()`
-    /// keeps it true to the system.
-    public static var hasEverRequestedAuthorization: Bool {
-        NotificationAuthorizationState.hasEverBeenRequested
-    }
-
     /// Reads the REAL system authorization status and latches
-    /// `hasEverRequestedAuthorization` when it is no longer `.notDetermined`.
-    /// Returns the same answer, so an async caller can use it directly instead of
-    /// the cache. Safe in an `.appex` (reading settings is allowed there; only
-    /// asking is not).
+    /// `NotificationAuthorizationState.hasEverBeenRequested` when it is no longer
+    /// `.notDetermined`. Returns the same answer, so an async caller can use it
+    /// directly instead of the cache. Safe in an `.appex` (reading settings is
+    /// allowed there; only asking is not).
     @discardableResult
     public static func refreshAuthorizationRequestedState() async -> Bool {
         let status = await UNUserNotificationCenter.current().notificationSettings()

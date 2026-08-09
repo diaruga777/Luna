@@ -49,13 +49,24 @@ struct StreamIMAPClient {
         let select = try await session.run("SELECT INBOX", step: "select")
         let uidValidity = GmailIMAPClient.parseBracketValue("UIDVALIDITY", in: select.lines) ?? 0
         let uidNext = GmailIMAPClient.parseBracketValue("UIDNEXT", in: select.lines) ?? 1
-        let afterUID = cursor.uid
 
-        if afterUID == 0 || cursor.uidValidity != uidValidity {
+        // An `.imap` cursor whose validity still matches resumes from its uid;
+        // `.fresh`, a stray `.graph` cursor (e.g. the account switched
+        // providers), or a UIDVALIDITY change (the mailbox renumbered its
+        // UIDs) all mean the same thing here — nothing to resume from.
+        let afterUID: Int
+        switch cursor {
+        case .imap(let uid, let storedValidity) where storedValidity == uidValidity:
+            afterUID = uid
+        case .imap, .fresh, .graph:
+            afterUID = 0
+        }
+
+        if afterUID == 0 {
             try? await session.run("LOGOUT", step: "logout")
             return FetchResult(
                 messages: [],
-                cursor: MailCursor(uid: uidNext - 1, uidValidity: uidValidity))
+                cursor: .imap(uid: uidNext - 1, uidValidity: uidValidity))
         }
 
         let start = afterUID + 1
@@ -101,7 +112,7 @@ struct StreamIMAPClient {
         }
         try? await session.run("LOGOUT", step: "logout")
         return FetchResult(
-            messages: messages, cursor: MailCursor(uid: highestUID, uidValidity: uidValidity))
+            messages: messages, cursor: .imap(uid: highestUID, uidValidity: uidValidity))
     }
 
     /// Flags the given UIDs `\Seen` in INBOX (best-effort).

@@ -118,7 +118,7 @@ public enum ListingPage {
     /// Explicit "this is an article" markup: `og:type=article`, or an
     /// `Article`/`NewsArticle`/`BlogPosting` JSON-LD node. Mirrors
     /// `content.js`'s `pageDeclaresArticle`.
-    public static func declaresArticle(html: String, baseURL: URL? = nil) -> Bool {
+    static func declaresArticle(html: String, baseURL: URL? = nil) -> Bool {
         guard let document = parse(html, baseURL) else { return false }
         return declaresArticle(document: document)
     }

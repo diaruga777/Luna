@@ -26,11 +26,6 @@ public final class WeeklySaveRefresher {
     /// than being dropped.
     public static var metadataFetcher: WeeklyMetadataFetcher?
 
-    /// Posted after a proposal check finds new proposals, so an open
-    /// proposals screen can refresh itself.
-    public static let proposalsDidChange =
-        Notification.Name("lunaWeeklyProposalsDidChange")
-
     private let database: WeeklyCloudDatabase
     private let store: WeeklySaveStore
     private let now: () -> Date
@@ -191,7 +186,6 @@ public final class WeeklySaveRefresher {
         let unseen = names.subtracting(store.seenProposalIDs())
         store.markProposalsSeen(names)
         guard !unseen.isEmpty else { return 0 }
-        NotificationCenter.default.post(name: Self.proposalsDidChange, object: nil)
         let newest = proposals.first { unseen.contains($0.recordName) }
         notifyProposals(unseen.count, newest.flatMap { URL(string: $0.urlString)?.host })
         weeklyCloudLog("\(unseen.count) new proposal(s)")

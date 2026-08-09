@@ -14,6 +14,34 @@ import WebKit
 /// app draws the SAME error card instead of each inventing one.
 public struct FailedSaveCardModel {
 
+    /// The card's one rescue-related state, replacing what used to be four
+    /// independently-settable fields (`isRescuing`/`progress`/`canRescue`/
+    /// `hasSpentAIAttempt`) — a shape that could claim a running rescue AND a
+    /// spent/unavailable terminal state at once, which nothing in the UI ever
+    /// meant to show simultaneously.
+    public enum RescueState: Equatable {
+        /// Nothing has been tried, or a previous attempt failed but the button
+        /// is still offered.
+        case idle
+        /// A rescue is running right now — the web view goes under a dimming
+        /// overlay with the eclipse progress bar (fraction 0…1) over it.
+        case running(progress: Double)
+        /// This item's one Apple Intelligence attempt for THIS app version is
+        /// already spent. Replaces the button with the apology and a Delete —
+        /// the card has nothing left to offer until Luna itself changes.
+        case spent
+        /// The LLM rescue path isn't available at all (Apple Intelligence
+        /// absent, engine not installed, or the failure isn't worth an attempt).
+        /// Renders identically to `.spent` — the button is hidden rather than
+        /// offering a no-op.
+        case unavailable
+
+        public var isRunning: Bool {
+            if case .running = self { return true }
+            return false
+        }
+    }
+
     /// The reading-list item this card stands for. The card watches
     /// `.rescueProgressChanged` for this id so the eclipse bar advances without
     /// the host reloading its whole carousel several times a second.
@@ -26,32 +54,15 @@ public struct FailedSaveCardModel {
     /// The same URL as display text for the bar under the web view, scheme
     /// stripped. Shown in full: which link broke is the point.
     public var urlText: String
-    /// Whether a rescue is running right now — the web view goes under a dimming
-    /// overlay with the eclipse progress bar over it.
-    public var isRescuing: Bool
-    /// The running rescue's fraction, 0…1. Ignored unless `isRescuing`.
-    public var progress: Double
-    /// Whether the LLM rescue path is available at all (Apple Intelligence
-    /// present, engine installed). False hides the button rather than offering a
-    /// no-op.
-    public var canRescue: Bool
-    /// Whether this item's one Apple Intelligence attempt for THIS app version is
-    /// already spent. True replaces the button with the apology and a Delete —
-    /// the card has nothing left to offer until Luna itself changes.
-    public var hasSpentAIAttempt: Bool
+    public var rescueState: RescueState
 
     public init(
-        itemID: UUID, url: URL?, urlText: String,
-        isRescuing: Bool = false, progress: Double = 0,
-        canRescue: Bool = true, hasSpentAIAttempt: Bool = false
+        itemID: UUID, url: URL?, urlText: String, rescueState: RescueState = .idle
     ) {
         self.itemID = itemID
         self.url = url
         self.urlText = urlText
-        self.isRescuing = isRescuing
-        self.progress = progress
-        self.canRescue = canRescue
-        self.hasSpentAIAttempt = hasSpentAIAttempt
+        self.rescueState = rescueState
     }
 }
 
@@ -369,7 +380,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     }
 
     private func reload() {
-        guard !model.isRescuing else { return }
+        guard !model.rescueState.isRunning else { return }
         guard let webView, webView.url != nil else {
             hasStartedLoad = false
             loadPageIfNeeded()
@@ -384,12 +395,11 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// coordinator's work starts on a background executor and the user needs to
     /// see the press land immediately.
     private func beginRescue() {
-        guard !model.isRescuing else { return }
+        guard !model.rescueState.isRunning else { return }
         pendingRescueStart = Date()
         sawRescueInFlight = false
-        model.isRescuing = true
-        model.progress = RescueStage.queued.fraction
-        progressBar.setProgress(Float(model.progress), animated: false)
+        model.rescueState = .running(progress: RescueStage.queued.fraction)
+        progressBar.setProgress(Float(RescueStage.queued.fraction), animated: false)
         apply(model)
         actions.rescue()
     }
@@ -414,7 +424,7 @@ public final class FailedSaveCardViewController: CardContentViewController {
     /// version's AI attempt is now spent — which is the terminal chin.
     private func refreshState() {
         guard var latest = stateProvider() else { return }
-        if latest.isRescuing {
+        if latest.rescueState.isRunning {
             sawRescueInFlight = true
             pendingRescueStart = nil
         } else if let started = pendingRescueStart {
@@ -425,9 +435,17 @@ public final class FailedSaveCardViewController: CardContentViewController {
                 sawRescueInFlight = false
             } else {
                 // Still waiting for the coordinator to pick the attempt up; hold
-                // the overlay the tap put there rather than flickering it away.
-                latest.isRescuing = true
-                latest.progress = max(model.progress, RescueStage.queued.fraction)
+                // the overlay the tap put there rather than flickering it away
+                // (replacing whatever terminal/idle state the fresh read found —
+                // there is nothing to show alongside a rescue we know is starting).
+                let currentProgress: Double
+                if case .running(let progress) = model.rescueState {
+                    currentProgress = progress
+                } else {
+                    currentProgress = 0
+                }
+                latest.rescueState = .running(
+                    progress: max(currentProgress, RescueStage.queued.fraction))
             }
         }
         model = latest
@@ -452,15 +470,15 @@ public final class FailedSaveCardViewController: CardContentViewController {
     private func apply(_ model: FailedSaveCardModel) {
         urlLabel.text = model.urlText
 
-        let rescuing = model.isRescuing
+        let rescuing = model.rescueState.isRunning
         dimmingView.isHidden = !rescuing
         // The reload button is the one control the overlay disables — reloading
         // the page under a running extraction would pull the ground out from
         // under it. Share stays live: the URL is valid either way.
         reloadButton.isEnabled = !rescuing
         reloadButton.alpha = rescuing ? 0.4 : 1
-        if rescuing {
-            progressBar.setProgress(Float(model.progress), animated: true)
+        if case .running(let progress) = model.rescueState {
+            progressBar.setProgress(Float(progress), animated: true)
         }
         updateProgressTicker(rescuing: rescuing)
 
@@ -468,7 +486,11 @@ public final class FailedSaveCardViewController: CardContentViewController {
         // A running rescue keeps the offer's button in place and merely disables
         // it — hiding it would collapse the chin and resize the web view under
         // the overlay, which reads as the card breaking rather than working.
-        let terminal = model.hasSpentAIAttempt || !model.canRescue
+        let terminal: Bool
+        switch model.rescueState {
+        case .spent, .unavailable: terminal = true
+        case .idle, .running: terminal = false
+        }
         rescueButton.isHidden = terminal
         rescueButton.isEnabled = !rescuing
         rescueButton.alpha = rescuing ? 0.5 : 1

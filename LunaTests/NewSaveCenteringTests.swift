@@ -184,8 +184,8 @@ final class NewSaveCenteringTests: XCTestCase {
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
-        deck.carousel.reloadData(centeringAt: 1)
-        XCTAssertEqual(deck.carousel.currentIndex, 1)
+        deck.carousel.reloadData(centeringAt: 2)
+        XCTAssertEqual(deck.carousel.currentIndex, 2)
 
         let url = "https://store.example.com/tracked-elsewhere"
         let tracked = ReadingListItem(
@@ -199,7 +199,9 @@ final class NewSaveCenteringTests: XCTestCase {
             items: [tracked] + seeded, contents: [:])
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
 
-        XCTAssertEqual(deck.carousel.currentIndex, 1)
+        XCTAssertEqual(
+            deck.carousel.currentIndex, 1,
+            "a tracker saved outside the app takes the center from the card the user was on")
         _ = window
     }
 

@@ -5,15 +5,32 @@
 
 import Foundation
 
+/// A named crawler UA to spoof, or an arbitrary custom User-Agent string. A rule
+/// carries at most one — the bundled table never sets both.
+public enum UserAgentSpoof: Equatable {
+    case crawler(CrawlerAgent)
+    case custom(String)
+}
+
+/// A named referer origin to spoof (reusing `RefererOrigin`, the same type the
+/// browser-tier bypass strategy uses), or an arbitrary custom `Referer` value
+/// (e.g. a site that unlocks for a specific referrer). A rule carries at most one.
+/// The bundled table only ever names `.google`.
+public enum RefererSpoof: Equatable {
+    case origin(RefererOrigin)
+    case custom(String)
+}
+
 /// One site's paywall-unlock config, produced by `scripts/generate_site_rules.js`
 /// into the bundled `site_unlock_rules.json`. Every field is optional; a nil field
 /// means "this technique isn't used for this site". Group configs are already
 /// flattened to one rule per member domain, and `{domain}` placeholders in the
 /// regexes are already substituted.
 ///
-/// `csCode` (a small nested cleanup DSL used by a few sites) is carried in the
-/// JSON but not decoded here — it belongs to the browser tier. `ldJsonUrl` is
-/// decoded but not yet consumed (needs a second network fetch to resolve).
+/// The JSON also carries `csCode`/`csDompurify` (a small nested cleanup DSL used by
+/// a few sites, belonging to the browser tier), header/IP-spoofing and cookie-hold
+/// fields with no reader, and JSON-LD reconstruction fields with no reader — none of
+/// those are decoded here.
 public struct SiteUnlockRule: Decodable, Equatable {
     public let domain: String
     /// Keep cookies (the default is to blank the `Cookie:` request header).
@@ -23,41 +40,64 @@ public struct SiteUnlockRule: Decodable, Equatable {
     public let blockRegex: [String]?
     /// Inline-script block pattern (paywall logic inlined into the page).
     public let blockJsInline: String?
-    /// A named crawler UA to spoof: `googlebot` (also adds Google referer + XFF),
-    /// `bingbot`, or `facebookbot`.
-    public let useragent: String?
-    /// An arbitrary custom User-Agent string.
-    public let useragentCustom: String?
-    /// A named referer origin (`google`).
-    public let referer: String?
-    /// A custom `Referer` value (e.g. a site that unlocks for a specific referrer).
-    public let refererCustom: String?
-    /// Extra request headers to set.
-    public let headersCustom: [String: String]?
-    /// Spoof `X-Forwarded-For` from a region (`eu`) or a random IP (any other value).
-    public let randomIP: String?
+    /// The User-Agent this rule spoofs, parsed once from the JSON's `useragent`
+    /// (a named crawler) / `useragentCustom` (an arbitrary string) pair.
+    public let userAgentSpoof: UserAgentSpoof?
+    /// The Referer this rule spoofs, parsed once from the JSON's `referer` (a named
+    /// origin) / `refererCustom` (an arbitrary string) pair.
+    public let refererSpoof: RefererSpoof?
     /// Delete all stored cookies for the site after load.
     public let removeCookies: Bool?
     /// Delete only these named cookies (the meter counters).
     public let removeCookiesSelectDrop: [String]?
-    /// Keep only these named cookies, drop the rest.
-    public let removeCookiesSelectHold: [String]?
     /// Clear localStorage/sessionStorage (client-side meter store).
     public let clearLocalStorage: Bool?
-    /// Sanitize/reveal the article in the browser tier.
-    public let csDompurify: Bool?
-    /// Reconstruct the body from JSON-LD (`paywallSelector|bodySelector[|append][|hold]`).
-    public let ldJson: String?
-    /// Reconstruct from `__NEXT_DATA__`.
-    public let ldJsonNext: String?
-    /// Reconstruct from an inline `<script>` JSON blob.
-    public let ldJsonSource: String?
-    /// Reconstruct from an external JSON/REST endpoint (needs a second fetch).
-    public let ldJsonUrl: String?
-    /// Reveal AMP subscriber sections in place.
-    public let ampUnhide: Bool?
-    /// Redirect to an AMP URL (template with `{path}`/`{host}`), or nil.
-    public let ampRedirect: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case domain, allowCookies, blockRegex, blockJsInline
+        case useragent, useragentCustom, referer, refererCustom
+        case removeCookies, removeCookiesSelectDrop, clearLocalStorage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        domain = try container.decode(String.self, forKey: .domain)
+        allowCookies = try container.decodeIfPresent(Bool.self, forKey: .allowCookies)
+        blockRegex = try container.decodeIfPresent([String].self, forKey: .blockRegex)
+        blockJsInline = try container.decodeIfPresent(String.self, forKey: .blockJsInline)
+        removeCookies = try container.decodeIfPresent(Bool.self, forKey: .removeCookies)
+        removeCookiesSelectDrop = try container.decodeIfPresent([String].self, forKey: .removeCookiesSelectDrop)
+        clearLocalStorage = try container.decodeIfPresent(Bool.self, forKey: .clearLocalStorage)
+
+        if let named = try container.decodeIfPresent(String.self, forKey: .useragent),
+           let crawler = Self.crawler(named: named) {
+            userAgentSpoof = .crawler(crawler)
+        } else if let custom = try container.decodeIfPresent(String.self, forKey: .useragentCustom) {
+            userAgentSpoof = .custom(custom)
+        } else {
+            userAgentSpoof = nil
+        }
+
+        if let named = try container.decodeIfPresent(String.self, forKey: .referer),
+           let origin = RefererOrigin(rawValue: named) {
+            refererSpoof = .origin(origin)
+        } else if let custom = try container.decodeIfPresent(String.self, forKey: .refererCustom) {
+            refererSpoof = .custom(custom)
+        } else {
+            refererSpoof = nil
+        }
+    }
+
+    /// The crawler identity a rule's `useragent` string names, or nil for an
+    /// unrecognized name (dropped, same as if the field were absent).
+    private static func crawler(named: String) -> CrawlerAgent? {
+        switch named {
+        case "googlebot": return .googlebotDesktop
+        case "bingbot": return .bingbot
+        case "facebookbot": return .facebookbot
+        default: return nil
+        }
+    }
 }
 
 /// A global paywall-vendor script blocker: its script/XHR requests are blocked on

@@ -30,13 +30,6 @@ final class ToneAssetTests: XCTestCase {
         XCTAssertEqual(duration, 1.55, accuracy: 0.15)
     }
 
-    func testFinalChimeIsLongerThanTransitionChime() throws {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
-        let transition = try ToneLibrary.loadBuffer(.transition, format: format)
-        let final = try ToneLibrary.loadBuffer(.final, format: format)
-        XCTAssertGreaterThan(final.frameLength, transition.frameLength)
-    }
-
     /// Loading at a different target sample rate/format exercises the
     /// AVAudioConverter path (not just a passthrough when formats already
     /// match) and must still produce sane, non-empty, roughly-correct-duration

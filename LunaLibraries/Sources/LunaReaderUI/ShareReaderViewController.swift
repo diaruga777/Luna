@@ -123,7 +123,7 @@ public final class ShareReaderViewController: UIViewController {
         let local = ArticleImageDownloader.resolveLocalImages(content, store: store)
         let needsSettling = local.blocks.contains { block in
             block.kind == .image && block.imageFileName == nil
-                && (block.imageWidth == nil || block.imageHeight == nil)
+                && block.imageSize == nil
         }
         guard needsSettling else { return local }
 

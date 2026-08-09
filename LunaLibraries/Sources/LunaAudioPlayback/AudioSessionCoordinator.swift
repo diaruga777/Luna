@@ -22,7 +22,6 @@ public final class AudioSessionCoordinator {
     public enum Action: Equatable {
         case pause
         case resume
-        case none
     }
 
     private let session = AVAudioSession.sharedInstance()
@@ -100,7 +99,7 @@ public final class AudioSessionCoordinator {
         case .ended:
             let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-            actionHandler?(options.contains(.shouldResume) ? .resume : .none)
+            if options.contains(.shouldResume) { actionHandler?(.resume) }
         @unknown default:
             break
         }

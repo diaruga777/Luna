@@ -14,13 +14,6 @@ import ActivityKit
 
 #if canImport(ActivityKit)
 @available(iOS 16.1, *)
-private extension LiveMediaDownloadAttributes.MediaKind {
-    init(rawJobValue: String) {
-        self = LiveMediaDownloadAttributes.MediaKind(rawValue: rawJobValue) ?? .unknown
-    }
-}
-
-@available(iOS 16.1, *)
 private extension LiveMediaDownloadAttributes.ContentState.Phase {
     init(jobPhase: LiveMediaDownloadJob.Phase) {
         switch jobPhase {
@@ -87,7 +80,7 @@ extension LiveMediaDownloadManager {
             id: UUID().uuidString,
             sourceURLString: urlString,
             assetURLString: nil,
-            mediaKind: "unknown",
+            mediaKind: nil,
             title: title ?? L10n.string("Downloader_liveActivity_defaultTitle"),
             creator: nil,
             resolveKind: nil,
@@ -98,8 +91,7 @@ extension LiveMediaDownloadManager {
             expectedByteCount: nil,
             receivedByteCount: nil,
             resumeDataFileName: nil,
-            rangeStartSeconds: nil,
-            rangeEndSeconds: nil,
+            timeRange: nil,
             resolvedVideoID: nil,
             youtubeVisitorData: nil,
             errorMessage: message,
@@ -178,7 +170,7 @@ extension LiveMediaDownloadManager {
         LiveMediaDownloadAttributes.ContentState(
             phase: .init(jobPhase: job.phase),
             progress: job.progress,
-            mediaKind: .init(rawJobValue: job.mediaKind),
+            mediaKind: .init(job.mediaKind),
             message: job.statusMessage,
             thumbnailFileName: job.thumbnailFileName,
             // Reopen the app this download is running in — each app registers

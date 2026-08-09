@@ -59,10 +59,14 @@ public extension AudioScript {
     /// The builder version produced by Phase 4's heuristic (+ optional
     /// on-device-LLM refinement) trimming pass — see `AudioTrimHeuristics`,
     /// `AudioTrimIntelligence`, and `AudioScriptPipeline`. Whether the LLM
-    /// pass actually ran is tracked separately (`AudioScriptCacheEnvelope.refined`)
-    /// rather than as its own builder version, since a heuristics-only script
-    /// is upgraded to a refined one in place without changing its shape.
-    static let heuristicBuilderVersion = 2
+    /// pass actually ran is tracked separately
+    /// (`AudioScriptCacheEnvelope.RefinementState`) rather than as its own
+    /// builder version, since a heuristics-only script is upgraded to a
+    /// refined one in place without changing its shape. Bumped for the
+    /// `refined`/`llmPermanentlyFailed` bool pair -> `RefinementState` enum
+    /// change (no migration — a version bump is simpler than teaching this
+    /// rebuildable cache to decode its own retired shape).
+    static let heuristicBuilderVersion = 3
 
     /// Phase-1 stub script builder: every non-empty text block of `content`,
     /// verbatim, in order — no trimming at all. This is a legitimate standing

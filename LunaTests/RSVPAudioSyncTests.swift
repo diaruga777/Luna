@@ -5,7 +5,7 @@
 
 import AVFoundation
 import LunaModels
-import LunaReaderEngine
+@testable import LunaReaderEngine
 import LunaReaderUI
 import XCTest
 @testable import LunaAudioPlayback

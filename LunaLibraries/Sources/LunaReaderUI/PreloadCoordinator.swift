@@ -219,7 +219,7 @@ public final class PreloadCoordinator {
 
             // Dedup: an already-loaded entry (this tree or another save's) just gains
             // this root as an owner across its whole cached subtree — no refetch.
-            if let existing = store.entry(for: job.url), existing.state == .loaded {
+            if let existing = store.entry(for: job.url), existing.loadedSuccessfully {
                 claimCachedSubtree(rootID: rootID, fromKey: key, visited: &visitedThisRun)
                 continue
             }
@@ -255,9 +255,8 @@ public final class PreloadCoordinator {
             store.record(url: url, rootID: rootID, kind: .article,
                          content: enriched, children: children)
             return children
-        case let .social(platform, itemID), let .video(platform, itemID):
-            store.record(url: url, rootID: rootID, kind: .platform,
-                         platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
+        case .social, .video:
+            store.record(url: url, rootID: rootID, kind: .platform)
             return []
         case .product, .needsArchive, .document, .failed, .unsupported:
             // No reader content to cache: a product page (live tap handles its UI), a

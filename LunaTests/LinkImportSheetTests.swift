@@ -144,7 +144,7 @@ final class LinkImportSheetTests: XCTestCase {
             sheet.table, titleForFooterInSection: 0)
         XCTAssertEqual(
             footer,
-            "All links imported.")
+            L10n.string("Settings_linkImport_unstructuredFooter"))
     }
 
     func testAStructuredFileHasNoSuchWarning() {

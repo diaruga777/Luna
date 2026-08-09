@@ -12,6 +12,22 @@ import XCTest
 
 final class ReaderShareSheetTests: XCTestCase {
 
+    /// Fires a row's action if it's a `.tap`; a `.submenu` row fires nothing
+    /// itself (tapping it opens its children instead).
+    private func fire(_ row: ReaderShareSheet.Row) {
+        if case .tap(let action) = row.behavior { action() }
+    }
+
+    private func isSubmenu(_ row: ReaderShareSheet.Row) -> Bool {
+        if case .submenu = row.behavior { return true }
+        return false
+    }
+
+    private func children(of row: ReaderShareSheet.Row) -> [ReaderShareSheet.Row] {
+        if case .submenu(let children) = row.behavior { return children }
+        return []
+    }
+
     func testRowsIncludeExplicitShareActions() {
         let rows = ReaderShareSheet.rows(
             includeExport: true,
@@ -19,7 +35,6 @@ final class ReaderShareSheetTests: XCTestCase {
         XCTAssertEqual(rows.count, 4)
         XCTAssertEqual(
             rows.map(\.title), ["Copy link", "Share link", "Send as email", "Export as…"])
-        XCTAssertFalse(rows.contains { $0.isPrimary })
     }
 
     func testExportRowOmittedForMedia() {
@@ -27,7 +42,7 @@ final class ReaderShareSheetTests: XCTestCase {
             includeExport: false,
             onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onExport: { _ in })
         XCTAssertEqual(rows.map(\.title), ["Copy link", "Share link", "Send as email"])
-        XCTAssertFalse(rows.contains { !$0.children.isEmpty })
+        XCTAssertFalse(rows.contains(where: isSubmenu))
     }
 
     /// The export row is a submenu of every SHARE-MENU format, in
@@ -41,10 +56,10 @@ final class ReaderShareSheetTests: XCTestCase {
             includeExport: true,
             onPickFriend: {}, onShareLink: {}, onCopyLink: {},
             onExport: { picked.append($0) })
-        let children = rows.last?.children ?? []
-        XCTAssertEqual(children.count, ArticleExportFormat.shareMenuFormats.count)
-        XCTAssertEqual(children.map(\.title), ["EPUB", "PDF", "Word Document", "Text"])
-        for child in children { child.action() }
+        let exportChildren = rows.last.map(children) ?? []
+        XCTAssertEqual(exportChildren.count, ArticleExportFormat.shareMenuFormats.count)
+        XCTAssertEqual(exportChildren.map(\.title), ["EPUB", "PDF", "Word Document", "Text"])
+        exportChildren.forEach(fire)
         XCTAssertEqual(picked, [.epub, .pdf, .document, .plainText])
     }
 
@@ -57,7 +72,7 @@ final class ReaderShareSheetTests: XCTestCase {
             onCopyLink: { fired.append("copy") },
             onExport: { fired.append("export:\($0.rawValue)") })
         // The export row is a submenu, so tapping it fires nothing itself.
-        for row in rows { row.action() }
+        rows.forEach(fire)
         XCTAssertEqual(fired, ["copy", "link", "pick"])
     }
 

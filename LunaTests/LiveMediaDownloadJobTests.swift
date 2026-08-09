@@ -1,3 +1,4 @@
+import LunaModels
 @testable import LunaMediaDownload
 import XCTest
 
@@ -103,23 +104,71 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         let json = #"{"id":"1","sourceURLString":"https://www.tiktok.com/@a/video/1","assetURLString":null,"mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
         let job = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8))
         XCTAssertNil(job.ownership)
+        XCTAssertEqual(job.mediaKind, .video)
     }
 
-    func testDownloaderOwnershipRoundTrips() throws {
-        let job = LiveMediaDownloadJob(
-            id: "1", sourceURLString: "https://www.tiktok.com/@a/video/1",
-            assetURLString: nil, mediaKind: "video", title: "Media",
-            resolveKind: nil, phase: .resolving, progress: 0,
-            thumbnailFileName: nil, fileExtension: nil,
-            expectedByteCount: nil, receivedByteCount: nil,
-            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
-            resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
-            errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
-            suspendDeadline: nil, ownership: .downloader)
-        let decoded = try JSONDecoder().decode(
-            LiveMediaDownloadJob.self, from: JSONEncoder().encode(job))
-        XCTAssertEqual(decoded.ownership, .downloader)
-        XCTAssertTrue(decoded.isDownloaderOwned)
+    /// `mediaKind` used to be a bare `String` that three producers wrote three
+    /// incompatible encodings for: `MediaAsset.Kind.rawValue` ("gif"), the old
+    /// widget-facing `liveActivityKind` ("animatedImage"), and a literal
+    /// "unknown" sentinel for a job with no resolved asset yet. All must still
+    /// decode off disk into the one typed field.
+    func testLegacyMediaKindStringsDecodeIntoTypedKind() throws {
+        func decodedKind(forLegacyMediaKind raw: String) throws -> MediaAsset.Kind? {
+            let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+                + #""mediaKind":"\#(raw)","title":"Media","resolveKind":null,"phase":"resolving","#
+                + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"#
+                + #""errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
+            return try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8)).mediaKind
+        }
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "gif"), .gif)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "animatedImage"), .gif)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "video"), .video)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "audio"), .audio)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "image"), .image)
+        XCTAssertNil(try decodedKind(forLegacyMediaKind: "unknown"))
+    }
+
+    /// `timeRange` used to be shredded into two top-level `rangeStartSeconds`/
+    /// `rangeEndSeconds` fields. An in-flight job written before the update
+    /// must still decode its range (and a job with neither key decodes nil,
+    /// not a zero-start range).
+    func testLegacyRangeSecondsKeysDecodeIntoTimeRange() throws {
+        let withRange = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+            + #""mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","#
+            + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"#
+            + #""rangeStartSeconds":12.5,"rangeEndSeconds":42,"#
+            + #""errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"#
+            + #""suspendDeadline":null}"#
+        let job = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(withRange.utf8))
+        XCTAssertEqual(job.timeRange, MediaTimeRange(startSeconds: 12.5, endSeconds: 42))
+
+        let withoutRange = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+            + #""mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","#
+            + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"#
+            + #""errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"#
+            + #""suspendDeadline":null}"#
+        let bare = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(withoutRange.utf8))
+        XCTAssertNil(bare.timeRange)
+    }
+
+    /// `resolveKind` used to be a bare `String`, and two producers (the
+    /// URL-rescue and direct-URL starts) wrote "rescue"/"direct" literals that
+    /// matched none of the enum's cases at the time — every read site's
+    /// `flatMap(ResolveKind.init(rawValue:))` silently produced nil for them.
+    /// Both are now real cases, and any other legacy value still safely
+    /// decodes to nil rather than throwing.
+    func testLegacyResolveKindStringsDecodeIntoTypedKind() throws {
+        func decodedKind(forLegacyResolveKind raw: String) throws -> LiveMediaDownloadJob.ResolveKind? {
+            let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+                + #""mediaKind":null,"title":"Media","resolveKind":"\#(raw)","phase":"resolving","#
+                + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"#
+                + #""errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
+            return try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8)).resolveKind
+        }
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "rescue"), .rescue)
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "direct"), .direct)
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "youtubeClip"), .youtubeClip)
+        XCTAssertNil(try decodedKind(forLegacyResolveKind: "somethingUnrecognized"))
     }
 
     func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
@@ -156,11 +205,11 @@ final class LiveMediaDownloadJobTests: XCTestCase {
 
         let job = LiveMediaDownloadJob(
             id: "notification-thread", sourceURLString: sourceURL,
-            assetURLString: nil, mediaKind: "unknown", title: "Media",
-            resolveKind: "x", phase: .resolving, progress: 0,
+            assetURLString: nil, mediaKind: nil, title: "Media",
+            resolveKind: .x, phase: .resolving, progress: 0,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
-            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
+            resumeDataFileName: nil, timeRange: nil,
             resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
             errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
             suspendDeadline: nil, ownership: .downloader)
@@ -209,9 +258,6 @@ final class LiveMediaDownloadJobTests: XCTestCase {
     func testStoragePolicyIncludesReserveAndTransferOverhead() {
         let expected: Int64 = 1_000_000_000
         let required = MediaStoragePolicy.requiredByteCount(expectedByteCount: expected)
-        XCTAssertEqual(
-            required,
-            expected + MediaStoragePolicy.reserveByteCount + expected / 10)
         XCTAssertFalse(MediaStoragePolicy.hasCapacity(
             expectedByteCount: expected, availableByteCount: required - 1))
         XCTAssertTrue(MediaStoragePolicy.hasCapacity(

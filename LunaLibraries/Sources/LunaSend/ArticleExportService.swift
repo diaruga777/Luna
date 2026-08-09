@@ -115,7 +115,7 @@ public struct ArticleExportService {
     /// reader happened to have fetched — which, for a save that was never
     /// opened or an export taken seconds after the save, is nothing.
     @discardableResult
-    public func writePreparingImages(
+    func writePreparingImages(
         _ format: ArticleExportFormat, for item: ReadingListItem
     ) async throws -> URL {
         await prepareImages(for: item)
@@ -155,25 +155,6 @@ public struct ArticleExportService {
                 content, for: item, imagesDirectory: store.articlesDirectory)
         else { return }
         _ = store.saveContent(prepared, for: item)
-    }
-
-    /// Builds the EPUB and writes it to a temp file, returning its URL — the
-    /// pre-multi-format spelling of `write(.epub, for:)`.
-    public func writeEPUB(for item: ReadingListItem) throws -> URL {
-        try write(.epub, for: item)
-    }
-
-    /// An item provider advertising the article as a file in `format`, for the
-    /// share sheet. Built from the temp file so its UTType (e.g.
-    /// `org.idpf.epub-container`, `com.adobe.pdf`) is inferred from the extension.
-    public func itemProvider(
-        _ format: ArticleExportFormat = .epub, for item: ReadingListItem
-    ) throws -> NSItemProvider {
-        let fileURL = try write(format, for: item)
-        guard let provider = NSItemProvider(contentsOf: fileURL) else {
-            throw ExportError.noContent
-        }
-        return provider
     }
 
     /// Fetches any missing images, builds the file off the main thread, and

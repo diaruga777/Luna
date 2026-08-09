@@ -48,34 +48,6 @@ final class CardKindStyleTests: XCTestCase {
 
     // MARK: - The point: one deck, one frame, two presentations
 
-    /// Every kind, at one container size, resolving to the identical rectangle.
-    /// The deck asks `CardCarouselMetrics` once and hands the answer to every
-    /// slot, so this is really a statement about what a kind is no longer able
-    /// to say — but it is the regression that was visible, so it is pinned by
-    /// the numbers rather than by the absence of an API.
-    func testEveryKindGetsTheSameCardFrame() {
-        let containers = [
-            CGSize(width: 402, height: 626),    // iPhone 16 Pro card area
-            CGSize(width: 440, height: 708),    // iPhone 16 Pro Max
-            CGSize(width: 375, height: 519),    // iPhone SE
-            CGSize(width: 834, height: 1_050),  // iPad portrait
-            CGSize(width: 1_366, height: 906),  // 13" iPad landscape
-        ]
-        for container in containers {
-            let frame = CardCarouselMetrics.resolve(containerSize: container).centeredCardFrame()
-            XCTAssertEqual(
-                frame.width / frame.height,
-                CardCarouselMetrics.cardAspectRatio,
-                accuracy: 0.0001,
-                "every card is exactly 9:16 at \(container)")
-            XCTAssertEqual(
-                frame.midY, container.height / 2, accuracy: 0.01,
-                "every card is centered in the card area at \(container)")
-            XCTAssertEqual(
-                frame.midX, container.width / 2, accuracy: 0.01)
-        }
-    }
-
     func testAMediaCardAndAnArticleCardInOneDeckDifferOnlyInPresentation() throws {
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()

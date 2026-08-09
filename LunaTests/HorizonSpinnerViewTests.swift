@@ -179,26 +179,6 @@ final class HorizonSpinnerViewTests: XCTestCase {
         XCTAssertEqual(fade.values?.last as? Int, 0, "and invisible again while it rests")
     }
 
-    /// Setting `color` retints the halo while keeping the layer tree intact.
-    func testColorCanBeChanged() throws {
-        let spinner = laidOutSpinner(side: 26)
-        spinner.color = .systemRed
-        XCTAssertEqual(spinner.color, .systemRed)
-        XCTAssertNotNil(try layers(of: spinner).track.strokeColor)
-    }
-
-    /// The stopped, visible state still draws the full ring rather than a blank
-    /// placeholder (useful for deterministic screenshots).
-    func testStaticRingIsLayerBacked() throws {
-        let spinner = HorizonSpinnerView(side: 26)
-        spinner.hidesWhenStopped = false
-        spinner.color = .label
-        spinner.frame = CGRect(x: 0, y: 0, width: 26, height: 26)
-        spinner.layoutIfNeeded()
-        XCTAssertFalse(spinner.isHidden)
-        XCTAssertNotNil(try layers(of: spinner).track.path)
-    }
-
     /// `resolveToCheckmark` only runs its success beat while animating; stopped,
     /// it calls back immediately and adds nothing.
     func testResolveToCheckmarkWhenStoppedCallsBackImmediately() {

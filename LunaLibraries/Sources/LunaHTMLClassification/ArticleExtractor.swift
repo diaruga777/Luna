@@ -1081,7 +1081,7 @@ public struct ArticleExtractor {
         let dimensions = declaredImageDimensions(from: element)
         return ArticleContent.Block(
             kind: .image, text: "", links: [], imageURLString: urlString,
-            imageWidth: dimensions?.width, imageHeight: dimensions?.height)
+            imageSize: dimensions.map { ArticleContent.BlockImageSize(width: $0.width, height: $0.height) })
     }
 
     private func declaredImageDimensions(from element: Element) -> (width: Int, height: Int)? {

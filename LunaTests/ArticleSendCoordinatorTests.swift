@@ -161,7 +161,6 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         await coordinator.send(item, toDestinationID: kindle.id)
         let fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)
-        XCTAssertEqual(fresh?.pendingSendFailureNotices[kindle.id], true)
     }
 
     func testExplicitSendTargetsOnlyOneDestination() async {
@@ -262,6 +261,5 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         let fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)
         XCTAssertEqual(fresh?.sendFailureCounts[kindle.id], 3)
-        XCTAssertEqual(fresh?.pendingSendFailureNotices[kindle.id], true)
     }
 }

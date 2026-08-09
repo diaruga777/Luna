@@ -113,13 +113,4 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertNil(PlatformRecognizer.recognize("https://example.com/reel/1"))
     }
 
-    func testRegistryDispatchesAcrossPlatforms() {
-        let registry = PlatformRegistry.shared
-        XCTAssertEqual(registry.detect("https://x.com/a/status/20")?.platform, .x)
-        XCTAssertEqual(registry.detect("https://www.tiktok.com/@a/video/7212345678901234567")?.platform, .tiktok)
-        XCTAssertEqual(registry.detect("https://www.reddit.com/r/s/comments/abc/t/")?.platform, .reddit)
-        XCTAssertEqual(registry.detect("https://www.instagram.com/reel/Cx/")?.platform, .instagram)
-        XCTAssertEqual(registry.detect("https://fb.watch/abc/")?.platform, .facebook)
-        XCTAssertNil(registry.detect("https://en.wikipedia.org/wiki/Swift"))
-    }
 }

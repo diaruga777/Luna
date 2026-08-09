@@ -61,13 +61,22 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
         }
     }
-    /// The Phrases sub-mode's chunk timer (`scheduleNextChunk`/`advanceChunk`).
-    /// The Words sub-mode's timer is `wordClock` below — the two stay separate
-    /// low-level timers because only the words-mode one is shared with the
-    /// link preview.
-    private var timer: Timer?
-    private var intervalStart: Date?
-    private var intervalDuration: TimeInterval?
+    /// The Phrases sub-mode's chunk timer (`scheduleNextChunk`/`advanceChunk`),
+    /// bundled with the wall-clock start/length it was scheduled with — a
+    /// hold/release mid-word rescales the REMAINING time
+    /// (`rescaleRunningInterval`), which needs both. One optional so a
+    /// cancellation can never invalidate the timer while leaving a stale
+    /// start/duration behind (the three used to be cleared inconsistently
+    /// across call sites — `cancelChunkTimer()` is now the only place that
+    /// does it). The Words sub-mode's timer is `wordClock` below — the two
+    /// stay separate low-level timers because only the words-mode one is
+    /// shared with the link preview.
+    private struct ChunkTimer {
+        let timer: Timer
+        let start: Date
+        let duration: TimeInterval
+    }
+    private var chunkTimer: ChunkTimer?
     /// Drives the Words sub-mode's per-word advance — shared with
     /// `LinkRSVPPreview`'s own word timer (see `RSVPPlaybackClock`).
     private lazy var wordClock: RSVPPlaybackClock = {
@@ -454,7 +463,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// silent mode and whenever the center isn't voicing this item.
     private func syncPlaybackStateToCenter() {
         guard let center = speechCenter, isViewLoaded else { return }
-        let playingMine = centerOwnsItem && center.currentSnapshot.isAudiblyPlaying
+        let playingMine = centerOwnsItem && center.isAudiblyPlaying
         isPlaying = playingMine
         updateContextVisibility(animated: false)
     }
@@ -1051,7 +1060,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
                 if previewIsActive {
                     self.wasPlayingBeforeLinkPreview = self.isPlaying
                     if let center = self.speechCenter, self.centerOwnsItem,
-                       center.currentSnapshot.isAudiblyPlaying {
+                       center.isAudiblyPlaying {
                         center.pause()
                     } else if self.isPlaying {
                         self.pause()
@@ -1459,7 +1468,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func playViaCenter(_ center: AudioPlaybackCenter) {
         ReaderPlaybackArbiter.claim(self)
         if centerOwnsItem {
-            if center.currentSnapshot.isAudiblyPlaying { return }
+            if center.isAudiblyPlaying { return }
             if case .paused = center.state { center.resume(); return }
         }
         if currentIndex >= engine.words.count - 1 {
@@ -1485,20 +1494,16 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // Explicit user pauses go through `togglePlayPause`/`scrubbed`, which
         // pause the center directly; this path only settles local state.
         if speechCenter != nil {
-            timer?.invalidate()
-            timer = nil
+            cancelChunkTimer()
             wordClock.cancel()
             saveProgress()
             return
         }
         ReaderPlaybackArbiter.resign(self)
         isPlaying = false
-        timer?.invalidate()
-        timer = nil
+        cancelChunkTimer()
         wordClock.cancel()
         isSpeedHeld = false
-        intervalStart = nil
-        intervalDuration = nil
         // Only touch speech/audio in read-aloud mode — the silent reader must
         // never instantiate the synthesizer or claim the audio session.
         if isSpeechMode {
@@ -1546,7 +1551,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     @objc private func togglePlayPause() {
         if let center = speechCenter {
-            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying {
+            if centerOwnsItem, center.isAudiblyPlaying {
                 center.pause()
             } else {
                 play()
@@ -1567,7 +1572,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// The full-screen tap: pause-only, never a toggle.
     @objc private func surfaceTapped() {
         if let center = speechCenter {
-            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying { center.pause() }
+            if centerOwnsItem, center.isAudiblyPlaying { center.pause() }
             return
         }
         if isPlaying { pause() }
@@ -1607,8 +1612,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// `wordClock` in Words, or the chunk timer below in Phrases.
     private func rescaleRunningInterval(by factor: Double) {
         if displayMode == .phrases {
-            guard let start = intervalStart, let duration = intervalDuration, timer != nil else { return }
-            let remaining = max(0, duration - Date().timeIntervalSince(start)) * factor
+            guard let chunkTimer else { return }
+            let remaining = max(0, chunkTimer.duration - Date().timeIntervalSince(chunkTimer.start)) * factor
             startTimer(remaining) { [weak self] in self?.advanceChunk() }
         } else {
             wordClock.rescaleRemaining(by: factor)
@@ -1625,12 +1630,19 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// REMAINING time (see `rescaleRunningInterval`) — the Phrases sub-mode's
     /// chunk timer only; Words uses the shared `wordClock`.
     private func startTimer(_ interval: TimeInterval, handler: @escaping () -> Void) {
-        timer?.invalidate()
-        intervalStart = Date()
-        intervalDuration = interval
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { _ in
+        chunkTimer?.timer.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { _ in
             handler()
         }
+        chunkTimer = ChunkTimer(timer: timer, start: Date(), duration: interval)
+    }
+
+    /// Invalidates and clears the Phrases sub-mode's chunk timer — the ONE
+    /// place that happens, so the timer and the start/duration it was
+    /// scheduled with can never go out of sync.
+    private func cancelChunkTimer() {
+        chunkTimer?.timer.invalidate()
+        chunkTimer = nil
     }
 
     // MARK: Words-mode timer
@@ -1767,8 +1779,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if isSpeechMode {
             synthesizer.stopSpeaking(at: .immediate)
         } else if displayMode == .phrases {
-            timer?.invalidate()
-            timer = nil
+            cancelChunkTimer()
         } else {
             wordClock.cancel()
         }
@@ -1851,7 +1862,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let progress = engine.words.count > 1
             ? Double(currentIndex) / Double(engine.words.count - 1) : nil
         store.saveReaderExitPosition(
-            clearScrollOffset: true,
+            scrollOffset: .clear,
             readingProgress: progress, lastWordIndex: wordIndex, for: item.id)
     }
 
@@ -1884,7 +1895,7 @@ extension RSVPViewController: ReaderPlaybackPausable {
     /// word timer.
     public func pauseForExclusivePlayback() {
         if let center = speechCenter, centerOwnsItem,
-           center.currentSnapshot.isAudiblyPlaying {
+           center.isAudiblyPlaying {
             center.pause()
         } else if isPlaying {
             pause()

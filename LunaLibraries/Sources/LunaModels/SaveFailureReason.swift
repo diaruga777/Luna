@@ -26,7 +26,7 @@ public enum FailedSaveCopy {
     ///
     /// Lives here rather than in `FailedSaveNaming` (LunaFetch) so the extension
     /// failure card can show the identical string without an extension linking
-    /// the fetch tier. `FailedSaveNaming.displayURL` forwards to it.
+    /// the fetch tier.
     public static func displayURL(_ url: URL?, rawURLString: String? = nil) -> String {
         let text = url?.absoluteString ?? rawURLString ?? ""
         for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
@@ -70,8 +70,6 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
     case notHTML
     /// The server declared a body larger than Luna will hold in memory.
     case tooLarge
-    /// A document save whose type Luna can't parse (`documentType`).
-    case unsupportedDocument(String)
     /// A media link that resolved to no downloadable asset.
     case noMediaFound
     /// The extraction/persistence step itself failed (encode or disk write).
@@ -108,11 +106,6 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return L10n.string("SaveFailure_notReadableWebPage")
         case .tooLarge:
             return L10n.string("SaveFailure_tooLarge")
-        case let .unsupportedDocument(type):
-            let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty
-                ? "Luna can't read this document"
-                : "Luna can't read .\(trimmed) documents"
         case .noMediaFound:
             return L10n.string("SaveFailure_noMediaFound")
         case .couldNotSave:
@@ -149,7 +142,7 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return L10n.string("SaveFailure_searchResultsHint")
         case .subscribeRedirect:
             return L10n.string("SaveFailure_openInBrowserToReadHint")
-        case .tooLarge, .unsupportedDocument, .noMediaFound, .couldNotSave, .unknown:
+        case .tooLarge, .noMediaFound, .couldNotSave, .unknown:
             return nil
         }
     }
@@ -162,7 +155,7 @@ public enum SaveFailureReason: Equatable, Sendable, Codable {
             return true
         case let .httpStatus(code):
             return code == 429 || (500...599).contains(code)
-        case .notReadable, .notContent, .notHTML, .tooLarge, .unsupportedDocument,
+        case .notReadable, .notContent, .notHTML, .tooLarge,
              .noMediaFound, .subscribeRedirect, .unknown:
             return false
         }

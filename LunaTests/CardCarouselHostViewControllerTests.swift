@@ -26,16 +26,6 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
         XCTAssertEqual(geometry.title.minX, geometry.thumbnail.maxX + 12)
     }
 
-    func testRecentProductArtworkSettlesIntoProductCardHeader() {
-        let card = CGRect(x: 20, y: 80, width: 350, height: 620)
-        let geometry = UtilCardSaveTransitionGeometry.fallback(
-            in: card, kind: .product, sourceTitleHeight: 42)
-
-        XCTAssertEqual(geometry.thumbnail.size, CGSize(width: 64, height: 64))
-        XCTAssertEqual(geometry.thumbnail.origin, CGPoint(x: 38, y: 98))
-        XCTAssertEqual(geometry.title.height, 64)
-    }
-
     private final class TestHost: CardCarouselHostViewController {}
 
     // MARK: - Only a row with artwork grows into a card

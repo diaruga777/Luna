@@ -262,17 +262,14 @@ public struct ArticleDOCXBuilder {
                   image.size.width > 0, image.size.height > 0
             else { return nil }
             let intrinsicAspect = Double(image.size.height / image.size.width)
-            var width = block.imageWidth.flatMap { $0 > 0 ? Double($0) : nil }
-                ?? Double(image.size.width)
+            var width: Double
             var height: Double
-            if let declaredHeight = block.imageHeight, declaredHeight > 0 {
-                height = Double(declaredHeight)
+            if let size = block.imageSize, size.width > 0, size.height > 0 {
+                width = Double(size.width)
+                height = Double(size.height)
             } else {
+                width = Double(image.size.width)
                 height = width * intrinsicAspect
-            }
-            if block.imageWidth == nil, let declaredHeight = block.imageHeight,
-               declaredHeight > 0 {
-                width = height / intrinsicAspect
             }
             let scale = min(1, 336 / width, 384 / height)
             width *= scale

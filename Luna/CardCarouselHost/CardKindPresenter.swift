@@ -358,13 +358,6 @@ enum CardKindPresenters {
         [article, media, product].compactMap { $0 }
     }
 
-    /// Whether this save has a home on the deck at all: its kind's presenter is
-    /// installed, or it is a kind-less failed save (which belongs everywhere).
-    static func isSurfaced(_ item: ReadingListItem) -> Bool {
-        if ReadingListSectioning.isFailedSave(item) { return true }
-        return presenter(for: item) != nil
-    }
-
     #if DEBUG
     /// Tests install production-shaped presenters explicitly, exactly as they do
     /// for `ShareKindPresenters`.

@@ -19,29 +19,43 @@ import LunaModels
 /// `rows`, so the wording never diverges. The actions are injected so this stays
 /// UI-only; `AppReaderShareProvider` wires them to the social / export stack.
 ///
-/// A row with `children` is a submenu: the four export formats hang off one
-/// "Export as…" row rather than flattening into the top level, which would
-/// double the option list for a choice most shares never touch. In the menu the
-/// system draws it as a nested popover; in the fallback sheet it presents a
-/// second sheet — see `rowTapped`.
+/// A `.submenu` row hangs a nested list off one entry: the four export formats
+/// hang off one "Export as…" row rather than flattening into the top level,
+/// which would double the option list for a choice most shares never touch. In
+/// the menu the system draws it as a nested popover; in the fallback sheet it
+/// presents a second sheet — see `rowTapped`.
 public final class ReaderShareSheet: UIViewController {
 
-    /// One tappable option, or — when `children` is non-empty — a submenu of them.
+    /// One row's behavior when tapped: fire an action, or open a nested list of
+    /// more rows. A row can never carry both — `.submenu` and `.tap` used to be
+    /// two separately-settable properties (`children`/`action`) where a non-empty
+    /// `children` silently made `action` dead.
     public struct Row {
+        public enum Behavior {
+            case tap(() -> Void)
+            case submenu([Row])
+        }
+
         public let title: String
         public let systemImage: String
-        public let isPrimary: Bool
-        public let action: () -> Void
-        /// Nested options. When non-empty, `action` is not used.
-        public let children: [Row]
+        public let behavior: Behavior
 
-        public init(title: String, systemImage: String, isPrimary: Bool,
-                    children: [Row] = [], action: @escaping () -> Void = {}) {
+        private init(title: String, systemImage: String, behavior: Behavior) {
             self.title = title
             self.systemImage = systemImage
-            self.isPrimary = isPrimary
-            self.children = children
-            self.action = action
+            self.behavior = behavior
+        }
+
+        public static func action(
+            title: String, systemImage: String, action: @escaping () -> Void
+        ) -> Row {
+            Row(title: title, systemImage: systemImage, behavior: .tap(action))
+        }
+
+        public static func submenu(
+            title: String, systemImage: String, children: [Row]
+        ) -> Row {
+            Row(title: title, systemImage: systemImage, behavior: .submenu(children))
         }
     }
 
@@ -56,8 +70,8 @@ public final class ReaderShareSheet: UIViewController {
         onExport: @escaping (ArticleExportFormat) -> Void
     ) -> [Row] {
         ArticleExportFormat.shareMenuFormats.map { format in
-            Row(title: format.displayName, systemImage: format.systemImage,
-                isPrimary: false, action: { onExport(format) })
+            .action(title: format.displayName, systemImage: format.systemImage,
+                    action: { onExport(format) })
         }
     }
 
@@ -70,20 +84,20 @@ public final class ReaderShareSheet: UIViewController {
         onExport: @escaping (ArticleExportFormat) -> Void
     ) -> [Row] {
         var rows: [Row] = []
-        rows.append(Row(
+        rows.append(.action(
             title: L10n.string("Common_copyLink"), systemImage: "doc.on.doc",
-            isPrimary: false, action: onCopyLink))
-        rows.append(Row(
+            action: onCopyLink))
+        rows.append(.action(
             title: L10n.string("Common_shareLink"), systemImage: "square.and.arrow.up",
-            isPrimary: false, action: onShareLink))
-        rows.append(Row(
+            action: onShareLink))
+        rows.append(.action(
             title: L10n.string("Sharing_readerShareSheet_1sendAsEmail"), systemImage: "envelope",
-            isPrimary: false, action: onPickFriend))
+            action: onPickFriend))
         // File export only applies to readable articles, not media / platform posts.
         if includeExport {
-            rows.append(Row(
+            rows.append(.submenu(
                 title: exportTitle, systemImage: "square.and.arrow.down.on.square",
-                isPrimary: false, children: exportRows(onExport: onExport)))
+                children: exportRows(onExport: onExport)))
         }
         return rows
     }
@@ -97,13 +111,15 @@ public final class ReaderShareSheet: UIViewController {
     }
 
     private static func menuElement(for row: Row) -> UIMenuElement {
-        guard row.children.isEmpty else {
+        switch row.behavior {
+        case .submenu(let children):
             return UIMenu(
                 title: row.title, image: UIImage(systemName: row.systemImage),
-                children: row.children.map(menuElement(for:)))
-        }
-        return UIAction(title: row.title, image: UIImage(systemName: row.systemImage)) { _ in
-            row.action()
+                children: children.map(menuElement(for:)))
+        case .tap(let action):
+            return UIAction(title: row.title, image: UIImage(systemName: row.systemImage)) { _ in
+                action()
+            }
         }
     }
 
@@ -172,14 +188,9 @@ public final class ReaderShareSheet: UIViewController {
         config.image = UIImage(systemName: row.systemImage)
         config.imagePadding = 10
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
-        config.baseForegroundColor = row.isPrimary ? .white : GlassStyle.readingAccent
-        if row.isPrimary {
-            config.background.backgroundColor = GlassStyle.readingAccent
-            config.background.cornerRadius = 14
-        } else {
-            config.background.backgroundColor = LunaColors.secondaryBackground
-            config.background.cornerRadius = 14
-        }
+        config.baseForegroundColor = GlassStyle.readingAccent
+        config.background.backgroundColor = LunaColors.secondaryBackground
+        config.background.cornerRadius = 14
         config.titleAlignment = .leading
 
         let button = UIButton(configuration: config)
@@ -196,17 +207,16 @@ public final class ReaderShareSheet: UIViewController {
         // Dismiss first so whatever comes next can present on the original
         // presenter without an "already presenting" conflict — which is also why
         // a submenu row has to capture that presenter before dismissing.
-        guard row.children.isEmpty else {
+        switch row.behavior {
+        case .submenu(let children):
             let presenter = presentingViewController
-            let children = row.children
             let title = row.title
             dismiss(animated: true) {
                 guard let presenter else { return }
                 Self.present(from: presenter, rows: children, title: title)
             }
-            return
+        case .tap(let action):
+            dismiss(animated: true) { action() }
         }
-        let action = row.action
-        dismiss(animated: true) { action() }
     }
 }

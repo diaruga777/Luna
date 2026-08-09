@@ -20,7 +20,7 @@ public enum ReadingHeuristics {
     /// Determiners/articles/possessives and the infinitive "to" — words that
     /// must stay attached to the word that FOLLOWS them. A chunk should never end
     /// on one of these (it strands the reader on "the" / "a" with no noun).
-    public static let leadingBinders: Set<String> = [
+    static let leadingBinders: Set<String> = [
         "a", "an", "the", "this", "that", "these", "those",
         "my", "your", "his", "her", "its", "our", "their",
         "to", "no", "every", "each", "some", "any", "another", "such",
@@ -29,7 +29,7 @@ public enum ReadingHeuristics {
     /// Prepositions, conjunctions and relative/subordinating words that naturally
     /// BEGIN a phrase. A new chunk prefers to start here (we break *before* them),
     /// which keeps prepositional/subordinate phrases intact as one fixation.
-    public static let phraseStarters: Set<String> = [
+    static let phraseStarters: Set<String> = [
         // Prepositions
         "in", "on", "at", "of", "for", "with", "from", "by", "about",
         "into", "onto", "over", "under", "above", "below", "up", "down",
@@ -45,7 +45,7 @@ public enum ReadingHeuristics {
     /// All common function words (binders + starters + a few high-frequency
     /// extras). Used by the timing model to give very common words less dwell
     /// time — they are recognized almost instantly.
-    public static let functionWords: Set<String> = leadingBinders.union(phraseStarters).union([
+    static let functionWords: Set<String> = leadingBinders.union(phraseStarters).union([
         "is", "are", "was", "were", "be", "been", "being", "am",
         "do", "does", "did", "have", "has", "had", "will", "would",
         "can", "could", "shall", "should", "may", "might", "must",

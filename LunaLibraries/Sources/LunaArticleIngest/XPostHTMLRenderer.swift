@@ -67,8 +67,9 @@ enum XPostHTMLRenderer {
         case .image:
             guard let source = block.imageURLString else { return "" }
             var tag = "<img src=\"\(attribute(source))\""
-            if let width = block.imageWidth { tag += " width=\"\(width)\"" }
-            if let height = block.imageHeight { tag += " height=\"\(height)\"" }
+            if let size = block.imageSize {
+                tag += " width=\"\(size.width)\" height=\"\(size.height)\""
+            }
             return tag + ">"
         case .heading:
             return "<h2>\(linked(block))</h2>"

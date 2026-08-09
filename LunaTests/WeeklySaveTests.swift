@@ -802,6 +802,41 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertEqual(makeStore().seenProposalIDs(), ["proposal-b"])
     }
 
+    /// `displays` is keyed by `WeeklySaveKind` in memory, but the dictionary's
+    /// synthesized `Codable` only special-cases `String`/`Int` keys as a JSON
+    /// object — any other key type encodes as an alternating key/value array
+    /// instead. `Payload`'s hand-written coding keeps the on-disk shape a
+    /// plain string-keyed object rather than silently switching to that array
+    /// form.
+    func testDisplaysPersistAsAStringKeyedJSONObjectNotAnArray() throws {
+        let store = makeStore()
+        store.setDisplay(display(daysOld: 0), for: .article)
+
+        let data = try Data(contentsOf: container.appendingPathComponent("weeklySaves.json"))
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let displays = json?["displays"] as? [String: Any]
+        XCTAssertNotNil(displays, "displays must decode as a JSON object, not an array of pairs")
+        XCTAssertNotNil(displays?["article"])
+    }
+
+    /// A key this build's `WeeklySaveKind` doesn't recognize (already-garbled
+    /// JSON, or a kind a newer build wrote) must not take the rest of the
+    /// payload down with it.
+    func testAnUnrecognizedDisplayKeyIsDroppedRatherThanFailingTheWholeDecode() throws {
+        let store = makeStore()
+        store.setDisplay(display(daysOld: 0), for: .article)
+        let fileURL = container.appendingPathComponent("weeklySaves.json")
+
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as! [String: Any]
+        var displays = json["displays"] as! [String: Any]
+        displays["notARealKind"] = displays["article"]
+        json["displays"] = displays
+        try JSONSerialization.data(withJSONObject: json).write(to: fileURL)
+
+        let reopened = makeStore()
+        XCTAssertEqual(reopened.display(for: .article)?.title, "A Title")
+    }
+
     // MARK: WeeklySaveStoreTests helpers
 
     private func makeStore() -> WeeklySaveStore {
@@ -919,14 +954,6 @@ final class WeeklySaveTests: XCTestCase {
             "product\nhttps://shop.example/p\n2023-11-14T22:13:20Z")
     }
 
-    func testPerAppKindOwnership() {
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .luna), [.article, .media, .product])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .reader), [.article])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .downloader), [.media])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .priceTracker), [.product])
-        XCTAssertEqual(WeeklySaveKind.article.recordName, "weekly-article")
-    }
-
     func testProposalRecordNameIsTheURLDedup() {
         let first = WeeklyProposal(
             kind: .article, urlString: "  https://example.com/x  ", date: Date())
@@ -943,19 +970,6 @@ final class WeeklySaveTests: XCTestCase {
                 kind: .article, urlString: "https://example.com/y", date: Date()).recordName)
     }
 
-    func testPerAppLabelsRenameTheNounButNotTheTier() {
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .luna, monthTier: false), "Save of the week")
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .luna, monthTier: true), "Save of the month")
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .reader, monthTier: false), "Read of the week")
-        XCTAssertEqual(
-            WeeklySaveLabels.subtitle(for: .downloader, monthTier: true),
-            "Download of the month")
-        XCTAssertEqual(
-            WeeklySaveLabels.subtitle(for: .priceTracker, monthTier: false), "Deal of the week")
-        XCTAssertEqual(
-            WeeklySaveLabels.promoteMenuTitle(for: .reader), "Promote to Read of the Week")
-        XCTAssertEqual(WeeklySaveLabels.proposeMenuTitle, "Propose Save of the Week")
-    }
 }
 
 private extension UIView {

@@ -21,11 +21,12 @@ import Foundation
 /// `BypassPlan` test.
 public enum BypassGate {
 
-    /// Why a bypass was allowed (carrying the triggering signal) or blocked.
+    /// Why a bypass was allowed, or blocked.
     public enum Decision: Equatable {
-        /// A bypass MAY run. The associated `Signal` records which paywall evidence
-        /// justified it (for diagnostics).
-        case attempt(Signal)
+        /// A bypass MAY run. Every caller only ever asks whether a bypass is
+        /// allowed, never which paywall evidence justified it, so this carries
+        /// no payload.
+        case attempt
         /// A bypass must NOT run. The associated `Block` records why.
         case block(Block)
 
@@ -34,24 +35,6 @@ public enum BypassGate {
             if case .attempt = self { return true }
             return false
         }
-    }
-
-    /// The paywall evidence that justified a bypass attempt.
-    public enum Signal: Equatable {
-        /// A gate marker in the visible text (`PaywallDetector.gateMarkers`).
-        case gateMarker
-        /// The publisher's machine-readable lock declaration
-        /// (`PaywallDetector.htmlDeclaresLocked`).
-        case declaredLocked
-        /// A known hard-paywall host (`ArticleFetcher.isHardPaywallHost`) whose body
-        /// we couldn't read (or only got a teaser/stub for).
-        case hardPaywallHostUnreadable
-        /// An archive.today snapshot URL — always routed through the archive reader.
-        case archiveSnapshot
-        /// The direct fetch failed and the host is unknown, so we can't PROVE the
-        /// page is free; a bypass is allowed as a best-effort recovery (this is the
-        /// pre-existing behavior the resolver/selector already relied on).
-        case unprovenFreeUnknownHost
     }
 
     /// Why a bypass was suppressed.
@@ -144,33 +127,33 @@ public enum BypassGate {
 
         // (4) Publisher-declared lock — the strongest paywall signal.
         if htmlDeclaresLocked {
-            return .attempt(.declaredLocked)
+            return .attempt
         }
 
         // (5) A gate marker in the page text (cut-off body), at any length.
         if let html, htmlContainsGateMarker(html) {
-            return .attempt(.gateMarker)
+            return .attempt
         }
         if let extracted, extracted.looksPaywalled {
-            return .attempt(.gateMarker)
+            return .attempt
         }
 
         // (6) A known hard-paywall host whose body we couldn't read (no readable
         // extraction above) — the archive snapshot is the only way in.
         if ArticleFetcher.isHardPaywallHost(url) {
-            return .attempt(.hardPaywallHostUnreadable)
+            return .attempt
         }
 
         // (7) An archive.today snapshot — always routed through the archive reader.
         if ArticleFetcher.isArchiveTodayURL(url) {
-            return .attempt(.archiveSnapshot)
+            return .attempt
         }
 
         // (8) Direct fetch failed on an unknown host: we can't prove the page is free
         // (it may be JS-walled), so a best-effort bypass is allowed. A page we DID
         // fetch and that shows no paywall evidence falls through to (9).
         if html == nil {
-            return .attempt(.unprovenFreeUnknownHost)
+            return .attempt
         }
 
         // (9) We have the HTML, it's not a product/platform page, shows no paywall

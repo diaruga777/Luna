@@ -151,18 +151,6 @@ final class IntentProgressReporterTests: XCTestCase {
         XCTAssertGreaterThan(IntentSaveTimeout.extendedRuntime, IntentSaveTimeout.standard)
     }
 
-    func testStandardBudgetLeavesRoomForTheRestOfTheIntent() {
-        // ~30 s total, and the save is only the first leg — the media handoff
-        // (preflight HEAD + transfer) still has to fit after it.
-        XCTAssertEqual(IntentSaveTimeout.standard, 12)
-        XCTAssertLessThan(IntentSaveTimeout.standard, 30)
-    }
-
-    func testProvideContextUsesTwentySecondsOfTheNormalBudget() {
-        XCTAssertEqual(IntentSaveTimeout.provideContext, 20)
-        XCTAssertLessThan(IntentSaveTimeout.provideContext, 30)
-    }
-
     func testSaveIntentTakesTheRuntimesBudgetNotTheDefault() {
         // Proves the concrete-type override actually shadows
         // `CaptureIntentRuntime`'s default. If it silently stopped winning, both
@@ -179,22 +167,5 @@ final class IntentProgressReporterTests: XCTestCase {
         expected = IntentSaveTimeout.standard
         #endif
         XCTAssertEqual(SaveIntent().captureSaveTimeout, expected)
-        XCTAssertEqual(CaptureIntentExtendedRuntime.saveTimeout, expected)
-    }
-
-    func testSystemProgressIsOnlyClaimedWhereTheRuntimeExistsToDriveIt() {
-        // The flag exists to mirror `LongRunningIntent` availability: claiming it
-        // without the extended runtime would suppress Luna's activity and leave
-        // NO progress UI at all.
-        if #available(iOS 27.0, *) {
-            // Xcode 26.2 archives compile the fallback even on iOS 27.
-            #if compiler(>=6.4)
-            XCTAssertTrue(CaptureIntentExtendedRuntime.isAvailable)
-            #else
-            XCTAssertFalse(CaptureIntentExtendedRuntime.isAvailable)
-            #endif
-        } else {
-            XCTAssertFalse(CaptureIntentExtendedRuntime.isAvailable)
-        }
     }
 }

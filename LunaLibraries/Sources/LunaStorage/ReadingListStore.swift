@@ -349,23 +349,33 @@ public final class ReadingListStore {
         }
     }
 
+    /// What `saveReaderExitPosition` should do with `lastScrollOffset` — the old
+    /// `scrollOffset: Double?` + `clearScrollOffset: Bool` pair let a caller pass
+    /// both a value AND clear at the same time (meaningless, and one caller had
+    /// to derive the bool from the same optional it was already passing).
+    public enum ScrollOffsetEdit: Equatable {
+        case unchanged
+        case clear
+        case set(Double)
+    }
+
     /// Persists a reader's resume position on exit.
     /// One coordinated write for everything a reader persists on close — scroll
     /// offset, reading progress (monotonic), spoken word, RSVP word index —
     /// instead of several back-to-back whole-list read-modify-write cycles on the
     /// main thread. nil parameters leave their field untouched; `lastWordIndex`
     /// lets the RSVP reader batch its exit save the same way the scroll reader does.
-    /// - Parameter clearScrollOffset: when true, sets `lastScrollOffset` to nil (the
-    ///   RSVP reader moves the shared position in word space with no pixels, so the
-    ///   stored exact offset no longer corresponds to `lastWordIndex` and must be
-    ///   invalidated). Distinct from a nil `scrollOffset`, which leaves it untouched.
+    /// - Parameter scrollOffset: what to do with `lastScrollOffset` — leave it
+    ///   alone, clear it (the RSVP reader moves the shared position in word space
+    ///   with no pixels, so the stored exact offset no longer corresponds to
+    ///   `lastWordIndex` and must be invalidated), or set it to a new value.
     /// - Parameter lastOriginalScrollOffset: the archive reader's own disjoint offset.
     ///
     /// Fire-and-forget (see `asyncUpdate`) — called from reader teardown paths
     /// (often mid pop-transition), and these fields are resume positions consumed
     /// on the NEXT open, not read back immediately after being set.
     public func saveReaderExitPosition(
-        scrollOffset: Double? = nil, clearScrollOffset: Bool = false,
+        scrollOffset: ScrollOffsetEdit = .unchanged,
         readingProgress: Double? = nil,
         lastSpokenWordIndex: Int? = nil, lastWordIndex: Int? = nil,
         lastOriginalScrollOffset: Double? = nil,
@@ -374,14 +384,19 @@ public final class ReadingListStore {
         asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             var changed = false
-            if clearScrollOffset {
+            switch scrollOffset {
+            case .unchanged:
+                break
+            case .clear:
                 if all[index].lastScrollOffset != nil {
                     all[index].lastScrollOffset = nil
                     changed = true
                 }
-            } else if let scrollOffset, all[index].lastScrollOffset != scrollOffset {
-                all[index].lastScrollOffset = scrollOffset
-                changed = true
+            case .set(let value):
+                if all[index].lastScrollOffset != value {
+                    all[index].lastScrollOffset = value
+                    changed = true
+                }
             }
             if let lastOriginalScrollOffset, all[index].lastOriginalScrollOffset != lastOriginalScrollOffset {
                 all[index].lastOriginalScrollOffset = lastOriginalScrollOffset
@@ -406,17 +421,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
-    /// NEXT open, not read back immediately after being set.
-    public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].lastScrollOffset != offset else { return false }
-            all[index].lastScrollOffset = offset
-            return true
-        }
-    }
-
     /// Persists the read-aloud resume position (marks audio as having played).
     /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
     /// NEXT open, not read back immediately after being set.
@@ -428,20 +432,6 @@ public final class ReadingListStore {
             return true
         }
     }
-
-    /// Persists how far through the article the user has gotten (0…1, only
-    /// ever increases). Fire-and-forget (see `asyncUpdate`) — a resume position
-    /// consumed on the NEXT open, not read back immediately after being set.
-    public func setReadingProgress(_ progress: Double, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            let clamped = min(max(progress, 0), 1)
-            guard clamped > (all[index].readingProgress ?? 0) else { return false }
-            all[index].readingProgress = clamped
-            return true
-        }
-    }
-
 
     public func delete(_ item: ReadingListItem) {
         coordinatedMutate { all in
@@ -475,15 +465,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Removes a set of items (and their cached content) in one pass — used to clear
-    /// the whole Archive section at once.
-    public func deleteItems(ids: Set<UUID>) {
-        coordinatedMutate { all in
-            for item in all where ids.contains(item.id) { self.removeFiles(for: item) }
-            all.removeAll { ids.contains($0.id) }
-        }
-    }
-
     /// Remembers which reader the user last used for an article.
     public func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
         coordinatedUpdate { all in
@@ -507,7 +488,6 @@ public final class ReadingListStore {
                 all[index].sendFailureCounts[destination] = nil
                 all[index].sendNextAttemptDates[destination] = nil
                 all[index].sendLastErrors[destination] = nil
-                all[index].pendingSendFailureNotices[destination] = nil
             }
             return true
         }
@@ -535,7 +515,6 @@ public final class ReadingListStore {
             all[index].sendFailureCounts[destination] = failureCount
             all[index].sendNextAttemptDates[destination] = nextAttemptDate
             all[index].sendLastErrors[destination] = errorMessage
-            all[index].pendingSendFailureNotices[destination] = nil
             return true
         }
     }
@@ -554,40 +533,7 @@ public final class ReadingListStore {
             }
             all[index].sendNextAttemptDates[destination] = nil
             all[index].sendLastErrors[destination] = errorMessage
-            all[index].pendingSendFailureNotices[destination] = true
             return true
-        }
-    }
-
-    public struct SendFailureNotice: Equatable {
-        public let itemID: UUID
-        public let destinationID: String
-        public let title: String
-        public let errorMessage: String
-    }
-
-    /// Returns and clears terminal send-failure notices so each hard/give-up error
-    /// is shown once, even if it happened during a background wakeup.
-    public func consumePendingSendFailureNotices() -> [SendFailureNotice] {
-        coordinatedMutate { all in
-            var notices: [SendFailureNotice] = []
-            for index in all.indices {
-                let destinations = all[index].pendingSendFailureNotices
-                    .filter { $0.value }
-                    .map(\.key)
-                    .sorted()
-                guard !destinations.isEmpty else { continue }
-                for destination in destinations {
-                    notices.append(SendFailureNotice(
-                        itemID: all[index].id,
-                        destinationID: destination,
-                        title: all[index].title ?? all[index].urlString,
-                        errorMessage: all[index].sendLastErrors[destination]
-                            ?? L10n.string("ReadingList_store_unknownSendErrorMessage")))
-                    all[index].pendingSendFailureNotices[destination] = nil
-                }
-            }
-            return notices
         }
     }
 

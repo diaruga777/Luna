@@ -67,20 +67,23 @@ public final class DoubleSaveActionStore {
         self.now = now
     }
 
-    private func actionKey(forSurface surface: String) -> String {
-        "doubleSave.action.\(surface)"
+    // `.rawValue` is used ONLY here, at the four defaults-key builders — every
+    // caller above this file works with `DoubleSaveSurface` itself, never a
+    // bare surface string.
+    private func actionKey(forSurface surface: DoubleSaveSurface) -> String {
+        "doubleSave.action.\(surface.rawValue)"
     }
 
-    private func presetEmailsKey(forSurface surface: String) -> String {
-        "doubleSave.presetFriendEmails.\(surface)"
+    private func presetEmailsKey(forSurface surface: DoubleSaveSurface) -> String {
+        "doubleSave.presetFriendEmails.\(surface.rawValue)"
     }
 
-    private func promptURLKey(forSurface surface: String) -> String {
-        "doubleSave.pendingFriendPromptURL.\(surface)"
+    private func promptURLKey(forSurface surface: DoubleSaveSurface) -> String {
+        "doubleSave.pendingFriendPromptURL.\(surface.rawValue)"
     }
 
-    private func promptDateKey(forSurface surface: String) -> String {
-        "doubleSave.pendingFriendPromptDate.\(surface)"
+    private func promptDateKey(forSurface surface: DoubleSaveSurface) -> String {
+        "doubleSave.pendingFriendPromptDate.\(surface.rawValue)"
     }
 
     // MARK: - Settings
@@ -88,7 +91,7 @@ public final class DoubleSaveActionStore {
     /// Defaults to `.nothing`. The retired PDF/Markdown choices migrate to the
     /// single document action; any other retired value (such as the old
     /// `sendToFriend`) lands on the inert default.
-    public func action(forSurface surface: String) -> DoubleSaveAction {
+    public func action(forSurface surface: DoubleSaveSurface) -> DoubleSaveAction {
         guard let rawValue = defaults.string(forKey: actionKey(forSurface: surface))
         else { return .nothing }
         switch rawValue {
@@ -97,16 +100,16 @@ public final class DoubleSaveActionStore {
         }
     }
 
-    public func setAction(_ action: DoubleSaveAction, forSurface surface: String) {
+    public func setAction(_ action: DoubleSaveAction, forSurface surface: DoubleSaveSurface) {
         defaults.set(action.rawValue, forKey: actionKey(forSurface: surface))
     }
 
     /// The preset recipient emails (lowercased addresses), in selection order.
-    public func presetFriendEmails(forSurface surface: String) -> [String] {
+    public func presetFriendEmails(forSurface surface: DoubleSaveSurface) -> [String] {
         defaults.stringArray(forKey: presetEmailsKey(forSurface: surface)) ?? []
     }
 
-    public func setPresetFriendEmails(_ emails: [String], forSurface surface: String) {
+    public func setPresetFriendEmails(_ emails: [String], forSurface surface: DoubleSaveSurface) {
         defaults.set(emails, forKey: presetEmailsKey(forSurface: surface))
     }
 
@@ -114,7 +117,7 @@ public final class DoubleSaveActionStore {
 
     /// Records that the app, once foregrounded, should present the friend
     /// selector for `urlString`.
-    public func setPendingFriendPrompt(urlString: String, forSurface surface: String) {
+    public func setPendingFriendPrompt(urlString: String, forSurface surface: DoubleSaveSurface) {
         defaults.set(urlString, forKey: promptURLKey(forSurface: surface))
         defaults.set(now().timeIntervalSinceReferenceDate,
                      forKey: promptDateKey(forSurface: surface))
@@ -122,7 +125,7 @@ public final class DoubleSaveActionStore {
 
     /// One-shot consume: returns the pending prompt's URL (clearing it), or nil
     /// when there is none or it has gone stale.
-    public func takePendingFriendPrompt(forSurface surface: String) -> String? {
+    public func takePendingFriendPrompt(forSurface surface: DoubleSaveSurface) -> String? {
         defer {
             defaults.removeObject(forKey: promptURLKey(forSurface: surface))
             defaults.removeObject(forKey: promptDateKey(forSurface: surface))

@@ -22,9 +22,11 @@ public enum FilterGuide {
     /// The outgoing subject prefix, including the human separator after the marker.
     public static let subjectPrefix = "\(subjectMatch) "
 
-    /// Whether Luna creates the filter itself for this provider.
+    /// Whether Luna creates the filter itself for this provider. Outlook is the
+    /// only provider with a filter API Luna can call (Graph); every other
+    /// provider needs the user to add a rule manually.
     public static func isAutomatic(_ id: MailProvider.ID) -> Bool {
-        MailProvider.provider(for: id).filterSupport == .automatic && id == .outlook
+        id == .outlook
     }
 
     /// A link to the provider's filter/rules settings (opened in the browser).

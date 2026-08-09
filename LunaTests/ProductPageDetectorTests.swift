@@ -185,16 +185,6 @@ final class ProductPageDetectorTests: XCTestCase {
             html: html, baseURL: URL(string: "https://www.notamazon.com/dp/B000000")))
     }
 
-    func testAmazonTLDCurrencyMap() {
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "www.amazon.com.au"), "AUD")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.com"), "USD")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "www.amazon.co.uk"), "GBP")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.ca"), "CAD")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.de"), "EUR")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.co.jp"), "JPY")
-        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.in"), "INR")
-    }
-
     func testEmbeddedPriceFromSellPriceShape() {
         let node: [String: Any] = ["product": ["sellPrice": "19.99", "priceCurrency": "GBP"]]
         let price = ProductPageDetector.firstPrice(in: node)

@@ -71,12 +71,6 @@ final class XPostExtractorTests: XCTestCase {
         }
     }
 
-    /// No single ordinary post can reach the threshold, whatever it contains —
-    /// X caps an ordinary post at 280 characters and the gate sits far above it.
-    func testThresholdSitsAboveTheOrdinaryPostLimit() {
-        XCTAssertGreaterThan(XPostExtractor.minimumBodyTextLength, 280)
-    }
-
     /// A genuine long-form single post is accepted, with its author attached.
     func testLongNoteTweetBecomesAnArticle() {
         let content = article("note-tweet-long.json")

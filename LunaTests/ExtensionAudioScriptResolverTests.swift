@@ -66,7 +66,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         // (drops everything) — proves a refined cache hit wins outright.
         let seededScript = AudioScript(spokenBlocks: [], totalWordCount: 0, builderVersion: AudioScript.heuristicBuilderVersion)
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: seededScript, refined: true, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: seededScript, refinementState: .refined),
             forContentFileName: item.contentFileName!)
 
         let script = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
@@ -83,7 +83,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
 
         let seededScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [0])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: seededScript, refined: false, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: seededScript, refinementState: .heuristicOnly),
             forContentFileName: item.contentFileName!)
 
         let script = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
@@ -107,7 +107,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
         XCTAssertNotNil(cached, "the freshly-built script must be persisted immediately")
         XCTAssertEqual(cached?.script, script)
-        XCTAssertEqual(cached?.refined, false)
+        XCTAssertEqual(cached?.refinementState, .heuristicOnly)
     }
 
     func testNoContentFileNameFallsBackToAnUnpersistedHeuristicBuild() {
@@ -155,7 +155,9 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
 
         _ = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
 
-        try await waitFor { self.scriptStore.load(forContentFileName: item.contentFileName!)?.refined == true }
+        try await waitFor {
+            self.scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState == .refined
+        }
     }
 
     func testIntelligentTrimmingDisabledNeverKicksOffRefinement() async throws {
@@ -174,7 +176,8 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         await resolver.awaitLastStartedRefinement()
 
         XCTAssertTrue(session.requestedPrompts.isEmpty)
-        XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false)
+        XCTAssertEqual(
+            scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState, .heuristicOnly)
     }
 
     func testUnavailableModelDegradesSilentlyWithNoRefinementAttempt() async throws {
@@ -210,7 +213,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         // its result — the cache must still show the unrefined entry.
         await resolver.awaitLastStartedRefinement()
         XCTAssertEqual(
-            scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false,
+            scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState, .heuristicOnly,
             "a cancelled refinement must never write its result to the cache")
     }
 
@@ -219,7 +222,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let content = readableContent()
         let heuristicScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: heuristicScript, refined: false, llmPermanentlyFailed: true),
+            AudioScriptCacheEnvelope(script: heuristicScript, refinementState: .permanentlyFailed),
             forContentFileName: item.contentFileName!)
 
         let session = FakeTrimModelSession()

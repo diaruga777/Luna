@@ -36,6 +36,11 @@ public final class ProductTrackerIngestor {
     var comparisonStarter: (UUID, URL, ReadingListStore) -> Void = {
         SellerComparison.beginAndRunInBackground(itemID: $0, sourceURL: $1, store: $2)
     }
+    /// Test seam for the complete product-artwork pass. Production first tries
+    /// the declared product image, then a page header image, then the favicon.
+    var artworkLoader: (URL?, URL) async -> Data? = { primaryURL, pageURL in
+        await ProductTrackerArtwork.fetch(primaryURL: primaryURL, pageURL: pageURL)
+    }
 
     public init() {}
 
@@ -56,6 +61,15 @@ public final class ProductTrackerIngestor {
             product: product, url: url, excludingItemID: item.id, store: store,
             comparisonStarter: comparisonStarter)
         if case let .merged(matchID, highlightedURL) = outcome {
+            // The tracker that won a merge may predate artwork collection. A
+            // duplicate save is still a chance to repair it, so every tracker
+            // gets the same product → header → favicon attempt.
+            if var tracker = store.item(withID: matchID)?.priceTracker,
+               tracker.imageFileName == nil,
+               let data = await artworkLoader(product.imageURL, url) {
+                tracker.imageFileName = writeArtwork(data, for: matchID, store: store)
+                store.updatePriceTracker(tracker, for: matchID)
+            }
             // The just-saved item was a duplicate route into an existing tracker;
             // drop its placeholder item so only the merged tracker remains.
             store.delete(item)
@@ -78,12 +92,8 @@ public final class ProductTrackerIngestor {
             identifiers: product.identifiers.merging(ProductIdentifiers(brand: product.brand)),
             alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction(
                 notificationsEverRequested: notificationsRequested))
-        if let imageURL = product.imageURL,
-           let data = await downloadProductImage(imageURL) {
-            let fileName = "\(item.id.uuidString)-product.jpg"
-            try? data.write(
-                to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
-            tracker.imageFileName = fileName
+        if let data = await artworkLoader(product.imageURL, url) {
+            tracker.imageFileName = writeArtwork(data, for: item.id, store: store)
         }
         ProductTrackerMerge.seedHistoryFromSnapshots(into: &tracker, candidate: product, candidateURL: url)
         store.savePriceTracker(tracker, for: item.id)
@@ -129,18 +139,17 @@ public final class ProductTrackerIngestor {
         }
     }
 
-    /// Downloads a product image. Returns nil on any failure.
-    private func downloadProductImage(_ imageURL: URL) async -> Data? {
-        guard LiveNetworkPolicy.allows(
-            imageURL, context: "ProductTrackerIngestor.downloadProductImage") else { return nil }
-        var request = URLRequest(url: imageURL, timeoutInterval: 8)
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              data.count > 512, data.count <= 5 * 1024 * 1024
-        else { return nil }
-        return data
+    private func writeArtwork(_ data: Data, for itemID: UUID, store: ReadingListStore) -> String? {
+        let fileName = "\(itemID.uuidString)-product.jpg"
+        let destination = store.articlesDirectory.appendingPathComponent(fileName)
+        do {
+            try data.write(to: destination, options: .atomic)
+            return fileName
+        } catch {
+            return nil
+        }
     }
+
 }
 
 /// Renders a tracker's price history graph to a JPEG for inline email embedding —

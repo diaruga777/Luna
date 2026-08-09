@@ -157,15 +157,16 @@ permission nobody has been asked for: a fresh install carries a storage setting
 that quietly does something else, since a failed Photos save falls back to a
 local file (`claudedocs/media-download.md`, "Download destination").
 
-- **No pill and no rim.** It is a sentence with one word you can change, not a
-  fourth action button under three action buttons: white text, then the current
-  option as a tappable run of *app icon + “in Luna”/“in Photos”* with a chevron.
+- **A subtle selector outline, not a fourth action button.** The sentence and
+  current option are horizontally centred as one control; the larger tappable
+  *app icon + “in Luna”/“in Photos”* run has a quiet outline and chevron.
   The icons are the real artwork at the text's own height — the running app's
   own icon (`LunaAppIconImage`) and the Photos pinwheel Luna draws
   (`PhotosAppGlyph`; a sandboxed app cannot read another app's icon).
 - **The options open IN PLACE**, over whatever the card has above them: the
   panel lands with the SELECTED option exactly on the collapsed selector, so the
-  word being read does not move and the alternative appears beside it. The panel
+  word being read does not move and the alternative appears beside it. Its 58pt
+  rows are visibly spaced for clean tap targets. The panel
   and its tap-to-dismiss catcher are hosted by the CARD, not by the row — a
   row-sized view cannot cover the rows and buttons around it.
 - **Photos is a REQUEST, not a write.** Choosing it asks for read/write access
@@ -278,8 +279,8 @@ at its 13pt top), and only the URL host as the subtitle. They come from
 `RecentURLMatcher.shared.matches`, so source, classification, cache, newest-first
 ordering, and unsaved filtering are exactly the former recent-URL behavior:
 
-- each Safari extension records the newest 20 raw HTTP(S) URLs in the shared App
-  Group;
+- each Safari extension deduplicates before persisting the newest 20 raw HTTP(S)
+  URLs in the shared App Group; revisiting a URL promotes its sole copy to front;
 - evaluation runs the real ingest pipeline for the current surface;
 - positive and negative verdicts are version-stamped and cached;
 - saved URLs disappear on `.readingListChanged`, while deleting that save can

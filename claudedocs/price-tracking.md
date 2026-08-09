@@ -257,8 +257,9 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
 - `LunaPriceUI/ProductDetailViewController.swift` — **the product surface**, and
   the only one. Every app and every extension that shows a tracked product shows
   this controller; its hosts add chrome and nothing else. Top to bottom:
-  - **Header** — a 46pt product thumbnail (`ProductArtwork.swift`: the downloaded
-    photo, else the app icon's green tag glyph), the product's SHORT name, the
+  - **Header** — a 46pt product thumbnail (`ProductArtwork.swift`: the declared
+    product image, then the page header image, then its favicon; never Luna's
+    price-tag glyph), the product's SHORT name, the
     full scraped title under it in caption type over at most two lines, and — on
     the right — the current best price with `N% off` beneath it when the tracker
     is below its baseline. The short name comes from `ProductTitleSummary`
@@ -454,7 +455,8 @@ plain article — never a broken tracker, never paywall-bypassed).
 - **In-app paste / manual / app-intent**: `ReadingListIngestor.ingest` fetches once,
   article resolve), then `PriceFetcher.fetchPrice` on a candidate. On a real price →
   `ProductInfo(candidate:price:)` → `ingestProductTracker` (intelligent merge via
-  `ProductMatcher`, else new tracker; downloads the product image), then posts
+  `ProductMatcher`, else new tracker; collects product artwork, falling back to
+  the page header image or favicon and repairing an artwork-less merged tracker), then posts
   `.priceTrackerSavedInteractively`; the reading list presents the editor in
   `.creation` mode (new tracker) or `.merge` mode (matched into an existing tracker;
   the new seller row is flashed), top-of-stack only. No fetchable price → records a

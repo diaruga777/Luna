@@ -4,7 +4,10 @@
 //
 
 import LunaDesignSystem
+import LunaFetch
+import LunaModels
 import LunaStorage
+import SwiftSoup
 import UIKit
 
 /// One product image loader, for every surface that draws a tracked product —
@@ -16,19 +19,87 @@ import UIKit
 /// It lives in the module rather than the app shell because the extension-hosted
 /// editor draws the same header, and an extension has no app shell.
 public enum PriceTrackerProductImage {
-    /// The tag glyph that stands in for a product with no picture of its own.
-    public static var fallback: UIImage { PriceTrackerTagIcon.image(size: 52) }
-
-    public static func load(imageFileName: String?, completion: @escaping (UIImage?) -> Void) {
-        guard let imageFileName else {
-            completion(nil)
-            return
-        }
-        let path = ReadingListStore.shared.articlesDirectory
-            .appendingPathComponent(imageFileName).path
+    /// Loads the persisted product artwork, recovering a website-owned image
+    /// for trackers made by an older build before images were always collected.
+    /// The recovery path is header artwork first, then the site's favicon —
+    /// deliberately never Luna's price-tag artwork.
+    public static func load(
+        imageFileName: String?, pageURL: URL?, completion: @escaping (UIImage?) -> Void
+    ) {
         DispatchQueue.global(qos: .userInitiated).async {
-            completion(UIImage(contentsOfFile: path)?.preparingForDisplay())
+            if let imageFileName {
+                let path = ReadingListStore.shared.articlesDirectory
+                    .appendingPathComponent(imageFileName).path
+                if let image = UIImage(contentsOfFile: path)?.preparingForDisplay() {
+                    completion(image)
+                    return
+                }
+            }
+            guard let pageURL else {
+                completion(nil)
+                return
+            }
+            Task {
+                let data = await ProductTrackerArtwork.fallbackData(for: pageURL)
+                completion(data.flatMap(UIImage.init(data:))?.preparingForDisplay())
+            }
         }
+    }
+}
+
+/// Website-owned product artwork collection. The page's product image wins;
+/// when it is absent or broken, its social/header image and finally its favicon
+/// make sure price-tracking never substitutes a Luna brand glyph for a product.
+enum ProductTrackerArtwork {
+    private static let maximumBytes = 5 * 1024 * 1024
+
+    static func fetch(primaryURL: URL?, pageURL: URL) async -> Data? {
+        if let primaryURL, let data = await imageData(from: primaryURL) { return data }
+        return await fallbackData(for: pageURL)
+    }
+
+    static func fallbackData(for pageURL: URL) async -> Data? {
+        if let headerURL = await headerImageURL(for: pageURL),
+           let data = await imageData(from: headerURL) {
+            return data
+        }
+        return await FaviconFetcher().fetchIconData(forPageURL: pageURL)
+    }
+
+    private static func headerImageURL(for pageURL: URL) async -> URL? {
+        guard let html = try? await ArticleFetcher().fetchHTML(from: pageURL),
+              let document = try? SwiftSoup.parse(html, pageURL.absoluteString)
+        else { return nil }
+        let selectors = [
+            "meta[property=og:image]", "meta[name=og:image]",
+            "meta[property=twitter:image]", "meta[name=twitter:image]",
+            "link[rel=image_src]",
+        ]
+        for selector in selectors {
+            guard let element = try? document.select(selector).first() else { continue }
+            let raw = ((try? element.attr("content")) ?? "").isEmpty
+                ? ((try? element.attr("href")) ?? "")
+                : ((try? element.attr("content")) ?? "")
+            if let url = URL(string: raw, relativeTo: pageURL)?.absoluteURL,
+               url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http" {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private static func imageData(from url: URL) async -> Data? {
+        guard LiveNetworkPolicy.allows(url, context: "ProductTrackerArtwork.imageData") else {
+            return nil
+        }
+        var request = URLRequest(url: url, timeoutInterval: 8)
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count > 512, data.count <= maximumBytes,
+              UIImage(data: data) != nil
+        else { return nil }
+        return data
     }
 }
 

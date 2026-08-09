@@ -35,9 +35,4 @@ final class BlueskyLinkTests: XCTestCase {
             "https://bsky.app/profile/bob.bsky.social/post/abc")
     }
 
-    func testRegistryClassifiesBluesky() {
-        let match = PlatformRegistry.shared.detect("https://bsky.app/profile/a.bsky.social/post/xyz")
-        XCTAssertEqual(match?.platform, .bluesky)
-        XCTAssertEqual(match?.itemID, "xyz")
-    }
 }

@@ -16,9 +16,9 @@ public final class PlatformRegistry {
     /// overlap, which they don't here.)
     private let modules: [PlatformModule]
 
-    public init(modules: [PlatformModule]? = nil) {
+    public init() {
         // Modules are added per platform as they're implemented.
-        self.modules = modules ?? [
+        self.modules = [
             BlueskyPlatform(),
             XPlatform(),
             TikTokPlatform(),
@@ -26,13 +26,6 @@ public final class PlatformRegistry {
             InstagramPlatform(),
             FacebookPlatform(),
         ]
-    }
-
-    /// Classifies a URL via the single shared `PlatformRecognizer` (one source of
-    /// truth, broad host coverage). Returns nil if no platform recognizes it.
-    public func detect(_ urlString: String) -> PlatformMatch? {
-        guard let recognized = PlatformRecognizer.recognize(urlString) else { return nil }
-        return PlatformMatch(platform: recognized.platform, itemID: recognized.itemID)
     }
 
     /// The module for a platform (for rendering/opening).

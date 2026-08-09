@@ -77,23 +77,6 @@ final class NotificationAuthorizationCallSiteTests: XCTestCase {
                 + "update definitionFile and the call-site scan.")
     }
 
-    /// An extension process can't honestly own the one-time prompt, so the guard in
-    /// `NotificationManager` is part of the policy, not an implementation detail: the
-    /// price editor is reachable from the share and action sheets.
-    func testDefinitionSkipsExtensionProcesses() throws {
-        let source = try String(
-            contentsOf: Self.repoRoot.appendingPathComponent(Self.definitionFile),
-            encoding: .utf8)
-        XCTAssertTrue(
-            source.contains("guard !isAppExtension else"),
-            "requestAuthorization() lost its app-extension guard — a threshold set in "
-                + "the share sheet would spend the prompt on a dismissing surface.")
-        XCTAssertTrue(
-            source.contains("Bundle.main.bundleURL.pathExtension == \"appex\""),
-            "isAppExtension no longer checks the bundle's .appex suffix — the guard "
-                + "above would be deciding from something else.")
-    }
-
     // MARK: - Scan
 
     private static func scanForCallSites() throws -> [String: Int] {

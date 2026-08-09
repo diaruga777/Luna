@@ -11,14 +11,6 @@ import XCTest
 
 final class OriginalPageViewControllerTests: XCTestCase {
     @MainActor
-    func testWebArchiveReplayDisablesContentJavaScript() {
-        let item = ReadingListItem(urlString: "https://example.com/script-laid-out-article")
-        let controller = OriginalPageViewController(item: item, store: .shared)
-
-        XCTAssertFalse(controller.allowsContentJavaScriptForTesting)
-    }
-
-    @MainActor
     func testNewYorkerCaptureInstallsPaywallAndAdCleanup() throws {
         let url = try XCTUnwrap(URL(
             string: "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"))

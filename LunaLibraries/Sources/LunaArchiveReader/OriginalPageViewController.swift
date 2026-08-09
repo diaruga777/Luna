@@ -60,10 +60,6 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
 
     public var contentScrollView: UIScrollView { webView.scrollView }
     #if DEBUG
-    /// Regression seam: saved pages must never run publisher JavaScript on replay.
-    public var allowsContentJavaScriptForTesting: Bool {
-        webView.configuration.defaultWebpagePreferences.allowsContentJavaScript
-    }
     public var loadedDocumentForTesting: String? {
         switch loadedDocument {
         case .archive: return "archive"

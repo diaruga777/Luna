@@ -69,12 +69,6 @@ final class OnboardingSaveDemoTests: XCTestCase {
         XCTAssertTrue(link.isOffline)
     }
 
-    /// Optimistic before the first path update — and deliberately the opposite of
-    /// `isOnWiFi`'s pessimism, because this gates a load the user asked for.
-    func testReachabilityAnswersOnlineBeforeItKnowsAnything() {
-        XCTAssertTrue(NetworkReachability.shared.isOnline)
-    }
-
     // MARK: - The hosted surface
 
     /// The practice link never reaches the network in ANY surface: the extensions

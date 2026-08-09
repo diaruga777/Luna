@@ -204,22 +204,6 @@ public enum SellerComparison {
         return added
     }
 
-    /// The whole save-time leg, START TO FINISH, for a tracker already persisted
-    /// under `itemID` — the blocking form the Action Button intents need,
-    /// because their answer is a document comparing the sellers.
-    ///
-    /// It goes through the same pending marker as everyone else, so a run
-    /// finished here is not re-run at the next launch.
-    @discardableResult
-    public static func runAndAttach(
-        itemID: UUID, sourceURL: URL, store: ReadingListStore, now: Date = Date()
-    ) async -> Int {
-        if store.item(withID: itemID)?.priceTracker?.pendingComparison == nil {
-            guard begin(itemID: itemID, sourceURL: sourceURL, store: store, now: now)
-            else { return 0 }
-        }
-        return await complete(itemID: itemID, store: store, now: now)
-    }
 }
 
 /// The rendezvous for in-flight fan-outs, keyed by tracker.

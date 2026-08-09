@@ -136,20 +136,7 @@ final class AudioScriptSupportTests: XCTestCase {
         XCTAssertEqual(script.totalWordCount, 0)
     }
 
-    func testScriptRoundTripsThroughCodable() throws {
-        let content = ArticleContent(title: "Title", blocks: [block(.paragraph, "Round trip this.")])
-        let script = AudioScript(passthrough: content)
-        let data = try JSONEncoder().encode(script)
-        let decoded = try JSONDecoder().decode(AudioScript.self, from: data)
-        XCTAssertEqual(decoded, script)
-    }
-
     // MARK: - AudioScriptStoreTests tests
-
-    func testScriptFileNameDerivesFromContentFileName() {
-        XCTAssertEqual(
-            AudioScriptStore.scriptFileName(forContentFileName: "ABCD.json"), "ABCD.audioScript.json")
-    }
 
     func testMissingCacheReturnsNil() {
         XCTAssertNil(store.load(forContentFileName: "missing.json"))

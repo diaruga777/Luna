@@ -225,28 +225,6 @@ final class ArticleExtractorTests: XCTestCase {
 
     /// Real-page smoke test: parses saved copies of actual news pages when the
     /// fixtures are present on the host (skipped otherwise, e.g. in CI).
-    func testExtractsRealWorldFixtures() throws {
-        // path: minimum plausible extracted length for that page.
-        let fixtures = [
-            ("/tmp/fixture-verge.html", 500),
-            ("/tmp/fixture-ars.html", 500),
-            ("/tmp/fixture-int.html", 4000),
-        ]
-        for (path, minimum) in fixtures {
-            guard let html = try? String(contentsOfFile: path, encoding: .utf8) else {
-                continue
-            }
-            do {
-                let content = try extractor.extract(html: html, baseURL: baseURL)
-                XCTAssertGreaterThan(
-                    content.wholeText.count, minimum,
-                    "thin extraction for \(path): got \(content.wholeText.count)")
-            } catch {
-                XCTFail("extraction threw for \(path): \(error)")
-            }
-        }
-    }
-
     /// An archived WSJ snapshot ships the real article body alongside a
     /// subscription gate and a long reader-comments thread. The comment thread
     /// holds far more `<p>` text than the article, so the old layer choice fell

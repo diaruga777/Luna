@@ -136,10 +136,6 @@ public final class VideoCardContentViewController: CardContentViewController {
         }
     }
 
-    #if DEBUG
-    var playerForTesting: AVPlayer { player }
-    #endif
-
     // MARK: - CardContentViewController
 
     public override var isPlayable: Bool { true }

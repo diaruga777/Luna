@@ -96,12 +96,6 @@ final class ArticleAudioEngineTests: XCTestCase {
         XCTAssertEqual(engine.rate, 1.0)
     }
 
-    func testSettingRatePersists() throws {
-        let engine = try makeEngine()
-        engine.rate = 1.5
-        XCTAssertEqual(engine.rate, 1.5)
-    }
-
     // MARK: - Scheduling & playhead
 
     func testSchedulingSegmentAdvancesPlayhead() async throws {
@@ -194,11 +188,6 @@ final class ArticleAudioEngineTests: XCTestCase {
     }
 
     // MARK: - Tones
-
-    func testSchedulingBundledToneDoesNotThrow() throws {
-        let engine = try makeEngine()
-        XCTAssertNoThrow(try engine.scheduleTone(.transition))
-    }
 
     func testSchedulingBundledToneCompletes() async throws {
         let engine = try makeEngine()

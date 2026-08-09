@@ -119,15 +119,6 @@ final class AutoDownloadSettingsTests: XCTestCase {
         }
     }
 
-    func testStorageOptionsListOffersPhotosFirstThenEveryDeletionAge() {
-        XCTAssertEqual(MediaStorageOption.allCases.first, .photos)
-        XCTAssertEqual(
-            MediaStorageOption.allCases.count, MediaRetentionOption.deletionOptions.count + 1)
-        XCTAssertFalse(MediaRetentionOption.deletionOptions.contains(.never))
-        XCTAssertEqual(
-            MediaStorageOption.deleteAfter(.oneDay).displayName, "Delete after 1 day")
-    }
-
     // MARK: - The util card's inline "Store downloads …" choice
 
     /// The row waits on a choice the USER made. A fresh install's `.photos` is

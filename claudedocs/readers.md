@@ -568,7 +568,7 @@ it is up). The indicator's own default mirrors the scroll view's content insets,
 bottom inset reserves the completion lane, which ended its track well over a hundred points short of
 the screen. Tests: `ExtensionScrollGeometryTests`.
 
-**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
+**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. Only `content.js` BUILDS one (Swift only parses it via `LunaDeepLink.articleURL(from:)`) — the in-app "Share Link…" shares the plain source/App-Clip URL instead (`SendToFriendSheet.shareLink`), not this deep link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
 
 ## Inline images
 

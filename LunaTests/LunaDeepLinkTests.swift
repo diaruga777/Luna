@@ -9,26 +9,34 @@ import XCTest
 
 final class LunaDeepLinkTests: XCTestCase {
 
-    // MARK: - Building a read link
+    // MARK: - Parsing a read link built exactly like content.js builds it
 
-    /// `readLink` builds a `<scheme>://read?url=…` link that round-trips the exact
-    /// article URL back out through `articleURL(from:)`.
+    /// `content.js` is the only place a `<scheme>://read?url=…` link is BUILT
+    /// (`scheme + "://read?url=" + encodeURIComponent(sourceURL)`, content.js:2373)
+    /// — Swift only parses it back out via `articleURL(from:)`. This pins that
+    /// parse against literal URL strings shaped exactly like the JS output,
+    /// rather than round-tripping through a Swift builder nothing in production
+    /// ever calls.
     func testReadLinkRoundTrips() {
-        let cases: [(name: String, articleURL: String, scheme: String?, expectedScheme: String)] = [
-            ("default scheme", "https://example.com/story", nil, "lunareader"),
+        let cases: [(name: String, articleURL: String, scheme: String, expectedScheme: String)] = [
+            ("default scheme", "https://example.com/story", "lunareader", "lunareader"),
             ("requested scheme", "https://example.com/story",
              LunaDeepLink.priceTrackerScheme, "lunapricetracker"),
-            ("query and fragment", "https://example.com/p?id=42&ref=abc#section", nil, "lunareader"),
+            ("query and fragment", "https://example.com/p?id=42&ref=abc#section",
+             "lunareader", "lunareader"),
             ("characters needing encoding", "https://example.com/search?q=hello world&tag=a+b",
-             nil, "lunareader"),
+             "lunareader", "lunareader"),
         ]
 
+        // The characters `encodeURIComponent` leaves unescaped (RFC 3986 unreserved).
+        let encodeURIComponentUnreserved = CharacterSet(
+            charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+
         for testCase in cases {
-            let link = testCase.scheme.map {
-                LunaDeepLink.readLink(forArticleURL: testCase.articleURL, scheme: $0)
-            } ?? LunaDeepLink.readLink(forArticleURL: testCase.articleURL)
-            guard let link else {
-                XCTFail("\(testCase.name): readLink returned nil")
+            let encoded = testCase.articleURL.addingPercentEncoding(
+                withAllowedCharacters: encodeURIComponentUnreserved) ?? testCase.articleURL
+            guard let link = URL(string: "\(testCase.scheme)://read?url=\(encoded)") else {
+                XCTFail("\(testCase.name): failed to build the literal test URL")
                 continue
             }
             XCTAssertEqual(link.scheme, testCase.expectedScheme, testCase.name)

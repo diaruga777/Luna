@@ -48,18 +48,6 @@ public enum LunaDeepLink {
         return readerScheme
     }
 
-    /// A `<scheme>://read?url=…` link wrapping a source URL. Defaults to the
-    /// Reader app; pass another app's scheme to target it instead.
-    public static func readLink(
-        forArticleURL articleURL: String, scheme: String = readerScheme
-    ) -> URL? {
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = "read"
-        components.queryItems = [URLQueryItem(name: "url", value: articleURL)]
-        return components.url
-    }
-
     /// Extracts the wrapped source URL from a `<any Luna scheme>://read?url=…`
     /// link, or nil if `url` isn't one.
     public static func articleURL(from url: URL) -> String? {
@@ -95,13 +83,6 @@ public enum LunaDeepLink {
     /// open silently fails. The `resolvedMediaHost` constant is mirrored in
     /// `content.js` — pinned by `SafariVideoOverlayTests`.
     public static let resolvedMediaHost = "resolvedmedia"
-
-    public static func resolvedMediaLink(scheme: String = ownScheme) -> URL? {
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = resolvedMediaHost
-        return components.url
-    }
 
     /// True for `<any Luna scheme>://resolvedmedia` — an app with no media kind
     /// simply drains nothing, so the broad scheme check is correct here too.

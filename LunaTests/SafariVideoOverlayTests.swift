@@ -556,7 +556,7 @@ final class SafariVideoOverlayContractTests: XCTestCase {
     /// A payload-free drain link, like `rescue`: nothing about the media rides
     /// the URL, so it can't truncate and the foreground drain is equivalent.
     func testTheDrainLinkCarriesNoPayload() throws {
-        let link = try XCTUnwrap(LunaDeepLink.resolvedMediaLink(scheme: LunaDeepLink.downloaderScheme))
+        let link = try XCTUnwrap(URL(string: "lunadownloader://\(LunaDeepLink.resolvedMediaHost)"))
         XCTAssertEqual(link.absoluteString, "lunadownloader://resolvedmedia")
         XCTAssertNil(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
     }

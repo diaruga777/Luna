@@ -161,9 +161,9 @@ public struct ArticleFetcher: HTMLFetching {
     /// SINGLE SOURCE: a host is hard-paywall iff the classifier's
     /// `hardPaywallNewsSites` table names it — the SAME list the classifier uses to
     /// return `.paywalledArticle(hardHost: true)`, so determination and the
-    /// "unreadable → park for archive" routing can never drift. (`BypassRuleTable`
-    /// only refines the per-host bypass STRATEGY ordering; a hard-paywall host with no
-    /// bespoke rule still routes to the archive reader via the generic plan.)
+    /// "unreadable → park for archive" routing can never drift. (`BypassStrategySelector`
+    /// refines the per-host bypass STRATEGY ordering; a hard-paywall host with no
+    /// bespoke strategy still routes to the archive reader via the generic plan.)
     public static func isHardPaywallHost(_ url: URL) -> Bool {
         Classifier.isHardPaywallHost(url)
     }

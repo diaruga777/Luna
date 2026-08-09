@@ -455,17 +455,6 @@ fail explicitly when no public progressive stream is present. YouTube's develope
 restrict downloading/offline playback without authorization; shipping this feature requires a
 separate product/legal review.
 
-## Pasteboard providers
-
-`MediaItemProviderFactory` and `MediaPasteboard` build a lazy, file-backed
-`NSItemProvider` for either storage state: local state uses
-`NSItemProvider(contentsOf: fileURL)`; Photos state registers a file representation which
-resolves the durable asset ID and streams the selected `PHAssetResource` to a temporary
-file on demand. Luna never assigns video `Data` to the pasteboard, so copying does not
-eagerly materialize a large movie in memory. (The automatic
-"copy every completed download" setting these backed was removed; the providers remain
-the way to put media on the pasteboard.)
-
 ## Settings
 
 Luna and Luna Downloader share the same `Settings → Downloads` screen with two picker rows:
@@ -530,9 +519,6 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
 - `PhotoLibrarySaver.swift` requests authorization, creates `.photo`/`.video` resources
   with `shouldMoveFile`, returns `placeholderForCreatedAsset.localIdentifier`, fetches by
   identifier, and streams original resources with iCloud network access allowed.
-- `MediaItemProvider.swift` builds lazy file-backed providers for local and Photos media
-  and contains the main-actor pasteboard helper.
-
 ## Permissions
 
 Both add and read access are required: add access creates the asset; `.readWrite` access

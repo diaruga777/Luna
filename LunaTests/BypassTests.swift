@@ -300,49 +300,12 @@ final class BypassTests: XCTestCase {
         XCTAssertTrue(plan.allowsArchiveToday)
     }
 
-    // MARK: - BypassRuleTable
-
-    // Exercises the per-host rule lookup: apex + subdomain matching, unknown host,
-    // and trailing-dot tolerance.
-
     /// Distinct from `url(_:)` above: this variant traps with a descriptive message
-    /// on a malformed literal instead of a bare force-unwrap. Two originals
-    /// (`BypassRuleTableTests`, `TrailingDotBypassTests`) declared this exact body
-    /// under the same `url` name; kept once here under a name that doesn't collide
-    /// with the force-unwrap `url(_:)` used by the AMP/BypassStrategySelector tests.
+    /// on a malformed literal instead of a bare force-unwrap. Used by the
+    /// `TrailingDotBypass` tests below.
     private func urlOrFail(_ string: String) -> URL {
         guard let url = URL(string: string) else { fatalError("bad test URL: \(string)") }
         return url
-    }
-
-    func testApexMatch() {
-        XCTAssertEqual(BypassRuleTable.rule(for: urlOrFail("https://wsj.com/articles/x"))?.domain, "wsj.com")
-    }
-
-    func testSubdomainMatch() {
-        XCTAssertEqual(BypassRuleTable.rule(for: urlOrFail("https://www.wsj.com/articles/x"))?.domain, "wsj.com")
-        XCTAssertEqual(
-            BypassRuleTable.rule(for: urlOrFail("https://cooking.nytimes.com/r"))?.domain, "nytimes.com")
-    }
-
-    func testTrailingDotHostMatches() {
-        XCTAssertEqual(BypassRuleTable.rule(for: urlOrFail("https://www.wsj.com./articles/x"))?.domain, "wsj.com")
-    }
-
-    func testUnknownHostReturnsNil() {
-        XCTAssertNil(BypassRuleTable.rule(for: urlOrFail("https://example.com/x")))
-    }
-
-    func testLookalikeHostDoesNotMatch() {
-        // A host that merely ends in the rule domain as a non-label suffix must not match.
-        XCTAssertNil(BypassRuleTable.rule(for: urlOrFail("https://notwsj.com/x")))
-        XCTAssertNil(BypassRuleTable.rule(for: urlOrFail("https://wsj.com.evil.example/x")))
-    }
-
-    func testEveryRuleEndsWithArchiveToday() {
-        for rule in BypassRuleTable.rules {
-            XCTAssertEqual(rule.strategies.last, .archiveToday, "\(rule.domain) must end in archiveToday")
-        }
     }
 
     // MARK: - BypassRunner
@@ -612,9 +575,9 @@ final class BypassTests: XCTestCase {
     // Covers the pure trailing-dot URL transform. Generalized from the former
     // NYT-only bypass: the transform now applies to ANY host (the selector decides
     // when to use it), so these assert the transform itself plus the retained NYT
-    // host classification used by the rule table.
-    // (Uses `urlOrFail(_:)`, declared in the BypassRuleTable section above — both
-    // originals declared the identical fatalError-guarded helper under the name `url`.)
+    // host classification.
+    // (Uses `urlOrFail(_:)`, declared above — both originals declared the identical
+    // fatalError-guarded helper under the name `url`.)
 
     func testAddsTrailingDotToHostPreservingPathAndQuery() {
         XCTAssertEqual(

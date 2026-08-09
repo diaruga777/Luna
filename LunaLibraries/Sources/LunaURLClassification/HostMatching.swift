@@ -7,7 +7,7 @@ import Foundation
 
 /// The shared "does this host equal or have this domain as a subdomain" idiom,
 /// used identically by `KnownSite`, `PlatformRecognizer`, `NewsAggregatorUnwrapper`,
-/// `URLUnwrapper`, `SocialPostFinder`, and `BypassRuleTable`. Callers pass an
+/// `URLUnwrapper`, and `SocialPostFinder`. Callers pass an
 /// already-lowercased host; `domain`/`domains` are expected lowercased too.
 public enum HostMatching {
 

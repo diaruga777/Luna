@@ -8,8 +8,8 @@ import Foundation
 /// The source-of-truth host lists for news classification, split by paywall posture.
 ///
 /// Matching is SUFFIX-based everywhere these lists are consumed
-/// (`host == domain || host.hasSuffix(".domain")`, see `KnownSite` /
-/// `BypassRuleTable`): one base domain therefore covers every subdomain
+/// (`host == domain || host.hasSuffix(".domain")`, see `KnownSite`): one base
+/// domain therefore covers every subdomain
 /// (`www.`, `cooking.`, `edition.`, …) but NEVER a sibling TLD. Each
 /// international edition or alternate-TLD variant (`nytimes.co.uk`,
 /// `lemonde.fr`, `theguardian.com` vs none) is listed explicitly.

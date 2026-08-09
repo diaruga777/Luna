@@ -127,19 +127,6 @@ final class EmailLoginActionButton: UIButton {
         didSet { updateAlpha() }
     }
     private func updateAlpha() { alpha = isEnabled ? 1 : 0.5 }
-
-    /// Swaps the title for the embedded spinner and blocks taps while `loading`.
-    /// Restoring real enablement afterward (based on the caller's own validation
-    /// state) is the caller's job — this only undoes the title swap.
-    func setLoading(_ loading: Bool) {
-        setTitle(loading ? "" : restingTitle, for: .normal)
-        isUserInteractionEnabled = !loading
-        if loading {
-            spinner.startAnimating()
-        } else {
-            spinner.stopAnimating()
-        }
-    }
 }
 
 /// The chip text for a known provider, or nil to hide the badge — `.generic`

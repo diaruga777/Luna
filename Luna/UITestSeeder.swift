@@ -35,21 +35,6 @@ enum UITestSeeder {
         #endif
     }
 
-    /// Whether this process was launched by the UI-test / screenshot harness at all
-    /// (a seeded state or a deep-linked screen). The screenshot
-    /// agent uses this to suppress simulator-only debug tap targets (the row ellipsis,
-    /// reader "Split High/Low") that otherwise overlay real content in captures. Those
-    /// hooks still appear for interactive simulator automation runs (no launch arg)
-    /// and in unit/snapshot tests (which build VCs directly, without these args).
-    /// DEBUG-only; always false in release.
-    static var isUITestLaunch: Bool {
-        #if DEBUG
-        return UITestLaunch.isActive
-        #else
-        return false
-        #endif
-    }
-
     /// The state requested on the command line, if any (and recognized). DEBUG-only —
     /// the type itself (`UITestState`) doesn't exist in release, so the whole property
     /// is compiled out (callers reference it only from `#if DEBUG`).

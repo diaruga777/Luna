@@ -23,10 +23,4 @@ enum InstalledAppMarkers {
             surfaceIdentifier: LunaApp.current.storageIdentifier)
     }
 
-    /// Whether `surface`'s app has ever recorded itself as installed on this
-    /// device (including the running app itself — its own marker is written
-    /// at every launch, so no special-casing is needed here).
-    static func isInstalled(_ surface: LunaApp) -> Bool {
-        LunaInstallationMarkers.wasInstalled(surfaceIdentifier: surface.storageIdentifier)
-    }
 }

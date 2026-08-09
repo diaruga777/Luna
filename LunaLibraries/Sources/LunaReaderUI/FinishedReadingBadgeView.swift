@@ -243,23 +243,6 @@ public final class FinishedReadingBadgeView: UIView {
         collapseWorkItem = nil
     }
 
-    #if DEBUG
-    var isExpandedForTesting: Bool { isExpanded }
-    var checkmarkIsHiddenForTesting: Bool { checkLayer.isHidden }
-    var checkmarkIsDrawingForTesting: Bool {
-        checkLayer.animation(forKey: "drawCheckmark") != nil
-    }
-    var readLabelIsStationaryForTesting: Bool {
-        readLabel.layer.animationKeys()?.isEmpty != false
-            && readLabel.transform == .identity
-            && readLabel.alpha == 1
-    }
-    func expandForTesting() { expand() }
-    func collapseForTesting() { collapse() }
-    static func resetExplanationForTesting() {
-        UserDefaults.standard.removeObject(forKey: didExplainDefaultsKey)
-    }
-    #endif
 }
 
 private extension UIBezierPath {

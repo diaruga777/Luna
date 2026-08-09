@@ -33,12 +33,6 @@ public enum ReaderAudioLauncher {
     /// nil in the share/action extensions (→ legacy SpeechController path).
     public static var center: AudioPlaybackCenter?
 
-    /// Whether the center currently owns playback of `itemID` (playing,
-    /// paused, or announcing it next). False whenever the seam is absent.
-    public static func ownsPlayback(of itemID: UUID) -> Bool {
-        center?.currentItemInfo?.itemID == itemID
-    }
-
     /// Pauses the center iff it currently owns `itemID`'s playback — the
     /// readers' "audio toggled off" hook. Deliberately narrow: it can never
     /// pause audio belonging to a DIFFERENT article (browsing another article

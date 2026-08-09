@@ -246,6 +246,11 @@ final class KindDeckProvider: CardDeckProviding {
 
     func deckContentController(forSlot slot: Int) -> CardContentViewController {
         guard let item = item(atSlot: slot) else { return CardContentViewController() }
+        // Until ingest classifies and fetches this save, every kind deliberately
+        // shares one metadata-free state. In particular, don't construct an
+        // article card whose fallback header would briefly say "Untitled" and
+        // show a globe before this URL turns out to be a product or media save.
+        guard item.state != .pending else { return PendingSaveCardContentViewController() }
         guard let presenter = presenter(for: item) else {
             // A save that FAILED gets the shared error card instead of an empty
             // one with a one-line apology: the page itself in a near-full-bleed
@@ -278,6 +283,10 @@ final class KindDeckProvider: CardDeckProviding {
             completion(nil)
             return
         }
+        guard item.state != .pending else {
+            completion(nil)
+            return
+        }
         guard let presenter = presenter(for: item) else {
             completion(UIImage(systemName: "exclamationmark.triangle"))
             return
@@ -287,6 +296,7 @@ final class KindDeckProvider: CardDeckProviding {
 
     func deckTitle(forSlot slot: Int) -> String? {
         guard let item = item(atSlot: slot) else { return nil }
+        guard item.state != .pending else { return nil }
         guard let presenter = presenter(for: item) else {
             // A failed save has no stored title; use the same fallback chain its
             // card headline does so the scrub preview and the card agree.
@@ -302,6 +312,10 @@ final class KindDeckProvider: CardDeckProviding {
             completion(nil)
             return
         }
+        guard item.state != .pending else {
+            completion(nil)
+            return
+        }
         presenter.loadSourceBadge(for: item, completion: completion)
     }
 
@@ -312,11 +326,16 @@ final class KindDeckProvider: CardDeckProviding {
             completion(nil)
             return
         }
+        guard item.state != .pending else {
+            completion(nil)
+            return
+        }
         presenter.loadMiniCarouselAccessory(for: item, completion: completion)
     }
 
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool {
         guard let item = item(atSlot: slot) else { return false }
+        guard item.state != .pending else { return false }
         return presenter(for: item)?.prefersThumbnailChip(for: item) ?? false
     }
 
@@ -329,6 +348,7 @@ final class KindDeckProvider: CardDeckProviding {
 
     func deckTopLeadingAccessory(forSlot slot: Int) -> UIView? {
         guard let item = item(atSlot: slot) else { return nil }
+        guard item.state != .pending else { return nil }
         return presenter(for: item)?.topLeadingAccessory(for: item)
     }
 

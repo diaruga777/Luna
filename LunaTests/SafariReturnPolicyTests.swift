@@ -6,17 +6,16 @@
 import LunaURLClassification
 import XCTest
 
-/// `SafariReturnPolicy.shouldReturn`: flagged media/product handled -> return;
-/// article -> never, even flagged and handled; failed/unsupported -> never;
-/// unflagged -> never.
+/// `SafariReturnPolicy.shouldReturn`: only a flagged, handled media save returns;
+/// article/product, failed/unsupported, and unflagged saves stay in Luna.
 final class SafariReturnPolicyTests: XCTestCase {
 
     func testFlaggedHandledMediaReturns() {
         XCTAssertTrue(SafariReturnPolicy.shouldReturn(outcome: .handled, kind: .media, flagged: true))
     }
 
-    func testFlaggedHandledProductReturns() {
-        XCTAssertTrue(SafariReturnPolicy.shouldReturn(outcome: .handled, kind: .product, flagged: true))
+    func testFlaggedHandledProductStaysInLuna() {
+        XCTAssertFalse(SafariReturnPolicy.shouldReturn(outcome: .handled, kind: .product, flagged: true))
     }
 
     func testArticleNeverReturnsEvenFlaggedAndHandled() {

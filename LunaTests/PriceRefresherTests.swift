@@ -80,7 +80,6 @@ final class PriceRefresherTests: XCTestCase {
 
         XCTAssertEqual(outcomes.count, 1)
         let outcome = outcomes[0]
-        XCTAssertEqual(outcome.previousBest, Decimal(string: "100"))
         XCTAssertEqual(outcome.newBest, Decimal(string: "80"))
         XCTAssertTrue(outcome.isAlerting)
         XCTAssertTrue(outcome.newlyAlerting)

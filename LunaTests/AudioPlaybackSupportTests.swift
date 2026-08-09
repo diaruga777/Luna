@@ -627,12 +627,12 @@ final class AudioPlaybackSupportTests: XCTestCase {
 
     func testInterruptionEndedWithoutShouldResumeDoesNotResume() {
         postInterruption(type: .ended, options: [])
-        XCTAssertEqual(actions, [.none])
+        XCTAssertEqual(actions, [], "no action should be emitted")
     }
 
     func testInterruptionEndedWithMissingOptionsDoesNotResume() {
         postInterruption(type: .ended)
-        XCTAssertEqual(actions, [.none])
+        XCTAssertEqual(actions, [], "no action should be emitted")
     }
 
     func testOldDeviceUnavailablePauses() {

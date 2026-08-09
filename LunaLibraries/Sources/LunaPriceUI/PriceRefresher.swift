@@ -31,8 +31,6 @@ extension ReadingListStore: PriceTrackerPersisting {}
 public struct PriceRefreshOutcome: Equatable {
     public let itemID: UUID
     public let productName: String
-    /// Best price before this refresh.
-    public let previousBest: Decimal
     /// Best price after this refresh.
     public let newBest: Decimal
     /// Whether the tracker is alerting AFTER the refresh.
@@ -99,7 +97,6 @@ public struct PriceRefresher {
     /// and computes the outcome. Returns nil only if the item vanished mid-refresh.
     public func refreshTracker(_ tracker: PriceTracker, itemID: UUID) async -> PriceRefreshOutcome? {
         let wasAlerting = tracker.isAlerting
-        let previousBest = tracker.currentBestPrice
         var updated = tracker
         let timestamp = now()
 
@@ -131,7 +128,6 @@ public struct PriceRefresher {
         return PriceRefreshOutcome(
             itemID: itemID,
             productName: finalTracker.productName,
-            previousBest: previousBest,
             newBest: finalTracker.currentBestPrice,
             isAlerting: isAlerting,
             newlyAlerting: isAlerting && !wasAlerting,

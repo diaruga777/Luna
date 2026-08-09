@@ -311,7 +311,6 @@ public final class AudioPlaybackCenter {
             switch action {
             case .pause: self?.handleExternalPause()
             case .resume: self?.handleExternalResume()
-            case .none: break
             }
         }
         self.sessionCoordinator.start()

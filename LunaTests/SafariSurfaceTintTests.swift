@@ -155,6 +155,15 @@ final class SafariSurfaceTintTests: XCTestCase {
             "the Price Tracker's near-neon green pill is still writing in white")
     }
 
+    func testPriceTrackerPillStaysInTheApp() {
+        let target = evaluate("""
+            window.__lunaTrackTarget({ scheme: "lunapricetracker",
+                surface: "pricetracker", supportsProducts: true }).url()
+            """)
+        XCTAssertTrue(target.hasPrefix("lunapricetracker://read?url="))
+        XCTAssertFalse(target.contains("ret=safari"))
+    }
+
     // MARK: - App chrome takes the surface, not the kind
 
     /// The setup confirmation is the app saying hello, on a page it was sent to

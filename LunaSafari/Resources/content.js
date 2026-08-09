@@ -2389,12 +2389,12 @@
         };
     }
 
-    // Media and product pill taps bounce the user back to Safari once the app
-    // has finished handling the save (background download / price refresh) --
-    // never the article pill, whose reader UI IS the destination. `&ret=safari`
-    // rides the deep link itself rather than a separate message so the flag
-    // survives even when `saveContent` isn't sent (downloadTargetFor never
-    // captures content).
+    // Only media pill taps bounce the user back to Safari once the app has
+    // started the background download: its Live Activity keeps progress visible
+    // there. Article and product cards are the hand-off destination, so neither
+    // carries `&ret=safari`. The flag rides the deep link rather than a separate
+    // message so it survives when `saveContent` isn't sent (downloadTargetFor
+    // never captures content).
     function downloadTargetFor(context) {
         if (!(context && context.supportsMedia)) { return null; }
         return {
@@ -2435,7 +2435,7 @@
             label: localizedMessage("trackInLuna"),
             tint: KIND_TINTS.product,
             captureContent: true,
-            url: function () { return ownSchemeTarget(context, location.href) + "&ret=safari"; }
+            url: function () { return ownSchemeTarget(context, location.href); }
         };
     }
 

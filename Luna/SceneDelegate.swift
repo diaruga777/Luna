@@ -163,8 +163,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
         if let articleURL = LunaDeepLink.articleURL(from: url) {
-            // Media/product pill taps carry `&ret=safari`; the article pill's
-            // `readTarget` never does (the reader IS the destination).
+            // Only Downloader media pill taps carry `&ret=safari`: their Live
+            // Activity continues to show the download after the app returns to
+            // Safari. Reader and Price Tracker cards are their destinations.
             openReader(articleURL: articleURL, returnsToSource: LunaDeepLink.requestsReturnToSource(url))
         }
     }
@@ -185,9 +186,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Saves the article (if new), then opens it the way tapping its list row does.
     /// A UI-test or debug root has no main navigation controller — nothing to open into.
-    /// `returnsToSource`: a media/product pill save bounces back to the original
-    /// https page in Safari once its own work (download start / price refresh)
-    /// has been kicked off — see `SafariReturnPolicy` and `claudedocs/safari-extension.md`.
+    /// `returnsToSource`: a Downloader media pill save bounces back to the
+    /// original https page in Safari once its download has started and its Live
+    /// Activity can report progress — see `SafariReturnPolicy` and
+    /// `claudedocs/safari-extension.md`.
     private func openReader(articleURL: String, returnsToSource: Bool = false) {
         guard let nav = mainNavigationController,
               let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }

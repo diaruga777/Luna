@@ -668,8 +668,7 @@ Product-page flow:
    retail page never shows "Read in Luna".
 2. On a product page the button says "Track in Luna" — shown only when the host app
    handles products (Price Tracker / central Luna), deep-linking
-   `<ownScheme>://read?url=<source>&ret=safari` with `captureContent: true` (see
-   "Bounce back to Safari" below). Before deciding which pill(s) to show, `content.js`
+   `<ownScheme>://read?url=<source>` with `captureContent: true`. Before deciding which pill(s) to show, `content.js`
    extracts a passive product SNAPSHOT and sends it (see "Passive product snapshots"
    below); the reply decides whether Track shows at all.
 
@@ -775,21 +774,20 @@ of the two. One lookup per page, its flag set before any DOM work.
 `ProductHistoryPillRenderTests` drives both halves through the shared
 `SafariJSTestHarness` web view.
 
-### Bounce back to Safari after a media/product save
+### Bounce back to Safari after a media save
 
-A media or product pill tap — never the article pill's `readTarget`, where the reader
-IS the destination — carries `&ret=safari` on its deep link. Once
-`ReadingListIngestor.handleSavePress` returns (the download has started and the Live
-Activity is up, or the tracker is persisted and its single-tracker refresh is
-running), `SceneDelegate` decides via the pure `SafariReturnPolicy.shouldReturn`
-(LunaURLClassification) whether to reopen the original https page —
+Only a Downloader media pill carries `&ret=safari` on its deep link. Once
+`ReadingListIngestor.handleSavePress` returns and the download has started, the Live
+Activity is up, and `SceneDelegate` decides via the pure
+`SafariReturnPolicy.shouldReturn` (LunaURLClassification) whether to reopen the original https page —
 `UIApplication.shared.open`, never a private `x-safari-https://`-style scheme, and
 never the `URLUnwrapper`-resolved URL. A failed or unsupported save keeps the user in
-the app to see the error surface; the article kind never bounces even if a flag
-somehow arrives on it (belt-and-suspenders in the policy itself, not just
-`content.js`'s omission). Known limitation: this opens the user's DEFAULT browser
-(Safari unless changed) and typically a NEW tab, not the tab the pill was tapped
-from — there's no supported "return to the previous app" API.
+the app to see the error surface. Article and product saves also remain in Luna:
+their reader and Price Tracker cards are the destination. The policy rejects a return
+flag for either kind as defense in depth for stale deep links. Known limitation: the
+media bounce opens the user's DEFAULT browser (Safari unless changed) and typically a
+NEW tab, not the tab the pill was tapped from — there's no supported "return to the
+previous app" API.
 
 Paywall unlock + toast:
 - The native handler answers `bypassEnabled` true only for article-handling hosts

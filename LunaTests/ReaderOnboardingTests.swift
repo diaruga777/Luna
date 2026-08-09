@@ -719,13 +719,16 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(price.finalSuffix, "")
 
         // Both sides at once, and the anchor carries its trailing space.
+        let downloaderCopy = OnboardingStrings.introCopy(for: .downloader)
+        XCTAssertEqual(downloaderCopy.initialText, "Sign up to watch.")
+        XCTAssertEqual(downloaderCopy.finalText, "No sign up needed.")
         let downloader = OnboardingHeadlineTransition(
-            from: "Sign in to watch.", to: "No Sign in to download.")
-        XCTAssertEqual(downloader.shared, "Sign in to ")
-        XCTAssertEqual(downloader.initialPrefix, "")
-        XCTAssertEqual(downloader.initialSuffix, "watch.")
-        XCTAssertEqual(downloader.finalPrefix, "No ")
-        XCTAssertEqual(downloader.finalSuffix, "download.")
+            from: downloaderCopy.initialText, to: downloaderCopy.finalText)
+        XCTAssertEqual(downloader.shared, "ign up ")
+        XCTAssertEqual(downloader.initialPrefix, "S")
+        XCTAssertEqual(downloader.initialSuffix, "to watch.")
+        XCTAssertEqual(downloader.finalPrefix, "No s")
+        XCTAssertEqual(downloader.finalSuffix, "needed.")
 
         // The anchor is a run, not a word: it may start mid-word on both sides.
         let luna = OnboardingHeadlineTransition(
@@ -891,17 +894,16 @@ final class ReaderOnboardingTests: XCTestCase {
         headline.layoutIfNeeded()
 
         let shared = try XCTUnwrap(headline.fragments.shared)
+        let departingPrefix = try XCTUnwrap(headline.fragments.initialPrefix)
         let departingSuffix = try XCTUnwrap(headline.fragments.initialSuffix)
         let arrivingPrefix = try XCTUnwrap(headline.fragments.finalPrefix)
         let arrivingSuffix = try XCTUnwrap(headline.fragments.finalSuffix)
-        XCTAssertNil(
-            headline.fragments.initialPrefix,
-            "Downloader's first state says nothing before the anchor")
 
         let firstBeat = expectation(description: "the claim arrives")
         headline.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
         wait(for: [firstBeat], timeout: 5)
         XCTAssertTrue(shared.isFullyRevealed)
+        XCTAssertTrue(departingPrefix.isFullyRevealed)
         XCTAssertTrue(departingSuffix.isFullyRevealed)
         XCTAssertFalse(arrivingPrefix.isFullyRevealed)
         XCTAssertFalse(arrivingSuffix.isFullyRevealed)
@@ -911,6 +913,7 @@ final class ReaderOnboardingTests: XCTestCase {
         wait(for: [secondBeat], timeout: 5)
         XCTAssertTrue(arrivingPrefix.isFullyRevealed)
         XCTAssertTrue(arrivingSuffix.isFullyRevealed)
+        XCTAssertTrue(departingPrefix.isFullyConcealed)
         XCTAssertTrue(departingSuffix.isFullyConcealed)
         XCTAssertTrue(shared.isFullyRevealed)
         XCTAssertEqual(headline.accessibilityLabel, headline.finalText)
@@ -970,6 +973,23 @@ final class ReaderOnboardingTests: XCTestCase {
             XCTAssertLessThanOrEqual(
                 width(text, font: narrowFont), narrow.bounds.width + 0.5,
                 "\(text) still overflows the card")
+        }
+
+        // Exercise compact through wide onboarding cards. The 190-point
+        // fixture above is deliberately narrower than any supported screen.
+        for cardWidth: CGFloat in [272, 306, 382] {
+            let headline = OnboardingIntroHeadlineView(copy: copy)
+            headline.frame = CGRect(x: 0, y: 0, width: cardWidth, height: 44)
+            headline.setNeedsLayout()
+            headline.layoutIfNeeded()
+            for fragment in headline.fragments.all {
+                XCTAssertGreaterThanOrEqual(
+                    fragment.frame.minX, -0.5,
+                    "\(cardWidth)-point card pushes copy past its leading edge")
+                XCTAssertLessThanOrEqual(
+                    fragment.frame.maxX, cardWidth + 0.5,
+                    "\(cardWidth)-point card pushes copy past its trailing edge")
+            }
         }
     }
 

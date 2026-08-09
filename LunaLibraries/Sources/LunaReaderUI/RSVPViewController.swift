@@ -1851,7 +1851,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let progress = engine.words.count > 1
             ? Double(currentIndex) / Double(engine.words.count - 1) : nil
         store.saveReaderExitPosition(
-            clearScrollOffset: true,
+            scrollOffset: .clear,
             readingProgress: progress, lastWordIndex: wordIndex, for: item.id)
     }
 

@@ -548,8 +548,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             // durable item, so a plain reopen restores both consistently.
             let d = root.descriptor
             store.saveReaderExitPosition(
-                scrollOffset: d.scrollOffset,
-                clearScrollOffset: d.scrollOffset == nil,
+                scrollOffset: d.scrollOffset.map(ReadingListStore.ScrollOffsetEdit.set) ?? .clear,
                 lastWordIndex: d.wordIndex,
                 lastOriginalScrollOffset: d.originalScrollOffset,
                 for: rootItem.id)

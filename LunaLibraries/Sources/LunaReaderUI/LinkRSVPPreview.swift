@@ -757,7 +757,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         let token = engine.tokenIndex(forFrameIndex: index) ?? index
         if article.isSaved {
             ReadingListStore.shared.saveReaderExitPosition(
-                clearScrollOffset: true, lastWordIndex: token, for: article.item.id)
+                scrollOffset: .clear, lastWordIndex: token, for: article.item.id)
         } else {
             ReaderSettings.setLinkPreviewWordIndex(token, for: PreloadStore.canonicalString(for: url))
         }

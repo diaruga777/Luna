@@ -1077,7 +1077,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // word). `currentReadingWordIndex`/`currentReadingScrollOffsetY` already fold in
         // the glance-fling guard, so a fast fling to the very start/end doesn't move it.
         store.saveReaderExitPosition(
-            scrollOffset: Double(currentReadingScrollOffsetY),
+            scrollOffset: .set(Double(currentReadingScrollOffsetY)),
             readingProgress: progress,
             lastSpokenWordIndex: speech?.currentWordIndex,
             lastWordIndex: currentReadingWordIndex,

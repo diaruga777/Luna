@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaModels
+@testable import LunaModels
 import XCTest
 @testable import Luna
 

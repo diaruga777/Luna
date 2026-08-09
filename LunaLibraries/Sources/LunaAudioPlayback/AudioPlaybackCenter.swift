@@ -282,11 +282,19 @@ public final class AudioPlaybackCenter {
     /// first render of the app run): applied to the engine the moment it's
     /// created inside `handleRendered`.
     private var pendingResetOffset: TimeInterval?
-    /// The state to return to when a pause is resumed — `.playing` normally,
-    /// `.announcing` when the pause landed mid-announcement (the engine's
-    /// queue still holds the rest of the announcement/chimes, so resuming
-    /// just lets them finish).
-    private var stateBeforePause: AudioPlaybackState?
+    /// Which state to return to when a pause is resumed — `.playing`
+    /// normally, `.announcing` when the pause landed mid-announcement (the
+    /// engine's queue still holds the rest of the announcement/chimes, so
+    /// resuming just lets them finish). No item id: `state`'s own
+    /// `.paused(itemID:)` at resume time already carries the id that either
+    /// case would restore (an announcement in progress pauses on its
+    /// `nextItemID`, which becomes the paused state's `itemID`), so
+    /// `AudioPlaybackState`'s associated values would just be write-only here.
+    private enum ResumeTarget {
+        case playing
+        case announcing
+    }
+    private var stateBeforePause: ResumeTarget?
 
     private var progressTimer: Timer?
     private var positionPersistTimer: Timer?
@@ -366,7 +374,10 @@ public final class AudioPlaybackCenter {
         engine?.play()
         startProgressTimer()
         startPositionPersistTimer()
-        setState(stateBeforePause ?? .playing(itemID: itemID))
+        switch stateBeforePause {
+        case .announcing: setState(.announcing(nextItemID: itemID))
+        case .playing, nil: setState(.playing(itemID: itemID))
+        }
         stateBeforePause = nil
     }
 
@@ -419,11 +430,14 @@ public final class AudioPlaybackCenter {
     private func pauseInternal(deactivateSessionAfterGrace: Bool) {
         let pausedItemID: UUID
         switch state {
-        case .playing(let itemID): pausedItemID = itemID
-        case .announcing(let nextItemID): pausedItemID = nextItemID
+        case .playing(let itemID):
+            pausedItemID = itemID
+            stateBeforePause = .playing
+        case .announcing(let nextItemID):
+            pausedItemID = nextItemID
+            stateBeforePause = .announcing
         case .idle, .paused: return
         }
-        stateBeforePause = state
         engine?.pause()
         stopProgressTimer()
         stopPositionPersistTimer()

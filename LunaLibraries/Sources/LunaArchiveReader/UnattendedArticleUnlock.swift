@@ -64,7 +64,7 @@ public enum UnattendedArticleUnlock {
                     // the deadline below races it in a separate child task.
                     let box = OnceBox(continuation)
                     reader.onExtracted = { box.resume(true) }
-                    reader.onGaveUp = { _ in box.resume(false) }
+                    reader.onGaveUp = { box.resume(false) }
                 }
             }
             group.addTask {

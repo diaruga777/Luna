@@ -23,7 +23,7 @@ final class ArchiveStageDecisionTests: XCTestCase {
         blockedLimit: Int = 3
     ) -> ArchiveWebReaderViewController.StageDecision {
         ArchiveWebReaderViewController.decideStage(
-            stage,
+            .init(rawProbe: stage),
             didLeaveHomepage: didLeaveHomepage,
             isSubmittingHomepage: isSubmittingHomepage,
             hasResolvedSnapshot: hasResolvedSnapshot,
@@ -118,21 +118,9 @@ final class ArchiveStageDecisionTests: XCTestCase {
         }
     }
 
-    // MARK: - What the cover does when the unlock lands
-
-    /// The regression: a successful unlock uncovered the page and then fired
-    /// `onExtracted`, whose handler dismisses the modal — so the raw
-    /// archive/publisher page played underneath the whole dismissal animation.
-    /// A controller someone is about to take away keeps its cover on.
-    func testTheCoverOnlyComesOffForAControllerThatIsStayingUp() {
-        XCTAssertFalse(
-            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
-                hasExtractedHandler: true),
-            "An onExtracted handler dismisses or replaces this controller; "
-                + "uncovering first shows the raw page through that animation")
-        XCTAssertTrue(
-            ArchiveWebReaderViewController.uncoversPageAfterExtraction(
-                hasExtractedHandler: false),
-            "With nowhere to go, the unlocked page is what the user reads")
-    }
+    // testTheCoverOnlyComesOffForAControllerThatIsStayingUp used to pin
+    // `uncoversPageAfterExtraction`, a one-line `!hasExtractedHandler` wrapper
+    // with no other caller. It's now inlined at its one call site (the
+    // extraction-completion closure in `extractAndSave`, private), so there is
+    // no longer a standalone pure function to assert against.
 }

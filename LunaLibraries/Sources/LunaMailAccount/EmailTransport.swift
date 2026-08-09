@@ -67,18 +67,25 @@ public struct FetchedMessage: Equatable {
     }
 }
 
-/// Opaque dedupe cursor persisted between fetches. IMAP uses `uid`+`uidValidity`
-/// (reset the cursor when validity changes); Graph uses an ISO `receivedDateTime`
-/// high-water mark in `token`.
-public struct MailCursor: Codable, Equatable {
-    public var uid: Int
-    public var uidValidity: Int
-    public var token: String?
+/// Opaque dedupe cursor persisted between fetches. The two provider-specific
+/// halves used to be one struct's two independently-settable fields (plus an
+/// optional wrapper standing in for "no cursor yet") — a shape that could hold
+/// an IMAP uid AND a Graph token at once, or neither, with nothing enforcing
+/// which combination a given provider actually produces. `.fresh` is the zero
+/// value that used to be a nil `MailCursor?` at the `fetchShares` boundary.
+public enum MailCursor: Codable, Equatable {
+    case fresh
+    /// IMAP's uid+uidValidity high-water mark (the cursor resets when validity
+    /// changes — the mailbox renumbered its UIDs).
+    case imap(uid: Int, uidValidity: Int)
+    /// Graph's ISO `receivedDateTime` high-water mark.
+    case graph(token: String)
 
-    public init(uid: Int = 0, uidValidity: Int = 0, token: String? = nil) {
-        self.uid = uid
-        self.uidValidity = uidValidity
-        self.token = token
+    /// The token a `.graph` cursor carries, or empty for any other case —
+    /// `GraphMailTransport` only ever wants "the token, or none yet".
+    public var graphToken: String {
+        if case .graph(let token) = self { return token }
+        return ""
     }
 }
 
@@ -114,9 +121,9 @@ public protocol EmailTransport: Sendable {
 
     /// Returns Luna-share messages received since `cursor` (also matched
     /// newsletter senders/subjects when `extraSenders`/`extraSubjects` are set),
-    /// plus the cursor to persist next.
+    /// plus the cursor to persist next. Pass `.fresh` for a first run.
     func fetchShares(
-        after cursor: MailCursor?,
+        after cursor: MailCursor,
         extraSenders: [String],
         extraSubjects: [String]
     ) async throws -> FetchResult

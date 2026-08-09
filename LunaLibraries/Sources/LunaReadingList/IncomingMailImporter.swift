@@ -61,14 +61,9 @@ public final class IncomingMailImporter {
             runningLock.unlock()
         }
 
-        let cursor = MailCursor(
-            uid: IncomingMailSettings.lastUID,
-            uidValidity: IncomingMailSettings.uidValidity,
-            token: IncomingMailSettings.cursorToken)
-
         do {
             let result = try await transport.fetchShares(
-                after: cursor,
+                after: IncomingMailSettings.cursor,
                 extraSenders: IncomingMailSettings.allowedSenders,
                 extraSubjects: IncomingMailSettings.subjectFilters)
 
@@ -95,9 +90,7 @@ public final class IncomingMailImporter {
             }
             if !toMarkRead.isEmpty { try? await transport.markRead(toMarkRead) }
 
-            IncomingMailSettings.lastUID = result.cursor.uid
-            IncomingMailSettings.uidValidity = result.cursor.uidValidity
-            IncomingMailSettings.cursorToken = result.cursor.token
+            IncomingMailSettings.cursor = result.cursor
             DiagnosticLog.shared.record(
                 "incoming mail: processed \(result.messages.count) message(s)", category: "mail")
         } catch {

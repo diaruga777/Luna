@@ -56,11 +56,11 @@ public struct IMAPSMTPTransport: EmailTransport {
     }
 
     public func fetchShares(
-        after cursor: MailCursor?, extraSenders: [String], extraSubjects: [String]
+        after cursor: MailCursor, extraSenders: [String], extraSubjects: [String]
     ) async throws -> FetchResult {
         try await imap.fetchShares(
             username: imapUsername, password: password,
-            after: cursor ?? MailCursor(), senders: extraSenders, subjects: extraSubjects)
+            after: cursor, senders: extraSenders, subjects: extraSubjects)
     }
 
     public func markRead(_ messageIDs: [String]) async throws {

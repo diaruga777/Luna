@@ -46,7 +46,7 @@ public struct GraphMailTransport: EmailTransport {
     }
 
     public func fetchShares(
-        after cursor: MailCursor?, extraSenders: [String], extraSubjects: [String]
+        after cursor: MailCursor, extraSenders: [String], extraSubjects: [String]
     ) async throws -> FetchResult {
         // No isRead filter: the auto-installed Luna inbox rule marks shares read
         // on arrival (and the user may simply read one first) — an unread-only
@@ -57,7 +57,7 @@ public struct GraphMailTransport: EmailTransport {
         // cursor is anchored to bound the window — everything since the cursor
         // is fetched and matched client-side, mirroring the IMAP path's
         // header-OR-sender-OR-subject semantics.
-        let matchClientSide = !extraSubjects.isEmpty && !(cursor?.token ?? "").isEmpty
+        let matchClientSide = !extraSubjects.isEmpty && !cursor.graphToken.isEmpty
         var interest = [String]()
         if !matchClientSide {
             interest = ["startswith(subject,'\(Self.odataEscaped(FilterGuide.subjectMatch))')"]
@@ -65,7 +65,7 @@ public struct GraphMailTransport: EmailTransport {
                 "from/emailAddress/address eq '\(Self.odataEscaped($0))'"
             }
         }
-        let dateClause = (cursor?.token).flatMap { $0.isEmpty ? nil : "receivedDateTime gt \($0)" }
+        let dateClause = cursor.graphToken.isEmpty ? nil : "receivedDateTime gt \(cursor.graphToken)"
 
         // One request PER interest clause rather than OR-ing them into a single
         // $filter: Graph's mail API throws InefficientFilter when an OR'd
@@ -94,7 +94,7 @@ public struct GraphMailTransport: EmailTransport {
         }
 
         var messages: [FetchedMessage] = []
-        var newestDate = cursor?.token ?? ""
+        var newestDate = cursor.graphToken
         for wire in byID.values.sorted(by: { ($0.receivedDateTime ?? "") < ($1.receivedDateTime ?? "") }) {
             newestDate = max(newestDate, wire.receivedDateTime ?? "")
             let headers = wire.headerMap
@@ -118,7 +118,7 @@ public struct GraphMailTransport: EmailTransport {
             // an account with no Luna mail would never establish a cursor.
             newestDate = ISO8601DateFormatter().string(from: Date())
         }
-        return FetchResult(messages: messages, cursor: MailCursor(token: newestDate))
+        return FetchResult(messages: messages, cursor: .graph(token: newestDate))
     }
 
     /// The IMAP path's interest test: a Luna share marker, a sender match, or a

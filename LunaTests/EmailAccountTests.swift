@@ -518,12 +518,12 @@ private struct StubTransport: EmailTransport {
     }
 
     func fetchShares(
-        after cursor: MailCursor?,
+        after cursor: MailCursor,
         extraSenders: [String],
         extraSubjects: [String]
     ) async throws -> FetchResult {
         try resolve()
-        return FetchResult(messages: [], cursor: cursor ?? MailCursor())
+        return FetchResult(messages: [], cursor: cursor)
     }
 
     func markRead(_ messageIDs: [String]) async throws {

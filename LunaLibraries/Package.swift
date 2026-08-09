@@ -100,7 +100,7 @@ let package = Package(
         .target(name: "LunaDocuments", dependencies: ["LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount", "LunaAppConfig", "LunaURLClassification"]),
-        .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", "LunaMailAccount", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         // IMAP/SMTP engine for the multi-provider email account, built on
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external

@@ -8,6 +8,7 @@ import LunaIngest
 import LunaSocial
 import LunaSocialUI
 import LunaMailAccount
+import LunaAppConfig
 import LunaDesignSystem
 import LunaStorage
 import LunaWeekly
@@ -55,6 +56,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // writes to scratch (`claudedocs/staging.md`). No-op without
         // `-LunaStage`.
         LunaStage.prepareIfNeeded()
+        // Catch a broken xcconfig -> Info.plist chain immediately rather than
+        // silently falling back to the compiled-in App Group id and splitting
+        // the shared container from every extension. All four apps share this
+        // launch path, so one assert covers them.
+        assert(AppConfig.resolvedFromInfoPlist, "LunaAppGroupID did not resolve from Info.plist")
         #endif
         DiagnosticLog.shared.record("app launch", category: "lifecycle")
         // Register this app's per-kind pipeline processors, handlers, and UI

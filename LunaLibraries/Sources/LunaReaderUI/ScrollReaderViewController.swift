@@ -92,18 +92,25 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// keeping the initial `UITextView` layout cheap.
     private static let prefixCharacterBudget = 700
 
-    /// True once the FULL article has been rendered + swapped in (Phase 2 done, or
-    /// never needed because the prefix already covered the whole article). Until
-    /// then `rendered`/`wordMap` describe only the prefix, so position-dependent
-    /// features (RSVP/audio resume, finished-reading tracking) wait for it.
-    private var didLoadFullContent = false
-    /// Set once Phase 2 has been kicked off so it runs exactly once.
-    private var didBeginFullContentLoad = false
+    /// The progressive-load state: `.pending` until Phase 2 is kicked off,
+    /// `.inFlight` while it's building, `.done` once the FULL article has been
+    /// rendered + swapped in (or never needed because the prefix already
+    /// covered the whole article). Until `.done`, `rendered`/`wordMap`
+    /// describe only the prefix, so position-dependent features (RSVP/audio
+    /// resume, finished-reading tracking) wait for it. Replaces two bools
+    /// (`didLoadFullContent`/`didBeginFullContentLoad`) that could disagree —
+    /// nothing enforced "began" implies "not yet loaded".
+    private enum FullContentLoad {
+        case pending
+        case inFlight
+        case done
+    }
+    private var fullContentLoad: FullContentLoad = .pending
 
     #if DEBUG
     /// Test hooks for the progressive load: whether the full content has been
     /// swapped in, and the rendered text length / word count currently shown.
-    public var didLoadFullContentForTesting: Bool { didLoadFullContent }
+    public var didLoadFullContentForTesting: Bool { fullContentLoad == .done }
     public var renderedTextLengthForTesting: Int { rendered.text.length }
     public var wordCountForTesting: Int { wordMap.wordCount }
     public var animatedImageViewCountForTesting: Int { animatedImageViews.count }
@@ -227,7 +234,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         super.init(nibName: nil, bundle: nil)
         // If the prefix already covers the whole (short) article there's nothing to
         // swap — Phase 2 is skipped.
-        if rendered.isComplete { didLoadFullContent = true }
+        if rendered.isComplete { fullContentLoad = .done }
     }
 
     /// Reuses an already-built scroll reader shell with new article content. RabbitHole
@@ -263,8 +270,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
         finishedReadingTracker = FinishedReadingTracker()
         didRestoreScroll = false
-        didLoadFullContent = false
-        didBeginFullContentLoad = false
+        fullContentLoad = .pending
         didStartPlayback = false
         // An unconsumed jump must never survive into the next article.
         pendingAnchorBlockIndex = nil
@@ -307,7 +313,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 includesTitle: includesArticleTitle)
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
-        if rendered.isComplete { didLoadFullContent = true }
+        if rendered.isComplete { fullContentLoad = .done }
 
         guard isViewLoaded else { return }
         UIView.performWithoutAnimation {
@@ -324,7 +330,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             footer.isHidden = true
         }
         installAnimatedImageViews()
-        if didLoadFullContent {
+        if fullContentLoad == .done {
             fetchMissingImagesIfNeeded()
             installPositionDependentFeatures()
         }
@@ -564,14 +570,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Images cached on disk are baked into the prefix already; only genuinely
         // uncached ones (action/share surface) fall through here. Once the full
         // content lands this re-runs against it (see `prepareFullContent`).
-        if didLoadFullContent { fetchMissingImagesIfNeeded() }
+        if fullContentLoad == .done { fetchMissingImagesIfNeeded() }
 
         addSimulatorSplitHooksIfNeeded()
 
         // The resume highlight needs the FULL word map (a deep resume word isn't
         // in the prefix), so install it only once the full content has landed. For
         // an already-complete prefix that's now.
-        if didLoadFullContent { installPositionDependentFeatures() }
+        if fullContentLoad == .done { installPositionDependentFeatures() }
 
         // Hide the text until the saved scroll position is applied, so the
         // article never flashes at the top and then jumps. Fresh articles (no
@@ -640,14 +646,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// STRICT prefix of the full text, the top/visible layout is identical, so restoring
     /// the captured `contentOffset` across the swap is invisible.
     public func prepareFullContent() {
-        guard !didLoadFullContent, !didBeginFullContentLoad else { return }
-        didBeginFullContentLoad = true
+        guard fullContentLoad == .pending else { return }
+        fullContentLoad = .inFlight
         // Defer one runloop so a host that calls this from inside its open-animation
         // completion doesn't pay the build cost in the same commit as that completion.
         DispatchQueue.main.async { [weak self] in
             // `[weak self]` drops this if the VC deallocated. Require the view loaded
             // (it always is by the time Phase 2 is triggered) before touching it.
-            guard let self, self.isViewLoaded, !self.didLoadFullContent else { return }
+            guard let self, self.isViewLoaded, self.fullContentLoad != .done else { return }
             let full = ArticleTextRenderer.render(
                 self.content, includesTitle: self.includesArticleTitle)
             self.applyFullContent(full)
@@ -658,7 +664,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// scroll position. Runs on the main actor.
     @MainActor
     private func applyFullContent(_ full: RenderedArticle) {
-        guard !didLoadFullContent else { return }
+        guard fullContentLoad != .done else { return }
         // The user might have scrolled within the prefix while it was the only thing
         // laid out. Capture where they are so the swap is seamless.
         let offset = textView.contentOffset
@@ -701,7 +707,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
         installAnimatedImageViews()
 
-        didLoadFullContent = true
+        fullContentLoad = .done
         // A jump tapped while only the prefix was laid out: its destination exists
         // now, so honour it in place of the offset restored just above.
         if let blockIndex = pendingAnchorBlockIndex {
@@ -1040,7 +1046,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // animation (the inline split overlay, the RabbitHole stacked wipe) also call
         // `prepareFullContent()` from THEIR completion — `prepareFullContent` is
         // idempotent, so whichever fires first wins.
-        if !deferFullContentUntilHostCompletion, !didLoadFullContent {
+        if !deferFullContentUntilHostCompletion, fullContentLoad != .done {
             if let coordinator = transitionCoordinator {
                 coordinator.animate(alongsideTransition: nil) { [weak self] _ in
                     self?.prepareFullContent()
@@ -1068,7 +1074,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // finished (same guard as checkFinishedReading). One batched write —
         // this runs on the main thread during dismissal.
         var progress: Double?
-        if didLoadFullContent, textView.contentSize.height > 0 {
+        if fullContentLoad == .done, textView.contentSize.height > 0 {
             let visibleBottom = textView.contentOffset.y + textView.bounds.height
             progress = Double(visibleBottom / textView.contentSize.height)
         }
@@ -1377,7 +1383,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Never decide "finished" against the PREFIX content size — a long article
         // whose prefix happens to fit one screen would be wrongly marked read before
         // Phase 2 expands it. Wait for the full content.
-        guard didLoadFullContent, textView.contentSize.height > 0 else { return }
+        guard fullContentLoad == .done, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
         // Require the user to enter the reserved whitespace far enough for the
         // persistent glass pill to be visible when its checkmark starts drawing.
@@ -1439,7 +1445,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func scrollToInPageAnchor(_ anchorID: String) {
         guard let blockIndex = content.blockIndex(forAnchorID: anchorID) else { return }
-        guard didLoadFullContent else {
+        guard fullContentLoad == .done else {
             pendingAnchorBlockIndex = blockIndex
             prepareFullContent()
             return

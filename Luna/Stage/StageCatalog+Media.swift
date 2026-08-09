@@ -198,7 +198,7 @@ enum MediaStageCatalog {
                 summary: "What a saved post shows in the share/action extension before any "
                     + "download starts. Hosted in-app — a simulator cannot drive the share sheet.",
                 kind: .media,
-                seed: { AutoDownloadSettings.autoDownloadMediaInPreview = false },
+                seed: { AutoDownloadSettings.policy = .never },
                 make: {
                     UINavigationController(
                         rootViewController: SavedNonTextualViewController(

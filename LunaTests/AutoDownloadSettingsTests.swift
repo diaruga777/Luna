@@ -106,16 +106,19 @@ final class AutoDownloadSettingsTests: XCTestCase {
         }
     }
 
-    /// The old settings allowed "Photos off, no retention"; the collapsed row has no
-    /// such choice, so it reads as the default deletion age.
-    func testStorageFallsBackToDefaultRetentionWhenNeitherWasChosen() {
+    /// `MediaStorageSettings.option` used to re-normalize a `.never` retention
+    /// back to `defaultRetention` on both read and write, defending against
+    /// "Photos off, no retention" — reachable only by poking the two backing
+    /// prefs independently, which is exactly what `autoSaveDownloadsToPhotos`'s
+    /// setter going module-internal (this D12 change) rules out: `option` is
+    /// now the only path that can set either pref, and it always sets both
+    /// together. `.deleteAfter(.never)` is still constructible and, since
+    /// nothing needs to defend against a combination nothing can produce
+    /// anymore, `option` now simply round-trips it rather than re-normalizing.
+    func testStorageOptionRoundTripsNeverWithoutRenormalizing() {
         preservingSettings {
-            AutoDownloadSettings.autoSaveDownloadsToPhotos = false
-            MediaRetentionSettings.option = .never
-
-            XCTAssertEqual(
-                MediaStorageSettings.option,
-                .deleteAfter(MediaStorageSettings.defaultRetention))
+            MediaStorageSettings.option = .deleteAfter(.never)
+            XCTAssertEqual(MediaStorageSettings.option, .deleteAfter(.never))
         }
     }
 
@@ -242,12 +245,16 @@ final class AutoDownloadSettingsTests: XCTestCase {
 
     func testWiFiOnlyDownloadsDefaultsOffAndRoundTrips() {
         let previous = defaults.object(forKey: wifiOnlyKey)
-        defer { restore(previous, forKey: wifiOnlyKey) }
+        let previousAutoDownload = defaults.object(forKey: autoDownloadKey)
+        defer {
+            restore(previous, forKey: wifiOnlyKey)
+            restore(previousAutoDownload, forKey: autoDownloadKey)
+        }
 
         defaults.removeObject(forKey: wifiOnlyKey)
         XCTAssertFalse(AutoDownloadSettings.wifiOnlyDownloads)
 
-        AutoDownloadSettings.wifiOnlyDownloads = true
+        AutoDownloadSettings.policy = .wifiOnly
         XCTAssertTrue(AutoDownloadSettings.wifiOnlyDownloads)
     }
 

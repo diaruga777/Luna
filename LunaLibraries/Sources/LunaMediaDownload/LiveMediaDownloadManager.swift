@@ -166,6 +166,9 @@ public final class LiveMediaDownloadManager: NSObject {
     private let store = JobStore()
     private let saver: PhotoLibrarySaving
     private var backgroundCompletionHandler: (() -> Void)?
+    private let backgroundWorkLock = NSLock()
+    private var pendingBackgroundWork = 0
+    private var backgroundEventsFinished = false
 
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.background(
@@ -381,6 +384,29 @@ public final class LiveMediaDownloadManager: NSObject {
             return false
         }
         let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
+        if ownership == .downloader {
+            guard let pending = try? SavedMediaStore.shared.ensureUndownloaded(
+                id: readingItem?.id ?? UUID(),
+                sourceURLString: sourceURLString,
+                title: title ?? readingItem?.title,
+                creator: readingItem?.channelName,
+                dateSaved: readingItem?.dateAdded ?? Date())
+            else {
+                await startFailedActivity(
+                    urlString: sourceURLString, title: title,
+                    message: MediaDownloadError.saveFailed.message)
+                return false
+            }
+            guard LiveMediaDownloadStartPolicy.downloaderShouldStart(
+                storageState: pending.storageState
+            ) else { return false }
+        }
+        if let existing = store.jobs().first(where: {
+            $0.sourceURLString == sourceURLString && !$0.isTerminal
+        }) {
+            await updateActivity(for: existing)
+            return true
+        }
         var job = LiveMediaDownloadJob(
             id: UUID().uuidString,
             sourceURLString: sourceURLString,
@@ -404,12 +430,17 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveAttempts: 0,
             mediaAttempts: 0,
             suspendDeadline: nil,
-            ownership: ownership)
+            ownership: ownership,
+            audioURLString: asset.audioURL?.absoluteString,
+            dashManifestURLString: asset.dashManifestURL?.absoluteString)
         store.upsert(job)
         if job.isDownloaderOwned { postDownloaderJobProgress(job: job, progress: 0) }
         await startActivity(for: job)
-        startMediaDownload(for: job, asset: asset)
-        return true
+        // The caller bounces straight back to Safari. Do not report "started"
+        // until preflight has registered the durable background task; a detached
+        // preparation task can be frozen as soon as Safari owns the foreground.
+        await prepareAndStartMediaDownload(for: job, asset: asset)
+        return store.job(id: job.id).map { !$0.isTerminal } ?? false
     }
 
     private func createAndStartJob(_ gated: GateResult, title: String?) async -> Bool {
@@ -475,7 +506,9 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func startMediaDownload(for job: LiveMediaDownloadJob, asset: MediaAsset) {
-        Task { await prepareAndStartMediaDownload(for: job, asset: asset) }
+        startTrackedBackgroundWork {
+            await self.prepareAndStartMediaDownload(for: job, asset: asset)
+        }
     }
 
     /// Runs the two checks that need a resolved asset: determine its actual size
@@ -514,6 +547,8 @@ public final class LiveMediaDownloadManager: NSObject {
         }
 
         job.assetURLString = asset.url.absoluteString
+        job.audioURLString = asset.audioURL?.absoluteString
+        job.dashManifestURLString = asset.dashManifestURL?.absoluteString
         job.mediaKind = asset.kind
         job.fileExtension = MediaFileDownloader.fileExtension(for: asset, mimeType: nil)
         job.expectedByteCount = expected
@@ -552,9 +587,54 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     public func attachBackgroundCompletionHandler(_ completionHandler: @escaping () -> Void) {
+        backgroundWorkLock.lock()
         backgroundCompletionHandler = completionHandler
+        backgroundEventsFinished = false
+        backgroundWorkLock.unlock()
         _ = session
-        Task { await reapExpiredSuspensions() }
+        startTrackedBackgroundWork { await self.reapExpiredSuspensions() }
+    }
+
+    /// Work launched from a background-session delegate callback must finish (or
+    /// register its next background task) before the AppDelegate completion
+    /// handler is released. Otherwise iOS is free to freeze the process between
+    /// the download reaching 100% and the file entering `SavedMediaStore`.
+    private func startTrackedBackgroundWork(
+        _ operation: @escaping () async -> Void
+    ) {
+        backgroundWorkLock.lock()
+        pendingBackgroundWork += 1
+        backgroundWorkLock.unlock()
+        Task {
+            await operation()
+            self.finishTrackedBackgroundWork()
+        }
+    }
+
+    private func finishTrackedBackgroundWork() {
+        let completion: (() -> Void)?
+        backgroundWorkLock.lock()
+        pendingBackgroundWork = max(0, pendingBackgroundWork - 1)
+        completion = takeBackgroundCompletionIfReadyLocked()
+        backgroundWorkLock.unlock()
+        if let completion { DispatchQueue.main.async(execute: completion) }
+    }
+
+    private func markBackgroundEventsFinished() {
+        let completion: (() -> Void)?
+        backgroundWorkLock.lock()
+        backgroundEventsFinished = true
+        completion = takeBackgroundCompletionIfReadyLocked()
+        backgroundWorkLock.unlock()
+        if let completion { DispatchQueue.main.async(execute: completion) }
+    }
+
+    private func takeBackgroundCompletionIfReadyLocked() -> (() -> Void)? {
+        guard backgroundEventsFinished, pendingBackgroundWork == 0 else { return nil }
+        let completion = backgroundCompletionHandler
+        backgroundCompletionHandler = nil
+        backgroundEventsFinished = false
+        return completion
     }
 
     public func resumeLiveActivities() {
@@ -662,6 +742,25 @@ public final class LiveMediaDownloadManager: NSObject {
             job.errorMessage = nil
             job.phase = .downloading
             store.upsert(job)
+            if let audioURLString = job.audioURLString,
+               let audioURL = URL(string: audioURLString) {
+                let videoFile = Self.redditVideoStagingURL(jobID: job.id)
+                let audioFile = Self.redditAudioStagingURL(jobID: job.id)
+                if FileManager.default.fileExists(atPath: videoFile.path),
+                   FileManager.default.fileExists(atPath: audioFile.path) {
+                    startRedditMux(jobID: job.id)
+                } else if FileManager.default.fileExists(atPath: videoFile.path) {
+                    startTask(
+                        Self.redditRequest(audioURL), jobID: job.id,
+                        role: .redditAudio, attempt: job.mediaAttempts)
+                } else {
+                    startTask(
+                        Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                        jobID: job.id, role: .redditVideo, attempt: job.mediaAttempts,
+                        expectedByteCount: job.expectedByteCount)
+                }
+                return
+            }
             if let resumeData = store.resumeData(for: job) {
                 startTask(
                     resumeData: resumeData, jobID: job.id, role: .media,
@@ -783,6 +882,16 @@ public final class LiveMediaDownloadManager: NSObject {
         job.suspendDeadline = nil
         job.errorMessage = nil
         job.errorKind = nil
+        if job.audioURLString != nil {
+            job.phase = .downloading
+            store.upsert(job)
+            await updateActivity(for: job)
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: job.progress)
+            }
+            await restartTransfer(for: job)
+            return
+        }
         if let assetURLString = job.assetURLString,
            let assetURL = URL(string: assetURLString),
            let sourceURL = URL(string: job.sourceURLString) {
@@ -868,7 +977,16 @@ public final class LiveMediaDownloadManager: NSObject {
             request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
         } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .youtube {
             request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+        } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .reddit {
+            request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
         }
+        return request
+    }
+
+    private static func redditRequest(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
         return request
     }
 
@@ -1120,8 +1238,8 @@ public final class LiveMediaDownloadManager: NSObject {
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
             if http.statusCode == 403, restartExpiredYouTubeMedia(job) { return }
-            Task {
-                await retryOrFail(
+            startTrackedBackgroundWork {
+                await self.retryOrFail(
                     job: job, role: .media, response: response,
                     message: MediaDownloadError.downloadFailed.message)
             }
@@ -1157,7 +1275,9 @@ public final class LiveMediaDownloadManager: NSObject {
             }
             resumeFinalization(for: job)
         } catch {
-            Task { await failJob(job, message: MediaDownloadError.downloadFailed.message) }
+            startTrackedBackgroundWork {
+                await self.failJob(job, message: MediaDownloadError.downloadFailed.message)
+            }
         }
     }
 
@@ -1168,7 +1288,7 @@ public final class LiveMediaDownloadManager: NSObject {
     /// timestamp range from being applied twice.
     private func resumeFinalization(for persistedJob: LiveMediaDownloadJob) {
         let jobID = persistedJob.id
-        Task {
+        startTrackedBackgroundWork {
             guard var job = self.store.job(id: jobID), job.phase == .saving else { return }
             let ext = job.fileExtension ?? ((job.mediaKind ?? .image) == .video ? "mp4" : "jpg")
             let staging = JobStore.stagingURL(fileName: "\(job.id).source.\(ext)")
@@ -1188,89 +1308,179 @@ public final class LiveMediaDownloadManager: NSObject {
                     throw MediaDownloadError.downloadFailed
                 }
                 if (job.mediaKind ?? .image) == .video, job.thumbnailFileName == nil {
-                    job.thumbnailFileName = makeVideoThumbnail(
+                    job.thumbnailFileName = self.makeVideoThumbnail(
                         from: destination, jobID: job.id)
                 }
-                store.upsert(job)
-                await save(job: job, fileURL: destination, kind: (job.mediaKind ?? .image))
+                self.store.upsert(job)
+                await self.save(job: job, fileURL: destination, kind: (job.mediaKind ?? .image))
             } catch {
                 guard let current = self.store.job(id: jobID) else { return }
-                await failJob(current, message: MediaDownloadError.downloadFailed.message)
+                await self.failJob(current, message: MediaDownloadError.downloadFailed.message)
             }
         }
     }
 
-    /// Reddit hosts video and audio as two separate CDN files (its DASH
-    /// pipeline) rather than one playable URL, so this bypasses the shared
-    /// background-session task/delegate state machine above (built around one
-    /// URL producing one file) and does its own plain async fetch + mux,
-    /// finishing through the same `finalizeDownloadedFile` tail as everything
-    /// else. Reddit clips are short, so this deliberately doesn't retrofit the
-    /// resumable-background-task machinery for a two-stream case. If the
-    /// audio companion (a derived URL, not one Reddit hands back directly —
-    /// see `RedditMediaParser`) can't be fetched, degrades to the silent
-    /// video rather than failing the whole download.
+    /// Reddit's video and audio legs run sequentially in the durable background
+    /// session. The staged video and persisted companion URLs make every network
+    /// boundary restartable after suspension or process death; only the final,
+    /// local mux runs in app execution time.
     private func startRedditMuxedDownload(
         for job: LiveMediaDownloadJob, videoURL: URL, audioURL: URL, dashManifestURL: URL?
     ) {
-        let jobID = job.id
-        Task {
-            // Re-fetches current job state right before each terminal action
-            // (rather than trusting the snapshot captured when this Task was
-            // started) so a suspend that raced with these fetches is honored.
-            func currentlyRunningJob() -> LiveMediaDownloadJob? {
-                guard let current = self.store.job(id: jobID), current.phase != .suspended else { return nil }
-                return current
+        var job = job
+        job.audioURLString = audioURL.absoluteString
+        job.dashManifestURLString = dashManifestURL?.absoluteString
+        store.upsert(job)
+        guard let sourceURL = URL(string: job.sourceURLString) else { return }
+        startTask(
+            Self.mediaAssetRequest(assetURL: videoURL, sourceURL: sourceURL),
+            jobID: job.id, role: .redditVideo, attempt: job.mediaAttempts,
+            expectedByteCount: job.expectedByteCount)
+    }
+
+    private static func redditVideoStagingURL(jobID: String) -> URL {
+        JobStore.stagingURL(fileName: "\(jobID).reddit-video.mp4")
+    }
+
+    private static func redditAudioStagingURL(jobID: String) -> URL {
+        JobStore.stagingURL(fileName: "\(jobID).reddit-audio.m4a")
+    }
+
+    private func moveRedditTrack(from location: URL, to destination: URL) throws {
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: location, to: destination)
+    }
+
+    private func finishRedditVideo(
+        job: LiveMediaDownloadJob, location: URL, response: URLResponse?
+    ) {
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true
+        else {
+            startTrackedBackgroundWork {
+                await self.retryRedditVideoOrFail(job: job, response: response)
             }
-
-            do {
-                let videoFile = try await plainDownload(videoURL)
-                self.reportProgress(jobID: jobID, progress: 0.5)
-
-                guard let audioFile = await RedditAudioFetcher.fetch(
-                    primaryAudioURL: audioURL, dashManifestURL: dashManifestURL,
-                    referer: "https://www.reddit.com/")
-                else {
-                    self.reportProgress(jobID: jobID, progress: 1)
-                    guard let current = currentlyRunningJob() else { return }
-                    finalizeDownloadedFile(job: current, temporaryLocation: videoFile, fileExtension: "mp4", kind: .video)
-                    return
-                }
-                self.reportProgress(jobID: jobID, progress: 0.8)
-
-                let muxedURL = MediaDownloadStorage.newFileURL(extension: "mp4")
-                let finalFile: URL
-                do {
-                    try await MediaMuxer.mux(videoURL: videoFile, audioURL: audioFile, outputURL: muxedURL)
-                    try? FileManager.default.removeItem(at: videoFile)
-                    finalFile = muxedURL
-                } catch {
-                    finalFile = videoFile
-                }
-                try? FileManager.default.removeItem(at: audioFile)
-                self.reportProgress(jobID: jobID, progress: 1)
-                guard let current = currentlyRunningJob() else { return }
-                finalizeDownloadedFile(job: current, temporaryLocation: finalFile, fileExtension: "mp4", kind: .video)
-            } catch {
-                guard let current = currentlyRunningJob() else { return }
-                await failJob(current, message: MediaDownloadError.downloadFailed.message)
+            return
+        }
+        do {
+            try moveRedditTrack(from: location, to: Self.redditVideoStagingURL(jobID: job.id))
+            reportProgress(jobID: job.id, progress: 0.5)
+            guard let audio = job.audioURLString.flatMap(URL.init(string:)) else {
+                finishRedditWithoutAudio(jobID: job.id)
+                return
+            }
+            startTask(Self.redditRequest(audio), jobID: job.id, role: .redditAudio, attempt: 0)
+        } catch {
+            startTrackedBackgroundWork {
+                await self.failJob(job, message: MediaDownloadError.downloadFailed.message)
             }
         }
     }
 
-    /// A plain (non-background-session) streamed download to a temp file,
-    /// used only by the Reddit mux path above.
-    private func plainDownload(_ url: URL) async throws -> URL {
-        var request = URLRequest(url: url, timeoutInterval: 60)
-        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
-        let (location, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw MediaDownloadError.downloadFailed
+    private func retryRedditVideoOrFail(
+        job: LiveMediaDownloadJob, response: URLResponse?, error: Error? = nil
+    ) async {
+        guard var current = store.job(id: job.id), current.phase != .suspended else { return }
+        guard isTransient(response: response, error: error),
+              current.mediaAttempts + 1 < Self.maxTransientAttempts,
+              let video = current.assetURLString.flatMap(URL.init(string:)),
+              let source = URL(string: current.sourceURLString)
+        else {
+            await failJob(current, message: MediaDownloadError.downloadFailed.message)
+            return
         }
-        let destination = MediaDownloadStorage.newFileURL(extension: "mp4")
-        try FileManager.default.moveItem(at: location, to: destination)
-        return destination
+        current.mediaAttempts += 1
+        store.upsert(current)
+        startTask(
+            Self.mediaAssetRequest(assetURL: video, sourceURL: source),
+            jobID: current.id, role: .redditVideo, attempt: current.mediaAttempts,
+            expectedByteCount: current.expectedByteCount)
+    }
+
+    private func finishRedditAudio(
+        job: LiveMediaDownloadJob, location: URL, response: URLResponse?
+    ) {
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true
+        else {
+            startRedditManifestFallback(jobID: job.id)
+            return
+        }
+        do {
+            try moveRedditTrack(from: location, to: Self.redditAudioStagingURL(jobID: job.id))
+            reportProgress(jobID: job.id, progress: 0.9)
+            startRedditMux(jobID: job.id)
+        } catch {
+            finishRedditWithoutAudio(jobID: job.id)
+        }
+    }
+
+    private func startRedditManifestFallback(jobID: String) {
+        guard var job = store.job(id: jobID), job.phase != .suspended else { return }
+        guard let manifest = job.dashManifestURLString.flatMap(URL.init(string:)) else {
+            finishRedditWithoutAudio(jobID: jobID)
+            return
+        }
+        job.dashManifestURLString = nil
+        store.upsert(job)
+        startTask(Self.redditRequest(manifest), jobID: job.id, role: .redditManifest, attempt: 0)
+    }
+
+    private func finishRedditManifest(
+        job: LiveMediaDownloadJob, location: URL, response: URLResponse?
+    ) {
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+              let data = try? Data(contentsOf: location),
+              let xml = String(data: data, encoding: .utf8),
+              let manifest = response?.url,
+              let audio = RedditMediaParser.audioURL(
+                fromDASHManifest: xml, manifestURL: manifest),
+              var current = store.job(id: job.id)
+        else {
+            finishRedditWithoutAudio(jobID: job.id)
+            return
+        }
+        current.audioURLString = audio.absoluteString
+        store.upsert(current)
+        startTask(Self.redditRequest(audio), jobID: job.id, role: .redditAudio, attempt: 1)
+    }
+
+    private func startRedditMux(jobID: String) {
+        startTrackedBackgroundWork {
+            guard let job = self.store.job(id: jobID), job.phase != .suspended else { return }
+            let video = Self.redditVideoStagingURL(jobID: jobID)
+            let audio = Self.redditAudioStagingURL(jobID: jobID)
+            guard FileManager.default.fileExists(atPath: video.path),
+                  FileManager.default.fileExists(atPath: audio.path) else { return }
+            let muxed = MediaDownloadStorage.newFileURL(extension: "mp4")
+            do {
+                try await MediaMuxer.mux(videoURL: video, audioURL: audio, outputURL: muxed)
+                try? FileManager.default.removeItem(at: video)
+                try? FileManager.default.removeItem(at: audio)
+                guard let current = self.store.job(id: jobID), current.phase != .suspended else {
+                    try? FileManager.default.removeItem(at: muxed)
+                    return
+                }
+                self.finalizeDownloadedFile(
+                    job: current, temporaryLocation: muxed,
+                    fileExtension: "mp4", kind: .video)
+            } catch {
+                try? FileManager.default.removeItem(at: audio)
+                self.finishRedditWithoutAudio(jobID: jobID)
+            }
+        }
+    }
+
+    private func finishRedditWithoutAudio(jobID: String) {
+        guard let job = store.job(id: jobID), job.phase != .suspended else { return }
+        let video = Self.redditVideoStagingURL(jobID: jobID)
+        guard FileManager.default.fileExists(atPath: video.path) else { return }
+        try? FileManager.default.removeItem(at: Self.redditAudioStagingURL(jobID: jobID))
+        finalizeDownloadedFile(
+            job: job, temporaryLocation: video, fileExtension: "mp4", kind: .video)
+    }
+
+    private func removeRedditStaging(jobID: String) {
+        try? FileManager.default.removeItem(at: Self.redditVideoStagingURL(jobID: jobID))
+        try? FileManager.default.removeItem(at: Self.redditAudioStagingURL(jobID: jobID))
     }
 
     private func reportProgress(jobID: String, progress: Double) {
@@ -1292,15 +1502,18 @@ public final class LiveMediaDownloadManager: NSObject {
             if startNextInstagramResolve(after: job, data: nil) { return }
             if startNextFacebookResolve(after: job, data: nil) { return }
             if startNextYouTubeResolve(after: job, data: nil) { return }
-            Task {
-                await retryOrFail(
+            startTrackedBackgroundWork {
+                await self.retryOrFail(
                     job: job, role: .resolve, response: response,
                     message: MediaDownloadError.noMedia.message)
             }
             return
         }
         guard let data = try? Data(contentsOf: location) else {
-            Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
+            startTrackedBackgroundWork {
+                await self.failJob(
+                    job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia)
+            }
             return
         }
         if job.resolveKind == .youtubeClip,
@@ -1326,7 +1539,10 @@ public final class LiveMediaDownloadManager: NSObject {
         if startNextInstagramResolve(after: job, data: data) { return }
         if startNextFacebookResolve(after: job, data: data) { return }
         if startNextYouTubeResolve(after: job, data: data) { return }
-        Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
+        startTrackedBackgroundWork {
+            await self.failJob(
+                job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia)
+        }
         return
     }
 
@@ -1508,6 +1724,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 postDownloaderJobProgress(job: job, progress: 1)
             }
             await endActivity(for: job)
+            removeRedditStaging(jobID: job.id)
             store.remove(job.id)
         } catch {
             await failJob(job, message: MediaDownloadError.saveFailed.message)
@@ -1632,6 +1849,12 @@ public final class LiveMediaDownloadManager: NSObject {
                     jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts,
                     expectedByteCount: retryJob.expectedByteCount)
             }
+        case .redditVideo:
+            await retryRedditVideoOrFail(job: retryJob, response: response, error: error)
+        case .redditAudio:
+            startRedditManifestFallback(jobID: retryJob.id)
+        case .redditManifest:
+            finishRedditWithoutAudio(jobID: retryJob.id)
         }
     }
 
@@ -1674,12 +1897,14 @@ public final class LiveMediaDownloadManager: NSObject {
         }
         await updateActivity(for: job)
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
+        removeRedditStaging(jobID: job.id)
         store.remove(job.id)
     }
 
     private func tearDownSuspendedJob(_ job: LiveMediaDownloadJob) async {
         await cancelTasks(jobID: job.id)
         await endActivity(for: job, dismissalDelay: 0)
+        removeRedditStaging(jobID: job.id)
         store.removeFiles(for: job)
         store.remove(job.id)
         if job.isDownloaderOwned {
@@ -1699,15 +1924,22 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         guard totalBytesExpectedToWrite > 0,
               let description = downloadTask.taskDescription,
               let parts = Self.taskParts(description),
-              parts.role == .media,
               let jobID = parts.jobID,
               var job = store.job(id: jobID),
               job.phase != .suspended
         else { return }
+        let fraction = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        let progress: Double
+        switch parts.role {
+        case .media: progress = fraction
+        case .redditVideo: progress = fraction * 0.5
+        case .redditAudio: progress = 0.5 + fraction * 0.4
+        case .resolve, .redditManifest, .none: return
+        }
         let previousPercent = Int(job.progress * 100)
         let phaseChanged = job.phase != .downloading
         job.phase = .downloading
-        job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        job.progress = progress
         job.receivedByteCount = totalBytesWritten
         job.expectedByteCount = totalBytesExpectedToWrite
         let percentChanged = Int(job.progress * 100) != previousPercent
@@ -1737,10 +1969,19 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         if parts.role == .media {
             store.removeResumeData(for: job)
         }
-        if parts.role == .resolve {
+        switch parts.role {
+        case .resolve:
             finishResolve(job: job, downloadedTo: location, response: downloadTask.response)
-        } else {
+        case .media:
             finish(job: job, downloadedTo: location, response: downloadTask.response)
+        case .redditVideo:
+            finishRedditVideo(job: job, location: location, response: downloadTask.response)
+        case .redditAudio:
+            finishRedditAudio(job: job, location: location, response: downloadTask.response)
+        case .redditManifest:
+            finishRedditManifest(job: job, location: location, response: downloadTask.response)
+        case .none:
+            break
         }
     }
 
@@ -1762,21 +2003,30 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
             job.resumeDataFileName = fileName
             store.upsert(job)
         }
-        Task {
-            await retryOrFail(
-                job: job,
-                role: parts.role ?? .media,
-                response: task.response,
-                error: error,
-                message: MediaDownloadError.downloadFailed.message)
+        switch parts.role {
+        case .redditVideo:
+            startTrackedBackgroundWork {
+                await self.retryRedditVideoOrFail(
+                    job: job, response: task.response, error: error)
+            }
+        case .redditAudio:
+            startRedditManifestFallback(jobID: job.id)
+        case .redditManifest:
+            finishRedditWithoutAudio(jobID: job.id)
+        case .resolve, .media, .none:
+            startTrackedBackgroundWork {
+                await self.retryOrFail(
+                    job: job,
+                    role: parts.role ?? .media,
+                    response: task.response,
+                    error: error,
+                    message: MediaDownloadError.downloadFailed.message)
+            }
         }
     }
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        DispatchQueue.main.async { [weak self] in
-            self?.backgroundCompletionHandler?()
-            self?.backgroundCompletionHandler = nil
-        }
+        markBackgroundEventsFinished()
     }
 }
 
@@ -1784,6 +2034,9 @@ private extension LiveMediaDownloadManager {
     enum TaskRole: String {
         case resolve
         case media
+        case redditVideo
+        case redditAudio
+        case redditManifest
     }
 
     static func taskParts(_ description: String) -> (jobID: String?, role: TaskRole?, attempt: Int?)? {

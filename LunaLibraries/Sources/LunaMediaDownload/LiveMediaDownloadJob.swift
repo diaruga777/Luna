@@ -57,6 +57,11 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     var id: String
     var sourceURLString: String
     var assetURLString: String?
+    /// Reddit's audio-only companion and authoritative DASH fallback. Keeping
+    /// these with the job lets both legs be recreated as background-session
+    /// tasks after process death instead of falling back to `URLSession.shared`.
+    var audioURLString: String?
+    var dashManifestURLString: String?
     /// Nil for a job that hasn't resolved an asset yet (or whose legacy on-disk
     /// value didn't parse — the old "unknown" sentinel and anything else
     /// unrecognized). Never a case that CLAIMS a kind it doesn't have: the old
@@ -116,11 +121,14 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         resolvedVideoID: String? = nil, youtubeVisitorData: String? = nil,
         errorMessage: String? = nil, errorKind: ErrorKind? = nil,
         resolveAttempts: Int, mediaAttempts: Int,
-        suspendDeadline: Date? = nil, ownership: LiveMediaDownloadOwnership? = nil
+        suspendDeadline: Date? = nil, ownership: LiveMediaDownloadOwnership? = nil,
+        audioURLString: String? = nil, dashManifestURLString: String? = nil
     ) {
         self.id = id
         self.sourceURLString = sourceURLString
         self.assetURLString = assetURLString
+        self.audioURLString = audioURLString
+        self.dashManifestURLString = dashManifestURLString
         self.mediaKind = mediaKind
         self.title = title
         self.creator = creator
@@ -144,7 +152,8 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, sourceURLString, assetURLString, mediaKind, title, creator, resolveKind
+        case id, sourceURLString, assetURLString, audioURLString, dashManifestURLString
+        case mediaKind, title, creator, resolveKind
         case phase, progress, thumbnailFileName, fileExtension
         case expectedByteCount, receivedByteCount, resumeDataFileName
         case timeRange
@@ -159,6 +168,8 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         id = try c.decode(String.self, forKey: .id)
         sourceURLString = try c.decode(String.self, forKey: .sourceURLString)
         assetURLString = try c.decodeIfPresent(String.self, forKey: .assetURLString)
+        audioURLString = try c.decodeIfPresent(String.self, forKey: .audioURLString)
+        dashManifestURLString = try c.decodeIfPresent(String.self, forKey: .dashManifestURLString)
         mediaKind = Self.decodeLegacyMediaKind(
             try c.decodeIfPresent(String.self, forKey: .mediaKind))
         title = try c.decode(String.self, forKey: .title)
@@ -196,6 +207,8 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encode(id, forKey: .id)
         try c.encode(sourceURLString, forKey: .sourceURLString)
         try c.encodeIfPresent(assetURLString, forKey: .assetURLString)
+        try c.encodeIfPresent(audioURLString, forKey: .audioURLString)
+        try c.encodeIfPresent(dashManifestURLString, forKey: .dashManifestURLString)
         try c.encodeIfPresent(mediaKind, forKey: .mediaKind)
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(creator, forKey: .creator)

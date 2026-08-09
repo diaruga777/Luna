@@ -21,9 +21,9 @@ import SwiftSoup
 public struct FaviconFetcher {
 
     /// Icons larger than this are mis-served files, not favicons.
-    public static let maxIconBytes = 2 * 1024 * 1024
+    static let maxIconBytes = 2 * 1024 * 1024
     /// Below this pixel size a favicon renders as mush even in a 16pt badge.
-    public static let minimumPixelSize = 16
+    static let minimumPixelSize = 16
 
     public init() {}
 
@@ -102,7 +102,7 @@ public struct FaviconFetcher {
 
     /// Whether `data` decodes as a raster image at least `minimumPixelSize`
     /// on its longest side (multi-size .ico files pass if ANY frame does).
-    public static func isDecodableIcon(_ data: Data) -> Bool {
+    static func isDecodableIcon(_ data: Data) -> Bool {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
         let count = CGImageSourceGetCount(source)
         guard count > 0 else { return false }

@@ -46,7 +46,7 @@ public enum DuckDuckGoSearch {
     /// range guard rather than folded into "not 2xx" (a real 2xx result page
     /// still needs `isAnomalyPage` for the cases where the SAME challenge is
     /// served as an ordinary 200).
-    public static let anomalyStatusCode = 202
+    static let anomalyStatusCode = 202
 
     /// Whether `html` is DuckDuckGo's "unusual traffic" challenge rather than a
     /// results page — measured by its `anomaly-modal` challenge markup, which a

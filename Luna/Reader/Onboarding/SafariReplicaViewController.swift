@@ -363,7 +363,12 @@ final class SafariReplicaViewController:
             return
         }
         if let videoLesson {
-            videoLesson.begin()
+            // First teach the one Safari action the person has to take. The
+            // media panel is the proof of what enabling it unlocks, not a
+            // detached prelude that appears before the extension is on.
+            runExtensionEnableDemonstration { [weak videoLesson] in
+                videoLesson?.begin(immediately: true)
+            }
             return
         }
         if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
@@ -385,18 +390,24 @@ final class SafariReplicaViewController:
     /// that flip, playing while the sheet slides back down. The page underneath
     /// spells out those same steps, so the pass is a demonstration of what the
     /// reader is about to read.
-    private func runExtensionEnableDemonstration() {
+    private func runExtensionEnableDemonstration(
+        completion: (() -> Void)? = nil
+    ) {
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
         afterEnableDelay(
             OnboardingExtensionEnableTiming.pageHoldDuration,
             generation: generation
         ) {
-            self.presentExtensionsSheet(generation: generation)
+            self.presentExtensionsSheet(
+                generation: generation, completion: completion)
         }
     }
 
-    private func presentExtensionsSheet(generation: Int) {
+    private func presentExtensionsSheet(
+        generation: Int,
+        completion: (() -> Void)? = nil
+    ) {
         let sheet = OnboardingManageExtensionsSheetView(
             frame: view.bounds, configuration: onboardingConfiguration)
         extensionsSheet = sheet
@@ -423,7 +434,11 @@ final class SafariReplicaViewController:
                     self.lunaPage?.prepareCleanUp()
                     sheet.dismiss { [weak self] in
                         self?.extensionsSheet = nil
+                        completion?()
                     }
+                    // Only the Reader's explainer has clutter to shatter. The
+                    // Downloader keeps its blocked post intact behind the
+                    // extension's actual video panel.
                     self.lunaPage?.cleanUpClutter()
                 }
             }

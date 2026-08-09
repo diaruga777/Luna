@@ -63,14 +63,15 @@ UI surface uses instead of ever showing the URL when metadata was fetched.
 ### Download destination
 
 `AutoDownloadSettings.autoSaveDownloadsToPhotos` is App-Group backed and defaults to
-**on**:
+**off**:
 
 - On: a completed download is written to Photos and the returned durable identifier is
   committed as `.photosReference`.
-- Because that default is Luna's and not the user's, the util card offers the choice
-  inline until someone answers it — and asks for Photos access before saving the
-  Photos answer (`claudedocs/util-card.md`, "Where downloads are stored").
-- Off: the download is moved into App Group storage as `.localFile`.
+- Off: the download is moved into App Group storage as `.localFile`; this is the
+  shipped default, so a fresh install never asks for Photos access.
+- The util card offers the choice inline until someone answers it and asks for
+  Photos access before saving a Photos answer (`claudedocs/util-card.md`,
+  "Where downloads are stored").
 - If automatic Photos authorization/save fails, Luna preserves the completed bytes as a
   local file rather than discarding the download.
 - Direct audio is always preserved as a local file because PhotoKit does not
@@ -464,8 +465,9 @@ Luna and Luna Downloader share the same `Settings → Downloads` screen with two
    (`autoDownloadMediaInPreview` + `wifiOnlyDownloads`): Never means nothing downloads on
    its own, and the two on-values differ only in whether a download that starts on cellular
    waits for Wi-Fi. Manual per-item downloads always start immediately.
-2. **Storage** — **Save to Photos** (the default) or **Delete after 1 day / 3 days /
-   2 weeks / 1 month**. `MediaStorageSettings.option` maps this one choice onto
+2. **Storage** — **in Luna** (the default, with the inline 2-week retention) or
+   **Save to Photos** / **Delete after 1 day / 3 days / 2 weeks / 1 month**.
+   `MediaStorageSettings.option` maps this one choice onto
    `autoSaveDownloadsToPhotos` + `MediaRetentionSettings.option`, which makes the two
    mutually exclusive: choosing Photos clears the deletion clock, choosing an age turns
    Photos off. An installation that had Photos off with no retention choice reads as the
@@ -474,10 +476,10 @@ Luna and Luna Downloader share the same `Settings → Downloads` screen with two
 
 The screen writes through `MediaStorageSettings.choose`, not `option`, so the user's
 answer is recorded as theirs (`hasExplicitChoice`). That marker is what the util
-card's inline **“Store downloads in Luna / in Photos”** line waits on: Photos is the
-default and needs a permission nobody has been asked for, so both downloading apps
-offer the choice on the card until it is answered anywhere — and that row, unlike this
-screen, asks for Photos access BEFORE it saves the setting
+card's inline **“Store downloads in Luna / in Photos”** line waits on: Luna is the
+default, and Photos needs a permission nobody has been asked for, so both downloading
+apps offer the choice on the card until it is answered anywhere — and that row, unlike
+this screen, asks for Photos access BEFORE it saves the setting
 (`MediaUtilCardStorageChoice`, `claudedocs/util-card.md`).
 
 All values live in the App Group so the app, App Intents, share/action extensions, and

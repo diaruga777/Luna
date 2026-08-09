@@ -134,6 +134,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     private let setupHeading = UILabel()
     private let stepRows: [OnboardingSafariEnableStepRowView]
     private let actionsView = OnboardingSafariActionsView()
+    private var panelCorona: EclipseCoronaView?
+    private var actionsCorona: EclipseCoronaView?
 
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
@@ -218,8 +220,14 @@ final class OnboardingVideoDownloadOverlayView: UIView {
                 OnboardingStrings.Accessibility.safariStep(index)
             setupContainer.addSubview(row)
         }
-        actionsView.onActivate = { [weak self] in self?.onActivateSafari?() }
-        actionsView.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
+        actionsView.onActivate = { [weak self] in
+            self?.endActionsPulse()
+            self?.onActivateSafari?()
+        }
+        actionsView.onSkip = { [weak self] in
+            self?.endActionsPulse()
+            self?.onSkipSafariSetup?()
+        }
         setupContainer.addSubview(actionsView)
 
         // Everything but the two real buttons is scenery. The panel itself
@@ -292,6 +300,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         panel.bounds = CGRect(
             x: 0, y: 0, width: panelWidth, height: panelHeight)
         panel.center = CGPoint(x: page.midX, y: top + panelHeight / 2)
+        layOutPanelCorona()
 
         let left = Metrics.panelPadding
         close.frame = CGRect(
@@ -332,6 +341,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             y: rowY + Metrics.setupActionsGap,
             width: contentWidth,
             height: OnboardingSafariActionsView.preferredHeight)
+        layOutActionsCorona()
     }
 
     /// Everything the panel carries whatever state it is in.
@@ -351,15 +361,52 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             + Metrics.panelPadding
     }
 
+    private func layOutPanelCorona() {
+        guard panel.bounds.width > 0, panel.bounds.height > 0 else { return }
+        if panelCorona?.bounds.size != panel.bounds.size {
+            panelCorona?.removeFromSuperview()
+            let corona = EclipseCoronaView(
+                bodySize: panel.bounds.size,
+                cornerRadius: Metrics.panelCornerRadius,
+                tint: LunaSurfacePalette.atmosphereTint)
+            corona.alpha = lessonStage == .idle ? 0 : 1
+            insertSubview(corona, belowSubview: panel)
+            panelCorona = corona
+        }
+        panelCorona?.frame = panel.frame
+    }
+
+    private func layOutActionsCorona() {
+        let button = actionsView.activateButton
+        let frame = setupContainer.convert(button.bounds, from: button)
+        guard frame.width > 0, frame.height > 0 else { return }
+        if actionsCorona?.bounds.size != frame.size {
+            actionsCorona?.removeFromSuperview()
+            let corona = EclipseCoronaView(
+                bodySize: frame.size,
+                cornerRadius: frame.height / 2,
+                tint: LunaSurfacePalette.atmosphereTint)
+            corona.alpha = lessonStage == .setup ? 1 : 0
+            setupContainer.insertSubview(corona, belowSubview: actionsView)
+            actionsCorona = corona
+        }
+        actionsCorona?.frame = frame
+    }
+
     // MARK: - The sequence
 
     /// The whole lesson, on its own clock: the post is left alone, the panel
     /// arrives playing, and the setup block takes the download button's place.
-    func begin() {
+    func begin(immediately: Bool = false) {
         guard lessonStage == .idle else { return }
         generation += 1
         setNeedsLayout()
         layoutIfNeeded()
+
+        if immediately {
+            presentPanel()
+            return
+        }
 
         after(OnboardingVideoDownloadTiming.pageHoldDuration) { view in
             view.presentPanel()
@@ -375,6 +422,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         hidePanel()
         panel.transform = .identity
         controls.alpha = 0
+        panelCorona?.alpha = 0
+        actionsCorona?.alpha = 0
         download.alpha = 1
         setupContainer.alpha = 0
         setupContainer.isHidden = true
@@ -400,6 +449,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         // rather than animated, and a translucent one on the way in would show
         // the sign-up wall through the video answering it.
         panel.alpha = 1
+        panelCorona?.alpha = 1
         panel.transform = reduceMotion
             ? .identity
             : CGAffineTransform(scaleX: 0.94, y: 0.94)
@@ -469,6 +519,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         ) {
             self.setupContainer.alpha = 1
             self.setupContainer.transform = .identity
+            self.actionsCorona?.alpha = 1
+        } completion: { [weak self] _ in
+            self?.beginActionsPulse()
         }
     }
 
@@ -477,6 +530,30 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     func reactivateActions() {
         guard lessonStage == .setup else { return }
         actionsView.setActionsEnabled(true)
+        beginActionsPulse()
+    }
+
+    private func beginActionsPulse() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        actionsView.activateButton.layer.add(
+            OnboardingAttentionPulse.scale(),
+            forKey: "onboarding.video.actions.pulse")
+        actionsCorona?.layer.add(
+            OnboardingAttentionPulse.scale(),
+            forKey: "onboarding.video.actions.corona.scale")
+        actionsCorona?.layer.add(
+            OnboardingAttentionPulse.glow(
+                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
+            forKey: "onboarding.video.actions.corona.glow")
+    }
+
+    private func endActionsPulse() {
+        actionsView.activateButton.layer.removeAnimation(
+            forKey: "onboarding.video.actions.pulse")
+        actionsCorona?.layer.removeAnimation(
+            forKey: "onboarding.video.actions.corona.scale")
+        actionsCorona?.layer.removeAnimation(
+            forKey: "onboarding.video.actions.corona.glow")
     }
 
     /// Held while the lesson is off screen. The panel keeps its last frame, so

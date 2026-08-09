@@ -237,7 +237,7 @@ enum MediaStageCatalog {
 @MainActor
 private final class StageDownloadStorageChoice: DownloadStorageChoosing {
     var isUnanswered = true
-    var usesPhotos = true
+    var usesPhotos = false
 
     func chooseInLuna() { usesPhotos = false }
 

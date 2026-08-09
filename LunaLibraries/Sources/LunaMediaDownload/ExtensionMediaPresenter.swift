@@ -3,6 +3,7 @@
 //  LunaMediaDownload
 //
 
+import LunaModels
 import UIKit
 
 /// The media-kind side of the extension surfaces: the saved-non-textual screen
@@ -42,6 +43,22 @@ public final class ExtensionMediaPresenter {
         } else {
             autoDownloadThenComplete(urlString)
         }
+    }
+
+    /// The deterministic onboarding post is still shown by the production
+    /// saved-media controller. Only its downloaded file is supplied up front;
+    /// no network request, reading-list write, Photos write, or background
+    /// transfer is involved in a rehearsal.
+    public func presentPracticeVideo(
+        videoURL: URL, interactive: Bool,
+        presentModally: (UIViewController) -> Void,
+        completeOnExit: @escaping () -> Void
+    ) {
+        presentModally(SavedNonTextualViewController(
+            articleURLString: ShareSetupPractice.instaTokURLString,
+            showsSystemShare: interactive,
+            practiceVideoURL: videoURL,
+            onDone: completeOnExit))
     }
 
     /// Whether a background auto-download should start for `urlString` (the

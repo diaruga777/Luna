@@ -12,10 +12,9 @@ import Photos
 /// that download — the other two never link this module, so their card never
 /// offers the row.
 ///
-/// The whole point of asking here rather than in Settings is the ORDER: Photos
-/// is the shipped default, so an install whose owner never granted Photos access
-/// carries a storage setting that quietly does something else (finished
-/// downloads fall back to local files). Picking Photos on this row asks the
+/// The whole point of asking here rather than in Settings is the ORDER: Luna is
+/// the shipped default, so a fresh install never needs Photos access before it
+/// has asked for it. Picking Photos on this row asks the
 /// system first and saves the setting only if the answer is yes.
 @MainActor
 public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
@@ -73,8 +72,8 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
         // every later question.
         Task { @MainActor in
             guard await saver.requestReadAuthorization() else {
-                // The setting never moved to Photos, and an install still on the
-                // Photos default is left saying something the user just declined.
+                // The setting stays (or returns) in Luna after a declined
+                // request, never claiming the unavailable Photos destination.
                 chooseInLuna()
                 completion(.refused)
                 return

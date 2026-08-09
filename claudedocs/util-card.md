@@ -152,14 +152,14 @@ over — it belongs to BOTH variants, always tops the block, and while it is
 present the completed card shows **no recent URLs** (its options open over the
 room they would take).
 
-It exists because Photos is the shipped default and Photos needs a system
-permission nobody has been asked for: a fresh install carries a storage setting
-that quietly does something else, since a failed Photos save falls back to a
-local file (`claudedocs/media-download.md`, "Download destination").
+It makes the safe default explicit: fresh installs store downloads **in Luna**
+and do not ask for Photos access unless the person selects it.
 
 - **A subtle selector outline, not a fourth action button.** The sentence and
   current option are horizontally centred as one control; the larger tappable
-  *app icon + “in Luna”/“in Photos”* run has a quiet outline and chevron.
+  *app icon + “in Luna”/“in Photos”* run has a quiet outline and large, inset
+  up/down carets. The pill is always sized for the longer *in Photos* option,
+  so neither it nor the sentence shifts when the selection changes.
   The icons are the real artwork at the text's own height — the running app's
   own icon (`LunaAppIconImage`) and the Photos pinwheel Luna draws
   (`PhotosAppGlyph`; a sandboxed app cannot read another app's icon).

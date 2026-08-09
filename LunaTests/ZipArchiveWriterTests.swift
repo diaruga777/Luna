@@ -55,7 +55,7 @@ final class ZipArchiveWriterTests: XCTestCase {
         XCTAssertEqual(directory.prefix(4), Data([0x50, 0x4B, 0x01, 0x02]))
     }
 
-    func testArchiveRoundTripsThroughSystemUnzipStructures() {
+    func testLocalHeaderCRCMatchesThePayload() {
         var writer = ZipArchiveWriter()
         let payload = Data((0..<1000).map { UInt8($0 % 251) })
         writer.addEntry(path: "blob.bin", data: payload)

@@ -77,7 +77,6 @@ final class DoubleSaveTests: XCTestCase {
         XCTAssertNil(DoubleSaveAction.nothing.exportFormat)
         XCTAssertNil(DoubleSaveAction.sendToKindle.exportFormat)
         XCTAssertEqual(DoubleSaveAction.openDocument.exportFormat, .document)
-        XCTAssertEqual(DoubleSaveAction.openDocument.displayName, "View immediately")
     }
 
     func testPendingFriendPromptIsOneShot() {

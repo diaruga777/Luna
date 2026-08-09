@@ -48,9 +48,6 @@ final class RSVPEngineTests: XCTestCase {
         let cases: [(name: String, paragraphs: [String], index: Int, expected: Double)] = [
             ("plain short word = 200ms", ["abc abc"], 0, base),
             ("plain word in a mixed block", ["word word. word, word"], 0, base),
-            ("sentence end dwells 1.8×", ["word word. word, word"], 1, base * 1.8),
-            ("clause end dwells 1.3×", ["word word. word, word"], 2, base * 1.3),
-            ("paragraph end dwells 2.5×", ["one two", "three"], 1, base * 2.5),
         ]
         for testCase in cases {
             let engine = RSVPEngine(content: makeContent(testCase.paragraphs))

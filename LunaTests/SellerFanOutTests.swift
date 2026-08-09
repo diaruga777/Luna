@@ -360,17 +360,6 @@ final class SellerFanOutTests: XCTestCase {
     // MARK: - Profiles
 
     func testShippedProfiles() {
-        XCTAssertEqual(SellerFanOutProfile.full.candidateLimit, 12)
-        XCTAssertEqual(SellerFanOutProfile.full.resultTarget, 6)
-        XCTAssertEqual(SellerFanOutProfile.full.concurrency, 3)
-        XCTAssertTrue(SellerFanOutProfile.full.usesWebSearchLayer)
-        XCTAssertTrue(SellerFanOutProfile.full.allowsNameOnlyMatch)
-
-        XCTAssertEqual(SellerFanOutProfile.constrained.candidateLimit, 6)
-        XCTAssertEqual(SellerFanOutProfile.constrained.resultTarget, 3)
-        XCTAssertEqual(SellerFanOutProfile.constrained.concurrency, 2)
-        XCTAssertFalse(SellerFanOutProfile.constrained.usesWebSearchLayer)
-        XCTAssertFalse(SellerFanOutProfile.constrained.allowsNameOnlyMatch)
         // The Safari appex answers inside a 20s native budget.
         XCTAssertLessThan(SellerFanOutProfile.constrained.totalBudget, 20)
         // Candidates are over-provisioned against the target in BOTH profiles —

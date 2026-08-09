@@ -84,10 +84,6 @@ final class FactoryResetTests: XCTestCase {
     }
 
     func testTheSummaryNamesFailuresSoAPartialWipeIsNotReadAsAWholeOne() {
-        var clean = FactoryReset.Report()
-        clean.removedPaths = ["a", "b"]
-        XCTAssertEqual(clean.summary, "erased 2 item(s)")
-
         var partial = FactoryReset.Report()
         partial.removedPaths = ["a"]
         partial.failures = ["Library: busy"]

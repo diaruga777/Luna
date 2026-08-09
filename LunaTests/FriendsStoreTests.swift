@@ -117,4 +117,10 @@ final class FriendsStoreTests: XCTestCase {
         XCTAssertFalse(Friend.isValidEmail("not-an-email"))
         XCTAssertFalse(Friend.isValidEmail("a@b"))
     }
+
+    func testNormalizedValidLowercasesTrimsAndDropsInvalidAddresses() {
+        XCTAssertEqual(
+            Friend.normalizedValid([" A@B.com ", "not-an-email", "c@d.com", "a@b"]),
+            ["a@b.com", "c@d.com"])
+    }
 }

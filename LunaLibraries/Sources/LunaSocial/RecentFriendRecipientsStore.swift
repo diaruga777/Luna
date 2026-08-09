@@ -44,9 +44,7 @@ public final class RecentFriendRecipientsStore {
     }
 
     public func recordSent(to emails: [String], now: Date = Date()) {
-        let normalized = emails
-            .map(Friend.normalize)
-            .filter(Friend.isValidEmail)
+        let normalized = Friend.normalizedValid(emails)
         guard !normalized.isEmpty else { return }
 
         store.mutate { all in

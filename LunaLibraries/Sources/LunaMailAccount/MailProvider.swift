@@ -6,24 +6,6 @@
 import Foundation
 import LunaModels
 
-/// How Luna authenticates to a provider's mail servers.
-public enum MailAuthKind: String, Codable, Equatable {
-    /// App-specific password + IMAP/SMTP (Gmail, iCloud, Yahoo, custom domains).
-    case appPassword
-    /// OAuth2 access/refresh tokens (Outlook / Microsoft Graph).
-    case oauth
-}
-
-/// Whether Luna can install an inbox filter (mark-read / skip-inbox) for the
-/// provider, and how.
-public enum FilterSupport: String, Codable, Equatable {
-    /// Created programmatically by Luna (Outlook via Graph; Gmail via the
-    /// restricted settings API — opt-in, see the login flow).
-    case automatic
-    /// No API — Luna shows instructions / a deep link / an importable rule.
-    case guided
-}
-
 /// IMAP/SMTP connection settings for an app-password account. IMAP is always
 /// implicit TLS on 993 for the providers we support; SMTP is either implicit
 /// TLS (465) or STARTTLS (587, e.g. iCloud).
@@ -65,8 +47,6 @@ public struct MailProvider: Equatable {
     /// (Outlook talks to Graph, not IMAP/SMTP) and for `.generic` until the
     /// user's servers are resolved (autodiscovery or manual entry).
     public let server: MailServerConfig?
-    public let authKind: MailAuthKind
-    public let filterSupport: FilterSupport
     /// Where the user creates an app-specific password (nil for OAuth/generic).
     public let appPasswordURL: URL?
     /// Short guidance shown on the credential-entry screen.
@@ -75,13 +55,10 @@ public struct MailProvider: Equatable {
     public let domains: [String]
 
     public init(id: ID, displayName: String, server: MailServerConfig?,
-                authKind: MailAuthKind, filterSupport: FilterSupport,
                 appPasswordURL: URL?, setupInstructions: String?, domains: [String]) {
         self.id = id
         self.displayName = displayName
         self.server = server
-        self.authKind = authKind
-        self.filterSupport = filterSupport
         self.appPasswordURL = appPasswordURL
         self.setupInstructions = setupInstructions
         self.domains = domains
@@ -116,7 +93,6 @@ public struct MailProvider: Equatable {
                 server: MailServerConfig(
                     imapHost: "imap.gmail.com",
                     smtpHost: "smtp.gmail.com", smtpPort: 465, smtpUsesSTARTTLS: false),
-                authKind: .appPassword, filterSupport: .automatic,
                 appPasswordURL: URL(string: "https://myaccount.google.com/apppasswords"),
                 setupInstructions: L10n.string("MailAccount_mailProvider_gmailSetupInstructions"),
                 domains: ["gmail.com", "googlemail.com"])
@@ -126,7 +102,6 @@ public struct MailProvider: Equatable {
                 server: MailServerConfig(
                     imapHost: "imap.mail.me.com",
                     smtpHost: "smtp.mail.me.com", smtpPort: 587, smtpUsesSTARTTLS: true),
-                authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: URL(string: "https://appleid.apple.com"),
                 setupInstructions: L10n.string("MailAccount_mailProvider_icloudSetupInstructions"),
                 domains: ["icloud.com", "me.com", "mac.com"])
@@ -136,7 +111,6 @@ public struct MailProvider: Equatable {
                 server: MailServerConfig(
                     imapHost: "imap.mail.yahoo.com",
                     smtpHost: "smtp.mail.yahoo.com", smtpPort: 465, smtpUsesSTARTTLS: false),
-                authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: URL(string: "https://login.yahoo.com/account/security/app-passwords"),
                 setupInstructions: L10n.string("MailAccount_mailProvider_yahooSetupInstructions"),
                 domains: ["yahoo.com", "ymail.com", "rocketmail.com"])
@@ -144,7 +118,6 @@ public struct MailProvider: Equatable {
             return MailProvider(
                 id: .outlook, displayName: L10n.string("MailAccount_mailProvider_outlookDisplayName"),
                 server: nil,
-                authKind: .oauth, filterSupport: .automatic,
                 appPasswordURL: nil,
                 setupInstructions: nil,
                 domains: ["outlook.com", "hotmail.com", "live.com", "msn.com"])
@@ -152,7 +125,6 @@ public struct MailProvider: Equatable {
             return MailProvider(
                 id: .generic, displayName: L10n.string("MailAccount_mailProvider_genericDisplayName"),
                 server: nil,
-                authKind: .appPassword, filterSupport: .guided,
                 appPasswordURL: nil,
                 setupInstructions: L10n.string("MailAccount_mailProvider_genericSetupInstructions"),
                 domains: [])

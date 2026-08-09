@@ -851,7 +851,10 @@ public struct SellerFanOut {
             return gtin
         }
         let brand = request.identifiers.brand ?? ""
-        let name = request.productName
+        // The CLEANED name, same as the retailer searches: a web search for
+        // "… Chrome: Toasters: Amazon.com.au" buries the product under the
+        // storefront's own chrome.
+        let name = ProductTitleHygiene.cleaned(request.productName)
         if !brand.isEmpty, !name.lowercased().contains(brand.lowercased()) {
             return "\(brand) \(name)".trimmingCharacters(in: .whitespaces)
         }

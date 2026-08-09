@@ -177,7 +177,13 @@ into a drawn checkmark after successful verification.
 Article-loading labels use `EclipseBloomStatusLabel` with
 `ArticleLoadingStatusCycler`: the current initial message enters through the onboarding's
 top-down eclipse-bloom reveal, then—only after three seconds—cycles at random through
-reassuring alternatives such as “Still going…” and “Just a bit longer…”. Terminal errors
+reassuring alternatives such as “Still going…” and “Just a bit longer…”. The label and
+the onboarding utility-card intro both drive the one shared `GlyphPixelBloomView`: the
+moving moon edge intersects a native-scale glyph raster, then composites the same stacked
+additive halos off the main thread. Loading-copy changes are always whole-phrase reveals;
+they do not search for or preserve a shared substring between the old and new messages.
+Only the settled label is part of the view hierarchy—the bloom raster is transient—so a
+second full-text overlay cannot unevenly darken or thicken the final glyphs. Terminal errors
 replace the label plainly and stop the cycle.
 
 ## Moon-horizon progress (`MoonHorizonProgressBar` / `MoonHorizonProgressView`)

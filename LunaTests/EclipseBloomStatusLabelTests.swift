@@ -52,6 +52,25 @@ final class EclipseBloomStatusLabelTests: XCTestCase {
         label.layoutIfNeeded()
         label.reveal("Nearly there…")
         XCTAssertEqual(label.text, "Nearly there…")
+        XCTAssertTrue(label.usesOnboardingGlyphBloom)
+        XCTAssertEqual(
+            label.subviews.compactMap { $0 as? UILabel }.count, 1,
+            "the bloom must not stack a second full-text label over the final ink")
+    }
+
+    /// Rotating loading copy is a whole-phrase replacement. Unlike the intro
+    /// headline's second beat, it must never look for a shared run between two
+    /// unrelated status messages before it can bloom the new one.
+    func testRevealReplacesCompletelyUnrelatedTextWithTheSameGlyphBloom() {
+        let label = EclipseBloomStatusLabel()
+        label.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
+        label.layoutIfNeeded()
+
+        label.reveal("Opening in Luna…")
+        label.reveal("Finding the good part…")
+
+        XCTAssertEqual(label.text, "Finding the good part…")
+        XCTAssertTrue(label.usesOnboardingGlyphBloom)
     }
 
     /// A terminal message must not be overwritten by a reveal that was still owed

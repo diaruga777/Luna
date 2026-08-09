@@ -12,9 +12,17 @@ import LunaModels
 /// loading screens in every Luna surface and extension.
 public final class EclipseBloomStatusLabel: UIView {
     private let finalLabel = UILabel()
-    private let bloomLabel = UILabel()
+    /// A pure-white twin used only as the glyph-alpha source for the same
+    /// raster bloom renderer as the onboarding utility-card headline.
+    private let illuminationMaskLabel = UILabel()
     private let revealMask = CAShapeLayer()
+    /// A transparent copy of the onboarding moon front. Its presentation
+    /// transform is the bloom renderer's clock, keeping the light attached to
+    /// the actual mask edge instead of letting two independent animations drift.
+    private let frontTracker = CAShapeLayer()
+    private let pixelBloomView = GlyphPixelBloomView()
     private var isRevealing = false
+    private var revealGeneration = 0
     private var requestedText: String?
     /// Set when `reveal` was asked for before this view had a size: the words are
     /// already applied, and this is the sweep still owed once layout provides bounds.
@@ -25,34 +33,47 @@ public final class EclipseBloomStatusLabel: UIView {
         didSet { finalLabel.textColor = textColor }
     }
     public var font: UIFont = .preferredFont(forTextStyle: .body) {
-        didSet { [finalLabel, bloomLabel].forEach { $0.font = font } }
+        didSet { [finalLabel, illuminationMaskLabel].forEach { $0.font = font } }
     }
     public var textAlignment: NSTextAlignment = .center {
-        didSet { [finalLabel, bloomLabel].forEach { $0.textAlignment = textAlignment } }
+        didSet {
+            [finalLabel, illuminationMaskLabel].forEach { $0.textAlignment = textAlignment }
+        }
     }
     public var numberOfLines: Int = 1 {
-        didSet { [finalLabel, bloomLabel].forEach { $0.numberOfLines = numberOfLines } }
+        didSet {
+            [finalLabel, illuminationMaskLabel].forEach { $0.numberOfLines = numberOfLines }
+        }
+    }
+
+    /// Test/diagnostic evidence that this status label is configured with the
+    /// onboarding renderer rather than a whole-label shadow approximation.
+    public var usesOnboardingGlyphBloom: Bool {
+        pixelBloomView.usesRasterizedGlyphPixels
+            && pixelBloomView.usesStackedAdditiveHalos
     }
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        for label in [finalLabel, bloomLabel] {
+        clipsToBounds = false
+        for label in [finalLabel, illuminationMaskLabel] {
             label.translatesAutoresizingMaskIntoConstraints = false
             label.textAlignment = textAlignment
             label.numberOfLines = numberOfLines
             label.font = font
-            addSubview(label)
-            NSLayoutConstraint.activate([
-                label.topAnchor.constraint(equalTo: topAnchor),
-                label.bottomAnchor.constraint(equalTo: bottomAnchor),
-                label.leadingAnchor.constraint(equalTo: leadingAnchor),
-                label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            ])
         }
+        addSubview(finalLabel)
+        NSLayoutConstraint.activate([
+            finalLabel.topAnchor.constraint(equalTo: topAnchor),
+            finalLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            finalLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
+            finalLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
         finalLabel.textColor = textColor
-        bloomLabel.textColor = .white
-        bloomLabel.alpha = 0
+        illuminationMaskLabel.textColor = .white
+        frontTracker.fillColor = UIColor.clear.cgColor
+        layer.addSublayer(frontTracker)
     }
 
     @available(*, unavailable)
@@ -65,15 +86,11 @@ public final class EclipseBloomStatusLabel: UIView {
     /// still owed from before layout would otherwise fire on the next pass and put
     /// "Unlocking article…" back over the error.
     public func setTextImmediately(_ text: String?) {
-        layer.removeAllAnimations()
-        finalLabel.layer.removeAllAnimations()
-        bloomLabel.layer.removeAllAnimations()
-        finalLabel.layer.mask = nil
+        revealGeneration &+= 1
+        stopReveal()
         finalLabel.text = text
-        bloomLabel.text = text
+        illuminationMaskLabel.text = text
         finalLabel.alpha = 1
-        bloomLabel.alpha = 0
-        isRevealing = false
         requestedText = text
         pendingRevealDuration = nil
     }
@@ -95,11 +112,12 @@ public final class EclipseBloomStatusLabel: UIView {
     /// now or park the reveal for `layoutSubviews` to run once there are bounds to
     /// animate within.
     public func reveal(_ text: String, duration: TimeInterval = 1.55) {
+        revealGeneration &+= 1
+        stopReveal()
         requestedText = text
         finalLabel.text = text
-        bloomLabel.text = text
+        illuminationMaskLabel.text = text
         finalLabel.alpha = 1
-        bloomLabel.alpha = 0
         guard bounds.width > 0, bounds.height > 0 else {
             // No bounds yet: the words are already on screen-bound labels, and the
             // eclipse sweep runs as soon as layout gives them a rect.
@@ -125,11 +143,18 @@ public final class EclipseBloomStatusLabel: UIView {
         let initialPath = revealPath(excluding: initial, in: rect)
         let finalPath = revealPath(excluding: final, in: rect)
 
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         revealMask.fillRule = .evenOdd
         revealMask.fillColor = UIColor.white.cgColor
         revealMask.frame = rect
         revealMask.path = finalPath
         finalLabel.layer.mask = revealMask
+        frontTracker.frame = rect
+        frontTracker.path = UIBezierPath(ovalIn: initial).cgPath
+        let frontTransform = CATransform3DMakeTranslation(0, travel, 0)
+        frontTracker.transform = frontTransform
+        CATransaction.commit()
 
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
         let maskAnimation = CABasicAnimation(keyPath: "path")
@@ -139,26 +164,45 @@ public final class EclipseBloomStatusLabel: UIView {
         maskAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         revealMask.add(maskAnimation, forKey: "eclipseGlyphReveal")
 
-        // A stacked white glow produces the same brief white-hot bloom as the
-        // onboarding text before the glyphs cool to their normal status colour.
-        bloomLabel.layer.shadowColor = UIColor.white.cgColor
-        bloomLabel.layer.shadowOffset = .zero
-        bloomLabel.layer.shadowRadius = 18
-        let bloom = CAKeyframeAnimation(keyPath: "opacity")
-        bloom.values = [0, 0.9, 1, 0]
-        bloom.keyTimes = [0, 0.18, 0.42, 1]
-        bloom.duration = resolvedDuration
-        bloomLabel.layer.add(bloom, forKey: "eclipseBloom")
-        let shadow = CAKeyframeAnimation(keyPath: "shadowOpacity")
-        shadow.values = [0, 0.75, 1, 0]
-        shadow.keyTimes = bloom.keyTimes
-        shadow.duration = resolvedDuration
-        bloomLabel.layer.add(shadow, forKey: "eclipseBloomShadow")
+        let trackerAnimation = CABasicAnimation(keyPath: "transform")
+        trackerAnimation.fromValue = CATransform3DIdentity
+        trackerAnimation.toValue = frontTransform
+        trackerAnimation.duration = resolvedDuration
+        trackerAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
+        frontTracker.add(trackerAnimation, forKey: "eclipseBloomFront")
 
+        // This is the onboarding utility-card headline's actual rasterized
+        // glyph-edge light—not a second full label with a shadow. Only pixels
+        // beside the moving moon front emit, then cool behind it.
+        illuminationMaskLabel.frame = rect
+        illuminationMaskLabel.layoutIfNeeded()
+        let padding = GlyphPixelBloomView.renderPadding
+        pixelBloomView.frame = rect.insetBy(dx: -padding, dy: -padding)
+        if pixelBloomView.superview == nil { addSubview(pixelBloomView) }
+        pixelBloomView.configure(
+            glyphLabel: illuminationMaskLabel,
+            glyphFrame: CGRect(
+                x: padding, y: padding,
+                width: rect.width, height: rect.height),
+            circleFrame: initial.offsetBy(dx: padding, dy: padding),
+            scale: traitCollection.displayScale)
+        let frontSpeed = travel / CGFloat(max(resolvedDuration, 0.001))
+        pixelBloomView.reveal(
+            circleTravel: travel,
+            duration: resolvedDuration,
+            edgeBandScale: max(
+                1, frontSpeed / GlyphPixelBloomView.referenceFrontSpeed),
+            offsetProvider: { [weak frontTracker] in
+                frontTracker?.presentation().map { CGFloat($0.transform.m42) }
+            })
+
+        let generation = revealGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + resolvedDuration) { [weak self] in
-            guard let self, self.requestedText == text else { return }
+            guard let self, self.revealGeneration == generation else { return }
             self.finalLabel.layer.mask = nil
-            self.bloomLabel.alpha = 0
+            self.frontTracker.removeAllAnimations()
+            self.pixelBloomView.stop()
+            self.pixelBloomView.removeFromSuperview()
             self.isRevealing = false
         }
     }
@@ -172,6 +216,19 @@ public final class EclipseBloomStatusLabel: UIView {
               !isRevealing, bounds.width > 0, bounds.height > 0
         else { return }
         reveal(requestedText, duration: duration)
+    }
+
+    private func stopReveal() {
+        revealMask.removeAllAnimations()
+        frontTracker.removeAllAnimations()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frontTracker.transform = CATransform3DIdentity
+        CATransaction.commit()
+        pixelBloomView.stop()
+        pixelBloomView.removeFromSuperview()
+        finalLabel.layer.mask = nil
+        isRevealing = false
     }
 
     private func revealPath(excluding circle: CGRect, in rect: CGRect) -> CGPath {

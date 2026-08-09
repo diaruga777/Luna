@@ -154,9 +154,6 @@ public enum IngestPipeline {
     /// Runs the complete pipeline for `input`, ALWAYS within `timeout`. On timeout
     /// returns `.needsArchive` for a hard-paywall host (the archive reader is its
     /// only route) and `.failed` otherwise — never an infinite wait.
-    ///
-    /// - `render`: an optional rendered-HTML test seam for JS-only product prices.
-    ///   Production callers leave it nil so every capture surface processes equally.
     public static func process(
         _ input: IngestInput,
         timeout: TimeInterval = processTimeout,
@@ -165,14 +162,12 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
-        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText,
-        render: ((URL) async -> String?)? = nil
+        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText
     ) async -> Outcome {
         await processResolved(
             input, timeout: timeout, session: session, fetcher: fetcher,
             productDetector: productDetector, articleProcessor: articleProcessor,
-            productProcessor: productProcessor, socialTextProcessor: socialTextProcessor,
-            render: render).outcome
+            productProcessor: productProcessor, socialTextProcessor: socialTextProcessor).outcome
     }
 
     /// Runs the pipeline and returns both the outcome and the canonical URL it
@@ -186,16 +181,14 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         articleProcessor: ArticleIngestProcessing? = IngestKindProcessors.article,
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
-        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText,
-        render: ((URL) async -> String?)? = nil
+        socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText
     ) async -> IngestResult {
         await withTaskGroup(of: IngestResult?.self) { group in
             group.addTask {
                 await runUnbounded(
                     input, session: session, fetcher: fetcher,
                     productDetector: productDetector, articleProcessor: articleProcessor,
-                    productProcessor: productProcessor, socialTextProcessor: socialTextProcessor,
-                    render: render)
+                    productProcessor: productProcessor, socialTextProcessor: socialTextProcessor)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -222,8 +215,7 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         articleProcessor: ArticleIngestProcessing?,
         productProcessor: ProductIngestProcessing?,
-        socialTextProcessor: SocialTextIngestProcessing?,
-        render: ((URL) async -> String?)?
+        socialTextProcessor: SocialTextIngestProcessing?
     ) async -> IngestResult {
         // (1) Unwrap ONCE — every surface gets the same offline-first, tracking-
         // stripped unwrap (Facebook deep links, Apple/Google News, shorteners).
@@ -262,7 +254,7 @@ public enum IngestPipeline {
             return IngestResult(url: url, outcome: await processWeb(
                 url: url, classifiedKind: kind, input: input, fetcher: fetcher,
                 productDetector: productDetector, articleProcessor: articleProcessor,
-                productProcessor: productProcessor, render: render))
+                productProcessor: productProcessor))
         }
     }
 
@@ -281,8 +273,7 @@ public enum IngestPipeline {
         fetcher: HTMLFetching,
         productDetector: ProductPageDetector,
         articleProcessor: ArticleIngestProcessing?,
-        productProcessor: ProductIngestProcessing?,
-        render: ((URL) async -> String?)?
+        productProcessor: ProductIngestProcessing?
     ) async -> Outcome {
         // (2c) A search-results URL is decided BEFORE the fetch: there is no single
         // item on it for any kind to own, so a direct share fails immediately
@@ -329,7 +320,7 @@ public enum IngestPipeline {
             // linked product processor. Without one, the save is dropped as
             // Price-Tracker-owned — never silently re-read as an article.
             guard let productProcessor else { return .unsupported(owner: .priceTracker) }
-            if let product = await productProcessor.extract(url: url, html: html, render: render) {
+            if let product = await productProcessor.extract(url: url, html: html) {
                 return .product(product, html: html)
             }
             // No trustworthy price → fall through to the article path below

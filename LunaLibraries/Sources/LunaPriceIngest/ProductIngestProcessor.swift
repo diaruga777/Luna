@@ -20,11 +20,9 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
         self.metadataExtractor = metadataExtractor
     }
 
-    public func extract(
-        url: URL, html: String, render: ((URL) async -> String?)?
-    ) async -> ProductInfo? {
+    public func extract(url: URL, html: String) async -> ProductInfo? {
         guard let metadata = await metadataExtractor.extract(
-            url: url, html: html, render: render) else { return nil }
+            url: url, html: html) else { return nil }
         return ProductInfo(
             name: metadata.name, priceAmount: metadata.price.amount,
             priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,

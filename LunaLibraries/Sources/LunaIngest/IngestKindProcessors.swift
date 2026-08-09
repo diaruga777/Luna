@@ -28,9 +28,7 @@ public protocol ArticleIngestProcessing {
 public protocol ProductIngestProcessing {
     /// nil when no trustworthy price was found — the pipeline then falls
     /// through to the article path (matching the pre-split behavior).
-    func extract(
-        url: URL, html: String, render: ((URL) async -> String?)?
-    ) async -> ProductInfo?
+    func extract(url: URL, html: String) async -> ProductInfo?
 }
 
 /// Social-post TEXT processing: a long-form post on a social platform (an X

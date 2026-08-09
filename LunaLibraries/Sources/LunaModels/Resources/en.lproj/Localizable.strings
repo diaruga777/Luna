@@ -60,6 +60,7 @@
 "Common_installShortcut_Luna" = "Install Shortcut";
 "Common_kindle_Luna" = "Kindle";
 "Common_loading_Luna" = "Loading";
+"Common_loadingEllipsis_Luna" = "Loading...";
 "Common_namePlaceholderExample_Luna" = "name@example.com";
 "Common_never_Luna" = "Never";
 "Common_notNow_Luna" = "Not Now";

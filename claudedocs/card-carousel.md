@@ -463,6 +463,15 @@ temporary header. The destination card is revealed only when the handoff
 finishes. This is separate from new-save detection—the normal store reload still
 decides which card centers.
 
+**Pending saves are deliberately metadata-free.** Before ingest has fetched and
+classified a saved URL, `KindDeckProvider` renders one shared loading card for
+every kind: the indeterminate horizon spinner with `Loading...` beneath it. It
+does not construct a reader/product/media card and the strip supplies no title,
+thumbnail, favicon/source badge, product tag, or mini-card accessory. The first
+non-pending store update replaces that shell with the resolved kind's real card
+and metadata, so a new URL never flashes an `Untitled` header or placeholder
+globe while it is being fetched.
+
 Two things deliberately don't count as new. `offstageIDs` (archived rows) are
 passed in as seen, so unarchiving one reads as the return of a known card and
 leaves the archive tray's own transition in charge of where it lands. And the

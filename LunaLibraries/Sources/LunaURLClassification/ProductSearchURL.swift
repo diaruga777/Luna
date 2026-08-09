@@ -55,7 +55,7 @@ public enum ProductSearchURL {
 
     /// A plain Google **web** search (not the Shopping tab) for free-text typed into
     /// the URL bar.
-    public static func googleWebSearchURL(forQuery query: String) -> URL? {
+    static func googleWebSearchURL(forQuery query: String) -> URL? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: queryValueAllowed)

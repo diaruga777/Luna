@@ -316,7 +316,7 @@ public enum NewsAggregatorUnwrapper {
     }
 
     /// URL-safe base64 decode (restores `+`/`/` and pads to a multiple of 4).
-    public static func base64URLDecode(_ string: String) -> Data? {
+    static func base64URLDecode(_ string: String) -> Data? {
         var normalized = string
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")

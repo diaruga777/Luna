@@ -20,15 +20,15 @@ public struct RecognizedPlatform: Equatable {
 /// The already-parsed pieces of a URL handed to a `PlatformRule`'s recognizer, so
 /// each rule reads exactly what it needs (path segments, query, the host, or the
 /// whole URL) without re-parsing. Pure value type.
-public struct PlatformURLParts {
+struct PlatformURLParts {
     /// The lowercased host that matched the rule.
-    public let host: String
+    let host: String
     /// Path components with the leading "/" element dropped (e.g. `["watch"]`).
-    public let segments: [String]
+    let segments: [String]
     /// The URL's query items (empty when there are none).
-    public let query: [URLQueryItem]
+    let query: [URLQueryItem]
     /// The full URL, for rules whose id helper works on the whole URL.
-    public let url: URL
+    let url: URL
 }
 
 /// One declarative URL → platform rule. Recognition only — no fetching, no
@@ -43,12 +43,12 @@ public struct PlatformRule {
     /// Whether this rule recognizes a URL on a matching host. A rule may decline a
     /// host it shares with another platform, in which case the recognizer keeps
     /// scanning later rules. Default: host match is enough.
-    public let recognizes: (PlatformURLParts) -> Bool
+    let recognizes: (PlatformURLParts) -> Bool
     /// Extracts the item id from the parsed parts. A nil result is allowed — a
     /// short link or opaque page still classifies as the platform.
-    public let itemID: (PlatformURLParts) -> String?
+    let itemID: (PlatformURLParts) -> String?
 
-    public init(
+    init(
         platform: ContentPlatform,
         hosts: [String],
         recognizes: @escaping (PlatformURLParts) -> Bool = { _ in true },
@@ -64,9 +64,9 @@ public struct PlatformRule {
 /// The single deterministic platform recognizer, used identically on every
 /// surface (ingest, paste, share/action extensions, intents, friend receive).
 /// Pure: no network, no UIKit — compiles in extensions. This is the ONE place
-/// URL → platform rules live; every caller (`PlatformRegistry.detect`,
-/// `BypassGate`, the media-download path, `PasteboardSuggester`) recognizes
-/// through this single table.
+/// URL → platform rules live; every caller (`PlatformRegistry`, `BypassGate`,
+/// the media-download path, `PasteboardSuggester`) recognizes through this
+/// single table.
 public enum PlatformRecognizer {
 
     /// EXTEND HERE: add a platform by appending one rule. Order matters only when

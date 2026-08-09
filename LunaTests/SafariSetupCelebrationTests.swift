@@ -228,6 +228,21 @@ final class SafariSetupCelebrationTests: XCTestCase {
                     + "except through this relay")
         }
     }
+
+    func testRenderingTheOverlaySignalsTheMainAppToStopItsSafariGuide() {
+        let extensionSource = Self.source("LunaSafari/SharedSafariURL.swift")
+        let appSource = Self.source(
+            "LunaLibraries/Sources/LunaStorage/LunaSetupStatusStore.swift")
+        let onboardingSource = Self.source(
+            "Luna/Reader/Onboarding/AppOnboardingViewController.swift")
+        for source in [extensionSource, appSource, onboardingSource] {
+            XCTAssertTrue(
+                source.contains("safariCelebrationPresented"),
+                "the Safari confirmation signal must survive the extension-to-app hand-off")
+        }
+        XCTAssertTrue(extensionSource.contains("recordCelebrationShown"))
+        XCTAssertTrue(onboardingSource.contains("safariGuide.stopPictureInPicture()"))
+    }
 }
 
 /// The overlay itself, rendered by the production `content.js` in a bare
@@ -334,18 +349,18 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
             "1")
     }
 
-    /// The self-dismissal, without spending its five seconds — and without a
+    /// The self-dismissal, without spending its twenty seconds — and without a
     /// wait of any kind.
     ///
     /// `SETUP_CELEBRATION_DURATION` is a closure-scoped constant, so it can't be
     /// shortened from outside; but the ONE thing the overlay does with it is
     /// hand it to `setTimeout`, and that IS reachable. Stubbing `setTimeout`
     /// across `present()` intercepts the dismissal timer instead of scheduling
-    /// it, which lets this assert three things the old six-second version could
-    /// only imply: the timer was armed with 5000 (not merely that a mirror
+    /// it, which lets this assert three things a passive duration mirror could
+    /// only imply: the timer was armed with 20000 (not merely that a mirror
     /// global says so), the overlay is still up until it fires, and firing it is
     /// what takes the overlay down and hands the page back.
-    func testItDismissesItselfAfterFiveSecondsAndHandsThePageBack() {
+    func testItDismissesItselfAfterTwentySecondsAndHandsThePageBack() {
         _ = evaluate("""
             window.__lunaRealSetTimeout = window.setTimeout;
             window.__lunaArmedDelay = null;
@@ -364,9 +379,9 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
         _ = evaluate("window.setTimeout = window.__lunaRealSetTimeout; 'restored'")
 
         XCTAssertEqual(
-            evaluate("String(window.__lunaArmedDelay)"), "5000",
+            evaluate("String(window.__lunaArmedDelay)"), "20000",
             "the dismissal timer must be armed with the celebration's own duration")
-        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "5000")
+        XCTAssertEqual(evaluate("String(window.__lunaSetupCelebrationDuration)"), "20000")
         // Nothing has fired yet, so the overlay is still up.
         XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "present")
         XCTAssertEqual(evaluate("String(window.__lunaTestDismissed)"), "false")
@@ -376,6 +391,13 @@ final class SafariSetupCelebrationOverlayTests: XCTestCase {
         XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "absent")
         // The callback is how the pill logic gets its turn.
         XCTAssertEqual(evaluate("String(window.__lunaTestDismissed)"), "true")
+    }
+
+    func testPageHideDismissesTheOverlayWithoutHandingThePageBack() {
+        present()
+        _ = evaluate("window.dispatchEvent(new Event('pagehide')); 'hidden'")
+        XCTAssertEqual(evaluate("\(overlayQuery) ? 'present' : 'absent'"), "absent")
+        XCTAssertEqual(evaluate("String(window.__lunaTestDismissed)"), "false")
     }
 
     // MARK: - Harness

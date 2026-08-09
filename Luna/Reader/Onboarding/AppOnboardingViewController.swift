@@ -135,6 +135,7 @@ final class AppOnboardingViewController: UIViewController {
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
+    private var safariCelebrationObserver: NSObjectProtocol?
     private var contentObservers: [NSObjectProtocol] = []
     private var knownContentIdentifiers: Set<UUID> = []
     private var savedCardPreviewImage: UIImage?
@@ -231,6 +232,9 @@ final class AppOnboardingViewController: UIViewController {
     deinit {
         if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
         if let setupObserver { NotificationCenter.default.removeObserver(setupObserver) }
+        if let safariCelebrationObserver {
+            NotificationCenter.default.removeObserver(safariCelebrationObserver)
+        }
         for observer in contentObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -376,6 +380,15 @@ final class AppOnboardingViewController: UIViewController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.setupStatusChanged() }
+        }
+        safariCelebrationObserver = NotificationCenter.default.addObserver(
+            forName: LunaSetupStatusStore.safariCelebrationPresented,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // The extension has already rendered its in-Safari confirmation.
+            // End only this guide — the action-button guide is unrelated.
+            Task { @MainActor in self?.safariGuide.stopPictureInPicture() }
         }
         LunaSetupStatusStore.startObservingCrossProcessChanges()
         contentObservers = completion.contentWatch.changeNotifications.map { name in

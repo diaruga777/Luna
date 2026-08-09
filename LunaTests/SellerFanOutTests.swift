@@ -348,6 +348,13 @@ final class SellerFanOutTests: XCTestCase {
                 productName: "Sony WH-1000XM5",
                 identifiers: ProductIdentifiers(brand: "Sony"))),
             "Sony WH-1000XM5", "the brand is not repeated when the name already has it")
+        XCTAssertEqual(
+            subject.webSearchQuery(SellerFanOutRequest(
+                sourceURL: URL(string: "https://www.amazon.com.au/dp/B084PTKMTT")!,
+                productName: "Russell Hobbs Carlton 2 Slice Toaster, Chrome: Toasters: Amazon.com.au",
+                identifiers: ProductIdentifiers(brand: "Russell Hobbs"))),
+            "Russell Hobbs Carlton 2 Slice Toaster, Chrome",
+            "the web-search query is the CLEANED name, like the retailer searches")
     }
 
     // MARK: - Profiles

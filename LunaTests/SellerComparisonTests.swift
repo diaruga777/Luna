@@ -322,16 +322,19 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 1)
     }
 
-    /// The merge path is deliberately NOT compared: that tracker has been
-    /// through a fan-out once already, and re-running it would spend a dozen
-    /// candidates re-finding the stores it is excluding.
-    func testMergingIntoAnExistingTrackerRunsNoComparison() async {
+    /// The merge path is NOT compared once a tracker has already BEEN
+    /// through a fan-out (2+ stores, or a run already pending) — re-running
+    /// would spend a dozen candidates re-finding the stores it is excluding.
+    /// A merge into a tracker that has never had one is the Fix-8 carve-out,
+    /// covered separately below.
+    func testMergingIntoAnAlreadyComparedTrackerRunsNoComparison() async {
         let existing = store.add(urlString: "https://source.example/p/1")
-        store.savePriceTracker(
-            PriceTracker(
-                productName: "Acme Widget", firstStoreURL: "https://source.example/p/1",
-                price: 100, currency: "USD", brand: "Acme", productID: "0012345678905"),
-            for: existing.id)
+        var tracker = PriceTracker(
+            productName: "Acme Widget", firstStoreURL: "https://source.example/p/1",
+            price: 100, currency: "USD", brand: "Acme", productID: "0012345678905")
+        tracker.upsertStore(
+            PriceTrackerStore(urlString: "https://other.example/p/1", lastPrice: 90, currency: "USD"))
+        store.savePriceTracker(tracker, for: existing.id)
         let incoming = store.add(urlString: "https://source.example/p/1?ref=x")
         var ran = false
         ingestor.comparisonStarter = { _, _, _ in ran = true }
@@ -342,6 +345,30 @@ final class SellerComparisonTests: XCTestCase {
             product: product(), store: store)
 
         XCTAssertFalse(ran)
+    }
+
+    /// Fix 8's carve-out: a merge into a tracker that has NEVER been through
+    /// a fan-out (still one store, no pendingComparison) DOES kick a
+    /// comparison — the rule above was written for a tracker that had
+    /// already had one, not for one a prior save merely created and left
+    /// alone.
+    func testMergingIntoANeverComparedSellerlessTrackerKicksAComparison() async {
+        let existing = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(
+            PriceTracker(
+                productName: "Acme Widget", firstStoreURL: "https://source.example/p/1",
+                price: 100, currency: "USD", brand: "Acme", productID: "0012345678905"),
+            for: existing.id)
+        let incoming = store.add(urlString: "https://source.example/p/1?ref=x")
+        var kickedItemID: UUID?
+        ingestor.comparisonStarter = { itemID, _, _ in kickedItemID = itemID }
+        ingestor.refreshRunner = { _ in nil }
+
+        await ingestor.ingest(
+            incoming, url: URL(string: "https://source.example/p/1?ref=x")!,
+            product: product(), store: store)
+
+        XCTAssertEqual(kickedItemID, existing.id)
     }
 
     /// No runner installed (an app that doesn't compose the product kind, or a

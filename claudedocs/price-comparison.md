@@ -393,7 +393,7 @@ on. A wrong "$9.50 at Amazon" is worse than no answer.
    - **MPN-in-page** (`pageContainsSourceMPN`): the source declares an MPN
      (no GTIN reached this far), the candidate does NOT structurally
      declare a conflicting one, and the MPN token (case/separator-
-     insensitive) appears in the candidate's title, URL or markup.
+     insensitive) appears in the candidate's URL or markup.
 4. **Name similarity ≥ 0.6 (Jaccard) + compatible brand** → `.name`, but only
    when the profile allows it AND **the source declared no GTIN or MPN**. If the
    source has a strong id and the candidate does not present the same one, a name
@@ -406,9 +406,25 @@ on. A wrong "$9.50 at Amazon" is worse than no answer.
    GTIN, MPN or SKU). Accepted when name similarity clears a HIGHER bar
    (0.75, not 0.6) AND — whenever the source's own name or MPN carries a
    model-code-like token (a mixed letter+digit run of 6+ characters, e.g.
-   `HRFD634BW`) — that exact token appears on the candidate page too. No
-   token in the source ⇒ the higher bar alone is enough; there is no
+   `HRFD634BW`) — that exact token appears in the candidate's URL or markup
+   too. No token in the source ⇒ the higher bar alone is enough; there is no
    discriminator to demand.
+
+   Both containment checks in tiers 3 and 5 read the candidate's URL/markup
+   ONLY — never its (already-cleaned) NAME, even though the brief that
+   introduced them named "title" as a third surface. A product's own
+   identifier is very often literally a substring of its own display name
+   ("Sony WH-1000XM5 Headphones" contains "WH-1000XM5"), and both tiers are
+   only reached AFTER the name has already been compared against the
+   source's — so checking the name a second time for a substring of ITSELF
+   mostly just re-confirms that comparison rather than adding independent
+   evidence. Measured directly: `ComparisonMatchingTests
+   .testNameMatchIsRefusedWhenTheSourceHasACrossHostIdentifier` (two
+   IDENTICAL titles, the candidate declaring nothing) is exactly the
+   case the original tier-4 design refuses, and checking the name in
+   tiers 3/5 accepted it by accident. The real motivating cases are
+   unaffected: Amazon's ISBN and Costco's model code are both in the
+   URL, independent of either title.
 
 ### Why tier 3 exists, and why it no longer asks HOW the page was reached
 
@@ -815,7 +831,7 @@ All in `LunaTests/`:
 | `GTINFormsTests` | ISBN-10 ↔ ISBN-13, UPC/EAN/GTIN-14 forms, and that an ordinary ASIN fails the checksum |
 | `ProductTitleHygieneTests` | storefront prefixes/suffixes, format tails, the two colon-chrome shapes (`Amazon.com.au` before/after a category segment), and what must survive |
 | `GTINInPageMatchingTests` | the GTIN-in-page tier now accepting containment REGARDLESS of search provenance (once the name agrees), its refusals, and the audiobook trap |
-| `MPNContainmentMatchingTests` | the MPN-in-page tier: token containment in title/URL/markup, case/separator insensitivity, the name-must-agree and declared-conflicting-MPN refusals |
+| `MPNContainmentMatchingTests` | the MPN-in-page tier: token containment in URL/markup (deliberately NOT the candidate's own name), case/separator insensitivity, the name-must-agree and declared-conflicting-MPN refusals |
 | `RelaxedNameWithModelCodeMatchingTests` | the `.nameWithModelCode` tier: the 0.75 bar, the model-code discriminator (present vs absent in the source), ineligibility once the candidate declares ANY identifier, and the constrained profile's refusal |
 | `SellerFanOutDiagnosticsTests` | every rejection reason, attempt streaming, the run summary, the client-rendered skip, the render fallback and its cap, the identifier-then-name questions, query fallthrough and its link-budget cap, rendering past a markup-only challenge vs a hard block |
 | `SellerCategoryRelevanceTests` | a book outranking unrelated specialists, and hint normalization |

@@ -136,9 +136,9 @@ public enum ComparisonMatching {
         }
         if namesAgree(sourceName, candidateName, source: source, candidate: candidate) {
             if pageStatesSourceGTIN(source: source, evidence: evidence) { return .gtinInPage }
-            if pageContainsSourceMPN(
-                source: source, candidate: candidate, candidateName: candidateName, evidence: evidence
-            ) { return .mpn }
+            if pageContainsSourceMPN(source: source, candidate: candidate, evidence: evidence) {
+                return .mpn
+            }
             if allowsNameOnlyMatch, !source.hasCrossHostIdentifier { return .name }
         }
         if allowsNameOnlyMatch,
@@ -229,22 +229,41 @@ public enum ComparisonMatching {
 
     /// The MPN analogue of `pageStatesSourceGTIN`: the source declares an MPN,
     /// the candidate does NOT declare a conflicting one structurally, and the
-    /// MPN token turns up in the candidate's title, URL or markup. This is
-    /// what lets an MPN-only source (a Bing Lee-style save with a degraded
-    /// extraction — brand + MPN, no GTIN) verify a candidate whose own PDP
-    /// happens to be the one with no structured data at all.
+    /// MPN token turns up in the candidate's URL or markup. This is what lets
+    /// an MPN-only source (a Bing Lee-style save with a degraded extraction —
+    /// brand + MPN, no GTIN) verify a candidate whose own PDP happens to be
+    /// the one with no structured data at all.
+    ///
+    /// Deliberately checks the URL/markup ONLY, never `candidateName` — the
+    /// cleaned name the caller already ran through `namesAgree` before
+    /// reaching this tier at all. A product's own MPN is very often literally
+    /// a substring of its own display name ("Sony WH-1000XM5 Headphones"
+    /// contains "WH-1000XM5"), so checking the name AGAIN here would mostly
+    /// just re-confirm namesAgree's own verdict rather than add independent
+    /// evidence — exactly the redundancy `ComparisonMatchingTests
+    /// .testNameMatchIsRefusedWhenTheSourceHasACrossHostIdentifier` pins
+    /// against (two IDENTICAL titles, one side with no declared MPN at all,
+    /// must still refuse). The URL/markup are independent of the name
+    /// comparison, so containment there is real extra evidence.
     public static func pageContainsSourceMPN(
-        source: ProductIdentifiers, candidate: ProductIdentifiers, candidateName: String,
-        evidence: CandidatePageEvidence
+        source: ProductIdentifiers, candidate: ProductIdentifiers, evidence: CandidatePageEvidence
     ) -> Bool {
         guard candidate.normalizedMPN == nil, let mpn = source.mpn else { return false }
-        return containsNormalizedToken(
-            mpn, in: [candidateName, evidence.url?.absoluteString, evidence.html])
+        return containsNormalizedToken(mpn, in: [evidence.url?.absoluteString, evidence.html])
     }
 
     /// Full-profile-only relaxed name tier for a candidate that declares NO
     /// structured identifiers at all (no GTIN, MPN or SKU) when the source
     /// has one to check against. See the type-level doc's tier 5.
+    ///
+    /// The model-code check is URL/markup ONLY, for the same reason
+    /// `pageContainsSourceMPN` is: the name has already been compared (at a
+    /// HIGHER bar than usual, here) to reach this point, so re-checking the
+    /// same cleaned name for a substring of ITSELF is not independent
+    /// evidence — it is exactly what let two identically-named-but-unrelated
+    /// products through in testing. The measured Costco case is unaffected:
+    /// its URL contains the model code directly
+    /// (`…/Hisense-634L-…-HRFD634BW/p/177525`).
     static func matchesByRelaxedNameWithModelCode(
         source: ProductIdentifiers, sourceName: String,
         candidate: ProductIdentifiers, candidateName: String,
@@ -258,8 +277,7 @@ public enum ComparisonMatching {
             ProductTitleHygiene.cleaned(sourceName), ProductTitleHygiene.cleaned(candidateName))
         guard similarity >= relaxedNameThreshold else { return false }
         guard let token = modelCodeToken(sourceName: sourceName, mpn: source.mpn) else { return true }
-        return containsNormalizedToken(
-            token, in: [candidateName, evidence.url?.absoluteString, evidence.html])
+        return containsNormalizedToken(token, in: [evidence.url?.absoluteString, evidence.html])
     }
 
     /// The stricter name-similarity bar tier 5 asks for, in place of the

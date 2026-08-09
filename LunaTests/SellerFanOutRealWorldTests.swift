@@ -101,6 +101,22 @@ final class RealWorldSearchLinkExtractionTests: XCTestCase {
         XCTAssertEqual(found.map(\.path), ["/p/widget/10024438"])
     }
 
+    /// Measured live on officeworks.com.au: a search for an unrelated fridge
+    /// still seeded its own print-services nav links, which match the
+    /// retailer's own (necessarily loose) `/p/[^/]+` accept pattern just as
+    /// well as a real product does — `/print-copy/p/flyers-pcdhflcp` is a
+    /// category page, not a product.
+    func testOfficeworksPrintCopyNavLinksAreRefusedDespiteMatchingTheAcceptPattern() {
+        let html = """
+        <a href="/print-copy/p/flyers-pcdhflcp?cm_sp=all:menu-mobile:print-copy">Flyers</a>
+        <a href="/shop/officeworks/p/hisense-634l-fridge-hrfd634bw">Fridge</a>
+        """
+        let found = LeanProductPageParser.productLinks(
+            inSearchHTML: html, baseURL: URL(string: "https://www.officeworks.com.au/search?q=x")!,
+            limit: 5)
+        XCTAssertEqual(found.map(\.path), ["/shop/officeworks/p/hisense-634l-fridge-hrfd634bw"])
+    }
+
     /// Product URLs live in embedded JSON at least as often as in `<a href>`,
     /// where they are written with escaped slashes.
     func testJSONEscapedURLsInScriptPayloadsAreFound() {
@@ -556,7 +572,11 @@ final class MPNContainmentMatchingTests: XCTestCase {
 /// name-only tier — which the source having a GTIN/MPN blocks outright. The
 /// measured case: a Costco AU page, $1599.99, 0.90 name similarity, no
 /// JSON-LD — refused. The model code (`HRFD634BW`) printed in Costco's own
-/// title is the discriminator that makes trusting a bare name match safe.
+/// URL/PDP is the discriminator that makes trusting a bare name match safe.
+/// The model-code check reads the URL/markup ONLY, never the candidate name
+/// itself — the name has already been compared (at this tier's own HIGHER
+/// bar) to reach here, so a token that is only found by re-scanning that
+/// same name is not independent evidence.
 final class RelaxedNameWithModelCodeMatchingTests: XCTestCase {
 
     private let source = ProductIdentifiers(gtin: "9337640009775", brand: "Hisense")
@@ -573,12 +593,25 @@ final class RelaxedNameWithModelCodeMatchingTests: XCTestCase {
             allowsNameOnlyMatch: allowsNameOnly)
     }
 
-    /// The Costco case itself: high name similarity, model code in the title,
-    /// no structured identifier on the candidate at all.
-    func testHighNameSimilarityPlusModelCodeInTitleIsAccepted() {
+    /// The Costco case itself: high name similarity, the model code in the
+    /// candidate's own URL, no structured identifier on the candidate at all.
+    func testHighNameSimilarityPlusModelCodeInURLIsAccepted() {
         XCTAssertEqual(
-            verify(candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW"),
+            verify(
+                candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel",
+                url: "https://www.costco.com.au/Hisense-634L-PureFlat-French-Door-Fridge-Dark-Steel-HRFD634BW/p/177525"),
             .nameWithModelCode)
+    }
+
+    /// The model code repeated in the candidate's OWN name is not, by
+    /// itself, independent evidence — the name was already compared to reach
+    /// this tier, so a token found only by re-scanning it again would just
+    /// be re-confirming a comparison already made. Still refused here even
+    /// though the name similarity is high, because no URL/markup evidence
+    /// was offered.
+    func testModelCodeOnlyInTheCandidateNameIsNotIndependentEvidence() {
+        XCTAssertNil(
+            verify(candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW"))
     }
 
     /// The model code may be on the PAGE rather than in the title the parser

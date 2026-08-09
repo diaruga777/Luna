@@ -47,22 +47,18 @@ final class ExtensionProductPresenterTests: XCTestCase {
             productID: gtin, identifiers: ProductIdentifiers(gtin: gtin, brand: brand))
     }
 
-    private func present(
-        product: ProductInfo, url: URL
-    ) -> (presented: [UIViewController], completed: Bool) {
+    /// `presentModally` is called SYNCHRONOUSLY on both outcomes
+    /// (`presentPriceEditor` never awaits anything itself); `complete` is the
+    /// EDITOR's own Done callback (`editor.onDone = complete`), fired only
+    /// when the user finishes with it — never during this call — except on
+    /// the early failure path (no placeholder item), which calls it directly.
+    private func present(product: ProductInfo, url: URL) -> [UIViewController] {
         var presented: [UIViewController] = []
-        var completed = false
-        let expectation = expectation(description: "presentPriceEditor")
         presenter.presentPriceEditor(
             product: product, url: url, store: store,
             presentModally: { presented.append($0) },
-            complete: { completed = true; expectation.fulfill() })
-        // `presentModally`/`complete` are both called synchronously on this
-        // (main-actor) thread before `presentPriceEditor` returns, so the
-        // expectation is already fulfilled — this just keeps the call shape
-        // honest about that.
-        wait(for: [expectation], timeout: 1)
-        return (presented, completed)
+            complete: {})
+        return presented
     }
 
     // MARK: - No match: creates a new tracker, as before
@@ -70,7 +66,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
     func testNoExistingTrackerCreatesANewTrackerAndPresentsTheEditor() {
         let url = URL(string: "https://a.example/p/1")!
         _ = store.add(urlString: url.absoluteString)
-        let (presented, _) = present(product: product(name: "Widget"), url: url)
+        let presented = present(product: product(name: "Widget"), url: url)
 
         XCTAssertTrue(presented.first is PriceTrackingViewController)
         XCTAssertNotNil(store.item(forURLString: url.absoluteString)?.priceTracker)
@@ -90,10 +86,9 @@ final class ExtensionProductPresenterTests: XCTestCase {
 
         let newURL = URL(string: "https://binglee.example/p/1")!
         let placeholder = store.add(urlString: newURL.absoluteString)
-        let (presented, completed) = present(
+        let presented = present(
             product: product(name: "Hisense HRFD634BW Fridge", gtin: "9337640009775"), url: newURL)
 
-        XCTAssertTrue(completed)
         XCTAssertTrue(presented.first is PriceTrackingViewController)
         // Exactly one tracker survives, holding both store URLs.
         XCTAssertNil(store.item(withID: placeholder.id), "the placeholder must be removed on merge")

@@ -248,7 +248,13 @@ public enum LeanProductURLRules {
         rules["jbhifi.co.nz"] = rules["jbhifi.com.au"]
         rules["harveynorman.com.au"] = RetailerURLRule(accept: ["^/[^/]+\\.html"])
         rules["harveynorman.co.nz"] = rules["harveynorman.com.au"]
-        rules["officeworks.com.au"] = RetailerURLRule(accept: ["/p/[^/]+"])
+        // Live search results seed nav/menu links under the store's OTHER
+        // sections that also happen to match the bare "/p/" accept pattern —
+        // `/print-copy/p/flyers-pcdhflcp` (a print-services category page,
+        // not a product) measured on a real search for an unrelated fridge.
+        // A real officeworks product lives at `/shop/officeworks/p/<slug>`,
+        // never under `/print-copy/`.
+        rules["officeworks.com.au"] = RetailerURLRule(accept: ["/p/[^/]+"], reject: ["^/print-copy/"])
         rules["booktopia.com.au"] = RetailerURLRule(accept: ["/book/[0-9]{10,13}", "/[0-9]{10,13}\\.html"])
         rules["dymocks.com.au"] = RetailerURLRule(accept: ["^/book/[^/]+"])
         rules["coles.com.au"] = RetailerURLRule(accept: ["/product/[^/]+"])

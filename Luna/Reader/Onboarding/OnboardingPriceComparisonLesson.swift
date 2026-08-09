@@ -20,13 +20,15 @@ enum OnboardingPriceComparisonTiming {
     /// with an 18s budget; what matters here is that the spinner is up long
     /// enough to be read as work rather than as decoration.
     static let lookupDuration: TimeInterval = 2.4
-    /// The price the lookup found is legible on its own before the screen
-    /// darkens around it.
-    static let foundHoldDuration: TimeInterval = 0.9
+    /// Once the black spotlight has zoomed in on the lookup, leave its
+    /// searching state visible for a deliberate beat before replacing it with
+    /// the comparable seller result.
+    static let resultRevealDelay: TimeInterval = 1.0
+    /// The comparison result reads on its own before the instructions popup
+    /// arrives above it.
+    static let instructionsDelay: TimeInterval = 0.5
     static let spotlightFadeDuration: TimeInterval = 0.3
     static let spotlightCollapseDuration: TimeInterval = 0.85
-    /// The card follows the closing circle rather than racing it.
-    static let cardDelay: TimeInterval = 0.15
     static let cardRevealDuration: TimeInterval = 0.5
 }
 
@@ -287,6 +289,7 @@ final class OnboardingSafariSetupCardView: UIView {
 
     private let body = UIView()
     private var corona: EclipseCoronaView?
+    private var activateCorona: EclipseCoronaView?
     private let heading = UILabel()
     private let stepTexts: [String]
     private let stepRows: [OnboardingSafariEnableStepRowView]
@@ -395,6 +398,7 @@ final class OnboardingSafariSetupCardView: UIView {
             y: y,
             width: contentWidth,
             height: OnboardingSafariActionsView.preferredHeight)
+        layOutActivateCorona()
     }
 
     /// The corona is the card's border, so it takes the card's own geometry and
@@ -413,6 +417,27 @@ final class OnboardingSafariSetupCardView: UIView {
             corona = halo
         }
         corona?.frame = bounds
+    }
+
+    /// The card has its own eclipse edge, while the actionable Safari control
+    /// needs the Reader flow's tighter corona wrapped directly around its
+    /// capsule. Keeping them separate makes the instruction card legible AND
+    /// makes the exact button asking for a tap unmistakable.
+    private func layOutActivateCorona() {
+        let button = actionsView.activateButton
+        let frame = body.convert(button.bounds, from: button)
+        guard frame.width > 0, frame.height > 0 else { return }
+        if activateCorona?.bounds.size != frame.size {
+            activateCorona?.removeFromSuperview()
+            let halo = EclipseCoronaView(
+                bodySize: frame.size,
+                cornerRadius: frame.height / 2,
+                tint: LunaSurfacePalette.atmosphereTint)
+            body.insertSubview(halo, belowSubview: actionsView)
+            activateCorona = halo
+            applyPulse()
+        }
+        activateCorona?.frame = frame
     }
 
     /// Brings the card up over the closed spotlight and asks for its tap.
@@ -468,11 +493,19 @@ final class OnboardingSafariSetupCardView: UIView {
         guard isPulsing else { return }
         actionsView.activateButton.layer.add(
             OnboardingAttentionPulse.scale(), forKey: Self.pulseKey)
+        activateCorona?.layer.add(
+            OnboardingAttentionPulse.scale(), forKey: "\(Self.pulseKey).coronaScale")
+        activateCorona?.layer.add(
+            OnboardingAttentionPulse.glow(
+                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
+            forKey: "\(Self.pulseKey).coronaGlow")
     }
 
     private func endPulse() {
         isPulsing = false
         actionsView.activateButton.layer.removeAnimation(forKey: Self.pulseKey)
+        activateCorona?.layer.removeAnimation(forKey: "\(Self.pulseKey).coronaScale")
+        activateCorona?.layer.removeAnimation(forKey: "\(Self.pulseKey).coronaGlow")
     }
 
     #if DEBUG
@@ -589,15 +622,19 @@ final class OnboardingPriceComparisonOverlayView: UIView {
 
     /// Runs the whole lesson: the lookup, its answer, the spotlight closing on
     /// it, and the setup card over the top.
-    func begin() {
+    func begin(afterEnablingExtension: Bool = false) {
         guard stage == .idle else { return }
         stage = .looking
         generation += 1
         setNeedsLayout()
         layoutIfNeeded()
 
-        after(OnboardingPriceComparisonTiming.pageHoldDuration) { view in
-            view.revealPill()
+        if afterEnablingExtension {
+            revealPill()
+        } else {
+            after(OnboardingPriceComparisonTiming.pageHoldDuration) { view in
+                view.revealPill()
+            }
         }
     }
 
@@ -640,6 +677,34 @@ final class OnboardingPriceComparisonOverlayView: UIView {
                 animations: reveal)
         }
         after(OnboardingPriceComparisonTiming.lookupDuration) { view in
+            view.zoomSpotlightOntoLookup()
+        }
+    }
+
+    /// The black overlay closes around the still-searching pill first. The
+    /// answer is intentionally withheld until that zoom has landed, which makes
+    /// the comparison feel like work the extension just completed rather than
+    /// text that was waiting behind a transition.
+    private func zoomSpotlightOntoLookup() {
+        spotlight.layoutIfNeeded()
+        let generation = self.generation
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled
+                ? 0
+                : OnboardingPriceComparisonTiming.spotlightFadeDuration,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.spotlight.alpha = 1
+        } completion: { [weak self] _ in
+            guard let self, generation == self.generation else { return }
+            self.spotlight.collapse {}
+        }
+        after(
+            OnboardingPriceComparisonTiming.spotlightFadeDuration
+                + OnboardingPriceComparisonTiming.spotlightCollapseDuration
+                + OnboardingPriceComparisonTiming.resultRevealDelay
+        ) { view in
             view.showFoundPrice()
         }
     }
@@ -664,34 +729,7 @@ final class OnboardingPriceComparisonOverlayView: UIView {
                 options: [.curveEaseOut, .beginFromCurrentState],
                 animations: settle)
         }
-        after(OnboardingPriceComparisonTiming.foundHoldDuration) { view in
-            view.closeSpotlight()
-        }
-    }
-
-    private func closeSpotlight() {
-        // The hole is the height of the screen at this point, so the fade is
-        // almost entirely the corners darkening — which is what keeps the
-        // scrim's arrival from reading as a flash.
-        spotlight.layoutIfNeeded()
-        let generation = self.generation
-        UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled
-                ? 0
-                : OnboardingPriceComparisonTiming.spotlightFadeDuration,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            self.spotlight.alpha = 1
-        } completion: { [weak self] _ in
-            guard let self, generation == self.generation else { return }
-            self.spotlight.collapse {}
-        }
-        after(
-            OnboardingPriceComparisonTiming.spotlightFadeDuration
-                + OnboardingPriceComparisonTiming.spotlightCollapseDuration
-                + OnboardingPriceComparisonTiming.cardDelay
-        ) { view in
+        after(OnboardingPriceComparisonTiming.instructionsDelay) { view in
             view.presentSetupCard()
         }
     }

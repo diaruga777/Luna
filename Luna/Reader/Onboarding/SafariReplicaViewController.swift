@@ -359,7 +359,7 @@ final class SafariReplicaViewController:
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
         if let priceLesson {
-            priceLesson.begin()
+            runPriceComparisonDemonstration(priceLesson)
             return
         }
         if let videoLesson {
@@ -374,6 +374,45 @@ final class SafariReplicaViewController:
             deadline: .now() + OnboardingAnimationClock.delay(0.75)
         ) { [weak self] in
             self?.replayActionButtonSaveEffect()
+        }
+    }
+
+    /// Price Tracker starts by showing the same Safari-owned permission
+    /// decision as the Reader. Only after its extension is enabled does the
+    /// product lesson demonstrate the extension looking for comparable sellers.
+    private func runPriceComparisonDemonstration(
+        _ lesson: OnboardingPriceComparisonOverlayView
+    ) {
+        enableDemoGeneration += 1
+        let generation = enableDemoGeneration
+        afterEnableDelay(
+            OnboardingExtensionEnableTiming.pageHoldDuration,
+            generation: generation
+        ) {
+            let sheet = OnboardingManageExtensionsSheetView(
+                frame: self.view.bounds, configuration: self.onboardingConfiguration)
+            self.extensionsSheet = sheet
+            self.view.addSubview(sheet)
+            sheet.present { [weak self] in
+                guard let self, generation == self.enableDemoGeneration else { return }
+                self.afterEnableDelay(
+                    OnboardingExtensionEnableTiming.toggleDelay,
+                    generation: generation
+                ) {
+                    sheet.turnOnToggle { [weak self] in
+                        guard let self,
+                              generation == self.enableDemoGeneration
+                        else { return }
+                        sheet.dismiss { [weak self] in
+                            guard let self,
+                                  generation == self.enableDemoGeneration
+                            else { return }
+                            self.extensionsSheet = nil
+                            lesson.begin(afterEnablingExtension: true)
+                        }
+                    }
+                }
+            }
         }
     }
 

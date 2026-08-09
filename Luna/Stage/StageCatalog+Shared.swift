@@ -316,21 +316,21 @@ enum SharedStageCatalog {
                 summary: "A rescue running: the page dimmed under a progress bar. Frozen "
                     + "mid-run — the card polls its state provider and this one never moves.",
                 kind: .shared,
-                make: { failedSaveCard(isRescuing: true, progress: 0.45) }),
+                make: { failedSaveCard(.running(progress: 0.45)) }),
             StageDescriptor(
                 id: "card.failed-save.no-rescue", screen: "Failed save card",
                 variant: "no rescue offered",
                 summary: "A failure not worth an LLM pass (or no engine available): the "
                     + "button is absent rather than disabled.",
                 kind: .shared,
-                make: { failedSaveCard(canRescue: false) }),
+                make: { failedSaveCard(.unavailable) }),
             StageDescriptor(
                 id: "card.failed-save.terminal", screen: "Failed save card",
                 variant: "attempt spent",
                 summary: "The rescue was already spent under this app version: an apology "
                     + "and Delete, until an update makes it eligible again.",
                 kind: .shared,
-                make: { failedSaveCard(hasSpentAIAttempt: true) }),
+                make: { failedSaveCard(.spent) }),
             StageDescriptor(
                 id: "card.unsupported-save", screen: "Unsupported save card",
                 variant: "another app's kind",
@@ -361,14 +361,12 @@ enum SharedStageCatalog {
 
     @MainActor
     private static func failedSaveCard(
-        isRescuing: Bool = false, progress: Double = 0,
-        canRescue: Bool = true, hasSpentAIAttempt: Bool = false
+        _ rescueState: FailedSaveCardModel.RescueState = .idle
     ) -> UIViewController {
         let itemID = ReadingListItem.deterministicUUID(from: "stage-failed")
         let model = FailedSaveCardModel(
             itemID: itemID, url: URL(string: "https://example.com/broken"),
-            urlText: "example.com/broken", isRescuing: isRescuing, progress: progress,
-            canRescue: canRescue, hasSpentAIAttempt: hasSpentAIAttempt)
+            urlText: "example.com/broken", rescueState: rescueState)
         let card = FailedSaveCardViewController(
             model: model,
             actions: FailedSaveCardActions(rescue: {}, share: { _ in }, delete: {}),

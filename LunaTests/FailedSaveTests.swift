@@ -312,7 +312,10 @@ final class FailedSaveCardFactoryTests: XCTestCase {
         for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
             let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
             XCTAssertEqual(model.urlText, "example.com/broken")
-            XCTAssertFalse(model.isRescuing)
+            // Not checking canRescue/hasSpentAIAttempt (now .unavailable vs .idle):
+            // canRescue depends on the shared, test-order-sensitive
+            // URLRescueCoordinator.engine, same as before this refactor.
+            XCTAssertFalse(model.rescueState.isRunning)
         }
     }
 

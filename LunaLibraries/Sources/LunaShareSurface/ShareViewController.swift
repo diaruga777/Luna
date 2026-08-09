@@ -915,6 +915,11 @@ extension ShareViewController: ExtensionHost {
         }
         let navigationController = ExtensionNavigationController(
             rootViewController: viewController)
+        navigationController.onSwipeDownToDismiss = { [weak self] in
+            // Keep this on the same completion path as the loading screen's
+            // Close button and every terminal screen's Done button.
+            self?.complete()
+        }
         navigationController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(navigationController)
         view.addSubview(navigationController.view)

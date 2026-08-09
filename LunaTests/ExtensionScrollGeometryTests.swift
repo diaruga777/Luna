@@ -49,6 +49,30 @@ final class ExtensionScrollGeometryTests: XCTestCase {
             0, accuracy: 0.001, "Never negative")
     }
 
+    // MARK: - Sheet-wide exit swipe
+
+    func testDownwardExitSwipeNeedsBothDistanceAndVelocity() {
+        XCTAssertTrue(ExtensionNavigationController.shouldDismissOnSwipe(
+            translationY: ExtensionNavigationController.swipeDismissDistance,
+            peakDownwardVelocity: ExtensionNavigationController.swipeDismissVelocity,
+            peakLateralVelocity: 0))
+        XCTAssertFalse(ExtensionNavigationController.shouldDismissOnSwipe(
+            translationY: ExtensionNavigationController.swipeDismissDistance - 1,
+            peakDownwardVelocity: ExtensionNavigationController.swipeDismissVelocity,
+            peakLateralVelocity: 0))
+        XCTAssertFalse(ExtensionNavigationController.shouldDismissOnSwipe(
+            translationY: ExtensionNavigationController.swipeDismissDistance,
+            peakDownwardVelocity: ExtensionNavigationController.swipeDismissVelocity - 1,
+            peakLateralVelocity: 0))
+    }
+
+    func testExitSwipeRejectsAHorizontalOrDiagonalFlick() {
+        XCTAssertFalse(ExtensionNavigationController.shouldDismissOnSwipe(
+            translationY: ExtensionNavigationController.swipeDismissDistance,
+            peakDownwardVelocity: 1_000,
+            peakLateralVelocity: 900))
+    }
+
     /// The invariant the container exists for, measured through a real layout: the
     /// screen it shows is never underneath its own header bar.
     func testVisibleScreenClearsTheHeaderBar() {

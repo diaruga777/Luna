@@ -2243,20 +2243,31 @@
                 objectFit: "contain", background: "#000000", margin: "0", padding: "0",
                 border: "none", borderRadius: "0"
             });
-            // The authority on the clip's shape, and usually the FIRST word on it
-            // too: `preload="metadata"` means this lands well before the first
-            // frame, so a reel's panel grows while it is still opening the stream.
-            video.addEventListener("loadedmetadata", function () {
+            // The authority on the clip's shape. We ask before playback below,
+            // then repeat the read across Safari's readiness signals.
+            var applyVideoAspect = function () {
                 if (closed || !video) { return; }
                 if (video.videoWidth > 0 && video.videoHeight > 0) {
                     setStageAspect(video.videoHeight / video.videoWidth);
                 }
-            });
+            };
+            // iOS can defer `loadedmetadata` for an off-main-page player until a
+            // user gesture, and a restored page can race past that one event.
+            // Every subsequent readiness/playback signal repeats the cheap size
+            // read, while `setStageAspect` discards duplicates.
+            ["loadedmetadata", "loadeddata", "canplay", "durationchange", "playing"]
+                .forEach(function (eventName) {
+                    video.addEventListener(eventName, applyVideoAspect);
+                });
             // The page's CSP has the last word on the media load, and an expired
             // googlevideo URL 403s — either way the element reports it here.
             video.addEventListener("error", function () { if (!closed) { degrade(); } }, true);
             video.setAttribute("src", asset.url);
             stage.appendChild(video);
+            // `preload=metadata` is advisory on iOS. An explicit load starts the
+            // metadata request now, before Download or Play provides a gesture.
+            try { video.load(); } catch (e) {}
+            applyVideoAspect();
         });
     }
 

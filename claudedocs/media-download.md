@@ -47,6 +47,13 @@ the reading-list UUID as its stable identity. Existing manifests with the old re
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
 file disappears, store recovery changes the row back to `.undownloaded`.
 
+Safari's in-page player is a direct-resolved exception to the ordinary ingest
+funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
+before creating the job, then awaits preflight until the named background task is
+registered before returning the foreground to Safari. A completed transfer can
+therefore never arrive without a manifest row to receive it, and suspension cannot
+catch the handoff in the persist-before-task gap.
+
 Each row also carries best-effort `platform`/`platformItemID` (from
 `PlatformRecognizer.recognize`, purely parsed from the URL — no network) and `creator`
 (from the same platform metadata fetch that populates the reading-list item's title).
@@ -370,6 +377,15 @@ with the background session and restart every missing resolving, downloading, or
 The local saving/YouTube-range-export stage is persisted too: the untouched transfer stays in a
 `.source` staging file until the final output exists, so overnight repair can finish an export
 without applying a range twice.
+
+The AppDelegate background-session completion handler is not released merely
+because delegate events finished arriving. `LiveMediaDownloadManager` counts the
+async transition work those events started (next resolve/media task, trim, mux,
+store commit, Activity update/end) and releases the handler only when that work
+has either completed or installed its next system-owned task. Reddit follows the
+same rule: its video, guessed audio, and DASH-manifest/audio fallback are sequential
+roles in the named background session, with the companion URLs and completed video
+staging file persisted in the job. No Reddit transfer leg uses `URLSession.shared`.
 
 Every foreground and background path checks
 `volumeAvailableCapacityForImportantUsage` before starting or resuming. The required capacity

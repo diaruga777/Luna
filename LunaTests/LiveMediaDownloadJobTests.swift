@@ -3,6 +3,15 @@ import LunaModels
 import XCTest
 
 final class LiveMediaDownloadJobTests: XCTestCase {
+    private static var managerSource: String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return (try? String(
+            contentsOf: repoRoot.appendingPathComponent(
+                "LunaLibraries/Sources/LunaMediaDownload/LiveMediaDownloadManager.swift"),
+            encoding: .utf8)) ?? ""
+    }
+
     func testFacebookReelBackgroundResolutionStartsWithVideoPlugin() throws {
         let source = try XCTUnwrap(URL(string:
             "https://www.facebook.com/reel/1610065874019369/?fs=e&mibextid=wwXIfr&fs=e"))
@@ -105,6 +114,49 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         let job = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8))
         XCTAssertNil(job.ownership)
         XCTAssertEqual(job.mediaKind, .video)
+    }
+
+    func testRedditCompanionURLsSurviveJobPersistence() throws {
+        let audio = "https://v.redd.it/clip/audio"
+        let manifest = "https://v.redd.it/clip/DASHPlaylist.mpd"
+        let job = LiveMediaDownloadJob(
+            id: "reddit", sourceURLString: "https://reddit.com/comments/abc",
+            assetURLString: "https://v.redd.it/clip/DASH_720.mp4",
+            mediaKind: .video, title: "Clip", resolveKind: .reddit,
+            phase: .downloading, progress: 0.25,
+            resolveAttempts: 0, mediaAttempts: 0, ownership: .downloader,
+            audioURLString: audio, dashManifestURLString: manifest)
+
+        let restored = try JSONDecoder().decode(
+            LiveMediaDownloadJob.self, from: JSONEncoder().encode(job))
+
+        XCTAssertEqual(restored.audioURLString, audio)
+        XCTAssertEqual(restored.dashManifestURLString, manifest)
+    }
+
+    /// The Safari drain is allowed to return only after there is both a durable
+    /// library destination and a system-owned task. This source-level contract
+    /// guards the ordering across the app/extension handoff without starting a
+    /// real network transfer in the unit suite.
+    func testResolvedSafariDownloadPreparesDestinationBeforeAwaitingDurableTask() {
+        let method = Self.managerSource
+            .components(separatedBy: "public func startWithResolvedAssets(").last?
+            .components(separatedBy: "private func createAndStartJob(").first ?? ""
+        let destination = method.range(of: "SavedMediaStore.shared.ensureUndownloaded")
+        let task = method.range(of: "await prepareAndStartMediaDownload")
+        XCTAssertNotNil(destination)
+        XCTAssertNotNil(task)
+        if let destination, let task { XCTAssertLessThan(destination.lowerBound, task.lowerBound) }
+    }
+
+    func testRedditSplitStreamsStayOnTheNamedBackgroundSession() {
+        let reddit = Self.managerSource
+            .components(separatedBy: "private func startRedditMuxedDownload(").last?
+            .components(separatedBy: "private func reportProgress(").first ?? ""
+        XCTAssertTrue(reddit.contains("role: .redditVideo"))
+        XCTAssertTrue(reddit.contains("role: .redditAudio"))
+        XCTAssertTrue(reddit.contains("role: .redditManifest"))
+        XCTAssertFalse(reddit.contains("URLSession.shared"))
     }
 
     /// `mediaKind` used to be a bare `String` that three producers wrote three

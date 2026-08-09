@@ -412,8 +412,7 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         let sourceBytes = try XCTUnwrap(encodedImage(as: .jpeg))
         var image = imageBlock(
             alt: "Photo", fileName: "source-photo.jpg", data: sourceBytes)
-        image.imageWidth = 120
-        image.imageHeight = 80
+        image.imageSize = ArticleContent.BlockImageSize(width: 120, height: 80)
         let data = docx([image])
         try FileManager.default.removeItem(
             at: scratch.appendingPathComponent("source-photo.jpg"))
@@ -430,8 +429,7 @@ final class ArticleDocumentBuilderTests: XCTestCase {
     func testDOCXCapsOversizedDeclaredImageToThreeAndAHalfInches() throws {
         let sourceBytes = try XCTUnwrap(encodedImage(as: .jpeg))
         var image = imageBlock(alt: "Large", fileName: "large.jpg", data: sourceBytes)
-        image.imageWidth = 2_000
-        image.imageHeight = 1_000
+        image.imageSize = ArticleContent.BlockImageSize(width: 2_000, height: 1_000)
         let document = String(decoding: try XCTUnwrap(zipEntry(
             "word/document.xml", in: docx([image]))), as: UTF8.self)
         // 336 CSS px × 9,525 EMU = 3.5 inches; aspect remains 2:1.

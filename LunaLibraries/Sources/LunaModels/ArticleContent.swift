@@ -54,21 +54,20 @@ public struct ArticleContent: Codable, Equatable {
         /// set once the ingestor has downloaded it.
         public var imageFileName: String?
         /// Declared source dimensions for `.image` blocks, when the HTML provided
-        /// them. Used to reserve layout before the bytes are downloaded.
-        public var imageWidth: Int?
-        public var imageHeight: Int?
+        /// both of them. Used to reserve layout before the bytes are downloaded —
+        /// there is no representable state with only one dimension known.
+        public var imageSize: BlockImageSize?
 
         public init(kind: Kind, text: String, links: [Link],
                     imageURLString: String? = nil, imageFileName: String? = nil,
-                    imageWidth: Int? = nil, imageHeight: Int? = nil,
+                    imageSize: BlockImageSize? = nil,
                     anchorID: String? = nil) {
             self.kind = kind
             self.text = text
             self.links = links
             self.imageURLString = imageURLString
             self.imageFileName = imageFileName
-            self.imageWidth = imageWidth
-            self.imageHeight = imageHeight
+            self.imageSize = imageSize
             self.anchorID = anchorID
         }
 
@@ -79,6 +78,54 @@ public struct ArticleContent: Codable, Equatable {
         /// every one of those consumers must agree to skip them or their word
         /// indices drift apart.
         public var isReadableProse: Bool { kind != .tableOfContents && kind != .caption }
+
+        private enum CodingKeys: String, CodingKey {
+            case kind, text, links, anchorID, imageURLString, imageFileName, imageSize
+            // Legacy on-disk keys from before the two were unified into `imageSize`.
+            case imageWidth, imageHeight
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try container.decode(Kind.self, forKey: .kind)
+            text = try container.decode(String.self, forKey: .text)
+            links = try container.decode([Link].self, forKey: .links)
+            anchorID = try container.decodeIfPresent(String.self, forKey: .anchorID)
+            imageURLString = try container.decodeIfPresent(String.self, forKey: .imageURLString)
+            imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
+            if let size = try container.decodeIfPresent(BlockImageSize.self, forKey: .imageSize) {
+                imageSize = size
+            } else if let width = try container.decodeIfPresent(Int.self, forKey: .imageWidth),
+                      let height = try container.decodeIfPresent(Int.self, forKey: .imageHeight) {
+                imageSize = BlockImageSize(width: width, height: height)
+            } else {
+                imageSize = nil
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(kind, forKey: .kind)
+            try container.encode(text, forKey: .text)
+            try container.encode(links, forKey: .links)
+            try container.encodeIfPresent(anchorID, forKey: .anchorID)
+            try container.encodeIfPresent(imageURLString, forKey: .imageURLString)
+            try container.encodeIfPresent(imageFileName, forKey: .imageFileName)
+            try container.encodeIfPresent(imageSize, forKey: .imageSize)
+        }
+    }
+
+    /// A `.image` block's declared source dimensions — always both or neither;
+    /// there is no state representing "width known, height not" that every
+    /// consumer used to have to check for.
+    public struct BlockImageSize: Codable, Equatable {
+        public let width: Int
+        public let height: Int
+
+        public init(width: Int, height: Int) {
+            self.width = width
+            self.height = height
+        }
     }
 
     /// An inline link inside a block. `start`/`length` are UTF-16 offsets into `text`.

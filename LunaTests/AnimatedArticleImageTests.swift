@@ -51,7 +51,8 @@ final class AnimatedArticleImageTests: XCTestCase {
             .init(
                 kind: .image, text: "", links: [],
                 imageURLString: "https://example.com/animated-lead.gif",
-                imageFileName: fileName, imageWidth: 320, imageHeight: 180),
+                imageFileName: fileName,
+                imageSize: ArticleContent.BlockImageSize(width: 320, height: 180)),
             .init(kind: .paragraph, text: "A short article body.", links: []),
         ])
         var item = ReadingListItem(urlString: "https://example.com/article")

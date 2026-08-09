@@ -111,8 +111,20 @@ final class ArticleExtractorTests: XCTestCase {
         let images = content.blocks.filter { $0.kind == .image }
         XCTAssertEqual(images.count, 1)
         XCTAssertEqual(images.first?.imageURLString, "https://example.com/wp-content/uploads/hero-photo.png")
-        XCTAssertEqual(images.first?.imageWidth, 1600)
-        XCTAssertEqual(images.first?.imageHeight, 900)
+        XCTAssertEqual(images.first?.imageSize, ArticleContent.BlockImageSize(width: 1600, height: 900))
+    }
+
+    /// On-disk JSON written before `imageWidth`/`imageHeight` were unified into
+    /// `imageSize` must still decode into the paired type.
+    func testDecodesLegacyImageWidthHeightKeysIntoImageSize() throws {
+        let legacyJSON = """
+        {"kind":"image","text":"","links":[],
+         "imageURLString":"https://example.com/hero.png",
+         "imageWidth":1600,"imageHeight":900}
+        """
+        let block = try JSONDecoder().decode(
+            ArticleContent.Block.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(block.imageSize, ArticleContent.BlockImageSize(width: 1600, height: 900))
     }
 
     func testPrependsMetadataHeroImageAndUsesLazyResponsiveBodyImages() throws {

@@ -32,7 +32,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         ArticleContent.Block(
             kind: .image, text: "", links: [],
             imageURLString: "https://example.com/image.jpg",
-            imageWidth: width, imageHeight: height)
+            imageSize: ArticleContent.BlockImageSize(width: width, height: height))
     }
 
     /// A long article: title + several large paragraphs well past any small budget.

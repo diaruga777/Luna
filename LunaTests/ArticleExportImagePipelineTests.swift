@@ -56,7 +56,7 @@ final class ArticleExportImagePipelineTests: XCTestCase {
                 ArticleContent.Block(
                     kind: .image, text: "A hero photo", links: [],
                     imageURLString: remoteImageURL, imageFileName: recordingFileName,
-                    imageWidth: 2048, imageHeight: 1365),
+                    imageSize: ArticleContent.BlockImageSize(width: 2048, height: 1365)),
                 ArticleContent.Block(kind: .caption, text: "Photo: Ada", links: []),
                 ArticleContent.Block(kind: .paragraph, text: "Body after the photo.", links: []),
             ])

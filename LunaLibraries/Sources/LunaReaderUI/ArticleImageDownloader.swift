@@ -43,7 +43,7 @@ public enum ArticleImageDownloader {
         let initialTextBudget = 3_200
         return await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, textBeforeBlock in
             guard block.kind == .image else { return false }
-            if block.imageWidth != nil, block.imageHeight != nil { return false }
+            if block.imageSize != nil { return false }
             return textBeforeBlock <= initialTextBudget
         }
     }
@@ -59,7 +59,7 @@ public enum ArticleImageDownloader {
         _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
     ) async -> ArticleContent {
         await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, _ in
-            block.kind == .image && (block.imageWidth == nil || block.imageHeight == nil)
+            block.kind == .image && block.imageSize == nil
         }
     }
 

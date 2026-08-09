@@ -217,10 +217,9 @@ public enum ArticleTextRenderer {
     private static func attributedImagePlaceholder(
         for block: ArticleContent.Block, maxWidth: CGFloat
     ) -> NSAttributedString? {
-        guard let width = block.imageWidth, let height = block.imageHeight,
-              width > 0, height > 0 else { return nil }
-        let displayWidth = min(maxWidth, CGFloat(width))
-        let displayHeight = max(44, displayWidth / CGFloat(width) * CGFloat(height))
+        guard let size = block.imageSize, size.width > 0, size.height > 0 else { return nil }
+        let displayWidth = min(maxWidth, CGFloat(size.width))
+        let displayHeight = max(44, displayWidth / CGFloat(size.width) * CGFloat(size.height))
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: displayWidth, height: displayHeight))
         let image = renderer.image { context in
             LunaColors.secondaryFill.setFill()

@@ -37,9 +37,15 @@ final class ExtensionReaderPreparationTests: XCTestCase {
     private func imageBlock(
         url: String, width: Int? = nil, height: Int? = nil
     ) -> ArticleContent.Block {
-        ArticleContent.Block(
+        let size: ArticleContent.BlockImageSize?
+        if let width, let height {
+            size = ArticleContent.BlockImageSize(width: width, height: height)
+        } else {
+            size = nil
+        }
+        return ArticleContent.Block(
             kind: .image, text: "", links: [], imageURLString: url,
-            imageWidth: width, imageHeight: height)
+            imageSize: size)
     }
 
     private func content(_ blocks: [ArticleContent.Block]) -> ArticleContent {

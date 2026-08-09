@@ -703,14 +703,6 @@ public final class LiveMediaDownloadManager: NSObject {
         }
     }
 
-    /// Live progress (0...1) of a non-terminal Downloader-owned job for this
-    /// source URL, or `nil` if none is running — used by the grid to decide
-    /// whether a cell shows the progress ring or the static "undownloaded" icon.
-    public func currentDownloadProgress(forSourceURLString urlString: String) -> Double? {
-        guard let job = store.job(forSourceURLString: urlString), job.isDownloaderOwned else { return nil }
-        return job.progress
-    }
-
     public func currentDownloadSnapshot(
         forSourceURLString urlString: String
     ) -> DownloaderJobSnapshot? {

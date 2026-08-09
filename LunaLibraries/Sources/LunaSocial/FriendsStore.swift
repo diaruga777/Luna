@@ -113,8 +113,6 @@ public final class FriendsStore {
         return items().first { $0.email == normalized }
     }
 
-    public func isFriend(_ email: String) -> Bool { friend(withEmail: email) != nil }
-
     public func isBlocked(_ email: String) -> Bool { friend(withEmail: email)?.isBlocked == true }
 
     /// Adds a friend (or updates the name of an existing one). Returns the

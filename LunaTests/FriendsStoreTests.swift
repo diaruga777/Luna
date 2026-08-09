@@ -29,7 +29,6 @@ final class FriendsStoreTests: XCTestCase {
         store.add(email: "Alice@Example.com", name: "Alice")
         XCTAssertEqual(store.items().count, 1)
         // Email is normalized (lowercased) and used as the identifier.
-        XCTAssertTrue(store.isFriend("alice@example.com"))
         XCTAssertEqual(store.friend(withEmail: "alice@example.com")?.displayName, "Alice")
 
         store.remove(email: "alice@example.com")

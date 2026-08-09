@@ -638,15 +638,6 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         XCTAssertFalse(still.isDirectlyPlayable)
     }
 
-    func testFirstDirectlyPlayableSkipsStillsInACarousel() {
-        let carousel = [
-            MediaAsset(url: URL(string: "https://cdn.example.com/1.jpg")!, kind: .image),
-            MediaAsset(url: URL(string: "https://cdn.example.com/2.mp4")!, kind: .video),
-        ]
-        XCTAssertEqual(carousel.firstDirectlyPlayable?.url.absoluteString, "https://cdn.example.com/2.mp4")
-        XCTAssertNil([MediaAsset]().firstDirectlyPlayable)
-    }
-
     // MARK: - Reddit keeps its pill
 
     /// Reddit's own injection path must keep using the plain hand-off target.

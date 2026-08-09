@@ -29,10 +29,3 @@ public extension MediaAsset {
         }
     }
 }
-
-public extension Array where Element == MediaAsset {
-    /// The first asset an in-page player can stream, or nil when this post has
-    /// none (a photo carousel, a split-stream video) — in which case the caller
-    /// falls back to handing the page to the app.
-    var firstDirectlyPlayable: MediaAsset? { first(where: \.isDirectlyPlayable) }
-}

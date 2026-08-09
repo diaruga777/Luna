@@ -203,9 +203,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         return isShareable || isDocument
     }
 
-    /// Only items with a real web URL can be sent to other users.
-    public var canShareToFriends: Bool { isShareable }
-
     /// Send status for one destination.
     public func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
     /// Last delivery time for one destination.

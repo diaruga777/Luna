@@ -15,10 +15,6 @@ import Foundation
 /// Pure and unit-tested (`LinkListCSVTests`): no file access, no networking.
 public enum LinkListCSV {
 
-    /// Section values recognized on read: anything beginning `arch` is the
-    /// archive and everything else is an ordinary save.
-    public static let archiveSectionValue = "archive"
-
     /// Header names accepted for the section column, lowercased. `status` and
     /// `folder` are here on purpose: the two most common read-later exports
     /// (Pocket's `status`, Instapaper's `Folder`) already spell their archive

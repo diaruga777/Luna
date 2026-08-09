@@ -406,17 +406,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
-    /// NEXT open, not read back immediately after being set.
-    public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].lastScrollOffset != offset else { return false }
-            all[index].lastScrollOffset = offset
-            return true
-        }
-    }
-
     /// Persists the read-aloud resume position (marks audio as having played).
     /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
     /// NEXT open, not read back immediately after being set.
@@ -428,20 +417,6 @@ public final class ReadingListStore {
             return true
         }
     }
-
-    /// Persists how far through the article the user has gotten (0…1, only
-    /// ever increases). Fire-and-forget (see `asyncUpdate`) — a resume position
-    /// consumed on the NEXT open, not read back immediately after being set.
-    public func setReadingProgress(_ progress: Double, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            let clamped = min(max(progress, 0), 1)
-            guard clamped > (all[index].readingProgress ?? 0) else { return false }
-            all[index].readingProgress = clamped
-            return true
-        }
-    }
-
 
     public func delete(_ item: ReadingListItem) {
         coordinatedMutate { all in
@@ -472,15 +447,6 @@ public final class ReadingListStore {
         }
         if changed, archived {
             preloads.releaseTree(rootID: itemID)
-        }
-    }
-
-    /// Removes a set of items (and their cached content) in one pass — used to clear
-    /// the whole Archive section at once.
-    public func deleteItems(ids: Set<UUID>) {
-        coordinatedMutate { all in
-            for item in all where ids.contains(item.id) { self.removeFiles(for: item) }
-            all.removeAll { ids.contains($0.id) }
         }
     }
 

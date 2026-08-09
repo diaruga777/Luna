@@ -228,6 +228,54 @@ Clip/App Store fallback in the pills anymore — the target app is the host and 
 installed by definition. This is independent from the iOS 27+ Action Button
 shortcut setup; keep it available on earlier iOS versions.
 
+### Colour: a pill is its KIND's, chrome is its APP's
+
+Every in-page surface carries one of Luna's four identity colours
+(`LunaSurfacePalette.baseColor` — Luna indigo `#5856D6`, Reader periwinkle
+`#ADB5F6`, Downloader amber `#CC7609`, Price Tracker green `#07FF9D`), and which
+one it takes follows a single rule: **a pill is coloured by the CONTENT KIND it
+would save; app chrome is coloured by the APP showing it.**
+
+The two readings agree everywhere it matters, and only one of them is
+expressible. A single-content app shows exactly one kind of pill, so the
+Downloader's is always amber and the Price Tracker's always green — while the
+central Luna app, the only host that shows all three, colours each pill by the
+save it would make, which is the answer to "which of my apps is this button for".
+So `KIND_TINTS` (article → the Reader's, media → the Downloader's, product → the
+Price Tracker's) hangs off the target factories: `readTarget`/`downloadTargetFor`/
+`trackTargetFor` each name their tint, `injectLunaButton` renders whatever the
+target gave it (and stamps it on `data-luna-tint`), and a target that forgets one
+falls back to the Luna indigo. The video player's Download button takes the tint
+of the pill that opened it; the "Unlocked with Luna" toast takes the article tint
+(only article-capable hosts unlock at all).
+
+The **setup confirmation** is the exception that proves the rule: it belongs to
+the app rather than to any page — it is deliberately shown on pages that would
+earn no pill — so it is coloured by `surface`, which is why that field rides the
+`buttonContext` reply (handler → `background.js` relay → page) alongside `scheme`.
+Its wash is the app colour mixed most of the way down toward the night sky, since
+three of the four are far too bright to sit undimmed over someone's article.
+
+**Text colour is a function of the fill, never a constant.** The four identity
+colours span nearly the whole brightness range, so white would be unreadable on
+the Price Tracker's near-neon green and the Reader's pale periwinkle. Both
+languages pick the winner at the same threshold — WCAG relative luminance 0.19,
+where white and `#12121a` tie on contrast — `tintForeground` in `content.js` and
+`LunaSurfacePalette.ink(on:)` in Swift. That is what lets the fill go on being
+*exactly* the app's colour rather than a tempered version of it. The two
+informational chips (the "Was $X" history pill and the alternative-seller pill)
+are the one place the tint is a cast rather than a fill: they report a price
+instead of offering an action, so they stay the dark chip they have always been
+with the tint mixed 22% into it — filling them would make them read as a second
+button.
+
+`content.js` hand-copies the four hex values (this target links no package — the
+same trade the `Shared*.swift` files make), and `SafariSurfaceTintTests` holds the
+copy, the kind mapping, the text-colour rule and the resulting contrast against
+`LunaSurfacePalette`. The Downloader's onboarding Safari lesson replicates the
+player panel in UIKit and reads the same palette
+(`SafariVideoOverlayReplicaTests`).
+
 `LunaSafari/Resources/content.js` is loaded **both** ways: it is a **declared
 `content_scripts` entry** (`run_at: document_idle`, top frame, `js:
 [news_hosts.generated.js, platform_hosts.generated.js, product_rules.generated.js,
@@ -295,7 +343,8 @@ Article flow:
    A page is "locked" for `onlyLocked` when its host is a known
    hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
    — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
-3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping
+3. Otherwise it injects a "Read in Luna" capsule button in the article tint (the
+   Reader's periwinkle `#ADB5F6` — see "Colour" above). Tapping
    it opens `<ownScheme>://read?url=<encoded>` (`LunaDeepLink`) — the extension's own
    containing app.
 
@@ -487,14 +536,52 @@ content.js (recognized media page, or a pill tap)
 
 **Shape.** A dimmed, blurred fixed backdrop (tap to close); a panel at
 `calc(100vw - 24px)` capped at 640px, near the full width and **only as tall as
-its contents**; an X at the top left; a 16:9 stage; a full-width Download button
-beneath. Built the same way the pill and the setup confirmation are — plain
+its contents**; an X at the top left; the stage; a full-width Download button
+beneath, filled with the media kind's tint (see "Colour" above). Built the same way the pill and the setup confirmation are — plain
 elements, every style assigned through `applyStyle` (CSSOM property assignment,
 so a page's `style-src` CSP can't strip it), all text via `createTextNode`,
 `<div role="button">` rather than `<button>`, `z-index: 2147483647`, idempotent
 by element id. **There is no Share button**: the thing worth sharing is the video
 file, which does not exist until it has been downloaded — sharing happens in the
 app afterwards.
+
+**The popup's HEIGHT is the clip's, clamped at both ends.** A 9:16 reel in a 16:9
+letterbox is mostly black bars, so the stage takes the media's own aspect ratio —
+but it never goes *below* the 16:9 it opens at (a wide clip gets exactly the panel
+that shipped; the opening shape is a floor, not a starting point) and never past
+what is on screen. The stage is the only part of the panel whose size ever
+changes; the rest (padding, header, button) is measured at run time and is what
+the ceiling subtracts, so a wrapped label or a large accessibility font is already
+accounted for.
+
+The clamp is taken from **`window.visualViewport`, and this is the whole subtlety
+of the feature**. Both obvious answers are wrong: `100vh`/`100dvh` is the *large*
+viewport (laid out as though Safari's toolbars were retracted), and
+`position: fixed` is laid out against that same box — so the backdrop's own height
+is no better an answer than `100vh`. A panel sized by either runs under the
+address bar on a real device while every simulator test still passes.
+`visualViewport` is the one thing that reports the box that is on screen right
+now, so the backdrop is pinned to it (`top`/`height` from `visualViewport
+.offsetTop`/`.height`, `bottom: auto`) and the flex centring inside it is then
+centring in what the user can actually see. The safe-area insets are subtracted on
+top of that, as the backdrop's PADDING (`calc(14px + env(safe-area-inset-top))`
+and the bottom equivalent): they describe the unsafe part of exactly that box, and
+resolve to 0 on any page that isn't `viewport-fit=cover`. A toolbar collapsing, a
+rotation or a pinch re-runs both (`visualViewport`'s `scroll` moves the backdrop,
+`resize` also re-clamps the stage).
+
+The aspect ratio itself comes from the media, in two steps: the page's own
+`og:video:width`/`height` or `twitter:player:*` if it declares any (a beat earlier
+than the stream, and free), then authoritatively from the element's
+`loadedmetadata` — which `preload="metadata"` lands well before the first frame,
+so a reel's panel grows while the stream is still opening. Most posts declare
+nothing (an Instagram reel declares no video at all), so the second step is the
+one that usually does the work; the first size is applied without animation
+because it is the panel arriving, and every correction after it animates because
+it is the panel growing to fit. `SafariVideoOverlayTests`' shape section pins all
+of it, and `SafariVideoOverlayContractTests.testTheHeightIsClampedToTheVisual
+Viewport` pins the one part no rendering test can (a bare `WKWebView` has no
+browser chrome to be wrong about).
 
 **Why the resolve happens before the user needs to tap play.** The overlay opens
 in a loading state and sets `src` when the answer arrives, so the play tap on the
@@ -765,7 +852,8 @@ Paywall unlock + toast:
   `amp_unhide_subscr_section`; removing a real gate counts as an unlock for the toast.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
-  content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered
+  content.js shows a brief "Unlocked with Luna" toast: a capsule in the article tint,
+  centered
   above the button's corner (bottom ≈84px + safe area, so the two never overlap),
   fading out after ~3s. The "Read in Luna" button still appears independently.
 

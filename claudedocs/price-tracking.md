@@ -254,65 +254,77 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   (JS-loaded prices already in the DOM). The single source of "suggest = Add succeeds".
 - `ReaderKit/ProductSuggestionDebouncer.swift` — **pure** per-URL debounce
   (`shouldOffer(urlString:)` true once per URL; `hasOffered(urlString:)`).
-- `Luna/PriceTracker/PriceTrackerCardsViewController.swift` — the standalone
-  Price Tracker root. It adopts the exact shared root carousel, miniature
-  carousel, left setup/paste/recent arc, right archive arc, eclipse paging,
-  Settings, and Share chrome used by the sibling apps. Active cards contain:
-  - a 64pt product thumbnail and a 1–3 line product name;
-  - the always-present `PriceGraphView`, including its directly editable green
-    absolute alert threshold — or, for a tracker with no alert set, the **"Set price
-    alert"** pill in its place — and tap-only point tooltip;
-  - tracked-site rows plus the green + button.
-  Mini chips show the product thumbnail with the Price Tracker app icon's green
-  tag silhouette (no magnifying glass) at bottom-trailing. Archiving is
-  exclusively manual through the card menu; no time/read-state path archives a
-  tracker. Adding a site opens `ProductSearchOverlayViewController` with the
-  Reader-style eclipse. Its top chrome is only two small tabs: X on the left
-  and Open in Safari on the right; it has no Reader tab strip.
-- `ShareKit/PriceTrackingViewController.swift` — the tracker editor (in `ShareKit/` so
-  it compiles into the main app AND the extension targets), PUSHED onto the reading-list
-  nav stack in-app, or PRESENTED modally by the action/share extension's
-  `ShareSurfaceDriver` on a `.product` outcome (`PriceTrackingHost.extension`, exiting via
-  the injected `onDone`). **The exit differs by host and nothing else**: in-app, a back
-  chevron in the screen's own `NavHeaderBar`; in an extension, the floating glass
-  `ExtensionExitButton` every other Luna extension surface shows, with the alert-threshold
-  footer pinned above it so the circle never covers the readout. There is **no "Read
-  instead" button** — the editor no longer re-saves a tracker as an article, and the
-  `defaultSaveAsArticle` seam it needed is gone with it. `AlertThresholdSlider`,
-  `PriceTrackingManager`, and `InAppBrowser` moved to `ShareKit/` alongside it.
+- `LunaPriceUI/ProductDetailViewController.swift` — **the product surface**, and
+  the only one. Every app and every extension that shows a tracked product shows
+  this controller; its hosts add chrome and nothing else. Top to bottom:
+  - **Header** — a 46pt product thumbnail (`ProductArtwork.swift`: the downloaded
+    photo, else the app icon's green tag glyph), the product's SHORT name, the
+    full scraped title under it in caption type over at most two lines, and — on
+    the right — the current best price with `N% off` beneath it when the tracker
+    is below its baseline. The short name comes from `ProductTitleSummary`
+    (below).
+  - **Graph** — the always-present `PriceGraphView`, with its directly editable
+    green absolute alert threshold (or, for a tracker with no alert set, the
+    **"Set price alert"** pill in its place) and its tap-only point tooltip. Its
+    height is a share of the surface (30%, clamped to 132…260pt, and to 168pt
+    while there is no history to draw) rather than a constant, because the two
+    hosts are different sizes. It is also the band that absorbs spare height.
+  - **Alert row** (`AlertThresholdRow.swift`) — one 46pt line: a bell, "Alert
+    at", the slider (0.01…0.90), and the price it resolves to. See the next
+    section for its two states. The row's slider and the graph's line drive each
+    other live through `PriceGraphView.setThresholdPrice`, so the two controls
+    can never show different thresholds mid-drag.
+  - **Sellers** — the heading, a green **+**, and a scroll viewport of
+    `SellerRowView`s. A row is 44pt: favicon, seller NAME, price (the cheapest
+    tinted green when there is more than one). Tap → in-app Safari; long press →
+    Open / Remove. The viewport is exactly as tall as its rows until they stop
+    fitting, then it takes the remainder and scrolls — so a longer list is cut
+    mid-row rather than just past the first one. While a save-time fan-out is
+    out, its "Checking for other sellers…" row sits at the end of the list.
+  - **+** offers both ways to add one, in both hosts: **Search** (presents
+    `ProductSearchOverlayViewController` with the Reader-style eclipse) and
+    **Paste a link** (a URL alert). Either way the price fetch is MANDATORY —
+    `PriceFetcher` (static → embedded JSON → WebView), no price ⇒ "No price
+    found" and nothing added, `hasStore` dedupe. In the main app only, a no-price
+    page also offers `ProductPriceRescue.resolver` ("Try using on-device AI"),
+    the URL-rescue seam `KindWiring` installs at launch.
+  - Reloads on `.readingListChanged` — a fan-out lands its retailers one at a
+    time from a background task, so the surface has to hear about changes it did
+    not make.
+- `LunaPriceUI/ProductTitleSummary.swift` — **pure**, shape-only heuristic for
+  what a card leads with. `headline(for:)` cuts at the first separator
+  (`| : – — · , ;` or a spaced hyphen), drops bracketed asides, takes up to three
+  words, stops early at a token containing a digit once two words are already
+  down ("Apple iPhone", but "Sony WH-1000XM5 Wireless"), and falls back to two
+  words when three run past 30 characters. `detail(for:)` is the whole title, or
+  nil when the headline already said it. No brand or noun vocabulary anywhere:
+  the worst case is "the first few words", never a confident wrong guess.
+- `LunaPriceUI/SellerNaming.swift` — what a seller is CALLED, everywhere Luna
+  names one (the rows here AND `SellerComparisonDocument`): the bundled seller
+  directory's own name first ("Amazon Australia", "JB Hi-Fi"), else the
+  registrable domain with its public suffix dropped and its first letter raised.
+  Plus the lettered badge a host with no readable favicon falls back to.
+- `LunaFetch/SiteIconCache.swift` — the favicon behind each seller row. It used
+  to live in the app shell as `SourceIconCache` (the Reader's scrub chips), which
+  the extensions could not reach — so the card drew a `safari` compass for every
+  seller alike. One cache now: memory + disk + a negative cache + in-flight
+  de-duplication over `FaviconFetcher`.
+- `Luna/PriceTracker/ProductCardContent.swift` — the card HOST: the deck's card
+  frame, an 18pt inset, and the surface above inside it. It also carries the two
+  `UtilCardSaveTransitionAnchor` identifiers the save transition flies into.
+- `LunaPriceUI/PriceTrackingViewController.swift` — the screen HOST: a
+  `NavHeaderBar`, a `ReadableColumn`, the way out, and the same surface between
+  them. PUSHED onto the reading-list nav stack in-app, or PRESENTED modally by the
+  action/share extension's `ShareSurfaceDriver` on a `.product` outcome
+  (`PriceTrackingHost.extension`, exiting via the injected `onDone`). **The exit
+  differs by host and nothing else**: in-app, a back chevron in the header; in an
+  extension, the floating glass `ExtensionExitButton`, with the content's bottom
+  edge pinned above it so the circle never covers the seller list. There is no
+  "Read instead" button — the editor no longer re-saves a tracker as an article.
   `Mode.existing(itemID:)` (tap a row) / `.creation(itemID:host:)` /
-  `.merge(itemID:addedStoreURLString:host:)` (save-time). Each `Mode` maps to a
-  `PriceTrackingExitContext`. Insets table of seller rows (header **"Sellers"**; each
-  shows extracted price; tap → in-app Safari; swipe → remove, guarded by ≥1), an
-  **"Add seller"** table FOOTER (+ icon) — replaces the old nav-bar +, available in
-  all contexts, and a bottom **`AlertThresholdSlider`** (the shared threshold control).
-  - **Navigation chrome** (from `exitContext`, set in `configureNavigationChrome`):
-    - **Top-left** (always): `.back` chevron in-app (pops) / system **Done** in an
-      extension (dismisses). Routes through `dismissOrPop()` — pop when not the nav
-      root, else dismiss — so it's correct even if the nav is itself presented modally.
-    - **Top-right "Read instead"** (save-time only): **creation** → discard the whole
-      new tracker (delete its item) + `ReadingListIngestor.saveAsArticle` (forced
-      article, no re-detection); **merge** → `removeStore` exactly the just-added
-      seller URL (existing tracker otherwise intact) + `saveAsArticle` that URL;
-      **existing** → no button (`rightBarButtonItem = nil`). Then `dismissOrPop`.
-  - **Add seller** footer → an alert with a URL text field and three stacked actions:
-    **Add** (paste a URL → fetch price via `PriceTrackingManaging` — mandatory; no
-    price ⇒ "No price found", not added; dedupe via `hasStore`), **Search** (presents
-    the overlay above), **Cancel**. The overlay's confirmed page is added through the
-    same add path (prefetched-HTML fast path).
-  - `PriceTrackingManaging.fetchPrice(urlString:prefetchedHTML:)` (default-arg
-    convenience for the paste path) wraps `PriceFetcher` (static → embedded JSON →
-    WebView). The search overlay's captured HTML feeds the fast static path.
-  - Declares `Notification.Name.priceTrackerSavedInteractively`.
-- `Luna/ReadingList/AlertThresholdSlider.swift` — the **shared** alert-threshold
-  control: a liquid-glass pill (`GlassStyle.barEffect()`) with the title **"Alert
-  threshold"**, a slider (0.01…0.90), and a readout line
-  (`PriceFormatting.thresholdDescription` — percent + absolute "alert below $…").
-  Presentation-only: `configure(fraction:initialPrice:currency:)` seeds it — the
-  fraction is **optional**, and nil paints the unset state (parked slider, dimmed
-  track/thumb, call-to-action readout, a **"Set price alert"** button) — and it reports
-  via `onChanged` (live) / `onCommitted` (on release → host persists). Used by
-  `PriceTrackingViewController`'s footer to drive `alertThresholdFraction`.
+  `.merge(itemID:addedStoreURLString:host:)` (save-time, flashes the added
+  seller). Each `Mode` maps to a `PriceTrackingExitContext`. Declares
+  `Notification.Name.priceTrackerSavedInteractively`.
 - `Luna/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
@@ -363,20 +375,22 @@ synchronous latch over it:
 **The unset state in the UI.** Both editors show it, and both treat committing a
 threshold as the opt-in that raises the prompt:
 
-- **`PriceTrackingViewController`'s footer slider** (`AlertThresholdSlider`) parks at
-  the default 10% with a dimmed track and thumb, replaces the percent/absolute readout
-  with "No price alert yet. Set one to be notified when the price drops.", and adds a
-  **"Set price alert"** button. Dragging the parked slider un-dims it and shows the
-  real readout from the first movement; release (or the button) commits →
-  `setAlertThresholdFraction` + persist + `NotificationManager.requestAuthorization()`.
-- **The product card's `PriceGraphView`** has no line to drag, so with
-  `allowsThresholdEditing` and a nil threshold it draws no alert line and shows a
-  **"Set price alert"** pill where the line's price label would sit, reporting the tap
-  through `onThresholdRequested`. `PriceTrackerCardContentViewController` seeds
-  `defaultAlertThresholdFraction`, persists, asks for authorization, and reloads — the
-  line, handle and label then arrive, editable as always.
-- The set state is unchanged in both (the buttons are hidden), which is why the
-  existing editor snapshots still hold.
+- **The `AlertThresholdRow`** parks its slider at the default 10% with a dimmed
+  track and thumb and puts a **"Set price alert"** button where the threshold
+  price goes. Dragging the parked slider un-dims it and shows the real price from
+  the first movement; release (or the button) commits. Nothing about the row's
+  geometry changes between the two states, so setting an alert never moves the
+  layout underneath it.
+- **The `PriceGraphView`** has no line to drag, so with `allowsThresholdEditing`
+  and a nil threshold it draws no alert line and shows a **"Set price alert"**
+  pill where the line's price label would sit, reporting the tap through
+  `onThresholdRequested`.
+- Both, plus the graph's own committed drag, funnel into ONE
+  `commitThreshold(fraction:)` on `ProductDetailViewController`:
+  `setAlertThresholdFraction` + persist + `NotificationManager
+  .requestAuthorization()` + reload. That is the only call to
+  `requestAuthorization` anywhere in the product kind, and
+  `NotificationAuthorizationCallSiteTests` pins it.
 
 Once a threshold exists, everything downstream is the old behavior: `isAlerting`,
 the floated `.priceAlert` row, and `PriceRefreshCoordinator`'s `postPriceDrop` on a
@@ -384,9 +398,7 @@ the floated `.priceAlert` row, and `PriceRefreshCoordinator`'s `postPriceDrop` o
 
 **Notification permission is asked when the threshold is committed, not at launch.**
 Setting the alert line IS the request to be told about a drop, and it's the only thing
-this app posts, so both commit paths — `PriceGraphView.onThresholdCommitted` in the
-card (`PriceTrackerCardsViewController`) and `AlertThresholdSlider.onCommitted` in
-`PriceTrackingViewController`'s footer — call
+this app posts, so the one commit funnel calls
 `NotificationManager.requestAuthorization()` right after persisting. It's idempotent,
 so only the first commit prompts and no "have we asked yet" flag is needed; it also
 self-skips in an `.appex`, so a threshold set inside the share/action sheet doesn't
@@ -412,7 +424,7 @@ The standalone Price Tracker app uses the card root above.
   AND **not yet viewed** (`hasUnviewedAlert`), greatest discount (ties by id),
   **at most one**. It floats to the very **top** of the whole list (rendered by the VC
   as the one row of the `.priceAlert` section), badged **red**. Once the user opens it,
-  `markAlertViewed` is called (in `NonArticleCardOpening` for the central app, `PriceTrackerCardsViewController` for the standalone one), `hasUnviewedAlert`
+  `markAlertViewed` is called (`ProductCardPresenter.itemDidCenter`, the same code in both apps), `hasUnviewedAlert`
   becomes false, and the row rejoins the `priceTracking` section below Reading. A later
   strictly-lower price clears the ack so a genuinely fresh drop re-floats.
 - `shouldShowFilter` = ≥2 of {reader, media/link, price-tracker} kinds present.
@@ -492,8 +504,8 @@ here is where it sits in THIS pipeline:
 
 Surfacing the wait: both product surfaces draw one extra row while
 `tracker.pendingComparison` is set — a spinner and "Checking for other sellers…"
-under the seller list, in `PriceTrackingViewController`'s table and in the deck
-card's `storesStack`. Both reload on `.readingListChanged`, which every streamed
+under the seller list — one list, in one controller, in both hosts. It reloads
+on `.readingListChanged`, which every streamed
 seller posts, so the row fills in from underneath and disappears with the marker.
 
 Surviving the process: the marker is on the TRACKER, so a share extension torn
@@ -655,14 +667,20 @@ notifies. See `social-sharing.md`.
   unviewed-alert float-out + greatest-discount, **at-most-one float**, **viewed alert
   does NOT float** (and yields the top to a smaller-but-unviewed one), filter
   visibility, displayOrder (price-tracking below Reading; `.priceAlert` first). Plus
-  `PriceTrackingScreenTests` (editor nav): existing-mode **Back** pops + **no
-  "Read instead"**; creation-mode **"Read instead"** discards the whole tracker +
-  pops; merge-mode **"Read instead"** reverts ONLY the just-added seller (rest
-  intact) + pops; **extension host shows Done, in-app shows Back**; opening an
-  alerting tracker **marks the alert viewed**; and the **no-alert-set** state in both
-  editors — the card graph's "Set price alert" pill (with the line handle hidden) and
-  the footer slider's button each commit the default threshold to the store, while a
-  tracker that HAS a threshold shows neither.
+  `PriceTrackingScreenTests` (editor chrome): existing-mode **Back** pops;
+  **extension host shows the floating exit circle, in-app shows Back** (and the
+  circle stays a circle, clear of the seller list); opening an alerting tracker
+  **marks the alert viewed**; the waiting row appears and goes with the pending
+  marker; and the **no-alert-set** state — the graph's "Set price alert" pill
+  (with the line handle hidden) and the alert row's button each commit the
+  default threshold to the store, while a tracker that HAS one shows neither.
+- `ProductSurfaceTests` — `ProductTitleSummaryTests` over the marketplace title,
+  model codes, separators/brackets/commas, the short name that draws no duplicate
+  line, the three-long-words fallback and the degenerate inputs; plus
+  `ProductSurfaceParityTests`, which is the refactor itself: the card and the
+  extension-hosted editor both HOST a `ProductDetailViewController` (rather than
+  each building a rendition of one), and the alert row's slider and the graph's
+  line show the same threshold, live, before anything is persisted.
 - `ProductSearchURLTests` (7) — Google Shopping URL encoding (`+` spaces, escaped
   `&`/`#`, empty → nil) + URL-bar navigation target (scheme → load, bare domain →
   https, free text → Google search, empty → nil).

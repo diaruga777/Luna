@@ -25,6 +25,7 @@
 
 import LunaArchiveReader
 import LunaDesignSystem
+import LunaFetch
 import LunaModels
 import LunaReaderUI
 import LunaReadingList
@@ -1290,7 +1291,7 @@ final class ReaderCardContentViewController: CardContentViewController,
         }
         view.addSubview(titleHeader)
         guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
-        SourceIconCache.shared.icon(forPageURL: url) { [weak self] image in
+        SiteIconCache.shared.icon(forPageURL: url) { [weak self] image in
             guard let image else { return }
             self?.titleHeader.setIcon(image)
             self?.scrollTitleHeader.setIcon(image)

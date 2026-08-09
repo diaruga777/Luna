@@ -371,12 +371,17 @@ final class SellerComparisonDocumentTests: XCTestCase {
         numbers(in: svg, pattern: "class=\"axis price\" x=\"[0-9.-]+\" y=\"([0-9.-]+)\"", group: 1)
     }
 
-    func testSellerNamesComeFromTheRegistrableDomain() {
+    /// The bundled directory names a retailer it knows ("Amazon UK"); a host it
+    /// has never heard of falls back to its registrable domain, capitalised.
+    /// Same answer as the seller rows on the card — one `SellerNaming`.
+    func testSellerNamesComeFromTheDirectoryThenTheRegistrableDomain() {
         XCTAssertEqual(
             SellerComparisonDocument.sellerName(
-                forURLString: "https://www.amazon.co.uk/dp/B01"), "Amazon")
+                forURLString: "https://www.amazon.co.uk/dp/B01"), "Amazon UK")
         XCTAssertEqual(
             SellerComparisonDocument.sellerName(
                 forURLString: "https://shop.example.com/p/1"), "Example")
+        XCTAssertEqual(
+            SellerNaming.displayName(forURLString: "https://www.jbhifi.com.au/p/1"), "JB Hi-Fi")
     }
 }

@@ -583,9 +583,9 @@ The article kind's own answers:
   favicon for web saves — fetched by `FaviconFetcher` (LunaFetch: well-known
   apple-touch-icon path → homepage `<link rel*=icon>` candidates ranked
   touch-icon-first/largest-first → `/favicon.ico`, every response validated as
-  a decodable raster image) and cached by `SourceIconCache` (app shell:
-  memory + `Caches/SourceIcons/<host>.png` + 7-day negative cache + in-flight
-  de-dup). Email imports show the sender's initials on a name-derived pastel
+  a decodable raster image) and cached by `SiteIconCache` (LunaFetch, shared
+  with the price tracker's seller rows: memory + `Caches/SourceIcons/<host>.png`
+  + 7-day negative cache + in-flight de-dup). Email imports show the sender's initials on a name-derived pastel
   (or an envelope glyph when the sender is unknown), documents a doc glyph,
   and web saves a globe until the favicon lands (the data-source callback may
   fire twice: instant fallback, then the fetched icon —

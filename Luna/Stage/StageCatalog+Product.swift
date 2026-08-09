@@ -68,6 +68,15 @@ enum ProductStageCatalog {
                     ])
                 }),
             StageDescriptor(
+                id: "deck.product.compared", screen: "Card deck", variant: "many sellers",
+                summary: "What a save-time fan-out leaves behind: six retailers, the "
+                    + "cheapest tinted, and a seller list taller than its viewport.",
+                kind: .product,
+                seed: {
+                    StageFixtures.completeOnboarding()
+                    StageFixtures.seed([comparedTracker()])
+                }),
+            StageDescriptor(
                 id: "deck.product.pending", screen: "Card deck", variant: "never refreshed",
                 summary: "A tracker saved but not yet priced — what the card shows before "
                     + "the first refresh lands.",
@@ -103,8 +112,8 @@ enum ProductStageCatalog {
                 make: { editor(seed: "stage-gadget") }),
             StageDescriptor(
                 id: "price.editor.no-threshold", screen: "Price editor", variant: "no alert set",
-                summary: "No threshold yet: the slider parked and dimmed behind a 'set price "
-                    + "alert' offer, and no line on the graph.",
+                summary: "No threshold yet: the alert row parked and dimmed behind its "
+                    + "'Set price alert' button, and no line on the graph.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -116,8 +125,8 @@ enum ProductStageCatalog {
                 make: { editor(seed: "stage-nothreshold") }),
             StageDescriptor(
                 id: "price.editor.creation", screen: "Price editor", variant: "just saved",
-                summary: "The chrome a save-time editor wears: 'Read instead' discards the "
-                    + "whole tracker rather than going back.",
+                summary: "The chrome a save-time editor wears in the app: the header's "
+                    + "back chevron, and no floating exit.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -135,8 +144,8 @@ enum ProductStageCatalog {
                 id: "price.editor.extension", screen: "Price editor",
                 variant: "in a share sheet",
                 summary: "The extension-hosted editor: no back chevron, the floating "
-                    + "glass exit standing the alert footer up, and a long marketplace "
-                    + "title held inside the column instead of hanging off both edges.",
+                    + "glass exit standing the seller list up, and a marketplace title "
+                    + "trimmed to its product name with the rest kept underneath.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -154,9 +163,16 @@ enum ProductStageCatalog {
                         host: .extension))
                 }),
             StageDescriptor(
+                id: "price.editor.compared", screen: "Price editor", variant: "many sellers",
+                summary: "The same six retailers in the editor: the list scrolls, and the "
+                    + "cut lands mid-row rather than just past the first one.",
+                kind: .product,
+                seed: { StageFixtures.seed([comparedTracker()]) },
+                make: { editor(seed: "stage-compared") }),
+            StageDescriptor(
                 id: "price.editor.merge", screen: "Price editor", variant: "second seller added",
                 summary: "A second store for a product already tracked: the added seller "
-                    + "flashes, and 'Read instead' reverts only that one.",
+                    + "flashes green in the list.",
                 kind: .product,
                 seed: {
                     StageFixtures.seed([
@@ -172,6 +188,40 @@ enum ProductStageCatalog {
                         host: .inApp))
                 }),
         ]
+    }
+
+    /// A tracker the alternative-seller fan-out has finished with: one product,
+    /// six real retailers, one of them cheapest. Real hosts because the seller
+    /// rows name a retailer from the bundled directory and fetch its favicon —
+    /// `store.example.com` exercises neither.
+    private static func comparedTracker() -> ReadingListItem {
+        let sellers: [(String, Decimal)] = [
+            ("https://www.jbhifi.com.au/products/kettle", 129.99),
+            ("https://www.amazon.com.au/dp/B003FGWPPS", 124.50),
+            ("https://www.thegoodguys.com.au/kettle", 139.00),
+            ("https://www.myer.com.au/p/kettle", 145.00),
+            ("https://www.harveynorman.com.au/kettle", 132.95),
+            ("https://www.kmart.com.au/product/kettle", 149.00),
+        ]
+        var tracker = PriceTracker(
+            productName: "Smeg KLF03 50's Retro Style Electric Kettle, Pastel Blue "
+                + "| The Good Guys",
+            firstStoreURL: sellers[0].0, price: sellers[0].1, currency: "AUD",
+            brand: "Smeg", productID: "stage-compared", now: StageFixtures.ago(days: 6))
+        for offset in [5, 4, 3, 2, 1] {
+            tracker.recordPriceSample(
+                Decimal(129 - offset), currency: "AUD", urlString: sellers[0].0,
+                at: StageFixtures.ago(days: offset))
+        }
+        for (url, price) in sellers.dropFirst() {
+            tracker.upsertStore(PriceTrackerStore(
+                urlString: url, lastPrice: price, currency: "AUD",
+                lastRefreshed: StageFixtures.ago(hours: 5)))
+        }
+        return ReadingListItem(
+            seed: "stage-compared", urlString: sellers[0].0,
+            title: tracker.productName, dateAdded: StageFixtures.ago(days: 6),
+            state: .ready, captureSource: .manual, priceTracker: tracker)
     }
 
     @MainActor
@@ -220,23 +270,24 @@ enum ProductStageCatalog {
                     return StageFixtures.hosting(graph, height: 240)
                 }),
             StageDescriptor(
-                id: "price.threshold.unset", screen: "Alert threshold slider", variant: "parked",
-                summary: "The slider before an alert is set: track dimmed, readout tertiary.",
+                id: "price.threshold.unset", screen: "Alert threshold row", variant: "parked",
+                summary: "The row before an alert is set: track dimmed, and a Set price "
+                    + "alert button where the threshold price goes.",
                 kind: .product,
                 make: {
-                    let slider = AlertThresholdSlider()
-                    slider.configure(fraction: nil, initialPrice: 200, currency: "USD")
-                    return StageFixtures.hosting(slider, height: 120)
+                    let row = AlertThresholdRow()
+                    row.configure(fraction: nil, initialPrice: 200, currency: "USD")
+                    return StageFixtures.hosting(row, height: 90)
                 }),
             StageDescriptor(
-                id: "price.threshold.set", screen: "Alert threshold slider", variant: "armed",
+                id: "price.threshold.set", screen: "Alert threshold row", variant: "armed",
                 summary: "A 25%-off threshold committed: accent track and the price it "
-                    + "resolves to.",
+                    + "resolves to, on one line.",
                 kind: .product,
                 make: {
-                    let slider = AlertThresholdSlider()
-                    slider.configure(fraction: 0.25, initialPrice: 200, currency: "USD")
-                    return StageFixtures.hosting(slider, height: 120)
+                    let row = AlertThresholdRow()
+                    row.configure(fraction: 0.25, initialPrice: 200, currency: "USD")
+                    return StageFixtures.hosting(row, height: 90)
                 }),
         ]
     }

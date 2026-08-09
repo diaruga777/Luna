@@ -194,6 +194,14 @@
       "apps": ["luna", "pricetracker"]
     },
     {
+      "id": "deck.product.compared",
+      "screen": "Card deck",
+      "variant": "many sellers",
+      "summary": "What a save-time fan-out leaves behind: six retailers, the cheapest tinted, and a seller list taller than its viewport.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
       "id": "deck.product.empty",
       "screen": "Card deck",
       "variant": "no trackers",
@@ -242,10 +250,18 @@
       "apps": ["luna", "pricetracker"]
     },
     {
+      "id": "price.editor.compared",
+      "screen": "Price editor",
+      "variant": "many sellers",
+      "summary": "The same six retailers in the editor: the list scrolls, and the cut lands mid-row rather than just past the first one.",
+      "kind": "product",
+      "apps": ["luna", "pricetracker"]
+    },
+    {
       "id": "price.editor.creation",
       "screen": "Price editor",
       "variant": "just saved",
-      "summary": "The chrome a save-time editor wears: 'Read instead' discards the whole tracker rather than going back.",
+      "summary": "The chrome a save-time editor wears in the app: the header's back chevron, and no floating exit.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },
@@ -253,7 +269,7 @@
       "id": "price.editor.extension",
       "screen": "Price editor",
       "variant": "in a share sheet",
-      "summary": "The extension-hosted editor: no back chevron, the floating glass exit standing the alert footer up, and a long marketplace title held inside the column instead of hanging off both edges.",
+      "summary": "The extension-hosted editor: no back chevron, the floating glass exit standing the seller list up, and a marketplace title trimmed to its product name with the rest kept underneath.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },
@@ -261,7 +277,7 @@
       "id": "price.editor.merge",
       "screen": "Price editor",
       "variant": "second seller added",
-      "summary": "A second store for a product already tracked: the added seller flashes, and 'Read instead' reverts only that one.",
+      "summary": "A second store for a product already tracked: the added seller flashes green in the list.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },
@@ -269,7 +285,7 @@
       "id": "price.editor.no-threshold",
       "screen": "Price editor",
       "variant": "no alert set",
-      "summary": "No threshold yet: the slider parked and dimmed behind a 'set price alert' offer, and no line on the graph.",
+      "summary": "No threshold yet: the alert row parked and dimmed behind its 'Set price alert' button, and no line on the graph.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },
@@ -291,17 +307,17 @@
     },
     {
       "id": "price.threshold.set",
-      "screen": "Alert threshold slider",
+      "screen": "Alert threshold row",
       "variant": "armed",
-      "summary": "A 25%-off threshold committed: accent track and the price it resolves to.",
+      "summary": "A 25%-off threshold committed: accent track and the price it resolves to, on one line.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },
     {
       "id": "price.threshold.unset",
-      "screen": "Alert threshold slider",
+      "screen": "Alert threshold row",
       "variant": "parked",
-      "summary": "The slider before an alert is set: track dimmed, readout tertiary.",
+      "summary": "The row before an alert is set: track dimmed, and a Set price alert button where the threshold price goes.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },

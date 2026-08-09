@@ -86,7 +86,7 @@ public final class ExtensionAudioScriptResolver {
         }
 
         if let cached = scriptStore.load(forContentFileName: contentFileName) {
-            if !cached.refined, !cached.llmPermanentlyFailed {
+            if cached.refinementState == .heuristicOnly {
                 kickOffOpportunisticRefinement(
                     content: content, contentFileName: contentFileName, baseline: cached)
             }
@@ -95,7 +95,7 @@ public final class ExtensionAudioScriptResolver {
 
         let heuristicResult = AudioTrimHeuristics.classify(content)
         let script = heuristicResult.heuristicScript(for: content)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .heuristicOnly)
         scriptStore.save(envelope, forContentFileName: contentFileName)
         kickOffOpportunisticRefinement(content: content, contentFileName: contentFileName, baseline: envelope)
         return script
@@ -144,13 +144,13 @@ public final class ExtensionAudioScriptResolver {
     ) {
         if refinement.permanentFailure {
             let script = heuristicResult.heuristicScript(for: content)
-            let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: true)
+            let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .permanentlyFailed)
             scriptStore.save(envelope, forContentFileName: contentFileName)
             return
         }
         let combinedDropped = heuristicResult.droppedBlockIndices.union(refinement.additionalDroppedIndices)
         let script = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: combinedDropped)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: true, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .refined)
         scriptStore.save(envelope, forContentFileName: contentFileName)
     }
 }

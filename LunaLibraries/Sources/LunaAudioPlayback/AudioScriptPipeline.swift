@@ -114,14 +114,14 @@ public final class AudioScriptPipeline {
             return AudioTrimHeuristics.classify(content).heuristicScript(for: content)
         }
         if let cached = scriptStore.load(forContentFileName: contentFileName) {
-            if !cached.refined, !cached.llmPermanentlyFailed {
+            if cached.refinementState == .heuristicOnly {
                 kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: cached)
             }
             return cached.script
         }
         let heuristicResult = AudioTrimHeuristics.classify(content)
         let script = heuristicResult.heuristicScript(for: content)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .heuristicOnly)
         scriptStore.save(envelope, forContentFileName: contentFileName)
         kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: envelope)
         return script
@@ -161,7 +161,7 @@ public final class AudioScriptPipeline {
                 buildHeuristicScriptSync(item: item, content: content, contentFileName: contentFileName)
                 continue
             }
-            guard let cached, !cached.refined, !cached.llmPermanentlyFailed else { continue }
+            guard let cached, cached.refinementState == .heuristicOnly else { continue }
             kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: cached)
         }
     }
@@ -169,7 +169,7 @@ public final class AudioScriptPipeline {
     private func buildHeuristicScriptSync(item: ReadingListItem, content: ArticleContent, contentFileName: String) {
         let heuristicResult = AudioTrimHeuristics.classify(content)
         let script = heuristicResult.heuristicScript(for: content)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .heuristicOnly)
         scriptStore.save(envelope, forContentFileName: contentFileName)
         kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: envelope)
     }
@@ -203,13 +203,13 @@ public final class AudioScriptPipeline {
     ) {
         if refinement.permanentFailure {
             let script = heuristicResult.heuristicScript(for: content)
-            let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: true)
+            let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .permanentlyFailed)
             scriptStore.save(envelope, forContentFileName: contentFileName)
             return
         }
         let combinedDropped = heuristicResult.droppedBlockIndices.union(refinement.additionalDroppedIndices)
         let script = Self.buildScript(content: content, droppedBlockIndices: combinedDropped)
-        let envelope = AudioScriptCacheEnvelope(script: script, refined: true, llmPermanentlyFailed: false)
+        let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .refined)
         scriptStore.save(envelope, forContentFileName: contentFileName)
     }
 

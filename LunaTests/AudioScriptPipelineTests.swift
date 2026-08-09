@@ -79,7 +79,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
         XCTAssertNotNil(cached, "the built script must be persisted for next time")
         XCTAssertEqual(cached?.script, script)
-        XCTAssertEqual(cached?.refined, false)
+        XCTAssertEqual(cached?.refinementState, .heuristicOnly)
     }
 
     func testScriptForCacheHitReturnsTheStoredScriptWithoutRebuilding() {
@@ -94,7 +94,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         // returned as-is, never rebuilt.
         let seededScript = AudioScript(spokenBlocks: [], totalWordCount: 0, builderVersion: AudioScript.heuristicBuilderVersion)
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: seededScript, refined: true, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: seededScript, refinementState: .refined),
             forContentFileName: item.contentFileName!)
 
         let script = pipeline.script(for: item, content: content)
@@ -148,7 +148,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         let content = readableContent()
         let heuristicScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: heuristicScript, refined: false, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: heuristicScript, refinementState: .heuristicOnly),
             forContentFileName: item.contentFileName!)
 
         let session = FakeTrimModelSession()
@@ -161,8 +161,11 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.contentByID[item.id] = content
         pipeline.install()
 
-        try await waitFor { self.scriptStore.load(forContentFileName: item.contentFileName!)?.refined == true }
-        XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.refined, true)
+        try await waitFor {
+            self.scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState == .refined
+        }
+        XCTAssertEqual(
+            scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState, .refined)
     }
 
     func testUpgradeNeverAttemptedWhenIntelligentTrimmingDisabled() async throws {
@@ -170,7 +173,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         let content = readableContent()
         let heuristicScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: heuristicScript, refined: false, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: heuristicScript, refinementState: .heuristicOnly),
             forContentFileName: item.contentFileName!)
 
         let session = FakeTrimModelSession()
@@ -191,7 +194,8 @@ final class AudioScriptPipelineTests: XCTestCase {
         pipeline.install()
         await fulfillment(of: [swept], timeout: 2)
 
-        XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.refined, false)
+        XCTAssertEqual(
+            scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState, .heuristicOnly)
         XCTAssertTrue(session.requestedPrompts.isEmpty, "the model must never be asked when the setting is off")
     }
 
@@ -200,7 +204,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         let content = readableContent()
         let heuristicScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: heuristicScript, refined: false, llmPermanentlyFailed: true),
+            AudioScriptCacheEnvelope(script: heuristicScript, refinementState: .permanentlyFailed),
             forContentFileName: item.contentFileName!)
 
         let session = FakeTrimModelSession()
@@ -220,7 +224,8 @@ final class AudioScriptPipelineTests: XCTestCase {
         await fulfillment(of: [swept], timeout: 2)
 
         XCTAssertTrue(session.requestedPrompts.isEmpty, "a permanently-failed article must never be retried")
-        XCTAssertEqual(scriptStore.load(forContentFileName: item.contentFileName!)?.llmPermanentlyFailed, true)
+        XCTAssertEqual(
+            scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState, .permanentlyFailed)
     }
 
     func testGuardrailViolationDuringUpgradeMarksPermanentlyFailed() async throws {
@@ -228,7 +233,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         let content = readableContent()
         let heuristicScript = AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: [])
         scriptStore.save(
-            AudioScriptCacheEnvelope(script: heuristicScript, refined: false, llmPermanentlyFailed: false),
+            AudioScriptCacheEnvelope(script: heuristicScript, refinementState: .heuristicOnly),
             forContentFileName: item.contentFileName!)
 
         let session = FakeTrimModelSession()
@@ -241,10 +246,15 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.contentByID[item.id] = content
         pipeline.install()
 
-        try await waitFor { self.scriptStore.load(forContentFileName: item.contentFileName!)?.llmPermanentlyFailed == true }
+        try await waitFor {
+            self.scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState == .permanentlyFailed
+        }
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
-        XCTAssertEqual(cached?.llmPermanentlyFailed, true)
-        XCTAssertEqual(cached?.refined, false)
+        // `llmPermanentlyFailed == true` and `refined == false` used to be
+        // asserted separately; they were the same fact (the both-true
+        // combination this refactor makes unrepresentable), so this is now
+        // one assertion.
+        XCTAssertEqual(cached?.refinementState, .permanentlyFailed)
     }
 
     // MARK: - Helpers

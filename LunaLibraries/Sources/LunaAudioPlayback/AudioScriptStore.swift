@@ -8,25 +8,31 @@ import Foundation
 
 /// What's actually persisted to disk for one article: the built script plus
 /// bookkeeping the pipeline needs to decide whether it can stop touching this
-/// article (`refined`/`llmPermanentlyFailed`) — see `AudioScriptPipeline`.
+/// article — see `AudioScriptPipeline`.
 public struct AudioScriptCacheEnvelope: Codable, Equatable {
-    public var script: AudioScript
-    /// Whether the on-device LLM pass ran and (potentially) contributed to
-    /// `script`. A heuristics-only script (`false`) is eligible to be
-    /// upgraded in place by a later foreground sweep — WITHOUT touching
-    /// playback logic, since `AudioScript`'s shape never changes, only which
-    /// blocks survive.
-    public var refined: Bool
-    /// Set when the LLM pass hit a `guardrailViolation` for this article —
-    /// permanent: the pipeline must never attempt refinement again for it,
-    /// even though `refined` stays `false` (the script content genuinely
-    /// never got refined).
-    public var llmPermanentlyFailed: Bool
+    /// Where a script's LLM refinement stands. Used to be two independent
+    /// bools (`refined`/`llmPermanentlyFailed`) whose both-true combination
+    /// meant nothing — a script can't be both a finished refinement AND a
+    /// permanent refusal to ever refine.
+    public enum RefinementState: String, Codable, Equatable {
+        /// The heuristic pass built `script`; refinement hasn't run yet (or
+        /// is still eligible to be retried by a later foreground sweep) —
+        /// WITHOUT touching playback logic, since `AudioScript`'s shape never
+        /// changes, only which blocks survive.
+        case heuristicOnly
+        /// The on-device LLM pass ran and contributed to `script`.
+        case refined
+        /// The LLM pass hit a `guardrailViolation` for this article —
+        /// permanent: the pipeline must never attempt refinement again.
+        case permanentlyFailed
+    }
 
-    public init(script: AudioScript, refined: Bool, llmPermanentlyFailed: Bool) {
+    public var script: AudioScript
+    public var refinementState: RefinementState
+
+    public init(script: AudioScript, refinementState: RefinementState) {
         self.script = script
-        self.refined = refined
-        self.llmPermanentlyFailed = llmPermanentlyFailed
+        self.refinementState = refinementState
     }
 }
 

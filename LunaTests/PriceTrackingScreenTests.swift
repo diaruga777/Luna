@@ -6,7 +6,7 @@
 //
 
 import LunaReadingListUI
-import LunaPriceUI
+@testable import LunaPriceUI
 import LunaStorage
 import LunaModels
 import UIKit

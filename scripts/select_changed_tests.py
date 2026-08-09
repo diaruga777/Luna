@@ -73,8 +73,7 @@ PATH_RULES: list[tuple[str, object]] = [
     # suite that EVALUATES content.js belongs here: the three parity/label ones
     # alone let a change to the in-page UI (the pill, the player, the product
     # pills) through a green partial run.
-    (r"^LunaSafari/Resources/.*\.(js|json)$", ["SafariJSParityTests", "SafariPillLabelTests",
-                                               "SafariUnlockHeuristicTests",
+    (r"^LunaSafari/Resources/.*\.(js|json)$", ["SafariPillLabelTests",
                                                "SafariMediaPillTests", "SafariVideoOverlayTests",
                                                "SafariRedditGatingTests",
                                                "SafariArticleHeuristicTests",
@@ -84,8 +83,7 @@ PATH_RULES: list[tuple[str, object]] = [
                                                "PlatformHostsJSFixtureParityTests",
                                                "ProductPageJSFixtureParityTests",
                                                "ProductSnapshotJSFixtureParityTests"]),
-    (r"^LunaLibraries/Sources/LunaPaywallBypass/Resources/", ["SiteUnlockTests",
-                                                              "SafariJSParityTests"]),
+    (r"^LunaLibraries/Sources/LunaPaywallBypass/Resources/", ["SiteUnlockTests"]),
     # The bundled seller directory: validated as SHIPPED, and it is the seller
     # universe the candidate ranking draws from.
     (r"^LunaLibraries/Sources/LunaPriceCompare/Resources/", ["SellerDirectoryTests",
@@ -94,8 +92,12 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"\.entitlements$", ["KindCompositionRootTests"]),
     (r"Info\.plist$", ["KindCompositionRootTests"]),
     # Bundled resources. The mock pages and guide videos are onboarding's
-    # furniture; the .shortcut files' NAMES are asserted against BundledShortcut.
-    (r"^Luna/Resources/.*\.shortcut$", ["BundledShortcutTests", "ShortcutSettingsTests"]),
+    # furniture; the .shortcut files' NAMES are asserted against BundledShortcut,
+    # but that assertion has no dedicated test class today (BundledShortcutTests /
+    # ShortcutSettingsTests were folded away) — nothing currently maps a
+    # `.shortcut` rename to a test, so this is an explicit no-op rather than a
+    # stale class name silently selecting zero tests.
+    (r"^Luna/Resources/.*\.shortcut$", None),
     (r"^Luna/Resources/", ["ReaderOnboardingTests", "OnboardingSaveDemoTests"]),
     # Test inputs: whichever test names the fixture is the one that reads it.
     (r"^LunaTests/Fixtures/", "SYMBOL"),

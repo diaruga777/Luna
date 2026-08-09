@@ -13,8 +13,11 @@ import Foundation
 /// `ReadingListItem` (see `RabbitHoleStackStore`) so the conservative cross-process
 /// reading-list JSON is never touched by this experiment.
 public struct RabbitHoleLayerDescriptor: Codable, Equatable {
-    /// The page this layer shows.
-    public var urlString: String
+    /// The page this layer shows, parsed ONCE (at construction/decode) rather
+    /// than re-parsed on every access — nil is the blank shell created before
+    /// `configure(...)` installs a real URL (`RabbitHoleLayerViewController`'s
+    /// placeholder `urlString: ""`), not a transient parse failure.
+    public var url: URL?
     /// The shared scroll/RSVP reading position for this layer, as a word/token index —
     /// the mode-independent anchor both readers restore from.
     public var wordIndex: Int?
@@ -35,7 +38,9 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     /// mode.
     public var bottomLipText: String?
 
-    public var url: URL? { URL(string: urlString) }
+    /// `url`'s string form — empty for the blank shell, matching the pre-parse
+    /// shape this type used to persist directly.
+    public var urlString: String { url?.absoluteString ?? "" }
 
     public init(urlString: String,
          wordIndex: Int? = nil,
@@ -44,13 +49,39 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
          readerMode: ReadingListItem.ReaderMode = .scroll,
          title: String? = nil,
          bottomLipText: String? = nil) {
-        self.urlString = urlString
+        self.url = URL(string: urlString)
         self.wordIndex = wordIndex
         self.scrollOffset = scrollOffset
         self.originalScrollOffset = originalScrollOffset
         self.readerMode = readerMode
         self.title = title
         self.bottomLipText = bottomLipText
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case urlString, wordIndex, scrollOffset, originalScrollOffset, readerMode, title, bottomLipText
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = URL(string: try container.decode(String.self, forKey: .urlString))
+        wordIndex = try container.decodeIfPresent(Int.self, forKey: .wordIndex)
+        scrollOffset = try container.decodeIfPresent(Double.self, forKey: .scrollOffset)
+        originalScrollOffset = try container.decode(Double.self, forKey: .originalScrollOffset)
+        readerMode = try container.decode(ReadingListItem.ReaderMode.self, forKey: .readerMode)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        bottomLipText = try container.decodeIfPresent(String.self, forKey: .bottomLipText)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(urlString, forKey: .urlString)
+        try container.encodeIfPresent(wordIndex, forKey: .wordIndex)
+        try container.encodeIfPresent(scrollOffset, forKey: .scrollOffset)
+        try container.encode(originalScrollOffset, forKey: .originalScrollOffset)
+        try container.encode(readerMode, forKey: .readerMode)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(bottomLipText, forKey: .bottomLipText)
     }
 }
 

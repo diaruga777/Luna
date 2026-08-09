@@ -392,7 +392,9 @@ climbing front. Three things ride it:
 The explainer argues for the extension in prose, under clutter, and clears it.
 A price tracker can make a better argument — run the extension's actual answer
 on an actual product page — so its lesson opens the browser straight on the
-mock Amayzon page and plays what the extension would do there
+mock Amayzon page. It first shows Safari's Manage Extensions bottom sheet with
+the **Luna Price Tracker** icon and toggle; once that switch is on and the sheet
+has gone away, it plays what the extension would do there
 (`OnboardingPriceComparisonLesson.swift`, one overlay over the browser holding
 three layers in this z-order, which is the whole trick):
 
@@ -401,9 +403,11 @@ three layers in this z-order, which is the whole trick):
    16pt in, `rgba(20,20,26,.85)` capsule, 13pt medium, the pulsing 6pt dot —
    and wears the extension's own two states in the extension's own words
    (`findingSellers` → `Onboarding_Safari_pricePillLooking`, `priceAtSeller` →
-   `…_pricePillFoundTemplate`). It waits ~2.4s, then fills IN PLACE with the
-   same eyePhone cheaper at the manufacturer the page already names ("Visit the
-   Pearless Devices Store" → `$729.00 at Pearless`, against the page's $799.00).
+   `…_pricePillFoundTemplate`). It waits ~2.4s, then the black spotlight zooms
+   over the still-searching pill. One second after that close, it fills IN PLACE
+   with the same eyePhone cheaper at the manufacturer the page already names
+   ("Visit the Pearless Devices Store" → `$729.00 at Pearless`, against the
+   page's $799.00). The setup popup follows another 0.5s later.
    It is UIKit rather than markup injected into the `WKWebView` because the
    lesson has to measure it: the spotlight closes on its exact frame.
 2. **The scrim dims everything but that pill.** `OnboardingSpotlightScrimView`
@@ -418,8 +422,9 @@ three layers in this z-order, which is the whole trick):
 3. **The card sits over both.** `OnboardingSafariSetupCardView` carries the SAME
    three enable steps and the same Activate Safari / Skip pair the explainer
    prints down its page, on a body wearing a static launch `EclipseCoronaView`
-   as its border. Only the Activate Safari button breathes with
-   `OnboardingAttentionPulse`; the popup itself stays still. It hugs its
+   as its border. The Activate Safari capsule also wears its own tight corona
+   and both pulse with `OnboardingAttentionPulse`; the popup itself stays still.
+   It hugs its
    contents — widest step line at `OnboardingSafariEnableStepRowView.labelFont`,
    floored by `OnboardingSafariActionsView.minimumActivateWidth`, capped at a
    readable column — because it is a card over somebody else's page rather than
@@ -449,7 +454,7 @@ taps in:
 | condition | link | what the surface does |
 |---|---|---|
 | online, live Save of the Week for this app's kinds | that entry's `urlString` | a genuine fetch, save and presentation |
-| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice short-circuit → the bundled rehearsal for what that link IS, nothing stored |
+| online, no live entry | `OnboardingSurfaceConfiguration.practiceURLString` | the extensions' own practice route → the production UI for that link's kind; the temporary row is deleted after the pass |
 | offline (`NetworkReachability.isOnline`) | the practice link, flagged | `HostedShareInput.offlineFailure` → `SaveFailureReason.offline`'s real headline, under `wifi.slash`, in the surface's real error state |
 
 The offline terminal takes the failure's **headline** but not its `suggestion`:
@@ -475,8 +480,9 @@ does not change with who opened it — inside `ShareViewController.practicePrevi
 
 | practice link | rehearsal |
 |---|---|
-| `luna.app`, `amayzon.web` | `ShareSetupPracticePreviewViewController` — the bundled article |
+| `luna.app` | `ShareSetupPracticePreviewViewController` — the bundled article |
 | `instatok.com`, in an app that handles media | `ShareSetupPracticeDownloadViewController` — the bundled download |
+| `amayzon.web`, in an app that handles products | the registered `ShareProductPresenting` path — a deterministic eyePhone `ProductInfo` drives the real Price Tracker extension editor |
 
 The media rehearsal keeps the real media screen's grammar (the "Saved to Luna"
 badge, the square preview with the progress bar drawn inside it, the full-width
@@ -544,9 +550,9 @@ does not replace the carousel.
 The Safari demonstration remains storage-free: its mock pages never enter
 `readingList.json` or any content directory. The SAVE demonstration is no longer
 storage-free in the trivial sense — it runs the real surface — but it is
-storage-NEUTRAL: with no live weekly entry the practice short-circuit means nothing
-is appended at all, and with one, the row it appends is marked as the temporary save
-and deleted after each pass (see above). The legacy temporary-demo cleanup
+storage-NEUTRAL: both a live weekly entry and the product fallback append a row
+only for the real presenter, mark it temporary, and delete it after each pass
+(the article/media practice routes still append nothing). The legacy temporary-demo cleanup
 (`BundledLunaArticle.cleanupLegacyTemporarySave`) remains for users updating from an
 older build.
 

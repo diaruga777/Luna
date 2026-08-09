@@ -479,12 +479,15 @@ public final class ReadingListIngestor {
                 abs(attemptDate.timeIntervalSince($0))
                     < SavePressPolicy.intentDoublePressWindow
             } ?? false)
+        let regime: SavePressPolicy.SavePressRegime = doubleSaveActionSurface
+            .flatMap(Self.resolvedIntentAction(forSurface:))
+            .map(SavePressPolicy.SavePressRegime.actionButton)
+            ?? .inApp(doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [])
         let decision = SavePressPolicy.decide(
             existingItem: existing,
             previousPressDate: reservation.previousPressDate,
             now: attemptDate,
-            doubleSaveDestinationIDs: IngestorKindHandlers.article?.doubleSaveDestinationIDs() ?? [],
-            intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
+            regime: regime)
         return PreparedSavePress(
             itemID: reservation.item.id,
             urlString: urlString,

@@ -55,6 +55,19 @@ public enum SavePressPolicy {
         case promptFriendSelector
     }
 
+    /// Which double-save regime a press is governed by — the two used to be
+    /// expressed as an `intentAction: IntentAction?` alongside a
+    /// `doubleSaveDestinationIDs: [String]` that the intent regime silently
+    /// ignored. They are mutually exclusive, so a caller now picks exactly one.
+    public enum SavePressRegime: Equatable {
+        /// Legacy in-app regime: a second press within `doublePressWindow`
+        /// sends to every ereader destination in double-save mode.
+        case inApp(doubleSaveDestinationIDs: [String])
+        /// Action Button (Save App Intent) regime: a second press within
+        /// `intentDoublePressWindow` performs the resolved action.
+        case actionButton(IntentAction)
+    }
+
     /// How close together two presses must be to count as a double save
     /// (legacy in-app regime).
     public static let doublePressWindow: TimeInterval = 12
@@ -68,21 +81,17 @@ public enum SavePressPolicy {
     ///   - existingItem: the list item for this URL, nil if not saved yet.
     ///   - previousPressDate: when this URL was last saved/pressed (the item's
     ///     `dateAdded` if this is the first repeat press).
-    ///   - doubleSaveDestinationIDs: destinations that are configured AND in
-    ///     double-save mode right now (legacy regime).
-    ///   - intentAction: the resolved Action Button double-save action; non-nil
-    ///     ONLY for saves arriving through the Action Button's Save App Intent,
-    ///     which switches this press into the 7 s intent regime.
+    ///   - regime: which double-save regime governs this press.
     public static func decide(
         existingItem: ReadingListItem?,
         previousPressDate: Date?,
         now: Date,
-        doubleSaveDestinationIDs: [String],
-        intentAction: IntentAction? = nil
+        regime: SavePressRegime
     ) -> Decision {
         guard let existingItem else { return .saveNew }
 
-        if let intentAction {
+        switch regime {
+        case .actionButton(let intentAction):
             let isDoublePress = previousPressDate.map {
                 // There is deliberately NO minimum gap. Overlapping App Intent
                 // runs may reserve the store in the opposite order from their
@@ -105,26 +114,27 @@ public enum SavePressPolicy {
                 guard !existingItem.isPlatformItem else { return .ignore }
                 let eligible = eligibleDestinations(
                     [ArticleDestinationID.kindle], for: existingItem, now: now)
-                return eligible.isEmpty ? .ignore : .sendToEreaders(destinationIDs: eligible)
+                return sendToEreadersOrIgnore(eligible)
             case .sendToFriends(let emails):
                 // Friend shares email a link/content mail, so platform items work.
-                return emails.isEmpty ? .ignore : .sendToFriends(emails: emails)
+                return sendToFriendsOrIgnore(emails)
             case .promptFriendSelector:
                 return .promptFriendSelector
             }
+
+        case .inApp(let doubleSaveDestinationIDs):
+            // Platform items (videos, posts, tracks) have no ereader EPUB
+            // target — every repeat press is a no-op.
+            guard !existingItem.isPlatformItem else { return .ignore }
+
+            let isDoublePress = previousPressDate.map {
+                abs(now.timeIntervalSince($0)) < doublePressWindow
+            } ?? false
+            guard isDoublePress else { return .ignore }
+
+            let eligible = eligibleDestinations(doubleSaveDestinationIDs, for: existingItem, now: now)
+            return sendToEreadersOrIgnore(eligible)
         }
-
-        // Platform items (videos, posts, tracks) have no ereader EPUB target —
-        // every repeat press is a no-op.
-        guard !existingItem.isPlatformItem else { return .ignore }
-
-        let isDoublePress = previousPressDate.map {
-            abs(now.timeIntervalSince($0)) < doublePressWindow
-        } ?? false
-        guard isDoublePress, !doubleSaveDestinationIDs.isEmpty else { return .ignore }
-
-        let eligible = eligibleDestinations(doubleSaveDestinationIDs, for: existingItem, now: now)
-        return eligible.isEmpty ? .ignore : .sendToEreaders(destinationIDs: eligible)
     }
 
     /// Skips destinations already sent within the cooldown.
@@ -137,5 +147,16 @@ public enum SavePressPolicy {
                     .map { now.timeIntervalSince($0) < resendCooldown } ?? false)
             return !sentRecently
         }
+    }
+
+    /// The three `.isEmpty → .ignore` guards this policy used to repeat inline
+    /// (Kindle's eligible set, the legacy eligible set, and the friend-emails
+    /// list) collapse to these two one-liners.
+    private static func sendToEreadersOrIgnore(_ destinationIDs: [String]) -> Decision {
+        destinationIDs.isEmpty ? .ignore : .sendToEreaders(destinationIDs: destinationIDs)
+    }
+
+    private static func sendToFriendsOrIgnore(_ emails: [String]) -> Decision {
+        emails.isEmpty ? .ignore : .sendToFriends(emails: emails)
     }
 }

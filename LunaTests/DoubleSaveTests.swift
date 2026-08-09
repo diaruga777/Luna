@@ -123,7 +123,7 @@ final class DoubleSaveTests: XCTestCase {
     ) -> SavePressPolicy.Decision {
         SavePressPolicy.decide(
             existingItem: existingItem, previousPressDate: previousPressDate, now: intentRegimeNow,
-            doubleSaveDestinationIDs: [], intentAction: action)
+            regime: .actionButton(action))
     }
 
     func testIntentNewURLSaves() {
@@ -174,16 +174,12 @@ final class DoubleSaveTests: XCTestCase {
             .ignore)
     }
 
-    func testIntentRegimeDoesNotFallBackToLegacyTwelveSecondWindow() {
-        // 9 s is inside the legacy 12 s window but outside the intent 7 s window;
-        // with an intentAction armed the press must NOT trigger the legacy send.
-        XCTAssertEqual(
-            SavePressPolicy.decide(
-                existingItem: intentRegimeItem(),
-                previousPressDate: intentRegimeNow.addingTimeInterval(-9), now: intentRegimeNow,
-                doubleSaveDestinationIDs: [intentRegimeKindle], intentAction: .sendToKindle),
-            .ignore)
-    }
+    // testIntentRegimeDoesNotFallBackToLegacyTwelveSecondWindow used to prove an
+    // armed `intentAction` didn't fall back into the legacy 12 s send. That was
+    // testing a redundancy in the old two-optional-parameter shape: `regime:
+    // .actionButton` and `.inApp(doubleSaveDestinationIDs:)` are now mutually
+    // exclusive by construction, so there is no `doubleSaveDestinationIDs` to
+    // fall back to and the case can no longer be expressed.
 
     func testIntentKindleRespectsResendCooldown() {
         XCTAssertEqual(
@@ -252,17 +248,10 @@ final class DoubleSaveTests: XCTestCase {
             .ignore)
     }
 
-    /// The whole point of `.doNothing` over a nil `intentAction`: an Action
-    /// Button save whose setting is "Nothing" must not slip into the legacy
-    /// 12 s ereader regime and send anyway.
-    func testIntentDoNothingDoesNotFallBackToLegacyEreaderSend() {
-        XCTAssertEqual(
-            SavePressPolicy.decide(
-                existingItem: intentRegimeItem(),
-                previousPressDate: intentRegimeNow.addingTimeInterval(-5), now: intentRegimeNow,
-                doubleSaveDestinationIDs: [intentRegimeKindle], intentAction: .doNothing),
-            .ignore)
-    }
+    // testIntentDoNothingDoesNotFallBackToLegacyEreaderSend used to prove
+    // `.doNothing` didn't slip into the legacy 12 s ereader regime and send
+    // anyway. Same redundancy as above: `regime: .actionButton(.doNothing)`
+    // has no `doubleSaveDestinationIDs` to fall back to.
 
     func testIntentDoNothingStillSavesANewURL() {
         XCTAssertEqual(
@@ -352,7 +341,7 @@ final class DoubleSaveTests: XCTestCase {
         XCTAssertEqual(
             SavePressPolicy.decide(
                 existingItem: nil, previousPressDate: nil, now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .saveNew)
     }
 
@@ -361,7 +350,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: legacyRegimeItem(),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .sendToEreaders(destinationIDs: [legacyRegimeKindle]))
     }
 
@@ -370,7 +359,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: legacyRegimeItem(),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-60), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .ignore)
     }
 
@@ -381,7 +370,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: legacyRegimeItem(),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: []),
+                regime: .inApp(doubleSaveDestinationIDs: [])),
             .ignore)
     }
 
@@ -391,7 +380,7 @@ final class DoubleSaveTests: XCTestCase {
                 existingItem: legacyRegimeItem(
                     sendState: .sent, dateSent: legacyRegimeNow.addingTimeInterval(-3600)),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .ignore)
     }
 
@@ -401,7 +390,7 @@ final class DoubleSaveTests: XCTestCase {
                 existingItem: legacyRegimeItem(
                     sendState: .sent, dateSent: legacyRegimeNow.addingTimeInterval(-25 * 60 * 60)),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .sendToEreaders(destinationIDs: [legacyRegimeKindle]))
     }
 
@@ -415,7 +404,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: item,
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle, legacyRegimeSecondDestinationID]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle, legacyRegimeSecondDestinationID])),
             .sendToEreaders(destinationIDs: [legacyRegimeSecondDestinationID]))
     }
 
@@ -426,7 +415,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: video,
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .ignore)
     }
 
@@ -435,7 +424,7 @@ final class DoubleSaveTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: legacyRegimeItem(sendState: .failed),
                 previousPressDate: legacyRegimeNow.addingTimeInterval(-5), now: legacyRegimeNow,
-                doubleSaveDestinationIDs: [legacyRegimeKindle]),
+                regime: .inApp(doubleSaveDestinationIDs: [legacyRegimeKindle])),
             .sendToEreaders(destinationIDs: [legacyRegimeKindle]))
     }
 

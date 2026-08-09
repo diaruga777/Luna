@@ -267,7 +267,7 @@ public struct EpubBuilder {
             """
     }
 
-    public static func escapeXML(_ text: String) -> String {
+    private static func escapeXML(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")

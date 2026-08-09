@@ -4,7 +4,7 @@
 //
 
 import LunaReadingList
-import LunaSend
+@testable import LunaSend
 import LunaStorage
 import LunaModels
 import UIKit

@@ -42,8 +42,8 @@ public struct TextChunk: Equatable {
 public enum ChunkPlanner {
 
     /// Soft ceilings so a phrase comfortably fits two short lines in the reticule.
-    public static let maxWordsPerChunk = 5
-    public static let maxCharactersPerChunk = 30
+    static let maxWordsPerChunk = 5
+    static let maxCharactersPerChunk = 30
     /// A chunk may overrun the ceilings by this much to avoid stranding a bound
     /// word (e.g. pulling "house" in so the chunk doesn't end on "the").
     private static let overrunSlack = 6
@@ -124,7 +124,7 @@ public enum ChunkPlanner {
 
     /// Minimum on-screen time for a phrase regardless of WPM — two lines need a
     /// real (if quick) fixation, so high speeds don't flash them illegibly.
-    public static let minimumDisplay: TimeInterval = 0.28
+    static let minimumDisplay: TimeInterval = 0.28
 
     /// Display duration for a chunk at the given base words-per-minute. Per-word
     /// time honors the WPM but is weighted by each word's difficulty (common

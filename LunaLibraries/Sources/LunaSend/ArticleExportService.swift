@@ -115,7 +115,7 @@ public struct ArticleExportService {
     /// reader happened to have fetched — which, for a save that was never
     /// opened or an export taken seconds after the save, is nothing.
     @discardableResult
-    public func writePreparingImages(
+    func writePreparingImages(
         _ format: ArticleExportFormat, for item: ReadingListItem
     ) async throws -> URL {
         await prepareImages(for: item)

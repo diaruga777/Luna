@@ -17,7 +17,7 @@ public enum WeeklySigning {
 
     /// The bundled public key, base64 of the 32-byte raw representation. Its
     /// private half lives OUTSIDE this repository.
-    public static let publicKeyBase64 = "o3FR1R1bN8vZxNdqsxWwb7/tkM0ZYPPYOgQyIf5wLl4="
+    static let publicKeyBase64 = "o3FR1R1bN8vZxNdqsxWwb7/tkM0ZYPPYOgQyIf5wLl4="
 
     /// The parsed bundled key. Nil only if the literal above were corrupted,
     /// which `WeeklySigningTests` pins against.

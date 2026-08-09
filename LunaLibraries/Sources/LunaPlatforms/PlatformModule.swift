@@ -54,7 +54,7 @@ public protocol PlatformModule {
 }
 
 public extension PlatformModule {
-    public var metadataFetcher: PlatformMetadataFetching? { nil }
+    var metadataFetcher: PlatformMetadataFetching? { nil }
 }
 
 /// Best-effort metadata for a platform item, fetched at ingest. Any field may be

@@ -51,9 +51,9 @@ public struct WeeklySave: Codable, Equatable, Sendable {
     }
 
     /// After this long an entry stops existing entirely.
-    public static let expiryInterval: TimeInterval = 30 * 24 * 60 * 60
+    static let expiryInterval: TimeInterval = 30 * 24 * 60 * 60
     /// After this long the label stops saying "week" and starts saying "month".
-    public static let monthTierInterval: TimeInterval = 9 * 24 * 60 * 60
+    static let monthTierInterval: TimeInterval = 9 * 24 * 60 * 60
 
     public func isExpired(now: Date = Date()) -> Bool {
         now.timeIntervalSince(date) > Self.expiryInterval

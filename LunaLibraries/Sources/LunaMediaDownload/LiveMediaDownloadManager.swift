@@ -153,6 +153,10 @@ private func postDownloaderJobEnded(sourceURLString: String) {
 }
 
 public final class LiveMediaDownloadManager: NSObject {
+    /// `LiveMediaDownloadJob.ResolveKind` is the persisted type; this file's own
+    /// dispatch logic is dense enough with it to keep referring to it unqualified.
+    private typealias ResolveKind = LiveMediaDownloadJob.ResolveKind
+
     public static let shared = LiveMediaDownloadManager()
 
     private static let sessionIdentifier = "com.hsanabria.luna.mediaDownload.background"
@@ -384,7 +388,7 @@ public final class LiveMediaDownloadManager: NSObject {
             mediaKind: asset.kind,
             title: title ?? readingItem?.title ?? Self.title(for: sourceURL),
             creator: readingItem?.channelName,
-            resolveKind: "rescue",
+            resolveKind: .rescue,
             phase: .downloading,
             progress: 0,
             thumbnailFileName: nil,
@@ -440,7 +444,7 @@ public final class LiveMediaDownloadManager: NSObject {
             job.timeRange = youtube.timeRange
         }
         if let directAsset = MediaAsset.direct(url: gated.sourceURL) {
-            job.resolveKind = "direct"
+            job.resolveKind = .direct
             store.upsert(job)
             if job.isDownloaderOwned {
                 postDownloaderJobProgress(job: job, progress: 0)
@@ -454,7 +458,7 @@ public final class LiveMediaDownloadManager: NSObject {
             await failJob(job, message: MediaDownloadError.unsupported.message)
             return false
         }
-        job.resolveKind = resolve.kind
+        job.resolveKind = ResolveKind(rawValue: resolve.kind)
         store.upsert(job)
         // Register the durable background task before any UI-facing callback, so a
         // process death right after this point still has a real transfer to resume —
@@ -621,7 +625,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 await failJob(job, message: MediaDownloadError.unsupported.message)
                 return
             }
-            job.resolveKind = resolve.kind
+            job.resolveKind = ResolveKind(rawValue: resolve.kind)
             job.errorMessage = nil
             store.upsert(job)
             startTask(
@@ -809,7 +813,7 @@ public final class LiveMediaDownloadManager: NSObject {
         } else if let sourceURL = URL(string: job.sourceURLString),
                   let resolve = Self.resolveRequest(for: sourceURL) {
             job.phase = .resolving
-            job.resolveKind = resolve.kind
+            job.resolveKind = ResolveKind(rawValue: resolve.kind)
             store.upsert(job)
             await updateActivity(for: job)
             if job.isDownloaderOwned {
@@ -947,34 +951,6 @@ public final class LiveMediaDownloadManager: NSObject {
         }
     }
 
-    /// The stage of a persisted background resolve. `LiveMediaDownloadJob.resolveKind`
-    /// stores the raw string rather than this type, so jobs.json (and its decoding of
-    /// jobs written by earlier builds) never depends on this enum's case list — this
-    /// exists only to give the dispatch below compiler-checked cases instead of the
-    /// hand-matched string literals it used to switch on. An unrecognized raw string
-    /// (there is no known way to produce one today) simply fails to match any case
-    /// below, the same as it silently failed to match any string literal before.
-    private enum ResolveKind: String {
-        case x
-        case tiktok
-        case instagramGraphQL
-        case instagramEmbed
-        case facebookPlugin
-        case facebookDesktop
-        case facebookMobile
-        case facebookCanonical
-        case facebookCrawler
-        case facebook
-        case facebookShort
-        case reddit
-        case youtubeClip
-        case youtubeWatch
-        case youtubePlayerJavaScript
-        case youtubeAndroidVR
-        case youtubePlayer
-        case youtubeEmbed
-    }
-
     static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return nil }
         let resolveURL: URL
@@ -1057,7 +1033,7 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func resolvedAsset(from data: Data, job: LiveMediaDownloadJob) -> MediaAsset? {
-        switch job.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        switch job.resolveKind {
         case .x:
             return XMediaParser.assets(fromFxJSON: data).first
         case .tiktok:
@@ -1090,6 +1066,11 @@ public final class LiveMediaDownloadManager: NSObject {
                 videoID: videoID,
                 timeRange: job.timeRange?.isEffective == true ? job.timeRange : nil)
         case .youtubeClip, .youtubeWatch, .youtubePlayerJavaScript:
+            return nil
+        case .rescue, .direct:
+            // Neither ever reaches this parser: a `.rescue` job already carries
+            // its resolved `MediaAsset` (via `startWithResolvedAssets`), and a
+            // `.direct` job's URL needed no resolve step at all.
             return nil
         case nil:
             return nil
@@ -1322,13 +1303,13 @@ public final class LiveMediaDownloadManager: NSObject {
             Task { await failJob(job, message: MediaDownloadError.noMedia.message, errorKind: .noMedia) }
             return
         }
-        if job.resolveKind == ResolveKind.youtubeClip.rawValue,
+        if job.resolveKind == .youtubeClip,
            let html = String(data: data, encoding: .utf8),
            let clip = YouTubeClipParser.descriptor(fromHTML: html),
            let watchURL = YouTubeLink.watchURL(videoID: clip.videoID) {
             job.resolvedVideoID = clip.videoID
             job.timeRange = clip.timeRange
-            job.resolveKind = ResolveKind.youtubeWatch.rawValue
+            job.resolveKind = .youtubeWatch
             store.upsert(job)
             startTask(
                 YouTubeMediaResolver.watchRequest(watchURL),
@@ -1358,14 +1339,14 @@ public final class LiveMediaDownloadManager: NSObject {
 
         let request: URLRequest
         let kind: ResolveKind
-        switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        switch persistedJob.resolveKind {
         case .youtubeWatch:
             if let data,
                let bootstrap = YouTubePlaybackBootstrapParser.bootstrap(
                 fromWatchData: data) {
                 var job = persistedJob
                 job.youtubeVisitorData = bootstrap.visitorData
-                job.resolveKind = ResolveKind.youtubePlayerJavaScript.rawValue
+                job.resolveKind = .youtubePlayerJavaScript
                 store.upsert(job)
                 startTask(
                     YouTubeMediaResolver.playerJavaScriptRequest(
@@ -1407,7 +1388,7 @@ public final class LiveMediaDownloadManager: NSObject {
             return false
         }
         var job = persistedJob
-        job.resolveKind = kind.rawValue
+        job.resolveKind = kind
         store.upsert(job)
         startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         return true
@@ -1428,7 +1409,7 @@ public final class LiveMediaDownloadManager: NSObject {
         job.phase = .resolving
         job.progress = 0
         job.receivedByteCount = nil
-        job.resolveKind = resolve.kind
+        job.resolveKind = ResolveKind(rawValue: resolve.kind)
         store.upsert(job)
         startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         return true
@@ -1446,7 +1427,7 @@ public final class LiveMediaDownloadManager: NSObject {
     private func startNextInstagramResolve(
         after persistedJob: LiveMediaDownloadJob, data: Data?
     ) -> Bool {
-        guard persistedJob.resolveKind == ResolveKind.instagramGraphQL.rawValue,
+        guard persistedJob.resolveKind == .instagramGraphQL,
               let sourceURL = URL(string: persistedJob.sourceURLString),
               let code = PlatformRecognizer.recognize(sourceURL.absoluteString)?.itemID,
               let embedURL = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/")
@@ -1455,7 +1436,7 @@ public final class LiveMediaDownloadManager: NSObject {
             .isVideoMissingItsPlayableURL == true { return false }
 
         var job = persistedJob
-        job.resolveKind = ResolveKind.instagramEmbed.rawValue
+        job.resolveKind = .instagramEmbed
         store.upsert(job)
         var request = URLRequest(url: embedURL, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
@@ -1476,7 +1457,7 @@ public final class LiveMediaDownloadManager: NSObject {
         let resolutionURL = SocialMediaResolver.facebookResolutionURL(for: sourceURL)
 
         let next: (url: URL, kind: ResolveKind, userAgent: String)?
-        switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        switch persistedJob.resolveKind {
         case .facebookPlugin:
             next = (resolutionURL, .facebookDesktop, MediaDownloadHTTP.desktopBrowserUserAgent)
         case .facebookDesktop, .facebook:
@@ -1498,7 +1479,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
         guard let next else { return false }
         var job = persistedJob
-        job.resolveKind = next.kind.rawValue
+        job.resolveKind = next.kind
         store.upsert(job)
         let request = SocialMediaResolver.facebookPageRequest(
             next.url, userAgent: next.userAgent, timeoutInterval: 60)

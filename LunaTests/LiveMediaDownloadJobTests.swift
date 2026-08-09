@@ -151,6 +151,26 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertNil(bare.timeRange)
     }
 
+    /// `resolveKind` used to be a bare `String`, and two producers (the
+    /// URL-rescue and direct-URL starts) wrote "rescue"/"direct" literals that
+    /// matched none of the enum's cases at the time — every read site's
+    /// `flatMap(ResolveKind.init(rawValue:))` silently produced nil for them.
+    /// Both are now real cases, and any other legacy value still safely
+    /// decodes to nil rather than throwing.
+    func testLegacyResolveKindStringsDecodeIntoTypedKind() throws {
+        func decodedKind(forLegacyResolveKind raw: String) throws -> LiveMediaDownloadJob.ResolveKind? {
+            let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+                + #""mediaKind":null,"title":"Media","resolveKind":"\#(raw)","phase":"resolving","#
+                + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"#
+                + #""errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
+            return try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8)).resolveKind
+        }
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "rescue"), .rescue)
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "direct"), .direct)
+        XCTAssertEqual(try decodedKind(forLegacyResolveKind: "youtubeClip"), .youtubeClip)
+        XCTAssertNil(try decodedKind(forLegacyResolveKind: "somethingUnrecognized"))
+    }
+
     func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
         XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
             phase: .resolving, hasActiveTask: false))
@@ -186,7 +206,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         let job = LiveMediaDownloadJob(
             id: "notification-thread", sourceURLString: sourceURL,
             assetURLString: nil, mediaKind: nil, title: "Media",
-            resolveKind: "x", phase: .resolving, progress: 0,
+            resolveKind: .x, phase: .resolving, progress: 0,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,
             resumeDataFileName: nil, timeRange: nil,

@@ -24,6 +24,36 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         case noMedia
     }
 
+    /// The stage of a persisted background resolve. Codable (String-backed) so
+    /// jobs.json keeps the same on-disk shape; an unrecognized legacy raw string
+    /// decodes to nil via `init(rawValue:)`, the same way a hand-matched string
+    /// literal used to silently fail to match any case.
+    enum ResolveKind: String, Codable {
+        case x
+        case tiktok
+        case instagramGraphQL
+        case instagramEmbed
+        case facebookPlugin
+        case facebookDesktop
+        case facebookMobile
+        case facebookCanonical
+        case facebookCrawler
+        case facebook
+        case facebookShort
+        case reddit
+        case youtubeClip
+        case youtubeWatch
+        case youtubePlayerJavaScript
+        case youtubeAndroidVR
+        case youtubePlayer
+        case youtubeEmbed
+        /// A URL-rescue-resolved asset, started via `startWithResolvedAssets`.
+        case rescue
+        /// A directly-downloadable URL (`MediaAsset.direct`) that needed no
+        /// resolve step at all.
+        case direct
+    }
+
     var id: String
     var sourceURLString: String
     var assetURLString: String?
@@ -39,7 +69,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     /// Best-effort creator/author name (from the reading-list item's fetched
     /// platform metadata), carried through to `SavedMediaStore` on completion.
     var creator: String?
-    var resolveKind: String?
+    var resolveKind: ResolveKind?
     var phase: Phase
     var progress: Double
     var thumbnailFileName: String?
@@ -77,7 +107,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     init(
         id: String, sourceURLString: String, assetURLString: String? = nil,
         mediaKind: MediaAsset.Kind? = nil, title: String, creator: String? = nil,
-        resolveKind: String? = nil,
+        resolveKind: ResolveKind? = nil,
         phase: Phase, progress: Double, thumbnailFileName: String? = nil,
         fileExtension: String? = nil,
         expectedByteCount: Int64? = nil, receivedByteCount: Int64? = nil,
@@ -134,6 +164,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         title = try c.decode(String.self, forKey: .title)
         creator = try c.decodeIfPresent(String.self, forKey: .creator)
         resolveKind = try c.decodeIfPresent(String.self, forKey: .resolveKind)
+            .flatMap(ResolveKind.init(rawValue:))
         phase = try c.decode(Phase.self, forKey: .phase)
         progress = try c.decode(Double.self, forKey: .progress)
         thumbnailFileName = try c.decodeIfPresent(String.self, forKey: .thumbnailFileName)

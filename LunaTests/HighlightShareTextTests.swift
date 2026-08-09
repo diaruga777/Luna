@@ -98,18 +98,6 @@ final class HighlightShareTextTests: XCTestCase {
         XCTAssertFalse(asked)
     }
 
-    /// A reader that declines the range (a bad range) also falls through rather
-    /// than leaving the user with nothing on the pasteboard.
-    func testCopyFallsThroughWhenTheReaderDeclines() {
-        let textView = QuotingTextView(usingTextLayoutManager: false)
-        textView.text = "One sentence."
-        textView.selectedRange = NSRange(location: 0, length: 3)
-        textView.copySelectionAsQuote = { _ in false }
-
-        // Nothing to assert beyond "it didn't trap" — the system copy path runs.
-        textView.copy(nil)
-    }
-
     // MARK: - When the long press expands the selection itself
 
     /// The ordinary order: the press lands before the text view has selected

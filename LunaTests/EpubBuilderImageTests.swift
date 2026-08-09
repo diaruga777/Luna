@@ -111,6 +111,12 @@ final class EpubBuilderImageTests: XCTestCase {
                       "\(entryPaths(in: archive))")
         XCTAssertTrue(text(in: archive).contains("<img src=\"images/pic.png\""))
         XCTAssertTrue(text(in: archive).contains("media-type=\"image/png\""))
+
+        let jpeg = encoded(as: .jpeg)!
+        let jpegArchive = build([block(
+            fileName: "pic.jpg", remote: "https://example.com/pic.jpg",
+            bytes: jpeg, onDiskAs: "pic.jpg")])
+        XCTAssertTrue(text(in: jpegArchive).contains("media-type=\"image/jpeg\""))
     }
 
     /// Content is persisted before its images finish downloading, so the file

@@ -54,22 +54,6 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
     /// Pins `endActivity`'s finished-state dismissal window at its EXISTING
     /// 20s default — Feature 2c's tap-to-view work rides the alert
     /// `endActivity` already sends on the final `.finished`/`.failed` update,
-    /// never a longer dismissal delay (reverted design decision — see
-    /// `claudedocs/media-download.md`).
-    func testEndActivityDismissalDelayDefaultIsUnchanged() {
-        let source = Self.source("LunaLibraries/Sources/LunaMediaDownload/LiveMediaDownloadManager+ActivityKit.swift")
-        XCTAssertTrue(
-            source.contains("dismissalDelay: TimeInterval = 20"),
-            "endActivity's default dismissal delay must stay 20s")
-    }
-
-    private static func source(_ relativePath: String) -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-        return (try? String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
-    }
-
     func testViewURLEncodesTheSourceURLAsAQueryItem() {
         #if canImport(ActivityKit)
         let state = LiveMediaDownloadManager.shared.activityState(

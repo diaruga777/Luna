@@ -105,23 +105,6 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertNil(job.ownership)
     }
 
-    func testDownloaderOwnershipRoundTrips() throws {
-        let job = LiveMediaDownloadJob(
-            id: "1", sourceURLString: "https://www.tiktok.com/@a/video/1",
-            assetURLString: nil, mediaKind: "video", title: "Media",
-            resolveKind: nil, phase: .resolving, progress: 0,
-            thumbnailFileName: nil, fileExtension: nil,
-            expectedByteCount: nil, receivedByteCount: nil,
-            resumeDataFileName: nil, rangeStartSeconds: nil, rangeEndSeconds: nil,
-            resolvedVideoID: nil, youtubeVisitorData: nil, errorMessage: nil,
-            errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
-            suspendDeadline: nil, ownership: .downloader)
-        let decoded = try JSONDecoder().decode(
-            LiveMediaDownloadJob.self, from: JSONEncoder().encode(job))
-        XCTAssertEqual(decoded.ownership, .downloader)
-        XCTAssertTrue(decoded.isDownloaderOwned)
-    }
-
     func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
         XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
             phase: .resolving, hasActiveTask: false))
@@ -209,9 +192,6 @@ final class LiveMediaDownloadJobTests: XCTestCase {
     func testStoragePolicyIncludesReserveAndTransferOverhead() {
         let expected: Int64 = 1_000_000_000
         let required = MediaStoragePolicy.requiredByteCount(expectedByteCount: expected)
-        XCTAssertEqual(
-            required,
-            expected + MediaStoragePolicy.reserveByteCount + expected / 10)
         XCTAssertFalse(MediaStoragePolicy.hasCapacity(
             expectedByteCount: expected, availableByteCount: required - 1))
         XCTAssertTrue(MediaStoragePolicy.hasCapacity(

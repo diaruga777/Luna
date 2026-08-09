@@ -63,35 +63,4 @@ final class EpubBuilderTests: XCTestCase {
         XCTAssertNotNil(epub.firstRange(of: Data("<dc:creator>A. Writer</dc:creator>".utf8)))
     }
 
-    func testDownloadedImageIsEmbeddedAndReferenced() throws {
-        let imageData = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0, count: 64))
-        try imageData.write(to: scratchDirectory.appendingPathComponent("art-img0.jpg"))
-
-        var content = sampleContent()
-        content.blocks.append(ArticleContent.Block(
-            kind: .image, text: "caption", links: [],
-            imageURLString: "https://example.com/x.jpg", imageFileName: "art-img0.jpg"))
-
-        let epub = EpubBuilder().build(
-            content: content, sourceURLString: "https://example.com/a",
-            imagesDirectory: scratchDirectory)
-
-        XCTAssertNotNil(epub.firstRange(of: Data("OEBPS/images/art-img0.jpg".utf8)))
-        XCTAssertNotNil(epub.firstRange(of: imageData))
-        XCTAssertNotNil(epub.firstRange(of: Data("<img src=\"images/art-img0.jpg\"".utf8)))
-        XCTAssertNotNil(epub.firstRange(of: Data("media-type=\"image/jpeg\"".utf8)))
-    }
-
-    func testMissingImageFileIsSkippedEntirely() {
-        var content = sampleContent()
-        content.blocks.append(ArticleContent.Block(
-            kind: .image, text: "caption", links: [],
-            imageURLString: "https://example.com/x.jpg", imageFileName: "not-on-disk.jpg"))
-
-        let epub = EpubBuilder().build(
-            content: content, sourceURLString: "https://example.com/a",
-            imagesDirectory: scratchDirectory)
-
-        XCTAssertNil(epub.firstRange(of: Data("not-on-disk.jpg".utf8)))
-    }
 }

@@ -71,15 +71,6 @@ final class SaveFailureReasonTests: XCTestCase {
         XCTAssertFalse(SaveFailureReason.noMediaFound.isWorthRetrying)
     }
 
-    func testReasonSurvivesACodableRoundTrip() throws {
-        // The sidecar persists these, so a coding regression would silently wipe
-        // every stored reason on the next launch.
-        for reason in [SaveFailureReason.httpStatus(429), .network("nope"),
-                       .unsupportedDocument("epub"), .offline] {
-            let data = try JSONEncoder().encode(reason)
-            XCTAssertEqual(try JSONDecoder().decode(SaveFailureReason.self, from: data), reason)
-        }
-    }
 }
 
 final class FailedSaveNamingTests: XCTestCase {

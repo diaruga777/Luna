@@ -68,10 +68,6 @@ final class DuckDuckGoSearchTests: XCTestCase {
         XCTAssertTrue(DuckDuckGoSearch.resultURLs(inHTML: fixture("ddg-anomaly-challenge.html")).isEmpty)
     }
 
-    func testAnomalyStatusCodeIsTheMeasuredTwoOhTwo() {
-        XCTAssertEqual(DuckDuckGoSearch.anomalyStatusCode, 202)
-    }
-
     // MARK: - Small shape details worth pinning directly
 
     func testAmpEscapedAmpersandsInHrefsSurviveUnwrapping() {

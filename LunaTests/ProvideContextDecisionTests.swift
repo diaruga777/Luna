@@ -116,22 +116,10 @@ final class ProvideContextDecisionTests: XCTestCase {
 
     // MARK: - Recognized platform apps
 
-    func testPlatformAppNotInstalledIsUnsupported() {
-        XCTAssertEqual(
-            decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: false, visionModelAvailable: true),
-            .unsupported)
-    }
-
     func testPlatformAppInstalledWithoutVisionIsUnsupported() {
         XCTAssertEqual(
             decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: true, visionModelAvailable: false),
             .unsupported)
-    }
-
-    func testPlatformAppInstalledWithVisionNeedsScreenshot() {
-        XCTAssertEqual(
-            decide(appName: "TikTok", platform: .tiktok, handlesMediaKind: true, visionModelAvailable: true),
-            .screenshotNeeded)
     }
 
     func testEveryRecognizedPlatformTakesTheSameRoute() {

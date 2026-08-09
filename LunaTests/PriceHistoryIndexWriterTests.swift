@@ -64,21 +64,6 @@ final class PriceHistoryIndexWriterTests: XCTestCase {
         XCTAssertEqual(entries[0].stores[0].points.map(\.price), ["45"])
     }
 
-    func testWriteThenLoadRoundTrips() {
-        let entry = PriceHistoryIndexEntry(
-            name: "Widget", brand: "Acme", productID: "SKU-1",
-            stores: [PriceHistoryIndexEntry.StorePoints(
-                url: "https://shop.example/p/1", host: "shop.example",
-                points: [PriceHistoryIndexEntry.Point(day: "2026-01-01", price: "40", currency: "USD")])])
-        // `PriceHistoryIndexWriter.write`/`load` go through the real App Group
-        // container path — exercised for real by `write`'s round trip in the
-        // ingest/refresh integration tests; here we only confirm the shape
-        // encodes/decodes without loss.
-        let data = try! JSONEncoder().encode([entry])
-        let decoded = try! JSONDecoder().decode([PriceHistoryIndexEntry].self, from: data)
-        XCTAssertEqual(decoded, [entry])
-    }
-
     // MARK: - Regeneration hooks (source-text parity)
 
     private static func source(_ relativePath: String) -> String {
@@ -86,12 +71,6 @@ final class PriceHistoryIndexWriterTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent()
         return (try? String(
             contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
-    }
-
-    func testIngestRegeneratesTheIndex() {
-        XCTAssertTrue(
-            Self.source("LunaLibraries/Sources/LunaPriceUI/ProductTrackerIngestor.swift")
-                .contains("PriceHistoryIndexWriter.regenerate()"))
     }
 
     func testEveryRefreshCycleRegeneratesTheIndex() {

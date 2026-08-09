@@ -186,29 +186,6 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     // MARK: - Exit
 
-    /// Existing mode shows a Back chevron that pops back to the pushing root.
-    func testExistingModeBackPops() {
-        UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
-            XCTFail("no price tracker seeded"); return
-        }
-        let root = UIViewController()   // stands in for whatever pushed the editor
-        let nav = UINavigationController(rootViewController: root)
-        let window = UITestSupport.host(nav)
-        let editor = PriceTrackingViewController(itemID: tracker.id)
-        nav.pushViewController(editor, animated: false)
-        editor.loadViewIfNeeded()
-        XCTAssertTrue(nav.topViewController is PriceTrackingViewController)
-        // The header controls now live in the in-content NavHeaderBar (not the nav bar);
-        // exercise the same back action seam by its selector.
-        editor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(nav.topViewController === root, "Back should pop back to the pushing root")
-        XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
-                        "Back must not delete the tracker")
-        _ = window
-    }
-
     /// The price editor uses a custom Back item, which otherwise disables UIKit's
     /// stock interactive-pop recognizer. A left-edge swipe must still return a
     /// tracker opened from a root screen back to that root controller.
@@ -259,6 +236,8 @@ final class PriceTrackingScreenTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         XCTAssertTrue(nav.topViewController === root, "in-app Back pops to the pushing root")
+        XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
+                        "Back must not delete the tracker")
 
         // Extension host: the exit is a titleless floating button that hands off to
         // the `onDone` completion.

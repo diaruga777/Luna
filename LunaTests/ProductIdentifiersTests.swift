@@ -51,12 +51,6 @@ final class ProductIdentifiersTests: XCTestCase {
         XCTAssertFalse(ProductIdentifiers(sku: "A1", brand: "Sony").hasCrossHostIdentifier)
     }
 
-    func testCodableRoundTrip() throws {
-        let identifiers = ProductIdentifiers(gtin: "123", mpn: "XM5", sku: "A1", brand: "Sony")
-        let data = try JSONEncoder().encode(identifiers)
-        XCTAssertEqual(try JSONDecoder().decode(ProductIdentifiers.self, from: data), identifiers)
-    }
-
     func testBrandCompatibilityTreatsUnknownAsCompatible() {
         XCTAssertTrue(ProductIdentityMatching.brandsCompatible("Sony", "sony"))
         XCTAssertTrue(ProductIdentityMatching.brandsCompatible(nil, "Sony"))

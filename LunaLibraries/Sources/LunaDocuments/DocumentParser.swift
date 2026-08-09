@@ -19,40 +19,55 @@ import PDFKit
 /// carries that title back onto the reading-list row.
 public enum DocumentParser {
 
+    /// The formats `parse` has a specific reader for. Parsed ONCE, from the
+    /// raw extension string, instead of switching on that string twice over
+    /// two separately hand-kept case lists.
+    public enum ReadableDocumentFormat: String, CaseIterable {
+        case pdf, epub, docx, rtf, html, htm, xhtml, md, markdown, txt, text
+
+        /// Case-insensitive; nil for an extension `parse` has no specific reader
+        /// for — which still parses (as plain text), it just isn't one of these.
+        public init?(extension rawExtension: String) {
+            self.init(rawValue: rawExtension.lowercased())
+        }
+    }
+
     /// Every extension that can be read, which is also what
     /// `ShareAttachmentRouter` offers to accept — the two lists exist for
     /// different callers (one takes files, one takes UTTypes) and
-    /// `DocumentImportFormatTests` pins them to each other.
-    public static let readableExtensions: Set<String> = [
-        "pdf", "epub", "docx", "rtf", "html", "htm", "xhtml", "md", "markdown", "txt", "text",
-    ]
+    /// `EbookDocumentImportTests` pins them to each other. Derived from
+    /// `ReadableDocumentFormat` so it can't drift from what `parse` actually
+    /// switches on.
+    public static let readableExtensions: Set<String> =
+        Set(ReadableDocumentFormat.allCases.map(\.rawValue))
 
     public static func parse(fileURL: URL, type: String, title: String) -> ArticleContent? {
-        let lowercased = type.lowercased()
+        let format = ReadableDocumentFormat(extension: type)
         // The container formats carry their own title and author, so they build
         // the whole `ArticleContent` rather than just its blocks.
-        switch lowercased {
-        case "epub":
+        switch format {
+        case .epub:
             return (try? Data(contentsOf: fileURL)).flatMap {
                 EpubDocumentParser.parse(data: $0, fallbackTitle: title)
             }
-        case "docx":
+        case .docx:
             return (try? Data(contentsOf: fileURL)).flatMap {
                 DocxDocumentParser.parse(data: $0, fallbackTitle: title)
             }
-        default: break
+        case .pdf, .rtf, .html, .htm, .xhtml, .md, .markdown, .txt, .text, .none:
+            break
         }
 
         let blocks: [ArticleContent.Block]?
         var resolvedTitle = title
-        switch lowercased {
-        case "pdf":
+        switch format {
+        case .pdf:
             blocks = parsePDF(fileURL: fileURL)
-        case "md", "markdown":
+        case .md, .markdown:
             blocks = text(at: fileURL).map(MarkdownParser.blocks(from:))
-        case "rtf":
+        case .rtf:
             blocks = parseRTF(fileURL: fileURL)
-        case "html", "htm", "xhtml":
+        case .html, .htm, .xhtml:
             let html = text(at: fileURL)
             blocks = html.map(MarkupBlockExtractor.blocks(fromHTML:))
             // A saved page's file name is whatever the browser called it; the
@@ -60,9 +75,15 @@ public enum DocumentParser {
             if let html, let pageTitle = MarkupBlockExtractor.title(fromHTML: html) {
                 resolvedTitle = pageTitle
             }
-        default:
-            // txt and any other public.text type.
+        case .txt, .text, .none:
+            // `.none` is any extension with no specific reader above — a saved
+            // file's extension is never trusted to gate import, only to pick a
+            // parser, so an unrecognized one still becomes a readable document
+            // (best-effort plain text) rather than failing outright.
             blocks = text(at: fileURL).map(PlainTextParser.blocks(from:))
+        case .epub, .docx:
+            // Handled, and returned, in the switch above.
+            blocks = nil
         }
         guard let blocks, !blocks.isEmpty else { return nil }
         return ArticleContent(title: resolvedTitle, blocks: blocks)

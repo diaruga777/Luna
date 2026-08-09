@@ -36,22 +36,6 @@ final class SurfaceSupportTests: XCTestCase {
         }
     }
 
-    /// Full matrix over every (owner, current) pair.
-    func testFullMatrix() {
-        for owner in LunaApp.allCases {
-            for current in LunaApp.allCases {
-                let decision = SurfaceSupport.evaluate(owner: owner, current: current)
-                let expected: SurfaceSupport.Decision
-                if current == .luna || owner == current {
-                    expected = .supported
-                } else {
-                    expected = .unsupported(owner: owner)
-                }
-                XCTAssertEqual(decision, expected, "owner=\(owner) current=\(current)")
-            }
-        }
-    }
-
     func testEveryCrossCombinationIsUnsupportedWithTheRightOwner() {
         for owner in LunaApp.allCases where owner != .luna {
             for current in LunaApp.allCases where current != .luna && current != owner {

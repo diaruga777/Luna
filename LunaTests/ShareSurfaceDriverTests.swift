@@ -359,6 +359,8 @@ final class ShareSurfaceDriverTests: XCTestCase {
         shareDriver.present(.failed(nil), url: url(urlString))
         XCTAssertTrue(shareHost.completedSilently)
         XCTAssertFalse(shareHost.confirmedSaved)
+        XCTAssertFalse(shareHost.presented.contains { $0 is RescueFailureViewController },
+                       "share ext must never present the rescue hand-off card")
         XCTAssertEqual(store.item(forURLString: urlString)?.state, .failed)
     }
 }

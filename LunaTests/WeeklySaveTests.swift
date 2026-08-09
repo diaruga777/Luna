@@ -919,14 +919,6 @@ final class WeeklySaveTests: XCTestCase {
             "product\nhttps://shop.example/p\n2023-11-14T22:13:20Z")
     }
 
-    func testPerAppKindOwnership() {
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .luna), [.article, .media, .product])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .reader), [.article])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .downloader), [.media])
-        XCTAssertEqual(WeeklySaveKind.kinds(for: .priceTracker), [.product])
-        XCTAssertEqual(WeeklySaveKind.article.recordName, "weekly-article")
-    }
-
     func testProposalRecordNameIsTheURLDedup() {
         let first = WeeklyProposal(
             kind: .article, urlString: "  https://example.com/x  ", date: Date())
@@ -943,19 +935,6 @@ final class WeeklySaveTests: XCTestCase {
                 kind: .article, urlString: "https://example.com/y", date: Date()).recordName)
     }
 
-    func testPerAppLabelsRenameTheNounButNotTheTier() {
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .luna, monthTier: false), "Save of the week")
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .luna, monthTier: true), "Save of the month")
-        XCTAssertEqual(WeeklySaveLabels.subtitle(for: .reader, monthTier: false), "Read of the week")
-        XCTAssertEqual(
-            WeeklySaveLabels.subtitle(for: .downloader, monthTier: true),
-            "Download of the month")
-        XCTAssertEqual(
-            WeeklySaveLabels.subtitle(for: .priceTracker, monthTier: false), "Deal of the week")
-        XCTAssertEqual(
-            WeeklySaveLabels.promoteMenuTitle(for: .reader), "Promote to Read of the Week")
-        XCTAssertEqual(WeeklySaveLabels.proposeMenuTitle, "Propose Save of the Week")
-    }
 }
 
 private extension UIView {

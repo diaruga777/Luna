@@ -351,7 +351,6 @@ final class ArchiveTrayController: NSObject {
     var trayFrameForTesting: CGRect { tray.frame }
     var trayAlphaForTesting: CGFloat { tray.alpha }
     var itemSizeForTesting: CGSize { arcLayout.itemSize }
-    var arcLayoutForTesting: ArchiveArcLayout { arcLayout }
     var headerTitleForTesting: String { ArchiveArcHeaderCell.title }
     func contextMenuForTesting(itemAt index: Int) -> UIMenu {
         contextMenu(for: items[index], sourceView: collection)

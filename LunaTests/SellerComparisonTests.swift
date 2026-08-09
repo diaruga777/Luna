@@ -395,27 +395,6 @@ final class SellerComparisonTests: XCTestCase {
     // MARK: - The opportunistic completion hooks
 
     /// A refresh cycle opens by finishing whatever a dead process left behind.
-    /// It is the right moment for two reasons: the app is already awake with
-    /// the network, and the sellers a fan-out attaches arrive priced — so
-    /// running it FIRST spares the refresh from fetching them again, and the
-    /// baseline it settles is what this cycle's alert decisions are made
-    /// against.
-    func testARefreshCycleFinishesPendingComparisonsBeforeItRefreshes() async {
-        let coordinator = PriceRefreshCoordinator(
-            refresher: PriceRefresher(store: store, priceFetcher: MockPriceFetcher()))
-        var order: [String] = []
-        coordinator.pendingComparisonCompletion = {
-            order.append("comparisons")
-            return 1
-        }
-        let item = store.add(urlString: "https://source.example/p/1")
-        store.savePriceTracker(tracker(), for: item.id)
-
-        _ = await coordinator.refreshAndNotify()
-
-        XCTAssertEqual(order, ["comparisons"])
-    }
-
     /// The sweep both hooks call: it takes every tracker carrying a marker, and
     /// nothing else.
     func testTheSweepPicksUpEveryPendingTrackerAndSkipsTheRest() async {

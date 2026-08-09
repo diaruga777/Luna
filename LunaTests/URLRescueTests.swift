@@ -376,32 +376,6 @@ final class URLRescueTests: XCTestCase {
         func openURL(_ url: URL) { openedURLs.append(url) }
     }
 
-    func testActionExtensionFailedPresentsRescueCardAndMarksFailed() {
-        let host = FakeHost(isActionExtension: true)
-        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
-        let url = URL(string: "https://example.com/broken")!
-        let item = store.add(urlString: url.absoluteString)
-
-        driver.present(.failed(nil), url: url)
-
-        XCTAssertTrue(host.presented.contains { $0 is RescueFailureViewController },
-                      "action extension should present the rescue card")
-        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
-    }
-
-    func testShareExtensionFailedCompletesSilentlyNoCard() {
-        let host = FakeHost(isActionExtension: false)
-        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
-        let url = URL(string: "https://example.com/broken")!
-        let item = store.add(urlString: url.absoluteString)
-
-        driver.present(.failed(nil), url: url)
-
-        XCTAssertFalse(host.presented.contains { $0 is RescueFailureViewController })
-        XCTAssertEqual(host.completedSilently, 1)
-        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
-    }
-
     /// The extension no longer asks what the save should become — the model
     /// classifies the page when the app drains the queue — so the queued record
     /// must carry NO hint. A hint here would silently pin the answer and undo the

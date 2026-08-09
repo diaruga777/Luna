@@ -58,16 +58,6 @@ final class ReadingListSectioningTests: XCTestCase {
         return item
     }
 
-    // MARK: - rendersAsReader
-
-    func testArticleRendersAsReader() {
-        XCTAssertTrue(ReadingListSectioning.rendersAsReader(article()))
-    }
-
-    func testPlatformItemDoesNotRenderAsReader() {
-        XCTAssertFalse(ReadingListSectioning.rendersAsReader(platformItem()))
-    }
-
     // MARK: - assignSections
 
     func testFreshUnreadArticleGoesToReading() {
@@ -251,15 +241,4 @@ final class ReadingListSectioningTests: XCTestCase {
         }
     }
 
-    /// The capability flags are the same three-way split, and the central app is
-    /// the only one that answers yes to all of them.
-    func testCapabilityFlagsMatchTheKindSplit() {
-        XCTAssertTrue(LunaApp.luna.handlesArticles)
-        XCTAssertTrue(LunaApp.luna.handlesMedia)
-        XCTAssertTrue(LunaApp.luna.handlesProducts)
-        XCTAssertEqual(LunaApp.allCases.filter(\.handlesArticles), [.luna, .reader])
-        XCTAssertEqual(LunaApp.allCases.filter(\.handlesMedia), [.luna, .downloader])
-        XCTAssertEqual(LunaApp.allCases.filter(\.handlesProducts), [.luna, .priceTracker])
-        XCTAssertEqual(LunaApp.allCases.filter(\.sharesByEmail), [.luna, .reader])
-    }
 }

@@ -21,7 +21,7 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
     private func job(phase: LiveMediaDownloadJob.Phase, sourceURLString: String = "https://example.com/video") -> LiveMediaDownloadJob {
         LiveMediaDownloadJob(
             id: "job-1", sourceURLString: sourceURLString,
-            assetURLString: nil, mediaKind: "video", title: "A Video",
+            assetURLString: nil, mediaKind: .video, title: "A Video",
             resolveKind: nil, phase: phase, progress: 0.5,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,

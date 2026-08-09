@@ -1,3 +1,4 @@
+import LunaModels
 @testable import LunaMediaDownload
 import XCTest
 
@@ -103,6 +104,28 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         let json = #"{"id":"1","sourceURLString":"https://www.tiktok.com/@a/video/1","assetURLString":null,"mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
         let job = try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8))
         XCTAssertNil(job.ownership)
+        XCTAssertEqual(job.mediaKind, .video)
+    }
+
+    /// `mediaKind` used to be a bare `String` that three producers wrote three
+    /// incompatible encodings for: `MediaAsset.Kind.rawValue` ("gif"), the old
+    /// widget-facing `liveActivityKind` ("animatedImage"), and a literal
+    /// "unknown" sentinel for a job with no resolved asset yet. All must still
+    /// decode off disk into the one typed field.
+    func testLegacyMediaKindStringsDecodeIntoTypedKind() throws {
+        func decodedKind(forLegacyMediaKind raw: String) throws -> MediaAsset.Kind? {
+            let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
+                + #""mediaKind":"\#(raw)","title":"Media","resolveKind":null,"phase":"resolving","#
+                + #""progress":0,"thumbnailFileName":null,"fileExtension":null,"errorMessage":null,"#
+                + #""errorKind":null,"resolveAttempts":0,"mediaAttempts":0,"suspendDeadline":null}"#
+            return try JSONDecoder().decode(LiveMediaDownloadJob.self, from: Data(json.utf8)).mediaKind
+        }
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "gif"), .gif)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "animatedImage"), .gif)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "video"), .video)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "audio"), .audio)
+        XCTAssertEqual(try decodedKind(forLegacyMediaKind: "image"), .image)
+        XCTAssertNil(try decodedKind(forLegacyMediaKind: "unknown"))
     }
 
     func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
@@ -139,7 +162,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
 
         let job = LiveMediaDownloadJob(
             id: "notification-thread", sourceURLString: sourceURL,
-            assetURLString: nil, mediaKind: "unknown", title: "Media",
+            assetURLString: nil, mediaKind: nil, title: "Media",
             resolveKind: "x", phase: .resolving, progress: 0,
             thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil,

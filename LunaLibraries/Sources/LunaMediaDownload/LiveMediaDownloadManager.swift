@@ -381,7 +381,7 @@ public final class LiveMediaDownloadManager: NSObject {
             id: UUID().uuidString,
             sourceURLString: sourceURLString,
             assetURLString: asset.url.absoluteString,
-            mediaKind: asset.kind.rawValue,
+            mediaKind: asset.kind,
             title: title ?? readingItem?.title ?? Self.title(for: sourceURL),
             creator: readingItem?.channelName,
             resolveKind: "rescue",
@@ -415,7 +415,7 @@ public final class LiveMediaDownloadManager: NSObject {
             id: jobID,
             sourceURLString: gated.urlString,
             assetURLString: nil,
-            mediaKind: "unknown",
+            mediaKind: nil,
             title: title ?? Self.title(for: gated.sourceURL),
             creator: gated.readingItem?.channelName,
             resolveKind: nil,
@@ -513,7 +513,7 @@ public final class LiveMediaDownloadManager: NSObject {
         }
 
         job.assetURLString = asset.url.absoluteString
-        job.mediaKind = asset.kind.liveActivityKind
+        job.mediaKind = asset.kind
         job.fileExtension = MediaFileDownloader.fileExtension(for: asset, mimeType: nil)
         job.expectedByteCount = expected
         job.rangeStartSeconds = asset.timeRange?.startSeconds
@@ -1156,7 +1156,7 @@ public final class LiveMediaDownloadManager: NSObject {
             return
         }
 
-        let kind = job.mediaAssetKind
+        let kind = job.mediaKind ?? .image
         let ext = MediaFileDownloader.fileExtension(
             for: MediaAsset(url: URL(string: job.assetURLString ?? job.sourceURLString)!, kind: kind),
             mimeType: http?.mimeType)
@@ -1198,7 +1198,7 @@ public final class LiveMediaDownloadManager: NSObject {
         let jobID = persistedJob.id
         Task {
             guard var job = self.store.job(id: jobID), job.phase == .saving else { return }
-            let ext = job.fileExtension ?? (job.mediaAssetKind == .video ? "mp4" : "jpg")
+            let ext = job.fileExtension ?? ((job.mediaKind ?? .image) == .video ? "mp4" : "jpg")
             let staging = JobStore.stagingURL(fileName: "\(job.id).source.\(ext)")
             let destination = JobStore.downloadURL(fileName: "\(job.id).\(ext)")
             do {
@@ -1208,7 +1208,7 @@ public final class LiveMediaDownloadManager: NSObject {
                         endSeconds: job.rangeEndSeconds)
                     let processed = try await MediaVideoTrimmer.trimIfNeeded(
                         fileURL: staging,
-                        timeRange: job.mediaAssetKind == .video ? range : nil)
+                        timeRange: (job.mediaKind ?? .image) == .video ? range : nil)
                     try? FileManager.default.removeItem(at: destination)
                     try FileManager.default.moveItem(at: processed, to: destination)
                     if processed != staging {
@@ -1218,12 +1218,12 @@ public final class LiveMediaDownloadManager: NSObject {
                 guard FileManager.default.fileExists(atPath: destination.path) else {
                     throw MediaDownloadError.downloadFailed
                 }
-                if job.mediaAssetKind == .video, job.thumbnailFileName == nil {
+                if (job.mediaKind ?? .image) == .video, job.thumbnailFileName == nil {
                     job.thumbnailFileName = makeVideoThumbnail(
                         from: destination, jobID: job.id)
                 }
                 store.upsert(job)
-                await save(job: job, fileURL: destination, kind: job.mediaAssetKind)
+                await save(job: job, fileURL: destination, kind: (job.mediaKind ?? .image))
             } catch {
                 guard let current = self.store.job(id: jobID) else { return }
                 await failJob(current, message: MediaDownloadError.downloadFailed.message)

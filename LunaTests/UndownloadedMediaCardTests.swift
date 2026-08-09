@@ -33,7 +33,7 @@ final class UndownloadedMediaCardTests: XCTestCase {
     ) -> DownloaderJobSnapshot {
         LiveMediaDownloadJob(
             id: "job", sourceURLString: sourceURL, assetURLString: nil,
-            mediaKind: "video", title: "Clip", resolveKind: "x", phase: phase,
+            mediaKind: .video, title: "Clip", resolveKind: "x", phase: phase,
             progress: progress, thumbnailFileName: nil, fileExtension: nil,
             expectedByteCount: nil, receivedByteCount: nil, resumeDataFileName: nil,
             rangeStartSeconds: nil, rangeEndSeconds: nil, resolvedVideoID: nil,

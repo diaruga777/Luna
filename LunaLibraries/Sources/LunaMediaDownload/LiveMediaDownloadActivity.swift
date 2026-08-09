@@ -17,6 +17,21 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         case animatedImage
         case video
         case unknown
+
+        /// Maps the job's now-typed `MediaAsset.Kind?` onto this widget enum,
+        /// which keeps its own separate cases for ActivityKit `Codable`
+        /// stability. Nil (unresolved job, or an unrecognized legacy on-disk
+        /// value) becomes `.unknown` — as does `.audio`, which this widget has
+        /// no case for (unchanged from before: an audio job always badged as
+        /// `.unknown` here).
+        public init(_ kind: MediaAsset.Kind?) {
+            switch kind {
+            case nil, .audio: self = .unknown
+            case .image: self = .image
+            case .gif: self = .animatedImage
+            case .video: self = .video
+            }
+        }
     }
 
     public struct ContentState: Codable, Hashable {
@@ -78,17 +93,6 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
     }
 }
 #endif
-
-public extension MediaAsset.Kind {
-    var liveActivityKind: String {
-        switch self {
-        case .image: return "image"
-        case .gif: return "animatedImage"
-        case .video: return "video"
-        case .audio: return "audio"
-        }
-    }
-}
 
 public enum LiveMediaDownloadAssets {
     public static func thumbnailURL(fileName: String) -> URL {

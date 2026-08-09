@@ -469,6 +469,18 @@ final class SafariVideoOverlayTests: XCTestCase {
             "the panel kept the page's claimed shape after the clip reported a wide one")
     }
 
+    /// Mobile Safari may withhold its first metadata callback until playback.
+    /// The player explicitly asks for metadata and keeps listening to later
+    /// readiness signals, so the first Play tap is not the first time it sizes.
+    func testThePlayerProactivelyLoadsAndKeepsReadingItsAspect() {
+        let builder = SafariJSTestHarness.source("LunaSafari/Resources/content.js")
+            .components(separatedBy: "function presentVideoOverlay(").last ?? ""
+        XCTAssertTrue(builder.contains("video.load()"))
+        for event in ["loadedmetadata", "loadeddata", "canplay", "durationchange", "playing"] {
+            XCTAssertTrue(builder.contains("\"\(event)\""), "missing aspect retry on \(event)")
+        }
+    }
+
     // MARK: - Which pages get it
 
 }
@@ -510,6 +522,11 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         XCTAssertTrue(
             background.contains("return { queued: false }; }"),
             "the queueResolvedDownload relay must catch into a refusal")
+    }
+
+    func testReturningFromTheAppReusesTheFreshPageResolve() {
+        XCTAssertTrue(handler.contains("ResolvedMediaCache.shared.record(forURLString:"))
+        XCTAssertTrue(handler.contains("playbackResolveReuseLifetime"))
     }
 
     // MARK: - Which viewport the panel is measured against

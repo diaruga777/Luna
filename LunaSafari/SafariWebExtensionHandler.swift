@@ -29,6 +29,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// the page's `sendMessage` promise forever. The JS side sets a slightly
     /// longer one of its own so a killed appex degrades too.
     private static let resolveTimeout: TimeInterval = 20
+    /// A Safari → app → Safari bounce can recreate the content-script DOM even
+    /// though it is still the same page. Reuse the resolve from moments ago so
+    /// the replacement player receives its source immediately instead of
+    /// reopening at the default shape while another network ladder runs.
+    private static let playbackResolveReuseLifetime: TimeInterval = 10 * 60
 
     func beginRequest(with context: NSExtensionContext) {
         let (surface, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
@@ -161,6 +166,12 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
         let title = (message?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let cached = ResolvedMediaCache.shared.record(forURLString: urlString),
+           Date().timeIntervalSince(cached.dateWritten) < Self.playbackResolveReuseLifetime {
+            let playable = cached.assets.filter(\.isDirectlyPlayable)
+            complete(context, with: ["assets": playable.map(Self.messageDictionary(for:))])
+            return
+        }
         Task {
             let assets = await Self.resolveWithinBudget(url)
             if !assets.isEmpty {

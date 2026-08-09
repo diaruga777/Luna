@@ -577,10 +577,12 @@ rotation or a pinch re-runs both (`visualViewport`'s `scroll` moves the backdrop
 The aspect ratio itself comes from the media, in two steps: the page's own
 `og:video:width`/`height` or `twitter:player:*` if it declares any (a beat earlier
 than the stream, and free), then authoritatively from the element's
-`loadedmetadata` — which `preload="metadata"` lands well before the first frame,
-so a reel's panel grows while the stream is still opening. Most posts declare
-nothing (an Instagram reel declares no video at all), so the second step is the
-one that usually does the work; the first size is applied without animation
+intrinsic `videoWidth`/`videoHeight`. `preload="metadata"` is only advisory on
+iOS, so content.js explicitly calls `load()` after insertion and rereads the
+intrinsic size on `loadedmetadata`, `loadeddata`, `canplay`, `durationchange`,
+and `playing`; a Play or Download tap is never the first opportunity to size the
+panel. Most posts declare nothing (an Instagram reel declares no video at all),
+so the second step is the one that usually does the work; the first size is applied without animation
 because it is the panel arriving, and every correction after it animates because
 it is the panel growing to fit. `SafariVideoOverlayTests`' shape section pins all
 of it, and `SafariVideoOverlayContractTests.testTheHeightIsClampedToTheVisual
@@ -591,6 +593,12 @@ browser chrome to be wrong about).
 in a loading state and sets `src` when the answer arrives, so the play tap on the
 native controls is a genuine user gesture driving playback directly — which is
 what lets it play unmuted inline.
+
+A Safari → Luna → Safari bounce can reconstruct the content-script DOM even
+though the tab never left its page. The native handler reuses that page's existing
+fresh `ResolvedMediaCache` entry for ten minutes, so the replacement player gets
+its source immediately and runs the same sizing path again. It does not persist a
+panel size; the size is always re-derived from the live media element.
 
 **The page's own CSP governs the media load**, so this only ever plays a
 same-platform asset — and every platform we resolve allows its own CDN

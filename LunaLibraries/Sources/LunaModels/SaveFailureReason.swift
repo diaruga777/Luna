@@ -26,7 +26,7 @@ public enum FailedSaveCopy {
     ///
     /// Lives here rather than in `FailedSaveNaming` (LunaFetch) so the extension
     /// failure card can show the identical string without an extension linking
-    /// the fetch tier. `FailedSaveNaming.displayURL` forwards to it.
+    /// the fetch tier.
     public static func displayURL(_ url: URL?, rawURLString: String? = nil) -> String {
         let text = url?.absoluteString ?? rawURLString ?? ""
         for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {

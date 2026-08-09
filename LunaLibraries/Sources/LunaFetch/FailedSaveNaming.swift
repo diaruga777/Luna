@@ -30,26 +30,6 @@ public enum FailedSaveNaming {
         return ArticleFetcher.articleTitleGuess(from: url)
     }
 
-    /// The publisher line under the headline: the fetched `og:site_name` when
-    /// there is one, else the host without `www.`. nil when there's no URL at
-    /// all (a malformed save).
-    public static func displaySiteName(url: URL?, siteName: String? = nil) -> String? {
-        if let name = nonEmpty(siteName) { return name }
-        guard let host = url?.host, !host.isEmpty else { return nil }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-    }
-
-    /// The full failing URL as the card shows it — scheme dropped (it's noise in
-    /// a one-line label) but path and query kept, because WHICH url failed is
-    /// the point.
-    public static func displayURL(_ url: URL?, rawURLString: String? = nil) -> String {
-        // The implementation moved down to LunaModels (`FailedSaveCopy`) so the
-        // extension failure card can render the identical string without an
-        // extension linking the fetch tier. Kept here so existing call sites and
-        // the naming chain's tests read as one API.
-        FailedSaveCopy.displayURL(url, rawURLString: rawURLString)
-    }
-
     private static func nonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty

@@ -112,25 +112,6 @@ final class FailedSaveNamingTests: XCTestCase {
         XCTAssertEqual(FailedSaveNaming.displayTitle(url: nil), "Untitled")
     }
 
-    func testSiteNamePrefersTheFetchedPublisherName() {
-        XCTAssertEqual(
-            FailedSaveNaming.displaySiteName(url: url, siteName: "The Example"),
-            "The Example")
-        XCTAssertEqual(FailedSaveNaming.displaySiteName(url: url), "example.com")
-        XCTAssertNil(FailedSaveNaming.displaySiteName(url: nil))
-    }
-
-    /// The card shows WHICH url failed, so the path and query must survive —
-    /// only the scheme is dropped as noise.
-    func testDisplayURLDropsOnlyTheScheme() {
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(URL(string: "https://a.com/b?c=d")!),
-            "a.com/b?c=d")
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(URL(string: "http://a.com/b")!), "a.com/b")
-        XCTAssertEqual(
-            FailedSaveNaming.displayURL(nil, rawURLString: "not a url"), "not a url")
-    }
 }
 
 final class PageMetadataFetcherTests: XCTestCase {

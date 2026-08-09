@@ -50,7 +50,7 @@ enum FailedSaveCardFactory {
         FailedSaveCardModel(
             itemID: item.id,
             url: item.url,
-            urlText: FailedSaveNaming.displayURL(item.url, rawURLString: item.urlString),
+            urlText: FailedSaveCopy.displayURL(item.url, rawURLString: item.urlString),
             isRescuing: URLRescueCoordinator.shared.isRescuing(item.id),
             progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0,
             // A `.notContent` failure has no article for the model to find, so the

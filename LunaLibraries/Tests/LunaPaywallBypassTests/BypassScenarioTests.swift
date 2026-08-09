@@ -19,8 +19,7 @@ import LunaFetch
     </body></html>
     """
 
-    #expect(BypassGate.decision(for: url, html: html, extracted: nil)
-        == .attempt(.hardPaywallHostUnreadable))
+    #expect(BypassGate.decision(for: url, html: html, extracted: nil) == .attempt)
     let plan = BypassPlan.make(for: url, directHTML: html)
     #expect(plan.webPreStages == [.directUnlock])
     #expect(plan.allowsArchiveToday)

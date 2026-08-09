@@ -538,6 +538,17 @@ open class ShareViewController: UIViewController {
             "completed share-sheet onboarding practice", category: "share")
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // The Downloader's practice post is mock data flowing through the
+            // SAME saved-media controller an action extension normally shows.
+            // The kind module owns that controller, so the kind-neutral share
+            // surface only asks its registered presenter to mount it.
+            if ShareSetupPractice.matchesVideoPractice(url),
+               app.handlesMedia,
+               let videoURL = ShareSetupPractice.bundledVideoURL,
+               ShareKindPresenters.media?.presentPracticeVideo(
+                    videoURL: videoURL, host: self) == true {
+                return
+            }
             let preview = Self.practicePreview(for: url, app: app)
             preview.onDone = { [weak self] in self?.completeSilently() }
             self.presentModally(preview)

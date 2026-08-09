@@ -40,6 +40,11 @@ public final class SavedNonTextualViewController: UIViewController {
     /// ACTION extension does (it's a destination in its own right); the share
     /// extension doesn't — the user arrived from a share sheet.
     private let showsSystemShare: Bool
+    /// A bundled onboarding file runs the production result UI without a live
+    /// post to resolve. It is deliberately display-only: the rehearsal must
+    /// never write to the reading list, Photos, or Downloader's library.
+    private let practiceVideoURL: URL?
+    private var isPracticePreview: Bool { practiceVideoURL != nil }
 
     /// The app's own colour — the extensions inherit their host app's tint, so
     /// the Downloader's buttons read orange and the central app's indigo.
@@ -90,6 +95,11 @@ public final class SavedNonTextualViewController: UIViewController {
     // placeholder.
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
+    /// The bundled onboarding clip stays inside this result surface instead of
+    /// taking a transient full-screen player hop.
+    private let practicePlayerView = InlinePlayerLayerView()
+    private var practicePlayer: AVQueuePlayer?
+    private var practiceLooper: AVPlayerLooper?
     /// A large media icon shown in the pending state (before any download starts).
     private let pendingIconView = UIImageView()
     /// A play overlay shown when the downloaded media is a video.
@@ -131,10 +141,12 @@ public final class SavedNonTextualViewController: UIViewController {
 
     public init(
         articleURLString: String, showsSystemShare: Bool = false,
+        practiceVideoURL: URL? = nil,
         onDone: @escaping () -> Void
     ) {
         self.articleURLString = articleURLString
         self.showsSystemShare = showsSystemShare
+        self.practiceVideoURL = practiceVideoURL
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
@@ -142,6 +154,7 @@ public final class SavedNonTextualViewController: UIViewController {
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
+        practicePlayer?.pause()
         // Delete a downloaded-but-never-saved preview file when the screen closes
         // (any dismissal path), so previews don't accumulate in the temp dir.
         if let url = unsavedPreviewFileURL {
@@ -245,6 +258,13 @@ public final class SavedNonTextualViewController: UIViewController {
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)
 
+        if isPracticePreview {
+            practicePlayerView.playerLayer.videoGravity = .resizeAspectFill
+            practicePlayerView.isHidden = true
+            practicePlayerView.translatesAutoresizingMaskIntoConstraints = false
+            previewContainer.addSubview(practicePlayerView)
+        }
+
         pendingIconView.image = UIImage(
             systemName: "play.rectangle.on.rectangle",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 48, weight: .regular))
@@ -276,10 +296,13 @@ public final class SavedNonTextualViewController: UIViewController {
         previewPlaceholder.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewPlaceholder)
 
-        // Tap the preview to play the downloaded video.
-        previewContainer.isUserInteractionEnabled = true
-        previewContainer.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(previewTapped)))
+        // Real saves retain their full-screen viewer on tap. The rehearsal
+        // plays on this surface itself, so a demo never escapes into AVKit.
+        previewContainer.isUserInteractionEnabled = !isPracticePreview
+        if !isPracticePreview {
+            previewContainer.addGestureRecognizer(
+                UITapGestureRecognizer(target: self, action: #selector(previewTapped)))
+        }
 
         // Square, by preference: the media's own proportions never move its
         // centre. `lessThanOrEqualTo` is the one that must hold — a short sheet
@@ -312,6 +335,14 @@ public final class SavedNonTextualViewController: UIViewController {
             playOverlay.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
             playOverlay.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
         ])
+        if isPracticePreview {
+            NSLayoutConstraint.activate([
+                practicePlayerView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
+                practicePlayerView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
+                practicePlayerView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
+                practicePlayerView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
+            ])
+        }
 
         downloadButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Downloader_media_preview_downloadButtonTitle"), symbol: "arrow.down.circle",
@@ -419,6 +450,15 @@ public final class SavedNonTextualViewController: UIViewController {
     /// otherwise rest in the pending state until the user taps Download.
     private func beginMediaFlow() {
         guard MediaDownloadablePlatform.supports(articleURLString) else { return }
+        if let practiceVideoURL {
+            // The result screen remains the real `SavedNonTextual` controller;
+            // only its input is bundled mock data. Resolve it after the hosted
+            // sheet has revealed so the inline download/result transition is
+            // still visible in the iMessage lesson.
+            applyResolvedMediaState(
+                .ready(DownloadedMedia(fileURL: practiceVideoURL, kind: .video)))
+            return
+        }
         if let existing = SavedMediaStore.shared.existingDownloadedItem(forURLString: articleURLString) {
             // Already in the library under this URL or the same platform item id
             // (e.g. a share-link token whose resolved permalink was saved earlier) —
@@ -507,7 +547,14 @@ public final class SavedNonTextualViewController: UIViewController {
             session.awaitsMediaPlayback = false
         case let .ready(media):
             let fileURL = media.fileURL
-            if !didRetainHostedPreview {
+            // The onboarding clip is already playing in this controller's
+            // preview rectangle. Do not ask the host to layer a second player
+            // over the sheet — that was the brief full-screen-looking hop.
+            if isPracticePreview {
+                session.awaitsMediaPlayback = false
+                return
+            }
+            if !isPracticePreview, !didRetainHostedPreview {
                 didRetainHostedPreview = true
                 session.retain(media) {
                     try? FileManager.default.removeItem(at: fileURL)
@@ -556,7 +603,10 @@ public final class SavedNonTextualViewController: UIViewController {
         mediaState = state
         // Track the live preview file for teardown cleanup (only `.ready` has one).
         if case .ready(let media) = state {
-            unsavedPreviewFileURL = media.fileURL
+            // The practice clip belongs to the app bundle. Treating it like a
+            // downloaded temp file would attempt to delete a shipped resource
+            // when the controller leaves the rehearsal.
+            unsavedPreviewFileURL = isPracticePreview ? nil : media.fileURL
         } else {
             unsavedPreviewFileURL = nil
         }
@@ -603,7 +653,7 @@ public final class SavedNonTextualViewController: UIViewController {
             setSaveButton(savedToPhotos: didSaveToPhotos)
             // Takes the slot back for audio, which Photos can't hold.
             showReadyPreview(media)
-            persistToDownloaderLibraryIfNeeded(media)
+            if !isPracticePreview { persistToDownloaderLibraryIfNeeded(media) }
 
         case .alreadyDownloaded(let item):
             pendingIconView.isHidden = true
@@ -742,6 +792,10 @@ public final class SavedNonTextualViewController: UIViewController {
     /// renders its first-frame poster with the play overlay (tap to play). Persists
     /// the still into the shared store so the app's platform card has a thumbnail.
     private func showReadyPreview(_ media: DownloadedMedia) {
+        if isPracticePreview {
+            showInlinePracticePlayback(url: media.fileURL)
+            return
+        }
         previewImageView.isHidden = false
         saveButton.isHidden = media.kind == .audio
         switch media.kind {
@@ -780,6 +834,30 @@ public final class SavedNonTextualViewController: UIViewController {
                 }
             }
         }
+    }
+
+    /// Mock data, production result UI: the practice clip starts in the real
+    /// media-preview rectangle and loops there. It has no gesture recognizer,
+    /// so it can never briefly present an AVKit full-screen controller during
+    /// the iMessage lesson.
+    private func showInlinePracticePlayback(url: URL) {
+        previewImageView.isHidden = true
+        pendingIconView.isHidden = true
+        previewPlaceholder.isHidden = true
+        playOverlay.isHidden = true
+        practicePlayerView.isHidden = false
+        guard practicePlayer == nil else {
+            practicePlayer?.play()
+            return
+        }
+        let player = AVQueuePlayer()
+        player.isMuted = true
+        player.automaticallyWaitsToMinimizeStalling = false
+        practicePlayer = player
+        practiceLooper = AVPlayerLooper(
+            player: player, templateItem: AVPlayerItem(url: url))
+        practicePlayerView.playerLayer.player = player
+        player.play()
     }
 
     /// Shows a link already downloaded to the Downloader's library, from the
@@ -896,6 +974,13 @@ public final class SavedNonTextualViewController: UIViewController {
     /// `.localFile` duplicate (a COPY is saved, then the library's own file is retired via
     /// `transitionToPhotosReference` — the button is disabled/hidden once already `.photosReference`).
     private func saveToPhotos() {
+        // The onboarding screen is driven by a bundled mock file. Keep the
+        // production control visible and let it reach its ordinary completed
+        // visual state, without adding a rehearsal clip to the user's library.
+        if isPracticePreview {
+            finishSave(success: true)
+            return
+        }
         switch mediaState {
         case .ready(let media):
             saveButton.isEnabled = false
@@ -1012,6 +1097,10 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     private func deleteAndExit() {
+        if isPracticePreview {
+            onDone()
+            return
+        }
         guard !isDeleting else { return }
         isDeleting = true
         deleteButton.isEnabled = false
@@ -1196,4 +1285,9 @@ public final class SavedNonTextualViewController: UIViewController {
         ])
     }
 
+}
+
+private final class InlinePlayerLayerView: UIView {
+    override static var layerClass: AnyClass { AVPlayerLayer.self }
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }

@@ -139,7 +139,9 @@
   </style>
 </head>
 <body>
-  <video autoplay muted loop playsinline preload="auto" poster="">
+  <!-- The onboarding post is a still: its portrait poster makes the blocked
+       page legible before Luna's own player panel arrives. -->
+  <video muted loop playsinline preload="metadata" poster="LunaMoonPhasesPoster.jpg">
     <source src="LunaMoonPhases.mp4" type="video/mp4">
   </video>
   <div class="shade"></div>

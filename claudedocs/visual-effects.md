@@ -139,6 +139,13 @@ mock state stays clear for a reading beat before its setup UI, and no source
 animation loops behind setup. Returning checks/disables the corresponding util
 action; the compact completed variant is constructed on the next app launch.
 
+Downloader's Safari lesson starts with Safari's native-style extension toggle,
+then brings its amber-rimmed player panel over a still portrait InstaTok post.
+Its final setup action carries the same breathing corona as the Reader. The
+iMessage save rehearsal drives the real saved-media result controller with the
+bundled practice clip, including its Photos, Share, Delete, and Done controls;
+the clip loops inline in that controller and never opens a full-screen player.
+
 ## Loading spinner (`HorizonSpinnerView`)
 
 `LunaLibraries/Sources/LunaDesignSystem/HorizonSpinnerView.swift` is the shared

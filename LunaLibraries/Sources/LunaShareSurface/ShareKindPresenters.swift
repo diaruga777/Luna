@@ -89,6 +89,11 @@ public protocol ShareMediaPresenting {
     /// it, and it cannot name `SavedMediaStore` itself — the shared app shell
     /// compiles into apps that link no media module at all.
     func deleteSavedContents(forURLString urlString: String)
+
+    /// Presents the media result screen with a bundled rehearsal file instead
+    /// of resolving a network post. This keeps onboarding's mock data on the
+    /// exact controller an action extension normally presents.
+    func presentPracticeVideo(videoURL: URL, host: ExtensionHost) -> Bool
 }
 
 /// Both of these are asks from ONE caller (the onboarding save lesson) that most
@@ -97,6 +102,10 @@ public protocol ShareMediaPresenting {
 extension ShareMediaPresenting {
     public func preloadDownload(forURLString urlString: String) {}
     public func deleteSavedContents(forURLString urlString: String) {}
+
+    public func presentPracticeVideo(videoURL: URL, host: ExtensionHost) -> Bool {
+        false
+    }
 }
 
 /// Product-kind presentation for the extension surfaces: persist the tracker

@@ -22,14 +22,15 @@ public enum AutoDownloadSettings {
     private static let autoSaveDownloadsToPhotosKey = "autoSaveDownloadsToPhotos"
 
     /// Whether completed Downloader downloads should be saved into Photos.
-    /// Defaults to ON so new installs use Photos-backed storage automatically.
+    /// Defaults to OFF, so a new install keeps downloads in Luna until the
+    /// person explicitly chooses Photos.
     /// Surfaced to the user as `MediaStorageOption.photos` (see
     /// `MediaStorageSettings`), which is mutually exclusive with local retention.
     /// The setter is module-internal: `MediaStorageSettings.option` is the only
     /// mutator, so it can never fall out of sync with the retention pref it pairs
     /// with (see the deleted `.never` re-normalizations this used to need).
     public internal(set) static var autoSaveDownloadsToPhotos: Bool {
-        get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? true }
+        get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? false }
         set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }
     }
 

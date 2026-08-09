@@ -67,4 +67,13 @@ struct MediaSharePresenter: ShareMediaPresenting {
         }
         AutoDownloadSettings.unmarkDownloaded(urlString)
     }
+
+    func presentPracticeVideo(videoURL: URL, host: ExtensionHost) -> Bool {
+        presenter.presentPracticeVideo(
+            videoURL: videoURL,
+            interactive: host.readerMode != nil,
+            presentModally: { [weak host] in host?.presentModally($0) },
+            completeOnExit: { [weak host] in host?.completeSilently() })
+        return true
+    }
 }

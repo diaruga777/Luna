@@ -360,9 +360,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// view keeps its genuine Safari User-Agent.
     private static func directUnlockReferer(for url: URL) -> String? {
         guard let rule = SiteUnlockRules.rule(for: url) else { return nil }
-        if let custom = rule.refererCustom { return custom }
-        if rule.referer == "google" { return "https://www.google.com/" }
-        return nil
+        switch rule.refererSpoof {
+        case .origin(let origin): return origin.url
+        case .custom(let custom): return custom
+        case nil: return nil
+        }
     }
 
     /// Resolves the specific newest archive.today snapshot via the TimeMap in

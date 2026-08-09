@@ -19,6 +19,10 @@ import UIKit
 @MainActor
 public final class ExtensionProductPresenter {
 
+    /// Test seam: which snapshots history-seeding matches against on a merge.
+    /// Production reads the shared App Group file.
+    var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
+
     public init() {}
 
     /// Persists the tracker first so the editor has an item (falling back to a
@@ -57,7 +61,8 @@ public final class ExtensionProductPresenter {
             product: product, url: url, excludingItemID: placeholder.id, store: store,
             comparisonStarter: { itemID, sourceURL, store in
                 SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: sourceURL, store: store)
-            })
+            },
+            snapshots: snapshotProvider())
 
         let editor: PriceTrackingViewController
         switch outcome {

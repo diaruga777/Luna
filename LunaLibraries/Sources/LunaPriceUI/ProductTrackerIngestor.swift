@@ -53,13 +53,12 @@ public final class ProductTrackerIngestor {
     ) async {
         // The merge decision (and its snapshot seeding + identifier union) is
         // shared with the extension's immediate-editor path — see
-        // `ProductTrackerMerge`. The seam bridges this instance's own
-        // `snapshotProvider` (tests stub it per-instance) to the shared
-        // helper's, which every caller reads.
-        ProductTrackerMerge.snapshotProvider = snapshotProvider
+        // `ProductTrackerMerge`. This instance's own `snapshotProvider`
+        // (tests stub it per-instance) is passed straight through as a
+        // parameter rather than bridged via a global.
         let outcome = ProductTrackerMerge.mergeIfPossible(
             product: product, url: url, excludingItemID: item.id, store: store,
-            comparisonStarter: comparisonStarter)
+            comparisonStarter: comparisonStarter, snapshots: snapshotProvider())
         if case let .merged(matchID, highlightedURL) = outcome {
             // The tracker that won a merge may predate artwork collection. A
             // duplicate save is still a chance to repair it, so every tracker
@@ -95,7 +94,8 @@ public final class ProductTrackerIngestor {
         if let data = await artworkLoader(product.imageURL, url) {
             tracker.imageFileName = writeArtwork(data, for: item.id, store: store)
         }
-        ProductTrackerMerge.seedHistoryFromSnapshots(into: &tracker, candidate: product, candidateURL: url)
+        ProductTrackerMerge.seedHistoryFromSnapshots(
+            into: &tracker, candidate: product, candidateURL: url, snapshots: snapshotProvider())
         store.savePriceTracker(tracker, for: item.id)
 
         // The alternative-seller fan-out, on the NEW-tracker path only (a merge

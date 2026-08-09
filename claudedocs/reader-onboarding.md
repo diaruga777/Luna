@@ -417,8 +417,9 @@ three layers in this z-order, which is the whole trick):
    runs against the close.
 3. **The card sits over both.** `OnboardingSafariSetupCardView` carries the SAME
    three enable steps and the same Activate Safari / Skip pair the explainer
-   prints down its page, on a body wearing the launch `EclipseCoronaView` as its
-   border and breathing the same `OnboardingAttentionPulse`. It hugs its
+   prints down its page, on a body wearing a static launch `EclipseCoronaView`
+   as its border. Only the Activate Safari button breathes with
+   `OnboardingAttentionPulse`; the popup itself stays still. It hugs its
    contents — widest step line at `OnboardingSafariEnableStepRowView.labelFont`,
    floored by `OnboardingSafariActionsView.minimumActivateWidth`, capped at a
    readable column — because it is a card over somebody else's page rather than

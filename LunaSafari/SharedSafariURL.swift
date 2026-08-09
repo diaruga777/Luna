@@ -25,12 +25,17 @@ enum SharedSafariURL {
         let defaults = UserDefaults(suiteName: appGroupID)
         defaults?.set(urlString, forKey: urlKey)
         defaults?.set(Date().timeIntervalSince1970, forKey: dateKey)
-        // Keep one useful entry per raw URL. Revisiting a page moves it to the
-        // front without normalizing or otherwise rewriting what Safari reported.
-        var recent = defaults?.stringArray(forKey: recentHistoryKey) ?? []
-        recent.removeAll { $0 == urlString }
-        recent.insert(urlString, at: 0)
-        defaults?.set(Array(recent.prefix(recentHistoryLimit)), forKey: recentHistoryKey)
+        // Canonicalize BEFORE persisting. A concurrent/older extension can have
+        // left repeats in the raw array; a revisit both removes every copy and
+        // promotes the surviving value to the front without rewriting Safari's
+        // raw URL string.
+        var seen: Set<String> = [urlString]
+        let remaining = (defaults?.stringArray(forKey: recentHistoryKey) ?? []).filter {
+            !$0.isEmpty && seen.insert($0).inserted
+        }
+        defaults?.set(
+            Array(([urlString] + remaining).prefix(recentHistoryLimit)),
+            forKey: recentHistoryKey)
     }
 
     /// Records that this containing app's extension has actually executed.

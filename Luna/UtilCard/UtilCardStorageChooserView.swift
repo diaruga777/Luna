@@ -10,11 +10,9 @@ import UIKit
 /// The util card's one-line "Store downloads …" choice, at the top of the setup
 /// block in the two apps that download media.
 ///
-/// It wears no pill and no rim — it is a sentence with one word you can change,
-/// not another action button under three action buttons. Tapping the selector
-/// opens both options IN PLACE: the panel lands with the selected option exactly
-/// where the collapsed selector was, so the word you were reading does not move
-/// and the alternative appears beside it, over whatever the card had there.
+/// The explanatory sentence and its selector read as one centred control. The
+/// selector is deliberately more prominent than the prose around it, while the
+/// expanded choices become generous, well-separated tap targets.
 final class UtilCardStorageChooserView: UIView {
 
     enum Option: CaseIterable, Equatable {
@@ -22,25 +20,26 @@ final class UtilCardStorageChooserView: UIView {
         case photos
     }
 
-    /// One text line's worth of row. The block above the paste field is tight,
-    /// and this row is prose rather than a target the size of a button.
-    static let height: CGFloat = 34
+    static let height: CGFloat = 46
 
-    private static let labelFont = UIFont.systemFont(ofSize: 15, weight: .regular)
-    private static let optionFont = UIFont.systemFont(ofSize: 15, weight: .semibold)
+    private static let labelFont = UIFont.systemFont(ofSize: 16, weight: .regular)
+    private static let optionFont = UIFont.systemFont(ofSize: 18, weight: .semibold)
     /// The icons are height-matched to the text they precede, not to the row.
     private static var iconSide: CGFloat { optionFont.lineHeight.rounded() }
     private static let iconToTitle: CGFloat = 6
     private static let labelToSelector: CGFloat = 6
     private static let selectorToChevron: CGFloat = 5
     private static let chevronWidth: CGFloat = 10
+    private static let selectorHorizontalInset: CGFloat = 8
     /// The expanded panel's padding around its rows, and the row height it uses
     /// — which is the collapsed selector's own height, so the selected option
     /// lands exactly where it already was. The horizontal padding is
     /// `labelToSelector` on purpose: the panel's leading edge then lands in the
     /// seam after "Store downloads" instead of over its last letters.
-    private static var panelPadding: CGSize { CGSize(width: labelToSelector, height: 7) }
-    private static var optionRowHeight: CGFloat { iconSide + 8 }
+    private static var panelPadding: CGSize { CGSize(width: 16, height: 14) }
+    private static let collapsedSelectorHeight: CGFloat = 40
+    private static let optionRowHeight: CGFloat = 58
+    private static let optionRowGap: CGFloat = 10
 
     /// The user tapped an option. `luna` is applied by the caller directly;
     /// `photos` may be refused, which is why the caller — not this view — owns
@@ -78,6 +77,11 @@ final class UtilCardStorageChooserView: UIView {
         selectorIcon.layer.cornerCurve = .continuous
         selectorLabel.font = Self.optionFont
         selectorLabel.textColor = LunaColors.primaryText
+        selector.layer.cornerRadius = 10
+        selector.layer.cornerCurve = .continuous
+        selector.layer.borderWidth = 1
+        selector.layer.borderColor = UIColor.white.withAlphaComponent(0.23).cgColor
+        selector.backgroundColor = UIColor.white.withAlphaComponent(0.06)
         chevron.image = UIImage(
             systemName: "chevron.up.chevron.down",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold))
@@ -124,11 +128,12 @@ final class UtilCardStorageChooserView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let titleWidth = titleLabel.sizeThatFits(bounds.size).width.rounded(.up)
-        titleLabel.frame = CGRect(
-            x: 0, y: 0, width: titleWidth, height: bounds.height)
-
         let selectorWidth = Self.selectorWidth(for: selection)
-        let selectorHeight = Self.optionRowHeight
+        let selectorHeight = Self.collapsedSelectorHeight
+        let wholeWidth = titleWidth + Self.labelToSelector + selectorWidth
+        let leading = max((bounds.width - wholeWidth) / 2, 0).rounded()
+        titleLabel.frame = CGRect(
+            x: leading, y: 0, width: titleWidth, height: bounds.height)
         selector.frame = CGRect(
             x: titleLabel.frame.maxX + Self.labelToSelector,
             y: ((bounds.height - selectorHeight) / 2).rounded(),
@@ -160,7 +165,7 @@ final class UtilCardStorageChooserView: UIView {
     ) {
         let side = Self.iconSide
         icon.frame = CGRect(
-            x: 0,
+            x: Self.selectorHorizontalInset,
             y: ((container.bounds.height - side) / 2).rounded(),
             width: side,
             height: side)
@@ -169,7 +174,8 @@ final class UtilCardStorageChooserView: UIView {
         label.frame = CGRect(
             x: labelX,
             y: 0,
-            width: max(0, container.bounds.width - labelX - trailingReserve),
+            width: max(0, container.bounds.width - labelX - trailingReserve
+                - Self.selectorHorizontalInset),
             height: container.bounds.height)
     }
 
@@ -178,7 +184,8 @@ final class UtilCardStorageChooserView: UIView {
     static func selectorWidth(for option: Option) -> CGFloat {
         let text = (title(for: option) as NSString)
             .size(withAttributes: [.font: optionFont]).width.rounded(.up)
-        return iconSide + iconToTitle + text + selectorToChevron + chevronWidth
+        return Self.selectorHorizontalInset * 2 + iconSide + iconToTitle + text
+            + selectorToChevron + chevronWidth
     }
 
     // MARK: - Expansion
@@ -256,6 +263,7 @@ final class UtilCardStorageChooserView: UIView {
         dismissCatcher?.frame = host.bounds
 
         let rowHeight = Self.optionRowHeight
+        let rowPitch = rowHeight + Self.optionRowGap
         let widest = Option.allCases
             .map { Self.selectorWidth(for: $0) - Self.selectorToChevron - Self.chevronWidth }
             .max() ?? 0
@@ -264,17 +272,19 @@ final class UtilCardStorageChooserView: UIView {
         panel.bounds = CGRect(
             x: 0, y: 0,
             width: widest + Self.panelPadding.width * 2,
-            height: rowHeight * CGFloat(Option.allCases.count) + Self.panelPadding.height * 2)
+            height: rowHeight * CGFloat(Option.allCases.count)
+                + Self.optionRowGap * CGFloat(max(Option.allCases.count - 1, 0))
+                + Self.panelPadding.height * 2)
         panel.center = CGPoint(
             x: anchor.minX - Self.panelPadding.width + panel.bounds.width / 2,
-            y: anchor.minY - Self.panelPadding.height - rowHeight * selectedIndex
+            y: anchor.minY - Self.panelPadding.height - rowPitch * selectedIndex
                 + panel.bounds.height / 2)
 
         for (index, option) in Option.allCases.enumerated() {
             guard let row = optionRows[option] else { continue }
             row.frame = CGRect(
                 x: Self.panelPadding.width,
-                y: Self.panelPadding.height + rowHeight * CGFloat(index),
+                y: Self.panelPadding.height + rowPitch * CGFloat(index),
                 width: widest,
                 height: rowHeight)
             guard let icon = row.subviews.compactMap({ $0 as? UIImageView }).first,

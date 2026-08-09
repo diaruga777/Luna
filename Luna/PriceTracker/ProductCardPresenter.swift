@@ -99,8 +99,9 @@ final class ProductCardPresenter: CardKindPresenting {
         completion: @escaping (UIImage?) -> Void
     ) {
         PriceTrackerProductImage.load(
-            imageFileName: item.priceTracker?.imageFileName
-        ) { completion($0 ?? PriceTrackerProductImage.fallback) }
+            imageFileName: item.priceTracker?.imageFileName,
+            pageURL: item.priceTracker?.stores.first.flatMap { URL(string: $0.urlString) }
+        ) { completion($0) }
     }
 
     /// A product chip is its own picture, with the app icon's green tag
@@ -110,7 +111,10 @@ final class ProductCardPresenter: CardKindPresenting {
     func loadMiniCarouselAccessory(
         for item: ReadingListItem, completion: @escaping (UIImage?) -> Void
     ) {
-        completion(PriceTrackerTagIcon.image(size: 22))
+        PriceTrackerProductImage.load(
+            imageFileName: item.priceTracker?.imageFileName,
+            pageURL: item.priceTracker?.stores.first.flatMap { URL(string: $0.urlString) },
+            completion: completion)
     }
 
     // MARK: - Verbs
@@ -226,8 +230,9 @@ final class ProductCardPresenter: CardKindPresenting {
             isAvailable: true,
             loadImage: { completion in
                 PriceTrackerProductImage.load(
-                    imageFileName: tracker.imageFileName
-                ) { completion($0 ?? PriceTrackerProductImage.fallback) }
+                    imageFileName: tracker.imageFileName,
+                    pageURL: tracker.stores.first.flatMap { URL(string: $0.urlString) },
+                    completion: completion)
             },
             tap: { [weak self, weak host] in
                 guard let self, let host else { return }

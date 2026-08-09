@@ -458,11 +458,13 @@ public final class ProductDetailViewController: UIViewController {
     }
 
     private func loadThumbnail(_ tracker: PriceTracker) {
-        PriceTrackerProductImage.load(imageFileName: tracker.imageFileName) { [weak self] loaded in
+        PriceTrackerProductImage.load(
+            imageFileName: tracker.imageFileName,
+            pageURL: tracker.stores.first.flatMap { URL(string: $0.urlString) }
+        ) { [weak self] loaded in
             let apply = {
-                // A real photograph fills its frame; the tag glyph is centred in it.
-                self?.thumbnailView.contentMode = loaded == nil ? .center : .scaleAspectFill
-                self?.thumbnailView.image = loaded ?? PriceTrackerProductImage.fallback
+                self?.thumbnailView.contentMode = .scaleAspectFill
+                self?.thumbnailView.image = loaded
             }
             if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
         }

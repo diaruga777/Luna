@@ -281,8 +281,6 @@ final class OnboardingSafariSetupCardView: UIView {
     private static let stepsToActionsGap: CGFloat = 18
     private static let pulseKey =
         "onboarding.priceLesson.attentionPulse"
-    private static let pulseScaleKey =
-        "onboarding.priceLesson.attentionPulse.scale"
 
     var onActivate: (() -> Void)?
     var onSkip: (() -> Void)?
@@ -413,8 +411,6 @@ final class OnboardingSafariSetupCardView: UIView {
                 tint: LunaSurfacePalette.atmosphereTint)
             insertSubview(halo, belowSubview: body)
             corona = halo
-            // A resize builds a new corona; the breath it replaces carries over.
-            applyPulse()
         }
         corona?.frame = bounds
     }
@@ -472,20 +468,11 @@ final class OnboardingSafariSetupCardView: UIView {
         guard isPulsing else { return }
         actionsView.activateButton.layer.add(
             OnboardingAttentionPulse.scale(), forKey: Self.pulseKey)
-        guard let corona else { return }
-        corona.layer.add(
-            OnboardingAttentionPulse.scale(), forKey: Self.pulseScaleKey)
-        corona.layer.add(
-            OnboardingAttentionPulse.glow(
-                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
-            forKey: Self.pulseKey)
     }
 
     private func endPulse() {
         isPulsing = false
         actionsView.activateButton.layer.removeAnimation(forKey: Self.pulseKey)
-        corona?.layer.removeAnimation(forKey: Self.pulseKey)
-        corona?.layer.removeAnimation(forKey: Self.pulseScaleKey)
     }
 
     #if DEBUG

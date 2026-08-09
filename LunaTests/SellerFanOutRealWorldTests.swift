@@ -101,6 +101,22 @@ final class RealWorldSearchLinkExtractionTests: XCTestCase {
         XCTAssertEqual(found.map(\.path), ["/p/widget/10024438"])
     }
 
+    /// Measured live on officeworks.com.au: a search for an unrelated fridge
+    /// still seeded its own print-services nav links, which match the
+    /// retailer's own (necessarily loose) `/p/[^/]+` accept pattern just as
+    /// well as a real product does — `/print-copy/p/flyers-pcdhflcp` is a
+    /// category page, not a product.
+    func testOfficeworksPrintCopyNavLinksAreRefusedDespiteMatchingTheAcceptPattern() {
+        let html = """
+        <a href="/print-copy/p/flyers-pcdhflcp?cm_sp=all:menu-mobile:print-copy">Flyers</a>
+        <a href="/shop/officeworks/p/hisense-634l-fridge-hrfd634bw">Fridge</a>
+        """
+        let found = LeanProductPageParser.productLinks(
+            inSearchHTML: html, baseURL: URL(string: "https://www.officeworks.com.au/search?q=x")!,
+            limit: 5)
+        XCTAssertEqual(found.map(\.path), ["/shop/officeworks/p/hisense-634l-fridge-hrfd634bw"])
+    }
+
     /// Product URLs live in embedded JSON at least as often as in `<a href>`,
     /// where they are written with escaped slashes.
     func testJSONEscapedURLsInScriptPayloadsAreFound() {
@@ -317,6 +333,52 @@ final class ProductTitleHygieneTests: XCTestCase {
             "Sony WH-1000XM5 Wireless Headphones, Black")
         XCTAssertEqual(ProductTitleHygiene.cleaned("Widget | Shop"), "Widget | Shop")
     }
+
+    /// Amazon AU's `<title>` puts its own domain in a COLON-separated segment
+    /// AFTER the product name, with a category segment on the OTHER side of
+    /// it — neither a prefix nor a dash/pipe suffix, so this was passing
+    /// through uncleaned: a live save's retailer query was measured as the
+    /// full raw string, `coles-au q=Russell Hobbs … Chrome: Toasters:
+    /// Amazon.com.au`, which returns nothing on every retailer's search.
+    func testAmazonColonChromeWithCategoryBeforeTheDomainIsRemoved() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Russell Hobbs RHT82BRU Carlton 2 Slice Toaster, Wide Slots, 7 Browning "
+                    + "Controls, Defrost, Cancel & Reheat Functions, Chrome: Toasters: Amazon.com.au"),
+            "Russell Hobbs RHT82BRU Carlton 2 Slice Toaster, Wide Slots, 7 Browning "
+                + "Controls, Defrost, Cancel & Reheat Functions, Chrome")
+    }
+
+    /// The other real shape: the domain segment BEFORE the category segment.
+    func testAmazonColonChromeWithCategoryAfterTheDomainIsRemoved() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Panasonic spare blade men's shaver 6-blade ES9600 : Amazon.com.au: "
+                    + "Health, Household & Personal Care"),
+            "Panasonic spare blade men's shaver 6-blade ES9600")
+    }
+
+    /// A category segment that happens to share a word with the
+    /// `looksLikeStorefront` word list (`Books`) must NOT be mistaken for the
+    /// storefront itself when there is no ACTUAL domain segment alongside it
+    /// — the colon-tail stripper only fires on a domain-shaped fragment
+    /// (`amazon.com.au`), never a bare category word, so an ordinary colon in
+    /// a title survives exactly as it always did.
+    func testAnOrdinaryColonWithNoStorefrontDomainSegmentSurvives() {
+        XCTAssertEqual(
+            ProductTitleHygiene.cleaned(
+                "Amazon.com: Atomic Habits: An Easy & Proven Way to Build Good Habits "
+                    + "& Break Bad Ones | Clear, James: Books"),
+            "Atomic Habits: An Easy & Proven Way to Build Good Habits "
+                + "& Break Bad Ones | Clear, James: Books")
+    }
+
+    /// A title that is ONLY colon chrome (no real segment before the
+    /// storefront) keeps whatever text remains rather than losing the whole
+    /// title — the same conservatism the other strippers hold.
+    func testColonChromeAloneIsNotTurnedIntoNothing() {
+        XCTAssertEqual(ProductTitleHygiene.cleaned("Toasters: Amazon.com.au"), "Toasters")
+    }
 }
 
 // MARK: - The evidence tier
@@ -358,14 +420,26 @@ final class GTINInPageMatchingTests: XCTestCase {
         XCTAssertEqual(verify(html: "<td>978-0-7352-1129-2</td>"), .gtinInPage)
     }
 
-    /// Both halves are required. Containment alone, on a page reached by a NAME
-    /// search, could be a "related items" rail.
-    func testContainmentWithoutAGTINSearchIsNotEvidence() {
-        XCTAssertNil(verify(html: "9780735211292", reachedByGTINSearch: false))
+    /// Search provenance is no longer a precondition: the NAME already has to
+    /// agree before this tier is even consulted (the caller's own nesting),
+    /// and that plus containment is what makes it evidence rather than a
+    /// "related items" rail — a web-search hit, or a retailer's own search
+    /// buried under a NAME query, lands on this exact page just as often as
+    /// a GTIN query does (the measured case: a JB Hi-Fi-style GTIN source
+    /// verifying a Costco-style page found by DDG, whose title matches and
+    /// whose markup prints the barcode, with nothing about how it was found).
+    func testContainmentWithoutAGTINSearchIsNowAcceptedWhenTheNameAgrees() {
+        XCTAssertEqual(verify(html: "9780735211292", reachedByGTINSearch: false), .gtinInPage)
     }
 
-    func testAGTINSearchWithoutContainmentIsNotEvidence() {
+    func testContainmentWithoutTheNameAgreeingIsStillNotEvidence() {
+        XCTAssertNil(verify(
+            candidateName: "Garden Hose Reel 50ft", html: "9780735211292", reachedByGTINSearch: false))
+    }
+
+    func testNoContainmentIsNotEvidenceRegardlessOfHowThePageWasReached() {
         XCTAssertNil(verify(html: "<p>a completely different book</p>"))
+        XCTAssertNil(verify(html: "<p>a completely different book</p>", reachedByGTINSearch: false))
     }
 
     func testTheNameMustStillMatch() {
@@ -421,5 +495,213 @@ final class GTINInPageMatchingTests: XCTestCase {
             source: source, sourceName: title,
             candidate: ProductIdentifiers(), candidateName: "Cordless Drill"),
             "the name already refused it")
+    }
+}
+
+// MARK: - The MPN containment tier
+
+/// The symmetric hole the GTIN evidence tier had: an MPN-only source (a
+/// degraded extraction — brand + model number, no barcode, the measured Bing
+/// Lee shape) could never verify a candidate whose page carries no structured
+/// identifier at all, even though the model number is usually right there in
+/// the candidate's own title.
+final class MPNContainmentMatchingTests: XCTestCase {
+
+    private let source = ProductIdentifiers(mpn: "HRFD634BW", brand: "Hisense")
+    private let sourceName = "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW"
+    private let candidateName = "Hisense HRFD634BW 634L PureFlat French Door Fridge (Dark Stainless Steel)"
+
+    private func verify(
+        candidate: ProductIdentifiers = ProductIdentifiers(),
+        html: String? = nil, url: String? = nil, allowsNameOnly: Bool = false
+    ) -> SellerMatchConfidence? {
+        ComparisonMatching.verify(
+            source: source, sourceName: sourceName,
+            candidate: candidate, candidateName: candidateName,
+            evidence: CandidatePageEvidence(html: html, url: url.flatMap { URL(string: $0) }),
+            allowsNameOnlyMatch: allowsNameOnly)
+    }
+
+    func testMPNTokenInURLPlusMatchingNameIsAccepted() {
+        XCTAssertEqual(
+            verify(url: "https://www.jbhifi.com.au/products/hisense-hrfd634bw-634l-fridge"), .mpn)
+    }
+
+    func testMPNTokenInPageMarkupIsAccepted() {
+        XCTAssertEqual(verify(html: "<p>Model: HRFD634BW</p>"), .mpn)
+    }
+
+    /// Case and separators must not defeat the containment check — a page can
+    /// print `hrfd-634bw` where the source recorded `HRFD634BW`.
+    func testMPNTokenIsCaseAndSeparatorInsensitive() {
+        XCTAssertEqual(verify(html: "<p>model no. hrfd-634bw</p>"), .mpn)
+    }
+
+    func testNoMPNTokenAnywhereIsNotEvidence() {
+        XCTAssertNil(verify(html: "<p>completely unrelated copy</p>"))
+    }
+
+    /// The name must still agree — containment on a page for a different
+    /// product (an accessory bundle, say) is not the fridge.
+    func testTheNameMustStillAgreeForMPNContainment() {
+        XCTAssertNil(ComparisonMatching.verify(
+            source: source, sourceName: sourceName,
+            candidate: ProductIdentifiers(), candidateName: "Garden Hose Reel 50ft",
+            evidence: CandidatePageEvidence(html: "HRFD634BW"),
+            allowsNameOnlyMatch: false))
+    }
+
+    /// A candidate that structurally declares its OWN (different) MPN is not
+    /// overridden by incidental containment — that page has already told us
+    /// what it is.
+    func testACandidateDeclaringItsOwnMPNIsNotOverriddenByContainment() {
+        XCTAssertNil(verify(
+            candidate: ProductIdentifiers(mpn: "SOME-OTHER-MODEL"),
+            html: "mentions HRFD634BW in passing"))
+    }
+
+    func testAvailableInTheConstrainedProfileTooAsIdentifierEvidence() {
+        XCTAssertEqual(verify(html: "<p>Model: HRFD634BW</p>", allowsNameOnly: false), .mpn)
+    }
+}
+
+// MARK: - The relaxed name + model-code tier
+
+/// A candidate with NO structured identifiers at all (the common case for a
+/// plain retail listing) used to be reachable only through the ordinary
+/// name-only tier — which the source having a GTIN/MPN blocks outright. The
+/// measured case: a Costco AU page, $1599.99, 0.90 name similarity, no
+/// JSON-LD — refused. The model code (`HRFD634BW`) printed in Costco's own
+/// URL/PDP is the discriminator that makes trusting a bare name match safe.
+/// The model-code check reads the URL/markup ONLY, never the candidate name
+/// itself — the name has already been compared (at this tier's own HIGHER
+/// bar) to reach here, so a token that is only found by re-scanning that
+/// same name is not independent evidence.
+final class RelaxedNameWithModelCodeMatchingTests: XCTestCase {
+
+    private let source = ProductIdentifiers(gtin: "9337640009775", brand: "Hisense")
+    private let sourceName = "Hisense HRFD634BW 634L PureFlat French Door Fridge (Dark Stainless Steel)"
+
+    private func verify(
+        candidateName: String, candidate: ProductIdentifiers = ProductIdentifiers(),
+        html: String? = nil, url: String? = nil, allowsNameOnly: Bool = true
+    ) -> SellerMatchConfidence? {
+        ComparisonMatching.verify(
+            source: source, sourceName: sourceName,
+            candidate: candidate, candidateName: candidateName,
+            evidence: CandidatePageEvidence(html: html, url: url.flatMap { URL(string: $0) }),
+            allowsNameOnlyMatch: allowsNameOnly)
+    }
+
+    /// The Costco case itself: high name similarity, the model code in the
+    /// candidate's own URL, no structured identifier on the candidate at all.
+    func testHighNameSimilarityPlusModelCodeInURLIsAccepted() {
+        XCTAssertEqual(
+            verify(
+                candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel",
+                url: "https://www.costco.com.au/Hisense-634L-PureFlat-French-Door-Fridge-Dark-Steel-HRFD634BW/p/177525"),
+            .nameWithModelCode)
+    }
+
+    /// The model code repeated in the candidate's OWN name is not, by
+    /// itself, independent evidence — the name was already compared to reach
+    /// this tier, so a token found only by re-scanning it again would just
+    /// be re-confirming a comparison already made. Still refused here even
+    /// though the name similarity is high, because no URL/markup evidence
+    /// was offered.
+    func testModelCodeOnlyInTheCandidateNameIsNotIndependentEvidence() {
+        XCTAssertNil(
+            verify(candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW"))
+    }
+
+    /// The model code may be on the PAGE rather than in the title the parser
+    /// extracted.
+    func testModelCodeInMarkupAloneAlsoCounts() {
+        XCTAssertEqual(
+            verify(
+                candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel",
+                html: "<p>Model HRFD634BW</p>"),
+            .nameWithModelCode)
+    }
+
+    /// Below the relaxed 0.75 bar, this tier refuses even with the model code
+    /// present — the ordinary 0.6 name-only tier is a DIFFERENT tier (and is
+    /// blocked here anyway because the source has a GTIN).
+    func testBelowTheRelaxedThresholdIsRefusedEvenWithTheModelCode() {
+        XCTAssertNil(verify(candidateName: "Fridge HRFD634BW on sale this week only, limited stock"))
+    }
+
+    /// When the source's name/MPN carries NO model-code-like token, the
+    /// higher name-similarity bar alone is enough — there is no discriminator
+    /// to demand.
+    func testNoModelCodeToDemandFallsBackToTheHigherBarAlone() {
+        let plainSource = ProductIdentifiers(gtin: "9337640009775", brand: "Acme")
+        XCTAssertEqual(
+            ComparisonMatching.verify(
+                source: plainSource, sourceName: "Acme Wireless Mechanical Keyboard",
+                candidate: ProductIdentifiers(), candidateName: "Acme Wireless Mechanical Keyboard Pro",
+                allowsNameOnlyMatch: true),
+            .nameWithModelCode)
+    }
+
+    /// A candidate that declares ANY structured identifier (even one that
+    /// doesn't match) is not eligible for this tier — it has already told us
+    /// something structural about itself.
+    func testACandidateWithAnyStructuredIdentifierIsIneligible() {
+        XCTAssertNil(verify(
+            candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW",
+            candidate: ProductIdentifiers(sku: "177525")))
+    }
+
+    /// The constrained (Safari) profile refuses this tier along with the
+    /// ordinary name-only one — it is still a NAME match at heart, just a
+    /// more careful one.
+    func testTheConstrainedProfileRefusesThisTierToo() {
+        XCTAssertNil(verify(
+            candidateName: "Hisense 634L PureFlat French Door Fridge Dark Steel HRFD634BW",
+            allowsNameOnly: false))
+    }
+
+    /// A source with NO cross-host identifier at all never needs this tier —
+    /// the ordinary name-only tier already covers it, and fires FIRST.
+    func testASourceWithNoIdentifierUsesTheOrdinaryNameTierNotThisOne() {
+        XCTAssertEqual(
+            ComparisonMatching.verify(
+                source: ProductIdentifiers(brand: "Hisense"), sourceName: sourceName,
+                candidate: ProductIdentifiers(), candidateName: sourceName,
+                allowsNameOnlyMatch: true),
+            .name)
+    }
+
+    func testConfidenceOrderingPlacesItAboveNameAndBelowGTINInPage() {
+        XCTAssertTrue(SellerMatchConfidence.nameWithModelCode > .name)
+        XCTAssertTrue(SellerMatchConfidence.nameWithModelCode < .gtinInPage)
+    }
+}
+
+// MARK: - The Amazon small-interstitial bot wall
+
+/// Amazon's search intermittently serves a tiny (measured ~2KB) Akamai Bot
+/// Manager challenge as an ordinary 200 rather than a blocked status — the
+/// generic challenge needles (`captcha`, `unusual traffic`, …) never appear
+/// on it, so it passed straight through as a "successful" empty search.
+final class AmazonInterstitialBotWallTests: XCTestCase {
+
+    private func fixture() -> String {
+        BypassFixtures.html("Products/amazon-au-bm-verify-interstitial.html")
+    }
+
+    func testTheMeasuredInterstitialIsRecognized() {
+        let html = fixture()
+        XCTAssertLessThan(html.count, 8_000)
+        XCTAssertTrue(BotWallDetection.isBotWall(statusCode: 200, html: html))
+    }
+
+    /// The existing large-page safeguard must stay green: this is a SIZE-
+    /// gated check, not a blanket needle match.
+    func testTheSameNeedlesDoNotCondemnALargePage() {
+        let padded = fixture() + String(repeating: "<div>product details</div>", count: 400)
+        XCTAssertGreaterThan(padded.count, 8_000)
+        XCTAssertFalse(BotWallDetection.isBotWall(statusCode: 200, html: padded))
     }
 }

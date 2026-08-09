@@ -376,9 +376,14 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         XCTAssertEqual(fetcher.requested, ["https://shop.example/search?q=0194644090876"])
     }
 
-    /// Only the identifier question makes the evidence tier available; the name
-    /// fallback's answer is verified without it.
-    func testTheEvidenceTierIsUnavailableOnTheNameFallback() async {
+    /// The evidence tier no longer needs the identifier question specifically
+    /// — once the name already agrees (this candidate's own nesting inside
+    /// `ComparisonMatching.verify`), a NAME query landing on a page that
+    /// prints the barcode is exactly as good evidence as a GTIN query would
+    /// have been. This is the Costco/JB-style gap the fix closed: a retailer
+    /// whose search buries the exact product under a NAME query used to be
+    /// refused for it.
+    func testTheEvidenceTierIsNowAvailableOnTheNameFallbackToo() async {
         let fetcher = StubFetcher()
         fetcher.stub("https://shop.example/search?q=0194644090876", html: "<html></html>")
         fetcher.stub(
@@ -399,8 +404,146 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let outcome = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
             .run(request())
+        XCTAssertEqual(outcome.results.count, 1)
+        XCTAssertEqual(outcome.results.first?.confidence, .gtinInPage)
+    }
+
+    // MARK: - Falling through to the next query
+
+    /// A GTIN query whose extracted links all fail to verify (a retailer's
+    /// own junk that happened to match a shared URL pattern, or simply the
+    /// wrong product) used to END the candidate outright. The NAME query,
+    /// asked second, is what actually finds the product.
+    func testAGTINQueryWithNoVerifiedLinkFallsThroughToTheNameQuery() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://shop.example/search?q=0194644090876",
+            html: #"<a href="/products/unrelated-widget">Unrelated</a>"#)
+        fetcher.stub(
+            "https://shop.example/products/unrelated-widget",
+            html: productPage(name: "Garden Hose Reel", gtin: "0000000000001", price: "19.99"))
+        fetcher.stub(
+            "https://shop.example/search?q=Sony+WH-1000XM5",
+            html: #"<a href="/products/xm5">XM5</a>"#)
+        fetcher.stub(
+            "https://shop.example/products/xm5",
+            html: productPage(name: "Sony WH-1000XM5", gtin: "0194644090876", price: "329.99"))
+        let directory = SellerDirectory(version: 1, sellers: [
+            seller("shop", domain: "shop.example", acceptsGTIN: nil),
+        ])
+        let outcome = await SellerFanOut(
+            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            .run(request())
+        XCTAssertEqual(outcome.results.count, 1)
+        XCTAssertEqual(outcome.results.first?.url.absoluteString, "https://shop.example/products/xm5")
+        XCTAssertEqual(fetcher.requested, [
+            "https://shop.example/search?q=0194644090876",
+            "https://shop.example/products/unrelated-widget",
+            "https://shop.example/search?q=Sony+WH-1000XM5",
+            "https://shop.example/products/xm5",
+        ])
+    }
+
+    /// The fallthrough cannot double the run's cost: the total number of
+    /// pages FETCHED across every query is still capped at
+    /// `productURLsPerCandidate` (2, in this profile) — not that budget PER
+    /// query.
+    func testFallthroughIsBoundedByTheSamePerCandidateLinkBudget() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://shop.example/search?q=0194644090876",
+            html: """
+            <a href="/products/wrong-a">A</a><a href="/products/wrong-b">B</a>
+            """)
+        fetcher.stub(
+            "https://shop.example/products/wrong-a",
+            html: productPage(name: "Garden Hose Reel", gtin: "0000000000001", price: "19.99"))
+        fetcher.stub(
+            "https://shop.example/products/wrong-b",
+            html: productPage(name: "Cordless Drill", gtin: "0000000000002", price: "59.99"))
+        fetcher.stub(
+            "https://shop.example/search?q=Sony+WH-1000XM5",
+            html: #"<a href="/products/xm5">XM5</a>"#)
+        let directory = SellerDirectory(version: 1, sellers: [
+            seller("shop", domain: "shop.example", acceptsGTIN: nil),
+        ])
+        let outcome = await SellerFanOut(
+            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            .run(request())
         XCTAssertTrue(outcome.results.isEmpty)
+        // Two links already spent on the (wrong) GTIN query left no budget at
+        // all for a second query — its search page is never even fetched.
+        XCTAssertEqual(fetcher.requested, [
+            "https://shop.example/search?q=0194644090876",
+            "https://shop.example/products/wrong-a",
+            "https://shop.example/products/wrong-b",
+        ])
         XCTAssertEqual(outcome.rejection(for: "shop"), .noVerifiedMatch)
+    }
+
+    // MARK: - Rendering past a markup-only challenge
+
+    /// A retailer's search sometimes serves a soft interstitial under an
+    /// ordinary 200 rather than a blocked status — previously indistinguishable
+    /// from a hard bot wall, so the run gave up on the host immediately. A
+    /// context that can render gets one chance to see past it, exactly as it
+    /// does for a structurally-empty page.
+    func testAMarkupChallengeUnderTwoHundredGetsARenderAttempt() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://shop.example/search?q=0194644090876",
+            html: "<html><body>Pardon Our Interruption</body></html>", statusCode: 200)
+        fetcher.stub(
+            "https://shop.example/products/xm5",
+            html: productPage(name: "Sony WH-1000XM5", gtin: "0194644090876", price: "329.99"))
+        let directory = SellerDirectory(version: 1, sellers: [
+            seller("shop", domain: "shop.example"),
+        ])
+        let outcome = await SellerFanOut(
+            directory: directory, profile: profile, fetch: fetcher.fetch,
+            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# },
+            localeRegion: "US")
+            .run(request())
+        XCTAssertEqual(outcome.results.count, 1)
+        XCTAssertTrue(try! XCTUnwrap(outcome.attempts.first).usedRenderedSearch)
+    }
+
+    /// A genuinely BLOCKED status (403/429/…) is a hard refusal — there is
+    /// nothing to render past, so no render slot is spent discovering that.
+    func testABlockedStatusIsNeverRetriedThroughTheRenderer() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://shop.example/search?q=0194644090876", html: "refused", statusCode: 403)
+        let renders = Counter()
+        let directory = SellerDirectory(version: 1, sellers: [
+            seller("shop", domain: "shop.example"),
+        ])
+        _ = await SellerFanOut(
+            directory: directory, profile: profile, fetch: fetcher.fetch,
+            renderSearch: { _ in await renders.bump(); return nil }, localeRegion: "US")
+            .run(request())
+        let count = await renders.value
+        XCTAssertEqual(count, 0)
+    }
+
+    /// If the RENDERED markup still looks like a challenge, the host is
+    /// marked bot-walled rather than treating the render as a second static
+    /// fetch to search for links in.
+    func testAChallengeThatSurvivesRenderingIsStillABotWall() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://shop.example/search?q=0194644090876",
+            html: "<html><body>Please complete the CAPTCHA</body></html>", statusCode: 200)
+        let directory = SellerDirectory(version: 1, sellers: [
+            seller("shop", domain: "shop.example"),
+        ])
+        let outcome = await SellerFanOut(
+            directory: directory, profile: profile, fetch: fetcher.fetch,
+            renderSearch: { _ in "<html><body>Please complete the CAPTCHA</body></html>" },
+            localeRegion: "US")
+            .run(request())
+        XCTAssertTrue(outcome.results.isEmpty)
+        XCTAssertEqual(outcome.rejection(for: "shop"), .searchBotWalled)
     }
 }
 

@@ -38,6 +38,7 @@ public enum ProductTitleHygiene {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         title = strippingStorefrontPrefix(title)
+        title = strippingColonStorefrontTail(title)
         title = strippingStorefrontSuffix(title)
         title = strippingFormatTail(title)
         title = title.trimmingCharacters(in: CharacterSet(charactersIn: " -–—|:·,"))
@@ -53,6 +54,50 @@ public enum ProductTitleHygiene {
         let head = String(title[..<colon]).trimmingCharacters(in: .whitespaces)
         guard head.count <= 24, looksLikeStorefront(head) else { return title }
         return String(title[title.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// `<name>: <category>: Amazon.com.au`, `<name> : Amazon.com.au: <category>`
+    /// — Amazon AU's `<title>` puts its own domain in a COLON-separated
+    /// segment after the product name, with a breadcrumb-style category
+    /// segment on either side of it (measured live: `… Chrome: Toasters:
+    /// Amazon.com.au` and `… ES9600 : Amazon.com.au: Health, Household &
+    /// Personal Care` — the second has the storefront BEFORE the category,
+    /// the first after it). Neither shape is a dash/pipe suffix, so
+    /// `strippingStorefrontSuffix` never sees it, and it isn't the PREFIX
+    /// either (`strippingStorefrontPrefix` only looks at the head before the
+    /// FIRST colon). Once any segment beyond the first is domain-shaped
+    /// (contains a dot, e.g. `amazon.com.au` — narrower than
+    /// `looksLikeStorefront`'s bare-word match, which would also fire on an
+    /// innocent category segment like "Books"), the product name is just the
+    /// first segment: a category carries no product information wherever it
+    /// sits relative to the storefront's own name.
+    static func strippingColonStorefrontTail(_ title: String) -> String {
+        let normalized = title.replacingOccurrences(
+            of: #"\s*:\s*"#, with: "\u{0}", options: [.regularExpression])
+        let segments = normalized.components(separatedBy: "\u{0}")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard segments.count > 1, let first = segments.first, !first.isEmpty,
+              segments.dropFirst().contains(where: looksLikeStorefrontDomain)
+        else { return title }
+        return first
+    }
+
+    /// The DOMAIN-shaped half of `looksLikeStorefront` only — a fragment must
+    /// contain a dot (`amazon.com.au`), never a bare word (`Books`, `Target`)
+    /// alone. The bare-word match is right for a dash/pipe SUFFIX (an actual
+    /// chrome fragment there never doubles as a legitimate category name),
+    /// but a colon-separated segment is exactly where a real category name
+    /// (`Toasters`, `Books`) sits, so the colon-tail stripper needs the
+    /// stricter test to avoid mistaking one for the storefront itself.
+    static func looksLikeStorefrontDomain(_ fragment: String) -> Bool {
+        let lower = fragment.trimmingCharacters(in: .whitespaces).lowercased()
+        guard lower.contains(".") else { return false }
+        if lower.range(of: #"^[a-z0-9][a-z0-9 &'’-]{0,20}\.(com|co\.uk|ca|com\.au|co\.nz|ie|in|sg|co\.za|net|org)$"#,
+                        options: [.regularExpression]) != nil {
+            return true
+        }
+        let head = lower.components(separatedBy: ".")[0]
+        return storefrontWords.contains(head)
     }
 
     /// ` - Walmart.com`, ` | Target`, ` – Barnes & Noble` — the storefront

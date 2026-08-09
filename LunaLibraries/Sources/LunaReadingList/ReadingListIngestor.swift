@@ -39,6 +39,17 @@ public final class ReadingListIngestor {
     /// (foreground, user-initiated) save.
     public static var rescueTrigger: ((UUID, URL, CaptureSource, _ interactive: Bool) -> Void)?
 
+    /// Installed by a product-handling app's `KindWiring` (`SellerComparison
+    /// .beginAndRunInBackground`, via a thin adapter — `LunaReadingList` cannot
+    /// link `LunaPriceUI`). Called from the re-save dedup below when a
+    /// re-saved URL merges into a tracker that has never been through a
+    /// fan-out and still has fewer than two stores, so a repeat save of an
+    /// Amazon-style product actually attempts seller discovery instead of
+    /// showing nothing (`claudedocs/price-comparison.md`'s "re-saves of a
+    /// seller-less tracker kick a comparison"). nil in a process that hasn't
+    /// composed the product kind, where nothing runs anyway.
+    public static var priceTrackerComparisonKicker: ((UUID, URL, ReadingListStore) -> Void)?
+
     public init(
         store: ReadingListStore = .shared,
         surfaceDecision: @escaping (Outcome) -> SurfaceSupport.Decision = {
@@ -180,13 +191,20 @@ public final class ReadingListIngestor {
         // price-tracking on a previous save. The merge path deletes the placeholder,
         // so a re-save arrives as a fresh placeholder here.
         if !forceArticle,
-           let (existingTrackerItemID, _) = store.priceTracker(
+           let (existingTrackerItemID, existingTracker) = store.priceTracker(
                containingStoreURL: resolvedURL.absoluteString),
            existingTrackerItemID != item.id {
             store.delete(item)
             PriceTrackerSaveAnnouncement.post(
                 itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
                 isMerge: true, highlightedURL: resolvedURL.absoluteString)
+            // A tracker that has never been through a fan-out and still has
+            // fewer than two stores has effectively never been compared —
+            // this is the repeat-save case that used to leave an Amazon-style
+            // product with no seller row and no spinner, forever.
+            if existingTracker.pendingComparison == nil, existingTracker.stores.count < 2 {
+                Self.priceTrackerComparisonKicker?(existingTrackerItemID, resolvedURL, store)
+            }
             return decision
         }
 

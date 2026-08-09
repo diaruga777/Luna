@@ -56,6 +56,47 @@ final class SellerDirectoryTests: XCTestCase {
         XCTAssertNil(directory.seller(forHost: "not-a-real-shop.example"))
     }
 
+    /// Five AU appliance/electronics sellers added after a live JB Hi-Fi /
+    /// Bing Lee fan-out found the AU directory too thin to answer with
+    /// anything but the source itself (`claudedocs/price-comparison.md`).
+    /// Each entry's shape was independently measured, live, 2026-08-09:
+    /// `binglee-au`'s search 200s with real product links for a GTIN query;
+    /// `appliancesonline-au` (Angular bundle), `costco-au` (Spartacus/SAP
+    /// Commerce SPA — every path serves the same empty shell) and
+    /// `betta-au` (a Handlebars-templated Shopify search widget,
+    /// `{{ product.handle }}` literally unrendered in the served markup) are
+    /// all live 200s with zero static product links; `retravision-au`'s
+    /// entire site — including its homepage — sits behind a Cloudflare JS
+    /// challenge that a plain fetch cannot pass, so it is unverified.
+    func testTheFiveNewAUApplianceSellersAreShapedAsMeasured() throws {
+        let directory = try bundledDirectory()
+        let byID = Dictionary(uniqueKeysWithValues: directory.sellers.map { ($0.id, $0) })
+        for id in ["binglee-au", "appliancesonline-au", "retravision-au", "costco-au", "betta-au"] {
+            XCTAssertNotNil(byID[id], "missing \(id)")
+        }
+        XCTAssertEqual(byID["binglee-au"]?.region, "AU")
+        XCTAssertEqual(byID["binglee-au"]?.acceptsGTIN, true)
+        XCTAssertFalse(byID["binglee-au"]?.searchRequiresRendering ?? true)
+
+        for id in ["appliancesonline-au", "costco-au", "betta-au"] {
+            XCTAssertTrue(
+                byID[id]?.searchRequiresRendering ?? false, "\(id) is a measured JS shell")
+        }
+        XCTAssertFalse(
+            byID["retravision-au"]?.searchRequiresRendering ?? true,
+            "retravision is bot-walled, not client-rendered — a different failure mode")
+        XCTAssertFalse(byID["retravision-au"]?.verified ?? true, "its shape could not be confirmed live")
+
+        for id in ["binglee-au", "appliancesonline-au", "retravision-au", "costco-au", "betta-au"] {
+            let categories = Set(byID[id]?.categories ?? [])
+            XCTAssertTrue(
+                categories.contains(SellerCategory.appliances.rawValue)
+                    || categories.contains(SellerCategory.electronics.rawValue)
+                    || categories.contains(SellerCategory.general.rawValue),
+                "\(id) should be reachable by an appliance/electronics product")
+        }
+    }
+
     // MARK: - Validation catches what it claims to
 
     private func seller(

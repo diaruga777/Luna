@@ -63,6 +63,13 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
+        // A re-save that merges into a tracker which has never been through
+        // a fan-out (still fewer than two stores) kicks a comparison instead
+        // of showing nothing forever — `LunaReadingList` cannot link
+        // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
+        ReadingListIngestor.priceTrackerComparisonKicker = { itemID, url, store in
+            SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
+        }
         // …and the CARD half of each kind, on the same principle: one
         // definition per kind, installed by every app that shows it, so the
         // central deck and each single-kind deck cannot disagree about the

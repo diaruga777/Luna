@@ -34,24 +34,59 @@ public final class ExtensionProductPresenter {
     /// tap the user had already made. What survives a share extension's early
     /// death is not the Task but the PENDING MARKER on the tracker: the app
     /// finishes the run at its next launch or its next refresh cycle.
+    ///
+    /// **Merges, rather than always creating.** Before this asked
+    /// `ProductTrackerMerge` (shared with the in-app path — see
+    /// `claudedocs/price-comparison.md`'s "Extension saves merge and seed"),
+    /// a share-sheet save of a product already being tracked created a
+    /// second, unrelated tracker even when both pages declared the SAME GTIN.
+    /// On a merge the editor opens on the MATCHED tracker's item, in
+    /// `.merge` mode, instead of duplicating — synchronously, with no image
+    /// download or other await the extension cannot afford.
     public func presentPriceEditor(
         product: ProductInfo, url: URL, store: ReadingListStore,
         presentModally: @escaping (UIViewController) -> Void,
         complete: @escaping () -> Void
     ) {
-        guard let itemID = store.savePriceTracker(
-            product.makeTracker(
-                fallbackURL: url,
-                alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
-            forURLString: url.absoluteString)
-        else {
+        guard let placeholder = store.item(forURLString: url.absoluteString) else {
             complete()
             return
         }
-        SellerComparison.beginAndRunInBackground(
-            itemID: itemID, sourceURL: url, store: store)
-        let editor = PriceTrackingViewController(
-            mode: .creation(itemID: itemID, host: .extension))
+
+        let outcome = ProductTrackerMerge.mergeIfPossible(
+            product: product, url: url, excludingItemID: placeholder.id, store: store,
+            comparisonStarter: { itemID, sourceURL, store in
+                SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: sourceURL, store: store)
+            })
+
+        let editor: PriceTrackingViewController
+        switch outcome {
+        case let .merged(matchID, highlightedURL):
+            // The just-saved placeholder was a duplicate route into an
+            // existing tracker; drop it so only the merged tracker remains.
+            store.delete(placeholder)
+            PriceTrackerSaveAnnouncement.post(
+                itemID: matchID, source: placeholder.effectiveCaptureSource,
+                isMerge: true, highlightedURL: highlightedURL)
+            editor = PriceTrackingViewController(
+                mode: .merge(
+                    itemID: matchID, addedStoreURLString: highlightedURL ?? url.absoluteString,
+                    host: .extension))
+
+        case .newTracker:
+            guard let itemID = store.savePriceTracker(
+                product.makeTracker(
+                    fallbackURL: url,
+                    alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
+                forURLString: url.absoluteString)
+            else {
+                complete()
+                return
+            }
+            SellerComparison.beginAndRunInBackground(
+                itemID: itemID, sourceURL: url, store: store)
+            editor = PriceTrackingViewController(mode: .creation(itemID: itemID, host: .extension))
+        }
         editor.onDone = complete
         presentModally(editor)
     }

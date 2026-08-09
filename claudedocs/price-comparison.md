@@ -75,11 +75,21 @@ Two deliberate refusals in extraction:
 `ProductMatcher.bestMatch` gained a tier above flattened-id equality: keyed
 GTIN, zero-padded to 14 so the same number declared as GTIN-8/12/13/14 matches.
 
+**Every save path now actually carries them onto the tracker.**
+`ProductInfo.makeTracker` (the extension's tracker constructor) always did;
+`ProductTrackerIngestor.ingest`'s new-tracker branch built `PriceTracker`
+directly and, until fixed, passed no `identifiers:` argument at all — so an
+in-app save's tracker carried NO keyed GTIN/MPN, `SellerComparison.request`
+(built from `tracker.identifiers`) had nothing to search by, and the whole
+fan-out ran name-only regardless of what the source page actually declared.
+Both paths now pass `product.identifiers.merging(ProductIdentifiers(brand:
+product.brand))`, mirroring each other exactly.
+
 ---
 
 ## The seller directory
 
-`LunaPriceCompare/Resources/seller-directory.json` — 222 retailers across 9
+`LunaPriceCompare/Resources/seller-directory.json` — 227 retailers across 9
 English-speaking regions, bundled rather than fetched (a network round trip just
 to learn *where* to look would spend most of the appex's budget before the first
 real request).
@@ -102,9 +112,17 @@ real request).
 - `searchIsClientRendered` (optional, additive — an entry written before it
   decodes as `nil`, which reads as "not known to be") marks a shop whose search
   RESULTS are drawn by JavaScript, so the served markup carries no product links
-  at all. 31 entries carry it, and each was MEASURED: a live search that returned
+  at all. 35 entries carry it, and each was MEASURED: a live search that returned
   200, no bot wall, and zero extractable product links. Target's US search page is
-  123KB and Walmart's 248KB, and neither contains a single product URL.
+  123KB and Walmart's 248KB, and neither contains a single product URL; three of
+  the AU additions are the same failure mode in different frameworks —
+  `appliancesonline-au` (an Angular bundle), `costco-au` (a Spartacus/SAP
+  Commerce SPA whose every path serves the identical shell) and `betta-au` (a
+  Shopify search widget templated with Handlebars, its `{{ product.handle }}`
+  placeholder literally unrendered in the served markup). A FOURTH AU addition,
+  `retravision-au`, is NOT flagged this way despite also finding zero links —
+  its entire site sits behind a Cloudflare JS challenge, a bot wall rather than
+  a structurally-empty page, and 403 already covers that case.
 
   Two consumers, and they want opposite things. A static-only context (the Safari
   appex) excludes them at SELECTION — its candidate budget is six, and a slot
@@ -182,6 +200,15 @@ the first found nothing; one KNOWN to take barcodes does not. An empty answer
 from a shop that indexes barcodes means "not stocked", and a second request is
 itself how a bot wall gets tripped.
 
+**A query whose links all fail to VERIFY falls through to the next query
+too**, not just an empty-links query — measured live: a GTIN query on a
+retailer's own search sometimes returns real-looking links that are junk (a
+nav/menu URL matching a shared pattern by coincidence) or the wrong product,
+and the old code ended the candidate there, never trying the name query that
+would have found the real one. The total pages FETCHED across every query for
+one candidate is still capped at `productURLsPerCandidate` — the budget one
+query used to get alone — so the fallthrough cannot double a run's cost.
+
 The name is always the CLEANED name (`ProductTitleHygiene`) — searching another
 retailer for the string "Amazon.com" returns nothing on anyone's first page.
 
@@ -216,6 +243,15 @@ SAMPLE on a different subdomain. Four rules, each from a measured failure:
    then retailer-shaped, then the shared strict patterns, then generic slugs,
    with document order preserved inside each tier. Amazon URLs canonicalize to
    `/dp/<ASIN>` so one product cannot fill three link slots under three slugs.
+   The generic-slug (weakest) tier ALSO takes the query itself: for a NAME
+   query, a slug sharing no word with it is dropped — measured junk this
+   closes: officeworks' own `/print-copy/p/flyers…` and a jbhifi Microsoft-365
+   nav link both matched the bare `/p/` needle, and because links were
+   non-empty the per-candidate loop used to stop right there, never trying
+   the name query that would have found the real product (see "the identifier
+   question" below). A numeric GTIN query disables the filter — a slug rarely
+   repeats the raw barcode, and a link that DOES carry it is already promoted
+   to the top tier by the searched-identifier check regardless.
 
 ### Rendering a search page
 
@@ -228,6 +264,18 @@ first. `LunaPriceCompare` may not link WebKit, so the app supplies it
 rendered DOM yields a product link" rather than a fixed settle window. The
 constrained profile has no renderer and a budget of zero.
 
+**A render is also attempted for a markup-only CHALLENGE served under an
+ordinary 200** — not just for a structurally-empty page. A genuinely BLOCKED
+status (401/403/405/429/503) is still a hard, un-rendered refusal (nothing to
+render past); but a 200 whose body reads as a bot-wall challenge used to mark
+the whole host out immediately, with no chance to see what a browser would
+have rendered. If the rendered markup STILL looks like a challenge, the host
+is marked bot-walled as before. `renderedSearchLimit` is 5, not 3, in the
+full profile — the AU directory expansion alone put three more client-rendered
+majors (`appliancesonline-au`, `costco-au`, `betta-au`) into a 12-candidate
+run that already had `thegoodguys-au`, and 3 render slots could not see past
+all of them in one run.
+
 The lean parser also reads the app-state JSON price tier (`current_retail`,
 `currentPrice.price`) that `TargetPriceRule`/`WalmartPriceRule` already read with
 SwiftSoup, with the storefront's REGION supplying the currency the bare number
@@ -237,6 +285,16 @@ lacks (`SellerDirectory.currencies`) — a `.com` is not evidence of a country.
 reaches retailers the directory has never heard of. Same verification, same
 merge rule; it is a second opinion, not a replacement. Off in the constrained
 profile.
+
+`DuckDuckGoSearch` was measured DEAD: `html.duckduckgo.com` now serves every
+result as a DIRECT href on `class="result__a"`, and the parser understood
+only the historical `…/l/?uddg=<percent-encoded-url>` redirect wrapper — a
+live 200 page full of results parsed to zero links, silently, with nothing
+in the 2xx/error signature to say so. It now reads both shapes in one pass
+(the site still serves the wrapper for some requests) and refuses DuckDuckGo's
+"unusual traffic" anomaly/challenge page — recognized by its `anomaly-modal`
+markup, which has been observed under BOTH a 202 and an ordinary 200 —
+rather than parsing it as an empty successful search.
 
 **Merge rule** (`ComparableResultMerger`): results are keyed by registrable
 domain — one price per retailer, never two. A new domain appends. A domain
@@ -281,9 +339,20 @@ assert on the rejections rather than on log text.
 
 **Bot walls are expected, not exceptional.** 401/403/405/429/503, or a
 challenge interstitial served with a 200, marks the whole host out for the run —
-following its product links would just collect more refusals. 404 is an ordinary
-miss and does not poison the host. This is precisely why candidates are
-over-provisioned relative to the result target in BOTH profiles.
+following its product links would just collect more refusals (unless it is a
+markup-only challenge under a 200 and a render is available — see "Rendering a
+search page" above; a render that still looks like a challenge marks the host
+out exactly as before). 404 is an ordinary miss and does not poison the host.
+This is precisely why candidates are over-provisioned relative to the result
+target in BOTH profiles.
+
+`BotWallDetection` also recognizes Amazon's small (measured ~2KB) Akamai Bot
+Manager interstitial — served with an ORDINARY 200 for
+`amazon.com.au/s?k=<gtin>`, intermittently (the same request sometimes serves
+the real search page) — by its `bm-verify`/`triggerInterstitialChallenge`
+markers, size-gated at 8KB so an otherwise-generic-sounding needle can't
+false-positive a real page. It carries none of the prose the other challenge
+needles look for ("captcha", "unusual traffic", …), so it needed its own.
 
 ### Profiles
 
@@ -297,9 +366,10 @@ over-provisioned relative to the result target in BOTH profiles.
 | total budget | 35s | 15s (inside the appex's 20s native budget) |
 | per-fetch timeout | 10s | 8s |
 | name-only match | allowed | **refused** |
-| `.gtinInPage` match | allowed | **allowed** (it is identifier evidence) |
+| `.gtinInPage` / `.mpn` (containment) match | allowed | **allowed** (identifier evidence) |
+| `.nameWithModelCode` (relaxed name) match | allowed | **refused** (still a name match at heart) |
 | client-rendered sellers | asked, with a render fallback | skipped at selection |
-| rendered searches per run | 3 | 0 |
+| rendered searches per run | 5 | 0 |
 | web-search layer | on | off |
 
 ---
@@ -313,18 +383,50 @@ on. A wrong "$9.50 at Amazon" is worse than no answer.
    DIFFER are a refusal, not a fall-through: both sides named the product
    globally and named different products.
 2. **MPN equality + compatible brand** → `.mpn`.
-3. **The page STATES the GTIN without declaring it** → `.gtinInPage`. Three
-   conditions, all required: the page was reached by asking THIS retailer's own
-   search for the GTIN's digits, the page (or its URL) contains those digits, and
-   the name similarity in tier 4 already passes.
+3. **The name matches (the ordinary 0.6 threshold) AND the page CONTAINS
+   the source's GTIN digits, or its own declared MPN** → `.gtinInPage` /
+   `.mpn`. Two evidence forms sharing one tier:
+   - **GTIN-in-page** (`pageStatesSourceGTIN`): the page (or its URL)
+     contains any written form of the source's GTIN
+     (`GTINForms.variants` — GTIN-14, EAN-13, UPC-12, the ISBN-10, a
+     separator-tolerant pass for `978-0-7352-1129-2`).
+   - **MPN-in-page** (`pageContainsSourceMPN`): the source declares an MPN
+     (no GTIN reached this far), the candidate does NOT structurally
+     declare a conflicting one, and the MPN token (case/separator-
+     insensitive) appears in the candidate's URL or markup.
 4. **Name similarity ≥ 0.6 (Jaccard) + compatible brand** → `.name`, but only
    when the profile allows it AND **the source declared no GTIN or MPN**. If the
    source has a strong id and the candidate does not present the same one, a name
    coincidence is not evidence — it is the case, the older model, or the
    two-pack. (A retailer SKU is not a cross-host identifier, so it does not block
    this tier.)
+5. **Relaxed name + model code** (`matchesByRelaxedNameWithModelCode`) →
+   `.nameWithModelCode`, full profile only: the source DOES declare a
+   GTIN/MPN, but the candidate declares NO structured identifier at all (no
+   GTIN, MPN or SKU). Accepted when name similarity clears a HIGHER bar
+   (0.75, not 0.6) AND — whenever the source's own name or MPN carries a
+   model-code-like token (a mixed letter+digit run of 6+ characters, e.g.
+   `HRFD634BW`) — that exact token appears in the candidate's URL or markup
+   too. No token in the source ⇒ the higher bar alone is enough; there is no
+   discriminator to demand.
 
-### Why tier 3 exists
+   Both containment checks in tiers 3 and 5 read the candidate's URL/markup
+   ONLY — never its (already-cleaned) NAME, even though the brief that
+   introduced them named "title" as a third surface. A product's own
+   identifier is very often literally a substring of its own display name
+   ("Sony WH-1000XM5 Headphones" contains "WH-1000XM5"), and both tiers are
+   only reached AFTER the name has already been compared against the
+   source's — so checking the name a second time for a substring of ITSELF
+   mostly just re-confirms that comparison rather than adding independent
+   evidence. Measured directly: `ComparisonMatchingTests
+   .testNameMatchIsRefusedWhenTheSourceHasACrossHostIdentifier` (two
+   IDENTICAL titles, the candidate declaring nothing) is exactly the
+   case the original tier-4 design refuses, and checking the name in
+   tiers 3/5 accepted it by accident. The real motivating cases are
+   unaffected: Amazon's ISBN and Costco's model code are both in the
+   URL, independent of either title.
+
+### Why tier 3 exists, and why it no longer asks HOW the page was reached
 
 Tiers 1 and 2 are unreachable on most of the real web. The measured case: an
 Amazon `/dp/` page, found by searching amazon.com for the exact GTIN, whose
@@ -333,24 +435,48 @@ because Amazon publishes no JSON-LD and lean parsing therefore found
 `gtin == nil`. Demanding a STRUCTURED identifier is demanding something most
 retailers do not ship.
 
-The two halves of the evidence do different jobs and neither is sufficient. The
-SEARCH half — this page came back from asking this shop for these exact digits —
-is what makes the containment meaningful rather than coincidental. The
-CONTAINMENT half is what stops a shop's "related items" rail from being taken as
-an answer. Because it is identifier evidence and cheap string containment, the
-**constrained profile accepts it** while still refusing tier 4.
+Originally the GTIN half of this tier ALSO required that the page be reached
+by asking the retailer's own search for the exact digits — a third condition
+on top of name-agreement and containment. That refused evidence the tier
+exists to accept: a name-matching, GTIN-printing page found by a NAME query
+(a retailer's own search burying the product under a name query, or a
+Layer-2 web-search hit) is exactly as good evidence as one found by a GTIN
+query — the NAME already agreeing (the caller's own nesting, required before
+this tier is even consulted) is what makes containment meaningful rather
+than coincidental; requiring search provenance on top of that was refusing a
+real "$1599.99 at Costco, 0.90 name match, prints the barcode" for the sole
+reason that DuckDuckGo found it rather than Costco's own search bar. Search
+provenance still matters elsewhere — it is what makes a SECOND fetch worth
+its cost in `SellerFanOut.verify`, when the rich resolver has no markup at
+all — but it is no longer a precondition for accepting evidence already in
+hand. The AUDIOBOOK-edition trap this tier could reopen is still pinned: it
+matches the paperback by name and does not carry the paperback's ISBN
+(or, now, its MPN), so it is refused regardless of how it was found.
 
-Every written form is tried (`GTINForms.variants`): GTIN-14, EAN-13, UPC-12, and
-for books the ISBN-10 — which is how Amazon's `/dp/<isbn10>` counts, since a book
-ASIN IS the ISBN-10. A separator-tolerant second pass catches
-`978-0-7352-1129-2`. The obvious trap is pinned by a test: the AUDIOBOOK edition
-of a title matches by name and does not carry the paperback's ISBN, so it is
-refused.
+Because it is identifier evidence and cheap string containment, the
+**constrained profile accepts both containment forms** while still refusing
+tier 4 and tier 5.
 
-`requiresPageEvidence` is the same question asked cheaply, so the orchestrator
-can tell whether fetching a page's markup would change the answer before spending
-a request on it — which matters because the rich resolver returns a parse and no
-HTML.
+`requiresPageEvidence` is the same GTIN question asked cheaply, so the
+orchestrator can tell whether fetching a page's markup would change the
+answer before spending a request on it — which matters because the rich
+resolver returns a parse and no HTML.
+
+### Why tier 5 exists
+
+Most real retail listings carry NO structured identifier at all — not even
+the loose kind tier 3 asks for. When the source has a GTIN/MPN, the ordinary
+name tier (4) is blocked outright for exactly that candidate, so it had no
+path to acceptance whatsoever. The measured case: a Costco AU page,
+$1599.99, 0.90 name similarity, compatible brand, no JSON-LD — refused. Its
+own title carries the model code (`HRFD634BW`) verbatim, which is the
+discriminator a plain name match cannot offer on its own: the case, the
+older model and the two-pack usually do NOT share the exact model code, so
+demanding it (when the source has one to demand) closes the trap tier 4's
+`!hasCrossHostIdentifier` guard exists to avoid, while still accepting the
+page. Refused in the constrained profile — it is still fundamentally a name
+match, just a more careful one, and a wrong pill on someone's shopping page
+costs more than a missing one.
 
 ---
 
@@ -501,9 +627,63 @@ and the run goes out behind it.
 | share / action extensions | `ExtensionProductPresenter.presentPriceEditor`, started before presenting | the editor, immediately, with the same waiting row in its seller list |
 | Action Button intents | `ProductIntentHandoff.document` joins the run before rendering | the system progress bar, `Stage.findingSellers` — this ONE surface still waits, because its answer is the comparison |
 
-The merge path is never compared: that tracker has already been through a
-fan-out, and re-running would spend a dozen candidates re-finding the stores it
-is excluding.
+**The ordinary merge path stays uncompared**: a tracker that has already been
+through a fan-out is excluded from a re-run, which would just spend a dozen
+candidates re-finding the stores it is already holding. That rule has one
+deliberate carve-out (below): a tracker that merges without ever having HAD a
+fan-out is not "already compared" at all.
+
+### Extension saves merge and seed too
+
+Before this, only the in-app new-tracker path consulted `ProductMatcher
+.bestMatch` or seeded history from passive Safari snapshots.
+`ExtensionProductPresenter.presentPriceEditor` (share/action extensions) always
+created a fresh tracker — a share-sheet save of a product already being
+tracked produced a SECOND, unrelated tracker even when both pages declared the
+SAME GTIN, and a passive snapshot with an offer-level `gtin13` was never folded
+in on that path.
+
+`ProductTrackerMerge.mergeIfPossible` is the shared merge-or-create decision
+now used by both `ProductTrackerIngestor.ingest`'s new-tracker branch and the
+extension presenter: it runs `ProductMatcher.bestMatch` against every OTHER
+tracker (excluding the just-classified placeholder item), and on a match
+unions the candidate's keyed identifiers into the matched tracker's empty
+slots, seeds snapshot history exactly as a new tracker always did, and adds
+the new store — returning `.newTracker` when nothing matched, so each caller
+still creates its own way (the app awaits an image download; the extension,
+which cannot afford that, does not). On a merge, the extension opens the
+SAME editor on the matched tracker's item, in `.merge` mode
+(`PriceTrackingViewController.Mode.merge`, previously defined but never
+wired to a caller), instead of duplicating.
+
+`SnapshotMatcher`'s candidate side (the seeding's own snapshot matching)
+now prefers the candidate's KEYED identifiers (`ProductInfo.identifiers
+.gtin`/`.mpn`/`.sku`) over the flattened `productID`, falling back to the
+flattened value when the candidate carries none — the seeding path and
+`ProductMatcher`'s own keyed-GTIN tier can no longer disagree about a
+candidate that has one.
+
+### Re-saves of a seller-less tracker kick a comparison
+
+The carve-out to "the merge path is never compared": inside
+`ProductTrackerMerge.mergeIfPossible` AND `ReadingListIngestor`'s separate
+re-save short-circuit (a re-saved URL that is already a store on an existing
+tracker), once the merge/dedup itself is done, if the target tracker has NO
+`pendingComparison` and — read BEFORE this save's own store is added, so an
+ordinary merge is never mistaken for "already at 2 stores" — fewer than TWO
+stores, a background comparison is started for it
+(`SellerComparison.beginAndRunInBackground`). Such a tracker has effectively
+never been compared at all: a completed fan-out normally attaches several
+stores at once, so being stuck at one (or newly created with zero
+identifiers) is itself the signal that the ORIGINAL save's comparison never
+ran — the process died first, or the product kind wasn't composed at save
+time. Before this, a repeat save of the same seller-less product looked
+identical to the first: no spinner, no seller row, forever.
+
+`LunaReadingList` cannot link `LunaPriceUI`, so `ReadingListIngestor
+.priceTrackerComparisonKicker` is a static seam — the same shape as
+`unsupportedSavePresenter`/`rescueTrigger` — installed by the two
+product-handling apps' `KindWiring` (`Luna`, `LunaPriceTracker`).
 
 ### The pending marker
 
@@ -639,18 +819,21 @@ All in `LunaTests/`:
 | --- | --- |
 | `SellerDirectoryTests` | the SHIPPED json (validation, regions, per-region mass merchants), `{query}` substitution in both contexts |
 | `SellerCandidateSelectorTests` | ordering determinism, directory-order independence, bounds, prefix property, exclusions, each scoring weight, region resolution, per-seller query |
-| `LeanProductPageParserTests` | JSON-LD/OG/microdata extraction, stable `@graph` node choice, refusals, search-link extraction |
+| `LeanProductPageParserTests` | JSON-LD/OG/microdata extraction, stable `@graph` node choice, refusals, search-link extraction, and the query-token filter on the weakest (loose) tier |
 | `LeanProductURLParityTests` | the copied rule tables + both predicates vs `ProductPageRules`/`ProductPageDetector` |
-| `ComparisonMatchingTests` | the three verification tiers and their refusals |
+| `ComparisonMatchingTests` | the base tiers (GTIN/MPN equality, name-only) and their refusals |
 | `ComparisonMatchingParityTests` | `ProductIdentityMatching` vs `ProductMatcher`/`SnapshotMatcher` |
 | `BotWallDetectionTests` | blocked statuses, 200-served challenges, no false positive on a large page |
+| `AmazonInterstitialBotWallTests` | the measured `bm-verify` interstitial fixture, and no false positive once it's padded past 8KB |
 | `SellerFanOutTests` | rank order, stop-at-target, budget expiry, bot-wall skip, verification refusals, exclusions, rich resolver, Layer 2 |
 | `RealWorldSearchLinkExtractionTests` | the captured eBay/B&N/Target search pages that returned nothing, the promo-card veto, asset/API and furniture refusals, JSON-escaped URLs, ASIN collapsing |
 | `AmazonProductDetailsTests` | identifiers and the buy box off two captured Amazon PDPs, the `po-brand` and warranty-prose false positives, the split-price layout, the lean parser end to end |
 | `GTINFormsTests` | ISBN-10 ↔ ISBN-13, UPC/EAN/GTIN-14 forms, and that an ordinary ASIN fails the checksum |
-| `ProductTitleHygieneTests` | storefront prefixes/suffixes and format tails, and what must survive |
-| `GTINInPageMatchingTests` | the evidence tier's three conditions and its five refusals, including the audiobook trap |
-| `SellerFanOutDiagnosticsTests` | every rejection reason, attempt streaming, the run summary, the client-rendered skip, the render fallback and its cap, the identifier-then-name questions |
+| `ProductTitleHygieneTests` | storefront prefixes/suffixes, format tails, the two colon-chrome shapes (`Amazon.com.au` before/after a category segment), and what must survive |
+| `GTINInPageMatchingTests` | the GTIN-in-page tier now accepting containment REGARDLESS of search provenance (once the name agrees), its refusals, and the audiobook trap |
+| `MPNContainmentMatchingTests` | the MPN-in-page tier: token containment in URL/markup (deliberately NOT the candidate's own name), case/separator insensitivity, the name-must-agree and declared-conflicting-MPN refusals |
+| `RelaxedNameWithModelCodeMatchingTests` | the `.nameWithModelCode` tier: the 0.75 bar, the model-code discriminator (present vs absent in the source), ineligibility once the candidate declares ANY identifier, and the constrained profile's refusal |
+| `SellerFanOutDiagnosticsTests` | every rejection reason, attempt streaming, the run summary, the client-rendered skip, the render fallback and its cap, the identifier-then-name questions, query fallthrough and its link-budget cap, rendering past a markup-only challenge vs a hard block |
 | `SellerCategoryRelevanceTests` | a book outranking unrelated specialists, and hint normalization |
 | `ComparableResultMergerTests` | the merge/supplant rule |
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
@@ -663,3 +846,7 @@ All in `LunaTests/`:
 | `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |
 | `ShareSurfaceDriverTests` | the extension editor opens IMMEDIATELY and leaves the fan-out running behind it |
 | `PriceTrackingScreenTests` | the waiting row's presence and its removal, in both product surfaces |
+| `ProductTrackerMergeTests` | the shared merge-or-create decision: no-match ⇒ new tracker, a match unions stores/identifiers and seeds snapshot history, and the Fix-8 comparison kick (fires only when never-compared AND under 2 stores, read BEFORE this save's own store is added) |
+| `ExtensionProductPresenterTests` | the same merge decision at the extension presenter's own level — no duplicate tracker, the placeholder is removed, a comparison is kicked end-to-end |
+| `ReadingListIngestorTrackerDedupTests` | the re-save dedup itself, and its own Fix-8 comparison kick (and its refusals: 2+ stores, already pending, no installed kicker) |
+| `DuckDuckGoSearchTests` | both result shapes (a live direct-href capture, a crafted legacy `uddg=` fixture), paid-result exclusion, dedup, and the anomaly/challenge page under either status code |

@@ -80,11 +80,18 @@ public struct SellerFanOutProfile: Equatable, Sendable {
 
     /// Save-time in the app and the share/action extensions: a user is watching
     /// a spinner, so ~35s of wall clock is affordable and worth spending.
+    ///
+    /// `renderedSearchLimit` is 5, not 3: the AU seller directory alone adds
+    /// four client-rendered majors on top of the pre-existing US ones
+    /// (`appliancesonline-au`, `costco-au`, `betta-au` are Angular/Handlebars
+    /// SPAs; `thegoodguys-au` already was) — a 12-candidate run with several
+    /// JS shells among its top scorers needs more than 3 render slots to see
+    /// past all of them in one run.
     public static let full = SellerFanOutProfile(
         candidateLimit: 12, resultTarget: 6, concurrency: 3, productURLsPerCandidate: 3,
         totalBudget: 35, perFetchTimeout: 10,
         allowsNameOnlyMatch: true, usesWebSearchLayer: true,
-        skipsClientRenderedSearch: false, renderedSearchLimit: 3)
+        skipsClientRenderedSearch: false, renderedSearchLimit: 5)
 
     /// The Safari extension: a page is already rendered and the native message
     /// must answer inside the appex's 20s budget, so everything shrinks and the
@@ -566,6 +573,15 @@ public struct SellerFanOut {
         await onAttempt?(attempt)
     }
 
+    /// One retailer, across every question it is asked (identifier then
+    /// name). A query whose links all fail to verify no longer ends the
+    /// candidate outright — the NEXT query, if any, gets a chance too, which
+    /// is what stops a junk-yielding GTIN query (a retailer's own nav/menu
+    /// link that happens to match the shared URL patterns) from silently
+    /// discarding the name query that would have found the real product. The
+    /// total number of pages FETCHED per candidate is still capped at
+    /// `profile.productURLsPerCandidate` — the same budget one query used to
+    /// get alone — so falling through cannot double the run's cost.
     private func runCandidateBody(
         _ seller: Seller, request: SellerFanOutRequest, sellerDomain: String,
         excludedDomains: Set<String>, state: State, start: Date, record: AttemptRecord
@@ -584,88 +600,131 @@ public struct SellerFanOut {
         let gtinDigits = GTINForms.digits(request.identifiers.gtin)
         let preferred = GTINForms.variants(of: request.identifiers.gtin)
 
-        var links: [URL] = []
-        var reachedByGTINSearch = false
+        var allLinks: [URL] = []
+        var sawAnyLinks = false
+        var sawPrice = false
+        var pendingRejection: SellerFanOutRejection = .noProductLinks
 
-        for query in queries {
+        queryLoop: for query in queries {
             if await state.isSatisfied || hasExpired(start) {
                 record.reject(.runEndedFirst)
                 return
             }
+            let remainingBudget = profile.productURLsPerCandidate - allLinks.count
+            guard remainingBudget > 0 else { break }
             record.query = query
             guard let searchURL = seller.searchRequestURL(forQuery: query) else { continue }
             record.searchURL = searchURL
             guard let searchPage = await fetch(searchURL) else {
-                record.reject(.searchUnreachable)
+                pendingRejection = .searchUnreachable
                 continue
             }
             record.statusCode = searchPage.statusCode
             record.searchBytes = searchPage.html.count
-            if BotWallDetection.isBotWall(
-                statusCode: searchPage.statusCode, html: searchPage.html) {
+
+            // A blocked STATUS is a hard refusal — nothing to render past.
+            if BotWallDetection.blockedStatusCodes.contains(searchPage.statusCode) {
                 await state.markBotWalled(sellerDomain)
                 record.reject(.searchBotWalled)
                 return
             }
             guard (200..<300).contains(searchPage.statusCode) else {
-                record.reject(.searchBadStatus)
+                pendingRejection = .searchBadStatus
                 continue
             }
-            links = LeanProductPageParser.productLinks(
-                inSearchHTML: searchPage.html, baseURL: searchPage.url,
-                limit: profile.productURLsPerCandidate, preferring: preferred)
+
+            var html = searchPage.html
+            var renderedThisQuery = false
+            if BotWallDetection.isBotWall(statusCode: 200, html: html) {
+                // A markup-only challenge under an ordinary 200 (a genuinely
+                // BLOCKED status already returned above) — some retailers
+                // serve a soft interstitial a render can see past, and a
+                // context that can render deserves the same one chance it
+                // gets for a structurally-empty page below.
+                guard let renderSearch, await state.claimRenderSlot(),
+                      let rendered = await renderSearch(searchURL)
+                else {
+                    await state.markBotWalled(sellerDomain)
+                    record.reject(.searchBotWalled)
+                    return
+                }
+                renderedThisQuery = true
+                record.usedRenderedSearch = true
+                record.searchBytes = rendered.count
+                if BotWallDetection.isBotWall(statusCode: 200, html: rendered) {
+                    await state.markBotWalled(sellerDomain)
+                    record.reject(.searchBotWalled)
+                    return
+                }
+                html = rendered
+            }
+
+            var links = LeanProductPageParser.productLinks(
+                inSearchHTML: html, baseURL: searchPage.url,
+                limit: remainingBudget, preferring: preferred, query: query)
 
             // Nothing in the served markup. On a retailer whose results are drawn
             // by JS this is not a miss, it is the entire page — so a context that
-            // can render is given one chance to see what a browser would have seen.
-            if links.isEmpty, let renderSearch, await state.claimRenderSlot(),
+            // can render is given one chance to see what a browser would have seen
+            // (unless it already rendered above for the challenge check).
+            if links.isEmpty, !renderedThisQuery, let renderSearch, await state.claimRenderSlot(),
                let rendered = await renderSearch(searchURL) {
                 record.usedRenderedSearch = true
                 record.searchBytes = rendered.count
                 links = LeanProductPageParser.productLinks(
                     inSearchHTML: rendered, baseURL: searchPage.url,
-                    limit: profile.productURLsPerCandidate, preferring: preferred)
+                    limit: remainingBudget, preferring: preferred, query: query)
             }
-            guard links.isEmpty else {
-                // The identifier question is the one that makes containment on
-                // the answer meaningful. Recorded per QUERY, not per candidate.
-                reachedByGTINSearch = gtinDigits.map { !$0.isEmpty && query == $0 } ?? false
-                record.reject(nil)
-                break
+
+            guard !links.isEmpty else {
+                pendingRejection = .noProductLinks
+                continue
             }
-            record.reject(.noProductLinks)
+            sawAnyLinks = true
+            // The identifier question is the one that makes containment on
+            // the answer meaningful. Recorded per QUERY, not per candidate.
+            let reachedByGTINSearch = gtinDigits.map { !$0.isEmpty && query == $0 } ?? false
+
+            for link in links {
+                guard allLinks.count < profile.productURLsPerCandidate else { break queryLoop }
+                allLinks.append(link)
+                if await state.isSatisfied || hasExpired(start) {
+                    record.productLinks = allLinks
+                    record.reject(sawPrice ? .noVerifiedMatch : .runEndedFirst)
+                    return
+                }
+                if await state.isBotWalled(sellerDomain) {
+                    record.productLinks = allLinks
+                    record.reject(.searchBotWalled)
+                    return
+                }
+                guard let resolved = await resolve(
+                    link, state: state, domain: sellerDomain, currencyHint: seller.regionCurrency)
+                else { continue }
+                let page = resolved.page
+                guard page.hasUsablePrice, let price = page.price, let currency = page.currency
+                else { continue }
+                sawPrice = true
+                guard let confidence = await verify(
+                    resolved, request: request, reachedByGTINSearch: reachedByGTINSearch)
+                else { continue }
+                let result = ComparableSellerResult(
+                    sellerID: seller.id, sellerName: seller.name, domain: sellerDomain,
+                    url: page.url, price: price, currency: currency, productName: page.name,
+                    identifiers: page.identifiers, imageURL: page.imageURL,
+                    confidence: confidence, source: .directory)
+                record.productLinks = allLinks
+                record.accept(confidence)
+                if await state.offer(result) { await onResult?(result) }
+                return
+            }
+            // This query's links didn't pan out; the next query (identifier
+            // then name), if any and if budget remains, gets a chance too.
         }
 
-        record.productLinks = links
-        guard !links.isEmpty else { return }
-
-        var sawPrice = false
-        for link in links {
-            if await state.isSatisfied || hasExpired(start) {
-                record.reject(sawPrice ? .noVerifiedMatch : .runEndedFirst)
-                return
-            }
-            if await state.isBotWalled(sellerDomain) {
-                record.reject(.searchBotWalled)
-                return
-            }
-            guard let resolved = await resolve(
-                link, state: state, domain: sellerDomain, currencyHint: seller.regionCurrency)
-            else { continue }
-            let page = resolved.page
-            guard page.hasUsablePrice, let price = page.price, let currency = page.currency
-            else { continue }
-            sawPrice = true
-            guard let confidence = await verify(
-                resolved, request: request, reachedByGTINSearch: reachedByGTINSearch)
-            else { continue }
-            let result = ComparableSellerResult(
-                sellerID: seller.id, sellerName: seller.name, domain: sellerDomain,
-                url: page.url, price: price, currency: currency, productName: page.name,
-                identifiers: page.identifiers, imageURL: page.imageURL,
-                confidence: confidence, source: .directory)
-            record.accept(confidence)
-            if await state.offer(result) { await onResult?(result) }
+        record.productLinks = allLinks
+        guard sawAnyLinks else {
+            record.reject(pendingRejection)
             return
         }
         record.reject(sawPrice ? .noVerifiedMatch : .noPriceOnAnyLink)

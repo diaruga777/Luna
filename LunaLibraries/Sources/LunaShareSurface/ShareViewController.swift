@@ -820,6 +820,31 @@ open class ShareViewController: UIViewController {
         loadWatchdog = nil
     }
 
+    /// The sheet-wide exit is intentionally limited to the Downloader and Price
+    /// Tracker's real extensions. Reader share/action extensions, and the in-app
+    /// onboarding rehearsal, keep their existing dismissal behavior.
+    private var supportsSwipeDownDismissal: Bool {
+        guard !isHosted else { return false }
+        switch LunaApp.current {
+        case .downloader, .priceTracker:
+            return true
+        case .luna, .reader:
+            return false
+        }
+    }
+
+    private func configureSwipeDownDismissal(
+        on navigationController: ExtensionNavigationController
+    ) {
+        guard supportsSwipeDownDismissal else { return }
+        navigationController.allowsSwipeDownToDismiss = true
+        navigationController.onSwipeDownToDismiss = { [weak self] in
+            // Use the same completion path as Done/Close, including cancelling
+            // any attachment-load watchdog before the request is finished.
+            self?.completeSilently()
+        }
+    }
+
     private func showSavedBadge() {
         let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
         badge.translatesAutoresizingMaskIntoConstraints = false
@@ -899,6 +924,7 @@ extension ShareViewController: ExtensionHost {
             return
         }
         let nav = ExtensionNavigationController(rootViewController: viewController)
+        configureSwipeDownDismissal(on: nav)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
     }
@@ -915,11 +941,7 @@ extension ShareViewController: ExtensionHost {
         }
         let navigationController = ExtensionNavigationController(
             rootViewController: viewController)
-        navigationController.onSwipeDownToDismiss = { [weak self] in
-            // Keep this on the same completion path as the loading screen's
-            // Close button and every terminal screen's Done button.
-            self?.complete()
-        }
+        configureSwipeDownDismissal(on: navigationController)
         navigationController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(navigationController)
         view.addSubview(navigationController.view)

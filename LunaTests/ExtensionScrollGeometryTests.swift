@@ -73,6 +73,16 @@ final class ExtensionScrollGeometryTests: XCTestCase {
             peakLateralVelocity: 900))
     }
 
+    func testExitSwipeIgnoresTouchesInsideAnyScrollView() {
+        let scrollView = UIScrollView()
+        let descendant = UIView()
+        scrollView.addSubview(descendant)
+
+        XCTAssertTrue(ExtensionNavigationController.isInsideScrollView(descendant))
+        XCTAssertTrue(ExtensionNavigationController.isInsideScrollView(scrollView))
+        XCTAssertFalse(ExtensionNavigationController.isInsideScrollView(UIView()))
+    }
+
     /// The invariant the container exists for, measured through a real layout: the
     /// screen it shows is never underneath its own header bar.
     func testVisibleScreenClearsTheHeaderBar() {

@@ -31,6 +31,11 @@ public final class ExtensionNavigationController: UINavigationController,
     public static let swipeDismissVelocity: CGFloat = 900
     private static let swipeDismissVerticalBias: CGFloat = 1.15
 
+    /// Enabled only by the app surfaces whose extensions support sheet-wide
+    /// swipe dismissal. Keeping the recognizer off otherwise also leaves the
+    /// reader extensions completely untouched.
+    public var allowsSwipeDownToDismiss = false
+
     /// Called when the visible action-extension screen receives a qualifying
     /// downward swipe. The host installs the same completion closure used by
     /// every Done/Close affordance; the navigation container only recognizes
@@ -52,7 +57,9 @@ public final class ExtensionNavigationController: UINavigationController,
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.addGestureRecognizer(swipeDownGesture)
+        if allowsSwipeDownToDismiss {
+            view.addGestureRecognizer(swipeDownGesture)
+        }
     }
 
     public override func viewDidLayoutSubviews() {
@@ -91,6 +98,26 @@ public final class ExtensionNavigationController: UINavigationController,
         translationY >= swipeDismissDistance
             && peakDownwardVelocity >= swipeDismissVelocity
             && peakDownwardVelocity >= peakLateralVelocity * swipeDismissVerticalBias
+    }
+
+    /// Scroll views own their pan gestures. A touch that begins anywhere in a
+    /// scroll view (including one of its descendants, such as a web view's
+    /// internal content) must never be promoted to sheet dismissal.
+    public static func isInsideScrollView(_ view: UIView?) -> Bool {
+        var candidate = view
+        while let current = candidate {
+            if current is UIScrollView { return true }
+            candidate = current.superview
+        }
+        return false
+    }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        guard gestureRecognizer === swipeDownGesture else { return true }
+        return !Self.isInsideScrollView(touch.view)
     }
 
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

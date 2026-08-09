@@ -72,7 +72,7 @@ public final class LunaSetupStatusStore {
             ?? .standard
     }
 
-    public func safariHasRun(isCentral: Bool) -> Bool {
+    func safariHasRun(isCentral: Bool) -> Bool {
         defaults.bool(forKey: isCentral ? Self.centralSafariKey : Self.sharedSafariKey)
     }
 
@@ -103,7 +103,7 @@ public final class LunaSetupStatusStore {
         "setup.shortcut.hasRun.\(app.storageIdentifier)"
     }
 
-    public func shortcutInstallWasPressed(for app: LunaApp) -> Bool {
+    func shortcutInstallWasPressed(for app: LunaApp) -> Bool {
         defaults.bool(forKey: Self.shortcutInstallPressedKey(for: app))
     }
 
@@ -115,7 +115,7 @@ public final class LunaSetupStatusStore {
     /// Exact per-app intent evidence. The old faceted aggregate remains a
     /// compatibility fallback for UI completion, but cannot prove WHICH old
     /// app ran and therefore cannot select the returning-user conversation.
-    public func shortcutHasRun(for app: LunaApp) -> Bool {
+    func shortcutHasRun(for app: LunaApp) -> Bool {
         hasPerAppShortcutRun(for: app)
             || (app != .luna && defaults.bool(forKey: Self.sharedShortcutKey))
     }
@@ -125,11 +125,6 @@ public final class LunaSetupStatusStore {
     public func shortcutRunApplies(to app: LunaApp) -> Bool {
         shortcutHasRun(for: app)
             || (app != .luna && shortcutHasRun(for: .luna))
-    }
-
-    public var anyShortcutHasRun: Bool {
-        defaults.bool(forKey: Self.sharedShortcutKey)
-            || LunaApp.allCases.contains { hasPerAppShortcutRun(for: $0) }
     }
 
     /// A sibling qualifies for the shortened Messages setup only when both

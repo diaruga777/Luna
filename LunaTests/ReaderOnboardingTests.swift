@@ -21,7 +21,7 @@ import LunaModels
 import LunaDesignSystem
 import LunaReaderUI
 import LunaShareSurface
-import LunaStorage
+@testable import LunaStorage
 import XCTest
 @testable import Luna
 

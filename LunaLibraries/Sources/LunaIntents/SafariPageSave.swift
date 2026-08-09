@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaFetch
+import LunaModels
 
 /// Safari has no post-search API to fall back on the way X/TikTok/Reddit do — when
 /// the tracked page URL is stale (or never captured) and a screenshot had to be
@@ -56,7 +57,7 @@ public enum SafariPageSave {
     /// Searches for and saves the article matching `title`/`site`, throwing
     /// `.notFound` when nothing survives the host filter.
     public static func save(
-        title: String, site: String?, doubleSaveActionSurface: String?,
+        title: String, site: String?, doubleSaveActionSurface: DoubleSaveSurface?,
         saveTimeout: TimeInterval = IntentSaveTimeout.standard,
         attemptDate: Date = Date(),
         onResolvedURL: ((String) -> Void)? = nil

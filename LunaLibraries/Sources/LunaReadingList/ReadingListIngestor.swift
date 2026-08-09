@@ -444,12 +444,12 @@ public final class ReadingListIngestor {
         public let urlString: String
         public let action: Action
         public let isDoubleSave: Bool
-        public let doubleSaveActionSurface: String?
+        public let doubleSaveActionSurface: DoubleSaveSurface?
         public let attemptDate: Date
 
         public init(
             itemID: UUID, urlString: String, action: Action,
-            isDoubleSave: Bool, doubleSaveActionSurface: String?, attemptDate: Date
+            isDoubleSave: Bool, doubleSaveActionSurface: DoubleSaveSurface?, attemptDate: Date
         ) {
             self.itemID = itemID
             self.urlString = urlString
@@ -465,7 +465,7 @@ public final class ReadingListIngestor {
     /// an App Intent handoff and execute later in another intent process.
     public func prepareSavePress(
         urlString: String, source: CaptureSource = .manual,
-        doubleSaveActionSurface: String? = nil,
+        doubleSaveActionSurface: DoubleSaveSurface? = nil,
         attemptDate: Date = Date()
     ) -> PreparedSavePress? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
@@ -581,7 +581,7 @@ public final class ReadingListIngestor {
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
                                 trustsPrefetchedHTML: Bool = false,
-                                doubleSaveActionSurface: String? = nil,
+                                doubleSaveActionSurface: DoubleSaveSurface? = nil,
                                 attemptDate: Date = Date()) async -> SavePressResult {
         guard let prepared = prepareSavePress(
             urlString: urlString, source: source,
@@ -613,7 +613,7 @@ public final class ReadingListIngestor {
     /// double save. "Send to Kindle" without a configured Kindle degrades the
     /// same way.
     private static func resolvedIntentAction(
-        forSurface surface: String
+        forSurface surface: DoubleSaveSurface
     ) -> SavePressPolicy.IntentAction? {
         switch DoubleSaveActionStore.shared.action(forSurface: surface) {
         case .nothing:

@@ -406,10 +406,7 @@ enum ActionButtonIntentSupport {
     /// the Action Button saves of the two apps that hold articles AND can build
     /// article files — the central Luna app and Reader. Every other surface and
     /// save path keeps the plain save behavior.
-    static var doubleSaveSurface: String? {
-        switch LunaApp.current {
-        case .luna, .reader: return LunaApp.current.storageIdentifier
-        case .downloader, .priceTracker: return nil
-        }
+    static var doubleSaveSurface: DoubleSaveSurface? {
+        LunaApp.current.doubleSaveSurface
     }
 }

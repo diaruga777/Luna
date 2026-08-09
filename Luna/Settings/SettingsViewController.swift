@@ -216,12 +216,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     /// The double-save action is keyed per app (Luna and Reader each keep their
     /// own), and only those two arm it — see
     /// `ActionButtonIntentSupport.doubleSaveSurface`.
-    private let doubleSaveSurface: String? = {
-        switch LunaApp.current {
-        case .luna, .reader: return LunaApp.current.storageIdentifier
-        case .downloader, .priceTracker: return nil
-        }
-    }()
+    private let doubleSaveSurface: DoubleSaveSurface? = LunaApp.current.doubleSaveSurface
     private var safariButtonName: String {
         L10n.string("Settings_shortcut_safariButtonName")
     }

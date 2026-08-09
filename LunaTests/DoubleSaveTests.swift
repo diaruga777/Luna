@@ -26,7 +26,7 @@ final class DoubleSaveTests: XCTestCase {
     private var suiteName: String!
     private var now: Date!
     private var actionStore: DoubleSaveActionStore!
-    private let surface = "reader"
+    private let surface = DoubleSaveSurface.reader
 
     override func setUp() {
         super.setUp()
@@ -54,19 +54,19 @@ final class DoubleSaveTests: XCTestCase {
         XCTAssertEqual(actionStore.action(forSurface: surface), .openDocument)
         XCTAssertEqual(actionStore.presetFriendEmails(forSurface: surface), ["a@b.com", "c@d.com"])
         // Surfaces are independent: Luna and Reader each keep their own action.
-        XCTAssertEqual(actionStore.action(forSurface: "luna"), .nothing)
+        XCTAssertEqual(actionStore.action(forSurface: .luna), .nothing)
     }
 
     /// The retired `sendToFriend` value can still be sitting in the shared App
     /// Group. It must read back as the inert default, not crash or linger.
     func testRetiredStoredActionFallsBackToNothing() {
-        defaults.set("sendToFriend", forKey: "doubleSave.action.\(surface)")
+        defaults.set("sendToFriend", forKey: "doubleSave.action.\(surface.rawValue)")
         XCTAssertEqual(actionStore.action(forSurface: surface), .nothing)
     }
 
     func testRetiredFileChoicesMigrateToViewImmediately() {
         for retiredValue in ["openPDF", "openMarkdown"] {
-            defaults.set(retiredValue, forKey: "doubleSave.action.\(surface)")
+            defaults.set(retiredValue, forKey: "doubleSave.action.\(surface.rawValue)")
             XCTAssertEqual(actionStore.action(forSurface: surface), .openDocument)
         }
     }
@@ -95,7 +95,7 @@ final class DoubleSaveTests: XCTestCase {
 
     func testPendingFriendPromptIsPerSurface() {
         actionStore.setPendingFriendPrompt(urlString: "https://example.com/a", forSurface: surface)
-        XCTAssertNil(actionStore.takePendingFriendPrompt(forSurface: "downloader"))
+        XCTAssertNil(actionStore.takePendingFriendPrompt(forSurface: .luna))
         XCTAssertEqual(
             actionStore.takePendingFriendPrompt(forSurface: surface), "https://example.com/a")
     }

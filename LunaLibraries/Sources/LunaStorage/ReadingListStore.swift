@@ -473,7 +473,6 @@ public final class ReadingListStore {
                 all[index].sendFailureCounts[destination] = nil
                 all[index].sendNextAttemptDates[destination] = nil
                 all[index].sendLastErrors[destination] = nil
-                all[index].pendingSendFailureNotices[destination] = nil
             }
             return true
         }
@@ -501,7 +500,6 @@ public final class ReadingListStore {
             all[index].sendFailureCounts[destination] = failureCount
             all[index].sendNextAttemptDates[destination] = nextAttemptDate
             all[index].sendLastErrors[destination] = errorMessage
-            all[index].pendingSendFailureNotices[destination] = nil
             return true
         }
     }
@@ -520,40 +518,7 @@ public final class ReadingListStore {
             }
             all[index].sendNextAttemptDates[destination] = nil
             all[index].sendLastErrors[destination] = errorMessage
-            all[index].pendingSendFailureNotices[destination] = true
             return true
-        }
-    }
-
-    public struct SendFailureNotice: Equatable {
-        public let itemID: UUID
-        public let destinationID: String
-        public let title: String
-        public let errorMessage: String
-    }
-
-    /// Returns and clears terminal send-failure notices so each hard/give-up error
-    /// is shown once, even if it happened during a background wakeup.
-    public func consumePendingSendFailureNotices() -> [SendFailureNotice] {
-        coordinatedMutate { all in
-            var notices: [SendFailureNotice] = []
-            for index in all.indices {
-                let destinations = all[index].pendingSendFailureNotices
-                    .filter { $0.value }
-                    .map(\.key)
-                    .sorted()
-                guard !destinations.isEmpty else { continue }
-                for destination in destinations {
-                    notices.append(SendFailureNotice(
-                        itemID: all[index].id,
-                        destinationID: destination,
-                        title: all[index].title ?? all[index].urlString,
-                        errorMessage: all[index].sendLastErrors[destination]
-                            ?? L10n.string("ReadingList_store_unknownSendErrorMessage")))
-                    all[index].pendingSendFailureNotices[destination] = nil
-                }
-            }
-            return notices
         }
     }
 

@@ -38,6 +38,8 @@ final class SetupGuideVideo: NSObject {
     private var looper: AVPlayerLooper?
     private var pictureInPictureController: AVPictureInPictureController?
     private var possibilityObservation: NSKeyValueObservation?
+    private var foregroundObserver: NSObjectProtocol?
+    private var activeObserver: NSObjectProtocol?
     private var wantsPictureInPicture = false
     private var didLoad = false
     private var didConfigureAudioSession = false
@@ -48,6 +50,16 @@ final class SetupGuideVideo: NSObject {
         playerView = layerView
         super.init()
         layerView.playerLayer.videoGravity = .resizeAspectFill
+        observeActionButtonReturnIfNeeded()
+    }
+
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        if let activeObserver {
+            NotificationCenter.default.removeObserver(activeObserver)
+        }
     }
 
     /// Loads the clip while the tray is on screen so a later button tap can
@@ -71,6 +83,16 @@ final class SetupGuideVideo: NSObject {
         }
         player?.pause()
     }
+
+    #if DEBUG
+    var pictureInPictureRequestedForTesting: Bool { wantsPictureInPicture }
+
+    /// Exercises the lifecycle stop contract without loading a media asset or
+    /// opening a PiP controller in a test process.
+    func requestPictureInPictureForTesting() {
+        wantsPictureInPicture = true
+    }
+    #endif
 
     private func loadIfNeeded() {
         guard !didLoad else { return }
@@ -108,6 +130,31 @@ final class SetupGuideVideo: NSObject {
               controller.isPictureInPicturePossible,
               !controller.isPictureInPictureActive else { return }
         controller.startPictureInPicture()
+    }
+
+    /// Unlike the Safari lesson, the Action Button guide should never resume
+    /// just because its host is foregrounded again. Stop at both lifecycle
+    /// boundaries: `willEnterForeground` takes PiP down immediately, while
+    /// `didBecomeActive` covers a system that recreates its PiP state during
+    /// activation. A new Settings tap is the only route that calls `start...`
+    /// and opts back in.
+    private func observeActionButtonReturnIfNeeded() {
+        guard guide == .actionButton else { return }
+        let center = NotificationCenter.default
+        foregroundObserver = center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.stopPictureInPicture() }
+        }
+        activeObserver = center.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.stopPictureInPicture() }
+        }
     }
 
     private var guideSuffix: String {

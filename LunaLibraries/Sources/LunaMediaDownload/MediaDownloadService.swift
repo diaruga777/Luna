@@ -12,7 +12,7 @@ import LunaURLClassification
 /// Used by both entry points (the action extension button + the reading list
 /// long-press menu). Streams the file to disk so a large video never sits in
 /// memory, and reports progress for the action extension's progress bar.
-public struct MediaDownloadService: MediaDownloading {
+public struct MediaDownloadService {
 
     private let resolver: SocialMediaResolving
     private let saver: PhotoLibrarySaving
@@ -23,6 +23,9 @@ public struct MediaDownloadService: MediaDownloading {
         self.saver = saver
     }
 
+    /// Resolves the post's media, downloads the FIRST item, and saves it to Photos.
+    /// Reports coarse 0…1 progress via `onProgress`. Returns the saved item's kind;
+    /// throws `MediaDownloadError` on any failure.
     public func downloadFirstMediaToPhotos(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> MediaAsset.Kind {
@@ -64,6 +67,8 @@ public struct MediaDownloadService: MediaDownloading {
         return asset.kind
     }
 
+    /// Resolves the post's media, downloads the FIRST item, and moves it into
+    /// Luna Downloader's app-owned saved-media library.
     public func downloadFirstMediaToAppStorage(
         from url: URL, title: String?, onProgress: @escaping (Double) -> Void
     ) async throws -> SavedMediaItem {
@@ -124,6 +129,10 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
+    /// Resolves the post's media and downloads the FIRST item to a local file
+    /// WITHOUT saving to Photos (so the action extension can show it inline and let
+    /// the user decide whether to keep it). Streams to disk for memory safety.
+    /// Reports coarse 0…1 progress; throws `MediaDownloadError` on any failure.
     public func downloadFirstMediaToFile(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> DownloadedMedia {
@@ -152,6 +161,8 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
+    /// Saves an already-downloaded media file to Photos (add-only). Requests
+    /// authorization first; throws `MediaDownloadError` on failure.
     public func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws -> String {
         guard await saver.requestReadAuthorization() else {
             throw MediaDownloadError.permissionDenied

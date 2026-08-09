@@ -28,16 +28,14 @@ public enum MediaAutoDownloader {
     /// AWAITS completion (so the app intent finishes the download before returning)
     /// and marks the URL so the main-app ingest fallback won't download it again.
     @discardableResult
-    public static func runIfEnabledAwaiting(
-        forURLString urlString: String, service: MediaDownloading = MediaDownloadService()
-    ) async -> Bool {
+    public static func runIfEnabledAwaiting(forURLString urlString: String) async -> Bool {
         ensureUndownloaded(urlString)
         guard isEnabled(forURLString: urlString),
               !AutoDownloadSettings.wasDownloaded(urlString),
               let url = URL(string: urlString)
         else { return false }
         do {
-            _ = try await service.downloadFirstMediaToAppStorage(
+            _ = try await MediaDownloadService().downloadFirstMediaToAppStorage(
                 from: url, title: nil, onProgress: { _ in })
             AutoDownloadSettings.markDownloaded(urlString)
             return true

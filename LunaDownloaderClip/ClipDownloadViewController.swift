@@ -17,7 +17,7 @@ final class ClipDownloadViewController: UIViewController {
         case failed(String)
     }
 
-    private let service: MediaDownloading = MediaDownloadService()
+    private let service = MediaDownloadService()
     private var state: State = .waiting
     private var task: Task<Void, Never>?
     private var pendingShare = false

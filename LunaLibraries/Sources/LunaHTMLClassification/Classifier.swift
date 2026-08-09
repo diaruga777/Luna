@@ -74,7 +74,7 @@ public enum Classifier {
     ]
 
     /// Maps a recognized platform to the `ContentKind` branch for its category.
-    public static func contentKind(for recognized: RecognizedPlatform) -> ContentKind {
+    static func contentKind(for recognized: RecognizedPlatform) -> ContentKind {
         switch recognized.kind {
         case .video: return .video(recognized.platform, itemID: recognized.itemID)
         case .social: return .social(recognized.platform, itemID: recognized.itemID)
@@ -91,7 +91,7 @@ public enum Classifier {
 
     /// Known shops → `.product(.knownShopHost)`. A deterministic hit lets real shops
     /// skip the fuzzy heuristic scorer entirely (fewer false positives). APPEND here.
-    public static let shopSites: [KnownSite] = [
+    static let shopSites: [KnownSite] = [
         // Amazon — every regional storefront. Amazon share domains are unwrapped
         // before classification, so they never bypass the storefront price rules.
         KnownSite(hosts: AmazonStorefronts.hosts,
@@ -113,11 +113,11 @@ public enum Classifier {
     /// Free-news hosts → `.article` (fast-path: skip the heuristic phase for a host
     /// we already know is a readable article site). The worldwide list lives in
     /// `NewsSites.free`.
-    public static let freeNewsSites = KnownSite(
+    static let freeNewsSites = KnownSite(
         hosts: NewsSites.free,
         kind: { _ in .article })
 
-    public static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]
+    static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]
 
     /// Whether `url` is a known hard-paywall news host — the SINGLE determination
     /// source shared by classification (`.paywalledArticle(hardHost: true)`) and the
@@ -133,7 +133,7 @@ public enum Classifier {
     /// The heuristic phase, run only when the deterministic table is undetermined.
     /// Order mirrors the table: product (structured/strong-heuristic) → paywall →
     /// readable article → undetermined. Reuses the existing pure detectors.
-    public static func heuristicKind(url: URL, html: String) -> ContentKind {
+    static func heuristicKind(url: URL, html: String) -> ContentKind {
         if let signal = productSignal(url: url, html: html) { return .product(signal) }
         if PaywallDetector.htmlDeclaresLocked(html) { return .paywalledArticle(hardHost: false) }
         if let document = try? SwiftSoup.parse(html, url.absoluteString),
@@ -151,7 +151,7 @@ public enum Classifier {
     /// - a structured-data candidate (JSON-LD / OG / microdata price), OR
     /// - a Tier-2 candidate that carries an actual recovered price (`staticPrice`)
     ///   or declares `og:type == product`.
-    public static func productSignal(url: URL, html: String) -> ProductSignal? {
+    static func productSignal(url: URL, html: String) -> ProductSignal? {
         let detector = ProductPageDetector()
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else { return nil }
         let baseURL = URL(string: url.absoluteString)

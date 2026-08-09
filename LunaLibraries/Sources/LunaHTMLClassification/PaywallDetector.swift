@@ -36,7 +36,7 @@ public enum PaywallDetector {
 
     /// Weaker subscription-marketing phrases that can also appear in the chrome of a
     /// FREE article, so they flag a wall only when the body is SHORT (a stub).
-    public static let weakMarkers = [
+    static let weakMarkers = [
         "try unlimited access", "unlimited digital access", "complete digital access",
         "digital access to quality", "cancel anytime", "subscriber agreement",
         "personal, non-commercial use", "sign in to read", "become a subscriber",
@@ -84,14 +84,24 @@ public enum PaywallDetector {
     /// which false-flags free pages that merely contain "premium"). Whitespace is
     /// collapsed so attribute spacing/quoting doesn't matter.
     public static func htmlDeclaresLocked(_ html: String) -> Bool {
-        HTMLClassification.declaresPaywall(in: html)
+        let compact = html.lowercased().filter { !$0.isWhitespace }
+        if compact.contains("\"isaccessibleforfree\":false")
+            || compact.contains("\"isaccessibleforfree\":\"false\"") {
+            return true
+        }
+        return ["locked", "metered", "premium"].contains { value in
+            compact.contains("content_tier\"content=\"\(value)")
+                || compact.contains("content-tier\"content=\"\(value)")
+                || compact.contains("content=\"\(value)\"property=\"article:content_tier")
+                || compact.contains("content=\"\(value)\"name=\"article:content_tier")
+        }
     }
 
     /// The structural paywall signal: a subscribe gate standing where the rest of the
     /// article should be (`TruncationGateDetector`). Unlike every other signal this one
     /// survives a LONG body, which is the whole point — see that type for why a
     /// generous free preview is invisible to the length and metadata checks.
-    public static func htmlShowsTruncationGate(_ html: String) -> Bool {
+    static func htmlShowsTruncationGate(_ html: String) -> Bool {
         TruncationGateDetector.showsTruncationGate(in: html)
     }
 }

@@ -445,7 +445,7 @@ public struct ProductPageDetector {
     /// `<script type="application/json">`, and inline `window.__…={…}` assignments)
     /// for a price anchored to a price-context key, plus its currency. Returns the
     /// first plausible hit. Pure.
-    public func priceFromEmbeddedJSON(document: Document) -> ProductPrice? {
+    func priceFromEmbeddedJSON(document: Document) -> ProductPrice? {
         for blob in embeddedJSONBlobs(document: document) {
             guard let data = blob.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: data) else { continue }
@@ -475,7 +475,7 @@ public struct ProductPageDetector {
     /// Extracts the first balanced `{ … }` object literal from a JS source string
     /// (an inline `window.__STATE__ = { … }` assignment). Returns nil if no balanced
     /// object is found.
-    public static func firstJSONObjectLiteral(in source: String) -> String? {
+    static func firstJSONObjectLiteral(in source: String) -> String? {
         guard let start = source.firstIndex(of: "{") else { return nil }
         var depth = 0
         var inString = false

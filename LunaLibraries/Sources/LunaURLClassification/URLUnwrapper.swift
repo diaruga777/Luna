@@ -5,18 +5,6 @@
 
 import Foundation
 
-/// Which wrapper handler fired when unwrapping a URL, for telemetry / tests.
-/// `nil` on an `UnwrapResult` means no handler matched (the URL was already a
-/// real article URL).
-public enum WrapperKind: String, Equatable {
-    case facebook
-    case appleNews
-    case googleNews
-    case googleShare
-    case shortener
-    case interstitial
-}
-
 /// The canonical result of unwrapping one incoming URL. `url` is always the best
 /// URL to use downstream (the original if nothing matched), already
 /// tracking-stripped. `didUnwrap` lets callers log / repoint a store only on a
@@ -28,8 +16,6 @@ public struct UnwrapResult: Equatable {
     /// Whether a handler actually changed the URL (the unwrapped target differs
     /// from the input, ignoring tracking-param stripping).
     public let didUnwrap: Bool
-    /// Which handler produced the change, or nil when nothing matched.
-    public let wrapper: WrapperKind?
 }
 
 /// How a matched handler resolves the underlying URL.
@@ -46,8 +32,6 @@ public enum UnwrapResolution {
 /// One wrapper definition. New wrappers are added by appending a value to
 /// `URLUnwrapper.handlers`; the dispatch needs no edits.
 public struct WrapperHandler {
-    /// The handler's identity, surfaced on the `UnwrapResult` for telemetry.
-    public let kind: WrapperKind
     /// Whether this handler applies to a URL with the given scheme/host. Host-suffix
     /// awareness is the handler's own responsibility.
     public let matches: (_ scheme: String?, _ host: String?) -> Bool
@@ -119,9 +103,9 @@ public enum URLUnwrapper {
         for handler in handlers where handler.matches(scheme, host) {
             switch handler.resolve(url) {
             case .immediate(let target):
-                if let target { return result(unwrapped: target, wrapper: handler.kind) }
+                if let target { return result(unwrapped: target) }
             case .fetch(let perform):
-                if let target = await perform(session) { return result(unwrapped: target, wrapper: handler.kind) }
+                if let target = await perform(session) { return result(unwrapped: target) }
             }
             // Matched the host but found no recoverable target: stop scanning (a
             // News+ exclusive, a shortener that stays on-host) and keep the original.
@@ -140,7 +124,7 @@ public enum URLUnwrapper {
         let host = url.host?.lowercased()
         for handler in handlers where handler.matches(scheme, host) {
             if case .immediate(let target) = handler.resolve(url), let target {
-                return result(unwrapped: target, wrapper: handler.kind)
+                return result(unwrapped: target)
             }
             break
         }
@@ -174,14 +158,14 @@ public enum URLUnwrapper {
 
     /// Builds a result for a handler hit, stripping tracking params from the target
     /// so dedupe / display / share all see one canonical URL.
-    private static func result(unwrapped target: URL, wrapper: WrapperKind) -> UnwrapResult {
-        UnwrapResult(url: URLCanonicalizer.strip(target), didUnwrap: true, wrapper: wrapper)
+    private static func result(unwrapped target: URL) -> UnwrapResult {
+        UnwrapResult(url: URLCanonicalizer.strip(target), didUnwrap: true)
     }
 
     /// Builds a result for a non-wrapper URL: the original URL, also
     /// tracking-stripped so every surface agrees on the canonical form.
     private static func result(unchanged url: URL) -> UnwrapResult {
-        UnwrapResult(url: URLCanonicalizer.strip(url), didUnwrap: false, wrapper: nil)
+        UnwrapResult(url: URLCanonicalizer.strip(url), didUnwrap: false)
     }
 
     // MARK: - Shortener host set
@@ -224,7 +208,6 @@ public extension WrapperHandler {
     /// both carry the target inline (offline). An `fbrpc://` link has no http host,
     /// so the matcher keys on scheme too.
     public static let facebook = WrapperHandler(
-        kind: .facebook,
         matches: { scheme, host in
             if scheme == "fbrpc" { return true }
             guard scheme == "https" || scheme == "http", let host else { return false }
@@ -240,7 +223,6 @@ public extension WrapperHandler {
     /// first tries the offline decode, with a synchronous `.immediate` shortcut so
     /// `unwrapOffline` resolves classic links without going async.
     public static let googleNews = WrapperHandler(
-        kind: .googleNews,
         matches: { _, host in host == "news.google.com" || host == "news.url.google.com" },
         resolve: { url in
             guard let articleID = NewsAggregatorUnwrapper.googleNewsArticleID(from: url) else {
@@ -261,7 +243,6 @@ public extension WrapperHandler {
     /// `redirectToUrlAfterTimeout(...)` call. The apparent delay is browser-only;
     /// the target is already present in the initial HTML response.
     public static let appleNews = WrapperHandler(
-        kind: .appleNews,
         matches: { _, host in
             guard let host else { return false }
             return NewsAggregatorUnwrapper.isAppleNews(host)
@@ -282,7 +263,6 @@ public extension WrapperHandler {
     /// product. Matches the host generically (any `share.google` link), never a
     /// specific id.
     public static let googleShare = WrapperHandler(
-        kind: .googleShare,
         matches: { _, host in
             guard let host else { return false }
             return HostMatching.hostSuffixMatches(host, "share.google")
@@ -302,7 +282,6 @@ public extension WrapperHandler {
     /// for the overwhelming majority of URLs. Registered LAST for that reason — see
     /// `URLUnwrapper.handlers`.
     public static let interstitial = WrapperHandler(
-        kind: .interstitial,
         matches: { scheme, _ in scheme == "https" || scheme == "http" },
         resolve: { url in .immediate(NewsAggregatorUnwrapper.interstitialTarget(url)) })
 
@@ -310,7 +289,6 @@ public extension WrapperHandler {
     /// if it left the shortener's host.
     public static func shorteners(_ hosts: Set<String>) -> WrapperHandler {
         WrapperHandler(
-            kind: .shortener,
             matches: { _, host in
                 guard let host else { return false }
                 return HostMatching.hostSuffixMatches(host, anyOf: hosts)

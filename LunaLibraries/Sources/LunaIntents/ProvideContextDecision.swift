@@ -35,26 +35,8 @@ public enum ProvideContextOnScreenURL {
     /// Extract every embedded HTTP(S) URL from Shortcuts' scalar text
     /// representation before applying the ordinary collapse rules. The system
     /// may supply bare newline-delimited values, a comma-delimited list, or
-    /// values wrapped in descriptive/JSON-like text.
-    public static func collapseText(
-        _ value: String?,
-        isSafari: Bool,
-        isEnabled: Bool = true
-    ) -> String? {
-        guard case let .single(urlString) = resolveText(
-            value, isSafari: isSafari, isEnabled: isEnabled)
-        else { return nil }
-        return urlString
-    }
-
-    public static func collapse(_ values: [String]?, isSafari: Bool) -> String? {
-        guard case let .single(urlString) = resolve(values, isSafari: isSafari) else {
-            return nil
-        }
-        return urlString
-    }
-
-    /// `collapseText`, keeping the reason a collapse failed.
+    /// values wrapped in descriptive/JSON-like text. Keeps the reason a
+    /// collapse failed (`.none`/`.divergent`) rather than flattening to `nil`.
     public static func resolveText(
         _ value: String?,
         isSafari: Bool,
@@ -71,7 +53,7 @@ public enum ProvideContextOnScreenURL {
         return resolve(values, isSafari: isSafari)
     }
 
-    /// `collapse`, keeping the reason a collapse failed: divergent values are
+    /// Collapses the extracted values into one decision: divergent values are
     /// reported as such (deduplicated, and only the ones that are valid URLs on
     /// their own) instead of collapsing into an indistinguishable `nil`.
     public static func resolve(_ values: [String]?, isSafari _: Bool) -> Resolution {

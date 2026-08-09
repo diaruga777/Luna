@@ -50,6 +50,19 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
         }
     }
 
+    func testOnlyTheAmayzonLinkStandsForAProduct() throws {
+        XCTAssertTrue(ShareSetupPractice.matchesProductPractice(
+            try XCTUnwrap(URL(string: ShareSetupPractice.amayzonURLString))))
+        for page in [
+            ShareSetupPractice.lunaURLString, ShareSetupPractice.instaTokURLString,
+        ] {
+            XCTAssertFalse(
+                ShareSetupPractice.matchesProductPractice(
+                    try XCTUnwrap(URL(string: page))),
+                "\(page) is not the Price Tracker's product rehearsal")
+        }
+    }
+
     // MARK: - One clip, named in three places
 
     /// The mock post plays it, the Safari lesson's panel plays it, and the save

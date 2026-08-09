@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaHTMLClassification
 import LunaStorage
 import LunaIngest
 import LunaModels
@@ -524,6 +525,10 @@ open class ShareViewController: UIViewController {
     private func presentShareSetupPracticeIfNeeded(_ url: URL) -> Bool {
         guard ShareSetupPractice.matches(url) else { return false }
         let app = LunaApp.current
+        if app.handlesProducts, ShareSetupPractice.matchesProductPractice(url) {
+            presentProductSetupPractice(url)
+            return true
+        }
         // Hosted, this same preview is what the lesson SHOWS you. Recording the
         // run there would let the app complete its own setup step on your behalf.
         if recordsSetupRunEvidence {
@@ -539,6 +544,40 @@ open class ShareViewController: UIViewController {
         }
         return true
     }
+
+    /// The Price Tracker's fallback rehearsal is not a Reader preview. It
+    /// appends the deterministic Amayzon product and hands a deterministic
+    /// `ProductInfo` to the registered product presenter, so the hosted lesson
+    /// and the real Price Tracker action extension both render the production
+    /// price editor (including its Done chrome and seller-comparison state).
+    private func presentProductSetupPractice(_ url: URL) {
+        SharedReadingListAppender.append(urlString: url.absoluteString)
+        if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+            HostedShareSession.current?.onDidAppendRow?(row.id)
+        }
+        recordShareSurfaceRun()
+        guard let presenter = ShareKindPresenters.product else {
+            assertionFailure("Product practice reached a host without its product presenter")
+            failOrComplete(L10n.string("ShareExtension_share_noLinkFoundMessage"))
+            return
+        }
+        presenter.presentPriceEditor(
+            product: Self.productSetupPracticeInfo,
+            url: url,
+            store: .shared,
+            host: self)
+    }
+
+    /// Matches the product visible in the bundled Amayzon mock. This is only
+    /// the no-weekly-save fallback; a live Save of the Week goes through the
+    /// ordinary ingest pipeline and presents its own extracted product data.
+    private static let productSetupPracticeInfo = ProductInfo(
+        name: L10n.string("Onboarding_Demo_amayzonProductTitle"),
+        priceAmount: 799,
+        priceCurrency: "USD",
+        imageURL: nil,
+        brand: "Pearless",
+        productID: "eyephone-air-256-moonmist")
 
     /// Which rehearsal a practice link stands for. The InstaTok link is a video
     /// post, and an app that downloads videos has to rehearse downloading one —

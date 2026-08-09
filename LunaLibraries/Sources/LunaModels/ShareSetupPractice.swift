@@ -78,6 +78,14 @@ public enum ShareSetupPractice {
         canonicalString(for: url) == instaTokURLString
     }
 
+    /// The mock Amayzon page is a priced product, rather than the generic
+    /// article rehearsal used by the Reader. Product-capable hosts route this
+    /// through their registered price-extension presenter so onboarding shows
+    /// the same editor a real product save would open.
+    public static func matchesProductPractice(_ url: URL) -> Bool {
+        canonicalString(for: url) == amayzonURLString
+    }
+
     private static func canonicalString(for url: URL) -> String {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.fragment = nil

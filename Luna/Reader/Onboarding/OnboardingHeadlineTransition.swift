@@ -14,8 +14,8 @@ import UIKit
 /// state or the other, so a headline's second beat is exactly “these glyphs
 /// leave, those glyphs arrive, the run between them never moves”. Whitespace
 /// and punctuation are ordinary characters here — “Miss a sale” → “Never miss a
-/// sale” keeps “iss a sale” and animates the capital away, and “Sign in to
-/// watch.” → “No Sign in to download.” keeps “Sign in to ” with fragments
+/// sale” keeps “iss a sale” and animates the capital away, and “Sign up to
+/// watch.” → “No sign up needed.” keeps “ign up ” with fragments
 /// arriving on BOTH sides of it.
 ///
 /// Pure text, deliberately: which glyphs animate is decided here, where it can

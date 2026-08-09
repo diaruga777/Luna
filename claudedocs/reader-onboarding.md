@@ -80,7 +80,7 @@ it was deleted once the diff generalized.
 |---|---|---|---|
 | Reader | “Read.” | “Read more.” | `Read` |
 | Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
-| Downloader | “Sign in to watch.” | “No Sign in to download.” | `Sign in to ` |
+| Downloader | “Sign up to watch.” | “No sign up needed.” | `ign up ` |
 | Price Tracker | “Miss a sale” | “Never miss a sale” | `iss a sale` |
 
 `OnboardingHeadlineTransition` (pure text, `OnboardingHeadlineTransition.swift`)

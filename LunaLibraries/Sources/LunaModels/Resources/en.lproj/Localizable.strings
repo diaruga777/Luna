@@ -263,12 +263,12 @@
 "Onboarding_Intro_headline1Initial_Luna" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
-"Onboarding_Intro_headline1Initial_Downloader" = "Sign in to watch.";
+"Onboarding_Intro_headline1Initial_Downloader" = "Sign up to watch.";
 "Onboarding_Intro_headline1Initial_PriceTracker" = "Miss a sale";
 "Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Core" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
-"Onboarding_Intro_headline2Final_Downloader" = "No Sign in to download.";
+"Onboarding_Intro_headline2Final_Downloader" = "No sign up needed.";
 "Onboarding_Intro_headline2Final_PriceTracker" = "Never miss a sale";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";

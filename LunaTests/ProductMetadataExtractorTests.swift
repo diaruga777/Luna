@@ -5,6 +5,7 @@
 
 import LunaPriceIngest
 import LunaHTMLClassification
+import LunaPriceMetadata
 import XCTest
 @testable import Luna
 
@@ -141,5 +142,19 @@ final class ProductMetadataExtractorTests: XCTestCase {
         let first = await extract("https://www.target.com/p/mug/-/A-54321", fixture: "target-nextdata.html")
         let second = await extract("https://www.target.com/p/mug/-/A-54321", fixture: "target-nextdata.html")
         XCTAssertEqual(first, second)
+    }
+
+    // MARK: - ProductMetadataParsing (JSON-LD)
+    //
+    // Ported from LunaLibraries/Tests/LunaPriceMetadataTests — the lower-level parser
+    // `ProductMetadataExtractor` calls into for the JSON-LD tier (see extract's call
+    // to `ProductMetadataParsing.firstJSONLDProduct` above this file's other cases).
+
+    func testParsesJSONLDProductOffer() {
+        let html = #"<script type="application/ld+json">{"@type":"Product","name":"Widget","offers":{"price":"19.95","priceCurrency":"AUD"}}</script>"#
+        let product = ProductMetadataParsing.firstJSONLDProduct(in: html)
+        XCTAssertEqual(product?.name, "Widget")
+        XCTAssertEqual(product?.price, 19.95)
+        XCTAssertEqual(product?.currency, "AUD")
     }
 }

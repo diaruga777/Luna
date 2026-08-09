@@ -621,4 +621,42 @@ final class BypassTests: XCTestCase {
         XCTAssertFalse(TrailingDotBypass.isNYTHost("wsj.com"))
         XCTAssertFalse(TrailingDotBypass.isNYTHost("notnytimes.com.attacker.com"))
     }
+
+    // MARK: - BypassGate
+    //
+    // Ported from LunaLibraries/Tests/LunaPaywallBypassTests/BypassScenarioTests
+    // (retired — that SwiftPM test target never ran under the app-hosted `LunaTests`
+    // bundle). `BypassGate.Decision.attempt` carries no payload (the Signal it used
+    // to carry was collapsed), so this asserts `.attempt` rather than a case value.
+    // The sibling `ArticleResolver` scenario from that file is NOT ported — it is a
+    // byte-identical duplicate of `ArticleResolverTests.testLongDirectArticleBeatsStaleSchemaLock`
+    // (same URL, same shaped HTML, same "readable + exactly one direct fetch" assertion).
+
+    func testKnownPaywallPublisherCommerceMarkupRetainsDirectUnlockPlan() {
+        let paywallURL = URL(string:
+            "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
+        )!
+        let html = """
+        <html><head>
+          <title>The Voice of Google | The New Yorker</title>
+          <meta property="og:type" content="article">
+          <meta property="product:price:amount" content="120.00">
+          <meta property="product:price:currency" content="USD">
+        </head><body>
+          <article><h1>The Voice of Google</h1><p>Subscriber preview.</p></article>
+          <button>Add to cart</button><div>Star Rating: 5 out of 5</div>
+        </body></html>
+        """
+
+        XCTAssertEqual(BypassGate.decision(for: paywallURL, html: html, extracted: nil), .attempt)
+        let plan = BypassPlan.make(for: paywallURL, directHTML: html)
+        XCTAssertEqual(plan.webPreStages, [.directUnlock])
+        XCTAssertTrue(plan.allowsArchiveToday)
+
+        let unknownURL = URL(string: "https://publisher.example/story")!
+        XCTAssertEqual(
+            BypassGate.decision(for: unknownURL, html: html, extracted: nil),
+            .block(.productPage),
+            "Only deterministic news classification overrides heuristics")
+    }
 }

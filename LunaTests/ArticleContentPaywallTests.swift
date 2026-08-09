@@ -69,4 +69,33 @@ final class ArticleContentPaywallTests: XCTestCase {
         let stub = content(["Subscribe to read the full story."])
         XCTAssertFalse(stub.hasReadableBody)
     }
+
+    // MARK: - PaywallDetector.htmlDeclaresLocked / looksPaywalled(content:html:)
+    //
+    // Ported from LunaLibraries/Tests/LunaHTMLClassificationTests (retired) —
+    // retargeted at `PaywallDetector.htmlDeclaresLocked`, since the
+    // `HTMLClassification.declaresPaywall` wrapper it originally asserted was deleted.
+
+    func testDetectsPublisherPaywallSchema() {
+        XCTAssertTrue(PaywallDetector.htmlDeclaresLocked(#"{"isAccessibleForFree":false}"#))
+        XCTAssertFalse(PaywallDetector.htmlDeclaresLocked(#"{"isAccessibleForFree":true}"#))
+    }
+
+    func testPublisherLockRejectsShortCleanBodiesOnly() {
+        let short = content([
+            String(repeating: "Clean prose with no subscription words at all here. ", count: 40),
+        ], title: "Story")
+        XCTAssertLessThan(short.bodyTextLength, PaywallDetector.shortBodyThreshold)
+        XCTAssertTrue(PaywallDetector.looksPaywalled(
+            content: short, html: #"{"isAccessibleForFree":false}"#))
+
+        let long = content([
+            String(repeating: "Reported article prose continues with enough concrete detail to read as the actual story. ", count: 70),
+        ], title: "Story")
+        XCTAssertGreaterThan(long.bodyTextLength, PaywallDetector.shortBodyThreshold)
+        XCTAssertFalse(PaywallDetector.looksPaywalled(
+            content: long, html: #"{"isAccessibleForFree":false}"#))
+        XCTAssertTrue(ArticleExtraction.isReadableArticle(
+            long, html: #"{"isAccessibleForFree":false}"#))
+    }
 }

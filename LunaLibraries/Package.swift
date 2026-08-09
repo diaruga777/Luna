@@ -199,13 +199,6 @@ let package = Package(
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
         .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
-        .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
-        .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
-        .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),
-        .testTarget(name: "LunaHTMLClassificationTests", dependencies: ["LunaHTMLClassification", "LunaModels"]),
-        .testTarget(name: "LunaPaywallBypassTests", dependencies: ["LunaPaywallBypass", "LunaFetch"]),
-        .testTarget(name: "LunaPriceMetadataTests", dependencies: ["LunaPriceMetadata"]),
-        .testTarget(name: "LunaMailAccountTests", dependencies: ["LunaMailAccount"]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

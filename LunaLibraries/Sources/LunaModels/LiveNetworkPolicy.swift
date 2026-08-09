@@ -31,7 +31,14 @@ import Foundation
 /// it directly (`XCTAssertNoLiveNetworkRefusals`).
 public enum LiveNetworkPolicy {
 
+    #if DEBUG
     // MARK: - The decision
+    //
+    // Everything below exists to answer `isLiveNetworkAllowed` and to let a
+    // test inspect what got refused. None of it ships in a Release build:
+    // outside DEBUG, `allows`/`check` (the only entry points production code
+    // calls) always permit — there is no test process to refuse on behalf
+    // of, so the whole apparatus would be dead weight in the shipping binary.
 
     /// Set this to permit live traffic from a test process — the general opt-in
     /// every deliberately-live test should use.
@@ -82,7 +89,7 @@ public enum LiveNetworkPolicy {
     /// itself. Always restore it in `tearDown`.
     nonisolated(unsafe) public static var overrideForTesting: Bool?
 
-    // MARK: - The check
+    // MARK: - Refusal
 
     /// Thrown (or logged) when live traffic is refused. Carries the call site so
     /// the failure explains itself without a stack trace.
@@ -102,21 +109,6 @@ public enum LiveNetworkPolicy {
             \(LiveNetworkPolicy.optInEnvironmentKey)=1 for a deliberately live test.
             """
         }
-    }
-
-    /// The throwing form, for entry points that already propagate errors.
-    public static func check(_ url: URL?, context: String) throws {
-        guard !isLiveNetworkAllowed else { return }
-        throw record(context: context, url: url)
-    }
-
-    /// The boolean form, for entry points whose failure mode is `nil`. Returns
-    /// false — having already recorded and logged the refusal — when live
-    /// traffic is not permitted.
-    public static func allows(_ url: URL?, context: String) -> Bool {
-        guard !isLiveNetworkAllowed else { return true }
-        _ = record(context: context, url: url)
-        return false
     }
 
     // MARK: - Bookkeeping
@@ -146,5 +138,33 @@ public enum LiveNetworkPolicy {
         lock.unlock()
         NSLog("[LunaLiveNetworkPolicy] %@", refusal.description)
         return refusal
+    }
+    #endif
+
+    // MARK: - The check
+    //
+    // The only two entry points production code calls, so they stay available
+    // unconditionally — in DEBUG they consult the decision above; in Release
+    // there is nothing to consult, so they simply permit.
+
+    /// The throwing form, for entry points that already propagate errors.
+    public static func check(_ url: URL?, context: String) throws {
+        #if DEBUG
+        guard !isLiveNetworkAllowed else { return }
+        throw record(context: context, url: url)
+        #endif
+    }
+
+    /// The boolean form, for entry points whose failure mode is `nil`. Returns
+    /// false — having already recorded and logged the refusal — when live
+    /// traffic is not permitted.
+    public static func allows(_ url: URL?, context: String) -> Bool {
+        #if DEBUG
+        guard !isLiveNetworkAllowed else { return true }
+        _ = record(context: context, url: url)
+        return false
+        #else
+        return true
+        #endif
     }
 }

@@ -43,15 +43,9 @@ public struct PasteboardCandidate {
     }
 }
 
-public protocol PasteboardSuggesting {
-    /// Evaluates a pasteboard URL string: returns a candidate when it isn't
-    /// already saved and something readable or supported can be extracted from it.
-    func evaluate(urlString: String) async -> PasteboardCandidate?
-}
-
-/// Default implementation: dedupes against the reading list and confirms there is
-/// readable content or a recognized platform item.
-public final class PasteboardSuggester: PasteboardSuggesting {
+/// Dedupes against the reading list and confirms there is readable content or
+/// a recognized platform item.
+public final class PasteboardSuggester {
     public static let shared = PasteboardSuggester()
 
     /// Best-effort preview art for a recognized platform URL, installed by the

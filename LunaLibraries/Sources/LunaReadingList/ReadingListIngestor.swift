@@ -82,7 +82,7 @@ public final class ReadingListIngestor {
     ///
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
     /// as a normal article even if its page would otherwise be classified as a price
-    /// tracker. Used by the "Read instead" override on the price-tracking editor.
+    /// tracker. Used when a rescue directive's hint is `.article` (`RescueDirectiveApplier`).
     ///
     /// The per-app content gate (`SurfaceSupport`) runs on the classified
     /// outcome before ANY store write: a foreign-kind save is discarded (item
@@ -623,18 +623,6 @@ public final class ReadingListIngestor {
             guard let format = action.exportFormat else { return .doNothing }
             return .exportArticle(format: format)
         }
-    }
-
-    /// Saves `urlString` as a normal article, bypassing product-page detection. Used
-    /// by the price-tracking editor's "Read instead" override: a URL that WAS
-    /// classified as a tracker is re-saved here as a plain article (it must not be
-    /// re-detected back into a tracker). Adds a fresh item when none exists, then
-    /// ingests it with detection forced off.
-    public func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
-        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
-        let urlString = url.absoluteString
-        let item = store.item(forURLString: urlString) ?? store.add(urlString: urlString, source: source)
-        await ingest(item, forceArticle: true)
     }
 
     /// Saves a NEW URL whose article content was already fetched (the pasteboard

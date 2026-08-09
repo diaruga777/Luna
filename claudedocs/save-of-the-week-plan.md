@@ -529,8 +529,10 @@ space in Settings — SettingsViewController.swift:77–89):
 
 - Worktree: run everything from
   `/Users/hsp/Desktop/Luna/.claude/worktrees/save-of-the-week`. The
-  `mkdir -p LunaLibraries/Tests/LunaURLClassificationTests` fresh-worktree fix
-  is ALREADY APPLIED here.
+  `mkdir -p LunaLibraries/Tests/LunaURLClassificationTests` fresh-worktree
+  workaround is no longer needed as of the August 2026 tree-shake, which
+  deleted `LunaLibraries/Tests/` and all its `.testTarget` declarations
+  entirely.
 - Compile gate per commit:
   `xcodebuild build-for-testing -scheme Luna -destination 'generic/platform=iOS
   Simulator' -derivedDataPath <DD> DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.

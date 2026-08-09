@@ -246,13 +246,15 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
 ### Last shims removed
 
 - **`PlatformClassifier` (+ `PlatformClassification` + `PlatformClassifierTests`)** —
-  DELETED. Every caller (`PasteboardSuggester`, `SocialMediaResolver`,
-  `NonTextualContent.detect`, `BypassGate`, `MediaDownload`, `MediaAutoDownloader`) now
-  calls `PlatformRecognizer.recognize` directly. Host-variant coverage lives in
-  `PlatformRecognizerTests` (the deleted tests were a strict subset).
+  DELETED. Every caller (`SocialMediaResolver`, `NonTextualContent.detect`, `BypassGate`,
+  `MediaDownload`, `MediaAutoDownloader`) now calls `PlatformRecognizer.recognize`
+  directly. Host-variant coverage lives in `PlatformRecognizerTests` (the deleted tests
+  were a strict subset).
   (`PlatformRegistry.detect` was one more such shim over `PlatformRecognizer` with no
   remaining caller of its own — deleted; `PlatformRegistry` now only maps a platform to
-  its rendering module.)
+  its rendering module. `PasteboardSuggester` no longer calls it either — the pasteboard
+  candidate-evaluation flow this list once named it for was itself dead code, collapsed
+  away in the August 2026 tree-shake, leaving only its `platformPreviewArt` seam.)
 - **`NewsAggregatorUnwrapper.unwrap` (async) / `normalizedIncomingURL` /
   `normalizedIncomingURLString`** — DELETED (no production callers left; tests covered by
   `URLUnwrapperTests`). The enum keeps ONLY the pure wrapper parsers that `URLUnwrapper`'s

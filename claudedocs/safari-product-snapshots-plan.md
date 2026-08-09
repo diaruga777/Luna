@@ -385,8 +385,10 @@ against every keyed value.
 ## Workflow requirements (repo rules — follow exactly)
 
 - Work in your own worktree off `main`; commit in small logical chunks as you go; merge into
-  `main` when done and clean up the worktree/branch. **A fresh worktree needs
-  `mkdir -p LunaLibraries/Tests/LunaURLClassificationTests` before any xcodebuild.**
+  `main` when done and clean up the worktree/branch. **The
+  `mkdir -p LunaLibraries/Tests/LunaURLClassificationTests` fresh-worktree
+  workaround is no longer needed as of the August 2026 tree-shake, which deleted
+  `LunaLibraries/Tests/` and all its `.testTarget` declarations entirely.**
 - Compile-check per commit (`xcodebuild build-for-testing -scheme Luna -destination
   'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`), use
   `scripts/run_tests.sh --changed` only while iterating, and finish with ONE full

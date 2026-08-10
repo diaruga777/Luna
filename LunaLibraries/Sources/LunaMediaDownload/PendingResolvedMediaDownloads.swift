@@ -132,14 +132,15 @@ public enum PendingResolvedMediaDownloads {
     /// (`ReadingListIngestor.prepareSavePress` does the same thing), and leaves
     /// the row `.pending`.
     ///
-    /// The other half — the metadata pass that gives the row its title,
-    /// thumbnail and kind — is OWED here, durably, in the same breath as the
-    /// reservation: the app finishes it in the background as soon as the user is
-    /// back in Safari, and the debt survives a killed process. It is written
-    /// before the transfer starts for the same reason the reservation is, so
-    /// nothing that can fail or take time stands between the press and the
-    /// recoverable state. (The metadata pass also finds the transfer already
-    /// running rather than starting a second one.)
+    /// The other half — the metadata that gives the row its title, creator and
+    /// kind — is OWED here, durably, in the same breath as the reservation, and
+    /// then paid immediately from the hand-off itself whenever the record
+    /// carries it (`completeFromHandoff`). The debt is written first, and
+    /// before the transfer starts, for the same reason the reservation is:
+    /// nothing that can fail or take time may stand between the press and the
+    /// recoverable state. What the record could NOT carry stays owed and the
+    /// background ingest finishes it (`BackgroundIngestCompletion`), which also
+    /// finds the transfer already running rather than starting a second one.
     @MainActor
     static func persistSave(for record: ResolvedMediaRecord) -> String {
         let urlString = URLUnwrapper.ingestURL(from: record.sourceURLString)?.absoluteString
@@ -148,7 +149,58 @@ public enum PendingResolvedMediaDownloads {
             urlString: urlString, at: Date())
         PendingIngestCompletions.shared.owe(
             itemID: reservation.item.id, urlString: urlString)
+        completeFromHandoff(record, urlString: urlString, itemID: reservation.item.id)
         return urlString
+    }
+
+    /// Finishes the row from what the EXTENSION already knew, without a network
+    /// round trip.
+    ///
+    /// The appex had to resolve this post to render the in-page player, and it
+    /// queued what it learned along with the assets — so the app re-fetching the
+    /// same metadata would be paying twice for one answer and delaying the row
+    /// (and the deck) behind a request it did not need. This writes exactly the
+    /// row a metadata pass would (`PlatformItemIngestor` → `savePlatformMetadata`)
+    /// and settles the debt.
+    ///
+    /// Two conditions, and a record failing either is simply left owed:
+    ///
+    ///  - **A title.** It is the one metadata field the extension actually has
+    ///    (the page's own, sent with the resolve request). No title means an
+    ///    incomplete hand-off — the resolve had not finished, or the page had
+    ///    none — which is precisely the case the background ingest exists for.
+    ///  - **A recognized platform.** `PlatformRecognizer` is pure URL parsing,
+    ///    so this costs nothing, but a URL no rule recognizes has no `platform`/
+    ///    `platformItemID` to write and must go through the classifying pipeline.
+    ///
+    /// It is safe to skip that pipeline HERE, and only here: a queued record
+    /// always carries playable assets (`PendingResolvedMediaStore.append`
+    /// refuses an assetless one), so this URL is a video post — the media kind —
+    /// and not, say, one of the long-form X posts that read as articles.
+    ///
+    /// `creator` and the row thumbnail are the two fields a fetch would add that
+    /// the extension cannot supply: the resolvers produce assets, not authors,
+    /// and a thumbnail row needs the image BYTES. The download fetches that
+    /// poster for its own card anyway (`fetchAndPublishThumbnail`), so the only
+    /// thing actually given up is the creator line — see `claudedocs/
+    /// safari-extension.md`.
+    @MainActor
+    @discardableResult
+    static func completeFromHandoff(
+        _ record: ResolvedMediaRecord, urlString: String, itemID: UUID
+    ) -> Bool {
+        let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty, let recognized = PlatformRecognizer.recognize(urlString),
+              ReadingListStore.shared.savePlatformMetadata(
+                platform: recognized.platform, platformItemID: recognized.itemID,
+                title: title, creator: nil, thumbnailFileName: nil,
+                for: itemID) != nil
+        else { return false }
+        PendingIngestCompletions.shared.settle(itemID)
+        SharedDiagnosticLog.record(
+            "resolved-media: completed \(urlString) from the hand-off — no metadata fetch",
+            category: "media-download")
+        return true
     }
 
     /// Back to Safari, at the page the user was actually on — never the

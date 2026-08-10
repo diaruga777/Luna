@@ -124,20 +124,50 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         XCTAssertTrue(queue.owed().isEmpty)
     }
 
-    // MARK: - The hand-off records one
+    // MARK: - The hand-off's two paths
 
-    /// The load-bearing wiring: the Safari drain's synchronous half reserves the
-    /// row AND owes its metadata pass, so nothing waits for a manual launch.
-    @MainActor
-    func testResolvedMediaHandoffOwesTheReservedRowsIngest() throws {
-        let urlString = "https://www.youtube.com/watch?v=\(UUID().uuidString.prefix(8))"
-        let record = ResolvedMediaRecord(
-            sourceURLString: urlString, title: nil,
+    private func handoffRecord(urlString: String, title: String?) -> ResolvedMediaRecord {
+        ResolvedMediaRecord(
+            sourceURLString: urlString, title: title,
             assets: [MediaAsset(
                 url: URL(string: "https://cdn.example.com/video.mp4")!, kind: .video)],
             dateWritten: Date())
+    }
 
-        let saved = PendingResolvedMediaDownloads.persistSave(for: record)
+    /// The normal path: the extension resolved this post to render its player,
+    /// so the record already carries the metadata and the row is finished from
+    /// it — no network round trip, and nothing left owed.
+    @MainActor
+    func testHandoffWithMetadataFinishesTheRowWithoutAFetch() throws {
+        // 11 characters, because that is what a YouTube id is and
+        // `PlatformRecognizer` checks.
+        let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
+        let urlString = "https://www.youtube.com/watch?v=\(videoID)"
+        let saved = PendingResolvedMediaDownloads.persistSave(
+            for: handoffRecord(urlString: urlString, title: "A resolved clip"))
+        let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
+        defer {
+            PendingIngestCompletions.shared.settle(item.id)
+            ReadingListStore.shared.delete(item)
+        }
+
+        XCTAssertEqual(item.state, .ready)
+        XCTAssertEqual(item.title, "A resolved clip")
+        XCTAssertEqual(item.platform, .youtube)
+        XCTAssertEqual(item.platformItemID, videoID)
+        XCTAssertFalse(PendingIngestCompletions.shared.owed().contains { $0.itemID == item.id })
+    }
+
+    /// The fallback: the resolve had not finished when Download was pressed, so
+    /// the record carries no metadata. The row is reserved `.pending` and its
+    /// ingest is OWED — which is what the background pass pays off, with no
+    /// manual launch.
+    @MainActor
+    func testIncompleteHandoffLeavesTheRowOwedForTheBackgroundIngest() throws {
+        let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
+        let urlString = "https://www.youtube.com/watch?v=\(videoID)"
+        let saved = PendingResolvedMediaDownloads.persistSave(
+            for: handoffRecord(urlString: urlString, title: nil))
         let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
         defer {
             PendingIngestCompletions.shared.settle(item.id)
@@ -148,5 +178,23 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         XCTAssertTrue(PendingIngestCompletions.shared.owed().contains {
             $0.itemID == item.id && $0.urlString == saved
         })
+    }
+
+    /// A URL no platform rule recognizes has no `platform`/`platformItemID` to
+    /// write, so however good its title is it still goes through the classifying
+    /// pipeline rather than being guessed at here.
+    @MainActor
+    func testHandoffForAnUnrecognizedHostStaysOwed() throws {
+        let urlString = "https://example.org/clips/\(UUID().uuidString.prefix(8))"
+        let saved = PendingResolvedMediaDownloads.persistSave(
+            for: handoffRecord(urlString: urlString, title: "A resolved clip"))
+        let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
+        defer {
+            PendingIngestCompletions.shared.settle(item.id)
+            ReadingListStore.shared.delete(item)
+        }
+
+        XCTAssertEqual(item.state, .pending)
+        XCTAssertTrue(PendingIngestCompletions.shared.owed().contains { $0.itemID == item.id })
     }
 }

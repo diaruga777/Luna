@@ -653,16 +653,17 @@ else:
    time. It is what survives if the user never comes back, and it gives the
    download job the row's identity instead of leaving a `SavedMediaStore` record
    under a random UUID with no row beside it. In the same breath it OWES the
-   row's metadata pass (`PendingIngestCompletions.owe`, LunaStorage) — see
-   "Finishing the save after the bounce" below.
+   row's metadata (`PendingIngestCompletions.owe`, LunaStorage) and — whenever
+   the record carries that metadata, which is the normal case — pays the debt
+   from the record instead of fetching. See "Finishing the save" below.
 2. **Start the transfer** from the assets the extension already resolved
    (`startResultWithResolvedAssets`).
 3. **Request the Live Activity** — the point of the exercise.
 4. **Leave.** Asset-size preflight continues under the same short app
    background-execution lease every media download uses; once the named
    background `URLSession` task is registered the system owns the transfer.
-5. **Then finish the save**, still in the background, with the user already back
-   in Safari.
+5. **Finish anything the record could not answer for itself**, in the
+   background, with the user already back in Safari.
 
 The app's own UI never gets a turn: the `resolvedmedia` route holds the launch
 splash (`AppLaunchTransition.holdForHandoff`), so the visit reads as one launch
@@ -690,32 +691,53 @@ holds the memory). Bouncing on a fresh marker alone also fired when the user
 opened the app from the Home Screen seconds after a Download tap, which is the
 one launch nobody asked to leave.
 
-**Finishing the save after the bounce.** The row the hand-off reserved is
-`.pending`: no title, no thumbnail, no kind. Leaving it that way until the next
+**Finishing the save: the metadata came with the record.** The row the hand-off
+reserves starts `.pending` — no title, no kind. Leaving it that way until the next
 launch/foreground `ingestAllPending` sweep would put a blank item in the deck for
-however long it takes the user to open the app — which is exactly what a hand-off
-that goes straight back to Safari is supposed to avoid. So the app finishes it
-ITSELF, in the background, with the user already on the page:
+however long it takes the user to open the app, which is exactly what a hand-off
+that goes straight back to Safari is supposed to avoid. There are two ways it gets
+finished, and the normal one costs no network at all:
 
-- The reservation and the DEBT are written together (`PendingIngestCompletions
-  .owe`, LunaStorage, App-Group backed, 3-day lifetime), before anything that can
-  fail or take time. That is the recoverable state.
-- Once the bounce has happened the drain posts `requestRun()`, and
-  `BackgroundIngestCompletion` (LunaReadingList — this is why the debt lives one
-  tier down in LunaStorage: the media module cannot name `ReadingListIngestor`)
-  runs the ordinary non-interactive ingest per owed row, each under its own
-  `BackgroundExecutionLease`, ended as soon as that row reaches a verdict. The
-  metadata pass finds the transfer already running rather than starting a second
-  one.
-- **When the granted window expires mid-ingest**, the lease's `onExpiration`
-  cancels the ingest at the one safe point (`ReadingListIngestor.ingest` checks
-  `Task.isCancelled` after the pipeline, before it persists anything): nothing is
-  written, the row stays `.pending`, and the debt stays queued with its attempt
-  count bumped. It resumes with no user action at the next wake — the background
-  `URLSession` running this very download wakes the process when it finishes, and
-  a launch works the queue too. `ingestAllPending` is unchanged and is still the
-  net for a process that was killed outright; it is just no longer what the
-  normal path depends on.
+- **The record already knows.** The appex had to resolve this post to render the
+  in-page player, and it queues what it learned beside the assets. So
+  `persistSave` finishes the row from the record itself
+  (`completeFromHandoff` → the same `savePlatformMetadata` a metadata pass would
+  write): the title the extension sent, plus `platform`/`platformItemID` from
+  `PlatformRecognizer`, which is pure URL parsing. No second round trip for an
+  answer the app was handed, and the row is complete before the transfer starts.
+  **What the extension actually has** is the page's own `document.title` (sent
+  with `resolveMedia`) and the assets — including the poster URL and any byte
+  estimate. It does NOT have the `creator`: the resolvers produce assets, not
+  authors, so a hand-off-completed row has no creator line, and the row
+  thumbnail is skipped too because a thumbnail needs image BYTES and the
+  download fetches that poster for its own card anyway. Skipping the classifying
+  pipeline is safe HERE only because a queued record always carries playable
+  assets (`PendingResolvedMediaStore.append` refuses an assetless one), so the
+  URL is a video post — never one of the long-form X posts that read as articles.
+- **The record does not know** — the resolve had not finished when Download was
+  pressed, or the URL matches no platform rule. Then the row stays owed and the
+  app finishes it ITSELF, in the background, with the user already on the page.
+
+The debt is the mechanism behind both. The reservation and the DEBT are written
+together (`PendingIngestCompletions.owe`, LunaStorage, App-Group backed, 3-day
+lifetime) before anything that can fail or take time — that is the recoverable
+state — and completing from the record simply settles it in the same breath.
+Otherwise, once the bounce has happened the drain posts `requestRun()`, and
+`BackgroundIngestCompletion` (LunaReadingList — this is why the debt lives one
+tier down in LunaStorage: the media module cannot name `ReadingListIngestor`)
+runs the ordinary non-interactive ingest per owed row, each under its own
+`BackgroundExecutionLease`, ended as soon as that row reaches a verdict. That
+pass finds the transfer already running rather than starting a second one.
+
+**When the granted window expires mid-ingest**, the lease's `onExpiration`
+cancels the ingest at the one safe point (`ReadingListIngestor.ingest` checks
+`Task.isCancelled` after the pipeline, before it persists anything): nothing is
+written, the row stays `.pending`, and the debt stays queued with its attempt
+count bumped. It resumes with no user action at the next wake — the background
+`URLSession` running this very download wakes the process when it finishes, and
+a launch works the queue too. `ingestAllPending` is unchanged and is still the
+net for a process that was killed outright; it is just no longer what the
+normal path depends on.
 
 **The page's own CSP governs the media load**, so this only ever plays a
 same-platform asset — and every platform we resolve allows its own CDN

@@ -22,6 +22,12 @@ public final class ExtensionProductPresenter {
     /// Test seam: which snapshots history-seeding matches against on a merge.
     /// Production reads the shared App Group file.
     var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
+    /// Test seam for the product-image write. The extension keeps the editor
+    /// responsive while this finishes, but persists the file before its host
+    /// process is dismissed whenever the network answers in time.
+    var artworkLoader: (URL?, URL) async -> Data? = { primaryURL, pageURL in
+        await ProductTrackerArtwork.fetch(primaryURL: primaryURL, pageURL: pageURL)
+    }
 
     public init() {}
 
@@ -79,6 +85,8 @@ public final class ExtensionProductPresenter {
                     itemID: matchID, addedStoreURLString: highlightedURL ?? url.absoluteString,
                     host: .extension),
                 openContainingAppForAddSeller: openContainingAppForAddSeller)
+            backfillArtwork(
+                itemID: matchID, primaryURL: product.imageURL, pageURL: url, store: store)
 
         case .newTracker:
             var tracker = product.makeTracker(
@@ -93,12 +101,31 @@ public final class ExtensionProductPresenter {
             }
             SellerComparison.beginAndRunInBackground(
                 itemID: itemID, sourceURL: url, store: store)
+            backfillArtwork(
+                itemID: itemID, primaryURL: product.imageURL, pageURL: url, store: store)
             editor = PriceTrackingViewController(
                 mode: .creation(itemID: itemID, host: .extension),
                 openContainingAppForAddSeller: openContainingAppForAddSeller)
         }
         editor.onDone = complete
         presentModally(editor)
+    }
+
+    private func backfillArtwork(
+        itemID: UUID, primaryURL: URL?, pageURL: URL, store: ReadingListStore
+    ) {
+        guard store.item(withID: itemID)?.priceTracker?.imageFileName == nil else { return }
+        Task { [artworkLoader] in
+            guard let data = await artworkLoader(primaryURL, pageURL),
+                  var tracker = store.item(withID: itemID)?.priceTracker,
+                  tracker.imageFileName == nil
+            else { return }
+            let fileName = "\(itemID.uuidString)-product.jpg"
+            let destination = store.articlesDirectory.appendingPathComponent(fileName)
+            guard (try? data.write(to: destination, options: .atomic)) != nil else { return }
+            tracker.imageFileName = fileName
+            store.updatePriceTracker(tracker, for: itemID)
+        }
     }
 
     /// The onboarding rehearsal's product arrives with a QUARTER of price

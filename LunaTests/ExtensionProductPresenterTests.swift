@@ -33,6 +33,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         presenter = ExtensionProductPresenter()
         presenter.snapshotProvider = { [] }
+        presenter.artworkLoader = { _, _ in nil }
     }
 
     override func tearDown() {
@@ -70,6 +71,36 @@ final class ExtensionProductPresenterTests: XCTestCase {
 
         XCTAssertTrue(presented.first is PriceTrackingViewController)
         XCTAssertNotNil(store.item(forURLString: url.absoluteString)?.priceTracker)
+    }
+
+    func testNewTrackerPersistsDeclaredProductArtwork() async throws {
+        let url = URL(string: "https://www.amazon.com.au/acme/dp/B0ACME1234")!
+        let imageURL = URL(string: "https://m.media-amazon.com/images/I/acme.jpg")!
+        let loaded = expectation(description: "artwork loader")
+        presenter.artworkLoader = { primaryURL, _ in
+            XCTAssertEqual(primaryURL, imageURL)
+            loaded.fulfill()
+            return Data("amazon-artwork".utf8)
+        }
+        _ = store.add(urlString: url.absoluteString)
+        _ = present(
+            product: ProductInfo(
+                name: "Acme", priceAmount: 42, priceCurrency: "AUD",
+                imageURL: imageURL, brand: nil, productID: "B0ACME1234",
+                identifiers: ProductIdentifiers(sku: "B0ACME1234")),
+            url: url)
+
+        await fulfillment(of: [loaded], timeout: 2)
+        for _ in 0..<50 {
+            if store.item(forURLString: url.absoluteString)?.priceTracker?.imageFileName != nil {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let fileName = try XCTUnwrap(
+            store.item(forURLString: url.absoluteString)?.priceTracker?.imageFileName)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.articlesDirectory.appendingPathComponent(fileName).path))
     }
 
     // MARK: - A match merges instead of duplicating

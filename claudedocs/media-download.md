@@ -524,6 +524,15 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
   then applies Downloader's destination policy. Downloads never hold a full
   video in memory.
 - `LiveMediaDownloadManager.swift` implements the equivalent background-transfer path.
+  Every app-owned transition around that path (initial resolution/preflight before a
+  task exists, local processing between tasks, and final persistence after a task
+  finishes) holds an iOS background-execution lease. The lease ends as soon as the
+  next system-owned background `URLSession` task is registered or local work finishes;
+  the transfer itself never depends on foreground execution. Safari's resolved-media
+  handoff therefore returns after the library row, recoverable job, and Live Activity
+  exist, without waiting for the optional size probe. If the process is later killed
+  in that small pre-task window, launch repair recreates the transfer from the asset
+  URLs persisted in the job.
   Its Facebook resolver follows the extension resolver's plugin-embed-first sequence,
   then falls back through the desktop page, mobile page, any canonical video page, and the
   crawler page;

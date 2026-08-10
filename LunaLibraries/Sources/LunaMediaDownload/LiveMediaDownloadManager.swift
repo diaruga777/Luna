@@ -152,6 +152,58 @@ private func postDownloaderJobEnded(sourceURLString: String) {
     }
 }
 
+/// Keeps the short app-owned legs around a background `URLSession` transfer
+/// alive when the user backgrounds the app: preflight before a task is
+/// registered, local mux/trim work between tasks, and final persistence after
+/// the system has delivered the downloaded file. The transfer itself remains
+/// owned by `URLSession`; this lease only bridges the gaps where there is no
+/// system-owned task yet (or anymore).
+private final class MediaBackgroundTaskLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+    private var hasEnded = false
+
+    init(name: String) {
+        let begin = {
+            self.identifier = UIApplication.shared.beginBackgroundTask(
+                withName: name
+            ) { [weak self] in
+                self?.end()
+            }
+        }
+        if Thread.isMainThread {
+            begin()
+        } else {
+            DispatchQueue.main.sync(execute: begin)
+        }
+    }
+
+    func end() {
+        let taskIdentifier: UIBackgroundTaskIdentifier
+        lock.lock()
+        guard !hasEnded else {
+            lock.unlock()
+            return
+        }
+        hasEnded = true
+        taskIdentifier = identifier
+        identifier = .invalid
+        lock.unlock()
+
+        guard taskIdentifier != .invalid else { return }
+        let finish = {
+            UIApplication.shared.endBackgroundTask(taskIdentifier)
+        }
+        if Thread.isMainThread {
+            finish()
+        } else {
+            DispatchQueue.main.async(execute: finish)
+        }
+    }
+
+    deinit { end() }
+}
+
 public final class LiveMediaDownloadManager: NSObject {
     /// `LiveMediaDownloadJob.ResolveKind` is the persisted type; this file's own
     /// dispatch logic is dense enough with it to keep referring to it unqualified.
@@ -219,6 +271,12 @@ public final class LiveMediaDownloadManager: NSObject {
         ownership: LiveMediaDownloadOwnership? = nil,
         manual: Bool = false
     ) async -> LiveMediaDownloadStartResult {
+        // Resolution can cross several awaited gates before the named
+        // background URLSession owns a task. If the app is backgrounded during
+        // that window, keep the preparation alive long enough to persist and
+        // register the durable transfer.
+        let backgroundLease = MediaBackgroundTaskLease(name: "MediaDownloadStart")
+        defer { backgroundLease.end() }
         let gated: GateResult
         switch await gateAndPrepare(
             urlString: urlString, title: title, ownership: ownership, manual: manual) {
@@ -373,6 +431,8 @@ public final class LiveMediaDownloadManager: NSObject {
         sourceURLString: String, title: String?, assets: [MediaAsset]
     ) async -> Bool {
         guard let asset = assets.first, let sourceURL = URL(string: sourceURLString) else { return false }
+        let backgroundLease = MediaBackgroundTaskLease(name: "ResolvedMediaDownloadStart")
+        defer { backgroundLease.end() }
         let ownership: LiveMediaDownloadOwnership = MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp
         // Non-Downloader saves write straight to Photos, so we need add-authorization.
@@ -436,11 +496,13 @@ public final class LiveMediaDownloadManager: NSObject {
         store.upsert(job)
         if job.isDownloaderOwned { postDownloaderJobProgress(job: job, progress: 0) }
         await startActivity(for: job)
-        // The caller bounces straight back to Safari. Do not report "started"
-        // until preflight has registered the durable background task; a detached
-        // preparation task can be frozen as soon as Safari owns the foreground.
-        await prepareAndStartMediaDownload(for: job, asset: asset)
-        return store.job(id: job.id).map { !$0.isTerminal } ?? false
+        // The durable destination + job are the handoff boundary. Preflight is
+        // app-owned work and therefore holds its own background lease; once it
+        // registers the download task, the named background URLSession takes
+        // over. This lets a Safari handoff return immediately without reopening
+        // the old persist-before-task suspension hole.
+        startMediaDownload(for: job, asset: asset)
+        return true
     }
 
     private func createAndStartJob(_ gated: GateResult, title: String?) async -> Bool {
@@ -602,12 +664,14 @@ public final class LiveMediaDownloadManager: NSObject {
     private func startTrackedBackgroundWork(
         _ operation: @escaping () async -> Void
     ) {
+        let appBackgroundLease = MediaBackgroundTaskLease(name: "MediaDownloadTransition")
         backgroundWorkLock.lock()
         pendingBackgroundWork += 1
         backgroundWorkLock.unlock()
         Task {
             await operation()
             self.finishTrackedBackgroundWork()
+            appBackgroundLease.end()
         }
     }
 
@@ -638,8 +702,8 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     public func resumeLiveActivities() {
-        Task {
-            await resumeUnfinishedDownloads()
+        startTrackedBackgroundWork {
+            await self.resumeUnfinishedDownloads()
         }
     }
 

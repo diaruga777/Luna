@@ -134,19 +134,34 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertEqual(restored.dashManifestURLString, manifest)
     }
 
-    /// The Safari drain is allowed to return only after there is both a durable
-    /// library destination and a system-owned task. This source-level contract
-    /// guards the ordering across the app/extension handoff without starting a
-    /// real network transfer in the unit suite.
-    func testResolvedSafariDownloadPreparesDestinationBeforeAwaitingDurableTask() {
+    /// Safari returns once the destination and recoverable job are durable. The
+    /// optional size probe must not hold the foreground bounce open; its generic
+    /// tracked-work wrapper supplies the brief background execution window until
+    /// the named URLSession owns the transfer.
+    func testResolvedSafariDownloadPersistsThenStartsTrackedPreparationWithoutAwaitingIt() {
         let method = Self.managerSource
             .components(separatedBy: "public func startWithResolvedAssets(").last?
             .components(separatedBy: "private func createAndStartJob(").first ?? ""
         let destination = method.range(of: "SavedMediaStore.shared.ensureUndownloaded")
-        let task = method.range(of: "await prepareAndStartMediaDownload")
+        let job = method.range(of: "store.upsert(job)")
+        let task = method.range(of: "startMediaDownload(for: job, asset: asset)")
         XCTAssertNotNil(destination)
+        XCTAssertNotNil(job)
         XCTAssertNotNil(task)
-        if let destination, let task { XCTAssertLessThan(destination.lowerBound, task.lowerBound) }
+        XCTAssertFalse(method.contains("await prepareAndStartMediaDownload"))
+        if let destination, let job, let task {
+            XCTAssertLessThan(destination.lowerBound, job.lowerBound)
+            XCTAssertLessThan(job.lowerBound, task.lowerBound)
+        }
+    }
+
+    func testEveryTrackedMediaTransitionHoldsApplicationBackgroundTime() {
+        let tracked = Self.managerSource
+            .components(separatedBy: "private func startTrackedBackgroundWork(").last?
+            .components(separatedBy: "private func finishTrackedBackgroundWork(").first ?? ""
+        XCTAssertTrue(tracked.contains("MediaBackgroundTaskLease"))
+        XCTAssertTrue(tracked.contains("await operation()"))
+        XCTAssertTrue(tracked.contains("appBackgroundLease.end()"))
     }
 
     func testRedditSplitStreamsStayOnTheNamedBackgroundSession() {

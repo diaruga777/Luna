@@ -117,6 +117,33 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertNil(subject.alertAcknowledgedAt)
     }
 
+    /// The request names the market: the currency of the page the tracker was
+    /// created from, so the engine can refuse foreign-market results before a
+    /// single one is fetched.
+    func testRequestCarriesTheTrackersOwnCurrencyAsTheMarket() {
+        let request = SellerComparison.request(
+            for: tracker(currency: "AUD"), sourceURL: URL(string: "https://source.example/p/1")!)
+        XCTAssertEqual(request.sourceCurrency, "AUD")
+    }
+
+    /// A seller priced in another currency must never reach the store list —
+    /// there is no FX source, so it can neither be compared nor displayed as a
+    /// better price. This is the tracker-side half of the market rule (the
+    /// engine refuses them too, but a resumed run's stale results must not
+    /// slip past).
+    func testAForeignCurrencyResultIsNeverAttached() {
+        var subject = tracker(currency: "AUD")
+        let added = SellerComparison.apply(
+            [
+                result(domain: "us-shop.example", price: "40", currency: "USD"),
+                result(domain: "au-shop.example", price: "80", currency: "AUD"),
+            ],
+            to: &subject)
+        XCTAssertEqual(added, 1, "only the AUD seller may join an AUD tracker")
+        XCTAssertFalse(subject.stores.contains { $0.urlString.contains("us-shop.example") })
+        XCTAssertTrue(subject.stores.contains { $0.urlString.contains("au-shop.example") })
+    }
+
     /// Two rows for the same shop is the one thing the store list must never
     /// show — and the engine's own per-domain key cannot know what the tracker
     /// already holds.

@@ -44,7 +44,12 @@ public enum SellerComparison {
             productName: tracker.productName,
             identifiers: identifiers,
             categoryHints: categoryHints,
-            excludedURLStrings: tracker.stores.map(\.urlString))
+            excludedURLStrings: tracker.stores.map(\.urlString),
+            // The market is the SOURCE store's, never the device's:
+            // `initialCurrency` is the currency of the page the tracker was
+            // created from, and the engine refuses any result priced in
+            // anything else.
+            sourceCurrency: tracker.initialCurrency)
     }
 
     // MARK: - Starting
@@ -188,10 +193,17 @@ public enum SellerComparison {
                 guard let host = URL(string: store.urlString)?.host else { return nil }
                 return ProductIdentityMatching.registrableDomain(host)
             })
+        // The tracker-side half of the market rule: the engine already refuses
+        // foreign-currency results, but a run resumed from an old pending
+        // marker (or any other producer of results) must not attach one either
+        // — a seller row in a currency the tracker cannot compare against is
+        // exactly the "foreign store in the list" bug.
+        let marketCurrency = tracker.initialCurrency.uppercased()
         var added = 0
         for result in results {
             let urlString = result.url.absoluteString
-            guard !tracker.hasStore(urlString: urlString),
+            guard result.currency.uppercased() == marketCurrency,
+                  !tracker.hasStore(urlString: urlString),
                   claimedDomains.insert(result.domain).inserted
             else { continue }
             var store = PriceTrackerStore(

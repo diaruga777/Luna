@@ -96,19 +96,39 @@ public enum SellerCandidateSelector {
 
     // MARK: - Region
 
-    /// The region whose storefronts to search: the source retailer's own region
-    /// when the directory knows it (an `amazon.co.uk` save is a UK shopping
-    /// trip regardless of where the phone is), else the device's region, else
-    /// `US`.
+    /// The market whose storefronts to search — derived from the STORE the user
+    /// is looking at, never from the device locale (an `amazon.co.uk` save is a
+    /// UK shopping trip regardless of where the phone is, and a phone on
+    /// holiday must not redirect it): the directory's own region for a known
+    /// retailer, else the country the host's TLD claims, else the region whose
+    /// storefronts transact in the page's own declared currency, else `US`.
     public static func resolveRegion(
-        sourceHost: String, directory: SellerDirectory, localeRegion: String?
+        sourceHost: String, sourceCurrency: String? = nil, directory: SellerDirectory
     ) -> String {
         if let seller = directory.seller(forHost: sourceHost) { return seller.region.uppercased() }
-        if let localeRegion, localeRegion.count == 2 {
-            let candidate = localeRegion.uppercased()
-            if directory.regions.contains(candidate) { return candidate }
+        if let region = regionFromHostTLD(sourceHost), directory.regions.contains(region) {
+            return region
+        }
+        if let currency = sourceCurrency?.uppercased(),
+           let region = SellerDirectory.currencies.first(where: { $0.value == currency })?.key,
+           directory.regions.contains(region) {
+            return region
         }
         return "US"
+    }
+
+    /// Country TLD → directory region. Only the countries the directory has
+    /// storefronts for; a country-neutral TLD (`.com`, `.net`) maps to nothing.
+    static let tldRegions: [String: String] = [
+        "uk": "GB", "gb": "GB", "au": "AU", "ca": "CA", "nz": "NZ",
+        "ie": "IE", "in": "IN", "sg": "SG", "za": "ZA", "us": "US",
+    ]
+
+    /// The country a host's final label claims (`myer.com.au` → AU,
+    /// `argos.co.uk` → GB), or nil when the TLD says nothing about a country.
+    static func regionFromHostTLD(_ host: String) -> String? {
+        guard let last = host.lowercased().split(separator: ".").last else { return nil }
+        return tldRegions[String(last)]
     }
 
     // MARK: - Selection

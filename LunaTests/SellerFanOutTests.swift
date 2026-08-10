@@ -128,8 +128,7 @@ final class SellerFanOutTests: XCTestCase {
             fetcher.stub("https://\(id).example/search?q=Sony+WH-1000XM5", html: "<html></html>")
         }
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(), fetch: fetcher.fetch,
-            localeRegion: "US").run(request())
+            directory: directory, profile: profile(), fetch: fetcher.fetch).run(request())
         XCTAssertEqual(outcome.attemptedSellerIDs, ["a", "b", "c", "d", "e"])
         XCTAssertEqual(outcome.stopReason, .exhausted)
         XCTAssertTrue(outcome.results.isEmpty)
@@ -141,8 +140,7 @@ final class SellerFanOutTests: XCTestCase {
             fetcher.stub("https://\(id).example/search?q=Sony+WH-1000XM5", html: "<html></html>")
         }
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(concurrency: 3), fetch: fetcher.fetch,
-            localeRegion: "US").run(request())
+            directory: directory, profile: profile(concurrency: 3), fetch: fetcher.fetch).run(request())
         XCTAssertEqual(outcome.attemptedSellerIDs, ["a", "b", "c", "d", "e"])
     }
 
@@ -157,8 +155,7 @@ final class SellerFanOutTests: XCTestCase {
             fetcher.stub("https://\(id).example/products/xm5", html: productHTML())
         }
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(target: 2), fetch: fetcher.fetch,
-            localeRegion: "US").run(request())
+            directory: directory, profile: profile(target: 2), fetch: fetcher.fetch).run(request())
         XCTAssertEqual(outcome.results.count, 2)
         XCTAssertEqual(outcome.stopReason, .reachedTarget)
         XCTAssertEqual(outcome.attemptedSellerIDs, ["a", "b"], "no candidate is asked needlessly")
@@ -176,8 +173,7 @@ final class SellerFanOutTests: XCTestCase {
         // 10s per clock read against a 15s budget: the run gets a couple of
         // candidates in and then must stop rather than walk the whole list.
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(budget: 15), fetch: fetcher.fetch,
-            localeRegion: "US", now: SteppingClock(step: 10).now).run(request())
+            directory: directory, profile: profile(budget: 15), fetch: fetcher.fetch, now: SteppingClock(step: 10).now).run(request())
         XCTAssertEqual(outcome.stopReason, .budgetExpired)
         XCTAssertLessThan(outcome.attemptedSellerIDs.count, 5)
         XCTAssertFalse(outcome.attemptedSellerIDs.isEmpty)
@@ -200,8 +196,7 @@ final class SellerFanOutTests: XCTestCase {
             fetcher.stub("https://\(id).example/products/xm5", html: productHTML())
         }
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(target: 2), fetch: fetcher.fetch,
-            localeRegion: "US").run(request())
+            directory: directory, profile: profile(target: 2), fetch: fetcher.fetch).run(request())
         XCTAssertFalse(
             fetcher.requestedURLs.contains("https://a.example/products/xm5"),
             "a bot-walled host must not be followed into")
@@ -216,7 +211,7 @@ final class SellerFanOutTests: XCTestCase {
         fetcher.stub("https://a.example/products/xm5", html: productHTML())
         let outcome = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: [seller("a")]),
-            profile: profile(target: 1), fetch: fetcher.fetch, localeRegion: "US").run(request())
+            profile: profile(target: 1), fetch: fetcher.fetch).run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         XCTAssertFalse(fetcher.requestedURLs.contains("https://a.example/products/xm5"))
     }
@@ -233,7 +228,7 @@ final class SellerFanOutTests: XCTestCase {
             html: productHTML(name: "Sony WH-1000XM4", gtin: "9999999999999"))
         let outcome = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: [seller("a")]),
-            profile: profile(target: 1), fetch: fetcher.fetch, localeRegion: "US").run(request())
+            profile: profile(target: 1), fetch: fetcher.fetch).run(request())
         XCTAssertTrue(outcome.results.isEmpty, "a different GTIN is a refusal")
         XCTAssertEqual(outcome.stopReason, .exhausted)
     }
@@ -249,7 +244,7 @@ final class SellerFanOutTests: XCTestCase {
         fetcher.stub("https://a.example/products/xm5", html: productHTML())
         let outcome = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: [seller("a")]),
-            profile: profile(target: 1), fetch: fetcher.fetch, localeRegion: "US").run(request())
+            profile: profile(target: 1), fetch: fetcher.fetch).run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.url.absoluteString, "https://a.example/products/xm5")
     }
@@ -262,7 +257,7 @@ final class SellerFanOutTests: XCTestCase {
             fetcher.stub("https://\(id).example/search?q=Sony+WH-1000XM5", html: "<html></html>")
         }
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile(), fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile(), fetch: fetcher.fetch)
             .run(request(excluding: ["https://www.b.example/products/xm5"]))
         XCTAssertEqual(outcome.attemptedSellerIDs, ["a", "c", "d", "e"])
     }
@@ -285,7 +280,7 @@ final class SellerFanOutTests: XCTestCase {
         let outcome = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: [seller("a")]),
             profile: profile(target: 1), fetch: fetcher.fetch,
-            richResolve: { _ in resolved }, localeRegion: "US").run(request())
+            richResolve: { _ in resolved }).run(request())
         XCTAssertEqual(outcome.results.first?.price, Decimal(string: "279.00"))
         XCTAssertFalse(fetcher.requestedURLs.contains("https://a.example/products/xm5"))
     }
@@ -301,8 +296,7 @@ final class SellerFanOutTests: XCTestCase {
         let outcome = await SellerFanOut(
             directory: directory, profile: profile(target: 2, webSearch: true),
             fetch: fetcher.fetch,
-            webSearch: { _ in [URL(string: "https://indie.example/products/xm5")!] },
-            localeRegion: "US").run(request())
+            webSearch: { _ in [URL(string: "https://indie.example/products/xm5")!] }).run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.domain, "indie.example")
         XCTAssertEqual(outcome.results.first?.source, .webSearch)
@@ -320,8 +314,7 @@ final class SellerFanOutTests: XCTestCase {
             webSearch: { _ in [
                 URL(string: "https://source.example/products/xm5")!,
                 URL(string: "https://indie.example/search?q=xm5")!,
-            ] },
-            localeRegion: "US").run(request())
+            ] }).run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         XCTAssertFalse(fetcher.requestedURLs.contains("https://source.example/products/xm5"))
         XCTAssertFalse(fetcher.requestedURLs.contains("https://indie.example/search?q=xm5"))
@@ -329,7 +322,7 @@ final class SellerFanOutTests: XCTestCase {
 
     func testWebSearchQueryPrefersGTINDigitsThenBrandedName() {
         let subject = SellerFanOut(
-            directory: directory, profile: profile(), fetch: { _ in nil }, localeRegion: "US")
+            directory: directory, profile: profile(), fetch: { _ in nil })
         XCTAssertEqual(
             subject.webSearchQuery(SellerFanOutRequest(
                 sourceURL: URL(string: "https://source.example/p")!,
@@ -355,6 +348,63 @@ final class SellerFanOutTests: XCTestCase {
                 identifiers: ProductIdentifiers(brand: "Russell Hobbs"))),
             "Russell Hobbs Carlton 2 Slice Toaster, Chrome",
             "the web-search query is the CLEANED name, like the retailer searches")
+    }
+
+    // MARK: - Market currency
+
+    /// The market is the source store's: a candidate page priced in another
+    /// currency is not a comparison (there is no FX source), so it is refused —
+    /// and the refusal is NAMED, not folded into "no verified match".
+    func testAForeignCurrencyPriceIsRefusedAndNamedAsTheRejection() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://a.example/search?q=Sony+WH-1000XM5",
+            html: searchHTML(productPath: "/products/xm5"))
+        fetcher.stub(
+            "https://a.example/products/xm5",
+            html: productHTML(price: "199.00", currency: "EUR"))
+        let outcome = await SellerFanOut(
+            directory: SellerDirectory(version: 1, sellers: [seller("a")]),
+            profile: profile(target: 1), fetch: fetcher.fetch).run(request())
+        XCTAssertTrue(outcome.results.isEmpty, "a EUR price is not a better USD price")
+        XCTAssertEqual(outcome.rejection(for: "a"), .foreignCurrency)
+    }
+
+    /// When the source page declares its own currency, THAT is the market —
+    /// not the resolved region's default.
+    func testTheSourcePagesOwnCurrencyDefinesTheMarket() async {
+        let fetcher = StubFetcher()
+        fetcher.stub(
+            "https://a.example/search?q=Sony+WH-1000XM5",
+            html: searchHTML(productPath: "/products/xm5"))
+        fetcher.stub(
+            "https://a.example/products/xm5",
+            html: productHTML(price: "199.00", currency: "EUR"))
+        let outcome = await SellerFanOut(
+            directory: SellerDirectory(version: 1, sellers: [seller("a")]),
+            profile: profile(target: 1), fetch: fetcher.fetch)
+            .run(SellerFanOutRequest(
+                sourceURL: URL(string: "https://source.example/products/xm5")!,
+                productName: "Sony WH-1000XM5",
+                identifiers: ProductIdentifiers(gtin: "0194644090876", brand: "Sony"),
+                regionOverride: "US", sourceCurrency: "EUR"))
+        XCTAssertEqual(outcome.results.first?.currency, "EUR")
+        XCTAssertEqual(outcome.results.first?.price, Decimal(string: "199.00"))
+    }
+
+    /// Layer 2 reaches storefronts in any country, which is exactly where a
+    /// foreign-market price most easily sneaks in.
+    func testWebSearchRefusesAForeignCurrencyResult() async {
+        let fetcher = StubFetcher()
+        fetcher.stub("https://a.example/search?q=Sony+WH-1000XM5", html: "<html></html>")
+        fetcher.stub(
+            "https://indie.example/products/xm5",
+            html: productHTML(price: "149.00", currency: "GBP"))
+        let outcome = await SellerFanOut(
+            directory: SellerDirectory(version: 1, sellers: [seller("a")]),
+            profile: profile(target: 1, webSearch: true), fetch: fetcher.fetch,
+            webSearch: { _ in [URL(string: "https://indie.example/products/xm5")!] }).run(request())
+        XCTAssertTrue(outcome.results.isEmpty, "a GBP price is not a better USD price")
     }
 
     // MARK: - Profiles

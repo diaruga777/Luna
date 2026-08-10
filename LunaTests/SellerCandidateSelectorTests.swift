@@ -201,23 +201,37 @@ final class SellerCandidateSelectorTests: XCTestCase {
         let subject = try SellerDirectory.bundled()
         XCTAssertEqual(
             SellerCandidateSelector.resolveRegion(
-                sourceHost: "www.johnlewis.com", directory: subject, localeRegion: "US"),
-            "GB", "a UK storefront is a UK shopping trip wherever the phone is")
+                sourceHost: "www.johnlewis.com", sourceCurrency: "USD", directory: subject),
+            "GB", "the directory's own region beats every weaker signal, including currency")
     }
 
-    func testUnknownSourceFallsBackToLocaleThenUS() {
-        let subject = directory([seller("us1", region: "US"), seller("au1", region: "AU")])
+    /// The market is the STORE's, never the device's: an unknown retailer's own
+    /// country TLD decides, then the currency its page prices in — and nothing
+    /// here ever reads the device locale.
+    func testUnknownSourceDerivesItsMarketFromTLDThenCurrencyThenUS() {
+        let subject = directory([
+            seller("us1", region: "US"), seller("au1", region: "AU"),
+            seller("gb1", region: "GB"),
+        ])
         XCTAssertEqual(
             SellerCandidateSelector.resolveRegion(
-                sourceHost: "unknown.example", directory: subject, localeRegion: "AU"),
-            "AU")
+                sourceHost: "shop.example.com.au", directory: subject),
+            "AU", "a .com.au storefront is an AU shopping trip")
         XCTAssertEqual(
             SellerCandidateSelector.resolveRegion(
-                sourceHost: "unknown.example", directory: subject, localeRegion: "FR"),
-            "US", "a region with no storefronts falls back rather than returning nothing")
+                sourceHost: "shop.example.co.uk", sourceCurrency: "AUD", directory: subject),
+            "GB", "the host's own TLD outranks the page currency")
         XCTAssertEqual(
             SellerCandidateSelector.resolveRegion(
-                sourceHost: "unknown.example", directory: subject, localeRegion: nil),
+                sourceHost: "unknown.example", sourceCurrency: "AUD", directory: subject),
+            "AU", "with a neutral TLD, the page's own currency names the market")
+        XCTAssertEqual(
+            SellerCandidateSelector.resolveRegion(
+                sourceHost: "shop.example.de", sourceCurrency: "CHF", directory: subject),
+            "US", "a market with no storefronts falls back rather than returning nothing")
+        XCTAssertEqual(
+            SellerCandidateSelector.resolveRegion(
+                sourceHost: "unknown.example", directory: subject),
             "US")
     }
 

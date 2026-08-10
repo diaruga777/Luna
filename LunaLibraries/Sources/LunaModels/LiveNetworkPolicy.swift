@@ -31,6 +31,22 @@ import Foundation
 /// it directly (`XCTAssertNoLiveNetworkRefusals`).
 public enum LiveNetworkPolicy {
 
+    /// Whether this process is a test runner.
+    ///
+    /// Deliberately OUTSIDE the DEBUG block below: "am I a test host?" has more
+    /// than one caller now, and every one of them wants the same answer. The
+    /// test host is the central Luna app, so anything the app arms at launch is
+    /// armed inside `LunaTests` too — live network was the first thing that had
+    /// to be refused on that basis, and background work the app starts by itself
+    /// (`BackgroundIngestCompletion`) is the second: a real ingest running
+    /// unbidden mid-suite contends with the very WebKit the capture tests drive.
+    /// In a Release build it simply answers false.
+    public static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+    }
+
     #if DEBUG
     // MARK: - The decision
     //
@@ -51,13 +67,6 @@ public enum LiveNetworkPolicy {
         "RUN_LIVE_YOUTUBE_TESTS",
         "RUN_LIVE_YOUTUBE_BACKGROUND_TESTS",
     ]
-
-    /// Whether this process is a test runner.
-    public static var isRunningUnderXCTest: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
-            || NSClassFromString("XCTestCase") != nil
-    }
 
     /// Whether a live-network opt-in is set in the environment.
     public static var isOptedIn: Bool {

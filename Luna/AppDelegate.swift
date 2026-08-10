@@ -185,7 +185,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // Settle (or finish) anything a previous hand-off left owed — the
             // sweep above may be doing the same rows, which the runner waits out
             // rather than duplicating.
-            BackgroundIngestCompletion.run()
+            BackgroundIngestCompletion.runFromLifecycle()
             // Kind-specific launch resumption: orphaned-media sweep + Live Activity
             // reattachment (media apps), pending ereader-send retry (article apps).
             KindWiring.appDidLaunch()
@@ -309,7 +309,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // finished. If that hand-off's metadata pass was cut short by an
         // expiring background window, this is where it resumes — on its own
         // lease, so it never delays the session handler above.
-        BackgroundIngestCompletion.run()
+        BackgroundIngestCompletion.runFromLifecycle()
     }
 
     private func scheduleMailFetch() {

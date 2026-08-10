@@ -501,25 +501,42 @@ does not change with who opened it — inside `ShareViewController.practicePrevi
 | practice link | rehearsal |
 |---|---|
 | `luna.app` | `ShareSetupPracticePreviewViewController` — the bundled article |
-| `instatok.com`, in an app that handles media | `ShareSetupPracticeDownloadViewController` — the bundled download |
-| `amayzon.web`, in an app that handles products | the registered `ShareProductPresenting` path — a deterministic eyePhone `ProductInfo` drives the real Price Tracker extension editor |
+| `instatok.com`, in an app that handles media | the registered `ShareMediaPresenting` path — `SavedNonTextualViewController`, the production media screen, over the bundled clip |
+| `amayzon.web`, in an app that handles products | the registered `ShareProductPresenting` path — a deterministic eyePhone `ProductInfo` drives the real Price Tracker extension editor, seeded with a fabricated price history (below) |
 
-The media rehearsal keeps the real media screen's grammar (the "Saved to Luna"
-badge, the square preview with the progress bar drawn inside it, the full-width
-Done) over a fixed beat: `downloadDuration` (1.5s) of the bar filling under the
-media glyph, then the clip's own first frame under a play badge. It is
-deliberately NOT `SavedNonTextualViewController`: the practice URL names no real
-post, so there is nothing to resolve, nothing to transfer, and nothing that may
-be written into the user's media library — the same reason the article rehearsal
-is not the real reader.
+**The media rehearsal is the production media screen.**
+`ExtensionMediaPresenter.presentPracticeVideo` mounts
+`SavedNonTextualViewController` with a `practiceVideoURL` — the same screen an
+action extension shows for a saved video, with its file supplied up front
+instead of resolved and transferred. Nothing about a rehearsal touches the
+network, the reading list, Photos or the Downloader's library.
 
-Two things it borrows rather than reimplements. It waits on
-`HostedShareSession.revealDate` before starting its bar, because the surface is
-built DETACHED well before the lesson's sheet opens and a beat begun at
-`viewDidLoad` would be over unseen; and it reports the clip through
-`onMediaFileReady`, so the finish is the host's ordinary media path — **the same
-video the Safari lesson taught, playing over the sheet**. `onReplayBeat` re-runs
-the whole beat on each pass of the looping demonstration.
+Its one asymmetry is WHERE the clip plays. A real save's video is handed to the
+host through `onMediaFileReady` and played over the sheet; the rehearsal's plays
+INSIDE the preview square (an `AVPlayerLayer`, muted and looping) and the screen
+holds the sheet open for `practicePlaybackDuration` (2s) while it does, so the
+demonstration never takes a full-screen-looking hop over a screen it has just
+built.
+
+**The gate that hid it.** That screen asks `MediaDownloadablePlatform.supports`
+before building its media half at all — the right question for a real save, and
+the wrong one here: `instatok.com` is a fictional host that matches no platform
+rule and carries no media extension, so the answer was "not downloadable", the
+preview was never built, `beginMediaFlow` returned before applying the file, and
+the Downloader's save lesson ended on a bare "Saved to Luna" badge with no video
+in it anywhere. `showsInlineMedia` is that question OR `isPracticePreview`: a
+practice video is downloadable media by construction, and is the one case the
+platform table cannot be asked about.
+
+`ShareSetupPracticeDownloadViewController` — the hand-built rehearsal that keeps
+the media screen's grammar (the badge, the square preview with the bar drawn
+inside it, the full-width Done) over `downloadDuration` (1.5s) and a poster
+frame — remains the fallback for a media host with no registered media
+presenter. It waits on `HostedShareSession.revealDate` before starting its bar,
+because the surface is built DETACHED well before the lesson's sheet opens and a
+beat begun at `viewDidLoad` would be over unseen, and it reports its clip
+through `onMediaFileReady`. Both rehearsals answer `onReplayBeat` by re-running
+their beat on each pass of the looping demonstration.
 
 The clip lives in the APP bundle only (`ShareSetupPractice.bundledVideoURL`): a
 rehearsal is worth 400KB in the app that teaches it and is not worth it in eight
@@ -538,7 +555,10 @@ the pipeline's 28s ingest budget are the backstops.
 **Media.** `HostedShareSession` gates a result behind the reveal plus
 `minimumDownloadIndication` (0.3s), so a preloaded file still shows its progress
 bar; a ready video is reported via `onMediaFileReady` and played over the sheet by
-a `VideoCardContentViewController`, muted and looping, for ~2s. The downloaded file
+a `VideoCardContentViewController`, muted and looping, for ~2s — every video
+except the REHEARSAL's, which plays in the media screen's own preview square
+instead (above) and reports nothing to the host but a wait to hold the sheet
+through. The downloaded file
 is retained on the session so a demo replay reuses it: each pass calls
 `session.replayBeat()`, which the media screen answers by re-running its own
 indication off the file it already has. Nothing refetches.
@@ -648,5 +668,9 @@ Relevant tests:
 - `OnboardingSaveDemoTests`: link resolution's three branches, the hosted surface
   (practice preview, the real offline failure, one-shot completion, the evidence
   guard), the sheet's chrome-only contract, and the rehearsal's cleanup;
+- `ShareSetupPracticeMediaTests`: which link stands for what, the one clip named
+  in three places, and that the rehearsal's clip is actually ON SCREEN — a
+  player layer, with a player in it, at a real size — where a link with no
+  bundled clip still shows none;
 - the existing onboarding visual/lesson tests: copy, setup effects, recovery,
   local assets, storage-free demos, Reduce Motion, and launch geometry.

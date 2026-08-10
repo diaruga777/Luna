@@ -273,18 +273,18 @@
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
 "Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
-"Onboarding_Intro_safariAction_Reader" = "Use Luna Reader inside Safari";
-"Onboarding_Intro_safariAction_Downloader" = "Use Luna Downloader inside Safari";
-"Onboarding_Intro_safariAction_PriceTracker" = "Use Luna Price Tracker inside Safari";
+"Onboarding_Intro_safariAction_Reader" = "Read uninterrupted in Safari";
+"Onboarding_Intro_safariAction_Downloader" = "Download and watch in Safari";
+"Onboarding_Intro_safariAction_PriceTracker" = "Shop the best price in Safari";
 "Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
 "Onboarding_Intro_saveBenefit_Core" = "Save anything";
 "Onboarding_Intro_saveBenefit_Reader" = "Read offline later";
 "Onboarding_Intro_saveBenefit_Downloader" = "Watch or share";
 "Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
 "Onboarding_Intro_shortcutAction_Luna" = "Save in one click";
-"Onboarding_Intro_shortcutAction_Reader" = "Save to read later";
+"Onboarding_Intro_shortcutAction_Reader" = "Unlock & save in one click";
 "Onboarding_Intro_shortcutAction_Downloader" = "Save videos in one click";
-"Onboarding_Intro_shortcutAction_PriceTracker" = "Track a price in one click";
+"Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in one click";
 "Onboarding_Intro_unableToLoadPage_Luna" = "Unable to load website";
 
 /* ===== Onboarding_Demo — InstaTok/Amayzon mock-page copy (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Demo) ===== */

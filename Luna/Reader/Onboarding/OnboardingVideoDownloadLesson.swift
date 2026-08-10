@@ -124,7 +124,11 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     private let blur = UIVisualEffectView(
         effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
     private let scrim = UIView()
+    /// The panel's geometry. Everything that DRAWS it — the night surface and
+    /// the corona behind it — is a child sized to these bounds, so the growth
+    /// is one animation on one view.
     private let panel = UIView()
+    private let panelBody = UIView()
     private let close = UILabel()
     private let stage = UIView()
     private let playerView = PlayerLayerView()
@@ -165,14 +169,25 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         scrim.isUserInteractionEnabled = false
         addSubview(scrim)
 
-        panel.backgroundColor = Self.nightSurface
-        panel.layer.cornerRadius = Metrics.panelCornerRadius
-        panel.layer.cornerCurve = .continuous
-        panel.layer.shadowColor = UIColor.black.cgColor
-        panel.layer.shadowOpacity = 0.55
-        panel.layer.shadowRadius = 30
-        panel.layer.shadowOffset = CGSize(width: 0, height: 24)
+        // The panel itself is a frame: the surface it looks like is `panelBody`,
+        // and the corona goes UNDER that body inside the same panel. Both are
+        // autoresizing children, so the panel's growth carries them with it in
+        // its own animation — a glow positioned from the outside, in
+        // `layoutSubviews`, can only ever be told the panel's FINAL frame, and
+        // any layout pass during the growth put it there while the panel was
+        // still travelling.
+        panel.clipsToBounds = false
         addSubview(panel)
+
+        panelBody.backgroundColor = Self.nightSurface
+        panelBody.layer.cornerRadius = Metrics.panelCornerRadius
+        panelBody.layer.cornerCurve = .continuous
+        panelBody.layer.shadowColor = UIColor.black.cgColor
+        panelBody.layer.shadowOpacity = 0.55
+        panelBody.layer.shadowRadius = 30
+        panelBody.layer.shadowOffset = CGSize(width: 0, height: 24)
+        panelBody.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        panel.addSubview(panelBody)
 
         close.text = "✕"
         close.font = .systemFont(ofSize: 17, weight: .medium)
@@ -280,8 +295,13 @@ final class OnboardingVideoDownloadOverlayView: UIView {
                     + setupBlockHeight(width: contentWidth))),
             idealStageHeight * 0.6)
 
+        // The download button gets the panel's own 10pt padding under it, as it
+        // does in `content.js` (`padding: "10px"` all round). Without it the
+        // capsule ended flush with the panel's bottom edge and its corners were
+        // cut by the panel's 20pt radius — the panel read as clipped.
         let playerHeight = fixedPanelHeight(stage: stageHeight)
             + Metrics.downloadTopGap + Metrics.downloadHeight
+            + Metrics.panelPadding
         let setupHeight = fixedPanelHeight(stage: stageHeight)
             + setupBlockHeight(width: contentWidth)
         let panelHeight = lessonStage == .setup ? setupHeight : playerHeight
@@ -361,19 +381,29 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             + Metrics.panelPadding
     }
 
+    /// The corona is built ONCE, for the panel it is first laid out in, and
+    /// then rides the panel's own bounds — it is a child of the panel, under
+    /// the surface it wraps. Its raster stretches over the growth rather than
+    /// being replaced: a replacement can only be rasterised for the panel's
+    /// FINAL size, which is a glow the wrong size for every frame of the
+    /// travel, and a glow given its frame from out here jumps to that final
+    /// geometry on any layout pass the animation happens to cross. A soft halo
+    /// stretched by the chin's own travel reads as the same light; a halo
+    /// standing where the panel is going does not.
     private func layOutPanelCorona() {
         guard panel.bounds.width > 0, panel.bounds.height > 0 else { return }
-        if panelCorona?.bounds.size != panel.bounds.size {
-            panelCorona?.removeFromSuperview()
+        if panelCorona == nil {
             let corona = EclipseCoronaView(
                 bodySize: panel.bounds.size,
                 cornerRadius: Metrics.panelCornerRadius,
                 tint: LunaSurfacePalette.atmosphereTint)
             corona.alpha = lessonStage == .idle ? 0 : 1
-            insertSubview(corona, belowSubview: panel)
+            corona.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            panel.insertSubview(corona, belowSubview: panelBody)
             panelCorona = corona
         }
-        panelCorona?.frame = panel.frame
+        panelCorona?.frame = panel.bounds
+        panelBody.frame = panel.bounds
     }
 
     private func layOutActionsCorona() {
@@ -646,9 +676,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     var downloadFrameForTesting: CGRect { convert(download.bounds, from: download) }
     var downloadColourForTesting: UIColor? { download.backgroundColor }
     var downloadAlphaForTesting: CGFloat { download.alpha }
-    var panelColourForTesting: UIColor? { panel.backgroundColor }
+    var panelColourForTesting: UIColor? { panelBody.backgroundColor }
     var closeFrameForTesting: CGRect { close.frame }
-    var panelCornerRadiusForTesting: CGFloat { panel.layer.cornerRadius }
+    var panelCornerRadiusForTesting: CGFloat { panelBody.layer.cornerRadius }
     /// How much of the page behind the panel the backdrop takes: the black's
     /// own alpha times the layer's, plus the blur's weight. A test's way of
     /// asserting that the blocked post is still on screen behind the answer.

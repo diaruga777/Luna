@@ -7,6 +7,7 @@
 //
 
 import XCTest
+import LunaMail
 import LunaModels
 @testable import LunaMailAccount
 
@@ -76,7 +77,7 @@ final class EmailBodyTests: XCTestCase {
         XCTAssertEqual(LunaShareMarker.from(htmlBody: body.html), marker)
     }
 
-    func testMIMEBuilderStructure() {
+    func testMIMEBuilderStructure() throws {
         let marker = LunaShareMarker(url: "https://ex.com/a", title: "T", kind: "article")
         let subject = "\(FilterGuide.subjectPrefix)T"
         let raw = EmailMIMEBuilder.build(
@@ -89,16 +90,21 @@ final class EmailBodyTests: XCTestCase {
 
         XCTAssertTrue(text.contains("Subject: \(MIMEHeaderEncoding.encodedHeaderText(subject))"))
         XCTAssertTrue(text.contains("To: you@ex.com"))
-        XCTAssertTrue(text.contains("\(LunaShareMarker.headerName): \(marker.headerValue())"))
         XCTAssertTrue(text.contains("multipart/related"))
         XCTAssertTrue(text.contains("multipart/alternative"))
         XCTAssertTrue(text.contains("text/plain; charset=utf-8"))
         XCTAssertTrue(text.contains("text/html; charset=utf-8"))
         XCTAssertTrue(text.contains("Content-ID: <img-0>"))
-        // Header marker round-trips.
-        let headerLine = text.split(separator: "\r\n")
-            .first { $0.hasPrefix("\(LunaShareMarker.headerName): ") }
-        let value = headerLine.map { String($0.dropFirst("\(LunaShareMarker.headerName): ".count)) }
-        XCTAssertEqual(value.flatMap(LunaShareMarker.from(headerValue:)), marker)
+
+        // The marker survives the trip the RECEIVER makes. Its base64 payload is
+        // 88 characters — past `MIMEHeaderEncoding.maxLineLength`, so the builder
+        // folds it onto a continuation line and no single line of the raw message
+        // carries the whole value. Reading it back therefore has to unfold, which
+        // is exactly what the IMAP reader does before handing the value to
+        // `LunaShareMarker`; asserting on one raw line instead would only pin the
+        // send side to a folding threshold it is free to change.
+        let headers = GmailIMAPClient.parseHeaders(GmailIMAPClient.splitMessage(text).headers)
+        let value = try XCTUnwrap(headers[LunaShareMarker.headerName.lowercased()])
+        XCTAssertEqual(LunaShareMarker.from(headerValue: value), marker)
     }
 }

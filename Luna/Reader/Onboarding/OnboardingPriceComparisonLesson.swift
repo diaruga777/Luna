@@ -16,10 +16,6 @@ enum OnboardingPriceComparisonTiming {
     /// pill that appeared with the page would read as part of the site.
     static let pageHoldDuration: TimeInterval = 0.9
     static let pillRevealDuration: TimeInterval = 0.28
-    /// How long the mock fan-out "takes". The real one is a native round trip
-    /// with an 18s budget; what matters here is that the spinner is up long
-    /// enough to be read as work rather than as decoration.
-    static let lookupDuration: TimeInterval = 2.4
     /// Once the black spotlight has zoomed in on the lookup, leave its
     /// searching state visible for a deliberate beat before replacing it with
     /// the comparable seller result.
@@ -676,9 +672,14 @@ final class OnboardingPriceComparisonOverlayView: UIView {
                 options: [.curveEaseOut, .beginFromCurrentState],
                 animations: reveal)
         }
-        after(OnboardingPriceComparisonTiming.lookupDuration) { view in
-            view.zoomSpotlightOntoLookup()
-        }
+        // The spotlight sets out with the pill rather than after it. The lesson
+        // is entered from the Manage Extensions sheet sliding away, and a beat
+        // spent watching a searching pill in the corner before anything moved
+        // toward it read as the demonstration having stalled. The searching
+        // state is still held — the zoom's own fade, close and
+        // `resultRevealDelay` are what hold it — so the answer still lands after
+        // work the user has watched happen.
+        zoomSpotlightOntoLookup()
     }
 
     /// The black overlay closes around the still-searching pill first. The

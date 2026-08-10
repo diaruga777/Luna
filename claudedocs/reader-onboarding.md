@@ -376,7 +376,13 @@ Four things about it that are NOT the web panel:
   panel on the page requires — 23pt on a 393×852 phone against 217pt of bottom
   travel, and nothing at all on anything roomier. The video keeps its place
   under the instructions arriving beneath it rather than being pushed up by
-  them.
+  them. **Only the panel moves**: `panel` is geometry, and the surface
+  (`panelBody`) plus the eclipse corona are autoresizing CHILDREN of it, so the
+  one animation carries them. A corona sitting beside the panel and given its
+  frame from `layoutSubviews` cannot be told anything but the panel's FINAL
+  frame — so any layout pass the growth crossed drew the glow at the size the
+  panel was still travelling toward, and the growth read as unfolding from the
+  top-left corner.
 - **Only the two action buttons are live.** The close button, the download button
   and the player's controls have no target and no gesture recognizer. A picture
   that answered a tap is a route out of a lesson into a page that does not exist.
@@ -413,7 +419,12 @@ climbing front. Three things ride it:
 
 1. **The clutter crumbles.** Every obstruction becomes ~11pt still tiles that
    detach exactly as the front reaches them and fly off (`prepareCleanUp` /
-   `animatePreparedShatterPieces`).
+   `animatePreparedShatterPieces`). The front is ONE constant-speed climb over
+   the whole page — `measureWaveOrigin` takes its entry edge, `frontArrival`
+   is a straight line in a tile's own y — and deliberately not a leg per page
+   element: a leg's arrival was constant across the air BETWEEN two elements,
+   so the crumble stalled for the height of every gap and then took it in a
+   single frame, which is what made the wipe hitch at the popup boundaries.
 2. **The content stays still.** It is already visible beneath the clutter, so the
    cleanup never blooms, re-occludes, or otherwise animates it; only obstruction
    tiles move. All tile flights are committed in one Core Animation transaction
@@ -446,8 +457,10 @@ three layers in this z-order, which is the whole trick):
    16pt in, `rgba(20,20,26,.85)` capsule, 13pt medium, the pulsing 6pt dot —
    and wears the extension's own two states in the extension's own words
    (`findingSellers` → `Onboarding_Safari_pricePillLooking`, `priceAtSeller` →
-   `…_pricePillFoundTemplate`). It waits ~2.4s, then the black spotlight zooms
-   over the still-searching pill. One second after that close, it fills IN PLACE
+   `…_pricePillFoundTemplate`). It arrives on the sheet's exit WITH the black
+   spotlight, which zooms over it while it is still searching — the pill used to
+   stand alone in the corner for 2.4s first, which read as the demonstration
+   having stalled rather than as work. One second after that close, it fills IN PLACE
    with the same eyePhone cheaper at the manufacturer the page already names
    ("Visit the Pearless Devices Store" → `$729.00 at Pearless`, against the
    page's $799.00). The setup popup follows another 0.5s later.

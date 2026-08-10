@@ -63,39 +63,11 @@ final class OnboardingSafariPageView: UIView {
 
     private struct ShatterPiece {
         let view: UIView
-        let midY: CGFloat
-        var arrival: TimeInterval
+        let arrival: TimeInterval
         let scatter: TimeInterval
         let flight: CGAffineTransform
 
         var delay: TimeInterval { arrival + scatter }
-    }
-
-    /// One stretch of the climbing front: within [top, bottom] the light
-    /// arrives at `start + (bottom - y) / speed` — the wave enters each
-    /// element at its BOTTOM and climbs. Tiles look their own page-y up in
-    /// these legs so every tile detaches exactly when the light beneath it
-    /// arrives, even though each element runs its own bloom.
-    private struct FrontLeg {
-        let top: CGFloat
-        let bottom: CGFloat
-        let start: TimeInterval
-        let speed: CGFloat
-
-        func arrival(at y: CGFloat) -> TimeInterval {
-            start + TimeInterval(max(0, bottom - max(y, top)) / speed)
-        }
-    }
-
-    /// One stationary page element whose frame gives the shatter front its
-    /// timing. The content is deliberately not animated by that front.
-    private struct WaveElement {
-        let view: UIView
-        /// False for an element whose band of the page is covered by a wider
-        /// sibling — the app icon beside the headline. The sibling's leg
-        /// answers for the tiles over that stretch, so the two can never
-        /// disagree about when a tile there detaches.
-        let contributesLeg: Bool
     }
 
     /// Hosts every piece of the page, the actions included. It never scrolls —
@@ -151,13 +123,15 @@ final class OnboardingSafariPageView: UIView {
 
     private var stage = Stage.blocked
     private var sequenceGeneration = 0
-    private var waveElements: [WaveElement] = []
     private var preparedShatterPieces: [ShatterPiece] = []
     /// Every tile the current wipe put on screen. `preparedShatterPieces`
     /// empties the moment the flights are handed out, so a replay needs its
     /// own handle on them to clear a wipe that is still in the air.
     private var shatterTiles: [UIView] = []
-    private var frontLegs: [FrontLeg] = []
+    /// Where the climbing front enters the page: the lowest edge anything the
+    /// wipe covers reaches, measured when the cascade is cut. Zero while no
+    /// wipe is prepared.
+    private var waveOrigin: CGFloat = 0
 
     /// Whose prose the page prints. The chunks differ per app, so the fitting
     /// pass needs to know which list it is choosing a prefix of.
@@ -285,20 +259,6 @@ final class OnboardingSafariPageView: UIView {
         }
         clutterContainer.addSubview(newsletterPopup)
         clutterContainer.addSubview(subscriptionSheet)
-
-        // Bottom to top, so the front enters at the actions block's own bottom
-        // edge and climbs. The icon shares its band with the wider headline.
-        waveElements = [WaveElement(view: actions, contributesLeg: true)]
-            + stepRows.reversed().map {
-                WaveElement(view: $0, contributesLeg: true)
-            }
-            + [
-                WaveElement(view: stepsHeading, contributesLeg: true),
-                WaveElement(view: explainer, contributesLeg: true),
-                WaveElement(view: byline, contributesLeg: true),
-                WaveElement(view: headline, contributesLeg: true),
-                WaveElement(view: appIcon, contributesLeg: false),
-            ]
     }
 
     @available(*, unavailable)
@@ -325,9 +285,9 @@ final class OnboardingSafariPageView: UIView {
     /// reserve follows it: with the bar gone the steps and the actions take
     /// back its strip, and they dodge it again the moment it returns.
     ///
-    /// Call this BEFORE `prepareCleanUp`, never during the wave: the cascade's
-    /// legs and every shatter tile's arrival are cut from the content frames as
-    /// they stand, so the geometry the front will cross has to be settled first.
+    /// Call this BEFORE `prepareCleanUp`, never during the wave: every shatter
+    /// tile is cut from the page as it stands, and its arrival from the front's
+    /// entry edge, so the geometry the wave will cross has to be settled first.
     func setReservesBrowserChrome(_ reserves: Bool) {
         let reserve = reserves ? Self.chromeReserve : Self.clearedChromeReserve
         guard reserve != bottomReserve else { return }
@@ -604,56 +564,44 @@ final class OnboardingSafariPageView: UIView {
         shatterTiles = []
         layoutIfNeeded()
 
-        computeShatterCascade()
+        measureWaveOrigin()
         preparedShatterPieces = clutterContainer.subviews.flatMap {
             buildShatterPieces(for: $0)
         }
-        // Strictly bottom-to-top, across every view at once: the legs are
-        // cut from one continuous front, but the sagitta slack at element
-        // boundaries can still dip a raw arrival below the tile beneath it.
-        // A running maximum up the page keeps each tile at or after every
-        // tile below it, textured by their scatter.
-        preparedShatterPieces.sort { $0.midY > $1.midY }
-        var runningArrival: TimeInterval = 0
-        for index in preparedShatterPieces.indices {
-            runningArrival = max(
-                runningArrival, preparedShatterPieces[index].arrival)
-            preparedShatterPieces[index].arrival = runningArrival
-        }
     }
 
-    /// One front still climbs the page, but it now times only the clutter tiles.
-    /// Page content remains static and readable throughout the cleanup.
-    private func computeShatterCascade() {
-        let speed = OnboardingSafariPageTiming.cascadeFrontSpeed
-        frontLegs = []
-        // Sorted rather than trusted: a layout change that reorders the page
-        // must not be able to send the wave down it.
-        let ordered = waveElements.sorted {
-            $0.view.frame.maxY > $1.view.frame.maxY
-        }
-        guard let waveOrigin = ordered.first?.view.frame.maxY else { return }
-        for element in ordered {
-            let view = element.view
-            let start = TimeInterval((waveOrigin - view.frame.maxY) / speed)
-            guard element.contributesLeg else { continue }
-            frontLegs.append(FrontLeg(
-                top: view.frame.minY,
-                bottom: view.frame.maxY,
-                start: start,
-                speed: speed))
-        }
+    /// Where the front enters, so that a tile's arrival is a straight line in
+    /// its own y. It climbs from the lowest edge the wipe has to cross — the
+    /// bottom-most obstruction, which is the subscription sheet sitting on the
+    /// page's bottom edge — rather than from the bottom-most piece of CONTENT:
+    /// anything below the latter would otherwise share one arrival and leave
+    /// as a slab.
+    ///
+    /// This front used to be cut into per-element legs, each starting when the
+    /// light reached that element's bottom. Between two elements the arrival
+    /// was then constant — the leg above answered for the whole gap — so the
+    /// front stalled for the height of every gap and then wiped it in a single
+    /// frame. The air the page leaves above its steps is the biggest of those
+    /// gaps, and a popup spanning it detached in one piece: THAT was the hitch
+    /// the crumble showed at the popup boundaries. Legs earned their keep while
+    /// each element bloomed on its own clock; nothing on this page blooms now,
+    /// and one uninterrupted front is both simpler and continuous by
+    /// construction.
+    private func measureWaveOrigin() {
+        let lowestObstruction = clutterContainer.subviews
+            .filter { !$0.isHidden }
+            .map { clutterContainer.convert($0.frame, to: self).maxY }
+            .max()
+        waveOrigin = max(lowestObstruction ?? bounds.maxY, bounds.maxY)
     }
 
-    /// When the climbing light reaches a page-level y: inside an element,
-    /// its own leg answers; in the dead space between elements, the leg
-    /// ABOVE it does (its `arrival` clamps y below its bottom to its start).
-    /// Above the topmost content, the wave's very end.
+    /// When the climbing light reaches a page-level y: one constant-speed
+    /// front, so every tile detaches in step with the tiles beside and beneath
+    /// it whatever the page's layout does between them.
     private func frontArrival(atPageY y: CGFloat) -> TimeInterval {
-        for leg in frontLegs where y >= leg.top {
-            return leg.arrival(at: y)
-        }
-        return frontLegs.last.map { $0.arrival(at: $0.top) } ?? 0
+        TimeInterval(
+            max(0, waveOrigin - y)
+                / OnboardingSafariPageTiming.cascadeFrontSpeed)
     }
 
     /// Shatters every obstruction bottom-to-top. The content beneath stays
@@ -775,7 +723,7 @@ final class OnboardingSafariPageView: UIView {
         sequenceGeneration += 1
         stage = .blocked
         preparedShatterPieces = []
-        frontLegs = []
+        waveOrigin = 0
         for tile in shatterTiles {
             tile.layer.removeAllAnimations()
             tile.removeFromSuperview()
@@ -865,7 +813,6 @@ final class OnboardingSafariPageView: UIView {
                     .scaledBy(x: 0.72, y: 0.72)
                 pieces.append(ShatterPiece(
                     view: piece,
-                    midY: frame.midY,
                     arrival: arrival,
                     scatter: scatter,
                     flight: flight))

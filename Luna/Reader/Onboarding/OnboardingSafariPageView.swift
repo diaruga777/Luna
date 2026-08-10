@@ -166,11 +166,11 @@ final class OnboardingSafariPageView: UIView {
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         // Safari lists this app's own extension under this app's own name; the
         // page's steps have to say the same thing (see the copy's note).
-        let appName = configuration.app.displayName
+        let appName = configuration.demonstrationApp.displayName
         let background = OnboardingSafariPagePalette.background
-        app = configuration.app
+        app = configuration.demonstrationApp
         appIcon = MoonRevealContentView(
-            image: OnboardingAppIcon.image()
+            image: LunaAppIconImage.image(for: configuration.demonstrationApp)
                 ?? UIImage(systemName: "moon.stars.fill"),
             cornerRadius: 17,
             accessibilityLabel: appName,

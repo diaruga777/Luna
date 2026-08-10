@@ -27,6 +27,31 @@ import XCTest
 
 final class ReaderOnboardingTests: XCTestCase {
 
+    // MARK: - Central sibling lesson selection
+
+    func testCentralOnboardingChoosesTheHighestRankedMissingSibling() {
+        XCTAssertEqual(
+            OnboardingSurfaceConfiguration.highestRankedUninstalledSibling {
+                $0 == .reader
+            },
+            .downloader)
+
+        let configuration = OnboardingSurfaceConfiguration.configuration(
+            for: .luna,
+            saveSetupMode: .unavailable,
+            demonstrationApp: .downloader)
+        XCTAssertEqual(configuration.safariDemonstrationApps, [
+            .downloader, .priceTracker, .reader,
+        ])
+        XCTAssertEqual(
+            configuration.practiceURLString,
+            ShareSetupPractice.instaTokURLString)
+        XCTAssertTrue(
+            OnboardingStrings.Instruction.safariPrompt(
+                saveBenefit: configuration.saveBenefit,
+                allApps: true).contains("All Luna apps"))
+    }
+
     // MARK: - Completion state machine
 
     func testCompletionIsOwnedByInjectedPerAppDefaults() {

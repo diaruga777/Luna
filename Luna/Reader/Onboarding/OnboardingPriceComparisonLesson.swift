@@ -298,7 +298,7 @@ final class OnboardingSafariSetupCardView: UIView {
 
     init(configuration: OnboardingSurfaceConfiguration) {
         let steps = OnboardingSafariExtensionCopy.steps(
-            appName: configuration.app.displayName)
+            appName: configuration.demonstrationApp.displayName)
         stepTexts = steps.map(\.text)
         stepRows = steps.map(OnboardingSafariEnableStepRowView.init(step:))
         super.init(frame: .zero)

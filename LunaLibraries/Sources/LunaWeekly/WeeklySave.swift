@@ -19,7 +19,17 @@ public enum WeeklySaveKind: String, Codable, CaseIterable, Sendable {
     /// the same three-way split `LunaApp.handlesArticles/Media/Products` draws.
     public static func kinds(for app: LunaApp) -> [WeeklySaveKind] {
         switch app {
-        case .luna: return [.article, .media, .product]
+        case .luna:
+            // Central Luna's fetch order is the same Reader → Downloader →
+            // Price Tracker ranking used by its onboarding examples.
+            return LunaApp.onboardingRankedSiblings.compactMap {
+                switch $0 {
+                case .reader: return .article
+                case .downloader: return .media
+                case .priceTracker: return .product
+                case .luna: return nil
+                }
+            }
         case .reader: return [.article]
         case .downloader: return [.media]
         case .priceTracker: return [.product]

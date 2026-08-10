@@ -146,7 +146,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         stepRows = OnboardingStrings.Safari
-            .steps(appName: configuration.app.displayName)
+            .steps(appName: configuration.demonstrationApp.displayName)
             .map(OnboardingSafariEnableStepRowView.init(step:))
         super.init(frame: .zero)
         accessibilityIdentifier =

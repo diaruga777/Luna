@@ -123,6 +123,7 @@ final class UtilCardContentViewController: CardContentViewController {
     /// save lesson, and the block stacks up from the paste row, so whatever is
     /// present simply fills the bottom slots.
     private var setupOffers: [UtilCardSetupButton] = []
+    private var setupTextCycler: UtilCardSetupTextCycler?
     private var recentRows: [UtilURLRow] = []
     private var didSettleHeadline = false
     /// On the launch that owns the headline sweep, everything below the
@@ -480,6 +481,8 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         weeklyHost.cardDidBecomeCentered()
+        setupTextCycler?.setInWindow(true)
+        setupTextCycler?.setCentered(true)
         guard let headline, !didSettleHeadline else { return }
         didSettleHeadline = true
         view.layoutIfNeeded()
@@ -508,6 +511,8 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         weeklyHost.cardDidLeaveCenter()
+        setupTextCycler?.setCentered(false)
+        setupTextCycler?.setInWindow(false)
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
@@ -576,6 +581,13 @@ final class UtilCardContentViewController: CardContentViewController {
             title: OnboardingStrings.Intro.emailAction.value(),
             symbol: "envelope.fill",
             action: #selector(emailSetupTapped))
+
+        if app == .luna, showsOnboarding {
+            setupTextCycler = UtilCardSetupTextCycler(
+                safariButton: safariButton,
+                shortcutButton: saveSetupButton,
+                apps: LunaApp.onboardingRankedSiblings)
+        }
     }
 
     private func configureOrLabel() {

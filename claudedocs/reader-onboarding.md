@@ -8,6 +8,15 @@ and layout contract are documented in `util-card.md`.
 This document covers the launch transition, completion model, and the native
 Safari and Action Button shortcut lessons that the util card reuses.
 
+Central Luna borrows sibling lessons in product rank order: Reader, Downloader,
+then Price Tracker. It starts with the highest-ranked sibling whose installation
+marker is absent. The central Messages lesson uses that sibling's practice or
+weekly link and save surface while keeping Luna's name and icon. The central
+Safari lesson uses the same sibling's mock UI; once its Safari instructions
+appear, they remain modal above the full-screen content while the three sibling
+lessons replay underneath in rank order. The Manage Extensions sheet remains
+branded Luna, and the Safari prompt states that all Luna apps' features apply.
+
 ## Launch root
 
 Each `KindWiring.makeRootViewController()` always creates that surface's normal
@@ -23,6 +32,12 @@ The state intentionally does not switch in-place after the second setup leg.
 Buttons may become checked/disabled, but the compact completed layout appears on
 the next process launch. With any saved cards present, launch centers the first
 save at index one; only an empty store starts on the util card.
+
+On the central util card, the Safari and shortcut labels cycle through the
+Reader, Downloader, and Price Tracker labels in that same rank order. The
+buttons themselves stay fixed; only their clipped labels translate and fade.
+The central Save of the Week row fetches and cycles those three kinds in rank
+order, including blank turns for kinds whose current pick is nil.
 
 ## Launch artwork and reveal
 

@@ -107,6 +107,9 @@ final class AppOnboardingViewController: UIViewController {
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
+    private var safariReplicas: [LunaApp: SafariReplicaViewController] = [:]
+    private var safariCycleIndex = 0
+    private var safariInstructionLoopActive = false
     private var messagesReplica: MessagesReplicaViewController?
     /// The save lesson's engine, built the moment the user taps into it: it
     /// resolves the link, starts the real work, and owns the real share surface
@@ -484,23 +487,43 @@ final class AppOnboardingViewController: UIViewController {
 
     private func mountSourceReplicas() {
         guard safariReplica == nil else { return }
-        let safari = SafariReplicaViewController(configuration: configuration)
-        safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
-        safari.onSkipSafariSetup = { [weak self] in
-            self?.skipSafariSetupAndContinue()
+        for (offset, demonstrationApp) in configuration.safariDemonstrationApps.enumerated() {
+            let safariConfiguration = OnboardingSurfaceConfiguration.configuration(
+                for: configuration.app,
+                saveSetupMode: configuration.saveSetupMode,
+                demonstrationApp: demonstrationApp)
+            let safari = SafariReplicaViewController(configuration: safariConfiguration)
+            safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
+            safari.onSkipSafariSetup = { [weak self] in
+                self?.skipSafariSetupAndContinue()
+            }
+            safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
+            safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
+            safari.onSetUpLater = { [weak self] in
+                self?.completeSetupFlow(.messages, outcome: .skipped)
+            }
+            safari.makeActionButtonDestinationSnapshot = { [weak self] in
+                self?.makeSavedCardSnapshot()
+            }
+            safari.onActionButtonWaveFinished = { [weak self] in
+                self?.actionButtonWaveDidFinish(from: .safari)
+            }
+            safariReplicas[demonstrationApp] = safari
+            if offset == 0 {
+                safariReplica = safari
+            }
+
+            addChild(safari)
+            safari.view.frame = view.bounds
+            safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
+            safari.view.layer.cornerCurve = .continuous
+            safari.view.clipsToBounds = true
+            safari.view.alpha = 0
+            safari.view.isHidden = true
+            view.addSubview(safari.view)
+            safari.didMove(toParent: self)
+            safari.view.layoutIfNeeded()
         }
-        safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
-        safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
-        safari.onSetUpLater = { [weak self] in
-            self?.completeSetupFlow(.messages, outcome: .skipped)
-        }
-        safari.makeActionButtonDestinationSnapshot = { [weak self] in
-            self?.makeSavedCardSnapshot()
-        }
-        safari.onActionButtonWaveFinished = { [weak self] in
-            self?.actionButtonWaveDidFinish(from: .safari)
-        }
-        safariReplica = safari
 
         let messages = MessagesReplicaViewController(
             urlString: configuration.practiceURLString,
@@ -528,18 +551,8 @@ final class AppOnboardingViewController: UIViewController {
         view.addSubview(messages.view)
         messages.didMove(toParent: self)
 
-        // Mounted hidden at full size so the WKWebView spins up and lays out
-        // its bundled page long before the expansion needs it.
-        addChild(safari)
-        safari.view.frame = view.bounds
-        safari.view.layer.cornerRadius = CardSurfaceView.cornerRadius
-        safari.view.layer.cornerCurve = .continuous
-        safari.view.clipsToBounds = true
-        safari.view.alpha = 0
-        safari.view.isHidden = true
-        view.addSubview(safari.view)
-        safari.didMove(toParent: self)
-        safari.view.layoutIfNeeded()
+        // Every central sibling lesson is mounted hidden so the popup can stay
+        // above a live page while the next feature animation starts below it.
     }
 
     /// Builds the save lesson's engine (once), points the conversation at the
@@ -550,7 +563,7 @@ final class AppOnboardingViewController: UIViewController {
         let demo = saveDemoController ?? OnboardingSaveDemoController(
             link: OnboardingSaveDemoLink.resolve(
                 practiceURLString: configuration.practiceURLString,
-                app: configuration.app),
+                app: configuration.demonstrationApp),
             onboardingStore: onboardingStore)
         saveDemoController = demo
         messages.saveDemoController = demo
@@ -576,7 +589,7 @@ final class AppOnboardingViewController: UIViewController {
         saveDemoController?.link
             ?? OnboardingSaveDemoLink.resolve(
                 practiceURLString: configuration.practiceURLString,
-                app: configuration.app)
+                app: configuration.demonstrationApp)
     }
 
     private func showSafariCard() {
@@ -724,6 +737,16 @@ final class AppOnboardingViewController: UIViewController {
 
     private func actionButtonWaveDidFinish(from source: OnboardingDemoSource) {
         guard source == activeDemoSource else { return }
+
+        // Central Luna keeps the Safari instructions above the lesson and
+        // continues the lesson underneath them. Subsequent sibling waves are
+        // just the loop's next beat; they must not replace or reconfigure the
+        // active popup.
+        if source == .safari, safariInstructionLoopActive {
+            scheduleSafariInstructionReplay()
+            return
+        }
+
         commitWaveDrivenCardPresentation()
         nextDemoSource = source.next
 
@@ -731,6 +754,10 @@ final class AppOnboardingViewController: UIViewController {
             return
         }
         stopDemoPresentationLoop()
+        if configuration.isCentralApp, prompt == .safari {
+            presentSafariInstructionsAndLoop()
+            return
+        }
         presentInstructionsAfterShrinking(
             instructionDelay:
                 OnboardingDemoLoopTiming.setupPromptSavedCardHoldDuration
@@ -744,6 +771,74 @@ final class AppOnboardingViewController: UIViewController {
             case .actionButton:
                 self.safariReplica?.showShortcutAndActionSetup()
             }
+        }
+    }
+
+    private func presentSafariInstructionsAndLoop() {
+        safariInstructionLoopActive = true
+        stopDemoPresentationLoop()
+        transitionDemo(to: .fullScreen, source: .safari) { [weak self] in
+            guard let self, !self.isFinishing else { return }
+            self.safariReplica?.showSafariPrompt()
+            self.scheduleSafariInstructionReplay()
+        }
+    }
+
+    /// Replays the next sibling lesson below the window-hosted instruction
+    /// overlay. The first lesson is already the highest-ranked missing sibling;
+    /// later passes wrap through Reader → Downloader → Price Tracker.
+    private func scheduleSafariInstructionReplay() {
+        guard safariInstructionLoopActive, !isFinishing else { return }
+        demoLoopGeneration += 1
+        let generation = demoLoopGeneration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(
+                OnboardingDemoLoopTiming.savedCardHoldDuration)
+        ) { [weak self] in
+            guard let self,
+                  self.safariInstructionLoopActive,
+                  !self.isFinishing,
+                  generation == self.demoLoopGeneration
+            else { return }
+            self.cycleSafariInstructionLesson()
+        }
+    }
+
+    private func cycleSafariInstructionLesson() {
+        let apps = configuration.safariDemonstrationApps
+        guard apps.count > 1,
+              let outgoing = safariReplica,
+              !isFinishing
+        else {
+            safariReplica?.resetDemonstration()
+            safariReplica?.beginDemonstration()
+            return
+        }
+        safariCycleIndex = (safariCycleIndex + 1) % apps.count
+        guard let incoming = safariReplicas[apps[safariCycleIndex]] else { return }
+
+        incoming.resetDemonstration()
+        incoming.view.frame = view.bounds
+        incoming.view.layer.cornerRadius = 0
+        incoming.view.isHidden = false
+        incoming.view.alpha = 0
+        view.bringSubviewToFront(incoming.view)
+        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.28
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState]
+        ) {
+            outgoing.view.alpha = 0
+            incoming.view.alpha = 1
+        } completion: { [weak self] _ in
+            guard let self, self.safariInstructionLoopActive else { return }
+            outgoing.view.isHidden = true
+            outgoing.view.alpha = 0
+            self.safariReplica = incoming
+            self.setNeedsStatusBarAppearanceUpdate()
+            incoming.prepareForPresentation()
+            incoming.beginDemonstration()
         }
     }
 
@@ -956,6 +1051,12 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    private func dismissSafariInstructions() {
+        for safari in safariReplicas.values {
+            safari.dismissInstructions(animated: false) {}
+        }
+    }
+
     #if DEBUG
     private func showDebugMessagesSource() {
         prepareSourceForPresentation(.messages)
@@ -984,6 +1085,7 @@ final class AppOnboardingViewController: UIViewController {
     /// foreground return from resuming stale callbacks over the next stage.
     private func pauseDemoPresentationPlayback() {
         stopDemoPresentationLoop()
+        safariInstructionLoopActive = false
         appSwitcher?.removeFromSuperview()
         appSwitcher = nil
         for source in OnboardingDemoSource.allCases {
@@ -1400,7 +1502,7 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
-        safariReplica?.dismissInstructions(animated: false) {}
+        dismissSafariInstructions()
 
         let outgoing = switcherSnapshot(of: source.view, afterScreenUpdates: false)
         let switcher = OnboardingAppSwitcherView(
@@ -1428,7 +1530,7 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
-        safariReplica?.dismissInstructions(animated: false) {}
+        dismissSafariInstructions()
 
         let outgoing = switcherSnapshot(
             of: source.view, afterScreenUpdates: false)
@@ -1482,7 +1584,7 @@ final class AppOnboardingViewController: UIViewController {
         pauseDemoPresentationPlayback()
         safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
-        safariReplica?.dismissInstructions(animated: false) {}
+        dismissSafariInstructions()
 
         root.view.alpha = 1
         root.view.layoutIfNeeded()

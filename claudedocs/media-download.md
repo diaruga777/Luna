@@ -532,7 +532,14 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
   handoff therefore returns after the library row, recoverable job, and Live Activity
   exist, without waiting for the optional size probe. If the process is later killed
   in that small pre-task window, launch repair recreates the transfer from the asset
-  URLs persisted in the job.
+  URLs persisted in the job. **The lease is inert in an `.appex`** — the share and
+  action extensions reach the same start path
+  (`ShareViewController.autoDownloadThenComplete` →
+  `MediaAutoDownloader.startLiveActivityIfEnabled`), `UIApplication.shared` is nil
+  there, and Swift's non-optional bridge traps on it; an extension has no app
+  lifetime to extend anyway, since its host decides when it dies. It is also
+  acquired asynchronously rather than with `DispatchQueue.main.sync`, because every
+  caller is an `async` context on the cooperative pool.
   Its Facebook resolver follows the extension resolver's plugin-embed-first sequence,
   then falls back through the desktop page, mobile page, any canonical video page, and the
   crawler page;

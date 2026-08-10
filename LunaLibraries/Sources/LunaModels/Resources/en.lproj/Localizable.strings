@@ -623,6 +623,9 @@
 "Settings_shortcut_titleSafariOnly_Luna" = "Safari";
 "Settings_shortcut_suggestionButtonSectionHeader_Luna" = "%@ Button";
 "Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari, choose when the \"%@\" button appears.";
+"Settings_shortcut_videoPlayerSectionHeader_Luna" = "Video Player";
+"Settings_shortcut_videoPlayerToggleLabel_Luna" = "Play in Safari";
+"Settings_shortcut_videoPlayerFooter_Luna" = "Open a video post in Safari and Luna plays it right there, with one button to download it. Turn this off to leave the page alone — the \"%@\" button still hands the video to Luna.";
 "Settings_shortcut_onScreenURLsSectionHeader_Luna" = "Apple Intelligence";
 "Settings_shortcut_onScreenURLsToggleLabel_Luna" = "On-Screen URLs";
 "Settings_shortcut_onScreenURLsFooter_Luna" = "When enabled, use Apple Intelligence to save any url on screen with the Action Button. URLs are identified on-device and may not be perfect.";

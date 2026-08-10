@@ -63,10 +63,12 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
         // Shortcut & Safari holds the suggestion-button toggle (article apps
-        // only) and the Action Button shortcut sections (any device that can
-        // run one) — omit the whole row rather than risk landing on a screen
-        // with nothing in it.
-        + (LunaApp.current.handlesArticles || ShortcutSettingsScreen.deviceHasShortcutSetup
+        // only), the in-page video player's off switch (media apps only) and
+        // the Action Button shortcut sections (any device that can run one) —
+        // omit the whole row rather than risk landing on a screen with nothing
+        // in it.
+        + (LunaApp.current.handlesArticles || LunaApp.current.handlesMedia
+            || ShortcutSettingsScreen.deviceHasShortcutSetup
             ? [SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() }]
             : [])
         + [
@@ -209,7 +211,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Then the Action-Button shortcut's URL preference, double-save action,
     /// and actions, which are here only on a device that can run the shortcut.
     private enum Section: Int, CaseIterable {
-        case suggestionButton, onScreenURLs, doubleSave, shortcut
+        case suggestionButton, videoPlayer, onScreenURLs, doubleSave, shortcut
     }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
@@ -245,6 +247,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         // The suggestion pill only ever fires on article pages, so its toggle
         // is meaningless outside the two apps that handle articles.
         var sections: [Section] = LunaApp.current.handlesArticles ? [.suggestionButton] : []
+        // The in-page video player is media handling, and only the two
+        // media-handling apps' extensions ever open one
+        // (`claudedocs/safari-extension.md`).
+        if LunaApp.current.handlesMedia { sections.append(.videoPlayer) }
         guard showsShortcutSetup else { return sections }
         sections.append(.onScreenURLs)
         // Double save is a behavior of the Action Button shortcut, so it
@@ -272,6 +278,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .suggestionButton: return 1
+        case .videoPlayer: return 1
         case .onScreenURLs: return 1
         case .doubleSave: return 1
         case .shortcut: return Row.allCases.count
@@ -281,6 +288,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton: return L10n.string("Settings_shortcut_suggestionButtonSectionHeader", safariButtonName)
+        case .videoPlayer: return L10n.string("Settings_shortcut_videoPlayerSectionHeader")
         case .onScreenURLs: return L10n.string("Settings_shortcut_onScreenURLsSectionHeader")
         case .doubleSave: return L10n.string("Settings_shortcut_doubleSaveSectionHeader")
         case .shortcut: return L10n.string("Settings_shortcut_shortcutSectionHeader")
@@ -291,6 +299,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         switch visibleSections[section] {
         case .suggestionButton:
             return L10n.string("Settings_shortcut_suggestionButtonFooter", safariButtonName)
+        case .videoPlayer:
+            return L10n.string("Settings_shortcut_videoPlayerFooter", safariButtonName)
         case .onScreenURLs:
             return L10n.string("Settings_shortcut_onScreenURLsFooter")
         case .doubleSave:
@@ -322,6 +332,19 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
                 control.topAnchor.constraint(greaterThanOrEqualTo: cell.contentView.topAnchor, constant: 8),
                 control.bottomAnchor.constraint(lessThanOrEqualTo: cell.contentView.bottomAnchor, constant: -8),
             ])
+            return cell
+        }
+
+        if visibleSections[indexPath.section] == .videoPlayer {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.selectionStyle = .none
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("Settings_shortcut_videoPlayerToggleLabel")
+            content.image = UIImage(systemName: "play.rectangle")
+            cell.contentConfiguration = content
+            cell.accessoryView = makeToggle(
+                isOn: SafariSuggestionSettings.videoPlayerEnabled,
+                action: #selector(videoPlayerToggled(_:)))
             return cell
         }
 
@@ -427,6 +450,10 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     @objc private func suggestionModeChanged(_ control: UISegmentedControl) {
         let modes = SafariSuggestionMode.allCases
         SafariSuggestionSettings.mode = modes[max(0, min(control.selectedSegmentIndex, modes.count - 1))]
+    }
+
+    @objc private func videoPlayerToggled(_ sender: UISwitch) {
+        SafariSuggestionSettings.videoPlayerEnabled = sender.isOn
     }
 
     @objc private func handleOnScreenURLsToggled(_ sender: UISwitch) {

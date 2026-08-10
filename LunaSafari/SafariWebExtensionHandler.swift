@@ -23,6 +23,12 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
+    /// The in-page player's off switch, written by the two media apps' Settings
+    /// (`SafariSuggestionSettings.videoPlayerKey`, pinned by
+    /// `SafariVideoOverlayContractTests`). Absent means ON — the player is the
+    /// shipped behavior, and a user who never opened Settings has written
+    /// nothing.
+    private static let videoPlayerKey = "safariVideoPlayerEnabled"
 
     /// A resolve is several chained network fetches (YouTube's is four), so it
     /// needs a real budget — but an appex that never completes its request wedges
@@ -73,6 +79,13 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
             payload["supportsProducts"] = Self.hostHandlesProducts
+            // Whether a media page opens the in-page player at all. Rides the
+            // context the page already asks for; a non-media host never sends it
+            // (its pages have no player to suppress), and an absent key is ON.
+            if Self.hostHandlesMedia {
+                payload["videoPlayer"] = UserDefaults(suiteName: Self.appGroupID)?
+                    .object(forKey: Self.videoPlayerKey) as? Bool ?? true
+            }
             // Rides the context the content script already asks for, so deciding
             // whether to congratulate the user costs no extra round trip. The
             // script suppresses its pill for the confirmation's lifetime.
@@ -202,6 +215,14 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             "kind": asset.kind.rawValue,
         ]
         if let thumbnail = asset.thumbnailURL { dictionary["thumbnailURL"] = thumbnail.absoluteString }
+        // The clip's shape as far as the resolve knows it (LunaMediaResolve
+        // reads it; nothing is parsed here). It arrives a whole network round
+        // trip before the element's own metadata, so the panel can open at the
+        // right height instead of re-shaping itself once the stream does.
+        if let size = asset.declaredPixelSize {
+            dictionary["width"] = size.width
+            dictionary["height"] = size.height
+        }
         return dictionary
     }
 

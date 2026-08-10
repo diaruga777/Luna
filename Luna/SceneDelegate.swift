@@ -152,6 +152,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // assets to the App Group; this link carries no payload, it just
             // says "drain". An app with no media kind drains nothing — and
             // nothing could have queued anything for it either.
+            //
+            // This launch exists only to persist the save, start the transfer
+            // and request the Live Activity — the user is going straight back to
+            // Safari — so hold the splash rather than crossfading to a deck they
+            // will never look at.
+            AppLaunchTransition.holdForHandoff()
             mainNavigationController?.popToRootViewController(animated: false)
             KindWiring.drainPendingResolvedMedia(
                 returningToSource: LunaDeepLink.requestsReturnToSource(url))
@@ -253,6 +259,16 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // `ExternalItemOpening`, so no kind-specific downcast is needed.
             (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
         }
+    }
+
+    /// The hand-off worked: we are on our way back to Safari, so the held splash
+    /// can retire off-screen and the next visit is an ordinary launch. (A
+    /// hand-off that never manages to leave releases on its own timeout instead —
+    /// `AppLaunchTransition.maximumHandoffHold`. This is deliberately NOT
+    /// `sceneWillEnterForeground`, which a cold launch runs moments after the
+    /// hold is taken.)
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        AppLaunchTransition.releaseHandoffHold()
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {

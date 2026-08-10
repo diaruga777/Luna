@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+@testable import Luna
 import LunaMediaResolve
 import LunaModels
 import LunaURLClassification
@@ -469,6 +470,51 @@ final class SafariVideoOverlayTests: XCTestCase {
             "the panel kept the page's claimed shape after the clip reported a wide one")
     }
 
+    /// The resolve usually knows the rendition's size (the CDN names it in the
+    /// URL), and it lands a whole round trip before the element's metadata — so
+    /// the panel opens at the clip's shape rather than growing into it.
+    func testTheResolvedSizeShapesTheStageBeforeAnythingStreams() {
+        present(assets: """
+            [{ url: \(json(Self.assetURL)), kind: "video", width: 720, height: 1280 }]
+            """)
+        let visible = js.number("""
+            window.visualViewport ? window.visualViewport.height : window.innerHeight
+            """)
+        XCTAssertGreaterThan(
+            panelRect().height, visible * 0.7,
+            "the panel ignored the size the resolve already knew")
+    }
+
+    /// The stage's inline `transition`, which is set only for a size change the
+    /// user is watching happen (empty while the panel is still arriving).
+    private func stageTransition() -> String {
+        js.string("""
+            document.getElementById(window.__lunaVideoOverlayID)
+                .firstChild.children[1].style.transition
+            """) ?? ""
+    }
+
+    /// Arriving at a size is not the same act as changing size. A shape known
+    /// while the panel is still appearing is applied outright…
+    func testAShapeKnownAsThePanelOpensIsNotAnimated() {
+        present(assets: playableAsset)
+        reportMetadata(width: 1080, height: 1920)
+        XCTAssertEqual(stageTransition(), "", "the panel animated its way to its opening size")
+    }
+
+    /// …but a platform that declares nothing anywhere can leave the answer to
+    /// the stream, and on iOS the stream can withhold it until the Play tap. A
+    /// first shape that turns up then must settle, not snap under the thumb.
+    func testAShapeThatOnlyArrivesAtPlayTimeSettlesInsteadOfSnapping() {
+        present(assets: playableAsset)
+        let window = js.number("window.__lunaInstantSizingMilliseconds") / 1000
+        RunLoop.current.run(until: Date().addingTimeInterval(window + 0.2))
+        reportMetadata(width: 1080, height: 1920)
+        XCTAssertTrue(
+            stageTransition().contains("height"),
+            "a late first shape resized the panel with no animation at all")
+    }
+
     /// Mobile Safari may withhold its first metadata callback until playback.
     /// The player explicitly asks for metadata and keeps listening to later
     /// readiness signals, so the first Play tap is not the first time it sizes.
@@ -600,6 +646,22 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         }
     }
 
+    /// The player's off switch crosses all three processes as a bare App Group
+    /// key: Settings writes it, the appex reads it as a literal (it links no app
+    /// code), the page acts on the answer. A key that agrees on two sides out of
+    /// three is a setting that silently does nothing.
+    func testTheOffSwitchIsOneAppGroupKeyAcrossAllThreeProcesses() {
+        XCTAssertTrue(
+            handler.contains("\"\(SafariSuggestionSettings.videoPlayerKey)\""),
+            "the Safari handler reads a different key than Settings writes")
+        XCTAssertTrue(
+            contentScript.contains("context.videoPlayer === false"),
+            "content.js no longer honours the handler's videoPlayer answer")
+        XCTAssertTrue(
+            handler.contains("payload[\"videoPlayer\"]"),
+            "the handler stopped sending the answer content.js waits for")
+    }
+
     /// And no OTHER file in the extension may grow one either.
     func testNoExtensionSourceReimplementsResolution() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
@@ -653,6 +715,37 @@ final class SafariVideoOverlayContractTests: XCTestCase {
 
         let still = MediaAsset(url: URL(string: "https://pbs.twimg.com/a.jpg")!, kind: .image)
         XCTAssertFalse(still.isDirectlyPlayable)
+    }
+
+    // MARK: - The shape is a Swift rule too
+
+    /// Where a platform names the rendition in its URL, the resolve already
+    /// knows the clip's shape — read in LunaMediaResolve, like playability, so
+    /// the extension keeps parsing nothing.
+    func testADeclaredRenditionSizeIsReadFromTheAssetURL() {
+        let x = MediaAsset(
+            url: URL(string: "https://video.twimg.com/ext_tw_video/1/pu/vid/avc1/720x1280/a.mp4")!,
+            kind: .video)
+        XCTAssertEqual(x.declaredPixelSize, MediaPixelSize(width: 720, height: 1280))
+        XCTAssertEqual(x.declaredPixelSize?.aspectHeightOverWidth ?? 0, 1280.0 / 720.0, accuracy: 0.001)
+
+        // The most specific segment wins where a path names more than one.
+        let nested = MediaAsset(
+            url: URL(string: "https://cdn.example.com/2x2/renditions/1920x1080/clip.mp4")!,
+            kind: .video)
+        XCTAssertEqual(nested.declaredPixelSize, MediaPixelSize(width: 1920, height: 1080))
+
+        // An id that merely contains an "x", a size no video has, and a
+        // platform that names nothing all answer the same way: nothing.
+        for urlString in [
+            "https://scontent.cdninstagram.com/v/t50/abcx123/reel.mp4",
+            "https://cdn.example.com/2x3/clip.mp4",
+            "https://www.tiktok.com/aweme/v1/play/?video_id=7000",
+        ] {
+            XCTAssertNil(
+                MediaAsset(url: URL(string: urlString)!, kind: .video).declaredPixelSize,
+                "invented a size for \(urlString)")
+        }
     }
 
     // MARK: - Reddit keeps its pill

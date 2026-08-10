@@ -215,6 +215,14 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             "kind": asset.kind.rawValue,
         ]
         if let thumbnail = asset.thumbnailURL { dictionary["thumbnailURL"] = thumbnail.absoluteString }
+        // The clip's shape as far as the resolve knows it (LunaMediaResolve
+        // reads it; nothing is parsed here). It arrives a whole network round
+        // trip before the element's own metadata, so the panel can open at the
+        // right height instead of re-shaping itself once the stream does.
+        if let size = asset.declaredPixelSize {
+            dictionary["width"] = size.width
+            dictionary["height"] = size.height
+        }
         return dictionary
     }
 

@@ -1844,6 +1844,12 @@
     // instead of waiting one out.
     var PLAYER_GROWTH_SECONDS = 0.24;
     window.__lunaSetPlayerGrowthSeconds = function (value) { PLAYER_GROWTH_SECONDS = value; };
+    // How long after the panel opens a shape still counts as the panel ARRIVING
+    // at its size (applied with no animation) rather than changing size in front
+    // of the user (animated). Long enough to cover the resolve round trip and
+    // the first metadata callback, short enough that a shape which only turns up
+    // when the user presses Play settles instead of snapping.
+    var PLAYER_INSTANT_SIZING_MS = 700;
     // A dismissal is the user saying "not this page": it stops any auto-open
     // still pending. The PILL is unaffected — tapping it re-opens the player.
     var videoOverlayDismissed = false;
@@ -1902,10 +1908,16 @@
     ///
     /// Worth asking before the stream opens because it costs nothing and lands a
     /// beat earlier than `loadedmetadata` — but it is only ever an optimisation:
-    /// most posts declare no video dimensions (an Instagram reel declares no
-    /// video at all), and the element's own metadata overrides whatever this
-    /// says the moment it arrives. `exclude` keeps our own panel out of the DOM
-    /// walk.
+    /// most posts declare no video dimensions, and the element's own metadata
+    /// overrides whatever this says the moment it arrives. `exclude` keeps our
+    /// own panel out of the DOM walk.
+    ///
+    /// Three sources, strongest first. The last of them is the poster's shape
+    /// rather than the video's, and it is here because of Instagram: a reel
+    /// declares no video whatsoever, and its `og:image` cover is generated at the
+    /// clip's own aspect. A cover that lies costs one animated correction when
+    /// the real metadata lands; having nothing at all costs the panel opening
+    /// letterboxed and jumping.
     function pageMediaAspect(exclude) {
         var pairs = [
             ["og:video:width", "og:video:height"],
@@ -1924,6 +1936,9 @@
                 return element.videoHeight / element.videoWidth;
             }
         }
+        var coverWidth = metaNumber("og:image:width");
+        var coverHeight = metaNumber("og:image:height");
+        if (coverWidth > 0 && coverHeight > 0) { return coverHeight / coverWidth; }
         return 0;
     }
 
@@ -2049,6 +2064,12 @@
         // the 16:9 it opens at (a wide clip keeps the panel exactly as it was),
         // and never past what `visiblePageBox` says is on screen.
         var stageAspect = 0;
+        // Whether the shape came from the media itself rather than from
+        // something the page said about its cover — see `setStageAspect`.
+        var hasAuthoritativeAspect = false;
+        // When the panel appeared, which is what separates "opening at the right
+        // size" from "changing size while someone is looking at it".
+        var openedAt = Date.now();
 
         /// Everything in the panel that is not the stage: its padding, the header
         /// and the download button. Measured rather than added up from the
@@ -2098,15 +2119,32 @@
         /// `ratio` is the clip's height ÷ width. Ignored unless it actually says
         /// something new, so a repeated `loadedmetadata` costs no layout.
         ///
-        var setStageAspect = function (ratio) {
+        /// `authoritative` is the element's own metadata (or the resolver's
+        /// declared rendition size) rather than something the page implied about
+        /// its cover image. A guess may replace another guess, but never an
+        /// answer — otherwise a poster that decodes late would re-shape a panel
+        /// already sized by the stream.
+        var setStageAspect = function (ratio, authoritative) {
             if (!(ratio > 0) || Math.abs(ratio - stageAspect) < 0.005) { return; }
+            if (hasAuthoritativeAspect && !authoritative) { return; }
+            if (authoritative) { hasAuthoritativeAspect = true; }
             // LEARNING the shape is the panel arriving at its size and must not
             // animate: it lands within a few hundred ms of the panel opening,
             // while the stage still says "Finding video…", and a transition there
             // is only a way for the first paint to be the wrong size. Changing
             // its mind afterwards is a correction, and that one has to be a
             // movement — the panel is already something the user is looking at.
-            if (stageAspect > 0) {
+            //
+            // The same is true of a FIRST shape that arrives late. A platform
+            // that declares nothing anywhere can leave the answer to the stream,
+            // and on iOS the stream can wait for the Play tap — at which point
+            // an unanimated resize is the panel snapping under the user's thumb,
+            // which is the one thing the sizing is here to avoid. So the
+            // no-animation case is not "the first" shape, it is "a shape that
+            // arrived while the panel was still appearing".
+            var isArrival = stageAspect === 0
+                && (Date.now() - openedAt) < PLAYER_INSTANT_SIZING_MS;
+            if (!isArrival) {
                 stage.style.transition = "height " + PLAYER_GROWTH_SECONDS + "s ease";
             }
             stageAspect = ratio;
@@ -2237,6 +2275,14 @@
             var asset = (result.assets || [])[0];
             if (!asset || !asset.url) { degrade(); return; }
             didResolve = true;
+            // The resolve itself often knows the rendition's size (the CDN names
+            // it in the URL — `MediaAsset.declaredPixelSize`), and it lands a
+            // whole network round trip before the element's metadata does. It is
+            // the media's own size, not a guess about it, so it counts as the
+            // answer.
+            if (asset.width > 0 && asset.height > 0) {
+                setStageAspect(asset.height / asset.width, true);
+            }
             if (status.parentNode) { status.parentNode.removeChild(status); }
             video = document.createElement("video");
             video.setAttribute("controls", "");
@@ -2254,9 +2300,22 @@
             var applyVideoAspect = function () {
                 if (closed || !video) { return; }
                 if (video.videoWidth > 0 && video.videoHeight > 0) {
-                    setStageAspect(video.videoHeight / video.videoWidth);
+                    setStageAspect(video.videoHeight / video.videoWidth, true);
                 }
             };
+            // Nothing has said anything about the shape yet, and the stream may
+            // not either until the user presses Play (iOS defers metadata for an
+            // off-page player). The poster is already being fetched to fill the
+            // stage — decoding it costs nothing extra and is usually the clip's
+            // own shape. A guess, so the stream still overrides it.
+            if (asset.thumbnailURL && stageAspect === 0) {
+                var cover = new Image();
+                cover.addEventListener("load", function () {
+                    if (closed || !(cover.naturalWidth > 0)) { return; }
+                    setStageAspect(cover.naturalHeight / cover.naturalWidth, false);
+                });
+                cover.src = asset.thumbnailURL;
+            }
             // iOS can defer `loadedmetadata` for an off-main-page player until a
             // user gesture, and a restored page can race past that one event.
             // Every subsequent readiness/playback signal repeats the cheap size
@@ -2322,6 +2381,7 @@
     window.__lunaPresentVideoOverlay = presentVideoOverlay;
     window.__lunaVideoOverlayID = VIDEO_OVERLAY_ID;
     window.__lunaAutoPlayerRetryDelays = AUTO_PLAYER_RETRY_DELAYS;
+    window.__lunaInstantSizingMilliseconds = PLAYER_INSTANT_SIZING_MS;
 
     var PILL_ID = "queue-read-button";
     window.__lunaPillID = PILL_ID;

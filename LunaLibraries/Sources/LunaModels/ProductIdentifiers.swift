@@ -49,6 +49,9 @@ public struct ProductIdentifiers: Codable, Equatable, Hashable, Sendable {
     /// The MPN reduced to comparable alphanumerics, or nil.
     public var normalizedMPN: String? { ProductIdentityMatching.normalizedID(mpn) }
 
+    /// The retailer SKU reduced to comparable alphanumerics, or nil.
+    public var normalizedSKU: String? { ProductIdentityMatching.normalizedID(sku) }
+
     /// Whether this carries any identifier strong enough to match across hosts
     /// (a GTIN, or an MPN that a brand can qualify).
     public var hasCrossHostIdentifier: Bool { normalizedGTIN != nil || normalizedMPN != nil }

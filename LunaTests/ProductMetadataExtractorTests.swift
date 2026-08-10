@@ -46,6 +46,27 @@ final class ProductMetadataExtractorTests: XCTestCase {
         XCTAssertEqual(meta?.price.currency, "USD")
     }
 
+    func testAmazonASINTitleAndPrimaryImageEnrichOtherwiseUnstructuredMetadata() async {
+        let html = """
+        <html><head><title>Amazon.com: Browser Chrome</title></head><body>
+        <span id="productTitle">Acme Model X1 Toaster</span>
+        <img id="landingImage" src="data:image/gif;base64,x"
+             data-old-hires="https://m.media-amazon.com/images/I/acme.jpg">
+        <div id="corePriceDisplay_desktop_feature_div">
+          <span class="a-price"><span class="a-offscreen">$42.50</span></span>
+        </div>
+        </body></html>
+        """
+        let meta = await extractor.extract(
+            url: url("https://www.amazon.com/acme/dp/B0ACME1234"), html: html)
+        XCTAssertEqual(meta?.name, "Acme Model X1 Toaster")
+        XCTAssertEqual(meta?.productID, "B0ACME1234")
+        XCTAssertEqual(meta?.identifiers.sku, "B0ACME1234")
+        XCTAssertEqual(
+            meta?.imageURL?.absoluteString,
+            "https://m.media-amazon.com/images/I/acme.jpg")
+    }
+
     func testAmazonLookalikeHostDoesNotMatchAmazonRule() {
         // amazon.scam.com is NOT an Amazon storefront — the rule must decline it.
         XCTAssertFalse(AmazonPriceRule().matches(host: "amazon.scam.com"))

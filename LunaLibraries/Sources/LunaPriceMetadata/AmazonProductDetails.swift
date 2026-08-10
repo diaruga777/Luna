@@ -38,15 +38,21 @@ public enum AmazonProductDetails {
     public struct Identifiers: Equatable, Sendable {
         public var gtin: String?
         public var mpn: String?
+        /// Amazon's ASIN. It is retailer-scoped, so it is a SKU rather than a
+        /// global identifier or manufacturer part number.
+        public var sku: String?
         public var brand: String?
 
-        public init(gtin: String? = nil, mpn: String? = nil, brand: String? = nil) {
+        public init(
+            gtin: String? = nil, mpn: String? = nil, sku: String? = nil, brand: String? = nil
+        ) {
             self.gtin = gtin
             self.mpn = mpn
+            self.sku = sku
             self.brand = brand
         }
 
-        public var isEmpty: Bool { gtin == nil && mpn == nil && brand == nil }
+        public var isEmpty: Bool { gtin == nil && mpn == nil && sku == nil && brand == nil }
     }
 
     /// Whether `host` is an Amazon storefront by SHAPE. The authoritative list
@@ -68,7 +74,10 @@ public enum AmazonProductDetails {
     /// whose details table did not load. `GTINForms.isValidISBN10` is what keeps
     /// that from firing on an ordinary ASIN.
     public static func identifiers(inHTML html: String, url: URL?) -> Identifiers {
-        var found = Identifiers()
+        // A product URL always states the ASIN even when Amazon lazy-loads or
+        // omits every product-details module. Preserve it as retailer-scoped
+        // identity; ordinary ASINs must never be promoted to GTIN/MPN.
+        var found = Identifiers(sku: asin(in: url))
         let html = detailsRegions(in: html)
 
         for label in ["ISBN-13", "ISBN13"] {
@@ -128,6 +137,83 @@ public enum AmazonProductDetails {
                 of: "/(dp|gp/product)/[A-Z0-9]{10}", options: [.regularExpression])
         else { return nil }
         return String(path[range].suffix(10))
+    }
+
+    // MARK: - Descriptive metadata
+
+    /// Amazon's visible product title, without the storefront/category chrome
+    /// appended to the document title.
+    public static func title(inHTML html: String) -> String? {
+        guard let raw = captures(
+            #"id\s*=\s*[\"']productTitle[\"'][^>]*>([\s\S]{1,2000}?)<"#, in: html
+        ).first else { return nil }
+        let title = strippedTags(raw)
+        return title.isEmpty ? nil : title
+    }
+
+    /// Primary product artwork from Amazon's desktop and mobile image blocks.
+    /// Amazon commonly omits `og:image`, but these blocks still carry a stable
+    /// high-resolution media URL.
+    public static func imageURL(inHTML html: String) -> URL? {
+        guard let tag = firstMatch(
+            #"<img\b[^>]*(?:id\s*=\s*[\"'](?:landingImage|main-image|imgBlkFront|ebooksImgBlkFront)[\"']|data-a-image-name\s*=\s*[\"']mainImage[\"']|data-fling-refmarker\s*=\s*[\"']detail_main_image_block[\"'])[^>]*>"#,
+            in: html)
+        else { return embeddedPrimaryImageURL(in: html) }
+
+        for attribute in ["data-old-hires", "data-a-hires", "data-midres-replacement"] {
+            if let raw = attributeValue(attribute, in: tag), let url = webURL(decodedHTML(raw)) {
+                return url
+            }
+        }
+        if let dynamic = attributeValue("data-a-dynamic-image", in: tag),
+           let data = decodedHTML(dynamic).data(using: .utf8),
+           let sizes = try? JSONSerialization.jsonObject(with: data) as? [String: [Int]],
+           let raw = sizes.max(by: { imageArea($0.value) < imageArea($1.value) })?.key,
+           let url = webURL(raw) {
+            return url
+        }
+        for attribute in ["src", "data-src"] {
+            if let raw = attributeValue(attribute, in: tag), let url = webURL(decodedHTML(raw)) {
+                return url
+            }
+        }
+        return embeddedPrimaryImageURL(in: html)
+    }
+
+    private static func embeddedPrimaryImageURL(in html: String) -> URL? {
+        for pattern in [
+            #"\"hiRes\"\s*:\s*\"(https?:\\?/\\?/[^\"]+)\""#,
+            #"\"large\"\s*:\s*\"(https?:\\?/\\?/[^\"]+)\""#,
+            #"\"mainUrl\"\s*:\s*\"(https?:\\?/\\?/[^\"]+)\""#,
+        ] {
+            guard let raw = captures(pattern, in: html).first else { continue }
+            let unescaped = raw.replacingOccurrences(of: #"\/"#, with: "/")
+            if let url = webURL(unescaped) { return url }
+        }
+        return nil
+    }
+
+    private static func attributeValue(_ name: String, in tag: String) -> String? {
+        captures(#"\b\#(name)\s*=\s*[\"']([^\"']+)[\"']"#, in: tag).first
+    }
+
+    private static func imageArea(_ size: [Int]) -> Int {
+        guard size.count >= 2 else { return 0 }
+        return size[0] * size[1]
+    }
+
+    private static func decodedHTML(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#34;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private static func webURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http"
+        else { return nil }
+        return url
     }
 
     // MARK: - Price
@@ -232,12 +318,14 @@ public enum AmazonProductDetails {
 
     static func normalizedAmountString(_ raw: String) -> String {
         guard let lastComma = raw.lastIndex(of: ","), let lastDot = raw.lastIndex(of: ".") else {
-            if raw.contains(",") {
-                let parts = raw.components(separatedBy: ",")
+            if raw.contains(",") || raw.contains(".") {
+                let separator: Character = raw.contains(",") ? "," : "."
+                let parts = raw.split(separator: separator, omittingEmptySubsequences: false)
+                    .map(String.init)
                 if parts.count == 2, (1...2).contains(parts[1].count) {
                     return parts.joined(separator: ".")
                 }
-                return raw.replacingOccurrences(of: ",", with: "")
+                return parts.joined()
             }
             return raw
         }

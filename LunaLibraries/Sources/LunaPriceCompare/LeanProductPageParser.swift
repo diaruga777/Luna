@@ -92,7 +92,7 @@ public enum LeanProductPageParser {
         if AmazonProductDetails.isAmazonHost(url.host) {
             let details = AmazonProductDetails.identifiers(inHTML: html, url: url)
             identifiers = identifiers.merging(ProductIdentifiers(
-                gtin: details.gtin, mpn: details.mpn, brand: details.brand))
+                gtin: details.gtin, mpn: details.mpn, sku: details.sku, brand: details.brand))
             if price == nil || currency == nil,
                let amazon = AmazonProductDetails.price(
                 inHTML: html, currencyHint: AmazonStorefronts.storefront(for: url.host)?.currency) {
@@ -114,7 +114,10 @@ public enum LeanProductPageParser {
             currency = embedded.currency
         }
 
-        let image = jsonLD?.imageURL
+        let image = (AmazonProductDetails.isAmazonHost(url.host)
+            ? AmazonProductDetails.imageURL(inHTML: html)?.absoluteString
+            : nil)
+            ?? jsonLD?.imageURL
             ?? metaContent(html, names: ["og:image", "twitter:image", "product:image"])
         return ParsedProductPage(
             url: url,

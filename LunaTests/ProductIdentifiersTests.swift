@@ -49,6 +49,7 @@ final class ProductIdentifiersTests: XCTestCase {
         XCTAssertTrue(ProductIdentifiers(mpn: "XM5").hasCrossHostIdentifier)
         // An SKU is retailer-scoped — it is not cross-host evidence.
         XCTAssertFalse(ProductIdentifiers(sku: "A1", brand: "Sony").hasCrossHostIdentifier)
+        XCTAssertEqual(ProductIdentifiers(sku: " B0-X1 ").normalizedSKU, "B0X1")
     }
 
     func testBrandCompatibilityTreatsUnknownAsCompatible() {

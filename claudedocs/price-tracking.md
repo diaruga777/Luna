@@ -116,6 +116,14 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     of the page itself already works via `urlLooksLikeProduct` (`/dp/<ASIN>`,
     `/gp/product/`) + add-to-cart. Fixture `Products/amazon-dp.html` (trimmed
     amazon.com.au) → **39.99 AUD** via the fast static path, no WebView, no spin.
+  - **Amazon identity + artwork** (`AmazonProductDetails`, shared by the rich and
+    lean parsers): `/dp/<ASIN>` / `/gp/product/<ASIN>` always becomes keyed
+    `ProductIdentifiers.sku` plus the legacy flattened `productID`; ISBN/GTIN,
+    model/MPN and brand still enrich it when a details module is present. The
+    visible `#productTitle` beats browser-title chrome, and the primary image is
+    read from Amazon's `landingImage` / `main-image` high-resolution attributes
+    (including `data-a-dynamic-image`) because Amazon commonly has no `og:image`.
+    This metadata is identical in app, share/action and lean comparison paths.
   - **`priceFromEmbeddedJSON`** scans `__NEXT_DATA__`, every
     `<script type=application/json>`, and inline `window.__…={…}` blobs
     (`firstJSONObjectLiteral` balanced-brace extractor). `firstPrice(in:)` recurses

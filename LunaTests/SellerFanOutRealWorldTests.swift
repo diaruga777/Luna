@@ -187,6 +187,39 @@ final class AmazonProductDetailsTests: XCTestCase {
         XCTAssertEqual(GTINForms.digits(found.gtin), "04548736132627")
         XCTAssertEqual(found.mpn, "XM5BK")
         XCTAssertEqual(found.brand, "Sony")
+        XCTAssertEqual(found.sku, "B09XS7JWHH")
+    }
+
+    func testOrdinaryASINIsPreservedAsRetailerScopedSKU() {
+        let found = AmazonProductDetails.identifiers(
+            inHTML: "<html><body>No details module</body></html>",
+            url: URL(string: "https://www.amazon.com.au/example/dp/B0CWRSYTTK/ref=abc")!)
+        XCTAssertEqual(found.sku, "B0CWRSYTTK")
+        XCTAssertNil(found.gtin)
+        XCTAssertNil(found.mpn)
+    }
+
+    func testPrimaryImageAndVisibleTitleComeFromAmazonImageBlock() throws {
+        let html = """
+        <span id="productTitle">  Sony WH-1000XM5 Headphones  </span>
+        <img id="main-image" src="data:image/gif;base64,x"
+             data-a-hires="https://m.media-amazon.com/images/I/61O3iMlnJIL.jpg">
+        """
+        XCTAssertEqual(
+            AmazonProductDetails.title(inHTML: html), "Sony WH-1000XM5 Headphones")
+        XCTAssertEqual(
+            try XCTUnwrap(AmazonProductDetails.imageURL(inHTML: html)).absoluteString,
+            "https://m.media-amazon.com/images/I/61O3iMlnJIL.jpg")
+    }
+
+    func testLargestDynamicPrimaryImageWinsOverPlaceholderSource() throws {
+        let html = """
+        <img id="landingImage" src="data:image/gif;base64,x"
+          data-a-dynamic-image="{&quot;https://m.media-amazon.com/small.jpg&quot;:[96,96],&quot;https://m.media-amazon.com/large.jpg&quot;:[1200,1200]}">
+        """
+        XCTAssertEqual(
+            try XCTUnwrap(AmazonProductDetails.imageURL(inHTML: html)).absoluteString,
+            "https://m.media-amazon.com/large.jpg")
     }
 
     /// The product-overview grid tags its row `class="po-brand"`, so a naive
@@ -218,6 +251,18 @@ final class AmazonProductDetailsTests: XCTestCase {
         XCTAssertEqual(price.currency.count, 3)
     }
 
+    func testLocalizedAmazonBuyBoxPriceUsesTheDecimalSeparator() throws {
+        let html = """
+        <div id="corePriceDisplay_desktop_feature_div">
+          <span class="a-price"><span class="a-offscreen">1.299,00 €</span></span>
+        </div>
+        """
+        let price = try XCTUnwrap(
+            AmazonProductDetails.price(inHTML: html, currencyHint: "EUR"))
+        XCTAssertEqual(price.amount, Decimal(1299))
+        XCTAssertEqual(price.currency, "EUR")
+    }
+
     /// The current desktop layout serves an EMPTY `a-offscreen` and splits the
     /// number across `a-price-whole` / `a-price-fraction`.
     func testSplitBuyBoxPriceIsRecomposed() throws {
@@ -241,6 +286,7 @@ final class AmazonProductDetailsTests: XCTestCase {
             currencyHint: "USD"))
         XCTAssertTrue(parsed.hasUsablePrice)
         XCTAssertEqual(parsed.identifiers.brand, "Sony")
+        XCTAssertEqual(parsed.identifiers.sku, "B09XS7JWHH")
         XCTAssertNotNil(parsed.identifiers.normalizedGTIN)
     }
 

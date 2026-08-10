@@ -114,10 +114,21 @@ public struct ProductMetadataExtractor {
         }
         guard let price = resolvePrice(url: url, html: html, document: document) else { return nil }
         let fields = detector.metadataFields(document: document, baseURL: url)
+        let amazon = AmazonStorefronts.storefront(for: url.host) == nil
+            ? nil
+            : AmazonProductDetails.identifiers(inHTML: html, url: url)
+        let identifiers = enrichedIdentifiers(fields.identifiers, amazon: amazon)
         return ProductMetadata(
-            name: fields.name, price: price, imageURL: fields.imageURL,
-            brand: fields.brand, productID: fields.productID,
-            identifiers: enrichedIdentifiers(fields.identifiers, url: url, html: html))
+            name: amazon == nil
+                ? fields.name
+                : (AmazonProductDetails.title(inHTML: html) ?? fields.name),
+            price: price,
+            imageURL: AmazonStorefronts.storefront(for: url.host) == nil
+                ? fields.imageURL
+                : (AmazonProductDetails.imageURL(inHTML: html) ?? fields.imageURL),
+            brand: fields.brand ?? amazon?.brand,
+            productID: fields.productID ?? amazon?.sku,
+            identifiers: identifiers)
     }
 
     /// Fills identifier gaps from retailer markup that publishes no structured
@@ -135,13 +146,12 @@ public struct ProductMetadataExtractor {
     /// what an Amazon page says. Structured extraction still WINS: this only
     /// fills what came back empty.
     private func enrichedIdentifiers(
-        _ identifiers: ProductIdentifiers, url: URL, html: String
+        _ identifiers: ProductIdentifiers, amazon details: AmazonProductDetails.Identifiers?
     ) -> ProductIdentifiers {
-        guard AmazonStorefronts.storefront(for: url.host) != nil else { return identifiers }
-        let details = AmazonProductDetails.identifiers(inHTML: html, url: url)
+        guard let details else { return identifiers }
         guard !details.isEmpty else { return identifiers }
         return identifiers.merging(ProductIdentifiers(
-            gtin: details.gtin, mpn: details.mpn, brand: details.brand))
+            gtin: details.gtin, mpn: details.mpn, sku: details.sku, brand: details.brand))
     }
 
     /// The single price source: the first matching host rule, else the generic

@@ -67,12 +67,19 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         defer { window.isHidden = true }
 
         // A save arriving while the intro is up ends onboarding and hands the
-        // freshly built production root to the window.
+        // freshly built production root to the window. The content observer is
+        // delivered on the main queue but hops through a `Task { @MainActor }`
+        // before it reaches the controller, so this WAITS for the handoff
+        // instead of assuming it lands inside a fixed pump: under full-suite
+        // load that hop has been measured at ~360ms, which turned a passing
+        // assertion into a race the suite lost as it grew.
         identifiers.insert(UUID())
         NotificationCenter.default.post(name: changed, object: nil)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
-        XCTAssertTrue(store.isCompleted)
+        XCTAssertTrue(
+            wait(until: { store.isCompleted && deck != nil }),
+            "a save arriving while the intro is up must end onboarding and hand "
+                + "a freshly built production root to the window")
         let cards = try XCTUnwrap(deck)
         XCTAssertTrue(
             waitForFullContent(in: cards),
@@ -152,14 +159,22 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
     /// that finished the Phase-2 swap.
     @MainActor
     private func waitForFullContent(in deck: ArticleCardsViewController) -> Bool {
-        let deadline = Date().addingTimeInterval(5)
+        wait(until: {
+            firstScrollReader(in: deck)?.didLoadFullContentForTesting == true
+        })
+    }
+
+    /// Pumps the run loop until the condition holds, or the deadline passes.
+    @MainActor
+    private func wait(
+        until condition: () -> Bool, timeout: TimeInterval = 5
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let reader = firstScrollReader(in: deck), reader.didLoadFullContentForTesting {
-                return true
-            }
+            if condition() { return true }
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
-        return false
+        return condition()
     }
 
     @MainActor

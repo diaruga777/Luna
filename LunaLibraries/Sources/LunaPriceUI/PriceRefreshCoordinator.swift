@@ -28,6 +28,14 @@ public final class PriceRefreshCoordinator {
     @discardableResult
     public func refreshAndNotify() async -> [PriceRefreshOutcome] {
         DiagnosticLog.shared.record("price refresh: runner started", category: "price")
+        // Passive Safari snapshots recorded since the last cycle become tracker
+        // history first, so the refresh (and its alert decisions) see them.
+        let swept = ProductSnapshotSweep.run(store: ReadingListStore.shared)
+        if swept > 0 {
+            DiagnosticLog.shared.record(
+                "price refresh: folded passive snapshots into \(swept) tracker(s)",
+                category: "price")
+        }
         // Finish any seller fan-out a dead process left mid-run, BEFORE the
         // refresh: the sellers it attaches are priced as it attaches them, so
         // running it first spares the refresh from re-fetching them, and the

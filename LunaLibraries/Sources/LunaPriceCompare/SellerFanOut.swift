@@ -175,6 +175,9 @@ public enum SellerFanOutRejection: String, Equatable, Sendable, Codable {
     case clientRenderedSearchSkipped
     /// Every product link led to a page with no price, or none at all.
     case noPriceOnAnyLink
+    /// Pages were priced, but only in a currency that is not the source
+    /// market's — a price that cannot be compared is not a better price.
+    case foreignCurrency
     /// Pages were priced, but none verified as the same product.
     case noVerifiedMatch
     /// The run stopped (target reached or budget spent) before this candidate
@@ -295,13 +298,19 @@ public struct SellerFanOutRequest: Equatable, Sendable {
     public let categoryHints: [String]
     /// Store URLs already attached (never re-found).
     public let excludedURLStrings: [String]
-    /// Overrides the region the source host / device locale would imply.
+    /// Overrides the region the source host would imply.
     public let regionOverride: String?
+    /// The currency the SOURCE page itself prices in (ISO 4217). This is the
+    /// market's currency: a result priced in anything else is refused, and when
+    /// the source host is unknown to the directory it also helps pick the
+    /// region whose storefronts to search. Nil ⇒ the resolved region's own
+    /// transaction currency stands in.
+    public let sourceCurrency: String?
 
     public init(
         sourceURL: URL, productName: String, identifiers: ProductIdentifiers,
         categoryHints: [String] = [], excludedURLStrings: [String] = [],
-        regionOverride: String? = nil
+        regionOverride: String? = nil, sourceCurrency: String? = nil
     ) {
         self.sourceURL = sourceURL
         self.productName = productName
@@ -309,6 +318,7 @@ public struct SellerFanOutRequest: Equatable, Sendable {
         self.categoryHints = categoryHints
         self.excludedURLStrings = excludedURLStrings
         self.regionOverride = regionOverride
+        self.sourceCurrency = sourceCurrency
     }
 }
 
@@ -386,7 +396,6 @@ public struct SellerFanOut {
     private let webSearch: WebSearch?
     private let richResolve: RichResolve?
     private let renderSearch: RenderSearch?
-    private let localeRegion: String?
     private let now: @Sendable () -> Date
     private let onResult: OnResult?
     private let onAttempt: OnAttempt?
@@ -400,7 +409,6 @@ public struct SellerFanOut {
         renderSearch: RenderSearch? = nil,
         onResult: OnResult? = nil,
         onAttempt: OnAttempt? = nil,
-        localeRegion: String? = Locale.current.region?.identifier,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.directory = directory
@@ -409,7 +417,6 @@ public struct SellerFanOut {
         self.webSearch = webSearch
         self.richResolve = richResolve
         self.renderSearch = renderSearch
-        self.localeRegion = localeRegion
         self.now = now
         self.onResult = onResult
         self.onAttempt = onAttempt
@@ -461,7 +468,16 @@ public struct SellerFanOut {
         let sourceHost = request.sourceURL.host ?? ""
         let region = request.regionOverride?.uppercased()
             ?? SellerCandidateSelector.resolveRegion(
-                sourceHost: sourceHost, directory: directory, localeRegion: localeRegion)
+                sourceHost: sourceHost, sourceCurrency: request.sourceCurrency,
+                directory: directory)
+        // The one currency a result may be priced in: the source page's own
+        // declaration first (the store the user is looking at names its own
+        // market), else the resolved region's transaction currency. A candidate
+        // priced in anything else — or in nothing establishable — is refused,
+        // because there is no FX source anywhere in Luna and a price that
+        // cannot be compared is not a better price.
+        let requiredCurrency = request.sourceCurrency?.uppercased()
+            ?? SellerDirectory.currencies[region]
 
         let excludedHosts = request.excludedURLStrings.compactMap { URL(string: $0)?.host }
         let candidates = SellerCandidateSelector.select(
@@ -489,13 +505,14 @@ public struct SellerFanOut {
                 layers.addTask {
                     await runWebSearchLayer(
                         request, search: webSearch, excludedDomains: excludedDomains,
-                        state: state, start: start)
+                        requiredCurrency: requiredCurrency, state: state, start: start)
                 }
             }
             layers.addTask {
                 await runDirectoryLayer(
                     candidates.map(\.seller), request: request,
-                    excludedDomains: excludedDomains, state: state, start: start)
+                    excludedDomains: excludedDomains, requiredCurrency: requiredCurrency,
+                    state: state, start: start)
             }
             await layers.waitForAll()
         }
@@ -522,7 +539,7 @@ public struct SellerFanOut {
 
     private func runDirectoryLayer(
         _ candidates: [Seller], request: SellerFanOutRequest,
-        excludedDomains: Set<String>, state: State, start: Date
+        excludedDomains: Set<String>, requiredCurrency: String?, state: State, start: Date
     ) async {
         var next = 0
         await withTaskGroup(of: Void.self) { group in
@@ -534,7 +551,7 @@ public struct SellerFanOut {
                 group.addTask {
                     await runCandidate(
                         seller, request: request, excludedDomains: excludedDomains,
-                        state: state, start: start)
+                        requiredCurrency: requiredCurrency, state: state, start: start)
                 }
                 return true
             }
@@ -558,7 +575,7 @@ public struct SellerFanOut {
     /// `SellerCandidateSelector.queries`).
     private func runCandidate(
         _ seller: Seller, request: SellerFanOutRequest,
-        excludedDomains: Set<String>, state: State, start: Date
+        excludedDomains: Set<String>, requiredCurrency: String?, state: State, start: Date
     ) async {
         let sellerDomain = ProductIdentityMatching.registrableDomain(seller.domain)
         let record = AttemptRecord(seller: seller, domain: sellerDomain)
@@ -567,7 +584,8 @@ public struct SellerFanOut {
         // report has to reach an actor.
         await runCandidateBody(
             seller, request: request, sellerDomain: sellerDomain,
-            excludedDomains: excludedDomains, state: state, start: start, record: record)
+            excludedDomains: excludedDomains, requiredCurrency: requiredCurrency,
+            state: state, start: start, record: record)
         let attempt = record.attempt
         await state.record(attempt)
         await onAttempt?(attempt)
@@ -584,7 +602,8 @@ public struct SellerFanOut {
     /// get alone — so falling through cannot double the run's cost.
     private func runCandidateBody(
         _ seller: Seller, request: SellerFanOutRequest, sellerDomain: String,
-        excludedDomains: Set<String>, state: State, start: Date, record: AttemptRecord
+        excludedDomains: Set<String>, requiredCurrency: String?, state: State, start: Date,
+        record: AttemptRecord
     ) async {
         guard !excludedDomains.contains(sellerDomain) else {
             record.reject(.runEndedFirst)
@@ -603,6 +622,7 @@ public struct SellerFanOut {
         var allLinks: [URL] = []
         var sawAnyLinks = false
         var sawPrice = false
+        var sawForeignPrice = false
         var pendingRejection: SellerFanOutRejection = .noProductLinks
 
         queryLoop: for query in queries {
@@ -704,6 +724,13 @@ public struct SellerFanOut {
                 let page = resolved.page
                 guard page.hasUsablePrice, let price = page.price, let currency = page.currency
                 else { continue }
+                // The market's currency is a refusal, not a preference: a page
+                // priced in anything else cannot be compared to the source page
+                // (no FX source), so it must never become a "better price".
+                if let requiredCurrency, currency.uppercased() != requiredCurrency {
+                    sawForeignPrice = true
+                    continue
+                }
                 sawPrice = true
                 guard let confidence = await verify(
                     resolved, request: request, reachedByGTINSearch: reachedByGTINSearch)
@@ -727,7 +754,11 @@ public struct SellerFanOut {
             record.reject(pendingRejection)
             return
         }
-        record.reject(sawPrice ? .noVerifiedMatch : .noPriceOnAnyLink)
+        if sawPrice {
+            record.reject(.noVerifiedMatch)
+        } else {
+            record.reject(sawForeignPrice ? .foreignCurrency : .noPriceOnAnyLink)
+        }
     }
 
     /// Verifies a resolved candidate, fetching the page's markup if — and only
@@ -806,7 +837,7 @@ public struct SellerFanOut {
     /// replacement: the same verification and the same merge rule apply.
     private func runWebSearchLayer(
         _ request: SellerFanOutRequest, search: WebSearch,
-        excludedDomains: Set<String>, state: State, start: Date
+        excludedDomains: Set<String>, requiredCurrency: String?, state: State, start: Date
     ) async {
         let query = webSearchQuery(request)
         guard !query.isEmpty, let urls = await search(query) else { return }
@@ -826,6 +857,10 @@ public struct SellerFanOut {
             let page = resolved.page
             guard page.hasUsablePrice,
                   let price = page.price, let currency = page.currency,
+                  // A web search reaches storefronts in ANY country — this
+                  // layer is where a foreign-market price most easily sneaks
+                  // in, so the market-currency refusal matters most here.
+                  requiredCurrency == nil || currency.uppercased() == requiredCurrency,
                   // A web-search hit was NOT reached by asking this retailer for
                   // the identifier, so the `.gtinInPage` tier does not apply:
                   // a search engine's result page can name any number.

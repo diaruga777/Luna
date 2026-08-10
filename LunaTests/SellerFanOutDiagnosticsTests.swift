@@ -86,7 +86,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("stocks", domain: "stocks.example"),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
 
         XCTAssertTrue(outcome.results.isEmpty)
@@ -109,7 +109,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("stocks", domain: "stocks.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
 
         let attempt = try XCTUnwrap(outcome.attempts.first)
@@ -140,7 +140,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("unpriced", domain: "unpriced.example"),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
 
         XCTAssertEqual(outcome.rejection(for: "wrong"), .noVerifiedMatch)
@@ -159,7 +159,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         ])
         let outcome = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            onAttempt: { await seen.add($0.sellerID) }, localeRegion: "US")
+            onAttempt: { await seen.add($0.sellerID) })
             .run(request())
 
         let streamed = await seen.ids
@@ -172,7 +172,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("a", domain: "a.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
 
         XCTAssertTrue(outcome.logSummary.contains("region=US"))
@@ -203,7 +203,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             allowsNameOnlyMatch: false, usesWebSearchLayer: false,
             skipsClientRenderedSearch: true, renderedSearchLimit: 0)
         let outcome = await SellerFanOut(
-            directory: directory, profile: constrained, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: constrained, fetch: fetcher.fetch)
             .run(request())
 
         XCTAssertTrue(outcome.attempts.isEmpty, "it is not even a candidate")
@@ -217,7 +217,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shell", domain: "shell.example", clientRendered: true),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertEqual(outcome.rejection(for: "shell"), .noProductLinks)
     }
@@ -265,8 +265,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         ])
         let outcome = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# },
-            localeRegion: "US")
+            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# })
             .run(request())
 
         XCTAssertEqual(outcome.results.count, 1)
@@ -286,7 +285,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             version: 1, sellers: [seller("ok", domain: "ok.example")])
         _ = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil }, localeRegion: "US")
+            renderSearch: { _ in await renders.bump(); return nil })
             .run(request())
         let count = await renders.value
         XCTAssertEqual(count, 0)
@@ -310,7 +309,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         _ = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: sellers), profile: wide,
             fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil }, localeRegion: "US")
+            renderSearch: { _ in await renders.bump(); return nil })
             .run(request())
         let count = await renders.value
         XCTAssertEqual(count, 2, "the profile's render budget, not one per candidate")
@@ -324,7 +323,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("shell", domain: "shell.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertFalse(outcome.attempts[0].usedRenderedSearch)
     }
@@ -352,7 +351,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
 
         XCTAssertEqual(outcome.results.count, 1)
@@ -371,7 +370,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: true),
         ])
         _ = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertEqual(fetcher.requested, ["https://shop.example/search?q=0194644090876"])
     }
@@ -402,7 +401,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.confidence, .gtinInPage)
@@ -432,7 +431,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.url.absoluteString, "https://shop.example/products/xm5")
@@ -468,7 +467,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch, localeRegion: "US")
+            directory: directory, profile: profile, fetch: fetcher.fetch)
             .run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         // Two links already spent on the (wrong) GTIN query left no budget at
@@ -501,8 +500,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         ])
         let outcome = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# },
-            localeRegion: "US")
+            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# })
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertTrue(try! XCTUnwrap(outcome.attempts.first).usedRenderedSearch)
@@ -520,7 +518,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         ])
         _ = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil }, localeRegion: "US")
+            renderSearch: { _ in await renders.bump(); return nil })
             .run(request())
         let count = await renders.value
         XCTAssertEqual(count, 0)
@@ -539,8 +537,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         ])
         let outcome = await SellerFanOut(
             directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in "<html><body>Please complete the CAPTCHA</body></html>" },
-            localeRegion: "US")
+            renderSearch: { _ in "<html><body>Please complete the CAPTCHA</body></html>" })
             .run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         XCTAssertEqual(outcome.rejection(for: "shop"), .searchBotWalled)

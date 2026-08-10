@@ -549,7 +549,7 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
   top guard already blocks re-detection. Paste and the extensions reach the same
   decision for a given URL.
 
-## Passive product snapshots seed history at save time
+## Passive product snapshots seed history — at save time, and by sweep
 
 Every product-page visit in a product-handling Safari extension is silently recorded
 (`claudedocs/safari-extension.md`'s "Passive product snapshots" section) into an App
@@ -574,7 +574,21 @@ brand-new store seeded with that history. This is the ONE way a product can have
 non-empty `priceHistory`/graph at the moment it's first saved, instead of waiting for
 the first background refresh. Snapshots are never deleted by matching — the same
 snapshot can seed a different product later, and remains available to the history
-pill.
+pill. Seeding refuses a snapshot in another currency than the tracker's
+`initialCurrency` — there is no FX source, so a £ point must not land on a $ graph.
+
+**`ProductSnapshotSweep` (LunaPriceUI) is the other consumer**, and it existed
+because save-time seeding alone left the file write-only for anything already
+tracked: browse a tracked product daily and every visit was recorded and never
+read (no past-day graph point, nothing for the index), and a RE-SAVE of the same
+URL takes `ReadingListIngestor`'s URL-equality dedup short-circuit, which never
+seeded at all. The sweep folds matching snapshots into every non-archived
+tracker — the tracker is turned into a `SnapshotMatcher` candidate (its keyed
+identifiers, flattened id, brand, name), so matching is by PRODUCT CODE, with
+URL equality just one tier — and regenerates the index when anything changed.
+It runs where the pending-comparison sweep runs: the product apps'
+`appDidLaunch` and the head of every `PriceRefreshCoordinator.refreshAndNotify`
+cycle. Idempotent (day buckets already holding a sample absorb the re-fold).
 
 Immediately after persisting, ingestion regenerates `priceHistoryIndex.json` (see
 below) and fires a SINGLE-tracker refresh (`PriceRefresher.refreshTracker(itemID:)` /

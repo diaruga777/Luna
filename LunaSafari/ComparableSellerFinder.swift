@@ -169,7 +169,12 @@ enum ComparableSellerFinder {
             webSearch: nil,
             richResolve: nil
         ).run(SellerFanOutRequest(
-            sourceURL: sourceURL, productName: page.name, identifiers: identifiers))
+            sourceURL: sourceURL, productName: page.name, identifiers: identifiers,
+            // The market is the page's own: its currency picks the storefronts
+            // when the host is unknown, and the engine refuses any result
+            // priced in anything else (`FreshComparablePrices` then re-refuses
+            // on the way to the pill — the same rule at both ends).
+            sourceCurrency: page.currency))
 
         // ONE line. The app writes the whole per-candidate story to its
         // shareable diagnostic log (`SellerComparisonRunner.logCategory`); an

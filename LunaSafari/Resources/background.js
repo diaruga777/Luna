@@ -164,9 +164,11 @@ browser.runtime.onMessage.addListener(function (message) {
     }
     if (message.type === "comparableSellers") {
         // The alternative-seller lookup: stored prices first, then a
-        // constrained live fan-out. `found: false` — a lookup that found
-        // nothing, a page the host app doesn't handle, or a failure — is the
-        // page's cue to fall back to today's history-pill rules.
+        // constrained live fan-out. `found: false` — a lookup that COMPLETED
+        // and found nothing (or a page the host app doesn't handle) — renders
+        // as "No better price found"; `failed: true` — the native round trip
+        // itself died — renders as "Unable to find better prices". The two must
+        // stay distinguishable, so only the catch sets `failed`.
         return browser.runtime.sendNativeMessage("application.id",
             { type: "comparableSellers", snapshot: message.snapshot })
             .then(function (resp) {
@@ -179,7 +181,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     url: resp.url
                 };
             })
-            .catch(function () { return { found: false }; });
+            .catch(function () { return { found: false, failed: true }; });
     }
 });
 

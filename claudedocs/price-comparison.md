@@ -143,9 +143,14 @@ search host would otherwise just make one retailer silently unreachable.
 the app, the extensions and the appex; a reshuffle between surfaces would make
 the same product answer differently depending on where it was saved.
 
-1. **Region.** The source retailer's own region when the directory knows it (an
+1. **Region — the market is the STORE the user is looking at, never the
+   device.** The source retailer's own region when the directory knows it (an
    `amazon.co.uk` save is a UK shopping trip wherever the phone is), else the
-   device region if any storefronts serve it, else `US`.
+   country the host's TLD claims (`myer.com.au` → AU), else the region whose
+   storefronts transact in the page's own declared currency
+   (`SellerFanOutRequest.sourceCurrency` — AUD names AU even on a `.com`),
+   else `US`. The device-locale fallback was deleted: a phone on holiday must
+   not redirect a shopping trip.
 2. **Categories.** Keyword inference over the page's category hints, breadcrumbs
    and product name. Hints arrive as breadcrumb trails and JSON-LD `category`
    strings, so separators become spaces and every token is ALSO emitted
@@ -281,6 +286,22 @@ The lean parser also reads the app-state JSON price tier (`current_retail`,
 SwiftSoup, with the storefront's REGION supplying the currency the bare number
 lacks (`SellerDirectory.currencies`) — a `.com` is not evidence of a country.
 
+### The market currency
+
+One currency per run, and it is a refusal: `request.sourceCurrency` (the SOURCE
+page's own declaration — `tracker.initialCurrency` on the app leg, the page
+snapshot's currency on the Safari leg), else the resolved region's transaction
+currency (`SellerDirectory.currencies`). A candidate page priced in anything
+else is refused (`.foreignCurrency` when that is all a candidate offered), and
+a page whose currency cannot be established at all already fails
+`hasUsablePrice`. There is no FX source anywhere in Luna, so a price that
+cannot be compared is not a better price — this is the same rule
+`FreshComparablePrices` applies at the pill and `SellerComparison.apply`
+re-applies at the tracker (a resumed run's stale results must not attach a
+foreign seller row either). Layer 1 is mostly in-market already (selection is
+per-region); the check matters most on Layer 2, which reaches storefronts in
+any country.
+
 **Layer 2 — keyless web search.** `DuckDuckGoSearch.results` (injected), which
 reaches retailers the directory has never heard of. Same verification, same
 merge rule; it is a second opinion, not a replacement. Off in the constrained
@@ -327,7 +348,8 @@ the `SellerFanOutRejection` that ended it:
 | `clientRenderedSearchSkipped` | flagged shop, and this profile cannot render |
 | `noProductLinks` | fetched, and no recognizable product URL on it |
 | `noPriceOnAnyLink` | every link led to a page with no price |
-| `noVerifiedMatch` | pages were priced; none was the same product |
+| `foreignCurrency` | pages were priced, but only in a currency that is not the market's |
+| `noVerifiedMatch` | pages were priced (in the market's currency); none was the same product |
 | `runEndedFirst` | the target was reached or the budget spent first |
 
 The formatting lives on the value (`logLine`, `logSummary`, `compactLogLine`), not
@@ -794,12 +816,20 @@ only end in refusals), and the budgets nest — 15s fan-out inside an 18s finder
 inside the handler's 20s inside the page's 25s backstop. Pill behaviour and the
 fallback contract are in `claudedocs/safari-extension.md`.
 
+The pill never just vanishes: a search that completed empty reads "No better
+price found" and a lookup that itself died reads "Unable to find better
+prices" — both keep the spinner's slot, non-tappable (`claudedocs/
+safari-extension.md`'s pill-state contract; the strings live in the
+extension's own `messages.json` + `MESSAGE_DEFAULTS`, since a web extension
+cannot resolve `L10n`).
+
 **The pill has a native replica, and it is deliberately a replica.** The price
 tracker's Safari onboarding lesson plays this whole exchange on its mock product
 page (`claudedocs/reader-onboarding.md`, "The price tracker demonstrates instead
 of explaining"): `OnboardingSellerPillView` reproduces `content.js`'s pill
-geometry and both its states, in its words, so what the lesson promises is what
-the extension delivers. Changing the pill's shape or copy means changing both.
+geometry and the two states the lesson shows (looking, found), in its words, so
+what the lesson promises is what the extension delivers. Changing the pill's
+shape or copy means changing both.
 
 ## Link set
 
@@ -822,14 +852,14 @@ All in `LunaTests/`:
 | file | what it pins |
 | --- | --- |
 | `SellerDirectoryTests` | the SHIPPED json (validation, regions, per-region mass merchants), `{query}` substitution in both contexts |
-| `SellerCandidateSelectorTests` | ordering determinism, directory-order independence, bounds, prefix property, exclusions, each scoring weight, region resolution, per-seller query |
+| `SellerCandidateSelectorTests` | ordering determinism, directory-order independence, bounds, prefix property, exclusions, each scoring weight, region resolution (directory → TLD → currency → US, never the device), per-seller query |
 | `LeanProductPageParserTests` | JSON-LD/OG/microdata extraction, stable `@graph` node choice, refusals, search-link extraction, and the query-token filter on the weakest (loose) tier |
 | `LeanProductURLParityTests` | the copied rule tables + both predicates vs `ProductPageRules`/`ProductPageDetector` |
 | `ComparisonMatchingTests` | the base tiers (GTIN/MPN equality, name-only) and their refusals |
 | `ComparisonMatchingParityTests` | `ProductIdentityMatching` vs `ProductMatcher`/`SnapshotMatcher` |
 | `BotWallDetectionTests` | blocked statuses, 200-served challenges, no false positive on a large page |
 | `AmazonInterstitialBotWallTests` | the measured `bm-verify` interstitial fixture, and no false positive once it's padded past 8KB |
-| `SellerFanOutTests` | rank order, stop-at-target, budget expiry, bot-wall skip, verification refusals, exclusions, rich resolver, Layer 2 |
+| `SellerFanOutTests` | rank order, stop-at-target, budget expiry, bot-wall skip, verification refusals, exclusions, rich resolver, Layer 2, the market-currency refusals (both layers, and `sourceCurrency` defining the market) |
 | `RealWorldSearchLinkExtractionTests` | the captured eBay/B&N/Target search pages that returned nothing, the promo-card veto, asset/API and furniture refusals, JSON-escaped URLs, ASIN collapsing |
 | `AmazonProductDetailsTests` | identifiers and the buy box off two captured Amazon PDPs, the `po-brand` and warranty-prose false positives, the split-price layout, the lean parser end to end |
 | `GTINFormsTests` | ISBN-10 ↔ ISBN-13, UPC/EAN/GTIN-14 forms, and that an ordinary ASIN fails the checksum |

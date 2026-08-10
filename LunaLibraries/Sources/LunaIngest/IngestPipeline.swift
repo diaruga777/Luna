@@ -314,14 +314,14 @@ public enum IngestPipeline {
         case .article, .paywalledArticle, .social, .video, .document:
             shouldExtractProduct = false
         }
-        if !input.forceArticle, shouldExtractProduct, let html = directHTML {
+        if !input.forceArticle, shouldExtractProduct {
             // The classification decided this page is a product for EVERY app
             // (shared detector); whether it can be PROCESSED depends on the
             // linked product processor. Without one, the save is dropped as
             // Price-Tracker-owned — never silently re-read as an article.
             guard let productProcessor else { return .unsupported(owner: .priceTracker) }
-            if let product = await productProcessor.extract(url: url, html: html) {
-                return .product(product, html: html)
+            if let product = await productProcessor.extract(url: url, html: directHTML ?? "") {
+                return .product(product, html: directHTML ?? "")
             }
             // No trustworthy price → fall through to the article path below
             // (matching the pre-split behavior; a product-handling app without

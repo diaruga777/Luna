@@ -86,9 +86,34 @@ final class SharedProductSnapshotsTests: XCTestCase {
     }
 
     func testKeyedIdentifiersRoundTrip() {
-        let snapshot = ProductSnapshotStore.makeSnapshot(
-            fromPayload: payload(gtin: "0012345678905"), now: Date())
+        var value = payload(gtin: "0012345678905")
+        value["imageURL"] = "https://images.example/widget.jpg"
+        let snapshot = ProductSnapshotStore.makeSnapshot(fromPayload: value, now: Date())
         XCTAssertEqual(snapshot?.gtin, "0012345678905")
+        XCTAssertEqual(snapshot?.imageURL, "https://images.example/widget.jpg")
+    }
+
+    func testSnapshotRebuildsProductMetadataWhenAmazonRefetchIsBlocked() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProductSnapshotFallback-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let store = ProductSnapshotStore(fileURL: fileURL)
+        var value = payload(
+            name: "Sony WH-1000XM5", price: "350.97", currency: "AUD",
+            url: "https://www.amazon.com.au/Sony/dp/B09XS7JWHH")
+        value["sku"] = "B09XS7JWHH"
+        value["retailerItemID"] = "B09XS7JWHH"
+        value["brand"] = "Sony"
+        value["imageURL"] = "https://m.media-amazon.com/images/I/xm5.jpg"
+        store.write([try XCTUnwrap(ProductSnapshotStore.makeSnapshot(
+            fromPayload: value, now: Date()))])
+
+        let info = try XCTUnwrap(store.productInfo(forPageURL: URL(string:
+            "https://www.amazon.com.au/Different-Slug/dp/B09XS7JWHH/ref=abc?th=1")!))
+        XCTAssertEqual(info.identifiers.sku, "B09XS7JWHH")
+        XCTAssertEqual(info.productID, "B09XS7JWHH")
+        XCTAssertEqual(info.imageURL?.absoluteString, value["imageURL"] as? String)
+        XCTAssertEqual(info.priceAmount, Decimal(string: "350.97"))
     }
 
     // MARK: - Same-day overwrite / dedupe
@@ -198,7 +223,8 @@ final class SharedProductSnapshotsTests: XCTestCase {
     func testTheExtensionRecordHasTheSameFields() {
         let source = Self.extensionSource("LunaSafari/SharedProductSnapshots.swift")
         for field in ["name", "price", "currency", "url", "host", "day", "capturedAt",
-                      "gtin", "mpn", "sku", "productID", "retailerItemID", "brand"] {
+                      "gtin", "mpn", "sku", "productID", "retailerItemID", "brand",
+                      "imageURL"] {
             XCTAssertTrue(
                 source.contains("var \(field):"),
                 "SharedProductSnapshots.Record has no \"\(field)\" field")

@@ -419,6 +419,9 @@ final class SellerFanOutTests: XCTestCase {
         XCTAssertGreaterThan(
             SellerFanOutProfile.constrained.candidateLimit,
             SellerFanOutProfile.constrained.resultTarget)
+        XCTAssertTrue(
+            SellerFanOutProfile.constrained.allowsNameOnlyMatch,
+            "an ASIN/SKU-only Safari source must still attempt and verify alternatives by name")
     }
 }
 

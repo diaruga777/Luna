@@ -849,16 +849,21 @@ Product-page flow:
    handles products (Price Tracker / central Luna), deep-linking
    `<ownScheme>://read?url=<source>` with `captureContent: true`. Before deciding which pill(s) to show, `content.js`
    extracts a passive product SNAPSHOT and sends it (see "Passive product snapshots"
-   below); the reply decides whether Track shows at all.
+   below); the reply decides whether Track shows at all. A product tap saves a compact
+   synthetic JSON-LD document built from that snapshot, not the whole rendered DOM:
+   current Amazon pages can exceed the 1.5 MB native-message ceiling, and refetching
+   them outside Safari is routinely bot-walled.
 
 ### Passive product snapshots + the "Was $X on <date>" history pill
 
 Every time a product-handling extension (Price Tracker / central Luna) sees a product
 page, `extractProductSnapshot()` (next to `looksLikeProductPage`) pulls `{name, price,
-currency, keyed identifiers, canonical URL}` from the SAME structured tiers the
+currency, keyed identifiers, imageURL, canonical URL}` from the SAME structured tiers the
 classifier already checked — JSON-LD `Product`/offer, OpenGraph `product:price:*`, or
-microdata — with **no heuristic/rendered-DOM tier**: a page with no structured price
-yields no snapshot at all, mirroring `ProductInfo`'s "the price is mandatory" rule.
+microdata. Amazon is the deliberate retailer-specific tier: its rendered buy box,
+storefront currency, details table, ASIN and primary-image block supply the same
+mandatory metadata even though Amazon publishes no JSON-LD Product/OG price and often
+no OG image. Other pages with no structured price still yield no snapshot.
 Identifiers are keyed (`gtin`, `mpn`, `sku`, `productID`, `retailerItemID`, `brand`),
 never flattened, so matching scope rules (an ASIN only matches `amazon.*`, an SKU only
 the same host, …) stay applicable downstream. The canonical URL strips the same

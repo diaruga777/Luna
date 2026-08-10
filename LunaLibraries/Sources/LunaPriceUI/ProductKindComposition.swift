@@ -33,7 +33,9 @@ public enum ProductKindComposition {
     /// handler, which is built from app-shell types and stays in `KindWiring+*`.
     @MainActor
     public static func install() {
-        IngestKindProcessors.product = ProductIngestProcessor()
+        IngestKindProcessors.product = ProductIngestProcessor(fallback: { url in
+            ProductSnapshotStore.shared.productInfo(forPageURL: url)
+        })
         ShareKindPresenters.product = ProductSharePresenter()
         SellerComparisonRunner.install()
     }

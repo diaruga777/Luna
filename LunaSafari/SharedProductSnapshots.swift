@@ -37,6 +37,7 @@ enum SharedProductSnapshots {
         var productID: String?
         var retailerItemID: String?
         var brand: String?
+        var imageURL: String?
     }
 
     private static func fileURL() -> URL? {
@@ -113,7 +114,7 @@ enum SharedProductSnapshots {
             capturedAt: ISO8601DateFormatter().string(from: now),
             gtin: field("gtin"), mpn: field("mpn"), sku: field("sku"),
             productID: field("productID"), retailerItemID: field("retailerItemID"),
-            brand: field("brand"))
+            brand: field("brand"), imageURL: field("imageURL"))
     }
 
     private static func decimalString(from raw: Any?) -> String? {

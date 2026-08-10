@@ -151,12 +151,15 @@ enum ComparableSellerFinder {
         forPageSnapshot page: SharedProductSnapshots.Record, pagePrice: Decimal, now: Date
     ) async -> Answer? {
         let identifiers = ProductIdentifiers(
-            gtin: page.gtin, mpn: page.mpn, sku: page.sku, brand: page.brand)
-        // The constrained profile refuses name-only matches, so a page that
-        // declares no GTIN and no MPN has nothing any candidate could be
-        // verified AGAINST: the run could only end in refusals, and it would
-        // spend fifteen seconds and six retailers' bandwidth doing it.
-        guard identifiers.hasCrossHostIdentifier,
+            gtin: page.gtin, mpn: page.mpn,
+            // `content.js` writes an Amazon ASIN as SKU. Keep the fallback for
+            // snapshots written by an older extension build, which only put it
+            // in `retailerItemID`.
+            sku: page.sku ?? page.retailerItemID, brand: page.brand)
+        // A global id is strongest. A retailer-scoped SKU/ASIN still proves the
+        // source is one concrete product and earns a name-verified search; a
+        // brand alone does not.
+        guard identifiers.hasCrossHostIdentifier || identifiers.normalizedSKU != nil,
               let sourceURL = URL(string: page.url),
               let directory
         else { return nil }

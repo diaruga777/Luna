@@ -14,20 +14,28 @@ import Foundation
 /// roots (Price Tracker + the central Luna app and their extensions).
 public final class ProductIngestProcessor: ProductIngestProcessing {
     private let metadataExtractor: ProductMetadataExtractor
+    private let fallback: ((URL) -> ProductInfo?)?
 
-    /// `metadataExtractor` is a test seam; production uses the default.
-    public init(metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor()) {
+    /// `metadataExtractor` and `fallback` are seams. Product surfaces install
+    /// the latter from the passive Safari snapshot store, so an Amazon bot wall
+    /// cannot erase metadata the rendered page already handed to Luna.
+    public init(
+        metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
+        fallback: ((URL) -> ProductInfo?)? = nil
+    ) {
         self.metadataExtractor = metadataExtractor
+        self.fallback = fallback
     }
 
     public func extract(url: URL, html: String) async -> ProductInfo? {
-        guard let metadata = await metadataExtractor.extract(
-            url: url, html: html) else { return nil }
-        return ProductInfo(
-            name: metadata.name, priceAmount: metadata.price.amount,
-            priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
-            brand: metadata.brand, productID: metadata.productID,
-            identifiers: metadata.identifiers,
-            sellers: metadata.sellers)
+        if let metadata = await metadataExtractor.extract(url: url, html: html) {
+            return ProductInfo(
+                name: metadata.name, priceAmount: metadata.price.amount,
+                priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
+                brand: metadata.brand, productID: metadata.productID,
+                identifiers: metadata.identifiers,
+                sellers: metadata.sellers)
+        }
+        return fallback?(url)
     }
 }

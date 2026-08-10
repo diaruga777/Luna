@@ -63,6 +63,11 @@ microdata) through `ProductCandidate` → `ProductInfo` → `ProductMetadata` �
 one and nothing migrated — and `PriceTracker.identifiers` decodes as empty when
 absent.
 
+Amazon's ASIN is explicitly a retailer-scoped SKU. It is taken from every valid
+`/dp/<ASIN>` or `/gp/product/<ASIN>` URL even when the details module is absent,
+and is also retained as the flattened `productID` for legacy dedupe. It is never
+misrepresented as a GTIN or MPN.
+
 Two deliberate refusals in extraction:
 
 - The unqualified JSON-LD/microdata `productID` key is **never** folded into the
@@ -387,9 +392,9 @@ needles look for ("captcha", "unusual traffic", …), so it needed its own.
 | product URLs per candidate | 3 | 2 |
 | total budget | 35s | 15s (inside the appex's 20s native budget) |
 | per-fetch timeout | 10s | 8s |
-| name-only match | allowed | **refused** |
+| name-only match | allowed | allowed only when the source has no GTIN/MPN (notably ASIN/SKU-only pages) |
 | `.gtinInPage` / `.mpn` (containment) match | allowed | **allowed** (identifier evidence) |
-| `.nameWithModelCode` (relaxed name) match | allowed | **refused** (still a name match at heart) |
+| `.nameWithModelCode` (relaxed name) match | allowed | allowed (high similarity + exact model token) |
 | client-rendered sellers | asked, with a render fallback | skipped at selection |
 | rendered searches per run | 5 | 0 |
 | web-search layer | on | off |

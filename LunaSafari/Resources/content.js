@@ -1208,9 +1208,10 @@
 
     // ── Passive product snapshots + the "Was $X" history pill ──────────────────
     // Extraction is independent of the pill-suggestion mode: a snapshot is
-    // local, non-refreshing product data, never a save. Structured price data
-    // ONLY -- no heuristic/rendered-DOM tier, mirroring "the price is
-    // mandatory" (a ProductInfo never exists without one).
+    // local, non-refreshing product data, never a save. Generic pages require
+    // structured price data; Amazon has one explicit rendered-buy-box tier,
+    // because it publishes no structured Product/Offer at all. Either way the
+    // price remains mandatory (a ProductInfo never exists without one).
 
     var TRACKING_QUERY_PARAM_NAMES = ["srsltid", "gclid", "ref"];
     var TRACKING_QUERY_PARAM_PREFIXES = ["utm_"];
@@ -1384,7 +1385,193 @@
         return null;
     }
 
+    function isAmazonProductURL() {
+        var host = (location.hostname || "").toLowerCase().replace(/\.$/, "");
+        return /(^|\.)amazon\.[a-z.]{2,6}$/.test(host)
+            && /\/(?:dp|gp\/product)\/[A-Z0-9]{10}(?:[/?]|$)/i.test(location.pathname || "");
+    }
+
+    var AMAZON_CURRENCIES = {
+        "amazon.com": "USD", "amazon.ca": "CAD", "amazon.com.mx": "MXN",
+        "amazon.com.br": "BRL", "amazon.co.uk": "GBP", "amazon.de": "EUR",
+        "amazon.fr": "EUR", "amazon.it": "EUR", "amazon.es": "EUR",
+        "amazon.nl": "EUR", "amazon.se": "SEK", "amazon.pl": "PLN",
+        "amazon.com.tr": "TRY", "amazon.com.be": "EUR", "amazon.ie": "EUR",
+        "amazon.co.jp": "JPY", "amazon.in": "INR", "amazon.com.au": "AUD",
+        "amazon.sg": "SGD", "amazon.ae": "AED", "amazon.sa": "SAR",
+        "amazon.eg": "EGP", "amazon.co.za": "ZAR"
+    };
+
+    function amazonCurrency() {
+        var host = (location.hostname || "").toLowerCase().replace(/\.$/, "");
+        var domains = Object.keys(AMAZON_CURRENCIES);
+        for (var i = 0; i < domains.length; i++) {
+            if (host === domains[i] || host.endsWith("." + domains[i])) {
+                return AMAZON_CURRENCIES[domains[i]];
+            }
+        }
+        return null;
+    }
+
+    function amazonDetailValue(labels) {
+        var containers = [
+            "#productOverview_feature_div", "#prodDetTable", "#richProductInformation",
+            "#productDetails_techSpec_section_1", "#productDetails_techSpec_section_2",
+            "#productDetails_detailBullets_sections1", "#productDetails_detailBullets_sections2",
+            "#detailBullets_feature_div", "#detailBulletsWrapper_feature_div"
+        ];
+        var rowSelectors = [];
+        for (var containerIndex = 0; containerIndex < containers.length; containerIndex++) {
+            rowSelectors.push(containers[containerIndex] + " tr");
+            rowSelectors.push(containers[containerIndex] + " li");
+            rowSelectors.push(containers[containerIndex] + " .a-row");
+        }
+        var rows = document.querySelectorAll(rowSelectors.join(","));
+        for (var i = 0; i < rows.length; i++) {
+            var text = (rows[i].textContent || "").replace(/[\u200e\u200f\u202a-\u202e]/g, " ")
+                .replace(/\s+/g, " ").trim();
+            for (var j = 0; j < labels.length; j++) {
+                var label = labels[j];
+                var position = text.toLowerCase().indexOf(label.toLowerCase());
+                if (position < 0 || position > 3) { continue; }
+                var cells = rows[i].querySelectorAll("th,td,.a-span9,.po-break-word");
+                var value = cells.length > 1 ? (cells[cells.length - 1].textContent || "")
+                    : text.slice(position + label.length).replace(/^\s*[:\-]\s*/, "");
+                value = value.replace(/[\u200e\u200f\u202a-\u202e]/g, " ")
+                    .replace(/\s+/g, " ").trim();
+                if (value && value.toLowerCase() !== label.toLowerCase()) { return value; }
+            }
+        }
+        return null;
+    }
+
+    function amazonISBN13FromISBN10(raw) {
+        var isbn = (raw || "").replace(/[^0-9X]/gi, "").toUpperCase();
+        if (!/^\d{9}[\dX]$/.test(isbn)) { return null; }
+        var sum10 = 0;
+        for (var i = 0; i < 10; i++) {
+            var digit = isbn[i] === "X" ? 10 : parseInt(isbn[i], 10);
+            sum10 += (10 - i) * digit;
+        }
+        if (sum10 % 11 !== 0) { return null; }
+        var base = "978" + isbn.slice(0, 9), sum13 = 0;
+        for (var j = 0; j < 12; j++) {
+            sum13 += parseInt(base[j], 10) * (j % 2 === 0 ? 1 : 3);
+        }
+        return base + String((10 - (sum13 % 10)) % 10);
+    }
+
+    function amazonIdentifiers() {
+        var asin = retailerItemIDFromURL();
+        var isbn13 = amazonDetailValue(["ISBN-13", "ISBN13"]);
+        var gtin = isbn13 && isbn13.replace(/\D/g, "");
+        if (!gtin || gtin.length !== 13) {
+            var barcode = amazonDetailValue([
+                "UPC", "EAN", "GTIN", "Global Trade Identification Number"]);
+            var match = barcode && barcode.replace(/\D/g, "").match(/\d{12,14}/);
+            gtin = match ? match[0] : null;
+        }
+        if (!gtin) {
+            gtin = amazonISBN13FromISBN10(amazonDetailValue(["ISBN-10", "ISBN10"]));
+        }
+        var mpn = amazonDetailValue([
+            "Item model number", "Part Number", "Model Number", "Manufacturer Part Number"]);
+        if (mpn && (!/[0-9]/.test(mpn) || mpn.length > 80)) { mpn = null; }
+        var brand = amazonDetailValue(["Brand", "Manufacturer"]);
+        if (!brand) {
+            var brandNode = document.querySelector(".po-brand .po-break-word, #bylineInfo");
+            brand = brandNode && (brandNode.textContent || "").replace(/^\s*Visit the\s+/i, "")
+                .replace(/\s+Store\s*$/i, "").trim();
+        }
+        return { gtin: gtin, mpn: mpn, sku: asin, productID: asin, brand: brand || null };
+    }
+
+    function amazonPriceAndCurrency() {
+        var selectors = [
+            ".apex-pricetopay-value .a-offscreen", ".priceToPay .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
+            "#corePrice_feature_div .a-price .a-offscreen", "#price_inside_buybox",
+            "#priceblock_ourprice", "#priceblock_dealprice"
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var node = document.querySelector(selectors[i]);
+            var raw = node && ((node.getAttribute("content") || node.textContent || "").trim());
+            var amount = parseLocalizedPriceNumber(raw);
+            if (amount !== null && amount > 0) {
+                var declared = raw.match(/\b[A-Z]{3}\b/);
+                return { amount: String(amount), currency: declared ? declared[0] : amazonCurrency() };
+            }
+        }
+        var box = document.querySelector(
+            ".apex-pricetopay-value, .priceToPay, #corePriceDisplay_desktop_feature_div");
+        if (box) {
+            var whole = box.querySelector(".a-price-whole");
+            var fraction = box.querySelector(".a-price-fraction");
+            if (whole) {
+                var composed = (whole.textContent || "").replace(/\D/g, "")
+                    + "." + ((fraction && fraction.textContent || "00").replace(/\D/g, "") || "00");
+                var composedAmount = parsePriceNumber(composed);
+                if (composedAmount !== null && composedAmount > 0) {
+                    return { amount: String(composedAmount), currency: amazonCurrency() };
+                }
+            }
+        }
+        return null;
+    }
+
+    // Amazon localizes its visible price independently of the page language:
+    // 1,299.00 and 1.299,00 are the same amount. Generic structured data uses
+    // a machine decimal; this parser is intentionally scoped to Amazon's UI.
+    function parseLocalizedPriceNumber(raw) {
+        if (typeof raw !== "string") { return null; }
+        var digits = raw.replace(/[^0-9.,]/g, "");
+        if (!digits) { return null; }
+        var comma = digits.lastIndexOf(","), dot = digits.lastIndexOf(".");
+        if (comma >= 0 && dot >= 0) {
+            digits = comma > dot
+                ? digits.replace(/\./g, "").replace(/,/g, ".")
+                : digits.replace(/,/g, "");
+        } else {
+            var separator = comma >= 0 ? "," : (dot >= 0 ? "." : "");
+            if (separator) {
+                var parts = digits.split(separator);
+                var decimalTail = parts.length === 2 && parts[1].length > 0 && parts[1].length <= 2;
+                digits = decimalTail ? parts[0] + "." + parts[1] : parts.join("");
+            }
+        }
+        var value = parseFloat(digits);
+        return isNaN(value) ? null : value;
+    }
+
+    function amazonPrimaryImageURL() {
+        var image = document.querySelector(
+            "#landingImage, #main-image, #imgBlkFront, #ebooksImgBlkFront, "
+            + '[data-a-image-name="mainImage"], [data-fling-refmarker="detail_main_image_block"]');
+        if (!image) { return ""; }
+        var direct = image.getAttribute("data-old-hires") || image.getAttribute("data-a-hires")
+            || image.getAttribute("data-midres-replacement");
+        if (direct && /^https?:\/\//i.test(direct)) { return direct; }
+        var dynamic = image.getAttribute("data-a-dynamic-image");
+        if (dynamic) {
+            try {
+                var sizes = JSON.parse(dynamic), best = "", bestArea = -1;
+                Object.keys(sizes).forEach(function (url) {
+                    var size = sizes[url] || [], area = (size[0] || 0) * (size[1] || 0);
+                    if (area > bestArea) { best = url; bestArea = area; }
+                });
+                if (/^https?:\/\//i.test(best)) { return best; }
+            } catch (e) {}
+        }
+        var src = image.currentSrc || image.getAttribute("src") || image.getAttribute("data-src") || "";
+        return /^https?:\/\//i.test(src) ? src : "";
+    }
+
     function productSnapshotName() {
+        if (isAmazonProductURL()) {
+            var amazonTitle = document.querySelector("#productTitle");
+            var titleText = amazonTitle && (amazonTitle.textContent || "").replace(/\s+/g, " ").trim();
+            if (titleText) { return titleText; }
+        }
         var node = jsonLDProductNode();
         if (node && typeof node.name === "string" && node.name.trim()) { return node.name.trim(); }
         var microdataEl = document.querySelector('[itemprop="name"]');
@@ -1397,19 +1584,27 @@
     }
 
     // The passive product snapshot this page offers, or null with no
-    // STRUCTURED price (no heuristic/rendered-DOM tier).
+    // trustworthy price (structured generically; rendered buy box on Amazon).
     function extractProductSnapshot() {
         var name = productSnapshotName();
         if (!name) { return null; }
 
         var node = jsonLDProductNode();
+        var amazonPage = isAmazonProductURL();
         var amount = null, currency = null, identifiers = {};
-        if (node) {
-            var offerAmount = offerPrice(node);
-            if (offerAmount === null) { return null; }
+        var offerAmount = node ? offerPrice(node) : null;
+        if (node && offerAmount !== null) {
             amount = String(offerAmount);
             currency = offerCurrency(node);
             identifiers = jsonLDIdentifiers(node);
+        } else if (amazonPage) {
+            var amazonPrice = amazonPriceAndCurrency();
+            if (!amazonPrice || !amazonPrice.currency) { return null; }
+            amount = amazonPrice.amount;
+            currency = amazonPrice.currency;
+            identifiers = amazonIdentifiers();
+        } else if (node) {
+            return null;
         } else {
             var found = metaPriceAndCurrency() || microdataPriceAndCurrency();
             if (!found) { return null; }
@@ -1419,7 +1614,23 @@
         }
         if (!currency) { return null; }
 
+        // Even an Amazon variant that happens to expose JSON-LD still gets the
+        // ASIN and plain-table identifiers. This guarantees one keyed identity
+        // for every recognized Amazon product URL.
+        if (amazonPage) {
+            var amazonFields = amazonIdentifiers();
+            identifiers.gtin = identifiers.gtin || amazonFields.gtin;
+            identifiers.mpn = identifiers.mpn || amazonFields.mpn;
+            identifiers.sku = identifiers.sku || amazonFields.sku;
+            identifiers.productID = identifiers.productID || amazonFields.productID;
+            identifiers.brand = identifiers.brand || amazonFields.brand;
+        }
+
         var retailerItemID = metaContent(["product:retailer_item_id"]) || retailerItemIDFromURL();
+        var imageURL = amazonPage ? amazonPrimaryImageURL() : "";
+        if (!imageURL) {
+            imageURL = metaContent(["og:image", "og:image:secure_url", "twitter:image", "product:image"]);
+        }
         return {
             name: name,
             price: amount,
@@ -1430,8 +1641,30 @@
             sku: identifiers.sku || null,
             productID: identifiers.productID || null,
             retailerItemID: retailerItemID || null,
-            brand: identifiers.brand || metaContent(["product:brand", "og:brand"]) || null
+            brand: identifiers.brand || metaContent(["product:brand", "og:brand"]) || null,
+            imageURL: imageURL || null
         };
+    }
+
+    // A compact, structured hand-off document for a product pill tap. Amazon
+    // pages routinely exceed the generic 1.5 MB DOM-message ceiling, and a
+    // refetch outside Safari is commonly bot-walled. This carries exactly the
+    // metadata already extracted from the rendered page instead.
+    function productSnapshotHTML(snapshot) {
+        if (!snapshot) { return ""; }
+        var product = {
+            "@context": "https://schema.org", "@type": "Product", name: snapshot.name,
+            image: snapshot.imageURL || undefined, brand: snapshot.brand || undefined,
+            gtin: snapshot.gtin || undefined, mpn: snapshot.mpn || undefined,
+            sku: snapshot.sku || snapshot.retailerItemID || undefined,
+            productID: snapshot.productID || snapshot.retailerItemID || undefined,
+            offers: { "@type": "Offer", price: snapshot.price, priceCurrency: snapshot.currency }
+        };
+        return "<!doctype html><html><head><title>" + String(snapshot.name).replace(/[<>&]/g, " ")
+            + "</title><script type=\"application/ld+json\">"
+            + JSON.stringify(product).replace(/</g, "\\u003c")
+            + "</script></head><body><h1>" + String(snapshot.name).replace(/[<>&]/g, " ")
+            + "</h1></body></html>";
     }
 
     // For the WKWebView harness -- see ProductSnapshotJSFixtureParityTests.
@@ -1496,12 +1729,12 @@
     // Renders whatever the productSnapshot round trip earned: the history
     // pill (stacked above Track when both show; alone when the page is
     // already tracked) and/or the Track pill (skipped once tracked).
-    function renderProductPills(context, historyResp) {
+    function renderProductPills(context, historyResp, snapshot) {
         var hasHistory = !!(historyResp && historyResp.hasHistory);
         var isTracked = !!(historyResp && historyResp.isTracked);
         if (hasHistory) { injectHistoryPill(historyResp, !isTracked); }
         if (!isTracked) {
-            var trackTarget = trackTargetFor(context);
+            var trackTarget = trackTargetFor(context, snapshot);
             if (trackTarget) { injectLunaButton(trackTarget); }
         }
     }
@@ -1642,14 +1875,14 @@
     // Puts the page into the waiting state: the spinner pill, plus the Track
     // pill it stacks above (which is not waiting on anything and should not be
     // held back by this lookup). Returns whether the lookup may proceed.
-    function beginSellerLookup(context, historyResp) {
+    function beginSellerLookup(context, historyResp, snapshot) {
         if (sellerLookupStarted) { return false; }
         if (!(context && context.supportsProducts)) { return false; }
         sellerLookupStarted = true;
         var isTracked = !!(historyResp && historyResp.isTracked);
         injectSellerSpinnerPill(!isTracked);
         if (!isTracked) {
-            var trackTarget = trackTargetFor(context);
+            var trackTarget = trackTargetFor(context, snapshot);
             if (trackTarget) { injectLunaButton(trackTarget); }
         }
         return true;
@@ -1670,10 +1903,10 @@
         applyStyle(pill, sellerPillStyle(stacked, false));
     }
 
-    function finishSellerLookup(context, historyResp, sellerResp) {
+    function finishSellerLookup(context, historyResp, sellerResp, snapshot) {
         var pill = document.getElementById(SELLER_PILL_ID);
         var isTracked = !!(historyResp && historyResp.isTracked);
-        if (!pill) { renderProductPills(context, historyResp); return; }
+        if (!pill) { renderProductPills(context, historyResp, snapshot); return; }
         if (sellerResp && sellerResp.found && sellerResp.url) {
             fillSellerPill(pill, sellerResp, !isTracked);
             return;
@@ -1698,27 +1931,27 @@
     // alternative sellers before rendering. Falls back to the plain Track pill
     // when there's no browser host, no extraction, or the round trip fails.
     function handleProductPage(context) {
-        var trackTarget = trackTargetFor(context);
+        var snapshot = extractProductSnapshot();
+        var trackTarget = trackTargetFor(context, snapshot);
         if (!(context && context.supportsProducts) || typeof browser === "undefined") {
             if (trackTarget) { injectLunaButton(trackTarget); }
             return;
         }
-        var snapshot = extractProductSnapshot();
         if (!snapshot) {
             if (trackTarget) { injectLunaButton(trackTarget); }
             return;
         }
         productSnapshotRequest(snapshot)
             .then(function (resp) {
-                if (!beginSellerLookup(context, resp)) {
-                    renderProductPills(context, resp);
+                if (!beginSellerLookup(context, resp, snapshot)) {
+                    renderProductPills(context, resp, snapshot);
                     return;
                 }
                 requestComparableSellers(snapshot).then(function (sellerResp) {
-                    finishSellerLookup(context, resp, sellerResp);
+                    finishSellerLookup(context, resp, sellerResp, snapshot);
                 });
             })
-            .catch(function () { renderProductPills(context, null); });
+            .catch(function () { renderProductPills(context, null, snapshot); });
     }
 
     // ── The one-shot setup confirmation ─────────────────────────────────────────
@@ -2621,7 +2854,9 @@
             // Hand the app the already-unlocked page HTML so it renders that content
             // instead of re-fetching (which could re-lock outside Safari). Skip when
             // the page is too large for native messaging; the app then fetches the URL.
-            var html = capturedHTML();
+            var html = typeof target.captureHTML === "function"
+                ? target.captureHTML()
+                : capturedHTML();
             if (html && html.length <= 1500000) {
                 browser.runtime.sendMessage({ type: "saveContent", url: location.href, html: html })
                     .then(open).catch(open);
@@ -2694,16 +2929,15 @@
     }
 
     // The "Track in Luna" button target for a recognized product page. Sends
-    // the rendered DOM (`captureContent: true`) so the app's product save runs
-    // over prefetched, hydrated HTML -- fast, and client-rendered prices
-    // resolve without a WebView render tier -- exactly as the article pill
-    // already does.
-    function trackTargetFor(context) {
+    // compact structured metadata when a snapshot is available; the generic
+    // rendered-DOM capture remains the fallback for other product pages.
+    function trackTargetFor(context, snapshot) {
         if (!(context && context.supportsProducts)) { return null; }
         return {
             label: localizedMessage("trackInLuna"),
             tint: KIND_TINTS.product,
             captureContent: true,
+            captureHTML: snapshot ? function () { return productSnapshotHTML(snapshot); } : null,
             url: function () { return ownSchemeTarget(context, location.href); }
         };
     }

@@ -50,12 +50,15 @@ public struct ProductSnapshot: Codable, Equatable {
     public var retailerItemID: String?
     /// Brand / manufacturer, if declared.
     public var brand: String?
+    /// Product artwork declared by the rendered page. Especially important for
+    /// Amazon, whose product image is commonly absent from Open Graph metadata.
+    public var imageURL: String?
 
     public init(
         name: String, price: String, currency: String, url: String, host: String,
         day: String, capturedAt: String, gtin: String? = nil, mpn: String? = nil,
         sku: String? = nil, productID: String? = nil, retailerItemID: String? = nil,
-        brand: String? = nil
+        brand: String? = nil, imageURL: String? = nil
     ) {
         self.name = name
         self.price = price
@@ -70,6 +73,7 @@ public struct ProductSnapshot: Codable, Equatable {
         self.productID = productID
         self.retailerItemID = retailerItemID
         self.brand = brand
+        self.imageURL = imageURL
     }
 
     /// `price` parsed back to a `Decimal`, or nil if the persisted string is malformed.

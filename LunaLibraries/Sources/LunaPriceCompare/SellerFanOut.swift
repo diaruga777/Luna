@@ -95,12 +95,16 @@ public struct SellerFanOutProfile: Equatable, Sendable {
 
     /// The Safari extension: a page is already rendered and the native message
     /// must answer inside the appex's 20s budget, so everything shrinks and the
-    /// weakest match tier is switched off — a wrong pill on someone's shopping
-    /// page is worse than no pill.
+    /// name matching remains available for retailer-scoped identifiers such as
+    /// an Amazon ASIN: those ids reliably establish that the source is one
+    /// concrete product but cannot travel to another retailer. Sources with a
+    /// GTIN/MPN still cannot use the ordinary name-only tier
+    /// (`ComparisonMatching` enforces that invariant); only its stricter
+    /// model-code evidence route remains available.
     public static let constrained = SellerFanOutProfile(
         candidateLimit: 6, resultTarget: 3, concurrency: 2, productURLsPerCandidate: 2,
         totalBudget: 15, perFetchTimeout: 8,
-        allowsNameOnlyMatch: false, usesWebSearchLayer: false,
+        allowsNameOnlyMatch: true, usesWebSearchLayer: false,
         skipsClientRenderedSearch: true, renderedSearchLimit: 0)
 }
 

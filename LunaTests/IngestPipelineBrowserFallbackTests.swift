@@ -14,6 +14,32 @@ import XCTest
 
 final class IngestPipelineBrowserFallbackTests: XCTestCase {
 
+    /// Amazon often refuses the app/extension URLSession even though Safari's
+    /// rendered page already produced a passive snapshot. A known product host
+    /// must still offer the product processor its fallback when the fetch has
+    /// no HTML at all.
+    func testKnownAmazonURLUsesSnapshotFallbackWhenNativeFetchIsBlocked() async {
+        let url = URL(string: "https://www.amazon.com.au/acme/dp/B0ACME1234")!
+        let expected = ProductInfo(
+            name: "Acme Toaster", priceAmount: 42, priceCurrency: "AUD",
+            imageURL: URL(string: "https://m.media-amazon.com/images/I/acme.jpg"),
+            brand: "Acme", productID: "B0ACME1234",
+            identifiers: ProductIdentifiers(sku: "B0ACME1234", brand: "Acme"))
+        let processor = ProductIngestProcessor(fallback: { candidateURL in
+            candidateURL == url ? expected : nil
+        })
+
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: .manual), timeout: 1,
+            fetcher: MockArticleFetcher(), productProcessor: processor)
+
+        guard case let .product(product, html) = outcome else {
+            return XCTFail("Expected snapshot-backed Amazon product, got \(outcome)")
+        }
+        XCTAssertEqual(product, expected)
+        XCTAssertTrue(html.isEmpty)
+    }
+
     /// A generic SPA state shape with `value` beside a nested ISO-currency object
     /// must complete the product route. Recognition without mandatory-price
     /// extraction used to fall through to Reader even though Safari showed Track.

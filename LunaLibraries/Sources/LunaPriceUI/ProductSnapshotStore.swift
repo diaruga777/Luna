@@ -5,6 +5,9 @@
 
 import LunaAppConfig
 import LunaHTMLClassification
+import LunaModels
+import LunaPriceMetadata
+import LunaURLClassification
 import Foundation
 
 /// Reads the passive product snapshots a product-handling Safari extension
@@ -59,6 +62,58 @@ public final class ProductSnapshotStore {
         try? data.write(to: fileURL, options: .atomic)
     }
 
+    /// The newest passive snapshot for exactly this canonical page, mapped
+    /// back into the same mandatory-price `ProductInfo` the HTML extractor
+    /// produces. This is the bot-wall fallback used by app/share/action saves:
+    /// Safari already read the rendered Amazon page, so a later blocked native
+    /// refetch must not throw that trustworthy metadata away.
+    public func productInfo(forPageURL url: URL) -> ProductInfo? {
+        let target = snapshotURLKey(url)
+        guard let snapshot = load()
+            .filter({ snapshot in
+                guard let snapshotURL = URL(string: snapshot.url) else { return false }
+                return snapshotURLKey(snapshotURL) == target
+            })
+            .max(by: { $0.capturedAt < $1.capturedAt }),
+              let amount = snapshot.priceAmount
+        else { return nil }
+        return productInfo(
+            snapshot: snapshot, amount: amount,
+            imageURL: snapshot.imageURL.flatMap(URL.init(string:)))
+    }
+
+    private func snapshotURLKey(_ url: URL) -> String {
+        let canonical = URLClassification.canonicalURL(url)
+        // Amazon changes slugs and appends `/ref=…` path components freely.
+        // The ASIN is the actual product-page identity and survives all of it.
+        if AmazonStorefronts.storefront(for: canonical.host) != nil,
+           let asin = AmazonProductDetails.asin(in: canonical) {
+            return "amazon:\(asin)"
+        }
+        guard var components = URLComponents(url: canonical, resolvingAgainstBaseURL: false)
+        else { return canonical.absoluteString }
+        components.queryItems = components.queryItems?.filter { item in
+            let name = item.name.lowercased()
+            if name == "srsltid" { return false }
+            if name == "tag", AmazonStorefronts.storefront(for: canonical.host) != nil { return false }
+            return true
+        }
+        if components.queryItems?.isEmpty == true { components.queryItems = nil }
+        return components.url?.absoluteString ?? canonical.absoluteString
+    }
+
+    private func productInfo(
+        snapshot: ProductSnapshot, amount: Decimal, imageURL: URL?
+    ) -> ProductInfo {
+        ProductInfo(
+            name: snapshot.name, priceAmount: amount, priceCurrency: snapshot.currency,
+            imageURL: imageURL, brand: snapshot.brand,
+            productID: snapshot.productID ?? snapshot.retailerItemID,
+            identifiers: ProductIdentifiers(
+                gtin: snapshot.gtin, mpn: snapshot.mpn,
+                sku: snapshot.sku ?? snapshot.retailerItemID, brand: snapshot.brand))
+    }
+
     // MARK: - Pure logic (mirrored verbatim by the extension's own copy)
 
     private static let dayFormatter: DateFormatter = {
@@ -102,7 +157,7 @@ public final class ProductSnapshotStore {
             capturedAt: ISO8601DateFormatter().string(from: now),
             gtin: field("gtin"), mpn: field("mpn"), sku: field("sku"),
             productID: field("productID"), retailerItemID: field("retailerItemID"),
-            brand: field("brand"))
+            brand: field("brand"), imageURL: field("imageURL"))
     }
 
     private static func decimalString(from raw: Any?) -> String? {

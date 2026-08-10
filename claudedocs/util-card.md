@@ -165,8 +165,9 @@ and do not ask for Photos access unless the person selects it.
 - **A subtle selector outline, not a fourth action button.** The sentence and
   current option are horizontally centred as one control; inside the pill, the
   *app icon + “in Luna”/“in Photos” + indicator* group is centred as one unit.
-  Its icon has a subtle squircle rim, and its up/down carets sit directly after
-  the label. The pill is always sized for the longer *in Photos* option,
+  The Luna icon has a subtle squircle rim and breathing room around its moon;
+  the Photos glyph deliberately has no rim. Its up/down carets sit directly
+  after the label. The pill is always sized for the longer *in Photos* option,
   so neither it nor the sentence shifts when the selection changes.
   The icons are the real artwork at the text's own height — the running app's
   own icon (`LunaAppIconImage`) and the Photos pinwheel Luna draws

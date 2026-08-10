@@ -77,8 +77,6 @@ final class UtilCardStorageChooserView: UIView {
         selectorIcon.contentMode = .scaleAspectFill
         selectorIcon.clipsToBounds = true
         selectorIcon.layer.cornerCurve = .continuous
-        selectorIcon.layer.borderWidth = 1
-        selectorIcon.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
         selectorLabel.font = Self.optionFont
         selectorLabel.textColor = LunaColors.primaryText
         selector.layer.cornerRadius = 10
@@ -150,7 +148,8 @@ final class UtilCardStorageChooserView: UIView {
             in: selector,
             icon: selectorIcon,
             label: selectorLabel,
-            indicatorWidth: Self.selectorToChevron + Self.chevronWidth)
+            indicatorWidth: Self.selectorToChevron + Self.chevronWidth,
+            drawsAppIconBorder: selection == .luna)
         chevron.frame = CGRect(
             x: (selectorLabel.frame.maxX + Self.selectorToChevron).rounded(),
             y: ((selectorHeight - Self.chevronWidth) / 2).rounded(),
@@ -169,7 +168,8 @@ final class UtilCardStorageChooserView: UIView {
         icon: UIImageView,
         label: UILabel,
         trailingReserve: CGFloat = 0,
-        indicatorWidth: CGFloat = 0
+        indicatorWidth: CGFloat = 0,
+        drawsAppIconBorder: Bool = false
     ) {
         let side = Self.iconSide
         let naturalWidth = label.sizeThatFits(
@@ -185,8 +185,10 @@ final class UtilCardStorageChooserView: UIView {
             width: side,
             height: side)
         icon.layer.cornerRadius = side * LunaAppIconImage.cornerRadiusRatio
-        icon.layer.borderWidth = 1
-        icon.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
+        icon.layer.borderWidth = drawsAppIconBorder ? 1 : 0
+        icon.layer.borderColor = drawsAppIconBorder
+            ? UIColor.white.withAlphaComponent(0.32).cgColor
+            : nil
         let labelX = icon.frame.maxX + Self.iconToTitle
         label.frame = CGRect(
             x: labelX,
@@ -312,7 +314,9 @@ final class UtilCardStorageChooserView: UIView {
             guard let icon = row.subviews.compactMap({ $0 as? UIImageView }).first,
                   let label = row.subviews.compactMap({ $0 as? UILabel }).first
             else { continue }
-            layoutSelectorContents(in: row, icon: icon, label: label)
+            layoutSelectorContents(
+                in: row, icon: icon, label: label,
+                drawsAppIconBorder: option == .luna)
         }
         host.bringSubviewToFront(dismissCatcher ?? panel)
         host.bringSubviewToFront(panel)
@@ -360,9 +364,21 @@ final class UtilCardStorageChooserView: UIView {
     static func icon(for option: Option) -> UIImage? {
         switch option {
         case .luna:
-            return LunaAppIconImage.image(for: .current)
+            return paddedAppIcon()
         case .photos:
             return PhotosAppGlyph.image(side: iconSide)
+        }
+    }
+
+    /// The Luna artwork's moon sits close to its asset edge. A little
+    /// transparent breathing room inside the same iOS-icon squircle keeps the
+    /// moon from reading as pressed against the selector's new rim.
+    private static func paddedAppIcon() -> UIImage? {
+        guard let image = LunaAppIconImage.image(for: .current) else { return nil }
+        let side = iconSide
+        let inset = max(2, side * 0.12)
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+            image.draw(in: CGRect(x: inset, y: inset, width: side - inset * 2, height: side - inset * 2))
         }
     }
 }

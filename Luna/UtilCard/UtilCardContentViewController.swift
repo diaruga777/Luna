@@ -345,6 +345,10 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.isHidden = !hasWeekly
         weeklyHost.alpha = hasWeekly ? 0 : 1
         view.setNeedsLayout()
+        // Put the invisible row in its finished-card seat before the fade
+        // begins. Animating this layout change would make its first appearance
+        // slide upward from the headline's old slot.
+        view.layoutIfNeeded()
         guard let headline else {
             weeklyHost.setCycleVisible(true)
             return
@@ -699,6 +703,9 @@ final class UtilCardContentViewController: CardContentViewController {
         button.configuration?.baseBackgroundColor =
             LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
         button.configuration?.titleLineBreakMode = .byTruncatingTail
+        button.configuration?.titleAlignment = .leading
+        button.configuration?.imagePlacement = .leading
+        button.configuration?.imagePadding = 10
         button.configuration?.contentInsets = NSDirectionalEdgeInsets(
             top: 13, leading: 20, bottom: 13, trailing: 20)
         var attributes = AttributeContainer()

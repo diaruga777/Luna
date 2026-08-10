@@ -738,7 +738,7 @@ final class UtilCardTests: XCTestCase {
     func testStorageSelectorCentersItsIconTextAndIndicatorWithASquircleRim() throws {
         let card = makeCard(
             showsOnboarding: false,
-            storageChoice: FakeDownloadStorageChoice())
+            storageChoice: FakeDownloadStorageChoice(usesPhotos: false))
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
         card.view.layoutIfNeeded()
@@ -757,6 +757,21 @@ final class UtilCardTests: XCTestCase {
             icon.layer.cornerRadius,
             icon.bounds.height * LunaAppIconImage.cornerRadiusRatio,
             accuracy: 0.01)
+    }
+
+    func testStorageSelectorLeavesThePhotosGlyphUnbordered() throws {
+        let card = makeCard(
+            showsOnboarding: false,
+            storageChoice: FakeDownloadStorageChoice(usesPhotos: true))
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let selector = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.storage.selector") as? UIControl)
+        let photosGlyph = try XCTUnwrap(
+            selector.subviews.compactMap { $0 as? UIImageView }.first)
+        XCTAssertEqual(photosGlyph.layer.borderWidth, 0)
     }
 
     func testStorageLineIsAbsentWithoutADownloadingAppOrOnceItIsAnswered() {

@@ -53,6 +53,14 @@ public final class EclipseBloomStatusLabel: UIView {
             && pixelBloomView.usesStackedAdditiveHalos
     }
 
+    #if DEBUG
+    /// The duration the most recent `reveal` actually animated with, after the
+    /// Reduce Motion override — evidence that a caller's requested speed (the
+    /// cycler's near-instant first bloom, its unchanged rotation sweep) reached
+    /// the animation rather than being silently ignored.
+    public private(set) var lastResolvedRevealDurationForTesting: TimeInterval?
+    #endif
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
@@ -157,6 +165,9 @@ public final class EclipseBloomStatusLabel: UIView {
         CATransaction.commit()
 
         let resolvedDuration = UIAccessibility.isReduceMotionEnabled ? 0.24 : duration
+        #if DEBUG
+        lastResolvedRevealDurationForTesting = resolvedDuration
+        #endif
         let maskAnimation = CABasicAnimation(keyPath: "path")
         maskAnimation.fromValue = initialPath
         maskAnimation.toValue = finalPath
@@ -254,10 +265,22 @@ public final class ArticleLoadingStatusCycler {
     /// shipped pacing; every call site takes the default.
     private let interval: TimeInterval
 
+    /// How long the FIRST phrase's bloom takes to sweep in. A spinner that has
+    /// just appeared has nothing to hold continuity with yet, so this defaults
+    /// to barely perceptible rather than `EclipseBloomStatusLabel.reveal`'s own
+    /// full sweep — every ROTATION after it still calls `reveal` with no
+    /// duration override at all, i.e. the same sweep it has always used.
+    private let initialRevealDuration: TimeInterval
+
+    /// Near-instant, but not zero: the bloom stays the same animation, just
+    /// too quick to watch happen.
+    public static let instantRevealDuration: TimeInterval = 0.05
+
     public init(
         label: EclipseBloomStatusLabel,
         initialText: String,
         interval: TimeInterval = 3,
+        initialRevealDuration: TimeInterval = ArticleLoadingStatusCycler.instantRevealDuration,
         alternatives: [String] = [
             L10n.string("LoadingStatus_stage1_stillGoing"),
             L10n.string("LoadingStatus_stage2_justABitLonger"),
@@ -268,6 +291,7 @@ public final class ArticleLoadingStatusCycler {
         self.label = label
         self.initialText = initialText
         self.interval = interval
+        self.initialRevealDuration = initialRevealDuration
         self.alternatives = alternatives
     }
 
@@ -275,7 +299,7 @@ public final class ArticleLoadingStatusCycler {
 
     public func start() {
         stop()
-        label?.reveal(initialText)
+        label?.reveal(initialText, duration: initialRevealDuration)
         timer = Timer.scheduledTimer(
             withTimeInterval: interval, repeats: true
         ) { [weak self] _ in self?.showNextPhrase() }

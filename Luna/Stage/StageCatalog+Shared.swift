@@ -62,6 +62,29 @@ enum SharedStageCatalog {
                     }
                     return safari
                 }),
+            StageDescriptor(
+                id: "onboarding.safari-lesson-journey", screen: "Safari lesson",
+                variant: "whole journey",
+                summary: "The lesson as the util card enters it, host and all. In central "
+                    + "Luna that is the three sibling lessons in rank order, and the "
+                    + "eclipse-bordered setup ask that comes up once the first full cycle "
+                    + "is done — the lessons keep replaying underneath it.",
+                kind: .shared,
+                seed: { StageFixtures.seedEmpty() },
+                make: {
+                    let onboarding = AppOnboardingViewController(
+                        completion: AppOnboardingCompletion(
+                            makeCompletedRootViewController:
+                                KindWiring.makeSetupReplayRootViewController))
+                    // Same cue as the stage above: the sequence starts once the
+                    // screen has been laid out at its full size.
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + OnboardingAnimationClock.delay(0.4)
+                    ) { [weak onboarding] in
+                        onboarding?.startSafariLessonForStaging()
+                    }
+                    return onboarding
+                }),
         ]
     }
 

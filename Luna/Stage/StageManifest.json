@@ -242,6 +242,14 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "onboarding.safari-lesson-journey",
+      "screen": "Safari lesson",
+      "variant": "whole journey",
+      "summary": "The lesson as the util card enters it, host and all. In central Luna that is the three sibling lessons in rank order, and the eclipse-bordered setup ask that comes up once the first full cycle is done — the lessons keep replaying underneath it.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
       "id": "price.editor.alerting",
       "screen": "Price editor",
       "variant": "price drop",

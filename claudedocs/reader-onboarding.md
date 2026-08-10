@@ -11,11 +11,47 @@ Safari and Action Button shortcut lessons that the util card reuses.
 Central Luna borrows sibling lessons in product rank order: Reader, Downloader,
 then Price Tracker. It starts with the highest-ranked sibling whose installation
 marker is absent. The central Messages lesson uses that sibling's practice or
-weekly link and save surface while keeping Luna's name and icon. The central
-Safari lesson uses the same sibling's mock UI; once its Safari instructions
-appear, they remain modal above the full-screen content while the three sibling
-lessons replay underneath in rank order. The Manage Extensions sheet remains
-branded Luna, and the Safari prompt states that all Luna apps' features apply.
+weekly link and save surface while keeping Luna's name and icon. The Manage
+Extensions sheet remains branded Luna, and the Safari prompt states that all Luna
+apps' features apply.
+
+### The central Safari lesson is all three, and it does not stop
+
+Central Luna is the app whose every surface takes every kind, so its Safari
+lesson is not one sibling's — it plays ALL THREE, in that rank order, and then
+keeps playing them.
+
+One replica per sibling is mounted hidden (`safariReplicas`), each built from the
+central configuration with that sibling's `demonstrationApp`, so each carries its
+own mock page, mock URL and lesson: the Reader's buried explainer and its clutter
+wipe, the Downloader's blocked post and video panel, the Price Tracker's product
+page, seller pill and spotlight. Nothing new is authored for the central app.
+
+The hand-over runs off ONE signal. Every lesson ends by asking for the same
+thing, so each reports reaching its own ask —
+`SafariReplicaViewController.onDidReachSetupOffer`, raised once per run from the
+explainer's `cleanUpClutter` completion, the video panel's step reveal, or the
+product card's arrival — and the host holds
+(`OnboardingDemoLoopTiming.siblingLessonHoldDuration`), cross-fades to the next
+replica, rewinds it and begins it. It never has to know which lesson it is
+playing. **The signal is what makes the cycle exist**: it used to hang off
+`onActionButtonWaveFinished`, which no Safari lesson ever fires, so the central
+app played one sibling and stopped.
+
+The pass that finishes the FIRST full cycle raises the Safari ask, and the cycle
+carries on beneath it. The ask is `DemoInstructionOverlay` in its `.eclipseCard`
+style: the prompt and its one Set Up Safari button on a card wearing the launch
+corona, over a scrim light enough to keep the lessons legible underneath — the
+full-bleed style stays for asks that arrive over a finished demonstration. It is
+hosted on the WINDOW, so the replicas swap under it; `hasSafariInstructions` asks
+every replica rather than the current one for that reason.
+
+Re-entering the lesson rewinds to the first sibling. An external hop stops the
+cycle (`pauseDemoPresentationPlayback`), and a Safari return with no extension
+evidence puts it back rather than leaving one frozen frame under a live ask.
+
+A faceted app's `safariDemonstrationApps` is one entry, so none of this engages:
+its single lesson ends on its own mock UI's ask, exactly as before.
 
 ## Launch root
 

@@ -36,6 +36,11 @@ final class SafariReplicaViewController:
     var onInstallShortcut: (() -> Void)?
     var onSetActionButton: (() -> Void)?
     var onSetUpLater: (() -> Void)?
+    /// This app's lesson has reached its own setup ask — the explainer's page
+    /// clean, the video panel's steps, the product card — whichever of the three
+    /// this replica plays. It is the ONE end-of-lesson signal, so a host that
+    /// plays several of them in a row does not have to know which is which.
+    var onDidReachSetupOffer: (() -> Void)?
 
     private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
@@ -74,6 +79,10 @@ final class SafariReplicaViewController:
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
     private var didBeginDemonstration = false
+    /// One report per run of the lesson: the explainer's clean-up completion,
+    /// the video panel's steps and the product card each land once, and a rewind
+    /// arms the next run.
+    private var didReportSetupOffer = false
     private var pageIndex = 0
     private var pageTimer: Timer?
 
@@ -184,6 +193,9 @@ final class SafariReplicaViewController:
             configuration: onboardingConfiguration)
         lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
         lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
+        lesson.onDidReachSetupOffer = { [weak self] in
+            self?.lessonDidReachSetupOffer()
+        }
         lesson.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(lesson)
         priceLesson = lesson
@@ -208,6 +220,9 @@ final class SafariReplicaViewController:
             configuration: onboardingConfiguration)
         lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
         lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
+        lesson.onDidReachSetupOffer = { [weak self] in
+            self?.lessonDidReachSetupOffer()
+        }
         lesson.translatesAutoresizingMaskIntoConstraints = false
         view.insertSubview(lesson, belowSubview: browserBar)
         videoLesson = lesson
@@ -337,6 +352,7 @@ final class SafariReplicaViewController:
     func resetDemonstration() {
         guard didBeginDemonstration else { return }
         didBeginDemonstration = false
+        didReportSetupOffer = false
         cancelActionButtonSaveEffect()
         priceLesson?.reset()
         videoLesson?.reset()
@@ -380,6 +396,15 @@ final class SafariReplicaViewController:
         ) { [weak self] in
             self?.replayActionButtonSaveEffect()
         }
+    }
+
+    /// Whichever of the three lessons this replica plays, it ends by asking for
+    /// the same thing. Reported once per run, and only for a run that is still
+    /// the current one.
+    private func lessonDidReachSetupOffer() {
+        guard didBeginDemonstration, !didReportSetupOffer else { return }
+        didReportSetupOffer = true
+        onDidReachSetupOffer?()
     }
 
     /// Price Tracker starts by showing the same Safari-owned permission
@@ -477,8 +502,11 @@ final class SafariReplicaViewController:
                     }
                     // Only the Reader's explainer has clutter to shatter. The
                     // Downloader keeps its blocked post intact behind the
-                    // extension's actual video panel.
-                    self.lunaPage?.cleanUpClutter()
+                    // extension's actual video panel — and reports its own end
+                    // from the panel instead.
+                    self.lunaPage?.cleanUpClutter { [weak self] in
+                        self?.lessonDidReachSetupOffer()
+                    }
                 }
             }
         }
@@ -534,7 +562,10 @@ final class SafariReplicaViewController:
             cornerRadius: browserRegion.cornerRadius)
     }
 
-    func showSafariPrompt() {
+    /// - Parameter style: `.eclipseCard` for an ask that has to STAY up over a
+    ///   demonstration that is still running underneath it — central Luna's,
+    ///   which keeps replaying its three sibling lessons behind this popover.
+    func showSafariPrompt(style: DemoInstructionOverlay.Style = .plain) {
         setInstruction(
             title: OnboardingStrings.Instruction.safariPrompt(
                 saveBenefit: onboardingConfiguration.saveBenefit,
@@ -545,7 +576,8 @@ final class SafariReplicaViewController:
                     image: UIImage(systemName: "safari.fill"),
                     prominent: true,
                     action: { [weak self] in self?.onSetUpSafari?() }),
-            ])
+            ],
+            style: style)
     }
 
 
@@ -635,9 +667,10 @@ final class SafariReplicaViewController:
 
     private func setInstruction(
         title: String?,
-        actions: [DemoInstructionOverlay.Action]
+        actions: [DemoInstructionOverlay.Action],
+        style: DemoInstructionOverlay.Style = .plain
     ) {
-        let overlay = instructionOverlay ?? DemoInstructionOverlay()
+        let overlay = instructionOverlay ?? DemoInstructionOverlay(style: style)
         overlay.configure(title: title, actions: actions)
         if instructionOverlay == nil {
             guard let host = view.window ?? view else { return }

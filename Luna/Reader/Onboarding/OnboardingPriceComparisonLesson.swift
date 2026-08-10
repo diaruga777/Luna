@@ -534,6 +534,10 @@ final class OnboardingPriceComparisonOverlayView: UIView {
 
     var onActivateSafari: (() -> Void)?
     var onSkipSafariSetup: (() -> Void)?
+    /// The lesson has said everything it has to say: the comparison is on the
+    /// page and the setup card is coming up over it. Central Luna, which plays
+    /// this lesson as one of three, uses it to hand over to the next sibling.
+    var onDidReachSetupOffer: (() -> Void)?
 
     /// Where the pill floats, measured up from the page's bottom edge: clear of
     /// the mock browser bar, with the same air over it the extension's own
@@ -741,6 +745,7 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         // finished demonstration.
         accessibilityViewIsModal = true
         card.present()
+        onDidReachSetupOffer?()
     }
 
     /// A generation-guarded, clock-scaled main-queue delay: anything scheduled

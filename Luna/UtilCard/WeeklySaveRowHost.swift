@@ -34,16 +34,19 @@ final class WeeklySaveRowHost: UIView {
     /// on every side, and that overhang is the effect.
     private let clip = UIView()
 
-    /// One row per live kind, in the app's kind order. The visible one is
-    /// `rows[index]`.
+    /// One row per cycle slot, in the app's kind order. Central Luna keeps
+    /// empty sibling slots too, so a missing weekly pick is a real turn in the
+    /// cycle rather than being silently removed from it.
     private(set) var rows: [UtilURLRow] = []
     private(set) var displays: [WeeklySaveDisplay] = []
+    private var slots: [WeeklySaveDisplay?] = []
     private var index = 0
     /// Held for the whole run — a transition that only the animation retains is
     /// the carousel's classic disappearing-act bug.
     private var replacement: WeeklyRowEclipseTransition?
 
-    /// Whether the card should give this slot any room at all.
+    /// Whether the card should give this slot any room at all. A central card
+    /// with at least one live pick keeps the slot for all three turns.
     var isEmpty: Bool { displays.isEmpty }
 
     /// Whether a replacement is mid-flight (the cycle pauses while it is).
@@ -131,23 +134,28 @@ final class WeeklySaveRowHost: UIView {
     func reload(animated: Bool) -> Bool {
         let wasEmpty = isEmpty
         let previous = displays
+        let previousSlots = slots
         let updated = store.liveDisplays(for: WeeklySaveKind.kinds(for: app))
-        guard updated != previous else { return false }
+        let updatedSlots: [WeeklySaveDisplay?] = app == .luna
+            ? WeeklySaveKind.kinds(for: app).map { store.display(for: $0) }
+            : updated.map(Optional.some)
+        guard updated != previous || updatedSlots != previousSlots else { return false }
         displays = updated
+        slots = updatedSlots
         let previousIndex = index
-        index = min(index, max(0, updated.count - 1))
+        index = min(index, max(0, updatedSlots.count - 1))
 
         // The one case worth an eclipse: the row on screen right now kept its
         // place and swapped its content. Anything else (a row appearing, the
         // last one leaving, the set changing size) is the card's own fade.
         if animated, !wasEmpty, !isEmpty,
-           previous.count == updated.count, previousIndex == index,
-           previous.indices.contains(index),
-           previous[index].save.kind == updated[index].save.kind,
-           previous[index].save != updated[index].save,
+           previousSlots.count == updatedSlots.count, previousIndex == index,
+           previousSlots.indices.contains(index),
+           previousSlots[index]?.save.kind == updatedSlots[index]?.save.kind,
+           previousSlots[index] != updatedSlots[index],
            bounds.width > 1, let outgoing = rows.indices.contains(index) ? rows[index] : nil
         {
-            replaceCurrentRow(outgoing: outgoing, with: updated[index])
+            replaceCurrentRow(outgoing: outgoing, with: updatedSlots[index])
             rebuildOffscreenRows(keeping: index)
             return false
         }
@@ -160,7 +168,9 @@ final class WeeklySaveRowHost: UIView {
     }
 
     private func syncPacer() {
-        pacer.liveKindCount = displays.count
+        pacer.liveKindCount = app == .luna && !displays.isEmpty
+            ? slots.count
+            : displays.count
         pacer.isReplacing = isReplacing
         pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
     }
@@ -169,7 +179,7 @@ final class WeeklySaveRowHost: UIView {
         replacement?.finish()
         replacement = nil
         for row in rows { row.removeFromSuperview() }
-        rows = displays.map(makeRow)
+        rows = slots.map(makeRow)
         updateRowVisibility()
         syncPacer()
     }
@@ -181,7 +191,7 @@ final class WeeklySaveRowHost: UIView {
             row.removeFromSuperview()
         }
         var rebuilt: [UtilURLRow] = []
-        for (offset, display) in displays.enumerated() {
+        for (offset, display) in slots.enumerated() {
             if offset == keptIndex, rows.indices.contains(keptIndex) {
                 rebuilt.append(rows[keptIndex])
             } else {
@@ -193,9 +203,18 @@ final class WeeklySaveRowHost: UIView {
         syncPacer()
     }
 
-    private func makeRow(_ display: WeeklySaveDisplay) -> UtilURLRow {
+    private func makeRow(_ display: WeeklySaveDisplay?) -> UtilURLRow {
         let row = UtilURLRow(style: .saveOfTheWeek)
-        configure(row, with: display)
+        if let display {
+            configure(row, with: display)
+        } else {
+            // The central card's nil turn is deliberately silent: the black
+            // row shell blends into the card while the same slot still travels
+            // with the carousel timing.
+            row.alpha = 0
+            row.isUserInteractionEnabled = false
+            row.accessibilityElementsHidden = true
+        }
         clip.addSubview(row)
         return row
     }
@@ -220,8 +239,11 @@ final class WeeklySaveRowHost: UIView {
     /// Reconciled by the util card on `.readingListChanged`: saving or deleting
     /// the pick flips its row between offered and answered.
     func updateSavedStates() {
-        for (offset, row) in rows.enumerated() where displays.indices.contains(offset) {
-            row.setSaved(isSaved?(displays[offset].save.urlString) ?? false)
+        for (offset, row) in rows.enumerated() {
+            guard slots.indices.contains(offset), let display = slots[offset] else {
+                continue
+            }
+            row.setSaved(isSaved?(display.save.urlString) ?? false)
         }
     }
 
@@ -234,7 +256,7 @@ final class WeeklySaveRowHost: UIView {
 
     // MARK: - Replacement
 
-    private func replaceCurrentRow(outgoing: UtilURLRow, with display: WeeklySaveDisplay) {
+    private func replaceCurrentRow(outgoing: UtilURLRow, with display: WeeklySaveDisplay?) {
         replacement?.finish()
         let incoming = makeRow(display)
         incoming.isHidden = false

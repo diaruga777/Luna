@@ -8,7 +8,7 @@ import Foundation
 /// The central Luna app's bundle id is the bare product prefix
 /// (`com.hsanabria.luna`) with no content suffix, so "no suffix" resolves to
 /// `.luna` — which is also the right default for the unit-test host.
-public enum LunaApp: CaseIterable, Equatable {
+public enum LunaApp: CaseIterable, Equatable, Hashable {
     /// The central Luna app — accepts and processes every content kind.
     case luna
     case reader
@@ -18,6 +18,13 @@ public enum LunaApp: CaseIterable, Equatable {
     public static var current: LunaApp {
         detect(bundleIdentifier: Bundle.main.bundleIdentifier)
     }
+
+    /// The standalone apps' product order used when the central Luna app needs
+    /// one representative lesson. Keep this separate from `allCases`: the
+    /// central app is a host, not one of the sibling products being ranked.
+    public static let onboardingRankedSiblings: [LunaApp] = [
+        .reader, .downloader, .priceTracker,
+    ]
 
     public static func detect(bundleIdentifier: String?) -> LunaApp {
         let identifier = (bundleIdentifier ?? "").lowercased()

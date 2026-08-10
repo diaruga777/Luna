@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 
 enum OnboardingDemoPage: CaseIterable, Equatable {
     case lunaPage
@@ -38,111 +39,96 @@ enum OnboardingDemoPage: CaseIterable, Equatable {
 }
 
 /// What an app's Safari lesson demonstrates before it asks for the setup.
-///
-/// Both lessons end in the same place — the three enable steps and the Activate
-/// Safari / Skip pair — and differ only in what they show first.
 enum OnboardingSafariLesson: Equatable {
-    /// The native `luna.app` explainer, buried under ads, popups and a
-    /// subscription wall until the mock extension flip clears them. Its own
-    /// page carries the setup call to action at the foot of its copy.
     case extensionExplainer
-    /// The kind of page the extension is FOR, with the extension's own answer
-    /// running on it: the alternative-seller pill looks for a better price,
-    /// finds one, and the screen closes down to it before the setup card
-    /// arrives (`OnboardingPriceComparisonOverlayView`).
     case priceComparison
-    /// The same idea for media: a post whose video is walled off behind a
-    /// sign-up prompt, and the extension's own video panel arriving over it,
-    /// playing the video the page would not
-    /// (`OnboardingVideoDownloadOverlayView`).
     case videoDownload
 }
 
-/// The animation and setup journey are shared. Only copy, demo content, final
-/// save plumbing, and Action Button evidence vary by host app.
+/// The animation and setup journey are shared. `app` is the host identity;
+/// `demonstrationApp` is the feature family whose lesson is currently shown.
 struct OnboardingSurfaceConfiguration {
     let app: LunaApp
+    let demonstrationApp: LunaApp
     let saveSetupMode: OnboardingSaveSetupMode
     let introCopy: OnboardingIntroCopy
     let saveBenefit: String
     let demoPages: [OnboardingDemoPage]
-    /// What this app's Safari lesson plays. A `.priceComparison` app opens the
-    /// browser straight on its own product page rather than on the explainer,
-    /// so its `demoPages` must lead with that page.
     let safariLesson: OnboardingSafariLesson
-    /// The link the SAVE lesson rehearses with when there is no live Save of
-    /// the Week to use instead (`OnboardingSaveDemoLink`).
-    ///
-    /// Declared per app rather than read off `demoPages`, which is what it used
-    /// to be: every app's Safari lesson now opens on the native explainer page,
-    /// so the browser's first page is `.lunaPage` everywhere and deriving the
-    /// practice link from it would have handed Luna Downloader an ARTICLE to
-    /// rehearse a media save with.
     let practiceURLString: String
     let seedTitle: String
     let seedSymbol: String
 
     var isCentralApp: Bool { app == .luna }
 
-    static var current: Self {
-        configuration(for: .current)
+    /// Central Luna starts with the first missing sibling, then rotates through
+    /// the ranking from that sibling onward. Faceted apps have one lesson.
+    var safariDemonstrationApps: [LunaApp] {
+        guard isCentralApp else { return [demonstrationApp] }
+        let ranked = LunaApp.onboardingRankedSiblings
+        guard let start = ranked.firstIndex(of: demonstrationApp) else { return ranked }
+        return Array(ranked[start...]) + Array(ranked[..<start])
     }
+
+    static var current: Self { configuration(for: .current) }
 
     static func configuration(
         for app: LunaApp,
-        saveSetupMode: OnboardingSaveSetupMode = .current
+        saveSetupMode: OnboardingSaveSetupMode = .current,
+        demonstrationApp requestedDemonstrationApp: LunaApp? = nil
     ) -> Self {
+        let demonstrationApp = app == .luna
+            ? (requestedDemonstrationApp ?? highestRankedUninstalledSibling())
+            : app
+        let lesson = lessonValues(for: demonstrationApp)
+        return Self(
+            app: app,
+            demonstrationApp: demonstrationApp,
+            saveSetupMode: saveSetupMode,
+            introCopy: OnboardingStrings.introCopy(for: app),
+            saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
+            demoPages: lesson.pages,
+            safariLesson: lesson.safariLesson,
+            practiceURLString: lesson.practiceURLString,
+            seedTitle: lesson.seedTitle,
+            seedSymbol: lesson.seedSymbol)
+    }
+
+    /// Injectable for tests so ranking does not require mutating App-Group
+    /// defaults.
+    static func highestRankedUninstalledSibling(
+        wasInstalled: (LunaApp) -> Bool = {
+            LunaInstallationMarkers.wasInstalled(surfaceIdentifier: $0.storageIdentifier)
+        }
+    ) -> LunaApp {
+        LunaApp.onboardingRankedSiblings.first(where: { !wasInstalled($0) }) ?? .reader
+    }
+
+    private static func lessonValues(for app: LunaApp) -> (
+        pages: [OnboardingDemoPage],
+        safariLesson: OnboardingSafariLesson,
+        practiceURLString: String,
+        seedTitle: String,
+        seedSymbol: String
+    ) {
         switch app {
         case .reader:
-            return Self(
-                app: app,
-                saveSetupMode: saveSetupMode,
-                introCopy: OnboardingStrings.introCopy(for: app),
-                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                demoPages: [.lunaPage],
-                safariLesson: .extensionExplainer,
-                practiceURLString: ShareSetupPractice.lunaURLString,
-                seedTitle: OnboardingStrings.Demo.readerSeedTitle.value(),
-                seedSymbol: "safari.fill")
+            return (
+                [.lunaPage], .extensionExplainer, ShareSetupPractice.lunaURLString,
+                OnboardingStrings.Demo.readerSeedTitle.value(), "safari.fill")
         case .downloader:
-            return Self(
-                app: app,
-                saveSetupMode: saveSetupMode,
-                introCopy: OnboardingStrings.introCopy(for: app),
-                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                // No explainer page: the lesson is the blocked post itself,
-                // with the extension's video panel answering it. A browser that
-                // rotated away would take the panel's own page out from under
-                // it, so there is exactly one.
-                demoPages: [.instaTok],
-                safariLesson: .videoDownload,
-                practiceURLString: ShareSetupPractice.instaTokURLString,
-                seedTitle: OnboardingStrings.Demo.instaTokSeedTitle.value(),
-                seedSymbol: "play.rectangle.fill")
+            return (
+                [.instaTok], .videoDownload, ShareSetupPractice.instaTokURLString,
+                OnboardingStrings.Demo.instaTokSeedTitle.value(), "play.rectangle.fill")
         case .priceTracker:
-            return Self(
-                app: app,
-                saveSetupMode: saveSetupMode,
-                introCopy: OnboardingStrings.introCopy(for: app),
-                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                // No explainer page: the lesson is the product page itself,
-                // with the extension's seller pill answering on it.
-                demoPages: [.amayzon],
-                safariLesson: .priceComparison,
-                practiceURLString: ShareSetupPractice.amayzonURLString,
-                seedTitle: OnboardingStrings.Demo.amayzonSeedTitle.value(),
-                seedSymbol: "tag.fill")
+            return (
+                [.amayzon], .priceComparison, ShareSetupPractice.amayzonURLString,
+                OnboardingStrings.Demo.amayzonSeedTitle.value(), "tag.fill")
         case .luna:
-            return Self(
-                app: app,
-                saveSetupMode: saveSetupMode,
-                introCopy: OnboardingStrings.introCopy(for: app),
-                saveBenefit: OnboardingStrings.Intro.saveBenefit.value(for: app),
-                demoPages: OnboardingDemoPage.allCases,
-                safariLesson: .extensionExplainer,
-                practiceURLString: ShareSetupPractice.lunaURLString,
-                seedTitle: OnboardingStrings.Demo.lunaSeedTitle.value(),
-                seedSymbol: "moon.stars.fill")
+            return (
+                OnboardingDemoPage.allCases, .extensionExplainer,
+                ShareSetupPractice.lunaURLString,
+                OnboardingStrings.Demo.lunaSeedTitle.value(), "moon.stars.fill")
         }
     }
 }

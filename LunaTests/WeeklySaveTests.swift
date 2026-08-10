@@ -320,11 +320,11 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertTrue(host.rows.isEmpty)
     }
 
-    func testASeededStoreProducesOneRowPerLiveKind() {
+    func testASeededStoreProducesOneRowPerLiveKindExceptCentralKeepsNilSlots() {
         seed(.article, "https://a.example/1")
         seed(.media, "https://b.example/2")
         XCTAssertEqual(makeHost(app: .reader).rows.count, 1)
-        XCTAssertEqual(makeHost(app: .luna).rows.count, 2)
+        XCTAssertEqual(makeHost(app: .luna).rows.count, 3)
         XCTAssertEqual(makeHost(app: .priceTracker).rows.count, 0)
     }
 
@@ -390,14 +390,14 @@ final class WeeklySaveTests: XCTestCase {
 
     // MARK: WeeklyRowHostTests: Central-app cycling
 
-    func testTheCycleRunsOnlyWithTwoLiveKindsAndTheCardInFront() {
+    func testTheCentralCycleKeepsNilKindsInItsCadenceAndTheCardInFront() {
         seed(.article, "https://a.example/1")
         let clock = FakeCycleClock()
         let host = makeHost(app: .luna, pacer: clock.pacer)
         host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
         window(host)
         host.cardDidBecomeCentered()
-        XCTAssertFalse(clock.pacer.isRunning, "One live kind never cycles")
+        XCTAssertTrue(clock.pacer.isRunning, "A nil sibling kind still gets a turn")
 
         seed(.media, "https://b.example/2")
         host.reload(animated: false)

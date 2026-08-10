@@ -324,13 +324,16 @@ enum OnboardingStrings {
         static let installShortcut = Definition(key: "Common_installShortcut")
         static let setActionButton = Definition(key: "Onboarding_Instruction_setActionButton")
         static let actionButtonPrompt = Definition(key: "Onboarding_Instruction_actionButtonPrompt")
+        static let allAppsLine = Definition(key: "Onboarding_Instruction_allAppsLine")
         static let setUpLater = Definition(key: "Onboarding_Instruction_setUpLater")
         static let externalOpenFailureTemplate = Definition(
             key: "Onboarding_Instruction_externalOpenFailureTemplate")
         static let done = Definition(key: "Common_done")
 
-        static func safariPrompt(saveBenefit: String) -> String {
-            safariPromptTemplate.value().replacingOccurrences(of: "%@", with: saveBenefit)
+        static func safariPrompt(saveBenefit: String, allApps: Bool = false) -> String {
+            let prompt = safariPromptTemplate.value()
+                .replacingOccurrences(of: "%@", with: saveBenefit)
+            return allApps ? prompt + "\n" + allAppsLine.value() : prompt
         }
 
         static func externalOpenFailure(destination: String) -> String {

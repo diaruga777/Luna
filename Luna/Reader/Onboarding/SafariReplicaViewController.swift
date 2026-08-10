@@ -537,7 +537,8 @@ final class SafariReplicaViewController:
     func showSafariPrompt() {
         setInstruction(
             title: OnboardingStrings.Instruction.safariPrompt(
-                saveBenefit: onboardingConfiguration.saveBenefit),
+                saveBenefit: onboardingConfiguration.saveBenefit,
+                allApps: onboardingConfiguration.isCentralApp),
             actions: [
                 .init(
                     title: OnboardingStrings.Instruction.setUpSafari.value(),

@@ -227,33 +227,56 @@ final class ProductHistoryPillRenderTests: XCTestCase {
     private static let historyReply =
         #"{hasHistory: true, isTracked: false, amount: "79.99", currency: "USD", day: "2026-01-12"}"#
 
-    /// The fallback contract: nothing found leaves the page exactly as it was
-    /// before this feature existed.
-    func testNoSellerFoundFallsBackToTheHistoryPill() {
+    /// A search that COMPLETED and found nothing says so in place — the pill
+    /// stays, keeps its slot (so the history pill is not rendered behind it),
+    /// and reads as the answer it is.
+    func testNoSellerFoundKeepsThePillSayingNoBetterPriceFound() {
         beginLookup(historyRespJSON: Self.historyReply)
         finishLookup(historyRespJSON: Self.historyReply, sellerRespJSON: "{ found: false }")
-        XCTAssertFalse(sellerPillExists, "the spinner must not be left behind")
-        XCTAssertTrue(historyPillExists)
+        XCTAssertEqual(sellerPillState, "empty")
+        XCTAssertEqual(sellerPillText, "No better price found")
+        XCTAssertFalse(historyPillExists, "the terminal pill occupies the history pill's slot")
         XCTAssertTrue(trackPillExists)
     }
 
-    func testNoSellerFoundAndNoHistoryLeavesJustTheTrackPill() {
+    /// The empty state is a status, not a control.
+    func testTheNoBetterPriceStateIsNotTappable() {
+        beginLookup()
+        finishLookup(sellerRespJSON: "{ found: false }")
+        XCTAssertEqual(sellerPillStyle("pointerEvents"), "none")
+    }
+
+    /// A lookup that FAILED outright — the native side rejected, died, or hit
+    /// the backstop — is worded differently from a completed search that found
+    /// nothing: one is an answer, the other is an apology.
+    func testAFailedLookupKeepsThePillSayingUnableToFindBetterPrices() {
+        beginLookup(historyRespJSON: Self.historyReply)
+        finishLookup(
+            historyRespJSON: Self.historyReply,
+            sellerRespJSON: "{ found: false, failed: true }")
+        XCTAssertEqual(sellerPillState, "failed")
+        XCTAssertEqual(sellerPillText, "Unable to find better prices")
+        XCTAssertEqual(sellerPillStyle("pointerEvents"), "none")
+        XCTAssertFalse(historyPillExists)
+    }
+
+    func testNoSellerFoundAndNoHistoryKeepsTheEmptyPillAboveTrack() {
         beginLookup()
         finishLookup(sellerRespJSON: "null")
-        XCTAssertFalse(sellerPillExists)
-        XCTAssertFalse(historyPillExists)
+        XCTAssertEqual(sellerPillState, "empty")
         XCTAssertTrue(trackPillExists)
+        XCTAssertFalse(historyPillExists)
     }
 
     /// An answer with no URL is not an answer — there is nowhere for the tap to
-    /// go, so the page falls back rather than showing an inert pill.
-    func testAFoundAnswerWithNoURLFallsBack() {
+    /// go, so it renders as the empty state rather than an inert "found" pill.
+    func testAFoundAnswerWithNoURLRendersTheEmptyState() {
         beginLookup(historyRespJSON: Self.historyReply)
         finishLookup(
             historyRespJSON: Self.historyReply,
             sellerRespJSON: #"{ found: true, price: "59.00", currency: "USD", sellerName: "Acme" }"#)
-        XCTAssertFalse(sellerPillExists)
-        XCTAssertTrue(historyPillExists)
+        XCTAssertEqual(sellerPillState, "empty")
+        XCTAssertFalse(historyPillExists)
     }
 
     /// An already-tracked page shows no Track pill, so the seller pill takes
@@ -293,18 +316,59 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         XCTAssertFalse(sellerPillExists)
     }
 
+    // MARK: - Capture under suggestion mode "never"
+
+    /// "Never" silences PILLS, not the passive snapshot: the record is local,
+    /// non-refreshing product data, and it is what a later save's history is
+    /// seeded from. It used to be silenced too — `offerLunaButton` returned
+    /// before the product branch could run.
+    func testSuggestionModeNeverStillRecordsTheSnapshotAndShowsNoPills() {
+        let productPage = """
+            <h1>Widget</h1>
+            <script type="application/ld+json">
+            {"@type":"Product","name":"Acme Widget","gtin13":"9337640009775",
+             "offers":{"price":"49.99","priceCurrency":"USD"}}
+            </script>
+            """
+        js.load(html: productPage, urlString: "https://shop.example/p/1", scripts: [
+            SafariJSTestHarness.newsHosts,
+            SafariJSTestHarness.platformHosts,
+            SafariJSTestHarness.productRules,
+            SafariJSTestHarness.contentScript,
+        ])
+        _ = js.evaluate("""
+            window.__lunaRecordedSnapshot = null;
+            window.__lunaSetProductSnapshotRequest(function (snapshot) {
+                window.__lunaRecordedSnapshot = snapshot;
+                return Promise.resolve(null);
+            });
+            window.__lunaOfferLunaButton(
+                { mode: "never", supportsProducts: true, scheme: "lunapricetracker" });
+            "ran"
+            """)
+        XCTAssertEqual(
+            js.string("(window.__lunaRecordedSnapshot || {}).gtin"), "9337640009775",
+            "the passive snapshot must still be recorded")
+        XCTAssertFalse(trackPillExists, "\"never\" still means no pills")
+        XCTAssertFalse(sellerPillExists)
+        XCTAssertFalse(historyPillExists)
+    }
+
     // MARK: - The round trip's own guarantees
 
-    /// Every non-answer collapses to nil before it reaches the render decision,
-    /// so `finishSellerLookup` has exactly one shape to handle.
-    func testARejectedRoundTripResolvesToNothingFound() {
-        XCTAssertEqual(replyFor("Promise.reject(new Error('nope'))"), "null")
+    /// A round trip that itself DIED — rejected, or threw — resolves to the
+    /// FAILED marker, so the pill can say "Unable to find better prices" rather
+    /// than passing failure off as a completed empty search.
+    func testARejectedRoundTripResolvesToFailed() {
+        XCTAssertEqual(replyFor("Promise.reject(new Error('nope'))"), "failed")
     }
 
-    func testAThrowingRequestResolvesToNothingFound() {
-        XCTAssertEqual(replyFor("(function () { throw new Error('nope'); })()"), "null")
+    func testAThrowingRequestResolvesToFailed() {
+        XCTAssertEqual(replyFor("(function () { throw new Error('nope'); })()"), "failed")
     }
 
+    /// A reply that COMPLETED and found nothing collapses to nil — the empty
+    /// state, not the failed one.
     func testANotFoundReplyResolvesToNothingFound() {
         XCTAssertEqual(replyFor("Promise.resolve({ found: false })"), "null")
     }
@@ -314,13 +378,15 @@ final class ProductHistoryPillRenderTests: XCTestCase {
     }
 
     /// Stubs the native request with `expression`, runs the round trip and
-    /// reports what it resolved to: `"null"`, or the seller URL.
+    /// reports what it resolved to: `"null"`, `"failed"`, or the seller URL.
     private func replyFor(_ expression: String) -> String {
         run("""
             window.__lunaSetComparableSellersRequest(function () { return \(expression); });
             window.__lunaComparableReply = "pending";
             window.__lunaRequestComparableSellers({}).then(function (reply) {
-                window.__lunaComparableReply = reply ? reply.url : "null";
+                if (!reply) { window.__lunaComparableReply = "null"; }
+                else if (reply.failed) { window.__lunaComparableReply = "failed"; }
+                else { window.__lunaComparableReply = reply.url; }
             });
             """)
         // The stub settles on a microtask; a second round trip through

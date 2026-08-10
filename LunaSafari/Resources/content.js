@@ -158,7 +158,9 @@
         wasPriceOnDate: "Was {price} on {date}",
         findingSellers: "Finding other sellers…",
         // `{price}`/`{seller}` -- same rule again, never `$`-style syntax.
-        priceAtSeller: "{price} at {seller}"
+        priceAtSeller: "{price} at {seller}",
+        noBetterPrice: "No better price found",
+        sellerLookupFailed: "Unable to find better prices"
     };
 
     function localizedMessage(key) {
@@ -231,7 +233,10 @@
     /// Decides which pill (if any) this page earns, from the native context.
     function offerLunaButton(resp) {
         var mode = (resp && resp.mode) || "all";
-        if (mode === "never") { return; }
+        // "Never" silences PILLS, not the passive product snapshot: extraction
+        // is local, non-refreshing product data, never a save -- and the
+        // history it records is what a later save's graph is seeded from.
+        if (mode === "never") { recordProductSnapshotSilently(resp); return; }
         var platform = recognizedPlatformPage();
         // Reddit is media-gated and SPA-aware; its own handler owns injection,
         // the retry-on-hydration schedule, and the soft-nav watcher.
@@ -278,6 +283,19 @@
     // (which target a page earns, and what happens once it lands) rather than a
     // hand-built target handed straight to an injector.
     window.__lunaOfferLunaButton = offerLunaButton;
+
+    // The snapshot HALF of `handleProductPage`, with no pill work at all: used
+    // when the suggestion mode is "never", so a silenced pill does not also
+    // silence the passive price record the mode was never about.
+    function recordProductSnapshotSilently(resp) {
+        if (!(resp && resp.supportsProducts)) { return; }
+        if (recognizedPlatformPage() || isRedditHost()) { return; }
+        if (!looksLikeProductPage()) { return; }
+        var snapshot = extractProductSnapshot();
+        if (!snapshot) { return; }
+        var sent = productSnapshotRequest(snapshot);
+        if (sent && sent.catch) { sent.catch(function () {}); }
+    }
 
     // One-shot re-check of just the article branch (mirrors the tail of
     // `offerLunaButton` above) for the 2500ms SPA retry.
@@ -1414,6 +1432,15 @@
     // For the WKWebView harness -- see ProductSnapshotJSFixtureParityTests.
     window.__lunaExtractProductSnapshot = extractProductSnapshot;
 
+    // The native round trip that records a page's passive snapshot (and
+    // answers the history-pill query), behind a swappable reference -- the
+    // WKWebView test harness has no extension host at all.
+    var productSnapshotRequest = function (snapshot) {
+        if (typeof browser === "undefined") { return Promise.resolve(null); }
+        return browser.runtime.sendMessage({ type: "productSnapshot", snapshot: snapshot });
+    };
+    window.__lunaSetProductSnapshotRequest = function (fn) { productSnapshotRequest = fn; };
+
     // The price EXACTLY as the native side reported it, in its own currency --
     // never a hardcoded symbol. `Intl` throws on an unrecognised currency code,
     // and formats NaN as "$NaN", so both fall back to the plain pair.
@@ -1485,9 +1512,11 @@
     // fan-out). It occupies the SAME slot the history pill would, because both
     // say something about this product's price and only one of them can be the
     // more useful thing to say: a better price available NOW beats a lower one
-    // from the past. So the lookup runs first and the history pill is rendered
-    // only if the lookup comes back empty -- which is also the whole of the
-    // fallback contract (`renderProductPills`, untouched).
+    // from the past. The pill never just disappears: a completed search that
+    // found nothing reads "No better price found", and a lookup that itself
+    // failed (native side dead, round trip rejected, backstop) reads "Unable
+    // to find better prices" -- both keep the slot, so the history pill is not
+    // rendered behind them.
     var SELLER_PILL_ID = "queue-seller-pill";
     // Longer than the finder's own 18s budget, so a native side that answers
     // late still wins over this backstop and only a DEAD one trips it.
@@ -1504,22 +1533,26 @@
     };
     window.__lunaSetComparableSellersRequest = function (fn) { comparableSellersRequest = fn; };
 
-    // Resolves to the reply, or to "nothing found" if the native side never
-    // answers: a promise that never settles would leave the spinner pill up
-    // forever and the history pill permanently suppressed behind it.
+    // Resolves to the reply, or -- when the native side never answers, rejects,
+    // or throws -- to a FAILED marker: a promise that never settles would leave
+    // the spinner pill up forever, and a whole-lookup failure must stay
+    // distinguishable from a lookup that completed and found nothing (the pill
+    // words the two differently).
     function requestComparableSellers(snapshot) {
+        var FAILED = { found: false, failed: true };
         return new Promise(function (resolve) {
             var settled = false;
             var finish = function (result) {
                 if (settled) { return; }
                 settled = true;
-                resolve(result && result.found && result.url ? result : null);
+                if (result && result.found && result.url) { resolve(result); return; }
+                resolve(result && result.failed ? FAILED : null);
             };
-            setTimeout(function () { finish(null); }, COMPARABLE_TIMEOUT);
+            setTimeout(function () { finish(FAILED); }, COMPARABLE_TIMEOUT);
             try {
-                comparableSellersRequest(snapshot).then(finish, function () { finish(null); });
+                comparableSellersRequest(snapshot).then(finish, function () { finish(FAILED); });
             } catch (e) {
-                finish(null);
+                finish(FAILED);
             }
         });
     }
@@ -1617,19 +1650,34 @@
         return true;
     }
 
-    // An answer fills the pill in place. Anything else -- nothing found, a
-    // failure, the backstop -- removes it and hands the page to today's rules
-    // EXACTLY, `injectLunaButton`'s own id guard making the already-rendered
-    // Track pill a no-op.
+    // The terminal states share the spinner's shape and slot, so the answer
+    // replaces it in place: found fills a tappable pill; a completed search
+    // that found nothing says so ("No better price found"); a lookup that
+    // FAILED outright -- the native side rejected, died, or hit the backstop --
+    // says that instead ("Unable to find better prices"). Both non-found
+    // states are informational (pointer-events: none) and keep the slot, so
+    // the history pill is not rendered behind them; the Track pill was never
+    // waiting on this lookup and is already on the page.
+    function fillSellerPillTerminalState(pill, state, messageKey, stacked) {
+        while (pill.firstChild) { pill.removeChild(pill.firstChild); }
+        pill.setAttribute("data-luna-state", state);
+        pill.appendChild(document.createTextNode(localizedMessage(messageKey)));
+        applyStyle(pill, sellerPillStyle(stacked, false));
+    }
+
     function finishSellerLookup(context, historyResp, sellerResp) {
         var pill = document.getElementById(SELLER_PILL_ID);
         var isTracked = !!(historyResp && historyResp.isTracked);
-        if (pill && sellerResp && sellerResp.found && sellerResp.url) {
+        if (!pill) { renderProductPills(context, historyResp); return; }
+        if (sellerResp && sellerResp.found && sellerResp.url) {
             fillSellerPill(pill, sellerResp, !isTracked);
             return;
         }
-        if (pill && pill.parentNode) { pill.parentNode.removeChild(pill); }
-        renderProductPills(context, historyResp);
+        if (sellerResp && sellerResp.failed) {
+            fillSellerPillTerminalState(pill, "failed", "sellerLookupFailed", !isTracked);
+        } else {
+            fillSellerPillTerminalState(pill, "empty", "noBetterPrice", !isTracked);
+        }
     }
 
     // For the WKWebView harness: the two halves of the lookup, observable
@@ -1655,7 +1703,7 @@
             if (trackTarget) { injectLunaButton(trackTarget); }
             return;
         }
-        browser.runtime.sendMessage({ type: "productSnapshot", snapshot: snapshot })
+        productSnapshotRequest(snapshot)
             .then(function (resp) {
                 if (!beginSellerLookup(context, resp)) {
                     renderProductPills(context, resp);

@@ -337,7 +337,13 @@ enum KindWiring {
         // A save-time seller fan-out that never finished — a share extension is
         // torn down the moment the user is done with it — is resumed here, from
         // the pending marker the tracker carries (`claudedocs/price-comparison.md`).
-        Task { await SellerComparison.completePending(store: ReadingListStore.shared) }
+        // The snapshot sweep runs FIRST: passive Safari captures recorded since
+        // the last launch become tracker history (and graph points) before the
+        // resumed run settles any baseline.
+        Task {
+            ProductSnapshotSweep.run(store: ReadingListStore.shared)
+            await SellerComparison.completePending(store: ReadingListStore.shared)
+        }
     }
 
     static func appDidEnterBackground() {

@@ -101,10 +101,18 @@ public enum ProductTrackerMerge {
         snapshots: [ProductSnapshot] = ProductSnapshotStore.shared.load()
     ) {
         guard !snapshots.isEmpty else { return }
+        // The tracker's market is its source page's currency. A snapshot of the
+        // same product in another market (the same GTIN browsed on amazon.co.uk
+        // against a USD tracker) is real data Luna cannot use: there is no FX
+        // source, so folding it in would put a £ point on a $ graph and a
+        // foreign store in the seller list.
+        let marketCurrency = tracker.initialCurrency.uppercased()
+        let comparable = snapshots.filter { $0.currency.uppercased() == marketCurrency }
+        guard !comparable.isEmpty else { return }
         let matched = SnapshotMatcher.matchingSnapshots(
             for: candidate, candidateURL: candidateURL,
             existingStoreURLStrings: tracker.stores.map(\.urlString),
-            among: snapshots)
+            among: comparable)
         guard !matched.isEmpty else { return }
 
         let byHost = Dictionary(grouping: matched) { $0.host.lowercased() }

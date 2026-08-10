@@ -89,6 +89,38 @@ enum AppLaunchTransition {
     static let instantMinimumVisibleDuration: TimeInterval = 0.02
     static let instantFadeDuration: TimeInterval = 0.05
 
+    /// A launch that exists only to hand work off has no UI worth revealing.
+    /// Safari's in-page player opens the app to persist the save, start the
+    /// transfer and request the Live Activity, and then puts the user straight
+    /// back on the page they were watching (`PendingResolvedMediaDownloads`) —
+    /// so the deck it would otherwise cross-fade to is a flash of an app nobody
+    /// asked to be in. While this is held the splash simply stays, and the whole
+    /// visit reads as one launch image.
+    private(set) static var isHeldForHandoff = false
+    /// Held work is a couple of store writes and an `Activity.request`. If the
+    /// return to Safari never happens (an `open` the system refuses), the app is
+    /// still standing here — so the hold always ends on its own.
+    static let maximumHandoffHold: TimeInterval = 4
+    /// Set while a hold is parked mid-reveal, so releasing runs the fade that
+    /// was skipped rather than leaving the splash up forever.
+    private static var parkedReveal: (() -> Void)?
+
+    static func holdForHandoff() {
+        guard !hasFinished else { return }
+        isHeldForHandoff = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + maximumHandoffHold) {
+            releaseHandoffHold()
+        }
+    }
+
+    static func releaseHandoffHold() {
+        guard isHeldForHandoff else { return }
+        isHeldForHandoff = false
+        let reveal = parkedReveal
+        parkedReveal = nil
+        reveal?()
+    }
+
     static func install(in window: UIWindow) {
         window.layoutIfNeeded()
         guard window.bounds.width > 0, window.bounds.height > 0 else {
@@ -118,9 +150,7 @@ enum AppLaunchTransition {
         let fade: TimeInterval = instant
             ? instantFadeDuration
             : (UIAccessibility.isReduceMotionEnabled ? 0.10 : fadeDuration)
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(hold)
-        ) {
+        let reveal = {
             guard overlay.window != nil else { return }
             target?.appLaunchTransitionWillReveal()
             UIView.animate(
@@ -138,6 +168,18 @@ enum AppLaunchTransition {
                 }
                 NotificationCenter.default.post(name: didFinish, object: nil)
             }
+        }
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(hold)
+        ) {
+            // The hand-off deep link is routed after this is scheduled (it
+            // arrives with the scene's connection options), so the hold is
+            // checked when the reveal FIRES rather than when it is planned.
+            guard !isHeldForHandoff else {
+                parkedReveal = reveal
+                return
+            }
+            reveal()
         }
     }
 

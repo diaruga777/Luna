@@ -468,7 +468,20 @@ public final class LiveMediaDownloadManager: NSObject {
     public func startWithResolvedAssets(
         sourceURLString: String, title: String?, assets: [MediaAsset]
     ) async -> Bool {
-        guard let asset = assets.first, let sourceURL = URL(string: sourceURLString) else { return false }
+        await startResultWithResolvedAssets(
+            sourceURLString: sourceURLString, title: title, assets: assets) == .started
+    }
+
+    /// `startWithResolvedAssets` with the REASON a start didn't happen preserved,
+    /// for the same reason `startReportingResult` exists beside `start`: Safari's
+    /// hand-off has to tell "there is nothing to do here, go back to your page"
+    /// apart from "nothing happened at all", and only the guards below know
+    /// which.
+    public func startResultWithResolvedAssets(
+        sourceURLString: String, title: String?, assets: [MediaAsset]
+    ) async -> LiveMediaDownloadStartResult {
+        guard let asset = assets.first, let sourceURL = URL(string: sourceURLString)
+        else { return .unsupported }
         let backgroundLease = MediaBackgroundTaskLease(name: "ResolvedMediaDownloadStart")
         defer { backgroundLease.end() }
         let ownership: LiveMediaDownloadOwnership = MediaAutoDownloader.isRunningInDownloader
@@ -479,7 +492,7 @@ public final class LiveMediaDownloadManager: NSObject {
             await startFailedActivity(
                 urlString: sourceURLString, title: title,
                 message: MediaDownloadError.permissionDenied.message, errorKind: .photosPermission)
-            return false
+            return .notAuthorized
         }
         let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
         if ownership == .downloader {
@@ -493,17 +506,17 @@ public final class LiveMediaDownloadManager: NSObject {
                 await startFailedActivity(
                     urlString: sourceURLString, title: title,
                     message: MediaDownloadError.saveFailed.message)
-                return false
+                return .failed(message: MediaDownloadError.saveFailed.message)
             }
             guard LiveMediaDownloadStartPolicy.downloaderShouldStart(
                 storageState: pending.storageState
-            ) else { return false }
+            ) else { return .alreadyDownloaded }
         }
         if let existing = store.jobs().first(where: {
             $0.sourceURLString == sourceURLString && !$0.isTerminal
         }) {
             await updateActivity(for: existing)
-            return true
+            return .started
         }
         var job = LiveMediaDownloadJob(
             id: UUID().uuidString,
@@ -540,7 +553,7 @@ public final class LiveMediaDownloadManager: NSObject {
         // over. This lets a Safari handoff return immediately without reopening
         // the old persist-before-task suspension hole.
         startMediaDownload(for: job, asset: asset)
-        return true
+        return .started
     }
 
     private func createAndStartJob(_ gated: GateResult, title: String?) async -> Bool {

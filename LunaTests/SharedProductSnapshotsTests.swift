@@ -191,7 +191,7 @@ final class SharedProductSnapshotsTests: XCTestCase {
             source.contains(".flatMap(sanitizedDecimalString)"),
             "SharedProductSnapshots.makeRecord no longer sanitizes the payload price")
         XCTAssertTrue(
-            source.contains(#"raw.filter { $0.isNumber || $0 == "." || $0 == "," }"#),
+            source.contains(#"raw.filter { $0.isNumber || $0 == "." || $0 == "," || $0 == "-" }"#),
             "the extension's sanitizer has drifted from ProductSnapshotStore's")
     }
 

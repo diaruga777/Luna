@@ -309,10 +309,11 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertEqual(subject.initialPrice, 100)
     }
 
-    /// A foreign-currency seller is attached (it is a real place to buy the
-    /// thing) but cannot enter the median — there is no FX source, so it would
-    /// contribute a meaningless number.
-    func testAForeignCurrencySellerIsAttachedButDoesNotMoveTheMedian() async {
+    /// The market rule at the end of a whole run: a foreign-currency result is
+    /// never attached at all (it used to join the list and merely sit out the
+    /// median — a GBP row in a USD seller list was exactly the reported bug),
+    /// and the baseline settles on the market-currency stores alone.
+    func testAForeignCurrencySellerIsNeverAttachedAndTheMedianIgnoresIt() async {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(price: "100", currency: "USD"), for: item.id)
         installRunner(results: [result(domain: "a.example", price: "1", currency: "GBP"),
@@ -320,7 +321,8 @@ final class SellerComparisonTests: XCTestCase {
         _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         let saved = store.item(withID: item.id)!.priceTracker!
-        XCTAssertEqual(saved.stores.count, 3)
+        XCTAssertEqual(saved.stores.count, 2, "the GBP seller must not appear in the list")
+        XCTAssertFalse(saved.stores.contains { $0.urlString.contains("a.example") })
         XCTAssertEqual(saved.initialPrice, 120, "median of the two USD stores")
     }
 

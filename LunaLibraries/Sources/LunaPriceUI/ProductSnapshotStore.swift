@@ -115,11 +115,12 @@ public final class ProductSnapshotStore {
     /// survive. The meta/microdata capture tiers hand over the page's RAW price
     /// text ("$1,299.00"), which `Decimal(string:)` refuses outright — so every
     /// such visit used to be dropped, silently, while the pill still rendered.
-    /// Mirrors `content.js`'s `parsePriceNumber` (strip everything outside
-    /// `[0-9.,]`, then drop the commas), so the two sides agree about which
-    /// prices are recordable. The SANITIZED string is what gets persisted.
+    /// Mirrors `content.js`'s `parsePriceNumber` (strip currency symbols, then
+    /// drop the thousands commas) — except the SIGN survives, so a negative
+    /// payload still fails the `amount > 0` gate rather than being laundered
+    /// into a positive price. The SANITIZED string is what gets persisted.
     public static func sanitizedDecimalString(_ raw: String) -> String? {
-        let stripped = raw.filter { $0.isNumber || $0 == "." || $0 == "," }
+        let stripped = raw.filter { $0.isNumber || $0 == "." || $0 == "," || $0 == "-" }
             .replacingOccurrences(of: ",", with: "")
         return stripped.isEmpty ? nil : stripped
     }

@@ -260,16 +260,20 @@
 "Onboarding_Intro_articleURLsOnly_Luna" = "article URLs only";
 "Onboarding_Intro_completed_Luna" = "Completed";
 "Onboarding_Intro_emailAction_Luna" = "Get your newsletters in Luna";
+/* The headline's two beats. A "\n" makes it more than one LINE, and the beats
+   then play line by line: the Downloader repeats its first line unchanged (so
+   that line has nothing to animate and does not move) and adds a second one the
+   initial text does not contain at all, which arrives on its own in beat two. */
 "Onboarding_Intro_headline1Initial_Luna" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
-"Onboarding_Intro_headline1Initial_Downloader" = "Sign up to watch.";
-"Onboarding_Intro_headline1Initial_PriceTracker" = "Miss a sale";
+"Onboarding_Intro_headline1Initial_Downloader" = "Watch and download.";
+"Onboarding_Intro_headline1Initial_PriceTracker" = "Get the best price.";
 "Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Core" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
-"Onboarding_Intro_headline2Final_Downloader" = "No sign up needed.";
-"Onboarding_Intro_headline2Final_PriceTracker" = "Never miss a sale";
+"Onboarding_Intro_headline2Final_Downloader" = "Watch and download.\nWithout signing in.";
+"Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price. Always.";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
 "Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";

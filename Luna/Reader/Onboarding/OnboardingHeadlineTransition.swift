@@ -148,6 +148,15 @@ struct OnboardingHeadlineTransition: Equatable {
 /// before it reaches the period still standing to its left — long enough to
 /// read the wrong sentence. Each departing fragment's front is placed against
 /// its own ink instead, so it goes out as the arrivals come in.
+///
+/// **A headline may be more than one line**, and each line runs this whole
+/// arrangement on its own copy (`OnboardingIntroCopy.lines`). The view is as
+/// tall as all of them from the moment it is built, so a line the second beat
+/// brings in occupies room that was reserved for it rather than pushing the
+/// line above it anywhere: the Downloader says the same first line in both
+/// states — nothing to animate, nothing to move — and its second line, which
+/// the initial copy does not contain at all, arrives under its own front while
+/// the first stands still.
 final class OnboardingIntroHeadlineView: UIView {
     static let lineHeight: CGFloat = 44
     /// The size the copy is set at when it fits. Narrow cards shrink from here;
@@ -184,15 +193,39 @@ final class OnboardingIntroHeadlineView: UIView {
         }
     }
 
-    let transition: OnboardingHeadlineTransition
+    /// One LINE of the headline: its own two states, and the fragment views
+    /// that draw them. Most copy is a single line; a headline whose second beat
+    /// adds a line beneath the first, rather than growing the sentence already
+    /// on screen, is two.
+    final class Line {
+        let transition: OnboardingHeadlineTransition
+        /// Empty until the view has a width to typeset against.
+        fileprivate(set) var fragments = Fragments()
 
-    var initialText: String { transition.initialText }
-    var finalText: String { transition.finalText }
-    var height: CGFloat { Self.lineHeight }
+        fileprivate init(transition: OnboardingHeadlineTransition) {
+            self.transition = transition
+        }
+    }
 
-    /// Empty until the view has a width to typeset against — the font depends
-    /// on how much room the card gives the copy.
-    private(set) var fragments = Fragments()
+    /// Never empty: copy with no newline in it is one line.
+    let lines: [Line]
+
+    /// The first line's transition — the whole of it for the single-line copy
+    /// every app but the Downloader ships.
+    var transition: OnboardingHeadlineTransition { lines[0].transition }
+    /// The first line's fragment views, for the same reason.
+    var fragments: Fragments { lines[0].fragments }
+
+    /// What the headline says in each beat, lines and all. A line that says
+    /// nothing in a beat contributes nothing to it rather than a blank line, so
+    /// this is exactly the copy — and exactly what is spoken.
+    var initialText: String { joined(lines.map { $0.transition.initialText }) }
+    var finalText: String { joined(lines.map { $0.transition.finalText }) }
+    /// Room for every line from the start, so one arriving later moves nothing.
+    var height: CGFloat { Self.lineHeight * CGFloat(lines.count) }
+
+    /// Every fragment on the view, whichever line it belongs to.
+    var allFragments: [MoonRevealLineView] { lines.flatMap { $0.fragments.all } }
 
     /// The size the fragments were built at, once they exist.
     private(set) var font: UIFont?
@@ -201,8 +234,10 @@ final class OnboardingIntroHeadlineView: UIView {
     private var showsFinishedState = false
 
     init(copy: OnboardingIntroCopy) {
-        transition = OnboardingHeadlineTransition(
-            from: copy.initialText, to: copy.finalText)
+        lines = copy.lines.map {
+            Line(transition: OnboardingHeadlineTransition(
+                from: $0.initialText, to: $0.finalText))
+        }
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         // Nothing is spoken until a beat has actually put glyphs on screen: a
@@ -226,10 +261,11 @@ final class OnboardingIntroHeadlineView: UIView {
 
     /// How far ahead of the arrivals a departing fragment's front starts, by
     /// fragment text. Zero for a fragment whose own ink is already at least as
-    /// high as everything arriving beside it.
-    func frontLead(forDeparting fragment: String) -> CGFloat {
-        guard let font else { return 0 }
-        let arriving = transition.arrivingFragments
+    /// high as everything arriving beside it — “beside it” being its OWN line,
+    /// since a fragment two lines down is not something it has to go out with.
+    func frontLead(forDeparting fragment: String, onLine index: Int = 0) -> CGFloat {
+        guard let font, lines.indices.contains(index) else { return 0 }
+        let arriving = lines[index].transition.arrivingFragments
         guard !arriving.isEmpty else { return 0 }
         let reference = arriving
             .map { Self.inkTopAboveBaseline($0, font: font) }
@@ -237,37 +273,41 @@ final class OnboardingIntroHeadlineView: UIView {
         return max(reference - Self.inkTopAboveBaseline(fragment, font: font), 0)
     }
 
-    /// The initial sentence arrives, whole, under one front.
+    /// The initial sentence arrives, whole, under one front. A line the initial
+    /// copy does not reach has nothing here and stays behind its own front.
     func revealFirstBeat(duration: TimeInterval, completion: @escaping () -> Void) {
         didStartBeats = true
         sweep(
-            fragments.initialSentence.map { line in
-                { done in line.reveal(duration: duration, completion: done) }
+            lines.flatMap { $0.fragments.initialSentence }.map { fragment in
+                { done in fragment.reveal(duration: duration, completion: done) }
             },
-            spokenText: transition.initialText,
+            spokenText: initialText,
             completion: completion)
     }
 
     /// The difference plays: fragments arrive as fragments leave, all in the
-    /// same turn and at the same pace, and the shared run is not part of it.
+    /// same turn and at the same pace, and the shared run is not part of it. A
+    /// line whose two states are identical contributes no operation at all —
+    /// which is how a first line stands perfectly still while a second arrives.
     func revealSecondBeat(duration: TimeInterval, completion: @escaping () -> Void) {
         didStartBeats = true
-        var operations: [(@escaping () -> Void) -> Void] = fragments.arriving.map {
-            line in { done in line.reveal(duration: duration, completion: done) }
-        }
-        operations += zip(fragments.departing, transition.departingFragments).map {
-            line, text in
-            { done in
-                line.conceal(
-                    duration: duration,
-                    frontLead: self.frontLead(forDeparting: text),
-                    completion: done)
+        var operations: [(@escaping () -> Void) -> Void] = []
+        for (index, line) in lines.enumerated() {
+            operations += line.fragments.arriving.map { fragment in
+                { done in fragment.reveal(duration: duration, completion: done) }
+            }
+            operations += zip(
+                line.fragments.departing, line.transition.departingFragments
+            ).map { fragment, text in
+                { done in
+                    fragment.conceal(
+                        duration: duration,
+                        frontLead: self.frontLead(forDeparting: text, onLine: index),
+                        completion: done)
+                }
             }
         }
-        sweep(
-            operations,
-            spokenText: transition.finalText,
-            completion: completion)
+        sweep(operations, spokenText: finalText, completion: completion)
     }
 
     /// The headline as both beats leave it, with neither beat playing. A card
@@ -279,13 +319,22 @@ final class OnboardingIntroHeadlineView: UIView {
     }
 
     private func applyFinishedState() {
-        for line in fragments.departing { line.showFullyConcealed() }
-        for line in ([fragments.shared] + fragments.arriving).compactMap({ $0 }) {
-            line.showFullyRevealed()
+        for line in lines {
+            for fragment in line.fragments.departing { fragment.showFullyConcealed() }
+            for fragment in [line.fragments.shared] + line.fragments.arriving.map(Optional.some) {
+                fragment?.showFullyRevealed()
+            }
         }
-        for line in fragments.all { line.isAccessibilityElement = false }
+        for fragment in allFragments { fragment.isAccessibilityElement = false }
         isAccessibilityElement = true
-        accessibilityLabel = transition.finalText
+        accessibilityLabel = finalText
+    }
+
+    /// The lines that have something to say in a beat, joined the way the copy
+    /// was written. A line contributing nothing is dropped rather than left as
+    /// a blank one, so VoiceOver reads the sentence and not the layout.
+    private func joined(_ texts: [String]) -> String {
+        texts.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private func sweep(
@@ -297,7 +346,7 @@ final class OnboardingIntroHeadlineView: UIView {
         // separate things to swipe through.
         let finish = { [weak self] in
             guard let self else { return }
-            for line in self.fragments.all { line.isAccessibilityElement = false }
+            for fragment in self.allFragments { fragment.isAccessibilityElement = false }
             self.isAccessibilityElement = true
             self.accessibilityLabel = spokenText
             completion()
@@ -320,9 +369,26 @@ final class OnboardingIntroHeadlineView: UIView {
     // MARK: - Building
 
     private func rebuild(with font: UIFont) {
-        for line in fragments.all { line.removeFromSuperview() }
+        for fragment in allFragments { fragment.removeFromSuperview() }
         self.font = font
-        let transition = self.transition
+        for line in lines { line.fragments = Self.build(line.transition, font: font) }
+        // Departures go behind, so their own bloom never washes over the words
+        // that stay; arrivals go in front of nothing they could hide.
+        for line in lines {
+            let built = line.fragments
+            for fragment in built.departing
+                + [built.shared].compactMap({ $0 }) + built.arriving
+            {
+                addSubview(fragment)
+            }
+        }
+        if showsFinishedState { applyFinishedState() }
+    }
+
+    private static func build(
+        _ transition: OnboardingHeadlineTransition,
+        font: UIFont
+    ) -> Fragments {
         let initial = transition.initialText as NSString
         let final = transition.finalText as NSString
         let initialPrefixLength = (transition.initialPrefix as NSString).length
@@ -363,42 +429,52 @@ final class OnboardingIntroHeadlineView: UIView {
                     location: finalSuffixStart,
                     length: final.length - finalSuffixStart))
         }
-        fragments = built
-        // Departures go behind, so their own bloom never washes over the words
-        // that stay; arrivals go in front of nothing they could hide.
-        for line in built.departing + [built.shared].compactMap({ $0 }) + built.arriving {
-            addSubview(line)
-        }
-        if showsFinishedState { applyFinishedState() }
+        return built
     }
 
     private func positionFragments() {
         guard let font else { return }
-        let metrics = Metrics(transition: transition, font: font)
-        let origins = metrics.origins(inContainerWidth: bounds.width)
-        // Left-aligned from one shared origin per sentence: every fragment then
-        // lands where its own sentence puts it, whatever the trailing glyphs of
-        // its composition are. The two points of slack keep a label whose text
-        // measures its own width from shrinking to fit itself.
-        let initialBlock = CGRect(
-            x: origins.initial,
-            y: 0,
-            width: metrics.initialWidth.rounded(.up) + 2,
-            height: bounds.height)
-        let finalBlock = CGRect(
-            x: origins.final,
-            y: 0,
-            width: metrics.finalWidth.rounded(.up) + 2,
-            height: bounds.height)
-        for line in fragments.departing { line.frame = initialBlock }
-        for line in ([fragments.shared] + fragments.arriving).compactMap({ $0 }) {
-            line.frame = finalBlock
+        for (index, line) in lines.enumerated() {
+            let metrics = Metrics(transition: line.transition, font: font)
+            let origins = metrics.origins(inContainerWidth: bounds.width)
+            // Each line keeps its own band, reserved whether or not it has
+            // anything on it yet, so a line arriving in the second beat lands
+            // where it always was rather than displacing the one above it.
+            let top = CGFloat(index) * Self.lineHeight
+            // Left-aligned from one shared origin per sentence: every fragment
+            // then lands where its own sentence puts it, whatever the trailing
+            // glyphs of its composition are. The two points of slack keep a
+            // label whose text measures its own width from shrinking to fit
+            // itself.
+            let initialBlock = CGRect(
+                x: origins.initial,
+                y: top,
+                width: metrics.initialWidth.rounded(.up) + 2,
+                height: Self.lineHeight)
+            let finalBlock = CGRect(
+                x: origins.final,
+                y: top,
+                width: metrics.finalWidth.rounded(.up) + 2,
+                height: Self.lineHeight)
+            for fragment in line.fragments.departing { fragment.frame = initialBlock }
+            for fragment in ([line.fragments.shared] + line.fragments.arriving)
+                .compactMap({ $0 })
+            {
+                fragment.frame = finalBlock
+            }
         }
+    }
+
+    /// The widest line decides the size: one headline is set in one font, so a
+    /// line that has to shrink takes the others down with it.
+    private func unionWidth(at font: UIFont) -> CGFloat {
+        lines.map { Metrics(transition: $0.transition, font: font).unionWidth }
+            .max() ?? 0
     }
 
     private func fittedFont(in width: CGFloat) -> UIFont {
         let base = Self.font(ofSize: Self.baseFontSize)
-        let needed = Metrics(transition: transition, font: base).unionWidth
+        let needed = unionWidth(at: base)
         guard needed > width, width > 0 else { return base }
         // Advances are very nearly linear in point size, so one division lands
         // at or just past the answer; the loop covers the hinting that makes it
@@ -407,9 +483,7 @@ final class OnboardingIntroHeadlineView: UIView {
             Self.minimumFontSize,
             (Self.baseFontSize * width / needed).rounded(.down))
         var font = Self.font(ofSize: size)
-        while size > Self.minimumFontSize,
-              Metrics(transition: transition, font: font).unionWidth > width
-        {
+        while size > Self.minimumFontSize, unionWidth(at: font) > width {
             size -= 0.5
             font = Self.font(ofSize: size)
         }

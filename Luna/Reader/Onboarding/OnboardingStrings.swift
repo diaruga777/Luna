@@ -431,9 +431,38 @@ enum OnboardingStrings {
 /// copy takes the same two beats of the same lunar sweep, and the difference
 /// between the two states is what the second beat animates — see
 /// `OnboardingHeadlineTransition`.
+///
+/// Both states may be SEVERAL LINES, written with `\n` in the strings file the
+/// way any other multi-line value is. The beats then play line by line, which
+/// is what lets a headline's second beat add a whole new line beneath the first
+/// instead of growing the sentence already on screen: the first line's two
+/// states are identical, so it has nothing to animate and does not move, and
+/// the second line — absent from the initial text entirely — arrives on its own
+/// under its own front.
 struct OnboardingIntroCopy: Equatable {
     let initialText: String
     let finalText: String
+
+    /// One line's own two states. A line the initial text does not reach has an
+    /// empty `initialText`: it says nothing in the first beat and arrives whole
+    /// in the second.
+    struct Line: Equatable {
+        let initialText: String
+        let finalText: String
+    }
+
+    /// The headline split into lines, paired up by position. Always at least
+    /// one — copy with no newline in it is a single line, which is the shape
+    /// every headline but the Downloader's has.
+    var lines: [Line] {
+        let initial = initialText.components(separatedBy: "\n")
+        let final = finalText.components(separatedBy: "\n")
+        return (0..<max(initial.count, final.count)).map { index in
+            Line(
+                initialText: index < initial.count ? initial[index] : "",
+                finalText: index < final.count ? final[index] : "")
+        }
+    }
 }
 
 /// Compatibility façade for the Safari explainer page. Its definitions live

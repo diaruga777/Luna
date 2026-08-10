@@ -89,22 +89,42 @@ To re-record after intentional corona/rim/star changes, run
 
 One sentence in two beats, in EVERY app: a headline is an initial state and a
 final one (`OnboardingStrings.Intro.headlineInitial` / `headlineFinal`), and the
-second beat animates the difference between them. There is no two-line variant;
-it was deleted once the diff generalized.
+second beat animates the difference between them.
 
 | App | Initial | Final | Anchor that never moves |
 |---|---|---|---|
 | Reader | “Read.” | “Read more.” | `Read` |
 | Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
-| Downloader | “Sign up to watch.” | “No sign up needed.” | `ign up ` |
-| Price Tracker | “Miss a sale” | “Never miss a sale” | `iss a sale` |
+| Downloader | “Watch and download.” | “Watch and download.<br>Without signing in.” | the whole first line |
+| Price Tracker | “Get the best price.” | “Get the best price. Always.” | `Get the best price.` |
+
+**A headline may be more than one LINE**, written with `\n` in the strings file
+the way any other multi-line value is (`OnboardingIntroCopy.lines` splits both
+states on it and pairs them up by position). The beats then play line by line,
+and that is the whole of the mechanism — there is no second animation and no
+second code path:
+
+- The Downloader repeats its first line **verbatim** in the final state. Its two
+  states are therefore identical, the anchor is the whole line, and the second
+  beat has literally no operation to run on it: no reflow, no re-reveal, nothing
+  to re-time. It simply stands.
+- Its second line is absent from the initial text entirely, so that line's
+  initial state is the empty string, its transition is a full replacement with
+  nothing departing, and beat two brings it in under its own front.
+- The view is `lineHeight × lines.count` tall from the moment it is built, so
+  the arriving line lands in room that was always reserved for it. The first
+  line's position does not depend on whether the second one has spoken yet.
+- One font for the whole headline: the widest line decides the fitted size.
+- The spoken label drops a line that says nothing in the beat rather than
+  reading a blank one, so VoiceOver hears the sentence and not the layout.
 
 `OnboardingHeadlineTransition` (pure text, `OnboardingHeadlineTransition.swift`)
 finds the anchor: the LONGEST continuous run of characters both states carry,
 ties going to the run that appears earliest in the final text. Everything before
 it and everything after it belongs to one state or the other — whitespace,
 punctuation and a letter changing case are ordinary characters here, which is
-why Price Tracker's capital “M” leaves with “Never m” arriving in its place.
+why “Miss a sale” → “Never miss a sale” keeps “iss a sale” and lets the capital
+“M” leave with “Never m” arriving in its place.
 Copy that shares no run worth standing still for — nothing in common, a single
 character, or punctuation only — replaces itself outright (`isFullReplacement`),
 each state centred on its own.
@@ -123,14 +143,15 @@ movement behind the weekly row's entrance.
 
 - **The FINAL sentence is what is centred.** The initial one is typeset wherever
   the anchor's final position puts it, so it lands left of centre when the copy
-  grows on the right (Reader) and right of centre when it grows on the left
-  (Price Tracker). Nothing translates between beats, because nothing was ever
+  grows on the right (Reader, Price Tracker) and right of centre when it grows
+  on the left. Nothing translates between beats, because nothing was ever
   anywhere else. Each sentence is one composition with every character but the
   fragment's own in clear ink, so a fragment's position is real typesetting
   rather than a measured offset.
 - **A narrow card shrinks the font, not the layout.** Both states have to fit
-  side by side (`Metrics.unionWidth`), so the view picks a size from 25pt down to
-  a 13pt floor at layout time and rebuilds its fragments if that size changes —
+  side by side (`Metrics.unionWidth`), and on a multi-line headline the WIDEST
+  line decides for all of them, so the view picks a size from 25pt down to a
+  13pt floor at layout time and rebuilds its fragments if that size changes —
   which it will only do before a beat has begun.
 
 Departures get their own fronts rather than sharing the arrivals'. A period's
@@ -138,7 +159,9 @@ ink sits a whole x-height below “more”'s, so one edge descending through the
 shared frame would uncover the top of the “m” a third of a second before
 reaching the period beside it — long enough to read the wrong sentence. Each
 departing fragment's front starts advanced by the drop from the highest arriving
-ink (`frontLead(forDeparting:)`), so it goes out as the arrivals come in.
+ink (`frontLead(forDeparting:onLine:)`), so it goes out as the arrivals come in
+— measured against its OWN line, since a fragment a line below is not something
+it has to leave with.
 
 ### The light is composited off the main thread
 

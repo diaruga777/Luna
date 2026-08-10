@@ -52,6 +52,133 @@ final class ReaderOnboardingTests: XCTestCase {
                 allApps: true).contains("All Luna apps"))
     }
 
+    /// Central Luna's Safari lesson is all three siblings' lessons: each ending
+    /// hands over to the next in rank order, the pass that completes the first
+    /// full cycle raises the setup ask, and the cycle goes on turning underneath
+    /// it rather than stopping on the lesson that raised it.
+    @MainActor
+    func testCentralSafariLessonCyclesItsThreeSiblingsAndKeepsGoingUnderTheAsk()
+        throws
+    {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .luna,
+                saveSetupMode: .unavailable,
+                demonstrationApp: .reader),
+            onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+        spinRunLoop(0.3)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
+        XCTAssertFalse(onboarding.hasSafariInstructionsForTesting)
+
+        // Reader's lesson ends: the Downloader's takes the screen, still with
+        // nothing over it — the first cycle is a demonstration, not an ask.
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
+        XCTAssertFalse(onboarding.hasSafariInstructionsForTesting)
+
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .priceTracker)
+        XCTAssertFalse(onboarding.hasSafariInstructionsForTesting)
+
+        // The third ending closes the first cycle: the ask comes up, and the
+        // cycle wraps back to the first sibling underneath it.
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(0.1)
+        XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
+        XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
+    }
+
+    /// A faceted app has ONE lesson, and its ending is the ask its own mock UI
+    /// carries: nothing cycles, and no popover is raised over it.
+    @MainActor
+    func testAFacetedAppsSafariLessonNeitherCyclesNorRaisesTheAsk() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .downloader, saveSetupMode: .unavailable),
+            onboardingStore: AppOnboardingStore(
+                app: .downloader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+        spinRunLoop(0.3)
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
+        XCTAssertFalse(onboarding.hasSafariInstructionsForTesting)
+    }
+
+    /// The one end-of-lesson signal the host cycles on: the Downloader's panel
+    /// reports it the moment the enable steps take the download button's place.
+    @MainActor
+    func testTheVideoLessonReportsReachingItsSetupOffer() {
+        let overlay = OnboardingVideoDownloadOverlayView(
+            configuration: .configuration(
+                for: .downloader, saveSetupMode: .unavailable))
+        overlay.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        overlay.layoutIfNeeded()
+        var reported = 0
+        overlay.onDidReachSetupOffer = { reported += 1 }
+
+        overlay.enterPlayerStateForTesting()
+        overlay.revealSetupInstructions()
+        // A second call is the same run's already-made offer, not a new one.
+        overlay.revealSetupInstructions()
+
+        XCTAssertEqual(reported, 1)
+    }
+
+    private func spinRunLoop(_ duration: TimeInterval) {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: duration))
+    }
+
     // MARK: - Completion state machine
 
     func testCompletionIsOwnedByInjectedPerAppDefaults() {

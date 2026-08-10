@@ -169,6 +169,22 @@ final class AppOnboardingViewController: UIViewController {
     func completeOnboardingWithRealSaveForTesting(animated: Bool) {
         completeOnboardingWithRealSave(animated: animated)
     }
+
+    /// Which sibling's lesson the Safari journey is showing.
+    var safariDemonstrationAppForTesting: LunaApp? {
+        let apps = configuration.safariDemonstrationApps
+        guard apps.indices.contains(safariCycleIndex) else { return nil }
+        return apps[safariCycleIndex]
+    }
+
+    var hasSafariInstructionsForTesting: Bool { hasSafariInstructions }
+
+    /// The ending each lesson reports for itself, without spending the several
+    /// seconds of animation that lead up to it.
+    func finishSafariLessonForTesting() {
+        guard let app = safariDemonstrationAppForTesting else { return }
+        safariLessonDidReachSetupOffer(app)
+    }
     #endif
 
     init(

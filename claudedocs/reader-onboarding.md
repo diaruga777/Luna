@@ -563,6 +563,20 @@ is retained on the session so a demo replay reuses it: each pass calls
 `session.replayBeat()`, which the media screen answers by re-running its own
 indication off the file it already has. Nothing refetches.
 
+**The product rehearsal's price history.** A brand-new tracker has no history
+and an empty graph is the truth for it — except in the one screen whose whole
+job is to demonstrate what tracking a price gets you, where it read as an empty
+box captioned "no price history yet". `ShareSetupPractice.practicePriceHistory`
+is a fabricated quarter — a list price, two forgettable promotions, one real
+sale, then today's price, as a staircase, because retail prices are step
+functions and a jittering line reads as a stock chart — stated as multiples of
+whatever the mock page is priced at, so the shape survives a change to the
+product. `ExtensionProductPresenter` seeds it into the new tracker before
+saving, matched BY URL (`ShareSetupPractice.matchesProductPractice`) like every
+other practice decision, so an Amayzon-shaped real save cannot pick it up by
+resembling one. The graph, the alert line and the seller list are the
+production ones either way.
+
 **Cleanup and the latch.** The row the surface appends is reported through
 `onDidAppendRow`, claimed via `AppOnboardingStore.recordTemporarySave`, and deleted
 after every pass along with its `SaveFailureStore` record and the media kind's own
@@ -672,5 +686,8 @@ Relevant tests:
   in three places, and that the rehearsal's clip is actually ON SCREEN — a
   player layer, with a player in it, at a real size — where a link with no
   bundled clip still shows none;
+- `ExtensionProductPresenterTests`: the merge decision at the presenter's own
+  level, plus the rehearsal product arriving with a history the graph can draw
+  (and an ordinary new tracker still arriving with none);
 - the existing onboarding visual/lesson tests: copy, setup effects, recovery,
   local assets, storage-free demos, Reduce Motion, and launch geometry.

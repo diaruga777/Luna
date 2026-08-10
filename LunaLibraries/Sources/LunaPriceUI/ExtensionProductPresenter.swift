@@ -81,11 +81,12 @@ public final class ExtensionProductPresenter {
                 openContainingAppForAddSeller: openContainingAppForAddSeller)
 
         case .newTracker:
+            var tracker = product.makeTracker(
+                fallbackURL: url,
+                alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction)
+            seedPracticeHistoryIfNeeded(into: &tracker, url: url)
             guard let itemID = store.savePriceTracker(
-                product.makeTracker(
-                    fallbackURL: url,
-                    alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
-                forURLString: url.absoluteString)
+                tracker, forURLString: url.absoluteString)
             else {
                 complete()
                 return
@@ -98,5 +99,26 @@ public final class ExtensionProductPresenter {
         }
         editor.onDone = complete
         presentModally(editor)
+    }
+
+    /// The onboarding rehearsal's product arrives with a QUARTER of price
+    /// history behind it (`ShareSetupPractice.practicePriceHistory`).
+    ///
+    /// Every other product this presenter opens is genuinely new, and an empty
+    /// graph is the truth for it — the tracker starts watching now. The lesson
+    /// is the one case where that truth teaches the wrong thing: the save lesson
+    /// exists to show what tracking a price gets you, and it was showing an
+    /// empty box captioned "no price history yet". Asked by URL, like every
+    /// other practice decision (`ShareSetupPractice.matchesProductPractice`), so
+    /// a real Amayzon-shaped save cannot pick this up by resembling it.
+    private func seedPracticeHistoryIfNeeded(into tracker: inout PriceTracker, url: URL) {
+        guard ShareSetupPractice.matchesProductPractice(url),
+              let host = url.host
+        else { return }
+        tracker.mergeHistorySamples(
+            ShareSetupPractice.practicePriceHistory(
+                currentPrice: tracker.initialPrice, currency: tracker.initialCurrency),
+            forHost: host,
+            newStoreURLString: url.absoluteString)
     }
 }

@@ -61,6 +61,25 @@ final class SharedProductSnapshotsTests: XCTestCase {
         XCTAssertNil(ProductSnapshotStore.makeSnapshot(fromPayload: payload(price: "call for price"), now: Date()))
     }
 
+    /// The meta/microdata capture tiers hand over the page's RAW price text —
+    /// "$1,299.00", not "1299.00" — and `Decimal(string:)` refuses it outright.
+    /// Every such visit used to be dropped silently (the pill still rendered,
+    /// the file stayed empty). The payload must be sanitized the same way
+    /// content.js's own `parsePriceNumber` reads it, and the SANITIZED string
+    /// is what persists, so `priceAmount` parses back.
+    func testASymbolAndCommaDecoratedPriceIsSanitizedAndKept() throws {
+        let snapshot = try XCTUnwrap(ProductSnapshotStore.makeSnapshot(
+            fromPayload: payload(price: "$1,299.00"), now: Date()))
+        XCTAssertEqual(snapshot.price, "1299.00")
+        XCTAssertEqual(snapshot.priceAmount, Decimal(string: "1299.00"))
+    }
+
+    func testACurrencyPrefixedPriceIsSanitizedAndKept() throws {
+        let snapshot = try XCTUnwrap(ProductSnapshotStore.makeSnapshot(
+            fromPayload: payload(price: "AU$59.95"), now: Date()))
+        XCTAssertEqual(snapshot.price, "59.95")
+    }
+
     func testMalformedCurrencyIsRejected() {
         XCTAssertNil(ProductSnapshotStore.makeSnapshot(
             fromPayload: payload(currency: "US$"), now: Date()))
@@ -161,6 +180,19 @@ final class SharedProductSnapshotsTests: XCTestCase {
         let source = Self.extensionSource("LunaSafari/SharedProductSnapshots.swift")
         XCTAssertTrue(source.contains("= \(ProductSnapshotStore.maxAgeDays)"))
         XCTAssertTrue(source.contains("= \(ProductSnapshotStore.maxCount)"))
+    }
+
+    /// The extension's copy must sanitize the raw price text the same way —
+    /// a "$1,299.00" dropped by ONE of the two copies is a snapshot the app
+    /// and the pill disagree about.
+    func testTheExtensionSanitizesThePriceTheSameWay() {
+        let source = Self.extensionSource("LunaSafari/SharedProductSnapshots.swift")
+        XCTAssertTrue(
+            source.contains(".flatMap(sanitizedDecimalString)"),
+            "SharedProductSnapshots.makeRecord no longer sanitizes the payload price")
+        XCTAssertTrue(
+            source.contains(#"raw.filter { $0.isNumber || $0 == "." || $0 == "," }"#),
+            "the extension's sanitizer has drifted from ProductSnapshotStore's")
     }
 
     func testTheExtensionRecordHasTheSameFields() {

@@ -80,13 +80,19 @@ final class AutoDownloadSettingsTests: XCTestCase {
 
     // MARK: - "Storage" (Photos vs. a deletion age — mutually exclusive)
 
-    func testStorageDefaultsToPhotos() {
+    /// A new install keeps downloads in Luna and never deletes them: Photos is
+    /// the destination the person has to CHOOSE (it needs an authorization they
+    /// have not been asked for yet), and an absent retention setting means
+    /// `.never`. Both prefs absent therefore resolves to `.deleteAfter(.never)`,
+    /// not `.photos`.
+    func testStorageDefaultsToKeepingDownloadsInLunaForever() {
         preservingSettings {
             defaults.removeObject(forKey: photosKey)
             defaults.removeObject(forKey: retentionDisabledKey)
             defaults.removeObject(forKey: retentionDaysKey)
 
-            XCTAssertEqual(MediaStorageSettings.option, .photos)
+            XCTAssertEqual(MediaStorageSettings.option, .deleteAfter(.never))
+            XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
         }
     }
 

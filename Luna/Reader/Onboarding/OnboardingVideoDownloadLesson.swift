@@ -56,6 +56,10 @@ enum OnboardingVideoDownloadTiming {
 final class OnboardingVideoDownloadOverlayView: UIView {
     var onActivateSafari: (() -> Void)?
     var onSkipSafariSetup: (() -> Void)?
+    /// The lesson has said everything it has to say: the panel is showing the
+    /// enable steps and its two actions. Central Luna, which plays this lesson
+    /// as one of three, uses it to hand over to the next sibling.
+    var onDidReachSetupOffer: (() -> Void)?
 
     private enum Metrics {
         /// `padding: "12px"` on the backdrop, `calc(100vw - 24px)` on the panel.
@@ -486,6 +490,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         lessonStage = .setup
         setupContainer.isHidden = false
         actionsView.setActionsEnabled(true)
+        onDidReachSetupOffer?()
 
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
         let duration = reduceMotion

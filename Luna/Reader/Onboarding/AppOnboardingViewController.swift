@@ -19,6 +19,10 @@ enum OnboardingDemoLoopTiming {
     static let setupPromptSavedCardHoldDuration: TimeInterval = 1.35
     /// A brief clean source beat before the next save gesture begins.
     static let sourceHoldDuration: TimeInterval = 0.38
+    /// How long a finished sibling lesson holds its own ask before central
+    /// Luna's cycle crosses to the next one. Longer than a card hold: what it
+    /// is holding is the point the lesson just made.
+    static let siblingLessonHoldDuration: TimeInterval = 1.5
 }
 
 enum OnboardingDemoSource: CaseIterable, Equatable {
@@ -107,9 +111,19 @@ final class AppOnboardingViewController: UIViewController {
     private let safariGuide = SetupGuideVideo(guide: .safariExtension)
     private let actionGuide = SetupGuideVideo(guide: .actionButton)
     private var safariReplica: SafariReplicaViewController?
+    /// One mounted replica per lesson the app's Safari journey plays. A faceted
+    /// app has exactly one; central Luna has its three siblings', which it
+    /// cycles through in rank order.
     private var safariReplicas: [LunaApp: SafariReplicaViewController] = [:]
+    /// Which of `configuration.safariDemonstrationApps` is on screen.
     private var safariCycleIndex = 0
-    private var safariInstructionLoopActive = false
+    /// The sibling cycle is running: from the first lesson's start until an
+    /// external hop or the end of onboarding stops it.
+    private var isCyclingSafariLessons = false
+    /// The Safari ask is up. It is raised by the pass that completes the first
+    /// full cycle and stays for the rest of the lesson, so later passes must not
+    /// raise or reconfigure it.
+    private var didRaiseSafariSetupPopover = false
     private var messagesReplica: MessagesReplicaViewController?
     /// The save lesson's engine, built the moment the user taps into it: it
     /// resolves the link, starts the real work, and owns the real share surface
@@ -508,6 +522,9 @@ final class AppOnboardingViewController: UIViewController {
             safari.onActionButtonWaveFinished = { [weak self] in
                 self?.actionButtonWaveDidFinish(from: .safari)
             }
+            safari.onDidReachSetupOffer = { [weak self] in
+                self?.safariLessonDidReachSetupOffer(demonstrationApp)
+            }
             safariReplicas[demonstrationApp] = safari
             if offset == 0 {
                 safariReplica = safari
@@ -657,6 +674,7 @@ final class AppOnboardingViewController: UIViewController {
     private func expandSafariCard() {
         guard !didExpandSafari, appSwitcher == nil else { return }
         preloadDemonstrationIfNeeded()
+        rewindSafariLessonCycle()
         guard let safari = safariReplica else {
             intro.setActionsEnabled(true)
             return
@@ -735,6 +753,27 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    /// Puts the sibling cycle back on its first lesson. The Safari lesson is
+    /// re-enterable — skipping leaves its intro button live — and a second entry
+    /// that opened on whichever sibling the last one wandered to would neither
+    /// match the ranking nor its own first frame.
+    private func rewindSafariLessonCycle() {
+        let apps = configuration.safariDemonstrationApps
+        didRaiseSafariSetupPopover = false
+        isCyclingSafariLessons = apps.count > 1
+        safariCycleIndex = 0
+        guard let first = apps.first,
+              let opening = safariReplicas[first],
+              opening !== safariReplica
+        else { return }
+        for (app, replica) in safariReplicas where app != first {
+            replica.resetDemonstration()
+            replica.view.isHidden = true
+            replica.view.alpha = 0
+        }
+        safariReplica = opening
+    }
+
     private func actionButtonWaveDidFinish(from source: OnboardingDemoSource) {
         guard source == activeDemoSource else { return }
 
@@ -742,7 +781,7 @@ final class AppOnboardingViewController: UIViewController {
         // continues the lesson underneath them. Subsequent sibling waves are
         // just the loop's next beat; they must not replace or reconfigure the
         // active popup.
-        if source == .safari, safariInstructionLoopActive {
+        if source == .safari, isCyclingSafariLessons {
             scheduleSafariInstructionReplay()
             return
         }
@@ -762,9 +801,7 @@ final class AppOnboardingViewController: UIViewController {
             instructionDelay:
                 OnboardingDemoLoopTiming.setupPromptSavedCardHoldDuration
         ) { [weak self] in
-            guard let self,
-                  self.safariReplica?.hasInstructions != true
-            else { return }
+            guard let self, !self.hasSafariInstructions else { return }
             switch prompt {
             case .safari:
                 self.safariReplica?.showSafariPrompt()
@@ -774,29 +811,97 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    /// A sibling lesson has finished saying its piece: the explainer page is
+    /// clean, or the video panel / product card is offering the same setup.
+    ///
+    /// Central Luna is the app whose surfaces take EVERY kind, so its Safari
+    /// lesson is all three siblings' lessons in rank order rather than one. Each
+    /// ending hands over to the next; the pass that finishes the FIRST full
+    /// cycle also raises the popover, and the cycling goes on underneath it.
+    /// A faceted app plays exactly one lesson and stops on its own ask, which is
+    /// what the count guard below leaves alone.
+    private func safariLessonDidReachSetupOffer(_ demonstrationApp: LunaApp) {
+        let apps = configuration.safariDemonstrationApps
+        guard configuration.isCentralApp,
+              apps.count > 1,
+              !isFinishing,
+              externalReturn == .none,
+              didExpandSafari,
+              activeDemoSource == .safari,
+              appSwitcher == nil,
+              // The lesson that just ended is the one on screen: a stale
+              // callback from a replica the cycle has already left behind must
+              // not advance it a second time.
+              apps.indices.contains(safariCycleIndex),
+              apps[safariCycleIndex] == demonstrationApp
+        else { return }
+
+        // The last lesson of the first cycle is where the ask comes up. Every
+        // other ending — and every later cycle — is just the next beat.
+        if !didRaiseSafariSetupPopover, safariCycleIndex == apps.count - 1 {
+            presentSafariInstructionsAndLoop()
+            return
+        }
+        scheduleSafariInstructionReplay()
+    }
+
+    /// Raises the Safari ask over the running demonstration and keeps the
+    /// lessons cycling beneath it. The popover is a card wearing the eclipse
+    /// corona rather than the full-bleed instruction sheet, and its scrim is
+    /// light, precisely because there is something behind it worth seeing: the
+    /// three sibling lessons replay under it until the user answers.
     private func presentSafariInstructionsAndLoop() {
-        safariInstructionLoopActive = true
+        didRaiseSafariSetupPopover = true
+        isCyclingSafariLessons = true
         stopDemoPresentationLoop()
+        // The journey moves on with the ask, exactly as a wave-driven prompt
+        // moves it: from here the Safari return legs, the skip and the
+        // completion handoff all read `.safariSetup`.
+        _ = journeyStage.completedSave(from: .safari)
         transitionDemo(to: .fullScreen, source: .safari) { [weak self] in
             guard let self, !self.isFinishing else { return }
-            self.safariReplica?.showSafariPrompt()
+            self.safariReplica?.showSafariPrompt(style: .eclipseCard)
             self.scheduleSafariInstructionReplay()
         }
+    }
+
+    /// Puts the loop back after a hop to real Safari that brought no extension
+    /// evidence home: the ask is still standing, so the lessons behind it go on
+    /// rather than leaving one frozen frame under a live popover.
+    private func resumeSafariLessonLoopIfNeeded() {
+        guard configuration.isCentralApp,
+              configuration.safariDemonstrationApps.count > 1,
+              hasSafariInstructions,
+              !isCyclingSafariLessons,
+              !isFinishing,
+              didExpandSafari,
+              activeDemoSource == .safari
+        else { return }
+        isCyclingSafariLessons = true
+        scheduleSafariInstructionReplay()
+    }
+
+    /// Whether any of the mounted sibling replicas is showing an instruction
+    /// overlay. The popover outlives the replica that raised it — it is hosted
+    /// on the window and the lessons swap underneath — so asking only the
+    /// current one would answer for the wrong lesson.
+    private var hasSafariInstructions: Bool {
+        safariReplicas.values.contains { $0.hasInstructions }
     }
 
     /// Replays the next sibling lesson below the window-hosted instruction
     /// overlay. The first lesson is already the highest-ranked missing sibling;
     /// later passes wrap through Reader → Downloader → Price Tracker.
     private func scheduleSafariInstructionReplay() {
-        guard safariInstructionLoopActive, !isFinishing else { return }
+        guard isCyclingSafariLessons, !isFinishing else { return }
         demoLoopGeneration += 1
         let generation = demoLoopGeneration
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingDemoLoopTiming.savedCardHoldDuration)
+                OnboardingDemoLoopTiming.siblingLessonHoldDuration)
         ) { [weak self] in
             guard let self,
-                  self.safariInstructionLoopActive,
+                  self.isCyclingSafariLessons,
                   !self.isFinishing,
                   generation == self.demoLoopGeneration
             else { return }
@@ -832,7 +937,7 @@ final class AppOnboardingViewController: UIViewController {
             outgoing.view.alpha = 0
             incoming.view.alpha = 1
         } completion: { [weak self] _ in
-            guard let self, self.safariInstructionLoopActive else { return }
+            guard let self, self.isCyclingSafariLessons else { return }
             outgoing.view.isHidden = true
             outgoing.view.alpha = 0
             self.safariReplica = incoming
@@ -1085,7 +1190,7 @@ final class AppOnboardingViewController: UIViewController {
     /// foreground return from resuming stale callbacks over the next stage.
     private func pauseDemoPresentationPlayback() {
         stopDemoPresentationLoop()
-        safariInstructionLoopActive = false
+        isCyclingSafariLessons = false
         appSwitcher?.removeFromSuperview()
         appSwitcher = nil
         for source in OnboardingDemoSource.allCases {
@@ -1278,6 +1383,7 @@ final class AppOnboardingViewController: UIViewController {
                 to: configuration.app)
             else {
                 safariReplica?.restoreInPageSafariSetup()
+                resumeSafariLessonLoopIfNeeded()
                 return
             }
             completeSetupFlow(.safari, outcome: .completed)
@@ -1288,7 +1394,7 @@ final class AppOnboardingViewController: UIViewController {
             // walks through that with its Settings message. Only a recovery
             // overlay (an earlier open failure) still uses the overlay path.
             if messagesReplica?.isShowingSetupMessages == true,
-               safariReplica?.hasInstructions != true
+               !hasSafariInstructions
             {
                 messagesReplica?.revealSettingsSetupMessage()
             } else {

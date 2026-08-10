@@ -245,7 +245,12 @@
             var downloadTarget = videoOverlayTargetFor(resp);
             if (!downloadTarget) { return; }
             injectLunaButton(downloadTarget);
-            autoPresentVideoOverlay(platform, downloadTarget, 0);
+            // A target with nothing to present is the player turned OFF in
+            // Settings: the pill is then exactly what it was before the player
+            // existed, and nothing opens over the page uninvited.
+            if (typeof downloadTarget.present === "function") {
+                autoPresentVideoOverlay(platform, downloadTarget, 0);
+            }
             return;
         }
         // Reddit feed / listing / comment-history pages are NOT posts: suppress
@@ -2092,6 +2097,7 @@
 
         /// `ratio` is the clip's height ÷ width. Ignored unless it actually says
         /// something new, so a repeated `loadedmetadata` costs no layout.
+        ///
         var setStageAspect = function (ratio) {
             if (!(ratio > 0) || Math.abs(ratio - stageAspect) < 0.005) { return; }
             // LEARNING the shape is the panel arriving at its size and must not
@@ -2426,6 +2432,11 @@
     function videoOverlayTargetFor(context) {
         var handoff = downloadTargetFor(context);
         if (!handoff) { return null; }
+        // The user can turn the player off (Settings → Safari, media apps only).
+        // The native handler answers `videoPlayer: false` then, and the pill goes
+        // back to being the plain hand-off it was before the player existed —
+        // same label, same tint, same deep link, no panel over their page.
+        if (context && context.videoPlayer === false) { return handoff; }
         return {
             label: handoff.label,
             tint: handoff.tint,

@@ -258,4 +258,39 @@ final class SafariMediaPillTests: XCTestCase {
         let opened = js.awaitAppSchemeNavigation { self.tapPill() } ?? ""
         XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
     }
+
+    // MARK: - Turned off
+
+    /// Loads a media page and runs the pill decision with the player switched OFF
+    /// in the host app's Settings — the shape of the `buttonContext` reply the
+    /// native handler sends when `safariVideoPlayerEnabled` is false.
+    private func offerWithPlayerDisabled(at urlString: String) {
+        js.load(
+            html: Self.videoPost, urlString: urlString,
+            scripts: [SafariJSTestHarness.platformHosts, SafariJSTestHarness.contentScript])
+        _ = js.evaluate("""
+            window.__lunaOfferLunaButton(
+                { scheme: "lunadownloader", supportsMedia: true, videoPlayer: false });
+            "offered"
+            """)
+    }
+
+    /// The setting's whole job: a video page the player would have taken over is
+    /// left alone.
+    func testTheDisabledPlayerNeverOpensItself() {
+        offerWithPlayerDisabled(at: Self.mediaPages[0])
+        XCTAssertFalse(
+            waitForOverlay(within: 0.5), "the player opened on a page with it switched off")
+    }
+
+    /// And the pill goes back to being what it was before the player existed:
+    /// still offered, still the media hand-off, still bouncing back to Safari.
+    func testTheDisabledPlayersPillHandsTheLinkToTheApp() {
+        offerWithPlayerDisabled(at: Self.mediaPages[0])
+        XCTAssertTrue(pillExists(), "turning the player off must not cost the page its pill")
+        let opened = js.awaitAppSchemeNavigation { self.tapPill() } ?? ""
+        XCTAssertTrue(opened.hasPrefix("lunadownloader://read?url="), "got \(opened)")
+        XCTAssertTrue(opened.hasSuffix("&ret=safari"), "got \(opened)")
+        XCTAssertFalse(overlayExists(), "a tap must not open the player either")
+    }
 }

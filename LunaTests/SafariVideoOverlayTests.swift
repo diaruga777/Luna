@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+@testable import Luna
 import LunaMediaResolve
 import LunaModels
 import LunaURLClassification
@@ -598,6 +599,22 @@ final class SafariVideoOverlayContractTests: XCTestCase {
                 "SafariWebExtensionHandler mentions \(forbidden) — fetching or parsing in the "
                     + "extension is a fork of LunaMediaResolve waiting to happen")
         }
+    }
+
+    /// The player's off switch crosses all three processes as a bare App Group
+    /// key: Settings writes it, the appex reads it as a literal (it links no app
+    /// code), the page acts on the answer. A key that agrees on two sides out of
+    /// three is a setting that silently does nothing.
+    func testTheOffSwitchIsOneAppGroupKeyAcrossAllThreeProcesses() {
+        XCTAssertTrue(
+            handler.contains("\"\(SafariSuggestionSettings.videoPlayerKey)\""),
+            "the Safari handler reads a different key than Settings writes")
+        XCTAssertTrue(
+            contentScript.contains("context.videoPlayer === false"),
+            "content.js no longer honours the handler's videoPlayer answer")
+        XCTAssertTrue(
+            handler.contains("payload[\"videoPlayer\"]"),
+            "the handler stopped sending the answer content.js waits for")
     }
 
     /// And no OTHER file in the extension may grow one either.

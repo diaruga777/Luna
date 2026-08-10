@@ -600,6 +600,17 @@ fresh `ResolvedMediaCache` entry for ten minutes, so the replacement player gets
 its source immediately and runs the same sizing path again. It does not persist a
 panel size; the size is always re-derived from the live media element.
 
+The Download handoff waits only for Luna to persist the destination and recoverable
+download job and to create its Live Activity. Asset-size preflight then continues
+under the same short app background-execution lease used by every media download;
+once the named background `URLSession` task is registered, the system owns the
+transfer. Luna immediately asks the system to reopen the original `https` URL, which
+returns to the existing Safari page rather than intentionally creating a new tab.
+The queued resolved-media record carries a one-minute copy of that return intent so
+launch/foreground recovery cannot consume the queue before `openURLContexts` and lose
+the bounce. The marker expires independently of the download: a failed responder-chain
+open still downloads on a later launch, but that later manual launch stays in Luna.
+
 **The page's own CSP governs the media load**, so this only ever plays a
 same-platform asset — and every platform we resolve allows its own CDN
 (instagram.com allows `*.cdninstagram.com` in `media-src`, x.com allows

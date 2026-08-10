@@ -16,12 +16,22 @@ public struct ResolvedMediaRecord: Codable, Equatable {
     public let title: String?
     public let assets: [MediaAsset]
     public let dateWritten: Date
+    /// The Safari Download tap asks the containing app to hand focus back to
+    /// this page. Keeping that intent beside the queued assets closes the cold-
+    /// launch/foreground race where lifecycle recovery drains the queue before
+    /// `SceneDelegate` receives the custom URL carrying `ret=safari`.
+    /// Optional so records written by an older app continue to decode.
+    public let returnToSourceUntil: Date?
 
-    public init(sourceURLString: String, title: String?, assets: [MediaAsset], dateWritten: Date) {
+    public init(
+        sourceURLString: String, title: String?, assets: [MediaAsset],
+        dateWritten: Date, returnToSourceUntil: Date? = nil
+    ) {
         self.sourceURLString = sourceURLString
         self.title = title
         self.assets = assets
         self.dateWritten = dateWritten
+        self.returnToSourceUntil = returnToSourceUntil
     }
 }
 

@@ -34,6 +34,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// the replacement player receives its source immediately instead of
     /// reopening at the default shape while another network ladder runs.
     private static let playbackResolveReuseLifetime: TimeInterval = 10 * 60
+    /// Long enough for a cold containing-app launch and its Live Activity to be
+    /// created, but short enough that a responder-chain open which never lands
+    /// cannot bounce a manual app launch back to an old Safari page tomorrow.
+    private static let downloadReturnHandoffLifetime: TimeInterval = 60
 
     func beginRequest(with context: NSExtensionContext) {
         let (surface, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
@@ -250,7 +254,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
               let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
               let record = ResolvedMediaCache.shared.record(forURLString: urlString)
         else { return false }
-        PendingResolvedMediaStore.shared.append(record)
+        PendingResolvedMediaStore.shared.append(ResolvedMediaRecord(
+            sourceURLString: record.sourceURLString, title: record.title,
+            assets: record.assets, dateWritten: record.dateWritten,
+            returnToSourceUntil: Date().addingTimeInterval(
+                Self.downloadReturnHandoffLifetime)))
         return !record.assets.isEmpty
     }
 

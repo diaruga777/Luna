@@ -8,6 +8,19 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
+enum PendingResolvedMediaReturnPolicy {
+    static func sourceURLString(
+        records: [ResolvedMediaRecord], deepLinkFlagged: Bool, now: Date
+    ) -> String? {
+        if let freshMarkedRecord = records.last(where: {
+            ($0.returnToSourceUntil ?? .distantPast) > now
+        }) {
+            return freshMarkedRecord.sourceURLString
+        }
+        return deepLinkFlagged ? records.last?.sourceURLString : nil
+    }
+}
+
 /// Drains what Safari's in-page player queued.
 ///
 /// The extension resolved the post itself (the same `SocialMediaResolver` this
@@ -36,11 +49,18 @@ public enum PendingResolvedMediaDownloads {
                     assets: record.assets)
                 started = started || didStart
             }
+            // Lifecycle recovery can win the race with `openURLContexts` and
+            // consume the queue first. In that case the fresh return marker
+            // written beside the assets carries the same intent as the custom
+            // URL's `ret=safari` flag. An expired marker still downloads, but a
+            // later manual app launch does not unexpectedly leave the app.
+            let returnURLString = PendingResolvedMediaReturnPolicy.sourceURLString(
+                records: records, deepLinkFlagged: returningToSource, now: Date())
             guard SafariReturnPolicy.shouldReturn(
                 outcome: started ? .handled : .failedOrUnsupported,
-                kind: .media, flagged: returningToSource),
-                let last = records.last,
-                let sourceURL = URL(string: last.sourceURLString) else { return }
+                kind: .media, flagged: returnURLString != nil),
+                let returnURLString,
+                let sourceURL = URL(string: returnURLString) else { return }
             await UIApplication.shared.open(sourceURL)
         }
     }

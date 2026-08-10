@@ -183,6 +183,25 @@ final class ResolvedMediaStoreTests: XCTestCase {
         let restored = try XCTUnwrap(pending().takeAll().first?.assets.first)
         XCTAssertEqual(restored, asset)
     }
+
+    func testFreshSafariReturnIntentSurvivesThePendingQueueRoundTrip() throws {
+        let deadline = now.addingTimeInterval(60)
+        let queued = ResolvedMediaRecord(
+            sourceURLString: "https://x.com/a/status/1", title: "A post",
+            assets: [MediaAsset(
+                url: URL(string: "https://cdn.example.com/a.mp4")!, kind: .video)],
+            dateWritten: now, returnToSourceUntil: deadline)
+
+        pending().append(queued)
+
+        XCTAssertEqual(try XCTUnwrap(pending().takeAll().first).returnToSourceUntil, deadline)
+    }
+
+    func testLegacyResolvedRecordWithoutReturnIntentStillDecodes() throws {
+        let data = Data(#"{"sourceURLString":"https://x.com/a/status/1","title":null,"assets":[],"dateWritten":0}"#.utf8)
+        let decoded = try JSONDecoder().decode(ResolvedMediaRecord.self, from: data)
+        XCTAssertNil(decoded.returnToSourceUntil)
+    }
 }
 
 private extension ResolvedMediaCache {

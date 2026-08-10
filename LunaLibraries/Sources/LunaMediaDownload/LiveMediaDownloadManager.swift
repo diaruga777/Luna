@@ -158,23 +158,61 @@ private func postDownloaderJobEnded(sourceURLString: String) {
 /// the system has delivered the downloaded file. The transfer itself remains
 /// owned by `URLSession`; this lease only bridges the gaps where there is no
 /// system-owned task yet (or anymore).
+///
+/// Two things it must never do, both learned the hard way:
+///
+///  - **Touch `UIApplication` in an `.appex`.** The share/action extensions reach
+///    the very same start path (`ShareViewController.autoDownloadThenComplete` →
+///    `MediaAutoDownloader.startLiveActivityIfEnabled` → `start` →
+///    `startReportingResult`), and `UIApplication.shared` returns nil in an app
+///    extension — through Swift's non-optional bridge that is a trap, i.e. a
+///    crash on every share-sheet media save. An extension has no app lifetime to
+///    extend anyway (the host decides when it dies), so the lease is simply inert
+///    there. Same `Bundle.main.bundleURL.pathExtension` test `NotificationManager`
+///    and `GazeTracker` use.
+///  - **Block a cooperative-pool thread on the main queue.** Leases are
+///    constructed from `async` contexts, and a `DispatchQueue.main.sync` from one
+///    of those is a priority inversion at exactly the busiest moment (launch,
+///    where `resumeLiveActivities` now takes one). Acquisition hops
+///    asynchronously instead; `end()` arriving first is handled rather than
+///    raced — the begin block sees `hasEnded` and immediately returns the task it
+///    was just given.
 private final class MediaBackgroundTaskLease: @unchecked Sendable {
     private let lock = NSLock()
     private var identifier: UIBackgroundTaskIdentifier = .invalid
     private var hasEnded = false
 
+    /// No `UIApplication` here — see the type's note.
+    private static var isAppExtension: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
+    }
+
     init(name: String) {
+        guard !Self.isAppExtension else {
+            hasEnded = true
+            return
+        }
         let begin = {
-            self.identifier = UIApplication.shared.beginBackgroundTask(
+            let taskIdentifier = UIApplication.shared.beginBackgroundTask(
                 withName: name
             ) { [weak self] in
                 self?.end()
             }
+            self.lock.lock()
+            guard !self.hasEnded else {
+                self.lock.unlock()
+                if taskIdentifier != .invalid {
+                    UIApplication.shared.endBackgroundTask(taskIdentifier)
+                }
+                return
+            }
+            self.identifier = taskIdentifier
+            self.lock.unlock()
         }
         if Thread.isMainThread {
             begin()
         } else {
-            DispatchQueue.main.sync(execute: begin)
+            DispatchQueue.main.async(execute: begin)
         }
     }
 

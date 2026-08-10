@@ -185,6 +185,12 @@ final class AppOnboardingViewController: UIViewController {
         guard let app = safariDemonstrationAppForTesting else { return }
         safariLessonDidReachSetupOffer(app)
     }
+
+    /// Enters the Safari lesson the way the util card's button does, for the
+    /// staged screen that reviews the whole journey (`claudedocs/staging.md`).
+    func startSafariLessonForStaging() {
+        showSafariCard()
+    }
     #endif
 
     init(

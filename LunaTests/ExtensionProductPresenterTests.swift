@@ -126,4 +126,40 @@ final class ExtensionProductPresenterTests: XCTestCase {
 
         wait(for: [landed], timeout: 5)
     }
+
+    // MARK: - The onboarding rehearsal's product has something to graph
+
+    /// The save lesson's price editor is the production one, graph slot and
+    /// all, and a brand-new tracker has no history — so the Price Tracker's
+    /// lesson demonstrated price tracking with an empty box captioned "no
+    /// price history yet". The rehearsal's product (and ONLY it, matched by
+    /// URL) arrives with a fabricated quarter behind it.
+    func testTheRehearsalsProductArrivesWithAHistoryToGraph() throws {
+        let url = try XCTUnwrap(URL(string: ShareSetupPractice.amayzonURLString))
+        _ = store.add(urlString: url.absoluteString)
+        _ = present(product: product(name: "eyePhone Air"), url: url)
+
+        let tracker = try XCTUnwrap(store.item(forURLString: url.absoluteString)?.priceTracker)
+        let series = PriceHistory.series(for: tracker)
+        XCTAssertGreaterThanOrEqual(
+            series.count, PriceHistory.minimumDaysForGraph,
+            "below this the graph says 'awaiting more data' instead of drawing")
+        XCTAssertNotEqual(
+            series.map(\.price).min(), series.map(\.price).max(),
+            "a flat line demonstrates nothing about tracking a price")
+        XCTAssertEqual(
+            series.last?.price, tracker.currentBestPrice,
+            "the history has to arrive at what the page says the price is today")
+    }
+
+    func testAnOrdinaryNewTrackerStillStartsWithNoHistory() throws {
+        let url = try XCTUnwrap(URL(string: "https://a.example/p/1"))
+        _ = store.add(urlString: url.absoluteString)
+        _ = present(product: product(name: "Widget"), url: url)
+
+        let tracker = try XCTUnwrap(store.item(forURLString: url.absoluteString)?.priceTracker)
+        XCTAssertTrue(
+            PriceHistory.series(for: tracker).isEmpty,
+            "a real save's tracker starts watching now and has nothing behind it")
+    }
 }

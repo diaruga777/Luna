@@ -19,7 +19,6 @@ import Foundation
 /// struct and re-encoding it would silently drop any field the mirror doesn't
 /// know about — e.g. `platform`/`sendStates` — corrupting other items.)
 public enum SharedReadingListAppender {
-    public static let appGroupID = AppConfig.appGroupID
 
     public static func append(urlString: String) {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
@@ -33,8 +32,7 @@ public enum SharedReadingListAppender {
     /// referencing it (`Articles/<id>-source.<ext>`).
     public static func appendDocument(sourceURL: URL) {
         let fileManager = FileManager.default
-        guard let container = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID)
+        guard let container = AppConfig.sharedContainerURL(fileManager)
         else { return }
 
         let id = UUID()
@@ -84,10 +82,17 @@ public enum SharedReadingListAppender {
 
     /// Reads the list as raw dictionaries (preserving unknown fields), prepends
     /// the new item unless `dedupeURLString` already exists, and writes it back.
+    /// Both container lookups go through `AppConfig.sharedContainerURL`, which is
+    /// THE one resolution point — asking the file manager directly is what made a
+    /// staged run append into the REAL App Group while `ReadingListStore` read the
+    /// stage's scratch container. The save then looked like it had vanished: the
+    /// onboarding lesson's product rehearsal appended a row, failed to find it a
+    /// line later, and fell back to a bare "Saved" confirmation instead of opening
+    /// the price editor. Outside DEBUG, and in every extension, this resolves to
+    /// exactly what it did before.
     private static func insertIfNew(dedupeURLString: String?, makeItem: () -> [String: Any]) {
         let fileManager = FileManager.default
-        guard let container = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID)
+        guard let container = AppConfig.sharedContainerURL(fileManager)
         else { return }
         let fileURL = container.appendingPathComponent("readingList.json")
 

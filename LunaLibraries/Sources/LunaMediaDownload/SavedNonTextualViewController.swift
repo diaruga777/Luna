@@ -46,6 +46,23 @@ public final class SavedNonTextualViewController: UIViewController {
     private let practiceVideoURL: URL?
     private var isPracticePreview: Bool { practiceVideoURL != nil }
 
+    /// Whether this screen carries the inline media half at all — the square
+    /// preview, its player, the Download / Save-to-Photos slot, the Share
+    /// circle.
+    ///
+    /// A real save asks the platform table, which is the right question: there
+    /// is nothing to fetch from a host Luna cannot pull media out of. The
+    /// REHEARSAL already has its file in hand, and its link names a fictional
+    /// host (`instatok.com`) that matches no platform rule and carries no media
+    /// extension — so asking the table answered "not downloadable", the preview
+    /// was never built, `beginMediaFlow` returned before applying the file, and
+    /// the Downloader's save lesson ended on a bare "Saved to Luna" badge with
+    /// no video in it at all. A practice video IS downloadable media by
+    /// construction; it is the one case the table cannot be asked about.
+    private var showsInlineMedia: Bool {
+        isPracticePreview || MediaDownloadablePlatform.supports(articleURLString)
+    }
+
     /// The app's own colour — the extensions inherit their host app's tint, so
     /// the Downloader's buttons read orange and the central app's indigo.
     private static var tint: UIColor { LunaSurfacePalette.baseColor }
@@ -246,7 +263,7 @@ public final class SavedNonTextualViewController: UIViewController {
     /// resolves. Non-textual items from a platform Luna can't download show the
     /// confirmation and the exits alone.
     private func mediaPreviewViews() -> [UIView] {
-        guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
+        guard showsInlineMedia else { return [] }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.backgroundColor = LunaColors.secondaryBackground
@@ -396,7 +413,7 @@ public final class SavedNonTextualViewController: UIViewController {
     private func exitControlViews() -> [UIView] {
         configureDeleteButton()
         configureDoneButton()
-        guard showsSystemShare, MediaDownloadablePlatform.supports(articleURLString) else {
+        guard showsSystemShare, showsInlineMedia else {
             return [deleteButton, doneButton]
         }
         return [floatingShareRow(), deleteButton, doneButton]
@@ -449,7 +466,7 @@ public final class SavedNonTextualViewController: UIViewController {
     /// Entry point after layout: auto-download immediately when the setting is ON,
     /// otherwise rest in the pending state until the user taps Download.
     private func beginMediaFlow() {
-        guard MediaDownloadablePlatform.supports(articleURLString) else { return }
+        guard showsInlineMedia else { return }
         if let practiceVideoURL {
             // The result screen remains the real `SavedNonTextual` controller;
             // only its input is bundled mock data. Resolve it after the hosted
@@ -549,9 +566,11 @@ public final class SavedNonTextualViewController: UIViewController {
             let fileURL = media.fileURL
             // The onboarding clip is already playing in this controller's
             // preview rectangle. Do not ask the host to layer a second player
-            // over the sheet — that was the brief full-screen-looking hop.
+            // over the sheet — that was the brief full-screen-looking hop — but
+            // do keep the sheet up while it plays, or the lesson's terminal hold
+            // is the whole of the playback and the video is a blink.
             if isPracticePreview {
-                session.awaitsMediaPlayback = false
+                holdSheetForPracticePlayback()
                 return
             }
             if !isPracticePreview, !didRetainHostedPreview {
@@ -574,6 +593,28 @@ public final class SavedNonTextualViewController: UIViewController {
                 return
             }
             session.onMediaFileReady?(fileURL)
+        }
+    }
+
+    /// How long the rehearsal's clip plays in the preview square before the
+    /// hosted sheet may leave. Long enough to read as playback rather than a
+    /// poster that twitched — the same beat the host spends on a REAL saved
+    /// video, spent here instead because this clip never leaves this screen.
+    static let practicePlaybackDuration: TimeInterval = 2.0
+
+    /// Cancels the hold of a pass that has been replaced: the lesson loops, and
+    /// a stale timer must not clear a newer pass's wait mid-download.
+    private var practicePlaybackGeneration = 0
+
+    private func holdSheetForPracticePlayback() {
+        HostedShareSession.current?.awaitsMediaPlayback = true
+        practicePlaybackGeneration += 1
+        let generation = practicePlaybackGeneration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.practicePlaybackDuration
+        ) { [weak self] in
+            guard let self, generation == self.practicePlaybackGeneration else { return }
+            HostedShareSession.current?.awaitsMediaPlayback = false
         }
     }
 

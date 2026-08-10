@@ -27,7 +27,66 @@ enum SharedStageCatalog {
     static func install() {
         StageRegistry.register(
             deckStages + utilCardStages + cardStages + settingsStages
-                + safariLessonStages)
+                + safariLessonStages + messagesLessonStages)
+    }
+
+    // MARK: - The Messages lesson
+
+    /// The save lesson, playing itself: the other timed sequence in onboarding,
+    /// and the one that ends on somebody else's screen. The conversation lands
+    /// bubble by bubble, the Action Button press ripples over the link, the mock
+    /// Dynamic Island runs the shortcut, and the sheet carries the REAL share
+    /// surface saving this app's practice link — so the last third of this stage
+    /// is whatever that app's own save result looks like (the Downloader's
+    /// saved-media screen with the clip playing in it, the Price Tracker's price
+    /// editor, the Reader's preview).
+    ///
+    /// It has no browser and no carousel around it: the pieces the host owns are
+    /// the pill destinations (Shortcuts, Settings, the App Store) and the way
+    /// out, none of which a review of the demonstration needs.
+    @MainActor
+    private static var messagesLessonStages: [StageDescriptor] {
+        [
+            StageDescriptor(
+                id: "onboarding.messages-lesson", screen: "Messages lesson",
+                variant: "full demonstration",
+                summary: "The save conversation from its first bubble through the "
+                    + "Action Button ripple, the Dynamic Island shortcut run, and the "
+                    + "real share surface resolving in the sheet.",
+                kind: .shared,
+                seed: { StageFixtures.seedEmpty() },
+                make: {
+                    let configuration = OnboardingSurfaceConfiguration.current
+                    let messages = MessagesReplicaViewController(
+                        urlString: configuration.practiceURLString)
+                    let demo = OnboardingSaveDemoController(
+                        link: OnboardingSaveDemoLink.resolve(
+                            practiceURLString: configuration.practiceURLString,
+                            app: configuration.demonstrationApp))
+                    messages.saveDemoController = demo
+                    // The real entry starts the work as the user taps in and the
+                    // conversation as the card finishes expanding; here, both once
+                    // the replica has been laid out at its full size.
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + OnboardingAnimationClock.delay(0.4)
+                    ) { [weak messages] in
+                        guard let messages else { return }
+                        demo.start(in: messages)
+                        messages.updateURL(demo.link.urlString)
+                        messages.prepareForPresentation()
+                        // The press is the answer to the link that just landed —
+                        // the source's own count of how long its staged content
+                        // takes, which is what the demo loop uses too.
+                        DispatchQueue.main.asyncAfter(
+                            deadline: .now() + OnboardingAnimationClock.delay(
+                                messages.actionButtonReplayDelay)
+                        ) { [weak messages] in
+                            messages?.replaySaveDemonstration()
+                        }
+                    }
+                    return messages
+                }),
+        ]
     }
 
     // MARK: - The Safari lesson

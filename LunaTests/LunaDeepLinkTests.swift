@@ -139,6 +139,30 @@ final class LunaDeepLinkTests: XCTestCase {
         XCTAssertNil(LunaDeepLink.mediaViewURLString(from: url))
     }
 
+    func testPriceTrackerAddSellerLinkRoundTripsTheItemID() throws {
+        let id = UUID(uuidString: "78A9292B-5E2C-4CF4-8F5B-B9BE7C13C90E")!
+        let link = try XCTUnwrap(LunaDeepLink.priceTrackerAddSellerLink(
+            scheme: LunaDeepLink.priceTrackerScheme, itemID: id))
+        XCTAssertEqual(link.host, "price-add-seller")
+        XCTAssertEqual(LunaDeepLink.priceTrackerAddSellerItemID(from: link), id)
+        XCTAssertNil(LunaDeepLink.priceTrackerAddSellerItemID(
+            from: URL(string: "lunapricetracker://price-add-seller?item=not-a-uuid")!))
+    }
+
+    func testExtensionBundleIdentifiersResolveTheirContainingAppScheme() {
+        let expected = [
+            "com.example.luna.share": LunaDeepLink.lunaScheme,
+            "com.example.luna.reader.action2": LunaDeepLink.readerScheme,
+            "com.example.luna.downloader.safari": LunaDeepLink.downloaderScheme,
+            "com.example.luna.pricetracker.share": LunaDeepLink.priceTrackerScheme,
+        ]
+        for (bundleIdentifier, scheme) in expected {
+            XCTAssertEqual(
+                LunaDeepLink.appScheme(forBundleIdentifier: bundleIdentifier), scheme,
+                bundleIdentifier)
+        }
+    }
+
     // MARK: - Resolved-media link (Safari's in-page player download)
 
     func testIsResolvedMediaLink() {

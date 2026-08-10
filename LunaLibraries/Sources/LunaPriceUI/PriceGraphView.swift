@@ -7,57 +7,27 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
-/// A compact price-history chart with an optional threshold editor.
-///
-/// The price series is deliberately non-interactive except for taps on a point.
-/// Threshold editing belongs to the green line's leading handle: dragging it moves
-/// the line, while tapping its price label opens a number-pad field. A pending edit
-/// is explicit — checkmark commits, xmark restores the value that began the edit.
-///
-/// With `allowsThresholdEditing` and NO threshold (`thresholdPrice: nil` — a product
-/// tracked before the user was ever asked about notifications) there is no line to
-/// drag, so the graph shows a **"Set price alert"** pill instead and reports the tap
-/// through `onThresholdRequested`. The host seeds the default threshold there, which
-/// is also where the notification-permission prompt is raised; the line, handle and
-/// label then arrive with the next `setData`.
-public final class PriceGraphView: UIView, UITextFieldDelegate {
-
-    public var onThresholdChanged: ((Decimal) -> Void)?
-    public var onThresholdCommitted: ((Decimal) -> Void)?
-    /// Fired when the user asks for an alert on a tracker that has none. The host
-    /// decides the starting threshold (and asks for notification permission).
-    public var onThresholdRequested: (() -> Void)?
+/// A compact price-history chart. Points can be tapped for detail; alert editing
+/// belongs exclusively to `AlertThresholdRow`. When an alert exists the chart
+/// mirrors its live slider value as a dashed line with one bell marker.
+public final class PriceGraphView: UIView {
 
     private var points: [PriceGraphPoint] = []
     private var currency = "USD"
     private var baselinePrice: Decimal?
     private var thresholdPrice: Decimal?
-    private var allowsThresholdEditing = false
     private var selectedIndex: Int?
-    private var editingOriginalThreshold: Decimal?
 
     private let thresholdColor = LunaSurfacePalette.baseColor(for: .priceTracker)
-    /// The margin the plot leaves for its own labels, and nothing more.
-    ///
-    /// It used to reserve 58pt on the left and 14 on the right — on a 320pt-wide
-    /// card that is a fifth of the chart spent on a gutter beside a "$200.00"
-    /// that measures 40. The left inset is now that measurement plus its 7pt
-    /// gap, the top is what the threshold's own price label needs to sit above
-    /// the line, and the bottom is one line of dates.
-    private let plotInsets = UIEdgeInsets(top: 26, left: 47, bottom: 24, right: 10)
+    private static let topInset: CGFloat = 22
+    private static let bottomInset: CGFloat = 24
+    private static let rightInset: CGFloat = 8
+    private static let minimumPlotWidth: CGFloat = 44
     /// Axis labels, in points. 9 was small enough that the price axis read as
     /// texture at arm's length.
     private static let axisFontSize: CGFloat = 10
 
-    private let thresholdHandle = UIButton(type: .custom)
-    /// Shown in place of the line's controls while the tracker has no threshold.
-    private let setThresholdButton = UIButton(type: .system)
-    private let thresholdPan = UIPanGestureRecognizer()
-    private let thresholdLabel = UIButton(type: .system)
-    private let thresholdEditor = UIVisualEffectView(effect: GlassStyle.barEffect())
-    private let thresholdField = UITextField()
-    private let commitButton = UIButton(type: .system)
-    private let cancelButton = UIButton(type: .system)
+    private let thresholdMarker = UIButton(type: .custom)
 
     private let calloutView = UIView()
     private let calloutLabel = UILabel()
@@ -75,46 +45,28 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
-    #if DEBUG
-    /// Lets an enclosing vertical scroll view defer to the handle's drag. The
-    /// recognizer is attached only to the small handle, so requiring it to fail
-    /// does not delay ordinary scrolling elsewhere on the card.
-    var thresholdDragGestureRecognizer: UIPanGestureRecognizer { thresholdPan }
-    #endif
-
     /// Backwards-compatible graph-only configuration (email snapshots and callers
     /// that do not own an alert threshold).
     public func setData(_ points: [PriceGraphPoint], currency: String) {
-        setData(
-            points, currency: currency, thresholdPrice: nil,
-            baselinePrice: nil, allowsThresholdEditing: false)
+        setData(points, currency: currency, thresholdPrice: nil, baselinePrice: nil)
     }
 
-    /// Configures the complete graph. An empty `points` array still draws axes and
-    /// the threshold line, making a new tracker immediately editable.
+    /// Configures the complete graph. A nil threshold means there is no alert, so
+    /// neither a line nor a marker is drawn.
     public func setData(
         _ points: [PriceGraphPoint],
         currency: String,
         thresholdPrice: Decimal?,
-        baselinePrice: Decimal?,
-        allowsThresholdEditing: Bool
+        baselinePrice: Decimal?
     ) {
         self.points = points
         self.currency = currency
         self.thresholdPrice = thresholdPrice
         self.baselinePrice = baselinePrice
-        self.allowsThresholdEditing = allowsThresholdEditing
         selectedIndex = nil
-        editingOriginalThreshold = nil
-        thresholdEditor.isHidden = true
-        thresholdLabel.isHidden = thresholdPrice == nil
-        thresholdHandle.isHidden = thresholdPrice == nil
-        // No threshold + editable = the tracker has no alert yet, and the graph is
-        // the only place to make one on the card. Read-only graphs (the email
-        // snapshot, the legacy editor's line) stay untouched.
-        setThresholdButton.isHidden = !(thresholdPrice == nil && allowsThresholdEditing)
+        thresholdMarker.isHidden = thresholdPrice == nil
         calloutView.isHidden = true
-        syncThresholdText()
+        syncThresholdAccessibilityValue()
         setNeedsLayout()
         setNeedsDisplay()
     }
@@ -127,21 +79,16 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     /// out sixty times a second, which is what "the graph flickered while you
     /// moved the slider" was.
     public func setThresholdPrice(_ price: Decimal) {
-        let wasUnset = thresholdPrice == nil
         thresholdPrice = price
-        if wasUnset {
-            thresholdLabel.isHidden = false
-            thresholdHandle.isHidden = false
-            setThresholdButton.isHidden = true
-        }
-        syncThresholdText()
+        thresholdMarker.isHidden = false
+        syncThresholdAccessibilityValue()
         setNeedsLayout()
         setNeedsDisplay()
     }
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        layoutThresholdControls()
+        layoutThresholdMarker()
         if let selectedIndex, points.indices.contains(selectedIndex) {
             layoutCallout(for: selectedIndex)
         }
@@ -244,6 +191,10 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         context.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
         context.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
         context.strokePath()
+        drawAxisLabel(
+            PriceFormatting.axisCurrencySymbol(currency: currency),
+            at: CGPoint(x: plot.minX - 7, y: max(bounds.minY, plot.minY - 17)),
+            align: .right)
     }
 
     private func drawDateLabels(in plot: CGRect) {
@@ -264,259 +215,47 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
             .font: UIFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: LunaColors.tertiaryText,
         ]
-        let size = (caption as NSString).size(withAttributes: attributes)
+        let drawRect = CGRect(
+            x: plot.minX + 4, y: plot.midY - 10,
+            width: max(plot.width - 8, 1), height: 20)
         (caption as NSString).draw(
-            at: CGPoint(x: plot.midX - size.width / 2, y: plot.midY - size.height / 2),
-            withAttributes: attributes)
+            in: drawRect, withAttributes: attributes.merging([
+                .paragraphStyle: centeredParagraphStyle,
+            ]) { _, new in new })
     }
 
-    // MARK: - Threshold controls
+    // MARK: - Alert marker
 
     private func configureThresholdControls() {
-        thresholdHandle.backgroundColor = thresholdColor
-        thresholdHandle.layer.cornerRadius = 9
-        thresholdHandle.layer.cornerCurve = .continuous
-        thresholdHandle.layer.borderWidth = 2
-        thresholdHandle.layer.borderColor = LunaColors.background.cgColor
-        thresholdHandle.accessibilityLabel = L10n.string("PriceTracker_alertThreshold_title")
-        thresholdHandle.accessibilityHint = L10n.string("PriceTracker_graph_thresholdHandleHint")
-        addSubview(thresholdHandle)
-
-        thresholdPan.addTarget(self, action: #selector(thresholdDragged(_:)))
-        thresholdHandle.addGestureRecognizer(thresholdPan)
-
-        var labelConfiguration = UIButton.Configuration.plain()
-        labelConfiguration.contentInsets = NSDirectionalEdgeInsets(
-            top: 3, leading: 7, bottom: 3, trailing: 7)
-        labelConfiguration.baseForegroundColor = thresholdColor
-        labelConfiguration.background.backgroundColor = LunaColors.background.withAlphaComponent(0.86)
-        labelConfiguration.background.cornerRadius = 7
-        thresholdLabel.configuration = labelConfiguration
-        thresholdLabel.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
-        thresholdLabel.addTarget(self, action: #selector(thresholdLabelTapped), for: .touchUpInside)
-        addSubview(thresholdLabel)
-
-        var setConfiguration = UIButton.Configuration.plain()
-        setConfiguration.title = L10n.string("PriceTracker_alertThreshold_setButtonTitle")
-        setConfiguration.image = UIImage(
-            systemName: "bell.badge",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
-        setConfiguration.imagePadding = 5
-        setConfiguration.contentInsets = NSDirectionalEdgeInsets(
-            top: 5, leading: 9, bottom: 5, trailing: 10)
-        setConfiguration.baseForegroundColor = thresholdColor
-        setConfiguration.background.backgroundColor = LunaColors.background.withAlphaComponent(0.86)
-        setConfiguration.background.strokeColor = thresholdColor.withAlphaComponent(0.55)
-        setConfiguration.background.strokeWidth = 1
-        setConfiguration.background.cornerRadius = 9
-        setThresholdButton.configuration = setConfiguration
-        setThresholdButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
-        setThresholdButton.isHidden = true
-        setThresholdButton.accessibilityHint = L10n.string("PriceTracker_graph_setButtonHint")
-        setThresholdButton.addTarget(
-            self, action: #selector(setThresholdTapped), for: .touchUpInside)
-        addSubview(setThresholdButton)
-
-        thresholdEditor.layer.cornerRadius = 9
-        thresholdEditor.layer.cornerCurve = .continuous
-        thresholdEditor.clipsToBounds = true
-        thresholdEditor.isHidden = true
-        addSubview(thresholdEditor)
-
-        thresholdField.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        thresholdField.textColor = thresholdColor
-        thresholdField.textAlignment = .right
-        thresholdField.keyboardType = .decimalPad
-        thresholdField.returnKeyType = .done
-        thresholdField.delegate = self
-        thresholdField.accessibilityLabel = L10n.string("PriceTracker_graph_thresholdFieldLabel")
-        thresholdField.addTarget(self, action: #selector(thresholdFieldChanged), for: .editingChanged)
-
-        configureEditorButton(commitButton, symbol: "checkmark", action: #selector(commitThreshold))
-        configureEditorButton(cancelButton, symbol: "xmark", action: #selector(cancelThreshold))
-        thresholdEditor.contentView.addSubview(thresholdField)
-        thresholdEditor.contentView.addSubview(commitButton)
-        thresholdEditor.contentView.addSubview(cancelButton)
-    }
-
-    private func configureEditorButton(_ button: UIButton, symbol: String, action: Selector) {
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(
-            systemName: symbol,
+            systemName: "bell.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
-        configuration.contentInsets = .zero
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 3, leading: 3, bottom: 3, trailing: 3)
         configuration.baseForegroundColor = thresholdColor
-        button.configuration = configuration
-        button.addTarget(self, action: action, for: .touchUpInside)
-        button.accessibilityLabel = symbol == "checkmark"
-            ? L10n.string("PriceTracker_graph_saveThresholdLabel")
-            : L10n.string("PriceTracker_graph_cancelThresholdLabel")
+        configuration.background.backgroundColor = LunaColors.background.withAlphaComponent(0.90)
+        configuration.background.cornerRadius = 9
+        thresholdMarker.configuration = configuration
+        thresholdMarker.isUserInteractionEnabled = false
+        thresholdMarker.isHidden = true
+        thresholdMarker.accessibilityLabel = L10n.string("PriceTracker_alertThreshold_title")
+        addSubview(thresholdMarker)
     }
 
-    private func layoutThresholdControls() {
-        guard let thresholdPrice else {
-            layoutSetThresholdButton()
-            return
-        }
+    private func layoutThresholdMarker() {
+        guard let thresholdPrice else { return }
         let plot = plotRect(in: bounds)
         let y = yPosition(for: decimalDouble(thresholdPrice), in: plot)
-        thresholdHandle.frame = CGRect(x: plot.minX - 9, y: y - 9, width: 18, height: 18)
+        let markerY = min(max(y - 11, plot.minY - 1), plot.maxY - 21)
+        thresholdMarker.frame = CGRect(x: plot.minX + 5, y: markerY, width: 22, height: 22)
+        bringSubviewToFront(thresholdMarker)
+    }
 
-        if thresholdEditor.isHidden {
-            thresholdLabel.sizeToFit()
-            let size = thresholdLabel.systemLayoutSizeFitting(
-                CGSize(width: 150, height: 28),
-                withHorizontalFittingPriority: .fittingSizeLevel,
-                verticalFittingPriority: .required)
-            thresholdLabel.frame = CGRect(
-                x: plot.minX + 8,
-                y: max(bounds.minY + 2, y - size.height - 5),
-                width: size.width,
-                height: size.height)
-        } else {
-            let width = min(max(bounds.width * 0.56, 172), 226)
-            let editorY = max(bounds.minY + 2, y - 34)
-            thresholdEditor.frame = CGRect(
-                x: plot.minX + 8, y: editorY, width: width, height: 32)
-            cancelButton.frame = CGRect(x: width - 30, y: 1, width: 28, height: 30)
-            commitButton.frame = CGRect(x: width - 60, y: 1, width: 28, height: 30)
-            thresholdField.frame = CGRect(x: 8, y: 2, width: width - 70, height: 28)
+    private func syncThresholdAccessibilityValue() {
+        thresholdMarker.accessibilityValue = thresholdPrice.map {
+            PriceFormatting.string(amount: $0, currency: currency)
         }
-    }
-
-    /// The no-alert pill sits at the top-left of the plot — where the line's own
-    /// price label would be, so setting an alert leaves the eye where it already is.
-    private func layoutSetThresholdButton() {
-        guard !setThresholdButton.isHidden else { return }
-        let plot = plotRect(in: bounds)
-        let size = setThresholdButton.systemLayoutSizeFitting(
-            CGSize(width: max(plot.width, 1), height: 30),
-            withHorizontalFittingPriority: .fittingSizeLevel,
-            verticalFittingPriority: .required)
-        setThresholdButton.frame = CGRect(
-            x: plot.minX + 8, y: max(bounds.minY + 2, plot.minY - size.height - 4),
-            width: min(size.width, max(plot.width - 8, 1)), height: size.height)
-    }
-
-    @objc private func setThresholdTapped() {
-        guard allowsThresholdEditing, thresholdPrice == nil else { return }
-        onThresholdRequested?()
-    }
-
-    private func syncThresholdText() {
-        guard let thresholdPrice else { return }
-        let formatted = PriceFormatting.string(amount: thresholdPrice, currency: currency)
-        thresholdLabel.setTitle(formatted, for: .normal)
-        thresholdLabel.accessibilityValue = formatted
-        thresholdHandle.accessibilityValue = formatted
-        thresholdField.text = decimalEditingString(thresholdPrice)
-    }
-
-    @objc private func thresholdLabelTapped() {
-        guard allowsThresholdEditing else { return }
-        beginThresholdEditing(focusField: true)
-    }
-
-    @objc private func thresholdDragged(_ gesture: UIPanGestureRecognizer) {
-        guard allowsThresholdEditing, thresholdPrice != nil else { return }
-        let plot = plotRect(in: bounds)
-        switch gesture.state {
-        case .began:
-            beginThresholdEditing(focusField: false)
-            updateThreshold(fromY: gesture.location(in: self).y, plot: plot)
-        case .changed:
-            updateThreshold(fromY: gesture.location(in: self).y, plot: plot)
-        default:
-            break
-        }
-    }
-
-    private func beginThresholdEditing(focusField: Bool) {
-        guard let thresholdPrice else { return }
-        if editingOriginalThreshold == nil {
-            editingOriginalThreshold = thresholdPrice
-        }
-        thresholdLabel.isHidden = true
-        thresholdEditor.isHidden = false
-        syncThresholdText()
-        setNeedsLayout()
-        layoutIfNeeded()
-        if focusField { thresholdField.becomeFirstResponder() }
-    }
-
-    private func updateThreshold(fromY y: CGFloat, plot: CGRect) {
-        let clampedY = min(max(y, plot.minY), plot.maxY)
-        let domain = priceDomain
-        let fraction = Double((plot.maxY - clampedY) / max(plot.height, 1))
-        let value = domain.min + fraction * (domain.max - domain.min)
-        let edited = clampedThreshold(Decimal(value))
-        thresholdPrice = edited
-        syncThresholdText()
-        setNeedsLayout()
-        setNeedsDisplay()
-        onThresholdChanged?(edited)
-    }
-
-    @objc private func thresholdFieldChanged() {
-        guard let value = parsedThresholdFieldValue() else { return }
-        thresholdPrice = clampedThreshold(value)
-        let formatted = PriceFormatting.string(amount: thresholdPrice!, currency: currency)
-        thresholdLabel.setTitle(formatted, for: .normal)
-        thresholdLabel.accessibilityValue = formatted
-        thresholdHandle.accessibilityValue = formatted
-        setNeedsLayout()
-        setNeedsDisplay()
-        onThresholdChanged?(thresholdPrice!)
-    }
-
-    @objc private func commitThreshold() {
-        guard let parsed = parsedThresholdFieldValue() ?? thresholdPrice else { return }
-        let committed = clampedThreshold(parsed)
-        thresholdPrice = committed
-        editingOriginalThreshold = nil
-        thresholdField.resignFirstResponder()
-        thresholdEditor.isHidden = true
-        thresholdLabel.isHidden = false
-        syncThresholdText()
-        setNeedsLayout()
-        setNeedsDisplay()
-        onThresholdCommitted?(committed)
-    }
-
-    @objc private func cancelThreshold() {
-        guard let original = editingOriginalThreshold else { return }
-        thresholdPrice = original
-        editingOriginalThreshold = nil
-        thresholdField.resignFirstResponder()
-        thresholdEditor.isHidden = true
-        thresholdLabel.isHidden = false
-        syncThresholdText()
-        setNeedsLayout()
-        setNeedsDisplay()
-        onThresholdChanged?(original)
-    }
-
-    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        commitThreshold()
-        return true
-    }
-
-    private func parsedThresholdFieldValue() -> Decimal? {
-        guard var text = thresholdField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return nil }
-        let separator = Locale.current.decimalSeparator ?? "."
-        if separator != "." { text = text.replacingOccurrences(of: separator, with: ".") }
-        text = text.filter { $0.isNumber || $0 == "." || $0 == "-" }
-        return Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))
-    }
-
-    private func clampedThreshold(_ value: Decimal) -> Decimal {
-        let number = decimalDouble(value)
-        if let baselinePrice {
-            let baseline = decimalDouble(baselinePrice)
-            return Decimal(min(max(number, baseline * 0.05), baseline * 0.99))
-        }
-        return Decimal(min(max(number, priceDomain.min), priceDomain.max))
     }
 
     // MARK: - Point tooltip
@@ -583,10 +322,12 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     private func layoutCallout(for index: Int) {
         let plot = plotRect(in: bounds)
         let point = plotPoint(at: index, in: plot)
-        let size = calloutView.systemLayoutSizeFitting(
-            CGSize(width: 170, height: 70),
+        var size = calloutView.systemLayoutSizeFitting(
+            CGSize(width: min(170, max(bounds.width - 6, 1)), height: 70),
             withHorizontalFittingPriority: .fittingSizeLevel,
             verticalFittingPriority: .required)
+        size.width = min(size.width, max(bounds.width - 6, 1))
+        size.height = min(size.height, max(bounds.height - 2, 1))
         let x = min(max(point.x - size.width / 2, 3), bounds.width - size.width - 3)
         let above = point.y - size.height - 10
         let y = above >= 1 ? above : min(point.y + 10, bounds.height - size.height - 1)
@@ -597,7 +338,12 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     // MARK: - Geometry and formatting
 
     private func plotRect(in rect: CGRect) -> CGRect {
-        rect.inset(by: plotInsets)
+        let maximumLeft = max(18, rect.width - Self.rightInset - Self.minimumPlotWidth)
+        let desiredLeft = max(axisLabelWidths(in: rect).max() ?? 0, currencyLabelWidth) + 8
+        let left = min(max(28, ceil(desiredLeft)), maximumLeft)
+        let width = max(rect.width - left - Self.rightInset, 1)
+        let height = max(rect.height - Self.topInset - Self.bottomInset, 1)
+        return CGRect(x: rect.minX + left, y: rect.minY + Self.topInset, width: width, height: height)
     }
 
     private var priceDomain: (min: Double, max: Double) {
@@ -644,33 +390,53 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
     ) {
         var used = Set<String>()
         for candidate in candidates {
-            let text = PriceFormatting.string(amount: Decimal(candidate.price), currency: currency)
+            let text = axisLabel(for: candidate.price, in: bounds)
             guard used.insert(text).inserted else { continue }
-    let y = min(max(candidate.y - 6, plot.minY - 1), plot.maxY - 12)
+            let y = min(max(candidate.y - 6, plot.minY - 1), plot.maxY - 12)
             drawAxisLabel(text, at: CGPoint(x: labelX, y: y), align: .right)
         }
     }
 
-    private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
-        let attributes: [NSAttributedString.Key: Any] = [
+    private var axisLabelAttributes: [NSAttributedString.Key: Any] {
+        [
             .font: UIFont.systemFont(ofSize: Self.axisFontSize, weight: .medium),
             .foregroundColor: LunaColors.secondaryText,
         ]
+    }
+
+    private var currencyLabelWidth: CGFloat {
+        (PriceFormatting.axisCurrencySymbol(currency: currency) as NSString)
+            .size(withAttributes: axisLabelAttributes).width
+    }
+
+    private func axisLabelWidths(in rect: CGRect) -> [CGFloat] {
+        let prices = points.map { decimalDouble($0.price) }
+        guard let minimum = prices.min(), let maximum = prices.max() else { return [] }
+        return [minimum, maximum].map {
+            (axisLabel(for: $0, in: rect) as NSString)
+                .size(withAttributes: axisLabelAttributes).width
+        }
+    }
+
+    /// Uses the precise label while it fits the share of the graph that an axis
+    /// can reasonably claim. If a multi-digit value exhausts that share, cents
+    /// are the first detail to go; five-digit values have already compacted.
+    private func axisLabel(for price: Double, in rect: CGRect) -> String {
+        let amount = Decimal(price)
+        let precise = PriceFormatting.axisString(amount: amount, currency: currency)
+        let budget = max(24, min(64, rect.width * 0.20))
+        let preciseWidth = (precise as NSString).size(withAttributes: axisLabelAttributes).width
+        guard abs(price) >= 10, preciseWidth > budget else { return precise }
+        return PriceFormatting.axisString(
+            amount: amount, currency: currency, showsFractionalDigits: false)
+    }
+
+    private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
+        let attributes = axisLabelAttributes
         let size = (text as NSString).size(withAttributes: attributes)
         let x = align == .right ? origin.x - size.width : origin.x
         (text as NSString).draw(
             at: CGPoint(x: x, y: origin.y), withAttributes: attributes)
-    }
-
-    private func decimalEditingString(_ value: Decimal) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = .current
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        formatter.usesGroupingSeparator = false
-        return formatter.string(from: value as NSDecimalNumber)
-            ?? NSDecimalNumber(decimal: value).stringValue
     }
 
     private func decimalDouble(_ value: Decimal) -> Double {
@@ -681,6 +447,13 @@ public final class PriceGraphView: UIView, UITextFieldDelegate {
         let dx = lhs.x - rhs.x
         let dy = lhs.y - rhs.y
         return dx * dx + dy * dy
+    }
+
+    private var centeredParagraphStyle: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.lineBreakMode = .byTruncatingTail
+        return style
     }
 
     private static let axisFormatter: DateFormatter = {

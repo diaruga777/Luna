@@ -45,7 +45,27 @@ public enum LunaDeepLink {
                 return scheme
             }
         }
-        return readerScheme
+        return appScheme(forBundleIdentifier: Bundle.main.bundleIdentifier) ?? readerScheme
+    }
+
+    /// App extensions do not register URL schemes, but their bundle identifier
+    /// is the containing app identifier plus `.share`, `.action2`, or `.safari`.
+    /// Recovering the host facet here makes extension-to-app links target the
+    /// app that owns the extension instead of falling back to Reader.
+    public static func appScheme(forBundleIdentifier bundleIdentifier: String?) -> String? {
+        guard var components = bundleIdentifier?.split(separator: ".").map(String.init),
+              !components.isEmpty else { return nil }
+        if let suffix = components.last,
+           ["share", "action2", "safari"].contains(suffix) {
+            components.removeLast()
+        }
+        switch components.last {
+        case "luna": return lunaScheme
+        case "reader": return readerScheme
+        case "downloader": return downloaderScheme
+        case "pricetracker": return priceTrackerScheme
+        default: return nil
+        }
     }
 
     /// Extracts the wrapped source URL from a `<any Luna scheme>://read?url=…`
@@ -127,6 +147,30 @@ public enum LunaDeepLink {
         guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "media" else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "url" })?.value
+    }
+
+    /// Opens a tracked product's card and immediately starts its in-app seller
+    /// browser. Share/action extensions use this route because a web search that
+    /// outlives the extension belongs to the containing app process.
+    public static func priceTrackerAddSellerLink(
+        scheme: String = ownScheme, itemID: UUID
+    ) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "price-add-seller"
+        components.queryItems = [URLQueryItem(name: "item", value: itemID.uuidString)]
+        return components.url
+    }
+
+    /// The tracker identifier from a `<luna scheme>://price-add-seller?item=…`
+    /// route, or nil for malformed and unrelated links.
+    public static func priceTrackerAddSellerItemID(from url: URL) -> UUID? {
+        guard let scheme = url.scheme, allSchemes.contains(scheme),
+              url.host == "price-add-seller",
+              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "item" })?.value
+        else { return nil }
+        return UUID(uuidString: value)
     }
 }
 

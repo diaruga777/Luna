@@ -18,6 +18,35 @@ final class PriceFormattingTests: XCTestCase {
                        "€23.50")
     }
 
+    func testPriceAxisUsesOneSeparateCurrencySymbol() {
+        XCTAssertEqual(PriceFormatting.axisCurrencySymbol(currency: "USD"), "$")
+        XCTAssertEqual(
+            PriceFormatting.axisString(amount: Decimal(string: "3456.25")!, currency: "USD"),
+            "3,456.25")
+    }
+
+    func testPriceAxisCompactsOnlyFiveDigitThousandsAndMillions() {
+        XCTAssertEqual(
+            PriceFormatting.axisString(amount: 23_455, currency: "USD"), "23k")
+        XCTAssertEqual(
+            PriceFormatting.axisString(amount: 35_200_000, currency: "USD"), "35m")
+        XCTAssertEqual(
+            PriceFormatting.axisString(amount: 3_456, currency: "USD"), "3,456.00")
+    }
+
+    func testPriceAxisDropsDecimalsWithAHalfDownBoundaryWhenSpaceRunsOut() {
+        XCTAssertEqual(
+            PriceFormatting.axisString(
+                amount: Decimal(string: "10.50")!, currency: "USD",
+                showsFractionalDigits: false),
+            "10")
+        XCTAssertEqual(
+            PriceFormatting.axisString(
+                amount: Decimal(string: "10.51")!, currency: "USD",
+                showsFractionalDigits: false),
+            "11")
+    }
+
     func testThresholdDescriptionShowsPercentAndAbsolute() {
         let description = PriceFormatting.thresholdDescription(
             fraction: 0.10, initialPrice: Decimal(string: "100")!, currency: "USD")

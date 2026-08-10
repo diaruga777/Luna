@@ -252,7 +252,7 @@ public struct PriceTracker: Codable, Equatable {
 
     /// Updates the stored fractional threshold from an absolute graph price.
     /// The persisted model keeps its existing 1%...95% drop invariant, so direct
-    /// typing and graph dragging cannot create an impossible threshold.
+    /// direct value conversion and slider movement cannot create an impossible threshold.
     public mutating func setAlertThresholdPrice(_ price: Decimal) {
         guard initialPrice > 0 else { return }
         let fraction = NSDecimalNumber(

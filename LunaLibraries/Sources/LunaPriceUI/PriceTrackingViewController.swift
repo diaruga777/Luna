@@ -80,11 +80,15 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         self.init(mode: .existing(itemID: itemID), priceFetcher: priceFetcher)
     }
 
-    public init(mode: Mode, priceFetcher: PriceFetching = PriceFetcher()) {
+    public init(
+        mode: Mode, priceFetcher: PriceFetching = PriceFetcher(),
+        openContainingAppForAddSeller: ((UUID) -> Void)? = nil
+    ) {
         self.mode = mode
         self.detail = ProductDetailViewController(
             itemID: mode.itemID, priceFetcher: priceFetcher,
-            highlightedURLString: mode.highlightedURLString)
+            highlightedURLString: mode.highlightedURLString,
+            openContainingAppForAddSeller: openContainingAppForAddSeller)
         super.init(nibName: nil, bundle: nil)
     }
 

@@ -86,6 +86,20 @@ enum KindWiring {
         root as? UINavigationController
     }
 
+    @MainActor
+    static func openPriceTrackerAddSeller(
+        itemID: UUID, navigationController: UINavigationController
+    ) {
+        guard ReadingListStore.shared.item(withID: itemID)?.priceTracker != nil,
+              let deck = navigationController.viewControllers.first
+                as? CardCarouselHostViewController else { return }
+        navigationController.dismiss(animated: false)
+        navigationController.popToRootViewController(animated: false)
+        deck.requestCentering(onSlotID: itemID)
+        deck.reload()
+        PriceTrackerAddSellerRoute.request(itemID: itemID)
+    }
+
     /// Price Tracker adds no kind rows — the universal tail is the whole menu.
     static func settingsCategories() -> [SettingsCategory] { [] }
 

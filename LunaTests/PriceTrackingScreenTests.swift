@@ -142,7 +142,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// One hosted deck answers both questions about the Price Tracker's root: it
     /// is the shared carousel (util card at zero, mini-card scrubber, archive
     /// tray), and its newest card — a tracker with no history points — still owns
-    /// the graph and its editable absolute threshold.
+    /// the graph and mirrors its alert as a non-editable bell marker.
     @MainActor
     func testPriceTrackerRootIsTheSharedCarouselAndKeepsThresholdOnZeroPointGraph() {
         UITestSupport.seedSharedStore(.priceTracking)
@@ -155,16 +155,17 @@ final class PriceTrackingScreenTests: XCTestCase {
         XCTAssertNotNil(deck.archiveTray)
 
         // Pending Keyboard is newest: it has no history points but still owns
-        // the graph and its editable absolute threshold.
+        // the graph and its alert marker.
         guard let content = deck.carousel.contentController(at: 1),
               let graph = findSubview(of: PriceGraphView.self, in: content.view),
               let threshold = findButton(accessibilityLabel: "Alert threshold", in: graph)
         else {
-            XCTFail("zero-point price card should expose its graph threshold")
+            XCTFail("zero-point price card should expose its graph alert marker")
             return
         }
         XCTAssertEqual(threshold.accessibilityValue, "$108.00")
-        XCTAssertNotNil(graph.thresholdDragGestureRecognizer.view)
+        XCTAssertNil(threshold.currentTitle, "the graph shows only the bell, never the value")
+        XCTAssertFalse(threshold.isUserInteractionEnabled, "the alert is edited by the row below")
         _ = window
     }
 
@@ -279,6 +280,26 @@ final class PriceTrackingScreenTests: XCTestCase {
         _ = window
     }
 
+    @MainActor
+    func testExtensionAddSellerHandsTheExactTrackerBackToTheContainingApp() throws {
+        UITestSupport.seedSharedStore(.priceTracking)
+        let item = try XCTUnwrap(
+            ReadingListStore.shared.items().first(where: { $0.isPriceTracker }))
+        var requestedItemID: UUID?
+        let editor = PriceTrackingViewController(
+            mode: .creation(itemID: item.id, host: .extension),
+            openContainingAppForAddSeller: { requestedItemID = $0 })
+        let window = UITestSupport.host(editor)
+        let button = try XCTUnwrap(
+            editor.view.descendants(ofType: UIButton.self).first {
+                $0.accessibilityLabel == "Add seller"
+            })
+        button.sendActions(for: .touchUpInside)
+        XCTAssertEqual(requestedItemID, item.id)
+        XCTAssertNil(editor.presentedViewController, "the extension must not host the seller webview")
+        _ = window
+    }
+
     /// The exit circle: a floating `UIButton` that is a DIRECT subview of the
     /// screen's view (the header's controls are nested inside the header bar).
     @MainActor
@@ -312,8 +333,8 @@ final class PriceTrackingScreenTests: XCTestCase {
     // MARK: - No alert set yet
 
     /// A product tracked before the notification prompt was ever answered has no
-    /// threshold, so the card's graph has no line to drag: it offers to set one, and
-    /// that tap is what creates the default alert (and raises the prompt).
+    /// threshold, so the card's graph has no alert line or marker. The alert row
+    /// below is the only editor and call to action.
     @MainActor
     func testPriceTrackerCardOffersToSetAnAlertWhenNoneIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
@@ -324,12 +345,13 @@ final class PriceTrackingScreenTests: XCTestCase {
 
         guard let content = deck.carousel.contentController(at: 1),
               let graph = findSubview(of: PriceGraphView.self, in: content.view),
-              let setAlert = findButton(title: "Set price alert", in: graph)
+              let row = findSubview(of: AlertThresholdRow.self, in: content.view),
+              let setAlert = findButton(title: "Set price alert", in: row)
         else {
             let content = deck.carousel.contentController(at: 1)
             let graph = content.flatMap { findSubview(of: PriceGraphView.self, in: $0.view) }
             XCTFail("""
-                an alert-less price card should offer to set an alert \
+                an alert-less price card should offer to set an alert in its row \
                 (content: \(String(describing: content)), graph: \(String(describing: graph)))
                 """)
             return
@@ -337,7 +359,7 @@ final class PriceTrackingScreenTests: XCTestCase {
         XCTAssertFalse(setAlert.isHidden)
         XCTAssertEqual(
             findButton(accessibilityLabel: "Alert threshold", in: graph)?.isHidden, true,
-            "no threshold means no draggable line handle")
+            "no threshold means no graph bell or line")
 
         setAlert.sendActions(for: .touchUpInside)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -347,7 +369,8 @@ final class PriceTrackingScreenTests: XCTestCase {
             .filter { $0.hasAlertThreshold }
         XCTAssertEqual(alerted.count, 1, "only the tapped card's tracker gained an alert")
         XCTAssertEqual(
-            alerted.first?.alertThresholdFraction, PriceTracker.defaultAlertThresholdFraction)
+            alerted.first?.alertThresholdFraction ?? -1,
+            PriceTracker.defaultAlertThresholdFraction, accuracy: 0.0001)
         _ = window
     }
 

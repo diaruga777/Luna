@@ -264,17 +264,6 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     the right — the current best price with `N% off` beneath it when the tracker
     is below its baseline. The short name comes from `ProductTitleSummary`
     (below).
-  - **Graph** — the always-present `PriceGraphView`, with its directly editable
-    green absolute alert threshold (or, for a tracker with no alert set, the
-    **"Set price alert"** pill in its place) and its tap-only point tooltip. Its
-    height is a share of the surface (30%, clamped to 132…260pt, and to 168pt
-    while there is no history to draw) rather than a constant, because the two
-    hosts are different sizes. It is also the band that absorbs spare height.
-  - **Alert row** (`AlertThresholdRow.swift`) — one 46pt line: a bell, "Alert
-    at", the slider (0.01…0.90), and the price it resolves to. See the next
-    section for its two states. The row's slider and the graph's line drive each
-    other live through `PriceGraphView.setThresholdPrice`, so the two controls
-    can never show different thresholds mid-drag.
   - **Sellers** — the heading, a green **+**, and a scroll viewport of
     `SellerRowView`s. A row is 44pt: favicon, seller NAME, price (the cheapest
     tinted green when there is more than one). Tap → in-app Safari; long press →
@@ -282,13 +271,27 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     fitting, then it takes the remainder and scrolls — so a longer list is cut
     mid-row rather than just past the first one. While a save-time fan-out is
     out, its "Checking for other sellers…" row sits at the end of the list.
-  - **+** offers both ways to add one, in both hosts: **Search** (presents
+  - **Graph** — the always-present `PriceGraphView`, with a read-only green alert
+    line and bell only when an alert exists, plus its tap-only point tooltip. Its
+    height is a share of the surface (30%, clamped to 132…260pt, and to 168pt
+    while there is no history to draw) rather than a constant, because the two
+    hosts are different sizes. It is also the band that absorbs spare height.
+    Its y axis shows the currency symbol once at the top; ticks spend the width
+    on numbers, dropping cents only when necessary and compacting five-digit
+    thousands / millions to `k` / `m` without compacting four-digit prices.
+  - **Alert row** (`AlertThresholdRow.swift`) — one 46pt line: a larger bell, a
+    small two-line "Alert at" + value block, and a wider slider (0.01…0.90).
+    The row is the only alert editor; its slider moves the graph line live through
+    `PriceGraphView.setThresholdPrice` before the commit persists.
+  - **+** offers both ways to add one in-app: **Search** (presents
     `ProductSearchOverlayViewController` with the Reader-style eclipse) and
     **Paste a link** (a URL alert). Either way the price fetch is MANDATORY —
     `PriceFetcher` (static → embedded JSON → WebView), no price ⇒ "No price
     found" and nothing added, `hasStore` dedupe. In the main app only, a no-price
     page also offers `ProductPriceRescue.resolver` ("Try using on-device AI"),
-    the URL-rescue seam `KindWiring` installs at launch.
+    the URL-rescue seam `KindWiring` installs at launch. In share/action
+    extensions the + instead opens `<ownScheme>://price-add-seller?item=…`; the
+    containing app centers that tracker card and presents this same search overlay.
   - Reloads on `.readingListChanged` — a fan-out lands its retailers one at a
     time from a background task, so the surface has to hear about changes it did
     not make.
@@ -318,9 +321,10 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   them. PUSHED onto the reading-list nav stack in-app, or PRESENTED modally by the
   action/share extension's `ShareSurfaceDriver` on a `.product` outcome
   (`PriceTrackingHost.extension`, exiting via the injected `onDone`). **The exit
-  differs by host and nothing else**: in-app, a back chevron in the header; in an
+  differs by host**: in-app, a back chevron in the header; in an
   extension, the floating glass `ExtensionExitButton`, with the content's bottom
-  edge pinned above it so the circle never covers the seller list. There is no
+  edge pinned above it so the circle never covers the seller list. The other
+  host-specific behavior is the + handoff described above. There is no
   "Read instead" button — the editor no longer re-saves a tracker as an article.
   `Mode.existing(itemID:)` (tap a row) / `.creation(itemID:host:)` /
   `.merge(itemID:addedStoreURLString:host:)` (save-time, flashes the added
@@ -382,11 +386,10 @@ threshold as the opt-in that raises the prompt:
   the first movement; release (or the button) commits. Nothing about the row's
   geometry changes between the two states, so setting an alert never moves the
   layout underneath it.
-- **The `PriceGraphView`** has no line to drag, so with `allowsThresholdEditing`
-  and a nil threshold it draws no alert line and shows a **"Set price alert"**
-  pill where the line's price label would sit, reporting the tap through
-  `onThresholdRequested`.
-- Both, plus the graph's own committed drag, funnel into ONE
+- **The `PriceGraphView`** draws no alert line or bell at all for a nil threshold.
+  It never creates or edits an alert; once the row creates one, the graph mirrors
+  the slider live with a dashed line and bell (no repeated price label).
+- The row's button and slider funnel into ONE
   `commitThreshold(fraction:)` on `ProductDetailViewController`:
   `setAlertThresholdFraction` + persist + `NotificationManager
   .requestAuthorization()` + reload. That is the only call to
@@ -398,7 +401,7 @@ the floated `.priceAlert` row, and `PriceRefreshCoordinator`'s `postPriceDrop` o
 `newlyAlerting` outcome.
 
 **Notification permission is asked when the threshold is committed, not at launch.**
-Setting the alert line IS the request to be told about a drop, and it's the only thing
+Setting the alert row IS the request to be told about a drop, and it's the only thing
 this app posts, so the one commit funnel calls
 `NotificationManager.requestAuthorization()` right after persisting. It's idempotent,
 so only the first commit prompts and no "have we asked yet" flag is needed; it also
@@ -673,7 +676,7 @@ notifies. See `social-sharing.md`.
   **extension host shows the floating exit circle, in-app shows Back** (and the
   circle stays a circle, clear of the seller list); opening an alerting tracker
   **marks the alert viewed**; the waiting row appears and goes with the pending
-  marker; and the **no-alert-set** state — the graph's "Set price alert" pill
+  bell marker; and the **no-alert-set** state — no alert treatment in the graph
   (with the line handle hidden) and the alert row's button each commit the
   default threshold to the store, while a tracker that HAS one shows neither.
 - `ProductSurfaceTests` — `ProductTitleSummaryTests` over the marketplace title,

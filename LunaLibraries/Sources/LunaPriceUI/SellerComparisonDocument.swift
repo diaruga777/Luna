@@ -302,10 +302,6 @@ public enum SellerComparisonDocument {
 
     private static func graphSection(_ content: Content) -> String {
         var html = "<h2>\(escape(L10n.string("PriceTrackerCompareDoc_06_historyHeading")))</h2>\n"
-        guard content.series.count >= 2 else {
-            return html
-                + "<p class=\"empty\">\(escape(L10n.string("PriceTrackerCompareDoc_07_noHistoryCaption")))</p>\n"
-        }
         return html + graphSVG(content) + "\n"
     }
 
@@ -313,7 +309,7 @@ public enum SellerComparisonDocument {
 
     static let graphWidth: Double = 640
     static let graphHeight: Double = 260
-    private static let inset = (left: 58.0, right: 16.0, top: 16.0, bottom: 34.0)
+    private static let inset = (left: 58.0, right: 16.0, top: 24.0, bottom: 34.0)
 
     /// How much room is left BELOW the lowest point, as a fraction of the value
     /// range. A line that touches the floor of its own frame reads as clipped
@@ -342,12 +338,28 @@ public enum SellerComparisonDocument {
         let domainMin = minPrice - padding
         let domainMax = span > 0 ? maxPrice : maxPrice + padding
         let domainSpan = max(domainMax - domainMin, .leastNormalMagnitude)
-        let plotWidth = graphWidth - inset.left - inset.right
+        var labelled: [String: Double] = [:]
+        let labelValues = prices.isEmpty
+            ? (current.map { [$0] } ?? [])
+            : [maxPrice, minPrice] + (current.map { [$0] } ?? [])
+        for value in labelValues {
+            let precise = PriceFormatting.axisString(
+                amount: Decimal(value), currency: content.displayCurrency)
+            let text = abs(value) >= 10 && precise.count > 9
+                ? PriceFormatting.axisString(
+                    amount: Decimal(value), currency: content.displayCurrency,
+                    showsFractionalDigits: false)
+                : precise
+            if labelled[text] == nil { labelled[text] = value }
+        }
+        let estimatedLabelWidth = Double(labelled.keys.map(\.count).max() ?? 1) * 6.4
+        let leftInset = min(max(inset.left, estimatedLabelWidth + 12), 96)
+        let plotWidth = graphWidth - leftInset - inset.right
         let plotHeight = graphHeight - inset.top - inset.bottom
 
         func x(_ index: Int) -> Double {
-            guard points.count > 1 else { return inset.left + plotWidth / 2 }
-            return inset.left + plotWidth * Double(index) / Double(points.count - 1)
+            guard points.count > 1 else { return leftInset + plotWidth / 2 }
+            return leftInset + plotWidth * Double(index) / Double(points.count - 1)
         }
         func y(_ price: Double) -> Double {
             inset.top + plotHeight * (1 - (price - domainMin) / domainSpan)
@@ -356,30 +368,36 @@ public enum SellerComparisonDocument {
         let path = prices.enumerated()
             .map { "\($0.offset == 0 ? "M" : "L")\(round2(x($0.offset))) \(round2(y($0.element)))" }
             .joined(separator: " ")
-        let area = path
-            + " L\(round2(x(points.count - 1))) \(round2(inset.top + plotHeight))"
-            + " L\(round2(x(0))) \(round2(inset.top + plotHeight)) Z"
-
         var svg = "<svg class=\"graph\" viewBox=\"0 0 \(Int(graphWidth)) \(Int(graphHeight))\""
             + " role=\"img\" xmlns=\"http://www.w3.org/2000/svg\">"
+        svg += "<line class=\"axis-line\" x1=\"\(round2(leftInset))\" y1=\"\(round2(inset.top))\""
+            + " x2=\"\(round2(leftInset))\" y2=\"\(round2(inset.top + plotHeight))\"/>"
+        svg += "<line class=\"axis-line\" x1=\"\(round2(leftInset))\" y1=\"\(round2(inset.top + plotHeight))\""
+            + " x2=\"\(round2(graphWidth - inset.right))\" y2=\"\(round2(inset.top + plotHeight))\"/>"
         // Price axis: the high, the low, and TODAY — the three numbers that make
         // a history mean something, and no filler in between. Any two that
         // coincide collapse into one label rather than overprinting.
-        var labelled: [String: Double] = [:]
-        for value in [maxPrice, minPrice] + (current.map { [$0] } ?? []) {
-            let text = PriceFormatting.string(
-                amount: Decimal(value), currency: content.displayCurrency)
-            if labelled[text] == nil { labelled[text] = value }
-        }
         for (text, value) in labelled.sorted(by: { $0.value > $1.value }) {
             let gridY = y(value)
-            svg += "<line class=\"grid\" x1=\"\(round2(inset.left))\" y1=\"\(round2(gridY))\""
+            svg += "<line class=\"grid\" x1=\"\(round2(leftInset))\" y1=\"\(round2(gridY))\""
                 + " x2=\"\(round2(graphWidth - inset.right))\" y2=\"\(round2(gridY))\"/>"
-            svg += "<text class=\"axis price\" x=\"\(round2(inset.left - 8))\""
+            svg += "<text class=\"axis price\" x=\"\(round2(leftInset - 8))\""
                 + " y=\"\(round2(gridY + 4))\">\(escape(text))</text>"
         }
-        svg += "<path class=\"area\" d=\"\(area)\"/>"
-        svg += "<path class=\"line\" d=\"\(path)\"/>"
+        svg += "<text class=\"axis currency\" x=\"\(round2(leftInset - 8))\" y=\"15\">"
+            + escape(PriceFormatting.axisCurrencySymbol(currency: content.displayCurrency))
+            + "</text>"
+        if !points.isEmpty {
+            let area = path
+                + " L\(round2(x(points.count - 1))) \(round2(inset.top + plotHeight))"
+                + " L\(round2(x(0))) \(round2(inset.top + plotHeight)) Z"
+            svg += "<path class=\"area\" d=\"\(area)\"/>"
+            svg += "<path class=\"line\" d=\"\(path)\"/>"
+        } else {
+            svg += "<text class=\"axis empty-history\" x=\"\(round2(leftInset + plotWidth / 2))\""
+                + " y=\"\(round2(inset.top + plotHeight / 2))\">"
+                + escape(L10n.string("PriceTrackerCompareDoc_07_noHistoryCaption")) + "</text>"
+        }
         // A dot per day is unreadable past a couple of months; the line already
         // carries the shape, so the markers retire once they would collide.
         if points.count <= 60 {
@@ -391,7 +409,7 @@ public enum SellerComparisonDocument {
         // Date axis: first and last only. Every bucket labelled is unreadable at
         // a year's worth of points, and the span is what the reader needs.
         if let first = points.first, let last = points.last {
-            svg += "<text class=\"axis date start\" x=\"\(round2(inset.left))\""
+            svg += "<text class=\"axis date start\" x=\"\(round2(leftInset))\""
                 + " y=\"\(round2(graphHeight - 10))\">\(escape(day(first.date)))</text>"
             svg += "<text class=\"axis date end\" x=\"\(round2(graphWidth - inset.right))\""
                 + " y=\"\(round2(graphHeight - 10))\">\(escape(day(last.date)))</text>"
@@ -506,11 +524,14 @@ public enum SellerComparisonDocument {
     .price.none { font-weight: 400; color: var(--muted); }
     .graph { display: block; width: 100%; height: auto; background: var(--card); border-radius: 14px; }
     .graph .grid { stroke: var(--line); stroke-width: 1; }
+    .graph .axis-line { stroke: var(--line); stroke-width: 1; }
     .graph .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
     .graph .area { fill: var(--accent-soft); stroke: none; }
     .graph .dot { fill: var(--accent); }
     .graph .axis { fill: var(--muted); font-size: 11px; font-family: inherit; }
     .graph .axis.price { text-anchor: end; }
+    .graph .axis.currency { text-anchor: end; font-weight: 700; }
+    .graph .axis.empty-history { text-anchor: middle; font-size: 14px; }
     .graph .axis.date.start { text-anchor: start; }
     .graph .axis.date.end { text-anchor: end; }
     """

@@ -293,7 +293,7 @@
       "id": "price.graph.empty",
       "screen": "Price graph",
       "variant": "no data",
-      "summary": "Axes and the 'set price alert' offer, before three days of samples exist to draw.",
+      "summary": "Axes before enough samples exist to draw a price history.",
       "kind": "product",
       "apps": ["luna", "pricetracker"]
     },

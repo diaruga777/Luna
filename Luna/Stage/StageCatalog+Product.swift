@@ -248,14 +248,12 @@ enum ProductStageCatalog {
         [
             StageDescriptor(
                 id: "price.graph.empty", screen: "Price graph", variant: "no data",
-                summary: "Axes and the 'set price alert' offer, before three days of "
-                    + "samples exist to draw.",
+                summary: "Axes before enough samples exist to draw a price history.",
                 kind: .product,
                 make: {
                     let graph = PriceGraphView()
                     graph.setData(
-                        [], currency: "USD", thresholdPrice: nil, baselinePrice: nil,
-                        allowsThresholdEditing: true)
+                        [], currency: "USD", thresholdPrice: nil, baselinePrice: nil)
                     return StageFixtures.hosting(graph, height: 240)
                 }),
             StageDescriptor(
@@ -266,7 +264,7 @@ enum ProductStageCatalog {
                     let graph = PriceGraphView()
                     graph.setData(
                         fallingSeries(), currency: "USD", thresholdPrice: 180,
-                        baselinePrice: 200, allowsThresholdEditing: true)
+                        baselinePrice: 200)
                     return StageFixtures.hosting(graph, height: 240)
                 }),
             StageDescriptor(

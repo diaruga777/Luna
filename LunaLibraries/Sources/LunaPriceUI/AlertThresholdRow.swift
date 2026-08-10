@@ -8,7 +8,7 @@ import LunaModels
 import UIKit
 
 /// The alert control every product surface shows: **one row**, 46pt tall —
-/// a bell, the words "Alert at", the slider, and the price it resolves to.
+/// a large bell, a compact two-line "Alert at" + value block, and the slider.
 ///
 /// It replaces a 130pt pill that spent four stacked lines saying what the last
 /// one says on its own. The percent-and-absolute readout ("25% off — alert below
@@ -61,19 +61,20 @@ public final class AlertThresholdRow: UIView {
     public required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     private func buildLayout() {
+        accessibilityIdentifier = "priceTracker.alert"
         backgroundColor = LunaColors.secondaryBackground
         layer.cornerRadius = 14
         layer.cornerCurve = .continuous
 
         iconView.image = UIImage(
             systemName: "bell.badge",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
         iconView.tintColor = accent
         iconView.contentMode = .center
         iconView.setContentHuggingPriority(.required, for: .horizontal)
 
         titleLabel.text = L10n.string("PriceTracker_alertThreshold_rowTitle")
-        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = LunaColors.secondaryText
         titleLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -90,9 +91,9 @@ public final class AlertThresholdRow: UIView {
             for: [.touchUpInside, .touchUpOutside, .touchCancel])
         slider.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        priceLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        priceLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         priceLabel.textColor = accent
-        priceLabel.textAlignment = .right
+        priceLabel.textAlignment = .left
         priceLabel.setContentHuggingPriority(.required, for: .horizontal)
         priceLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -103,7 +104,7 @@ public final class AlertThresholdRow: UIView {
         setConfiguration.titleTextAttributesTransformer =
             UIConfigurationTextAttributesTransformer { attributes in
                 var attributes = attributes
-                attributes.font = .systemFont(ofSize: 15, weight: .semibold)
+                attributes.font = .systemFont(ofSize: 12, weight: .semibold)
                 return attributes
             }
         setButton.configuration = setConfiguration
@@ -112,26 +113,27 @@ public final class AlertThresholdRow: UIView {
         setButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         setButton.addTarget(self, action: #selector(setAlertTapped), for: .touchUpInside)
 
-        let label = UIStackView(arrangedSubviews: [iconView, titleLabel])
-        label.axis = .horizontal
-        label.alignment = .center
-        label.spacing = 5
+        let value = UIStackView(arrangedSubviews: [titleLabel, priceLabel, setButton])
+        value.axis = .vertical
+        value.alignment = .leading
+        value.spacing = -1
+        value.setContentHuggingPriority(.required, for: .horizontal)
+        value.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        let stack = UIStackView(arrangedSubviews: [label, slider, priceLabel, setButton])
+        let stack = UIStackView(arrangedSubviews: [iconView, value, slider])
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 10
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            // The readout never narrows past its own widest plausible value, so
-            // the slider does not jitter sideways as digits change under the drag.
-            priceLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 66),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            value.widthAnchor.constraint(greaterThanOrEqualToConstant: 68),
         ])
     }
 

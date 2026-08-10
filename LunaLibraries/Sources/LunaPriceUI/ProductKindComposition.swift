@@ -9,6 +9,7 @@ import LunaModels
 import LunaPriceIngest
 import LunaShareSurface
 import LunaStorage
+import LunaURLClassification
 import Foundation
 
 /// THE single definition of what registering the **product kind** (price
@@ -51,6 +52,10 @@ struct ProductSharePresenter: ShareProductPresenting {
         presenter.presentPriceEditor(
             product: product, url: url, store: store,
             presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() })
+            complete: { [weak host] in host?.confirmSavedThenComplete() },
+            openContainingAppForAddSeller: { [weak host] itemID in
+                guard let link = LunaDeepLink.priceTrackerAddSellerLink(itemID: itemID) else { return }
+                host?.openURL(link)
+            })
     }
 }

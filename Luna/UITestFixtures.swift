@@ -252,7 +252,7 @@ enum UITestFixtures {
             if let current {
                 // Give the Price Tracker card a real tap-target series while the
                 // pending-price fixture below continues to exercise the zero-point
-                // graph and editable threshold.
+                // graph and mirrored alert threshold.
                 pt.recordPriceSample(
                     base, currency: "USD", urlString: url, at: ago(days: 3))
                 pt.recordPriceSample(

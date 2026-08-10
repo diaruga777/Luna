@@ -114,6 +114,10 @@ enum KindWiring {
         root as? UINavigationController
     }
 
+    static func openPriceTrackerAddSeller(
+        itemID: UUID, navigationController: UINavigationController
+    ) {}
+
     static func settingsCategories() -> [SettingsCategory] {
         [
             SettingsCategory(title: L10n.string("Common_downloads"), symbol: "arrow.down.circle") {

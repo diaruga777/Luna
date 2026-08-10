@@ -130,14 +130,37 @@ final class SellerComparisonDocumentTests: XCTestCase {
         XCTAssertTrue(html.contains("class=\"axis price\""))
         XCTAssertTrue(html.contains("class=\"axis date start\""))
         XCTAssertTrue(html.contains("class=\"axis date end\""))
-        XCTAssertTrue(html.contains("$100.00"), "the high end of the price axis")
+        XCTAssertTrue(html.contains(">100.00</text>"), "the high end of the price axis")
+        XCTAssertEqual(
+            html.components(separatedBy: "class=\"axis currency\"").count - 1, 1,
+            "the currency belongs once at the top of the y axis")
     }
 
-    func testASingleDataPointDrawsNoGraphAtAll() {
+    func testASingleDataPointStillDrawsTheStaticIntentGraph() {
         let html = SellerComparisonDocument.html(content(
             rows: [row("Amazon", price: "80")], series: points(["100"])))
-        XCTAssertFalse(html.contains("<svg"))
-        XCTAssertTrue(html.contains("class=\"empty\""))
+        XCTAssertTrue(html.contains("<svg class=\"graph\""))
+        XCTAssertTrue(html.contains("class=\"dot\""))
+    }
+
+    func testEmptyHistoryStillDrawsTheStaticIntentGraph() {
+        let html = SellerComparisonDocument.html(content(
+            rows: [row("Amazon", price: "80")], series: []))
+        XCTAssertTrue(html.contains("<svg class=\"graph\""))
+        XCTAssertTrue(html.contains("class=\"axis empty-history\""))
+        XCTAssertFalse(html.contains("<path class=\"line\" d=\"\""))
+    }
+
+    func testStaticIntentOrderIsProductThenSellersThenGraphAndNeverAlertConfiguration() throws {
+        let html = SellerComparisonDocument.html(content(
+            rows: [row("Amazon", price: "80")], series: points(["100", "80"]),
+            image: "data:image/png;base64,AAAA"))
+        let title = try XCTUnwrap(html.range(of: "<h1>"))
+        let sellers = try XCTUnwrap(html.range(of: "<ul class=\"sellers\""))
+        let graph = try XCTUnwrap(html.range(of: "<svg class=\"graph\""))
+        XCTAssertLessThan(title.lowerBound, sellers.lowerBound)
+        XCTAssertLessThan(sellers.lowerBound, graph.lowerBound)
+        XCTAssertFalse(html.lowercased().contains("alert at"))
     }
 
     /// A price that never moved is a real series, and dividing by its zero span
@@ -264,7 +287,7 @@ final class SellerComparisonDocumentTests: XCTestCase {
     func testThePriceAxisAlwaysLabelsTheHighTheLowAndToday() {
         let svg = SellerComparisonDocument.graphSVG(content(
             rows: [], series: points(["100", "120", "90"]), current: "95"))
-        for label in ["$120.00", "$90.00", "$95.00"] {
+        for label in ["120.00", "90.00", "95.00"] {
             XCTAssertTrue(svg.contains(label), "missing \(label)")
         }
         XCTAssertEqual(svg.components(separatedBy: "class=\"axis price\"").count - 1, 3)
@@ -287,7 +310,7 @@ final class SellerComparisonDocumentTests: XCTestCase {
     func testACurrentPriceBelowTheRecordStillLandsInsideThePlot() {
         let svg = SellerComparisonDocument.graphSVG(content(
             rows: [], series: points(["100", "110"]), current: "40"))
-        XCTAssertTrue(svg.contains("$40.00"))
+        XCTAssertTrue(svg.contains(">40.00</text>"))
         for y in Self.axisYValues(in: svg) {
             XCTAssertGreaterThanOrEqual(y, 0)
             XCTAssertLessThanOrEqual(y, SellerComparisonDocument.graphHeight)

@@ -127,6 +127,27 @@ final class ProductSurfaceParityTests: XCTestCase {
         _ = editorWindow
     }
 
+    @MainActor
+    func testEveryLiveProductSurfaceOrdersSellersBeforeGraphBeforeAlert() throws {
+        UITestSupport.seedSharedStore(.priceTracking)
+        let item = try XCTUnwrap(
+            ReadingListStore.shared.items().first(where: { $0.isPriceTracker }))
+        let card = ProductCardContentViewController(itemID: item.id)
+        let window = UITestSupport.host(card)
+        card.view.layoutIfNeeded()
+
+        let header = try XCTUnwrap(card.view.descendant(identifier: "priceTracker.header"))
+        let sellers = try XCTUnwrap(card.view.descendant(identifier: "priceTracker.sellers"))
+        let graph = try XCTUnwrap(card.view.descendant(identifier: "priceTracker.graph"))
+        let alert = try XCTUnwrap(card.view.descendant(identifier: "priceTracker.alert"))
+        for (upper, lower) in [(header, sellers), (sellers, graph), (graph, alert)] {
+            XCTAssertLessThanOrEqual(
+                upper.convert(upper.bounds, to: card.view).maxY,
+                lower.convert(lower.bounds, to: card.view).minY)
+        }
+        _ = window
+    }
+
     /// The alert row and the graph line are two views of one number. Moving the
     /// slider moves the line before anything is committed, which is what makes
     /// the readout believable.
@@ -179,5 +200,11 @@ private extension UIView {
     func firstDescendant<T: UIView>(ofType type: T.Type) -> T? {
         if let match = self as? T { return match }
         return subviews.lazy.compactMap { $0.firstDescendant(ofType: type) }.first
+    }
+
+
+    func descendant(identifier: String) -> UIView? {
+        if accessibilityIdentifier == identifier { return self }
+        return subviews.lazy.compactMap { $0.descendant(identifier: identifier) }.first
     }
 }

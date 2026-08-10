@@ -132,6 +132,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader.
     private func route(_ url: URL) {
+        if let itemID = LunaDeepLink.priceTrackerAddSellerItemID(from: url) {
+            if let nav = mainNavigationController {
+                KindWiring.openPriceTrackerAddSeller(itemID: itemID, navigationController: nav)
+            }
+            return
+        }
         if LunaDeepLink.isRescueLink(url) {
             // The extension handoff wrote the URL + hint + consent into the shared
             // store; just drain it (pop to root first so the list is visible when a

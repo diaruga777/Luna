@@ -60,8 +60,8 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - The card
 
-    /// The real editor: product image and title, the price graph with its
-    /// draggable alert threshold, and the seller list with its add button.
+    /// The real editor: product image and title, seller list with its add button,
+    /// read-only price graph, and the dedicated alert row.
     func cardContent(for item: ReadingListItem, host: CardPresenterHost)
         -> CardContentViewController?
     {

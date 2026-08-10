@@ -734,7 +734,11 @@ into a bar and the line already carries the shape.) The y-domain is padded below
 the minimum so a low reads as a low rather than as a clipped line, and the price
 axis labels exactly three numbers — the high, the low and TODAY, deduplicated
 when they coincide, with today folded into the domain so a price below the
-record still lands inside the plot. Self-containment is the whole requirement — a Shortcut result is Quick
+record still lands inside the plot. The currency symbol is printed once at the
+top of the y axis; the numeric ticks share the live graph's compact `k` / `m` and
+space-sensitive fractional formatting. One-point and empty histories still
+render the static SVG (with an in-graph empty caption when needed, and no alert
+configuration). Self-containment is the whole requirement — a Shortcut result is Quick
 Looked, saved to Files, AirDropped and mailed, all with no network, no base URL
 and no cache — and `SellerComparisonDocumentTests` asserts it directly (no
 `src="http`, no `<link`, no `<script`).

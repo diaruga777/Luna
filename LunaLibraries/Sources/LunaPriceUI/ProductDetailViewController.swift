@@ -56,17 +56,17 @@ public enum ProductPriceRescue {
 /// │ [img]  Panasonic shaver      $116.33     │  header: the short name, the
 /// │        Panasonic spare blade men's…      │  full title small underneath,
 /// │                                          │  and what it costs today
-/// │ ╭────────────────────────────────────╮   │
-/// │ │  price history + the alert line    │   │  graph: a share of the height,
-/// │ ╰────────────────────────────────────╯   │  never a fixed 246pt
-/// │ ╭────────────────────────────────────╮   │
-/// │ │ 🔔 Alert at ──o───────── $104.70   │   │  one 46pt row, both states
-/// │ ╰────────────────────────────────────╯   │
 /// │ Sellers                              +   │
 /// │ ╭────────────────────────────────────╮   │  a scroll viewport measured in
 /// │ │ 🅰 Amazon Australia       $116.33   │   │  whole rows plus a peek, so the
 /// │ │ 🅹 JB Hi-Fi              $119.00   │   │  list looks scrollable when it
 /// │ ╰┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈╯   │  is
+/// │ ╭────────────────────────────────────╮   │
+/// │ │  price history + the alert line    │   │  graph: a share of the height,
+/// │ ╰────────────────────────────────────╯   │  never a fixed 246pt
+/// │ ╭────────────────────────────────────╮   │
+/// │ │ 🔔 Alert at  $104.70  ──o────────  │   │  one 46pt row, both states
+/// │ ╰────────────────────────────────────╯   │
 /// └──────────────────────────────────────────┘
 /// ```
 ///
@@ -79,6 +79,9 @@ public final class ProductDetailViewController: UIViewController {
     private let itemID: UUID
     private let store = ReadingListStore.shared
     private let priceFetcher: PriceFetching
+    /// Non-nil only in an extension. The add button hands the item back to the
+    /// containing app instead of trying to keep a web session alive in an appex.
+    private let openContainingAppForAddSeller: ((UUID) -> Void)?
     /// A just-merged seller URL to flash, or nil.
     private let highlightedURLString: String?
 
@@ -100,6 +103,7 @@ public final class ProductDetailViewController: UIViewController {
     /// retailers below. A scroll indicator only says so while a finger is down,
     /// and the row the viewport cuts can land anywhere, including flush.
     private let sellersFade = CAGradientLayer()
+    private var pendingDeepLinkedSellerSearch = false
 
     private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
 
@@ -117,11 +121,13 @@ public final class ProductDetailViewController: UIViewController {
     public init(
         itemID: UUID,
         priceFetcher: PriceFetching = PriceFetcher(),
-        highlightedURLString: String? = nil
+        highlightedURLString: String? = nil,
+        openContainingAppForAddSeller: ((UUID) -> Void)? = nil
     ) {
         self.itemID = itemID
         self.priceFetcher = priceFetcher
         self.highlightedURLString = highlightedURLString
+        self.openContainingAppForAddSeller = openContainingAppForAddSeller
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -159,10 +165,10 @@ public final class ProductDetailViewController: UIViewController {
         view.addSubview(bandStack)
 
         bandStack.addArrangedSubview(makeHeader())
-        bandStack.addArrangedSubview(makeGraphBand())
-        bandStack.addArrangedSubview(alertRow)
         bandStack.addArrangedSubview(makeSellersHeading())
         bandStack.addArrangedSubview(makeSellersViewport())
+        bandStack.addArrangedSubview(makeGraphBand())
+        bandStack.addArrangedSubview(alertRow)
 
         configureAlertRow()
         installGraphHeightRatio()
@@ -182,6 +188,12 @@ public final class ProductDetailViewController: UIViewController {
         // change it did not make.
         NotificationCenter.default.addObserver(
             self, selector: #selector(readingListChanged), name: .readingListChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(addSellerDeepLinkReceived(_:)),
+            name: .priceTrackerAddSellerRequested, object: nil)
+        if PriceTrackerAddSellerRoute.consume(ifMatching: itemID) {
+            pendingDeepLinkedSellerSearch = true
+        }
         reload()
     }
 
@@ -240,6 +252,7 @@ public final class ProductDetailViewController: UIViewController {
         prices.spacing = 1
 
         let header = UIStackView(arrangedSubviews: [thumbnailView, titles, prices])
+        header.accessibilityIdentifier = "priceTracker.header"
         header.axis = .horizontal
         header.alignment = .center
         header.spacing = 11
@@ -265,24 +278,7 @@ public final class ProductDetailViewController: UIViewController {
 
     private func makeGraphBand() -> UIView {
         graphView.translatesAutoresizingMaskIntoConstraints = false
-        graphView.onThresholdChanged = { [weak self] price in
-            self?.alertRow.configure(
-                fraction: self?.fraction(forThresholdPrice: price),
-                initialPrice: self?.tracker?.initialPrice ?? 0,
-                currency: self?.tracker?.displayCurrency ?? "USD")
-        }
-        graphView.onThresholdCommitted = { [weak self] price in
-            guard let self, let fraction = self.fraction(forThresholdPrice: price) else { return }
-            self.commitThreshold(fraction: fraction)
-        }
-        // A tracker saved before the user was ever asked about notifications has
-        // no threshold and so no line to drag: the graph offers "Set price alert"
-        // instead, and this is where that default alert — and the permission
-        // prompt that makes it deliverable — comes from.
-        graphView.onThresholdRequested = { [weak self] in
-            self?.commitThreshold(fraction: PriceTracker.defaultAlertThresholdFraction)
-        }
-
+        graphView.accessibilityIdentifier = "priceTracker.graph"
         // The graph is the band that takes the slack: a tracker with two sellers
         // leaves room a list cannot use, and a taller chart is the best thing to
         // spend it on. Hugging it loosely is what makes the stack grow this one
@@ -333,8 +329,14 @@ public final class ProductDetailViewController: UIViewController {
         addSellerButton.configuration = configuration
         addSellerButton.accessibilityLabel = L10n.string(
             "PriceTracker_tracking_addSellerButtonLabel")
-        addSellerButton.showsMenuAsPrimaryAction = true
-        addSellerButton.menu = addSellerMenu()
+        if openContainingAppForAddSeller != nil {
+            addSellerButton.showsMenuAsPrimaryAction = false
+            addSellerButton.addTarget(
+                self, action: #selector(openContainingAppForSellerSearch), for: .touchUpInside)
+        } else {
+            addSellerButton.showsMenuAsPrimaryAction = true
+            addSellerButton.menu = addSellerMenu()
+        }
         addSellerButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             addSellerButton.widthAnchor.constraint(equalToConstant: 32),
@@ -342,6 +344,7 @@ public final class ProductDetailViewController: UIViewController {
         ])
 
         let row = UIStackView(arrangedSubviews: [sellersHeadingLabel, UIView(), addSellerButton])
+        row.accessibilityIdentifier = "priceTracker.sellersHeading"
         row.axis = .horizontal
         row.alignment = .center
         // Told, not hugged — see the header. This band is the label and the
@@ -351,6 +354,7 @@ public final class ProductDetailViewController: UIViewController {
     }
 
     private func makeSellersViewport() -> UIView {
+        sellersScrollView.accessibilityIdentifier = "priceTracker.sellers"
         sellersScrollView.showsVerticalScrollIndicator = true
         sellersScrollView.alwaysBounceVertical = false
         sellersScrollView.delegate = self
@@ -391,6 +395,26 @@ public final class ProductDetailViewController: UIViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateSellersFade()
+        presentPendingDeepLinkedSellerSearchIfPossible()
+    }
+
+    @objc private func openContainingAppForSellerSearch() {
+        openContainingAppForAddSeller?(itemID)
+    }
+
+    @objc private func addSellerDeepLinkReceived(_ notification: Notification) {
+        guard notification.userInfo?[PriceTrackerAddSellerRoute.itemIDKey] as? UUID == itemID
+        else { return }
+        _ = PriceTrackerAddSellerRoute.consume(ifMatching: itemID)
+        pendingDeepLinkedSellerSearch = true
+        presentPendingDeepLinkedSellerSearchIfPossible()
+    }
+
+    private func presentPendingDeepLinkedSellerSearchIfPossible() {
+        guard pendingDeepLinkedSellerSearch, viewIfLoaded?.window != nil,
+              presentedViewController == nil else { return }
+        pendingDeepLinkedSellerSearch = false
+        presentSearchOverlay()
     }
 
     /// Positions the fade over the bottom of the viewport, and retires it when
@@ -449,8 +473,7 @@ public final class ProductDetailViewController: UIViewController {
             series,
             currency: tracker.displayCurrency,
             thresholdPrice: tracker.alertThresholdPrice,
-            baselinePrice: tracker.initialPrice,
-            allowsThresholdEditing: true)
+            baselinePrice: tracker.initialPrice)
         alertRow.configure(
             fraction: tracker.alertThresholdFraction,
             initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
@@ -518,9 +541,8 @@ public final class ProductDetailViewController: UIViewController {
 
     // MARK: - The alert threshold
 
-    /// The ONE place a threshold is written, from all three ways of asking for
-    /// one — the graph's line, the alert row's slider, and the "set an alert at
-    /// all" offer either of them makes when there is none.
+    /// The ONE place a threshold is written, from the alert row's slider or its
+    /// unset-state button. The graph only mirrors this value.
     ///
     /// Committing a threshold is the opt-in moment for notifications: an alert
     /// the user just asked for is the first thing Luna has to tell them about
@@ -532,14 +554,6 @@ public final class ProductDetailViewController: UIViewController {
         store.updatePriceTracker(tracker, for: itemID)
         NotificationManager.requestAuthorization()
         reload()
-    }
-
-    /// The fractional drop an absolute graph price stands for, or nil when the
-    /// tracker has no baseline to measure it against.
-    private func fraction(forThresholdPrice price: Decimal) -> Double? {
-        guard let tracker, tracker.initialPrice > 0 else { return nil }
-        return NSDecimalNumber(
-            decimal: (tracker.initialPrice - price) / tracker.initialPrice).doubleValue
     }
 
     // MARK: - Sellers
@@ -710,6 +724,33 @@ public final class ProductDetailViewController: UIViewController {
         store.updatePriceTracker(tracker, for: itemID)
         reload()
     }
+}
+
+/// The app-shell route posts this after centering the requested product card.
+/// Keeping the payload in one named seam lets an already-mounted card and a card
+/// created by the centering reload behave identically.
+@MainActor
+public enum PriceTrackerAddSellerRoute {
+    public static let itemIDKey = "itemID"
+    private static var pendingItemID: UUID?
+
+    public static func request(itemID: UUID) {
+        pendingItemID = itemID
+        NotificationCenter.default.post(
+            name: .priceTrackerAddSellerRequested, object: nil,
+            userInfo: [itemIDKey: itemID])
+    }
+
+    static func consume(ifMatching itemID: UUID) -> Bool {
+        guard pendingItemID == itemID else { return false }
+        pendingItemID = nil
+        return true
+    }
+}
+
+public extension Notification.Name {
+    static let priceTrackerAddSellerRequested = Notification.Name(
+        "LunaPriceTrackerAddSellerRequested")
 }
 
 // MARK: - Removing a seller

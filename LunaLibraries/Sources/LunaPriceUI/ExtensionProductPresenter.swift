@@ -50,7 +50,8 @@ public final class ExtensionProductPresenter {
     public func presentPriceEditor(
         product: ProductInfo, url: URL, store: ReadingListStore,
         presentModally: @escaping (UIViewController) -> Void,
-        complete: @escaping () -> Void
+        complete: @escaping () -> Void,
+        openContainingAppForAddSeller: ((UUID) -> Void)? = nil
     ) {
         guard let placeholder = store.item(forURLString: url.absoluteString) else {
             complete()
@@ -76,7 +77,8 @@ public final class ExtensionProductPresenter {
             editor = PriceTrackingViewController(
                 mode: .merge(
                     itemID: matchID, addedStoreURLString: highlightedURL ?? url.absoluteString,
-                    host: .extension))
+                    host: .extension),
+                openContainingAppForAddSeller: openContainingAppForAddSeller)
 
         case .newTracker:
             guard let itemID = store.savePriceTracker(
@@ -90,7 +92,9 @@ public final class ExtensionProductPresenter {
             }
             SellerComparison.beginAndRunInBackground(
                 itemID: itemID, sourceURL: url, store: store)
-            editor = PriceTrackingViewController(mode: .creation(itemID: itemID, host: .extension))
+            editor = PriceTrackingViewController(
+                mode: .creation(itemID: itemID, host: .extension),
+                openContainingAppForAddSeller: openContainingAppForAddSeller)
         }
         editor.onDone = complete
         presentModally(editor)

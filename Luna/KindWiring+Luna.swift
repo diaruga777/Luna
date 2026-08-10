@@ -263,6 +263,20 @@ enum KindWiring {
         return root as? UINavigationController
     }
 
+    @MainActor
+    static func openPriceTrackerAddSeller(
+        itemID: UUID, navigationController: UINavigationController
+    ) {
+        guard ReadingListStore.shared.item(withID: itemID)?.priceTracker != nil,
+              let deck = navigationController.viewControllers.first
+                as? CardCarouselHostViewController else { return }
+        navigationController.dismiss(animated: false)
+        navigationController.popToRootViewController(animated: false)
+        deck.requestCentering(onSlotID: itemID)
+        deck.reload()
+        PriceTrackerAddSellerRoute.request(itemID: itemID)
+    }
+
     static func settingsCategories() -> [SettingsCategory] {
         [
             SettingsCategory(title: L10n.string("Common_reader"), symbol: "textformat.size") { ReaderSettingsScreen() },

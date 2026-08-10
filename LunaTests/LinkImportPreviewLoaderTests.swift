@@ -74,6 +74,31 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         XCTFail("timed out waiting for \(description)", file: file, line: line)
     }
 
+    /// Asserts a row REACHES a state, rather than assuming a fixed number of
+    /// yields already got it there.
+    ///
+    /// `settle()`'s eight yields are enough when this class runs alone and not
+    /// when the whole suite is competing for the main actor: every assertion
+    /// below that follows an async transition used to read the state one hop
+    /// early under load. That is how
+    /// `testAPageThatDoesNotAnswerLeavesTheRowAsItWas` passed in isolation
+    /// (0.001s) and failed in a full run, reading `.loading` where the refusal
+    /// had not yet landed. Assertions about a state that must NOT change (a row
+    /// that stays `.idle`, a request that is never made) still use `settle()` —
+    /// waiting for those would be a tautology.
+    private func assertState(
+        _ loader: LinkImportPreviewLoader, of urlString: String,
+        reaches expected: LinkImportPreviewLoader.State,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        for _ in 0..<200 {
+            if loader.state(for: urlString) == expected { return }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(loader.state(for: urlString), expected, file: file, line: line)
+    }
+
     private func onePixelPNG() -> Data {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
         return renderer.pngData { context in
@@ -87,11 +112,11 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     func testOnlyTheRowsInTheWindowAreFetched() async {
         let loader = makeLoader(maximumConcurrent: 4)
         loader.enterWindow(["https://a.example/1", "https://b.example/2"])
-        await settle()
+        await waitUntil("both rows to be requested") { recorder.requested.count == 2 }
 
         XCTAssertEqual(
             recorder.requested.sorted(), ["https://a.example/1", "https://b.example/2"])
-        XCTAssertEqual(loader.state(for: "https://a.example/1"), .loading)
+        await assertState(loader, of: "https://a.example/1", reaches: .loading)
         // Never asked for → never fetched, and the row shows its URL display.
         XCTAssertEqual(loader.state(for: "https://c.example/3"), .idle)
     }
@@ -100,22 +125,22 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         let loader = makeLoader(maximumConcurrent: 2)
         loader.enterWindow(
             ["https://a.example/1", "https://b.example/2", "https://c.example/3"])
-        await settle()
+        await waitUntil("the cap to be filled") { recorder.requested.count == 2 }
 
         XCTAssertEqual(recorder.requested.count, 2)
         // The third is queued, not fetched — and it still reads as loading, so its
         // row shows a spinner rather than flickering between states.
-        XCTAssertEqual(loader.state(for: "https://c.example/3"), .loading)
+        await assertState(loader, of: "https://c.example/3", reaches: .loading)
 
         recorder.finish("https://a.example/1", with: LinkPreview(title: "One"))
-        await settle()
+        await waitUntil("the queued third to start") { recorder.requested.count == 3 }
         XCTAssertEqual(recorder.requested.count, 3)
     }
 
     func testARowThatLeavesTheWindowBeforeItsTurnIsNeverFetched() async {
         let loader = makeLoader(maximumConcurrent: 1)
         loader.enterWindow(["https://a.example/1", "https://b.example/2"])
-        await settle()
+        await waitUntil("the first row to be requested") { recorder.requested.count == 1 }
         XCTAssertEqual(recorder.requested, ["https://a.example/1"])
 
         // Scrolled past before its turn came up: the data it would have cost is
@@ -139,9 +164,9 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
 
         // Cancelling would waste the bytes already spent, and scrolling back is
         // likely — so the answer is kept.
-        XCTAssertEqual(
-            loader.state(for: "https://a.example/1"),
-            .loaded(LinkImportPreviewLoader.Preview(title: "One")))
+        await assertState(
+            loader, of: "https://a.example/1",
+            reaches: .loaded(LinkImportPreviewLoader.Preview(title: "One")))
     }
 
     func testARowIsNeverFetchedTwice() async {
@@ -166,7 +191,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         XCTAssertTrue(recorder.requested.isEmpty)
         // Not `.loading`: a spinner on a plane would promise something that isn't
         // coming.
-        XCTAssertEqual(loader.state(for: "https://a.example/1"), .unavailable)
+        await assertState(loader, of: "https://a.example/1", reaches: .unavailable)
     }
 
     func testAPageThatDoesNotAnswerLeavesTheRowAsItWas() async {
@@ -174,9 +199,8 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         loader.enterWindow(["https://a.example/1"])
         await settle()
         recorder.fail("https://a.example/1", with: URLError(.timedOut))
-        await settle()
 
-        XCTAssertEqual(loader.state(for: "https://a.example/1"), .unavailable)
+        await assertState(loader, of: "https://a.example/1", reaches: .unavailable)
     }
 
     func testAPageWithNothingUsableIsAnsweredRatherThanRetried() async {
@@ -184,11 +208,10 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         loader.enterWindow(["https://a.example/1"])
         await settle()
         recorder.finish("https://a.example/1", with: LinkPreview())
-        await settle()
 
-        XCTAssertEqual(
-            loader.state(for: "https://a.example/1"),
-            .loaded(LinkImportPreviewLoader.Preview()))
+        await assertState(
+            loader, of: "https://a.example/1",
+            reaches: .loaded(LinkImportPreviewLoader.Preview()))
         loader.enterWindow(["https://a.example/1"])
         await settle()
         XCTAssertEqual(recorder.requested.count, 1)
@@ -199,7 +222,7 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         loader.enterWindow(["not a url"])
         await settle()
         XCTAssertTrue(recorder.requested.isEmpty)
-        XCTAssertEqual(loader.state(for: "not a url"), .unavailable)
+        await assertState(loader, of: "not a url", reaches: .unavailable)
     }
 
     // MARK: - Landing
@@ -241,11 +264,10 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
             "https://a.example/1",
             with: LinkPreview(
                 title: "One", imageURL: URL(string: "https://a.example/cover.png")))
-        await settle()
 
-        XCTAssertEqual(
-            loader.state(for: "https://a.example/1"),
-            .loaded(LinkImportPreviewLoader.Preview(title: "One")))
+        await assertState(
+            loader, of: "https://a.example/1",
+            reaches: .loaded(LinkImportPreviewLoader.Preview(title: "One")))
     }
 
     // MARK: - What the row shows

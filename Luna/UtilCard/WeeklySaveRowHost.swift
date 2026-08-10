@@ -19,6 +19,9 @@ final class WeeklySaveRowHost: UIView {
     var onSave: ((_ urlString: String, _ sourceView: UIView) -> Void)?
     /// The card asks for a relayout whenever the slot appears or disappears.
     var onPresenceChange: (() -> Void)?
+    /// The central onboarding labels subscribe here rather than maintaining a
+    /// second timer, so both changes begin on the same clock tick.
+    var onCycle: (() -> Void)?
     /// Whether the deck already holds this URL — installed by the util card so
     /// an answered pick shows dimmed under a checkmark rather than offered.
     var isSaved: ((_ urlString: String) -> Bool)? {
@@ -35,8 +38,8 @@ final class WeeklySaveRowHost: UIView {
     private let clip = UIView()
 
     /// One row per cycle slot, in the app's kind order. Central Luna keeps
-    /// empty sibling slots too, so a missing weekly pick is a real turn in the
-    /// cycle rather than being silently removed from it.
+    /// empty sibling slots too, so a missing weekly pick remains a fully
+    /// transparent turn in the cycle rather than being silently removed from it.
     private(set) var rows: [UtilURLRow] = []
     private(set) var displays: [WeeklySaveDisplay] = []
     private var slots: [WeeklySaveDisplay?] = []
@@ -89,7 +92,10 @@ final class WeeklySaveRowHost: UIView {
         pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         addGestureRecognizer(pan)
 
-        pacer.onAdvance = { [weak self] in self?.advance(forward: true, velocity: 0) }
+        pacer.onAdvance = { [weak self] in
+            self?.onCycle?()
+            self?.advance(forward: true, velocity: 0)
+        }
         pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
         lifecycleObservers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
@@ -125,6 +131,7 @@ final class WeeklySaveRowHost: UIView {
     /// Forwarded by the util card from `CardContentViewController`.
     func cardDidBecomeCentered() { pacer.isCentered = true }
     func cardDidLeaveCenter() { pacer.cardDidLeaveCenter() }
+    func setCycleVisible(_ isVisible: Bool) { pacer.isCycleVisible = isVisible }
 
     // MARK: - Content
 
@@ -208,9 +215,9 @@ final class WeeklySaveRowHost: UIView {
         if let display {
             configure(row, with: display)
         } else {
-            // The central card's nil turn is deliberately silent: the black
-            // row shell blends into the card while the same slot still travels
-            // with the carousel timing.
+            // The central card's nil turn leaves the entire slot empty — no
+            // dark row shell, rim, or hit target — while preserving its place
+            // in the shared three-kind cycle.
             row.alpha = 0
             row.isUserInteractionEnabled = false
             row.accessibilityElementsHidden = true
@@ -228,7 +235,8 @@ final class WeeklySaveRowHost: UIView {
                 kind: Self.previewKind(display.save.kind),
                 imageData: display.imageData),
             weeklyLabel: WeeklySaveLabels.subtitle(
-                for: app, monthTier: display.save.isMonthTier(now: now())))
+                for: app, monthTier: display.save.isMonthTier(now: now())),
+            weeklyTint: Self.softTint(for: display.save.kind))
         row.onTap = { [weak self, weak row] in
             guard let self, let row else { return }
             self.onSave?(display.save.urlString, row)
@@ -251,6 +259,7 @@ final class WeeklySaveRowHost: UIView {
     private func updateRowVisibility() {
         for (offset, row) in rows.enumerated() where !(replacement != nil && offset == index) {
             row.isHidden = offset != index
+            row.alpha = slotIsEmpty(offset) ? 0 : 1
         }
     }
 
@@ -314,7 +323,7 @@ final class WeeklySaveRowHost: UIView {
         let width = clip.bounds.width
         let row = rows[target]
         row.isHidden = false
-        row.alpha = 1
+        row.alpha = slotIsEmpty(target) ? 0 : 1
         row.frame = clip.bounds
         row.transform = CGAffineTransform(
             translationX: (forward ? width : -width) + drag, y: 0)
@@ -338,13 +347,13 @@ final class WeeklySaveRowHost: UIView {
                 incoming.setContentParallax(0)
                 outgoing.transform = CGAffineTransform(
                     translationX: forward ? -width : width, y: 0)
-                outgoing.alpha = 0.85
+                outgoing.alpha = self.slotIsEmpty(self.index) ? 0 : 0.85
             } else {
                 incoming.transform = CGAffineTransform(
                     translationX: forward ? width : -width, y: 0)
                 incoming.setContentParallax(forward ? Self.parallaxLag : -Self.parallaxLag)
                 outgoing.transform = .identity
-                outgoing.alpha = 1
+                outgoing.alpha = self.slotIsEmpty(self.index) ? 0 : 1
             }
         }
         animator.addCompletion { [weak self] _ in
@@ -440,6 +449,24 @@ final class WeeklySaveRowHost: UIView {
         row.isHidden = true
         row.transform = .identity
         row.setContentParallax(0)
+    }
+
+    private func slotIsEmpty(_ offset: Int) -> Bool {
+        slots.indices.contains(offset) && slots[offset] == nil
+    }
+
+    /// Each kind carries the tint of the standalone app that owns it, including
+    /// when central Luna cycles through every kind. The slight lift makes the
+    /// hue read as a soft glass cast rather than brand paint.
+    private static func softTint(for kind: WeeklySaveKind) -> UIColor {
+        let surface: LunaSurfacePalette.Surface
+        switch kind {
+        case .article: surface = .reader
+        case .media: surface = .downloader
+        case .product: surface = .priceTracker
+        }
+        return LunaSurfacePalette.blended(
+            LunaSurfacePalette.baseColor(for: surface), toward: .white, amount: 0.18)
     }
 
     private static func previewKind(_ kind: WeeklySaveKind) -> RecentURLPreview.Kind {

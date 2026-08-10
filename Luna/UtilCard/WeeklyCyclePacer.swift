@@ -17,7 +17,9 @@ import UIKit
 /// Main-thread only, like the view that owns it; deliberately NOT `@MainActor`
 /// so a `UIView`'s (nonisolated) initializer can build one as a default.
 final class WeeklyCyclePacer {
-    static let interval: TimeInterval = 2.0
+    /// This is intentionally unhurried: the weekly pick is content to read,
+    /// not a status ticker. The setup labels use this exact same clock.
+    static let interval: TimeInterval = 4.0
 
     /// Starts a repeating tick and returns its canceller. Injected so tests
     /// drive the cadence by hand instead of waiting two seconds a time.
@@ -42,6 +44,9 @@ final class WeeklyCyclePacer {
     /// A replacement eclipse owns the slot while it runs.
     var isReplacing = false { didSet { update() } }
     var isUserTouching = false { didSet { update() } }
+    /// Onboarding holds the slot back until its headline has yielded to it.
+    /// A hidden row must not advance underneath its entrance animation.
+    var isCycleVisible = true { didSet { update() } }
     /// Reduce Motion means no automatic movement at all; a deliberate swipe
     /// still works (as a crossfade).
     var reduceMotion = false { didSet { update() } }
@@ -62,7 +67,8 @@ final class WeeklyCyclePacer {
     /// moving, and no manual override.
     var canRun: Bool {
         liveKindCount >= 2 && isCentered && isInWindow && isAppActive
-            && !isReplacing && !isUserTouching && !reduceMotion && !userTookControl
+            && !isReplacing && !isUserTouching && isCycleVisible
+            && !reduceMotion && !userTookControl
     }
 
     func userDidTakeControl() {
@@ -104,12 +110,10 @@ final class WeeklyCyclePacer {
     }
 }
 
-/// The central util card's two setup labels share the weekly row's cadence and
-/// slide language. Only the labels move; the glass buttons, icons, frames and
-/// hit targets remain fixed.
+/// The central util card's setup labels advance *with* the weekly row. Only
+/// the labels move; the glass buttons, icons, frames and hit targets stay fixed.
 @MainActor
 final class UtilCardSetupTextCycler {
-    static let interval: TimeInterval = WeeklyCyclePacer.interval
     static let animationDuration: TimeInterval = 0.55
 
     private weak var safariButton: UIButton?
@@ -119,9 +123,6 @@ final class UtilCardSetupTextCycler {
     private let baseSafariTitle: String
     private let baseShortcutTitle: String
     private var index = -1
-    private var timer: Timer?
-    private var isCentered = false
-    private var isInWindow = false
 
     init(
         safariButton: UIButton,
@@ -138,35 +139,7 @@ final class UtilCardSetupTextCycler {
         shortcutButton.clipsToBounds = true
     }
 
-    deinit { timer?.invalidate() }
-
-    func setInWindow(_ value: Bool) {
-        isInWindow = value
-        updateTimer()
-    }
-
-    func setCentered(_ value: Bool) {
-        isCentered = value
-        if !value { reset() }
-        updateTimer()
-    }
-
-    private func updateTimer() {
-        guard isCentered, isInWindow, timer == nil,
-              !safariTitles.isEmpty || !shortcutTitles.isEmpty
-        else {
-            if (!isCentered || !isInWindow), let timer { timer.invalidate(); self.timer = nil }
-            return
-        }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) {
-            [weak self] _ in
-            Task { @MainActor in self?.advance() }
-        }
-        timer?.tolerance = Self.interval * 0.25
-    }
-
-    private func advance() {
-        guard isCentered, isInWindow else { return }
+    func advance() {
         let count = max(safariTitles.count, shortcutTitles.count)
         guard count > 0 else { return }
         index = (index + 1) % count
@@ -191,7 +164,7 @@ final class UtilCardSetupTextCycler {
             outgoing?.alpha = 0
         } completion: { [weak button] _ in
             guard let button else { return }
-            button.configuration?.title = title
+            self.applyTitle(title, to: button)
             button.accessibilityLabel = title
             button.layoutIfNeeded()
             let incoming = button.titleLabel
@@ -208,15 +181,13 @@ final class UtilCardSetupTextCycler {
         }
     }
 
-    private func reset() {
-        timer?.invalidate()
-        timer = nil
+    func reset() {
         index = -1
         safariButton?.titleLabel?.layer.removeAllAnimations()
         shortcutButton?.titleLabel?.layer.removeAllAnimations()
         UIView.performWithoutAnimation {
-            safariButton?.configuration?.title = baseSafariTitle
-            shortcutButton?.configuration?.title = baseShortcutTitle
+            if let safariButton { applyTitle(baseSafariTitle, to: safariButton) }
+            if let shortcutButton { applyTitle(baseShortcutTitle, to: shortcutButton) }
             safariButton?.accessibilityLabel = baseSafariTitle
             shortcutButton?.accessibilityLabel = baseShortcutTitle
             safariButton?.titleLabel?.transform = .identity
@@ -224,6 +195,15 @@ final class UtilCardSetupTextCycler {
             safariButton?.titleLabel?.alpha = 1
             shortcutButton?.titleLabel?.alpha = 1
         }
+    }
+
+    private func applyTitle(_ title: String, to button: UIButton) {
+        var configuration = button.configuration
+        configuration?.title = title
+        var attributes = AttributeContainer()
+        attributes.font = .systemFont(ofSize: 13, weight: .semibold)
+        configuration?.attributedTitle = AttributedString(title, attributes: attributes)
+        button.configuration = configuration
     }
 }
 

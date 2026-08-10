@@ -34,6 +34,7 @@ final class WeeklyRibbonView: UIView {
 
     private let shape = CAShapeLayer()
     private let label = UILabel()
+    private var tint = LunaSurfacePalette.baseColor
 
     var text: String? {
         get { label.text }
@@ -42,6 +43,11 @@ final class WeeklyRibbonView: UIView {
             label.text = newValue
             setNeedsLayout()
         }
+    }
+
+    func setTint(_ tint: UIColor) {
+        self.tint = tint
+        applyTint()
     }
 
     init() {
@@ -118,7 +124,7 @@ final class WeeklyRibbonView: UIView {
     }
 
     private func applyTint() {
-        shape.fillColor = Self.fillColor.resolvedColor(with: traitCollection).cgColor
+        shape.fillColor = Self.fillColor(for: tint).resolvedColor(with: traitCollection).cgColor
         label.textColor = Self.textColor
     }
 
@@ -128,8 +134,12 @@ final class WeeklyRibbonView: UIView {
     static var fillColor: UIColor { fillColor(for: LunaSurfacePalette.currentSurface) }
 
     static func fillColor(for surface: LunaSurfacePalette.Surface) -> UIColor {
+        fillColor(for: LunaSurfacePalette.baseColor(for: surface))
+    }
+
+    static func fillColor(for tint: UIColor) -> UIColor {
         LunaSurfacePalette.blended(
-            LunaSurfacePalette.baseColor(for: surface),
+            tint,
             toward: UtilURLRow.rowBackground,
             amount: 1 - tintStrength)
     }

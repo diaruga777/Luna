@@ -130,6 +130,11 @@ final class UtilCardContentViewController: CardContentViewController {
     /// headline waits invisible until the sweep's bloom has finished, then
     /// fades in together. Never true on any other appearance.
     private var awaitingIntroReveal = false
+    /// The first-run copy gets a short moment on its own. It then fades out as
+    /// the weekly slot moves into the completed-card position.
+    private var weeklyAppearanceDeferred = false
+    private var introHeadlineHasYieldedToWeekly = false
+    private var weeklyRevealWorkItem: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
 
     init(
@@ -193,6 +198,7 @@ final class UtilCardContentViewController: CardContentViewController {
     required init?(coder: NSCoder) { nil }
 
     deinit {
+        weeklyRevealWorkItem?.cancel()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
@@ -221,7 +227,9 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.isSaved = { [weak self] urlString in
             self?.savedURLStrings().contains(urlString) ?? false
         }
-        weeklyHost.isHidden = weeklyHost.isEmpty
+        weeklyAppearanceDeferred = animatesIntro
+        weeklyHost.setCycleVisible(!weeklyAppearanceDeferred)
+        weeklyHost.isHidden = weeklyHost.isEmpty || weeklyAppearanceDeferred
 
         // The setup block belongs to BOTH variants: the two system lessons are
         // first-run business, but the email nudge only becomes due once there
@@ -293,7 +301,7 @@ final class UtilCardContentViewController: CardContentViewController {
     /// What waits behind the headline on the launch that animates it. The
     /// headline itself is not here — it is the thing being waited on.
     private var introRevealElements: [UIView] {
-        [weeklyHost, safariButton, saveSetupButton, orLabel, pasteRow]
+        [safariButton, saveSetupButton, orLabel, pasteRow]
             + (storageChooser.map { [$0] } ?? [])
     }
 
@@ -304,6 +312,7 @@ final class UtilCardContentViewController: CardContentViewController {
         awaitingIntroReveal = false
         if UIAccessibility.isReduceMotionEnabled {
             for element in introRevealElements { element.alpha = 1 }
+            scheduleWeeklyAppearance()
             return
         }
         UIView.animate(
@@ -312,6 +321,53 @@ final class UtilCardContentViewController: CardContentViewController {
             options: [.curveEaseOut, .beginFromCurrentState]
         ) {
             for element in self.introRevealElements { element.alpha = 1 }
+        } completion: { _ in
+            self.scheduleWeeklyAppearance()
+        }
+    }
+
+    /// The headline has landed. Three seconds later it yields to the weekly
+    /// row, which fades into the exact location it uses after onboarding.
+    private func scheduleWeeklyAppearance() {
+        guard weeklyAppearanceDeferred, weeklyRevealWorkItem == nil else { return }
+        let workItem = DispatchWorkItem { [weak self] in self?.revealWeeklyAfterIntro() }
+        weeklyRevealWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + OnboardingAnimationClock.delay(3), execute: workItem)
+    }
+
+    private func revealWeeklyAfterIntro() {
+        guard weeklyAppearanceDeferred else { return }
+        weeklyRevealWorkItem = nil
+        weeklyAppearanceDeferred = false
+        introHeadlineHasYieldedToWeekly = true
+        let hasWeekly = !weeklyHost.isEmpty
+        weeklyHost.isHidden = !hasWeekly
+        weeklyHost.alpha = hasWeekly ? 0 : 1
+        view.setNeedsLayout()
+        guard let headline else {
+            weeklyHost.setCycleVisible(true)
+            return
+        }
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            headline.isHidden = true
+            view.layoutIfNeeded()
+            weeklyHost.alpha = 1
+            weeklyHost.setCycleVisible(true)
+            return
+        }
+        UIView.animate(
+            withDuration: 0.38,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            headline.alpha = 0
+            self.view.layoutIfNeeded()
+            self.weeklyHost.alpha = 1
+        } completion: { _ in
+            headline.isHidden = true
+            headline.alpha = 1
+            self.weeklyHost.setCycleVisible(true)
         }
     }
 
@@ -322,10 +378,10 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyHost.reload(animated: !UIAccessibility.isReduceMotionEnabled)
         let shouldHide = weeklyHost.isEmpty
         guard wasHidden != shouldHide else { return }
-        if awaitingIntroReveal {
+        if awaitingIntroReveal || weeklyAppearanceDeferred {
             // The headline is still speaking. Take the slot (or give it up)
             // silently — the row's alpha belongs to the intro reveal.
-            weeklyHost.isHidden = shouldHide
+            weeklyHost.isHidden = weeklyAppearanceDeferred || shouldHide
             view.setNeedsLayout()
             return
         }
@@ -423,7 +479,7 @@ final class UtilCardContentViewController: CardContentViewController {
             setupBlockTop = top
         }
 
-        if let headline {
+        if let headline, !introHeadlineHasYieldedToWeekly {
             headline.frame = CGRect(
                 x: inset,
                 y: (view.bounds.height * UtilCardLayout.headlineTopRatio).rounded(),
@@ -481,8 +537,6 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         weeklyHost.cardDidBecomeCentered()
-        setupTextCycler?.setInWindow(true)
-        setupTextCycler?.setCentered(true)
         guard let headline, !didSettleHeadline else { return }
         didSettleHeadline = true
         view.layoutIfNeeded()
@@ -511,8 +565,7 @@ final class UtilCardContentViewController: CardContentViewController {
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         weeklyHost.cardDidLeaveCenter()
-        setupTextCycler?.setCentered(false)
-        setupTextCycler?.setInWindow(false)
+        setupTextCycler?.reset()
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
@@ -587,6 +640,7 @@ final class UtilCardContentViewController: CardContentViewController {
                 safariButton: safariButton,
                 shortcutButton: saveSetupButton,
                 apps: LunaApp.onboardingRankedSiblings)
+            weeklyHost.onCycle = { [weak self] in self?.setupTextCycler?.advance() }
         }
     }
 
@@ -644,8 +698,14 @@ final class UtilCardContentViewController: CardContentViewController {
         if let image { button.configuration?.image = image }
         button.configuration?.baseBackgroundColor =
             LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
-        button.configuration?.titleLineBreakMode = .byWordWrapping
-        button.titleLabel?.numberOfLines = 2
+        button.configuration?.titleLineBreakMode = .byTruncatingTail
+        button.configuration?.contentInsets = NSDirectionalEdgeInsets(
+            top: 13, leading: 20, bottom: 13, trailing: 20)
+        var attributes = AttributeContainer()
+        attributes.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.configuration?.attributedTitle = AttributedString(title, attributes: attributes)
+        button.contentHorizontalAlignment = .leading
+        button.titleLabel?.numberOfLines = 1
         button.accessibilityLabel = title
         button.addTarget(self, action: action, for: .touchUpInside)
     }
@@ -825,10 +885,10 @@ final class UtilURLRow: UIControl {
     /// The wash the weekly row wears over the shared black. Low enough that the
     /// row is still a black card in waiting, high enough to separate it from the
     /// history rows beneath at a glance.
-    static let weeklyWashAlpha: CGFloat = 0.13
+    static let weeklyWashAlpha: CGFloat = 0.10
     /// The weekly rim's tint. The neutral rim is white at 0.14, so the palette
     /// goes on at a comparable weight rather than as a saturated outline.
-    static let weeklyRimAlpha: CGFloat = 0.42
+    static let weeklyRimAlpha: CGFloat = 0.30
 
     private let style: Style
     /// Present on the weekly row only, beneath every other subview.
@@ -843,6 +903,7 @@ final class UtilURLRow: UIControl {
     private let weeklyRibbon: WeeklyRibbonView?
     private let border = UtilURLRowGlassBorder()
     private var previewKind: RecentURLPreview.Kind?
+    private var weeklyTint = LunaSurfacePalette.baseColor
     private(set) var isShownAsSaved = false
     var onTap: (() -> Void)?
 
@@ -887,12 +948,9 @@ final class UtilURLRow: UIControl {
         savedOverlay.addSubview(savedCheckmark)
 
         if style == .saveOfTheWeek {
-            wash.backgroundColor = LunaSurfacePalette.baseColor
-                .withAlphaComponent(Self.weeklyWashAlpha)
+            applyWeeklyTint(weeklyTint)
             wash.isUserInteractionEnabled = false
             addSubview(wash)
-            border.rimTint = LunaSurfacePalette.baseColor
-                .withAlphaComponent(Self.weeklyRimAlpha)
         }
         addSubview(thumbnail)
         addSubview(savedOverlay)
@@ -918,7 +976,12 @@ final class UtilURLRow: UIControl {
     ///   app and per age tier (`WeeklySaveLabels`). It goes in the corner flag,
     ///   which is why the subtitle is the host and nothing else — the phrase used
     ///   to sit beside it and truncate it. Ignored by history rows.
-    func configure(_ preview: RecentURLPreview, weeklyLabel: String? = nil) {
+    func configure(
+        _ preview: RecentURLPreview,
+        weeklyLabel: String? = nil,
+        weeklyTint: UIColor? = nil
+    ) {
+        if let weeklyTint { applyWeeklyTint(weeklyTint) }
         previewKind = preview.kind
         thumbnail.image = preview.image ?? UIImage(
             systemName: preview.kind == .media ? "play.rectangle.fill"
@@ -933,6 +996,13 @@ final class UtilURLRow: UIControl {
         accessibilityLabel = [weeklyRibbon?.text, titleLabel.text, subtitleLabel.text]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    private func applyWeeklyTint(_ tint: UIColor) {
+        weeklyTint = tint
+        wash.backgroundColor = tint.withAlphaComponent(Self.weeklyWashAlpha)
+        border.rimTint = tint.withAlphaComponent(Self.weeklyRimAlpha)
+        weeklyRibbon?.setTint(tint)
     }
 
     /// How far the row's CONTENT trails its shell during a cycle slide. The
@@ -958,7 +1028,7 @@ final class UtilURLRow: UIControl {
         var baseRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
         var washRGBA = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
         guard base.getRed(&baseRGBA.r, green: &baseRGBA.g, blue: &baseRGBA.b, alpha: &baseRGBA.a),
-              LunaSurfacePalette.baseColor.getRed(
+              weeklyTint.getRed(
                 &washRGBA.r, green: &washRGBA.g, blue: &washRGBA.b, alpha: &washRGBA.a)
         else { return base }
         let wash = Self.weeklyWashAlpha

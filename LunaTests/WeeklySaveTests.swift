@@ -422,6 +422,43 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertFalse(host.rows[1].isHidden, "The neighbour is on screen after a tick")
     }
 
+    func testANilCentralTurnLeavesNoVisibleCardBehind() {
+        seed(.article, "https://a.example/1")
+        let host = makeHost(app: .luna)
+        host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
+        window(host)
+
+        host.advance(forward: true, velocity: 0)
+
+        XCTAssertFalse(host.rows[1].isHidden)
+        XCTAssertEqual(host.rows[1].alpha, 0, "A missing kind must not draw a blank row shell")
+    }
+
+    func testCentralRowsUseTheTintOfTheAppThatOwnsEachKind() throws {
+        seed(.article, "https://a.example/1")
+        seed(.media, "https://b.example/2")
+        seed(.product, "https://c.example/3")
+        let host = makeHost(app: .luna)
+        host.frame = CGRect(x: 0, y: 0, width: 310, height: 82)
+        window(host)
+
+        let mediaArtwork = try XCTUnwrap(
+            host.rows[1].makeUtilCardSaveTransitionArtwork(in: host))
+        let productArtwork = try XCTUnwrap(
+            host.rows[2].makeUtilCardSaveTransitionArtwork(in: host))
+        let media = try XCTUnwrap(mediaArtwork.rimTint)
+        let product = try XCTUnwrap(productArtwork.rimTint)
+        let softOrange = LunaSurfacePalette.blended(
+            LunaSurfacePalette.baseColor(for: .downloader), toward: .white, amount: 0.18)
+            .withAlphaComponent(UtilURLRow.weeklyRimAlpha)
+        let softGreen = LunaSurfacePalette.blended(
+            LunaSurfacePalette.baseColor(for: .priceTracker), toward: .white, amount: 0.18)
+            .withAlphaComponent(UtilURLRow.weeklyRimAlpha)
+
+        XCTAssertEqual(media, softOrange)
+        XCTAssertEqual(product, softGreen)
+    }
+
     func testAManualGestureLatchesAutoAdvanceOffUntilTheCardLeavesOrTheAppReturns() {
         let pacer = WeeklyCyclePacer(scheduler: { _, _ in {} })
         pacer.liveKindCount = 2
@@ -464,6 +501,19 @@ final class WeeklySaveTests: XCTestCase {
 
         pacer.isUserTouching = true
         XCTAssertFalse(pacer.canRun)
+    }
+
+    func testADeferredWeeklyRevealSuppressesThePacerUntilItIsVisible() {
+        let pacer = WeeklyCyclePacer(scheduler: { _, _ in {} })
+        pacer.liveKindCount = 3
+        pacer.isInWindow = true
+        pacer.isCentered = true
+        XCTAssertTrue(pacer.canRun)
+
+        pacer.isCycleVisible = false
+        XCTAssertFalse(pacer.canRun)
+        pacer.isCycleVisible = true
+        XCTAssertTrue(pacer.canRun)
     }
 
     /// A single-kind app never cycles, so a faceted app's host is inert.

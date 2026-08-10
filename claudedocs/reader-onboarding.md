@@ -36,8 +36,9 @@ save at index one; only an empty store starts on the util card.
 On the central util card, the Safari and shortcut labels cycle through the
 Reader, Downloader, and Price Tracker labels in that same rank order. The
 buttons themselves stay fixed; only their clipped labels translate and fade.
-The central Save of the Week row fetches and cycles those three kinds in rank
-order, including blank turns for kinds whose current pick is nil.
+The labels and Save of the Week use one four-second clock, so their changes
+start together. The central row cycles those three kinds in rank order; a
+missing kind is a fully empty turn, not a blank card.
 
 ## Launch artwork and reveal
 
@@ -112,6 +113,13 @@ each state centred on its own.
 brings the initial sentence in whole; beat two blooms the arriving fragments in
 and the departing ones out, in the same turn, and never touches the anchor. Two
 consequences worth knowing before changing copy or layout:
+
+On the launch that owns this reveal, the setup controls fade in after the final
+headline beat as usual, but the weekly row stays hidden for a further three
+seconds. The headline then fades away, the weekly row fades into the normal
+completed-card seat (`weeklyTopRatio`), and only then is central Luna's shared
+weekly/button cycle enabled. This keeps the opening sentence legible and avoids
+movement behind the weekly row's entrance.
 
 - **The FINAL sentence is what is centred.** The initial one is typeset wherever
   the anchor's final position puts it, so it lands left of centre when the copy

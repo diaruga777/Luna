@@ -77,9 +77,13 @@ appearing or vanishing is a fade plus a reflow — and an appearing row fades in
 IN PLACE: its host is laid out before the animation starts, so only the card's
 other elements animate their reflow while the row itself comes up at full size
 rather than growing into its slot. In the central Luna app, which
-is the only one with more than one kind, the row cycles between them every two
+is the only one with more than one kind, the row cycles between them every four
 seconds on an interruptible spring slide — swipe to take it over, and it stays
-manual until the card leaves centre or the app returns from the background.
+manual until the card leaves centre or the app returns from the background. A
+missing central kind still receives its turn, but its row is fully transparent:
+there is no blank card shell, rim, or hit target. Each cycling kind uses its
+own softened app tint (Reader blue, Downloader orange, Price Tracker green),
+even while running inside central Luna.
 
 If the weekly URL is already in the store, the row is shown dimmed with a
 translucent checkmark over its thumbnail — the favicon still reads through it —
@@ -126,6 +130,9 @@ order — which is also the order they read top to bottom — are:
 **At most TWO.** A third leaves the card no room for the weekly row and the
 recent URLs, and email — a nudge, not a requirement — is the one that loses.
 So it effectively appears only once one of the other two has stopped asking.
+Every button keeps its icon at a fixed leading inset; the smaller, single-line
+label begins immediately after it, so changing labels in central Luna never
+shifts either icon.
 
 **There is no share-sheet save lesson.** Luna's only save lesson is the Action
 Button shortcut; a device that cannot run it (`OnboardingSaveSetupMode
@@ -156,9 +163,10 @@ It makes the safe default explicit: fresh installs store downloads **in Luna**
 and do not ask for Photos access unless the person selects it.
 
 - **A subtle selector outline, not a fourth action button.** The sentence and
-  current option are horizontally centred as one control; the larger tappable
-  *app icon + “in Luna”/“in Photos”* run has a quiet outline and large, inset
-  up/down carets. The pill is always sized for the longer *in Photos* option,
+  current option are horizontally centred as one control; inside the pill, the
+  *app icon + “in Luna”/“in Photos” + indicator* group is centred as one unit.
+  Its icon has a subtle squircle rim, and its up/down carets sit directly after
+  the label. The pill is always sized for the longer *in Photos* option,
   so neither it nor the sentence shifts when the selection changes.
   The icons are the real artwork at the text's own height — the running app's
   own icon (`LunaAppIconImage`) and the Photos pinwheel Luna draws
@@ -239,14 +247,16 @@ back to at any other time the sentence simply stands finished
 (`OnboardingIntroHeadlineView.showFinishedState()`), so nothing re-animates on a
 page.
 
-**On that launch, the headline speaks first.** Everything else on the card —
-weekly row, both setup actions, the “or”, the paste row — waits at alpha 0
-until the second beat's bloom has finished, then fades in together, in place
-(0.38s ease-out, 0.16s after the sweep's completion — the standalone intro
-card's own beat). A weekly value arriving mid-sweep takes its slot silently
-and joins the group fade rather than fading in on its own; Reduce Motion makes
-the reveal instant. Any appearance that does NOT animate the sweep (paged back
-to, onboarding already complete) shows everything immediately.
+**On that launch, the headline speaks first.** The setup actions, “or”, paste
+row, and storage chooser wait at alpha 0 until the second beat's bloom has
+finished, then fade in together, in place (0.38s ease-out, 0.16s after the
+sweep's completion — the standalone intro card's own beat). The weekly row
+waits separately: three seconds after that control reveal, the headline fades
+away and the weekly row fades into the completed card's `weeklyTopRatio` seat.
+A weekly value arriving during either wait remains hidden until that handoff;
+only then can central Luna start cycling it. Reduce Motion makes each reveal
+instant. Any appearance that does NOT animate the sweep (paged back to,
+onboarding already complete) shows everything immediately.
 
 **The corona is part of this state too.** While onboarding is unanswered the
 host keeps the launch splash's `EclipseCoronaView` behind the deck at the resting

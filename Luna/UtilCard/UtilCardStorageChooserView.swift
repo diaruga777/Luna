@@ -77,6 +77,8 @@ final class UtilCardStorageChooserView: UIView {
         selectorIcon.contentMode = .scaleAspectFill
         selectorIcon.clipsToBounds = true
         selectorIcon.layer.cornerCurve = .continuous
+        selectorIcon.layer.borderWidth = 1
+        selectorIcon.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
         selectorLabel.font = Self.optionFont
         selectorLabel.textColor = LunaColors.primaryText
         selector.layer.cornerRadius = 10
@@ -144,10 +146,13 @@ final class UtilCardStorageChooserView: UIView {
             y: ((bounds.height - selectorHeight) / 2).rounded(),
             width: selectorWidth,
             height: selectorHeight)
-        layoutSelectorContents(in: selector, icon: selectorIcon, label: selectorLabel)
+        layoutSelectorContents(
+            in: selector,
+            icon: selectorIcon,
+            label: selectorLabel,
+            indicatorWidth: Self.selectorToChevron + Self.chevronWidth)
         chevron.frame = CGRect(
-            x: ((selectorLabel.frame.maxX + selector.bounds.width
-                - Self.chevronWidth) / 2).rounded(),
+            x: (selectorLabel.frame.maxX + Self.selectorToChevron).rounded(),
             y: ((selectorHeight - Self.chevronWidth) / 2).rounded(),
             width: Self.chevronWidth,
             height: Self.chevronWidth)
@@ -163,19 +168,26 @@ final class UtilCardStorageChooserView: UIView {
         in container: UIView,
         icon: UIImageView,
         label: UILabel,
-        trailingReserve: CGFloat = 0
+        trailingReserve: CGFloat = 0,
+        indicatorWidth: CGFloat = 0
     ) {
         let side = Self.iconSide
+        let naturalWidth = label.sizeThatFits(
+            CGSize(width: container.bounds.width, height: container.bounds.height)
+        ).width.rounded(.up)
+        let contentWidth = side + Self.iconToTitle + naturalWidth + indicatorWidth
+        let leading = max(
+            Self.selectorHorizontalInset,
+            ((container.bounds.width - contentWidth) / 2).rounded())
         icon.frame = CGRect(
-            x: Self.selectorHorizontalInset,
+            x: leading,
             y: ((container.bounds.height - side) / 2).rounded(),
             width: side,
             height: side)
         icon.layer.cornerRadius = side * LunaAppIconImage.cornerRadiusRatio
+        icon.layer.borderWidth = 1
+        icon.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
         let labelX = icon.frame.maxX + Self.iconToTitle
-        let naturalWidth = label.sizeThatFits(
-            CGSize(width: container.bounds.width, height: container.bounds.height)
-        ).width.rounded(.up)
         label.frame = CGRect(
             x: labelX,
             y: 0,

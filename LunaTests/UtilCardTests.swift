@@ -205,9 +205,9 @@ final class UtilCardTests: XCTestCase {
         }
     }
 
-    /// A weekly value landing while the headline is still speaking takes its
-    /// slot silently and joins the group fade instead of fading in on its own.
-    func testAWeeklyValueArrivingMidSweepWaitsForTheGroupReveal() throws {
+    /// A weekly value landing while the headline is still speaking stays out of
+    /// sight until the headline has made room for the delayed weekly reveal.
+    func testAWeeklyValueArrivingMidSweepWaitsForTheDelayedWeeklyReveal() throws {
         let card = makeCard(showsOnboarding: true, animatesIntro: true)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 350, height: 620)
@@ -217,13 +217,8 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(host.isHidden)
 
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
-        let deadline = Date().addingTimeInterval(2)
-        while host.isHidden, Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-        }
-
-        XCTAssertFalse(host.isHidden, "The slot is claimed while invisible")
-        XCTAssertEqual(host.alpha, 0, "Its alpha belongs to the group reveal")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertTrue(host.isHidden, "The weekly row waits for the headline exit")
     }
 
     // MARK: - Layout
@@ -738,6 +733,30 @@ final class UtilCardTests: XCTestCase {
             XCTAssertNotNil(storageChooser(in: card))
             XCTAssertEqual(actionButtons(in: card).count, 2)
         }
+    }
+
+    func testStorageSelectorCentersItsIconTextAndIndicatorWithASquircleRim() throws {
+        let card = makeCard(
+            showsOnboarding: false,
+            storageChoice: FakeDownloadStorageChoice())
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        let selector = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.storage.selector") as? UIControl)
+        let images = selector.subviews.compactMap { $0 as? UIImageView }
+        let icon = try XCTUnwrap(images.first)
+        let indicator = try XCTUnwrap(images.last)
+        XCTAssertEqual(
+            (icon.frame.minX + indicator.frame.maxX) / 2,
+            selector.bounds.midX,
+            accuracy: 1)
+        XCTAssertEqual(icon.layer.borderWidth, 1)
+        XCTAssertEqual(
+            icon.layer.cornerRadius,
+            icon.bounds.height * LunaAppIconImage.cornerRadiusRatio,
+            accuracy: 0.01)
     }
 
     func testStorageLineIsAbsentWithoutADownloadingAppOrOnceItIsAnswered() {

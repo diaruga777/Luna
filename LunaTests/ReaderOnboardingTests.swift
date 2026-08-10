@@ -744,16 +744,13 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(price.finalSuffix, "")
 
         // Both sides at once, and the anchor carries its trailing space.
-        let downloaderCopy = OnboardingStrings.introCopy(for: .downloader)
-        XCTAssertEqual(downloaderCopy.initialText, "Sign up to watch.")
-        XCTAssertEqual(downloaderCopy.finalText, "No sign up needed.")
-        let downloader = OnboardingHeadlineTransition(
-            from: downloaderCopy.initialText, to: downloaderCopy.finalText)
-        XCTAssertEqual(downloader.shared, "ign up ")
-        XCTAssertEqual(downloader.initialPrefix, "S")
-        XCTAssertEqual(downloader.initialSuffix, "to watch.")
-        XCTAssertEqual(downloader.finalPrefix, "No s")
-        XCTAssertEqual(downloader.finalSuffix, "needed.")
+        let bothSides = OnboardingHeadlineTransition(
+            from: "Sign up to watch.", to: "No sign up needed.")
+        XCTAssertEqual(bothSides.shared, "ign up ")
+        XCTAssertEqual(bothSides.initialPrefix, "S")
+        XCTAssertEqual(bothSides.initialSuffix, "to watch.")
+        XCTAssertEqual(bothSides.finalPrefix, "No s")
+        XCTAssertEqual(bothSides.finalSuffix, "needed.")
 
         // The anchor is a run, not a word: it may start mid-word on both sides.
         let luna = OnboardingHeadlineTransition(
@@ -764,7 +761,7 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(luna.finalPrefix, "One")
         XCTAssertEqual(luna.finalSuffix, ".")
 
-        for transition in [reader, price, downloader, luna] {
+        for transition in [reader, price, bothSides, luna] {
             XCTAssertFalse(transition.isFullReplacement)
             XCTAssertEqual(
                 transition.initialText,
@@ -798,14 +795,27 @@ final class ReaderOnboardingTests: XCTestCase {
     func testEveryAppsHeadlineHoldsSomethingStillAcrossItsTwoBeats() {
         for app in LunaApp.allCases {
             let copy = OnboardingStrings.introCopy(for: app)
-            let transition = OnboardingHeadlineTransition(
-                from: copy.initialText, to: copy.finalText)
-            XCTAssertFalse(
-                transition.isFullReplacement,
-                "\(app)'s headline animates a difference, not a replacement")
-            XCTAssertFalse(
-                transition.arrivingFragments.isEmpty
-                    && transition.departingFragments.isEmpty,
+            var hasSomethingToSay = false
+            for line in copy.lines {
+                let transition = OnboardingHeadlineTransition(
+                    from: line.initialText, to: line.finalText)
+                if line.initialText.isEmpty {
+                    // A line the first beat never says has nothing to hold
+                    // still — it arrives whole under its own front.
+                    XCTAssertTrue(
+                        transition.isFullReplacement,
+                        "\(app)'s added line is an arrival, not a diff")
+                } else {
+                    XCTAssertFalse(
+                        transition.isFullReplacement,
+                        "\(app)'s headline animates a difference, not a replacement")
+                }
+                hasSomethingToSay = hasSomethingToSay
+                    || !transition.arrivingFragments.isEmpty
+                    || !transition.departingFragments.isEmpty
+            }
+            XCTAssertTrue(
+                hasSomethingToSay,
                 "\(app)'s second beat has to have something to say")
         }
     }
@@ -916,8 +926,10 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroAnimatesBothSidesOfTheAnchorInOneBeat() throws {
+        // The central app's copy, which is the shipped headline with fragments
+        // on both sides of its anchor in both states.
         let headline = OnboardingIntroHeadlineView(
-            copy: OnboardingStrings.introCopy(for: .downloader))
+            copy: OnboardingStrings.introCopy(for: .luna))
         headline.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
         headline.setNeedsLayout()
         headline.layoutIfNeeded()
@@ -972,7 +984,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroShrinksItsCopyToFitANarrowCardWithoutLosingTheAnchor() throws {
-        let copy = OnboardingStrings.introCopy(for: .downloader)
+        let copy = OnboardingStrings.introCopy(for: .luna)
         let roomy = OnboardingIntroHeadlineView(copy: copy)
         roomy.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
         roomy.setNeedsLayout()
@@ -1004,22 +1016,106 @@ final class ReaderOnboardingTests: XCTestCase {
                 "\(text) still overflows the card")
         }
 
-        // Exercise compact through wide onboarding cards. The 190-point
-        // fixture above is deliberately narrower than any supported screen.
+        // Every app's shipped copy, on compact through wide onboarding cards.
+        // The 190-point fixture above is deliberately narrower than any
+        // supported screen; these are the real ones, and a multi-line headline
+        // has to hold every one of its lines inside them.
         for cardWidth: CGFloat in [272, 306, 382] {
-            let headline = OnboardingIntroHeadlineView(copy: copy)
-            headline.frame = CGRect(x: 0, y: 0, width: cardWidth, height: 44)
-            headline.setNeedsLayout()
-            headline.layoutIfNeeded()
-            for fragment in headline.fragments.all {
-                XCTAssertGreaterThanOrEqual(
-                    fragment.frame.minX, -0.5,
-                    "\(cardWidth)-point card pushes copy past its leading edge")
-                XCTAssertLessThanOrEqual(
-                    fragment.frame.maxX, cardWidth + 0.5,
-                    "\(cardWidth)-point card pushes copy past its trailing edge")
+            for app in LunaApp.allCases {
+                let headline = OnboardingIntroHeadlineView(
+                    copy: OnboardingStrings.introCopy(for: app))
+                headline.frame = CGRect(
+                    x: 0, y: 0, width: cardWidth, height: headline.height)
+                headline.setNeedsLayout()
+                headline.layoutIfNeeded()
+                for fragment in headline.allFragments {
+                    XCTAssertGreaterThanOrEqual(
+                        fragment.frame.minX, -0.5,
+                        "\(app) on a \(cardWidth)-point card pushes copy past "
+                            + "its leading edge")
+                    XCTAssertLessThanOrEqual(
+                        fragment.frame.maxX, cardWidth + 0.5,
+                        "\(app) on a \(cardWidth)-point card pushes copy past "
+                            + "its trailing edge")
+                }
             }
         }
+    }
+
+    // MARK: - A headline whose second beat adds a line
+
+    /// The Downloader's headline is two lines, and the second beat is only the
+    /// second of them: the first line says the same thing in both states, so it
+    /// neither re-animates nor moves, and the line beneath it — absent from the
+    /// initial copy entirely — arrives under its own front into room that was
+    /// reserved for it from the start.
+    func testASecondHeadlineLineArrivesWithoutDisturbingTheFirst() throws {
+        let copy = OnboardingStrings.introCopy(for: .downloader)
+        XCTAssertEqual(copy.initialText, "Watch and download.")
+        XCTAssertEqual(copy.finalText, "Watch and download.\nWithout signing in.")
+
+        let headline = OnboardingIntroHeadlineView(copy: copy)
+        XCTAssertEqual(headline.lines.count, 2)
+        XCTAssertEqual(
+            headline.height, OnboardingIntroHeadlineView.lineHeight * 2,
+            "The second line's room is reserved before it has anything on it")
+        headline.frame = CGRect(x: 0, y: 0, width: 306, height: headline.height)
+        headline.setNeedsLayout()
+        headline.layoutIfNeeded()
+
+        // The first line is the whole sentence, anchored: nothing of it leaves
+        // and nothing joins it.
+        let first = headline.lines[0]
+        let firstLine = try XCTUnwrap(first.fragments.shared)
+        XCTAssertTrue(first.fragments.departing.isEmpty)
+        XCTAssertTrue(first.fragments.arriving.isEmpty)
+
+        // The second is pure arrival, one line lower.
+        let second = headline.lines[1]
+        let secondLine = try XCTUnwrap(second.fragments.finalPrefix)
+        XCTAssertTrue(second.transition.isFullReplacement)
+        XCTAssertEqual(second.fragments.initialSentence.count, 0)
+        XCTAssertEqual(
+            secondLine.frame.minY,
+            firstLine.frame.minY + OnboardingIntroHeadlineView.lineHeight,
+            accuracy: 0.01)
+
+        let firstBeat = expectation(description: "the first line arrives")
+        headline.revealFirstBeat(duration: 0.02) { firstBeat.fulfill() }
+        wait(for: [firstBeat], timeout: 5)
+        XCTAssertTrue(firstLine.isFullyRevealed)
+        XCTAssertFalse(secondLine.isFullyRevealed)
+        XCTAssertEqual(headline.accessibilityLabel, "Watch and download.")
+
+        let firstFrame = firstLine.frame
+        let secondBeat = expectation(description: "the second line arrives")
+        headline.revealSecondBeat(duration: 0.02) { secondBeat.fulfill() }
+        wait(for: [secondBeat], timeout: 5)
+        XCTAssertTrue(secondLine.isFullyRevealed)
+        XCTAssertTrue(
+            firstLine.isFullyRevealed, "The first line is not touched again")
+        XCTAssertFalse(firstLine.isFullyConcealed)
+        XCTAssertEqual(firstLine.frame, firstFrame, "…and it does not reflow")
+        XCTAssertEqual(headline.accessibilityLabel, headline.finalText)
+        XCTAssertTrue(headline.isAccessibilityElement)
+    }
+
+    /// Paged back to, a two-line headline stands finished — both lines, with no
+    /// sweep left to play.
+    func testASecondHeadlineLineStandsFinishedWhenTheSweepIsNotThisAppearances() throws {
+        let headline = OnboardingIntroHeadlineView(
+            copy: OnboardingStrings.introCopy(for: .downloader))
+        headline.showFinishedState()
+        headline.frame = CGRect(x: 0, y: 0, width: 306, height: headline.height)
+        headline.setNeedsLayout()
+        headline.layoutIfNeeded()
+
+        for fragment in headline.allFragments {
+            XCTAssertTrue(
+                fragment.isFullyRevealed,
+                "Both lines of the finished sentence are already on screen")
+        }
+        XCTAssertEqual(headline.accessibilityLabel, headline.finalText)
     }
 
     /// The text width the headline transition measures against, with the same

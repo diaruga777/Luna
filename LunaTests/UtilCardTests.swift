@@ -164,9 +164,8 @@ final class UtilCardTests: XCTestCase {
 
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let fragments = headline.fragments
-        XCTAssertFalse(fragments.all.isEmpty)
-        for line in fragments.all { XCTAssertFalse(line.isFullyRevealed) }
+        XCTAssertFalse(headline.allFragments.isEmpty)
+        for line in headline.allFragments { XCTAssertFalse(line.isFullyRevealed) }
     }
 
     // MARK: - The headline speaks first

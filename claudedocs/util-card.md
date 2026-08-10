@@ -225,7 +225,12 @@ host is constructed. The card shows, top to bottom:
 
 The headline's top is `UtilCardLayout.headlineTopRatio` (0.28) of the card — a
 little above the exact third the standalone onboarding root used, not up on the
-card's shoulder — and the weekly row hangs below it. The setup actions are
+card's shoulder — and the weekly row hangs below it. It is that TOP that is
+fixed, not the headline's height: the Downloader's headline is two lines
+(`claudedocs/reader-onboarding.md`, "Surface headlines"), so it is twice as tall
+from the moment it is built and the weekly row hangs that much lower. The second
+line's room is reserved before it has anything on it, so the line above never
+moves when the second beat brings it in. The setup actions are
 anchored UPWARD from the paste row (as they were on the standalone intro), not
 off the headline, and the “or” sits in the seam between the last action and the
 paste field.
@@ -246,7 +251,8 @@ appearance is the launch's own — the deck is empty (so the util card is the
 launch selection) and `AppLaunchTransition.hasFinished` is still false. Paged
 back to at any other time the sentence simply stands finished
 (`OnboardingIntroHeadlineView.showFinishedState()`), so nothing re-animates on a
-page.
+page — including a two-line headline, whose second line is already there rather
+than waiting to arrive.
 
 **On that launch, the headline speaks first.** The setup actions, “or”, paste
 row, and storage chooser wait at alpha 0 until the second beat's bloom has

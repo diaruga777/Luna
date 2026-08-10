@@ -108,11 +108,15 @@ stable Xcode 26.2.
 > carry a chrome-free "Store downloads *in Luna* / *in Photos*" line in BOTH
 > states, which stands the recents down while present and retires from the next
 > launch once the question is answered anywhere (the card or Settings →
-> Downloads, both through `MediaStorageSettings.choose`). It exists because
-> Photos is the shipped default and needs a permission nobody has been asked for,
-> so choosing Photos there ASKS first and saves only on a yes — a refusal reverts
-> to Luna, and a second attempt opens Luna's own page in Settings, since iOS
-> prompts once. The card names no media symbol: `DownloadStorageChoice.installed`
+> Downloads, both through `MediaStorageSettings.choose`). **In Luna is the
+> shipped default** — a new install keeps downloads in the app and never deletes
+> them (`AutoDownloadSettings.autoSaveDownloadsToPhotos` defaults to false, and
+> an absent retention setting means `.never`, so `MediaStorageSettings.option`
+> resolves to `.deleteAfter(.never)`). The line exists because the OTHER answer,
+> Photos, needs a permission nobody has been asked for and would otherwise be
+> discovered only when a download silently did not arrive: choosing Photos there
+> ASKS first and saves only on a yes — a refusal reverts to Luna, and a second
+> attempt opens Luna's own page in Settings, since iOS prompts once. The card names no media symbol: `DownloadStorageChoice.installed`
 > (LunaModels) is the seam and `MediaUtilCardStorageChoice.install()` fills it
 > from the two media `KindWiring`s.
 > Paste remains in both states; the Save of the Week row

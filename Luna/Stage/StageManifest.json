@@ -234,6 +234,14 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "onboarding.messages-lesson",
+      "screen": "Messages lesson",
+      "variant": "full demonstration",
+      "summary": "The save conversation from its first bubble through the Action Button ripple, the Dynamic Island shortcut run, and the real share surface resolving in the sheet.",
+      "kind": "shared",
+      "apps": ["luna", "reader", "downloader", "pricetracker"]
+    },
+    {
       "id": "onboarding.safari-lesson",
       "screen": "Safari lesson",
       "variant": "full demonstration",

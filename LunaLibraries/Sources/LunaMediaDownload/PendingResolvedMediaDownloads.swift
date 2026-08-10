@@ -92,11 +92,12 @@ public enum PendingResolvedMediaDownloads {
             await handOffToSourceIfNeeded(
                 records: records, returningToSource: returningToSource,
                 handledSomething: handledSomething)
-            // The user is already on their way back to Safari; the metadata half
-            // of those saves is this app's own business now and runs here, under
-            // a background lease, rather than waiting for someone to open the app
-            // again (`BackgroundIngestCompletion` in LunaReadingList — this
-            // module cannot name it, and does not need to).
+            // Whatever the records could not answer for themselves is still
+            // owed. The user is already on their way back to Safari, so it runs
+            // HERE, under a background lease, rather than waiting for someone to
+            // open the app again (`BackgroundIngestCompletion` in
+            // LunaReadingList — this module cannot name it, and does not need
+            // to; an empty queue makes this a no-op).
             PendingIngestCompletions.shared.requestRun()
         }
     }

@@ -13,11 +13,18 @@ import LunaStorage
 /// The one surface that needs this today is Safari's Download hand-off
 /// (`claudedocs/safari-extension.md`): that launch persists the save, starts the
 /// transfer, requests the Live Activity and bounces straight back to the page.
-/// The row it left behind is `.pending` — no title, no thumbnail, no kind — and
-/// the ordinary launch/foreground `ingestAllPending` sweep would only finish it
-/// the next time somebody happened to open the app. A deck full of blank rows
-/// waiting on a launch defeats the point of the hand-off, so the app finishes
-/// the metadata itself, after the bounce, under a background-execution lease.
+/// The row it leaves behind is `.pending` — no title, no kind — and the ordinary
+/// launch/foreground `ingestAllPending` sweep would only finish it the next time
+/// somebody happened to open the app. A deck full of blank rows waiting on a
+/// launch defeats the point of the hand-off, so the app finishes the metadata
+/// itself, after the bounce, under a background-execution lease.
+///
+/// This is the FALLBACK half of that story: normally the record itself carries
+/// the metadata (the appex resolved the post to render its player) and
+/// `PendingResolvedMediaDownloads.completeFromHandoff` finishes the row with no
+/// network at all, settling the debt before this ever runs. What reaches here is
+/// a record that could not answer for itself — an unfinished resolve, or a URL no
+/// platform rule recognizes.
 ///
 /// **What happens when the granted window expires mid-ingest.** The lease's
 /// expiry cancels the ingest task at the ONE point that is safe to stop at:
@@ -34,6 +41,9 @@ public enum BackgroundIngestCompletion {
     private static let lock = NSLock()
     private static var isRunning = false
     private static var observer: NSObjectProtocol?
+    /// 100ms polls, so 60 seconds — longer than any ingest that is going to
+    /// finish, short enough that a stuck one cannot hold the queue.
+    private static let maximumWaitForARunningIngest = 600
 
     /// Starts listening for owed work. Called once at launch by the app shell —
     /// BEFORE the `resolvedmedia` drain can post its request, so a cold hand-off
@@ -93,8 +103,13 @@ public enum BackgroundIngestCompletion {
         // The launch sweep may already be ingesting this row. Two passes over
         // one item is a no-op inside the ingestor, but a no-op returns
         // immediately and would leave the debt looking unfinished; wait for the
-        // pass that IS running instead.
+        // pass that IS running instead — bounded, because a run that never ends
+        // must not wedge the queue. Giving up here leaves the row owed, which is
+        // the correct answer for "someone else is still working on it".
+        var waited = 0
         while ingestor.isIngesting(owed.itemID) {
+            guard waited < Self.maximumWaitForARunningIngest else { return }
+            waited += 1
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         guard let item = store.item(withID: owed.itemID), item.state == .pending else {

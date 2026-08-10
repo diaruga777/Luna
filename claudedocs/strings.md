@@ -251,6 +251,74 @@ Two things stay in Swift and are not editable this way:
   and deliberately does not share its lookup — that one is copy and may be
   reworded, this one is a filename.
 
+## The build-level guarantee
+
+One source file, but a built app carries **eight or so copies of it**, each
+made by a different, independently-tracked copy task:
+
+| copy | who makes it |
+| --- | --- |
+| `LunaLibraries_LunaModels.bundle/en.lproj/Localizable.strings` | SwiftPM, from `.process("Resources")` on LunaModels — verbatim bytes |
+| the same bundle again inside every embedded `.appex`, App Clip and widget | each of those targets links LunaModels and embeds its own copy |
+| `<App>.app/en.lproj/Localizable.strings` | `CopyStringsFile`, from the resource reference `add_strings_to_app_bundles.rb` adds — converted to a binary plist, so it is NOT byte-identical to the source |
+
+Every one of those is an up-to-date decision the build system makes on its
+own, and **nothing about a stale one is visible from inside the app**: it
+reads as "my copy edit didn't take", which invites re-editing copy that was
+already right — or, worse, ships wording nobody wrote.
+
+That is not hypothetical. Measured on Xcode 26.2: with an app fully built, put
+an older table into `<App>.app/LunaLibraries_LunaModels.bundle/en.lproj/
+Localizable.strings` and build again — the embed copy is **not** re-run, and
+the build reports `** BUILD SUCCEEDED **` while the app carries the old table.
+The realistic way to get into that state is an **interrupted build**: the
+top-level `LunaLibraries_LunaModels.bundle` product is updated early, and a
+build killed after that leaves every copy nested inside the `.app` a version
+behind. A products directory holding an app that this scheme did not rebuild
+(all four apps share one `Build/Products` directory) is the other way.
+
+So every app target ends with a **`Verify bundled strings table`** build
+phase, which runs
+
+```sh
+scripts/check_bundled_strings.py <the source> "$TARGET_BUILD_DIR/$WRAPPER_NAME"
+```
+
+Every `Localizable.strings` anywhere under the `.app` must parse to the same
+key/value table as the source; a mismatch is an `error:` naming the file and
+the differing keys, and the build fails. Comments, ordering and storage format
+are not compared — a `.strings` file is an old-style plist and the app-root
+copies are binary plists, so both sides go through `plutil` and are compared as
+tables, which is what the app can actually read. Copies that are byte-identical
+to the source skip parsing entirely, so the whole check costs about 0.1s and it
+is deliberately **always out of date**: the thing it distrusts is exactly the
+incremental logic that would let it be skipped.
+
+Three things to know about it:
+
+- It is installed by **`scripts/add_strings_check_phase.rb`** — re-run after
+  adding an app target, the same way `add_strings_to_app_bundles.rb` is. Only
+  the four APPS get the phase; everything else that carries a copy is embedded
+  inside one of them, so walking the `.app` covers it.
+- **It only guarantees a build that ran to the END.** An interrupted build
+  never reaches its last phase, and that half-updated products directory is
+  exactly what a hand-run `simctl install` reaches for. So
+  `scripts/install_all_luna_apps.sh` runs the same check on each `.app`
+  immediately before installing it and refuses a stale one. If you install by
+  hand, run the checker by hand.
+- The unit-test bundle is **skipped** (`SKIPPED_SUFFIXES`): a plain
+  `xcodebuild build` does not rebuild `LunaTests.xctest`, so in a derived-data
+  path that has also run the suite it legitimately lags, and it is never
+  installed or shipped. The test build checks its own copies from the inside
+  instead — see `LocalizableStringsTests` below.
+
+`LocalizableStringsTests.testAppBundleCarriesTheSameTable` is NOT this
+guarantee and never was: it runs inside the test host, so it can only compare
+the app's copy against LunaModels' copy *in the build it is running in*, and it
+cannot see the source tree at all. Two copies made from the same stale input
+agree with each other perfectly. The build phase is the only thing that
+compares a built artifact to the file on disk.
+
 ## Info.plist strings
 
 There is no `InfoPlist.xcstrings`. There used to be three (`Luna/`, `LunaShare/`,

@@ -1563,6 +1563,7 @@
 				6ED0D1662C9D703BF6C0F4BA /* Resources */,
 				2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */,
 				3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */,
+				031920C1C9030BA614DE6540 /* Verify bundled strings table */,
 			);
 			buildRules = (
 			);
@@ -1824,6 +1825,7 @@
 				AA0500000000000000000001 /* Embed Foundation Extensions */,
 				AA9000000000000000000001 /* Re-sign embedded extensions (debug) */,
 				EDD571470A4EB4F098CFA40F /* Embed App Clips */,
+				6D2AE0E89BA259E1778A735B /* Verify bundled strings table */,
 			);
 			buildRules = (
 			);
@@ -2004,6 +2006,7 @@
 				9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */,
 				LDCL0000000000000000000F /* Embed App Clips */,
 				F2DB15EE1976B470D4B0D7AF /* Re-sign embedded extensions (debug) */,
+				F451617BE1BAC22B0C965BEE /* Verify bundled strings table */,
 			);
 			buildRules = (
 			);
@@ -2113,6 +2116,7 @@
 				561ACAB090D2992361240C02 /* Resources */,
 				B6EE3F30819F2C07D15E9FCE /* Embed Foundation Extensions */,
 				FD503C80F76BB3778192472C /* Re-sign embedded extensions (debug) */,
+				C1B13F30B9834CA674C351A7 /* Verify bundled strings table */,
 			);
 			buildRules = (
 			);
@@ -2476,6 +2480,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		031920C1C9030BA614DE6540 /* Verify bundled strings table */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings",
+				"$(SRCROOT)/scripts/check_bundled_strings.py",
+			);
+			name = "Verify bundled strings table";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+		};
 		3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -2495,6 +2520,27 @@
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
 		};
+		6D2AE0E89BA259E1778A735B /* Verify bundled strings table */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings",
+				"$(SRCROOT)/scripts/check_bundled_strings.py",
+			);
+			name = "Verify bundled strings table";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+		};
 		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -2509,6 +2555,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		C1B13F30B9834CA674C351A7 /* Verify bundled strings table */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings",
+				"$(SRCROOT)/scripts/check_bundled_strings.py",
+			);
+			name = "Verify bundled strings table";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		F20000000000000000000001 /* Update Safari extension branding */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2608,6 +2675,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		F451617BE1BAC22B0C965BEE /* Verify bundled strings table */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings",
+				"$(SRCROOT)/scripts/check_bundled_strings.py",
+			);
+			name = "Verify bundled strings table";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		FD503C80F76BB3778192472C /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;

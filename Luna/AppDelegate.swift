@@ -168,19 +168,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             }
         }
 
-        // Listen for saves a fast surface only had time to RESERVE — Safari's
-        // Download hand-off is the one that does that — so their metadata pass
-        // runs in the background instead of waiting for someone to open the app.
-        // Installed BEFORE `KindWiring.appDidLaunch()` below, which is where a
-        // cold hand-off launch drains its queue and asks for exactly this.
-        BackgroundIngestCompletion.install()
-
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         // Both are skipped in staged mode: the re-ingest would resolve the very
         // saves a stage froze mid-fetch, and the launch sweep would purge the
         // media a stage just seeded. This is what makes a staged screen HOLD.
         if !LunaStage.isActive {
+            // Listen for saves a fast surface only had time to RESERVE — Safari's
+            // Download hand-off is the one that does that — so their metadata
+            // runs in the background instead of waiting for someone to open the
+            // app. Installed BEFORE `KindWiring.appDidLaunch()` below, which is
+            // where a cold hand-off launch drains its queue and asks for exactly
+            // this.
+            BackgroundIngestCompletion.install()
             ReadingListIngestor.shared.ingestAllPending()
             // Settle (or finish) anything a previous hand-off left owed — the
             // sweep above may be doing the same rows, which the runner waits out

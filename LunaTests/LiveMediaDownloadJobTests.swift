@@ -159,7 +159,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         let tracked = Self.managerSource
             .components(separatedBy: "private func startTrackedBackgroundWork(").last?
             .components(separatedBy: "private func finishTrackedBackgroundWork(").first ?? ""
-        XCTAssertTrue(tracked.contains("MediaBackgroundTaskLease"))
+        XCTAssertTrue(tracked.contains("BackgroundExecutionLease"))
         XCTAssertTrue(tracked.contains("await operation()"))
         XCTAssertTrue(tracked.contains("appBackgroundLease.end()"))
     }

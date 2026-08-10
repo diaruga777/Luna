@@ -652,15 +652,17 @@ else:
    sync half of an ordinary save press — before anything that can fail or take
    time. It is what survives if the user never comes back, and it gives the
    download job the row's identity instead of leaving a `SavedMediaStore` record
-   under a random UUID with no row beside it. The row stays `.pending`; the next
-   launch/foreground `ingestAllPending` sweep finishes its metadata and finds the
-   transfer already running rather than starting a second one.
+   under a random UUID with no row beside it. In the same breath it OWES the
+   row's metadata pass (`PendingIngestCompletions.owe`, LunaStorage) — see
+   "Finishing the save after the bounce" below.
 2. **Start the transfer** from the assets the extension already resolved
    (`startResultWithResolvedAssets`).
 3. **Request the Live Activity** — the point of the exercise.
 4. **Leave.** Asset-size preflight continues under the same short app
    background-execution lease every media download uses; once the named
    background `URLSession` task is registered the system owns the transfer.
+5. **Then finish the save**, still in the background, with the user already back
+   in Safari.
 
 The app's own UI never gets a turn: the `resolvedmedia` route holds the launch
 splash (`AppLaunchTransition.holdForHandoff`), so the visit reads as one launch

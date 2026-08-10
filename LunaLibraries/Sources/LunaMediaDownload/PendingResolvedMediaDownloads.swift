@@ -89,37 +89,65 @@ public enum PendingResolvedMediaDownloads {
                     sourceURLString: urlString, title: record.title, assets: record.assets)
                 handledSomething = handledSomething || result.reportsItsOwnOutcome
             }
-            let returnURLString = PendingResolvedMediaReturnPolicy.sourceURLString(
-                records: records, deepLinkFlagged: returningToSource, now: Date())
-            guard let returnURLString else { return }
-            guard returningToSource else {
-                rememberReturn(
-                    urlString: returnURLString,
-                    until: records.compactMap(\.returnToSourceUntil).max() ?? Date())
-                return
-            }
-            // A failure has a Live Activity of its own to report itself with, so
-            // it is not a reason to strand the user in an app whose UI says
-            // nothing about this download. Only a drain that produced NOTHING at
-            // all (no job, no activity) keeps them here.
-            guard SafariReturnPolicy.shouldReturn(
-                outcome: handledSomething ? .handled : .failedOrUnsupported,
-                kind: .media, flagged: true) else { return }
-            await returnToSource(urlString: returnURLString)
+            await handOffToSourceIfNeeded(
+                records: records, returningToSource: returningToSource,
+                handledSomething: handledSomething)
+            // The user is already on their way back to Safari; the metadata half
+            // of those saves is this app's own business now and runs here, under
+            // a background lease, rather than waiting for someone to open the app
+            // again (`BackgroundIngestCompletion` in LunaReadingList — this
+            // module cannot name it, and does not need to).
+            PendingIngestCompletions.shared.requestRun()
         }
+    }
+
+    /// The bounce, unchanged and unconditional-looking on purpose: it is its own
+    /// method so its several "no return from here" exits cannot also skip the
+    /// ingest request that follows it.
+    @MainActor
+    private static func handOffToSourceIfNeeded(
+        records: [ResolvedMediaRecord], returningToSource: Bool, handledSomething: Bool
+    ) async {
+        let returnURLString = PendingResolvedMediaReturnPolicy.sourceURLString(
+            records: records, deepLinkFlagged: returningToSource, now: Date())
+        guard let returnURLString else { return }
+        guard returningToSource else {
+            rememberReturn(
+                urlString: returnURLString,
+                until: records.compactMap(\.returnToSourceUntil).max() ?? Date())
+            return
+        }
+        // A failure has a Live Activity of its own to report itself with, so
+        // it is not a reason to strand the user in an app whose UI says
+        // nothing about this download. Only a drain that produced NOTHING at
+        // all (no job, no activity) keeps them here.
+        guard SafariReturnPolicy.shouldReturn(
+            outcome: handledSomething ? .handled : .failedOrUnsupported,
+            kind: .media, flagged: true) else { return }
+        await returnToSource(urlString: returnURLString)
     }
 
     /// Reserves this post's reading-list row and returns the URL the save is
     /// keyed under. Reserving is the synchronous half of an ordinary save press
     /// (`ReadingListIngestor.prepareSavePress` does the same thing), and leaves
-    /// the row `.pending` — the next launch/foreground `ingestAllPending` sweep
-    /// finishes its metadata, and finds the transfer already running rather than
-    /// starting a second one.
+    /// the row `.pending`.
+    ///
+    /// The other half — the metadata pass that gives the row its title,
+    /// thumbnail and kind — is OWED here, durably, in the same breath as the
+    /// reservation: the app finishes it in the background as soon as the user is
+    /// back in Safari, and the debt survives a killed process. It is written
+    /// before the transfer starts for the same reason the reservation is, so
+    /// nothing that can fail or take time stands between the press and the
+    /// recoverable state. (The metadata pass also finds the transfer already
+    /// running rather than starting a second one.)
     @MainActor
-    private static func persistSave(for record: ResolvedMediaRecord) -> String {
+    static func persistSave(for record: ResolvedMediaRecord) -> String {
         let urlString = URLUnwrapper.ingestURL(from: record.sourceURLString)?.absoluteString
             ?? record.sourceURLString
-        _ = ReadingListStore.shared.reserveSaveAttempt(urlString: urlString, at: Date())
+        let reservation = ReadingListStore.shared.reserveSaveAttempt(
+            urlString: urlString, at: Date())
+        PendingIngestCompletions.shared.owe(
+            itemID: reservation.item.id, urlString: urlString)
         return urlString
     }
 

@@ -168,6 +168,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             }
         }
 
+        // Listen for saves a fast surface only had time to RESERVE — Safari's
+        // Download hand-off is the one that does that — so their metadata pass
+        // runs in the background instead of waiting for someone to open the app.
+        // Installed BEFORE `KindWiring.appDidLaunch()` below, which is where a
+        // cold hand-off launch drains its queue and asks for exactly this.
+        BackgroundIngestCompletion.install()
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         // Both are skipped in staged mode: the re-ingest would resolve the very
@@ -175,6 +182,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // media a stage just seeded. This is what makes a staged screen HOLD.
         if !LunaStage.isActive {
             ReadingListIngestor.shared.ingestAllPending()
+            // Settle (or finish) anything a previous hand-off left owed — the
+            // sweep above may be doing the same rows, which the runner waits out
+            // rather than duplicating.
+            BackgroundIngestCompletion.run()
             // Kind-specific launch resumption: orphaned-media sweep + Live Activity
             // reattachment (media apps), pending ereader-send retry (article apps).
             KindWiring.appDidLaunch()
@@ -293,6 +304,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Background URLSessions belong to the media download manager; apps
         // without the media kind complete the callback immediately.
         KindWiring.attachBackgroundURLSessionHandler(completionHandler)
+        // The one wake this process is guaranteed to get without the user
+        // touching anything: the transfer a Safari hand-off started just
+        // finished. If that hand-off's metadata pass was cut short by an
+        // expiring background window, this is where it resumes — on its own
+        // lease, so it never delays the session handler above.
+        BackgroundIngestCompletion.run()
     }
 
     private func scheduleMailFetch() {

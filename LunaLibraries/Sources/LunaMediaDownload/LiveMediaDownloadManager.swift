@@ -152,96 +152,6 @@ private func postDownloaderJobEnded(sourceURLString: String) {
     }
 }
 
-/// Keeps the short app-owned legs around a background `URLSession` transfer
-/// alive when the user backgrounds the app: preflight before a task is
-/// registered, local mux/trim work between tasks, and final persistence after
-/// the system has delivered the downloaded file. The transfer itself remains
-/// owned by `URLSession`; this lease only bridges the gaps where there is no
-/// system-owned task yet (or anymore).
-///
-/// Two things it must never do, both learned the hard way:
-///
-///  - **Touch `UIApplication` in an `.appex`.** The share/action extensions reach
-///    the very same start path (`ShareViewController.autoDownloadThenComplete` →
-///    `MediaAutoDownloader.startLiveActivityIfEnabled` → `start` →
-///    `startReportingResult`), and `UIApplication.shared` returns nil in an app
-///    extension — through Swift's non-optional bridge that is a trap, i.e. a
-///    crash on every share-sheet media save. An extension has no app lifetime to
-///    extend anyway (the host decides when it dies), so the lease is simply inert
-///    there. Same `Bundle.main.bundleURL.pathExtension` test `NotificationManager`
-///    and `GazeTracker` use.
-///  - **Block a cooperative-pool thread on the main queue.** Leases are
-///    constructed from `async` contexts, and a `DispatchQueue.main.sync` from one
-///    of those is a priority inversion at exactly the busiest moment (launch,
-///    where `resumeLiveActivities` now takes one). Acquisition hops
-///    asynchronously instead; `end()` arriving first is handled rather than
-///    raced — the begin block sees `hasEnded` and immediately returns the task it
-///    was just given.
-private final class MediaBackgroundTaskLease: @unchecked Sendable {
-    private let lock = NSLock()
-    private var identifier: UIBackgroundTaskIdentifier = .invalid
-    private var hasEnded = false
-
-    /// No `UIApplication` here — see the type's note.
-    private static var isAppExtension: Bool {
-        Bundle.main.bundleURL.pathExtension == "appex"
-    }
-
-    init(name: String) {
-        guard !Self.isAppExtension else {
-            hasEnded = true
-            return
-        }
-        let begin = {
-            let taskIdentifier = UIApplication.shared.beginBackgroundTask(
-                withName: name
-            ) { [weak self] in
-                self?.end()
-            }
-            self.lock.lock()
-            guard !self.hasEnded else {
-                self.lock.unlock()
-                if taskIdentifier != .invalid {
-                    UIApplication.shared.endBackgroundTask(taskIdentifier)
-                }
-                return
-            }
-            self.identifier = taskIdentifier
-            self.lock.unlock()
-        }
-        if Thread.isMainThread {
-            begin()
-        } else {
-            DispatchQueue.main.async(execute: begin)
-        }
-    }
-
-    func end() {
-        let taskIdentifier: UIBackgroundTaskIdentifier
-        lock.lock()
-        guard !hasEnded else {
-            lock.unlock()
-            return
-        }
-        hasEnded = true
-        taskIdentifier = identifier
-        identifier = .invalid
-        lock.unlock()
-
-        guard taskIdentifier != .invalid else { return }
-        let finish = {
-            UIApplication.shared.endBackgroundTask(taskIdentifier)
-        }
-        if Thread.isMainThread {
-            finish()
-        } else {
-            DispatchQueue.main.async(execute: finish)
-        }
-    }
-
-    deinit { end() }
-}
-
 public final class LiveMediaDownloadManager: NSObject {
     /// `LiveMediaDownloadJob.ResolveKind` is the persisted type; this file's own
     /// dispatch logic is dense enough with it to keep referring to it unqualified.
@@ -313,7 +223,7 @@ public final class LiveMediaDownloadManager: NSObject {
         // background URLSession owns a task. If the app is backgrounded during
         // that window, keep the preparation alive long enough to persist and
         // register the durable transfer.
-        let backgroundLease = MediaBackgroundTaskLease(name: "MediaDownloadStart")
+        let backgroundLease = BackgroundExecutionLease(name: "MediaDownloadStart")
         defer { backgroundLease.end() }
         let gated: GateResult
         switch await gateAndPrepare(
@@ -482,7 +392,7 @@ public final class LiveMediaDownloadManager: NSObject {
     ) async -> LiveMediaDownloadStartResult {
         guard let asset = assets.first, let sourceURL = URL(string: sourceURLString)
         else { return .unsupported }
-        let backgroundLease = MediaBackgroundTaskLease(name: "ResolvedMediaDownloadStart")
+        let backgroundLease = BackgroundExecutionLease(name: "ResolvedMediaDownloadStart")
         defer { backgroundLease.end() }
         let ownership: LiveMediaDownloadOwnership = MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp
@@ -715,7 +625,7 @@ public final class LiveMediaDownloadManager: NSObject {
     private func startTrackedBackgroundWork(
         _ operation: @escaping () async -> Void
     ) {
-        let appBackgroundLease = MediaBackgroundTaskLease(name: "MediaDownloadTransition")
+        let appBackgroundLease = BackgroundExecutionLease(name: "MediaDownloadTransition")
         backgroundWorkLock.lock()
         pendingBackgroundWork += 1
         backgroundWorkLock.unlock()

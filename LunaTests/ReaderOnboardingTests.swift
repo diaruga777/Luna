@@ -882,8 +882,12 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testIntroShiftsTheInitialSentenceRightWhenTheCopyGrowsOnTheLeft() throws {
+        // Copy that grows on the LEFT, written here rather than taken from an
+        // app: what is under test is the geometry rule, and which app happens
+        // to ship a left-growing headline this week is not part of it.
         let headline = OnboardingIntroHeadlineView(
-            copy: OnboardingStrings.introCopy(for: .priceTracker))
+            copy: OnboardingIntroCopy(
+                initialText: "Miss a sale", finalText: "Never miss a sale"))
         headline.frame = CGRect(x: 0, y: 0, width: 306, height: 44)
         headline.setNeedsLayout()
         headline.layoutIfNeeded()

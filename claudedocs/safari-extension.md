@@ -506,6 +506,20 @@ On a media-handling host (central Luna / Downloader), a recognized media page
 does not send the user to the app to watch what they are already looking at: an
 overlay plays the post's video right there, with one Download button under it.
 
+**It can be turned off, and off means the page is left alone.** Taking over a
+media page uninvited is the point of the feature and exactly why it needs a
+switch: Settings → Safari → "Play in Safari", in the two media apps only,
+default ON. The app writes `safariVideoPlayerEnabled` into the App Group, the
+appex reads that key as a literal (it links no app code) and answers
+`videoPlayer` on the `buttonContext` reply, and `videoOverlayTargetFor` returns
+the plain hand-off target when the answer is `false` — so the pill is exactly
+what it was before the player existed (same label, same tint, same
+`?ret=safari` deep link) and nothing opens over the page. **An absent key means
+ON**: the player is the shipped behavior and a user who has never opened
+Settings has written nothing, so no default is ever written anywhere.
+`SafariMediaPillTests` covers both halves of the off state and
+`SafariVideoOverlayContractTests` pins the key across all three processes.
+
 **It opens on its own, and the pill is the way back to it.** The player is not a
 reward for finding a button — on a page whose subject IS a video it is up before
 the user does anything, in its loading state, and the resolve is already running.
@@ -574,20 +588,44 @@ resolve to 0 on any page that isn't `viewport-fit=cover`. A toolbar collapsing, 
 rotation or a pinch re-runs both (`visualViewport`'s `scroll` moves the backdrop,
 `resize` also re-clamps the stage).
 
-The aspect ratio itself comes from the media, in two steps: the page's own
-`og:video:width`/`height` or `twitter:player:*` if it declares any (a beat earlier
-than the stream, and free), then authoritatively from the element's
-intrinsic `videoWidth`/`videoHeight`. `preload="metadata"` is only advisory on
-iOS, so content.js explicitly calls `load()` after insertion and rereads the
-intrinsic size on `loadedmetadata`, `loadeddata`, `canplay`, `durationchange`,
-and `playing`; a Play or Download tap is never the first opportunity to size the
-panel. Most posts declare nothing (an Instagram reel declares no video at all),
-so the second step is the one that usually does the work; the first size is applied without animation
-because it is the panel arriving, and every correction after it animates because
-it is the panel growing to fit. `SafariVideoOverlayTests`' shape section pins all
-of it, and `SafariVideoOverlayContractTests.testTheHeightIsClampedToTheVisual
-Viewport` pins the one part no rendering test can (a bare `WKWebView` has no
-browser chrome to be wrong about).
+**The aspect ratio comes from the media, and the panel tries to know it before
+anything streams.** Two kinds of source, and they are not equal: an ANSWER (the
+media's own size) always beats a GUESS (something the page implied), and a guess
+may only replace another guess. In arrival order:
+
+| when | source | authority |
+| --- | --- | --- |
+| panel construction | the page's `og:video:width`/`height` or `twitter:player:*` | guess |
+| panel construction | any other `<video>` already on the page reporting an intrinsic size | guess |
+| panel construction | the page's `og:image:width`/`height` — the post's COVER, not the clip | guess |
+| the resolve reply | `MediaAsset.declaredPixelSize`, read from the asset URL | answer |
+| the poster decodes | the poster image's `naturalWidth`/`naturalHeight` | guess |
+| stream readiness | the element's `videoWidth`/`videoHeight` | answer |
+
+The resolve leg is the one that made the difference: several platforms name the
+rendition in the CDN path (X serves `…/vid/avc1/720x1280/…`), and reading it
+costs nothing and lands a whole network round trip before `loadedmetadata`. It
+is read in **LunaMediaResolve**, next to `isDirectlyPlayable` and for the same
+reason — the handler is an adapter and parses nothing — and rides the reply as
+`width`/`height`. The cover and poster guesses exist for Instagram, which
+declares no video whatsoever and whose cover is generated at the clip's own
+aspect; being guesses, they can never overwrite what the stream reports.
+
+`preload="metadata"` is only advisory on iOS, so content.js explicitly calls
+`load()` after insertion and rereads the intrinsic size on `loadedmetadata`,
+`loadeddata`, `canplay`, `durationchange`, and `playing`; a Play or Download tap
+is never the first opportunity to size the panel.
+
+**A size is applied without animation only while the panel is still ARRIVING**
+(the first 700ms, `PLAYER_INSTANT_SIZING_MS`). That used to be "the first size",
+which assumed the first size is always early — and on a platform that declares
+nothing anywhere, iOS can withhold the element's metadata until the Play tap, at
+which point an unanimated resize is the panel snapping under the user's thumb.
+Everything after the arrival window settles instead.
+`SafariVideoOverlayTests`' shape section pins all of it, and
+`SafariVideoOverlayContractTests.testTheHeightIsClampedToTheVisualViewport` pins
+the one part no rendering test can (a bare `WKWebView` has no browser chrome to
+be wrong about).
 
 **Why the resolve happens before the user needs to tap play.** The overlay opens
 in a loading state and sets `src` when the answer arrives, so the play tap on the
@@ -600,16 +638,55 @@ fresh `ResolvedMediaCache` entry for ten minutes, so the replacement player gets
 its source immediately and runs the same sizing path again. It does not persist a
 panel size; the size is always re-derived from the live media element.
 
-The Download handoff waits only for Luna to persist the destination and recoverable
-download job and to create its Live Activity. Asset-size preflight then continues
-under the same short app background-execution lease used by every media download;
-once the named background `URLSession` task is registered, the system owns the
-transfer. Luna immediately asks the system to reopen the original `https` URL, which
-returns to the existing Safari page rather than intentionally creating a new tab.
-The queued resolved-media record carries a one-minute copy of that return intent so
-launch/foreground recovery cannot consume the queue before `openURLContexts` and lose
-the bounce. The marker expires independently of the download: a failed responder-chain
-open still downloads on a later launch, but that later manual launch stays in Luna.
+**The Download hand-off: why an app launch at all, and what it is allowed to
+cost.** ActivityKit only ever shows an activity the APP's own process requested
+(`Activity.request`), and a Safari web extension cannot request one — so a
+download that reports progress on the Lock Screen cannot be started by the appex,
+however much of it the appex has already resolved. That is the whole reason the
+page navigates to `<scheme>://resolvedmedia?ret=safari` instead of the extension
+simply downloading. The launch therefore does exactly four things and nothing
+else:
+
+1. **Persist the save.** `PendingResolvedMediaDownloads.drain` reserves the
+   reading-list row synchronously — the same `reserveSaveAttempt` that is the
+   sync half of an ordinary save press — before anything that can fail or take
+   time. It is what survives if the user never comes back, and it gives the
+   download job the row's identity instead of leaving a `SavedMediaStore` record
+   under a random UUID with no row beside it. The row stays `.pending`; the next
+   launch/foreground `ingestAllPending` sweep finishes its metadata and finds the
+   transfer already running rather than starting a second one.
+2. **Start the transfer** from the assets the extension already resolved
+   (`startResultWithResolvedAssets`).
+3. **Request the Live Activity** — the point of the exercise.
+4. **Leave.** Asset-size preflight continues under the same short app
+   background-execution lease every media download uses; once the named
+   background `URLSession` task is registered the system owns the transfer.
+
+The app's own UI never gets a turn: the `resolvedmedia` route holds the launch
+splash (`AppLaunchTransition.holdForHandoff`), so the visit reads as one launch
+image rather than a flash of a deck, and the hold retires when the scene
+backgrounds or after 4s if the return never happens.
+
+Then `UIApplication.shared.open` on the **original https URL** — never the
+canonicalized save URL. iOS has no "return to the previous app" API, so this
+opens the default browser at that page; the tab the pill was tapped in never
+navigated away (a custom-scheme navigation doesn't replace the document), so in
+practice the user comes back to Safari with that page in front of them, usually
+in a new tab.
+
+A failure is not a reason to strand someone in an app whose UI says nothing about
+this download, so every outcome that reports itself through a Live Activity —
+started, already downloaded, deferred to Wi-Fi, refused, failed with a message —
+returns to Safari. Only a drain that produced nothing anywhere keeps them here.
+
+The queued record carries a one-minute copy of the return intent
+(`returnToSourceUntil`) because launch/foreground recovery can consume the queue
+before `openURLContexts` is delivered. A lifecycle drain does **not** act on that
+marker — it REMEMBERS the URL for the deep link that has not landed yet
+(`PendingResolvedMediaReturnPolicy` decides which, `PendingResolvedMediaDownloads`
+holds the memory). Bouncing on a fresh marker alone also fired when the user
+opened the app from the Home Screen seconds after a Download tap, which is the
+one launch nobody asked to leave.
 
 **The page's own CSP governs the media load**, so this only ever plays a
 same-platform asset — and every platform we resolve allows its own CDN
@@ -880,7 +957,10 @@ Paywall unlock + toast:
 
 The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" on Reader,
 "Download Button" on Downloader, and "Track in Luna Button" on Price Tracker — a
-3-segment control). **Nothing about the extension is version gated** — `nativeMessaging`
+3-segment control), alongside the media apps' "Play in Safari" toggle (the in-page
+player's off switch, above). That screen is offered to any app that has something
+on it: an article app (the pill's mode), a media app (the player), or any device
+that can set up the Action Button shortcut. **Nothing about the extension is version gated** — `nativeMessaging`
 needs no particular iOS, so the pills, the unlocking, and the recent-URL history the util
 card offers run everywhere Luna does. On a device with no Action Button shortcut to set up
 (`ShortcutSettingsScreen.deviceHasShortcutSetup`: iOS 27 AND Action Button hardware) this

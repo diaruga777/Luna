@@ -723,9 +723,17 @@ BELOW the page's current price, same currency only, ties broken by earliest date
 shows a second, **non-interactive** (`pointer-events: none`) pill, `Was $79.99 on
 1/12/25`, stacked above Track when unsaved, alone when already tracked, absent
 entirely when tracked with no cheaper history. Snapshots are NEVER saves: no
-reading-list row, no scheduled refresh, no alert — they exist only to seed a
-tracker's history at save time (`claudedocs/price-tracking.md`) and to answer this
-query.
+reading-list row, no scheduled refresh, no alert — they exist to seed a tracker's
+history at save time (`claudedocs/price-tracking.md`), to fold into EXISTING
+trackers as past-day history via `ProductSnapshotSweep` (LunaPriceUI — run at the
+product apps' launch and at the head of every refresh cycle, matched by product
+code through `SnapshotMatcher`, never by URL equality), and to answer this query.
+Two capture details that were bugs first: the native validators SANITIZE the raw
+price text the meta/microdata tiers send (`"$1,299.00"` used to fail
+`Decimal(string:)` and drop the whole record, silently), and the suggestion mode
+`"never"` silences PILLS only — `offerLunaButton` still records the passive
+snapshot through `recordProductSnapshotSilently` (the mode was never about the
+price record).
 
 ### The alternative-seller pill ("$59.00 at Acme")
 
@@ -744,7 +752,8 @@ content.js (after the productSnapshot reply)  → spinner pill + Track pill
       ├─ 2. else SellerFanOut(.constrained) over URLSession                 ← LunaPriceCompare
       │      └─ results written back via SharedProductSnapshots.record
       └─ reply {found, price, currency, sellerName, url}
-  → content.js fills the pill in place, or removes it and renders today's pills
+  → content.js fills the pill in place — found / "No better price found" /
+    "Unable to find better prices" — all three replace the spinner in its slot
 ```
 
 Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`) it
@@ -781,16 +790,25 @@ appex reaches the outermost one.
 In the page, `beginSellerLookup` puts up a spinner pill (a pulsing dot via the Web
 Animations API — no stylesheet injected into someone else's document) in the SAME slot
 the history pill would take, plus the Track pill, which is not waiting on anything.
-`finishSellerLookup` then either fills that pill in place — `<price> at <Seller>`,
-`role="button"`, `pointer-events: auto`, the destination on a `data-luna-seller-url`
-attribute so the tap reads what was rendered — or removes it and calls
-`renderProductPills` **entirely unchanged**. That last sentence is the fallback
-contract: nothing found, an answer with no URL, a rejection, or the backstop all land
-in the same place, and the page ends up exactly as it was before this feature (cheaper-
-historical pill, or nothing). The seller pill and the history pill never coexist: both
-speak about this product's price, and a better price available NOW is the more useful
-of the two. One lookup per page, its flag set before any DOM work.
-`ProductHistoryPillRenderTests` drives both halves through the shared
+`finishSellerLookup` then fills that pill in place with one of THREE terminal states —
+the pill never just vanishes:
+
+- **found** — `<price> at <Seller>`, `role="button"`, `pointer-events: auto`, the
+  destination on a `data-luna-seller-url` attribute so the tap reads what was
+  rendered;
+- **empty** (`"No better price found"`) — the search COMPLETED and found nothing
+  cheaper (`{found: false}`, or a found answer with no URL to send the tap to);
+- **failed** (`"Unable to find better prices"`) — the LOOKUP itself died: the
+  relay's catch (`{found: false, failed: true}` — only the catch sets `failed`, which
+  is what keeps the two non-found states distinguishable), a thrown request, or the
+  page's 25s backstop.
+
+The two non-found states are informational (`pointer-events: none`) and KEEP the
+slot, so the history pill is not rendered behind them — the seller pill and the
+history pill never coexist: both speak about this product's price, and only one can
+be the more useful thing to say. The Track pill was never waiting on the lookup and
+is already on the page. One lookup per page, its flag set before any DOM work.
+`ProductHistoryPillRenderTests` drives all of it through the shared
 `SafariJSTestHarness` web view.
 
 ### Bounce back to Safari after a media save

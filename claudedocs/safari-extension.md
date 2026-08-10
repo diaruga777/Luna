@@ -690,6 +690,33 @@ holds the memory). Bouncing on a fresh marker alone also fired when the user
 opened the app from the Home Screen seconds after a Download tap, which is the
 one launch nobody asked to leave.
 
+**Finishing the save after the bounce.** The row the hand-off reserved is
+`.pending`: no title, no thumbnail, no kind. Leaving it that way until the next
+launch/foreground `ingestAllPending` sweep would put a blank item in the deck for
+however long it takes the user to open the app — which is exactly what a hand-off
+that goes straight back to Safari is supposed to avoid. So the app finishes it
+ITSELF, in the background, with the user already on the page:
+
+- The reservation and the DEBT are written together (`PendingIngestCompletions
+  .owe`, LunaStorage, App-Group backed, 3-day lifetime), before anything that can
+  fail or take time. That is the recoverable state.
+- Once the bounce has happened the drain posts `requestRun()`, and
+  `BackgroundIngestCompletion` (LunaReadingList — this is why the debt lives one
+  tier down in LunaStorage: the media module cannot name `ReadingListIngestor`)
+  runs the ordinary non-interactive ingest per owed row, each under its own
+  `BackgroundExecutionLease`, ended as soon as that row reaches a verdict. The
+  metadata pass finds the transfer already running rather than starting a second
+  one.
+- **When the granted window expires mid-ingest**, the lease's `onExpiration`
+  cancels the ingest at the one safe point (`ReadingListIngestor.ingest` checks
+  `Task.isCancelled` after the pipeline, before it persists anything): nothing is
+  written, the row stays `.pending`, and the debt stays queued with its attempt
+  count bumped. It resumes with no user action at the next wake — the background
+  `URLSession` running this very download wakes the process when it finishes, and
+  a launch works the queue too. `ingestAllPending` is unchanged and is still the
+  net for a process that was killed outright; it is just no longer what the
+  normal path depends on.
+
 **The page's own CSP governs the media load**, so this only ever plays a
 same-platform asset — and every platform we resolve allows its own CDN
 (instagram.com allows `*.cdninstagram.com` in `media-src`, x.com allows

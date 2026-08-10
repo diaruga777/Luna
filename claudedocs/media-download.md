@@ -52,7 +52,10 @@ funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
 before creating the job, then awaits preflight until the named background task is
 registered before returning the foreground to Safari. A completed transfer can
 therefore never arrive without a manifest row to receive it, and suspension cannot
-catch the handoff in the persist-before-task gap.
+catch the handoff in the persist-before-task gap. The reading-list row it reserved
+is finished the same way it would be in any other save — just later and in the
+background, after the bounce: see "The save the hand-off did not have time to
+finish" below.
 
 Each row also carries best-effort `platform`/`platformItemID` (from
 `PlatformRecognizer.recognize`, purely parsed from the URL — no network) and `creator`
@@ -334,6 +337,36 @@ alert), which re-presents the activity prominently regardless of foreground/back
 state; the fix here was making sure that final alerting state carries the view URL, not
 lengthening how long the card lingers.
 
+## The save the hand-off did not have time to finish
+
+Safari's Download hand-off (`claudedocs/safari-extension.md`) is the one save that
+leaves the app before its row has any metadata: the launch reserves the row, starts
+the transfer, requests the activity and bounces. That row must not sit blank in the
+deck until somebody opens the app, so the app finishes it itself, in the background,
+once the user is already back on the page.
+
+- `PendingResolvedMediaDownloads.persistSave` reserves the row **and** records the
+  debt (`PendingIngestCompletions.owe`, LunaStorage, App-Group backed, 3-day
+  lifetime) in the same breath — before anything that can fail or take time. The
+  debt is durable precisely so a process that dies still owes it.
+- After the bounce the drain posts `requestRun()`; `BackgroundIngestCompletion`
+  (LunaReadingList — the tier that can name `ReadingListIngestor`, which the media
+  module cannot) runs the ordinary non-interactive ingest for each owed row under
+  its own `BackgroundExecutionLease`, ended the moment that row reaches a verdict.
+  The ingest's media leg attaches to the transfer already running rather than
+  starting a second one.
+- **If iOS reclaims the window mid-ingest**, the lease's `onExpiration` cancels the
+  ingest task at the one point that is safe: `ReadingListIngestor.ingest` checks
+  `Task.isCancelled` after the pipeline and before it persists, so a cancelled pass
+  writes nothing and the row stays exactly `.pending` — never half-written. The debt
+  stays queued with its attempt count bumped, and the next resume finishes it: the
+  background `URLSession` running this very download wakes the process when it
+  completes (`AppDelegate.handleEventsForBackgroundURLSession` works the queue on a
+  fresh lease, without delaying the session handler), and launch works it too.
+- `ReadingListIngestor.ingestAllPending` is unchanged and remains the safety net for
+  a process that was killed outright — it is simply no longer what the normal path
+  depends on.
+
 ## In-app progress: embedded, never floating
 
 In-app download progress is drawn **on the item that is downloading**, not in
@@ -526,7 +559,8 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
 - `LiveMediaDownloadManager.swift` implements the equivalent background-transfer path.
   Every app-owned transition around that path (initial resolution/preflight before a
   task exists, local processing between tasks, and final persistence after a task
-  finishes) holds an iOS background-execution lease. The lease ends as soon as the
+  finishes) holds an iOS background-execution lease — `BackgroundExecutionLease`, which
+  lives in LunaStorage because the hand-off's background ingest holds one too. The lease ends as soon as the
   next system-owned background `URLSession` task is registered or local work finishes;
   the transfer itself never depends on foreground execution. Safari's resolved-media
   handoff therefore returns after the library row, recoverable job, and Live Activity

@@ -142,20 +142,19 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         // 11 characters, because that is what a YouTube id is and
         // `PlatformRecognizer` checks.
         let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
-        let urlString = "https://www.youtube.com/watch?v=\(videoID)"
+        let store = ReadingListStore(containerURL: scratch)
+        let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
-            for: handoffRecord(urlString: urlString, title: "A resolved clip"))
-        let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
-        defer {
-            PendingIngestCompletions.shared.settle(item.id)
-            ReadingListStore.shared.delete(item)
-        }
+            for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
+                               title: "A resolved clip"),
+            store: store, completions: queue)
+        let item = try XCTUnwrap(store.item(forURLString: saved))
 
         XCTAssertEqual(item.state, .ready)
         XCTAssertEqual(item.title, "A resolved clip")
         XCTAssertEqual(item.platform, .youtube)
         XCTAssertEqual(item.platformItemID, videoID)
-        XCTAssertFalse(PendingIngestCompletions.shared.owed().contains { $0.itemID == item.id })
+        XCTAssertTrue(queue.owed().isEmpty)
     }
 
     /// The fallback: the resolve had not finished when Download was pressed, so
@@ -165,19 +164,17 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     @MainActor
     func testIncompleteHandoffLeavesTheRowOwedForTheBackgroundIngest() throws {
         let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
-        let urlString = "https://www.youtube.com/watch?v=\(videoID)"
+        let store = ReadingListStore(containerURL: scratch)
+        let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
-            for: handoffRecord(urlString: urlString, title: nil))
-        let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
-        defer {
-            PendingIngestCompletions.shared.settle(item.id)
-            ReadingListStore.shared.delete(item)
-        }
+            for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
+                               title: nil),
+            store: store, completions: queue)
+        let item = try XCTUnwrap(store.item(forURLString: saved))
 
         XCTAssertEqual(item.state, .pending)
-        XCTAssertTrue(PendingIngestCompletions.shared.owed().contains {
-            $0.itemID == item.id && $0.urlString == saved
-        })
+        XCTAssertEqual(queue.owed().map(\.itemID), [item.id])
+        XCTAssertEqual(queue.owed().first?.urlString, saved)
     }
 
     /// A URL no platform rule recognizes has no `platform`/`platformItemID` to
@@ -185,16 +182,15 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     /// pipeline rather than being guessed at here.
     @MainActor
     func testHandoffForAnUnrecognizedHostStaysOwed() throws {
-        let urlString = "https://example.org/clips/\(UUID().uuidString.prefix(8))"
+        let store = ReadingListStore(containerURL: scratch)
+        let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
-            for: handoffRecord(urlString: urlString, title: "A resolved clip"))
-        let item = try XCTUnwrap(ReadingListStore.shared.item(forURLString: saved))
-        defer {
-            PendingIngestCompletions.shared.settle(item.id)
-            ReadingListStore.shared.delete(item)
-        }
+            for: handoffRecord(urlString: "https://example.org/clips/a-clip",
+                               title: "A resolved clip"),
+            store: store, completions: queue)
+        let item = try XCTUnwrap(store.item(forURLString: saved))
 
         XCTAssertEqual(item.state, .pending)
-        XCTAssertTrue(PendingIngestCompletions.shared.owed().contains { $0.itemID == item.id })
+        XCTAssertEqual(queue.owed().map(\.itemID), [item.id])
     }
 }

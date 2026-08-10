@@ -142,15 +142,24 @@ public enum PendingResolvedMediaDownloads {
     /// recoverable state. What the record could NOT carry stays owed and the
     /// background ingest finishes it (`BackgroundIngestCompletion`), which also
     /// finds the transfer already running rather than starting a second one.
+    ///
+    /// The two stores are parameters so a test can exercise this against its own
+    /// (a `.shared` reading list and a `.shared` debt queue both live in the App
+    /// Group, which the whole test run shares — a fixture that writes there is a
+    /// fixture every later suite inherits).
     @MainActor
-    static func persistSave(for record: ResolvedMediaRecord) -> String {
+    static func persistSave(
+        for record: ResolvedMediaRecord,
+        store: ReadingListStore = .shared,
+        completions: PendingIngestCompletions = .shared
+    ) -> String {
         let urlString = URLUnwrapper.ingestURL(from: record.sourceURLString)?.absoluteString
             ?? record.sourceURLString
-        let reservation = ReadingListStore.shared.reserveSaveAttempt(
-            urlString: urlString, at: Date())
-        PendingIngestCompletions.shared.owe(
-            itemID: reservation.item.id, urlString: urlString)
-        completeFromHandoff(record, urlString: urlString, itemID: reservation.item.id)
+        let reservation = store.reserveSaveAttempt(urlString: urlString, at: Date())
+        completions.owe(itemID: reservation.item.id, urlString: urlString)
+        completeFromHandoff(
+            record, urlString: urlString, itemID: reservation.item.id,
+            store: store, completions: completions)
         return urlString
     }
 
@@ -188,16 +197,18 @@ public enum PendingResolvedMediaDownloads {
     @MainActor
     @discardableResult
     static func completeFromHandoff(
-        _ record: ResolvedMediaRecord, urlString: String, itemID: UUID
+        _ record: ResolvedMediaRecord, urlString: String, itemID: UUID,
+        store: ReadingListStore = .shared,
+        completions: PendingIngestCompletions = .shared
     ) -> Bool {
         let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty, let recognized = PlatformRecognizer.recognize(urlString),
-              ReadingListStore.shared.savePlatformMetadata(
+              store.savePlatformMetadata(
                 platform: recognized.platform, platformItemID: recognized.itemID,
                 title: title, creator: nil, thumbnailFileName: nil,
                 for: itemID) != nil
         else { return false }
-        PendingIngestCompletions.shared.settle(itemID)
+        completions.settle(itemID)
         SharedDiagnosticLog.record(
             "resolved-media: completed \(urlString) from the hand-off — no metadata fetch",
             category: "media-download")

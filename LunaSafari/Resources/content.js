@@ -1902,19 +1902,153 @@
     // still pending. The PILL is unaffected — tapping it re-opens the player.
     var videoOverlayDismissed = false;
 
+    // ── The page's own author ────────────────────────────────────────────────
+    // Read for the same reason the passive product snapshot is read: the page is
+    // already in front of us, and the alternative is the app going back out to
+    // the network for something this document is holding. The Download hand-off
+    // carries the answer to the app, which writes it as the saved row's creator
+    // (`completeFromHandoff`) — see `claudedocs/safari-extension.md`.
+    //
+    // NO network here, ever: only what this DOM already says. A page that says
+    // nothing yields "" and the row simply has no creator, exactly as before.
+
+    var MAX_AUTHOR_LENGTH = 120;
+
+    /// Cleans a candidate, or returns "" if it isn't a usable name.
+    ///
+    /// The two rejections are what keep this honest. A URL is what
+    /// `article:author` usually holds (a profile link), and a link is not a
+    /// name — turning one into a name means guessing which path component is a
+    /// person. And an over-long value is a page that has put something else in
+    /// the field (a description, a whole byline paragraph).
+    function cleanAuthor(value) {
+        if (typeof value !== "string") { return ""; }
+        var trimmed = value.replace(/\s+/g, " ").trim();
+        if (!trimmed || trimmed.length > MAX_AUTHOR_LENGTH) { return ""; }
+        if (/^https?:\/\//i.test(trimmed)) { return ""; }
+        return trimmed;
+    }
+
+    /// schema.org `author` as MARKUP: `<span itemprop="author"><link
+    /// itemprop="name" content="Blender">`, which is exactly the shape a YouTube
+    /// watch page ships (its channel), and a common one on news articles. Not a
+    /// platform rule — the platform just happens to speak schema.org.
+    function microdataAuthor() {
+        var scopes = document.querySelectorAll('[itemprop="author"], [itemprop="creator"]');
+        for (var i = 0; i < scopes.length; i++) {
+            var scope = scopes[i];
+            var named = scope.querySelector('[itemprop="name"]');
+            if (named) {
+                var nested = cleanAuthor(
+                    named.getAttribute("content") || named.textContent || "");
+                if (nested) { return nested; }
+            }
+            var direct = cleanAuthor(
+                scope.getAttribute("content") || scope.textContent || "");
+            if (direct) { return direct; }
+        }
+        return "";
+    }
+
+    /// The first `author`/`creator` name in any JSON-LD block, whatever node it
+    /// hangs off (a `VideoObject`, an `Article`, a `@graph` entry). Deliberately
+    /// generic: this reads a name that is already written down, so the node type
+    /// it belongs to does not change whether it is a name.
+    function jsonLDAuthorIn(node, depth) {
+        if (!node || typeof node !== "object" || depth > 6) { return ""; }
+        if (Array.isArray(node)) {
+            for (var i = 0; i < node.length; i++) {
+                var inArray = jsonLDAuthorIn(node[i], depth + 1);
+                if (inArray) { return inArray; }
+            }
+            return "";
+        }
+        var keys = ["author", "creator"];
+        for (var k = 0; k < keys.length; k++) {
+            var value = node[keys[k]];
+            if (typeof value === "string") {
+                var plain = cleanAuthor(value);
+                if (plain) { return plain; }
+            } else if (value && typeof value === "object") {
+                var candidates = Array.isArray(value) ? value : [value];
+                for (var c = 0; c < candidates.length; c++) {
+                    var named = candidates[c] && candidates[c].name;
+                    var cleaned = cleanAuthor(typeof named === "string" ? named : "");
+                    if (cleaned) { return cleaned; }
+                }
+            }
+        }
+        for (var key in node) {
+            if (Object.prototype.hasOwnProperty.call(node, key)) {
+                var nested = jsonLDAuthorIn(node[key], depth + 1);
+                if (nested) { return nested; }
+            }
+        }
+        return "";
+    }
+
+    function jsonLDAuthor() {
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (var i = 0; i < scripts.length; i++) {
+            var parsed;
+            try { parsed = JSON.parse(scripts[i].textContent || ""); } catch (e) { continue; }
+            var found = jsonLDAuthorIn(parsed, 0);
+            if (found) { return found; }
+        }
+        return "";
+    }
+
+    /// X renders its posts rather than serving markup about them: a logged-in
+    /// x.com page carries no `og:`/schema author at all, and its byline lives in
+    /// the post header. `data-testid="User-Name"` is X's own long-standing hook
+    /// for that header, whose first line is the display name (the second is the
+    /// @handle, which `cleanAuthor` keeps out of the way of by preferring the
+    /// first non-handle line).
+    ///
+    /// The only platform-specific reader here, and it stays that way: every
+    /// other platform we resolve either ships schema.org markup (YouTube) or
+    /// ships nothing usable, and guessing at a name from a page title is
+    /// fabrication, not extraction.
+    function platformBylineAuthor() {
+        if (!/(^|\.)(x|twitter)\.com$/i.test(location.hostname)) { return ""; }
+        var header = document.querySelector('[data-testid="User-Name"]');
+        if (!header) { return ""; }
+        var lines = (header.textContent || "").split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            var line = cleanAuthor(lines[i]);
+            if (line && line.charAt(0) !== "@") { return line; }
+        }
+        return "";
+    }
+
+    /// The author this page states, or "" when it states none.
+    ///
+    /// Ordered by how much the page COMMITS to the value: structured markup it
+    /// published about itself first (microdata, then JSON-LD), then the author
+    /// metas, then the one platform whose byline is only ever rendered. Nothing
+    /// here infers a name from a title, a site name or a URL.
+    function pageAuthor() {
+        return microdataAuthor()
+            || jsonLDAuthor()
+            || cleanAuthor(metaContent(["author", "article:author", "og:article:author"]))
+            || platformBylineAuthor();
+    }
+    window.__lunaPageAuthor = pageAuthor;
+
     // The native round trip, behind a swappable reference: the WKWebView test
     // harness has no extension host at all (`browser` is undefined), so
     // SafariVideoOverlayTests substitutes its own resolver here.
-    var resolveMediaRequest = function (url, title) {
+    var resolveMediaRequest = function (url, title, author) {
         if (typeof browser === "undefined") { return Promise.resolve({ assets: [] }); }
-        return browser.runtime.sendMessage({ type: "resolveMedia", url: url, title: title });
+        return browser.runtime.sendMessage(
+            { type: "resolveMedia", url: url, title: title, author: author });
     };
     window.__lunaSetResolveMediaRequest = function (fn) { resolveMediaRequest = fn; };
 
     /// Resolves to the reply, or to an empty result if the native side never
     /// answers — a promise that never settles would leave the player spinning
     /// with no way out.
-    function requestResolvedMedia(url, title) {
+    function requestResolvedMedia(url, title, author) {
         return new Promise(function (resolve) {
             var settled = false;
             var finish = function (result) {
@@ -1924,7 +2058,7 @@
             };
             setTimeout(function () { finish(null); }, RESOLVE_TIMEOUT);
             try {
-                resolveMediaRequest(url, title).then(finish, function () { finish(null); });
+                resolveMediaRequest(url, title, author).then(finish, function () { finish(null); });
             } catch (e) {
                 finish(null);
             }
@@ -2318,7 +2452,12 @@
         }
         window.addEventListener("orientationchange", onViewportResize);
 
-        requestResolvedMedia(sourceURL, document.title || "").then(function (result) {
+        // The author is read HERE, from the page the user is looking at, and
+        // travels with the resolve: by Download time the panel may have been
+        // open for minutes and this is the document that stated it.
+        var resolved = requestResolvedMedia(
+            sourceURL, document.title || "", pageAuthor());
+        resolved.then(function (result) {
             if (closed) { return; }
             var asset = (result.assets || [])[0];
             if (!asset || !asset.url) { degrade(); return; }

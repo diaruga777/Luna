@@ -349,11 +349,14 @@ deck until somebody opens the app.
   lifetime) in the same breath — before anything that can fail or take time. The
   debt is durable precisely so a process that dies still owes it.
 - **Normally it then pays that debt from the record**, with no network at all:
-  the appex resolved this post to render its in-page player, so the title it sent
-  plus `PlatformRecognizer`'s URL-parsed `platform`/`platformItemID` are already
-  enough to write the row a metadata pass would (`completeFromHandoff`). The
-  fields the extension cannot supply — `creator`, and a row thumbnail, which
-  needs image bytes — are named in `claudedocs/safari-extension.md`.
+  the appex resolved this post to render its in-page player, so the title and the
+  page's own author (`content.js`'s `pageAuthor()`) that it sent, plus
+  `PlatformRecognizer`'s URL-parsed `platform`/`platformItemID`, are already
+  enough to write the row a metadata pass would (`completeFromHandoff`). The row
+  THUMBNAIL is the one field left to a fetch — it needs image bytes, which the
+  transfer's own poster fetch gets anyway. Which author signals the page is read
+  for, and what happens when it states none, are in
+  `claudedocs/safari-extension.md`.
 - **A record that could not answer** (the resolve had not finished, so no title;
   or a URL no platform rule recognizes) stays owed, and the app finishes it
   itself, in the background, once the user is already back on the page.

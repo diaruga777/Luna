@@ -188,12 +188,14 @@ public enum PendingResolvedMediaDownloads {
     /// refuses an assetless one), so this URL is a video post — the media kind —
     /// and not, say, one of the long-form X posts that read as articles.
     ///
-    /// `creator` and the row thumbnail are the two fields a fetch would add that
-    /// the extension cannot supply: the resolvers produce assets, not authors,
-    /// and a thumbnail row needs the image BYTES. The download fetches that
-    /// poster for its own card anyway (`fetchAndPublishThumbnail`), so the only
-    /// thing actually given up is the creator line — see `claudedocs/
-    /// safari-extension.md`.
+    /// `creator` rides along when the PAGE stated one (`content.js`'s
+    /// `pageAuthor()` — schema.org author markup, JSON-LD, the author metas, or
+    /// X's rendered byline), so a hand-off-completed row carries the same
+    /// creator a share-sheet save of that page would. A page that states none
+    /// leaves it empty: this path never fabricates one and never goes to the
+    /// network for one. The row THUMBNAIL is the one field still only a fetch
+    /// could add, and the download fetches that poster for its own card anyway
+    /// (`fetchAndPublishThumbnail`) — see `claudedocs/safari-extension.md`.
     @MainActor
     @discardableResult
     static func completeFromHandoff(
@@ -202,11 +204,12 @@ public enum PendingResolvedMediaDownloads {
         completions: PendingIngestCompletions = .shared
     ) -> Bool {
         let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let creator = record.creator?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, let recognized = PlatformRecognizer.recognize(urlString),
               store.savePlatformMetadata(
                 platform: recognized.platform, platformItemID: recognized.itemID,
-                title: title, creator: nil, thumbnailFileName: nil,
-                for: itemID) != nil
+                title: title, creator: (creator?.isEmpty ?? true) ? nil : creator,
+                thumbnailFileName: nil, for: itemID) != nil
         else { return false }
         completions.settle(itemID)
         SharedDiagnosticLog.record(

@@ -22,16 +22,28 @@ public struct ResolvedMediaRecord: Codable, Equatable {
     /// `SceneDelegate` receives the custom URL carrying `ret=safari`.
     /// Optional so records written by an older app continue to decode.
     public let returnToSourceUntil: Date?
+    /// The author the PAGE stated — `content.js`'s `pageAuthor()`, read from the
+    /// document that was already open (schema.org author markup, JSON-LD, the
+    /// author metas, or X's rendered byline). It travels with the resolve so the
+    /// app can write the saved row's creator without going back out to the
+    /// network for something the extension was looking at
+    /// (`PendingResolvedMediaDownloads.completeFromHandoff`).
+    ///
+    /// Optional, and nil for both "this page states no author" and "written by
+    /// an older extension" — the app treats those the same way, by leaving the
+    /// creator empty rather than guessing one.
+    public let creator: String?
 
     public init(
         sourceURLString: String, title: String?, assets: [MediaAsset],
-        dateWritten: Date, returnToSourceUntil: Date? = nil
+        dateWritten: Date, returnToSourceUntil: Date? = nil, creator: String? = nil
     ) {
         self.sourceURLString = sourceURLString
         self.title = title
         self.assets = assets
         self.dateWritten = dateWritten
         self.returnToSourceUntil = returnToSourceUntil
+        self.creator = creator
     }
 }
 

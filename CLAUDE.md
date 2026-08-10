@@ -271,7 +271,26 @@ stable Xcode 26.2.
 > rather than build-time metadata), and the app/widget targets COPY the one
 > file into their own bundles via `scripts/add_strings_to_app_bundles.rb`
 > (re-run after adding a target; a test fails if a host's copy is missing or
-> has drifted). Staying in code: `AppShortcut` phrases/`shortTitle`s (they are
+> has drifted). **A built app therefore carries ~8 copies of the one file, each
+> made by an independently-tracked copy task, and a stale one is invisible from
+> inside the app** — it reads as "my copy edit didn't take", which invites
+> re-editing copy that was already right. Measured on Xcode 26.2: put an older
+> table into `<App>.app/LunaLibraries_LunaModels.bundle/en.lproj/…` and build
+> again and the embed copy is NOT re-run — `BUILD SUCCEEDED`, stale app. An
+> INTERRUPTED build gets there for real (the top-level resource bundle is
+> updated early; every copy nested inside the `.app` is left a version behind),
+> as does a products directory holding an app the current scheme didn't
+> rebuild. So every app target ends with a **`Verify bundled strings table`**
+> phase (`scripts/check_bundled_strings.py`, installed by
+> `scripts/add_strings_check_phase.rb` — re-run after adding an app): every
+> `Localizable.strings` under the `.app` must parse to the SAME table as the
+> source or the build fails; always-out-of-date, ~0.1s. It guarantees a build
+> that ran to the END, so `install_all_luna_apps.sh` runs the same check before
+> each install — an interrupted build never reaches its last phase, and that
+> half-updated products dir is what a hand-run `simctl install` grabs.
+> `LocalizableStringsTests` is NOT this guarantee: inside the test host it can
+> only compare two copies made from the same input, and two stale copies agree
+> perfectly. Staying in code: `AppShortcut` phrases/`shortTitle`s (they are
 > `AppShortcuts.strings`, and are Siri grammar) and `BundledShortcut
 > .displayName` (must equal the bundled `.shortcut` filename). **There is no
 > `InfoPlist.xcstrings`** — the three that existed were shared by four targets

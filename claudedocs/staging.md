@@ -135,6 +135,18 @@ Plus one exception: `AppOnboardingStore` deliberately uses **standard** defaults
 redirects that too. It is the one call site; anything else reading standard
 defaults is per-device configuration a stage has no business rewriting.
 
+> **A store that resolves the container ITSELF is invisible until a stage
+> exercises it.** `SharedReadingListAppender` — what every share/action surface
+> appends through — was still asking the file manager directly, so a staged save
+> landed in the REAL App Group while `ReadingListStore` read the scratch one. The
+> row appeared to vanish between the append and the lookup one line later: the
+> onboarding lesson's product rehearsal fell back to a bare "Saved" confirmation
+> instead of opening the price editor, with nothing in the log to say why. If a
+> staged save ever goes missing again, this is the shape of it. (`ProductSnapshotStore`
+> and `PriceHistoryIndexWriter` still resolve their own snapshot file; they are
+> read-mostly, and the stage that needs them isolated is the change that should
+> fix them.)
+
 > **The scratch suite must not be named `group.…`.** cfprefsd resolves a suite
 > with that prefix as an app-group container, the process is not entitled to a
 > group it invented, and the suite comes back unusable — silently sending every

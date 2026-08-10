@@ -134,6 +134,18 @@ Every button keeps its icon at a fixed leading inset; the smaller, single-line
 label begins immediately after it, so changing labels in central Luna never
 shifts either icon.
 
+**Full-width is a CENTRAL-LUNA-ONLY trait, and only for Safari/shortcut.** In
+central Luna, `UtilCardSetupTextCycler` advances the Safari and shortcut
+buttons' labels through every sibling app's own phrasing as the weekly row
+cycles, so those two buttons stay stretched edge to edge — the room a longer
+sibling phrase might need. Every other app's label never changes, so stretching
+it edge to edge just reads as too wide: `UtilCardContentViewController
+.compactSetupButtonWidth` sizes the Safari and shortcut buttons to their own
+content and centers them in the block on those three apps, while leaving the
+vertical stacking (order, gaps, which slot a lost lesson gives up) untouched.
+Email keeps the full-width treatment everywhere — it never cycles, in central
+Luna or anywhere else.
+
 **There is no share-sheet save lesson.** Luna's only save lesson is the Action
 Button shortcut; a device that cannot run it (`OnboardingSaveSetupMode
 .unavailable`) is offered nothing in that slot, and its save leg counts as

@@ -281,6 +281,37 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(buttons[0].frame.minY, bottomSlot)
     }
 
+    /// Central Luna's Safari/shortcut labels cycle through every sibling
+    /// app's own phrasing (`UtilCardSetupTextCycler`), so they keep the room
+    /// to grow into. Every other app never changes that label, so the button
+    /// hugs its own content and centers in the block instead of stretching
+    /// edge to edge. Email is unaffected either way — it never cycles.
+    func testSafariAndShortcutButtonsHugContentOutsideCentralLunaOnly() {
+        let width: CGFloat = 360
+        let luna = makeCard(showsOnboarding: true, hasSaves: false, app: .luna)
+        luna.loadViewIfNeeded()
+        luna.view.frame = CGRect(x: 0, y: 0, width: width, height: 640)
+        luna.view.layoutIfNeeded()
+        let lunaButtons = actionButtons(in: luna)
+        XCTAssertEqual(lunaButtons.count, 2)
+        for button in lunaButtons {
+            XCTAssertEqual(button.frame.width, width - UtilCardLayout.inset * 2)
+            XCTAssertEqual(button.frame.minX, UtilCardLayout.inset)
+        }
+
+        let reader = makeCard(showsOnboarding: true, hasSaves: false, app: .reader)
+        reader.loadViewIfNeeded()
+        reader.view.frame = CGRect(x: 0, y: 0, width: width, height: 640)
+        reader.view.layoutIfNeeded()
+        let readerButtons = actionButtons(in: reader)
+        XCTAssertEqual(readerButtons.count, 2)
+        for button in readerButtons {
+            XCTAssertLessThan(button.frame.width, width - UtilCardLayout.inset * 2)
+            XCTAssertEqual(
+                button.frame.midX, reader.view.bounds.midX, accuracy: 0.5)
+        }
+    }
+
     // MARK: - The email nudge
 
     func testEmailIsEarnedByThreeSavesOrTwoDaysWithTheFirst() {

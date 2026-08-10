@@ -177,7 +177,12 @@ into a drawn checkmark after successful verification.
 Article-loading labels use `EclipseBloomStatusLabel` with
 `ArticleLoadingStatusCycler`: the current initial message enters through the onboarding's
 top-down eclipse-bloom reveal, then—only after three seconds—cycles at random through
-reassuring alternatives such as “Still going…” and “Just a bit longer…”. The label and
+reassuring alternatives such as “Still going…” and “Just a bit longer…”. The FIRST message's
+bloom is near-instant (`ArticleLoadingStatusCycler.instantRevealDuration`, 0.05s) — a spinner
+that has just appeared has nothing to hold continuity with yet, so a slow sweep just reads as
+lag — while every rotation after it keeps the full ~1.55s sweep unchanged, since that one is a
+real transition between two phrases the reader is already looking at. Only `start()`'s call
+gets the fast duration; `showNextPhrase()` still calls `reveal` with no override at all. The label and
 the onboarding utility-card intro both drive the one shared `GlyphPixelBloomView`: the
 moving moon edge intersects a native-scale glyph raster, then composites the same stacked
 additive halos off the main thread. Loading-copy changes are always whole-phrase reveals;

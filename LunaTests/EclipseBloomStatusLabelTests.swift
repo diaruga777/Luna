@@ -108,4 +108,33 @@ final class EclipseBloomStatusLabelTests: XCTestCase {
         wait(for: [rotated], timeout: 6)
         cycler.stop()
     }
+
+    /// The FIRST phrase a spinner shows has nothing to hold continuity with
+    /// yet, so its bloom is near-instant; every phrase AFTER it is a real
+    /// transition and keeps the full sweep, unchanged.
+    func testCyclerBloomsTheFirstPhraseInFastButRotatesAtTheUnchangedSpeed() {
+        let label = EclipseBloomStatusLabel()
+        label.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
+        label.layoutIfNeeded()
+        let cycler = ArticleLoadingStatusCycler(
+            label: label, initialText: "Opening in Luna…", interval: 0.05,
+            alternatives: ["Still going…"])
+        cycler.start()
+
+        XCTAssertEqual(
+            label.lastResolvedRevealDurationForTesting,
+            ArticleLoadingStatusCycler.instantRevealDuration,
+            "the spinner's first word must bloom in barely perceptibly")
+
+        let rotated = expectation(description: "phrase rotated")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertEqual(label.text, "Still going…")
+            XCTAssertEqual(
+                label.lastResolvedRevealDurationForTesting, 1.55,
+                "the transition between two loading phrases must be untouched")
+            rotated.fulfill()
+        }
+        wait(for: [rotated], timeout: 6)
+        cycler.stop()
+    }
 }

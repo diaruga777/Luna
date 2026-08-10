@@ -458,10 +458,12 @@ final class UtilCardContentViewController: CardContentViewController {
         var nextBottom = actionsBottom
         for offer in setupOffers.reversed() {
             let button = button(for: offer)
+            let buttonWidth = compactSetupButtonWidth(for: offer, containerWidth: width)
+            let buttonX = inset + (width - buttonWidth) / 2
             button.frame = CGRect(
-                x: inset,
+                x: buttonX,
                 y: nextBottom - buttonHeight,
-                width: width,
+                width: buttonWidth,
                 height: buttonHeight)
             nextBottom = button.frame.minY - UtilCardLayout.setupButtonGap
         }
@@ -754,6 +756,27 @@ final class UtilCardContentViewController: CardContentViewController {
         case .save: return saveSetupButton
         case .email: return emailButton
         }
+    }
+
+    /// The Safari and shortcut buttons are full-width ONLY in central Luna,
+    /// where the label itself cycles between the other apps' kinds
+    /// (`UtilCardSetupTextCycler`) and needs the room to grow into. Every
+    /// other app never changes that label, so a fixed short phrase stretched
+    /// edge to edge just looks too wide — those buttons hug their own content
+    /// and center in the block instead. Email keeps the full-width treatment
+    /// everywhere: it never cycles, in central Luna or anywhere else.
+    private func compactSetupButtonWidth(
+        for offer: UtilCardSetupButton,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let hugsContent: Bool
+        switch offer {
+        case .safari, .save: hugsContent = app != .luna
+        case .email: hugsContent = false
+        }
+        guard hugsContent else { return containerWidth }
+        let fitted = button(for: offer).intrinsicContentSize.width
+        return min(containerWidth, max(0, fitted))
     }
 
     /// Whether this button wears its checkmark. Email has no finished state on

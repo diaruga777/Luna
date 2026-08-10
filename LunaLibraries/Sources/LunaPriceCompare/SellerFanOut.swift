@@ -622,7 +622,7 @@ public struct SellerFanOut {
         var allLinks: [URL] = []
         var sawAnyLinks = false
         var sawPrice = false
-        var sawOnlyForeignPrice = false
+        var sawForeignPrice = false
         var pendingRejection: SellerFanOutRejection = .noProductLinks
 
         queryLoop: for query in queries {
@@ -728,7 +728,7 @@ public struct SellerFanOut {
                 // priced in anything else cannot be compared to the source page
                 // (no FX source), so it must never become a "better price".
                 if let requiredCurrency, currency.uppercased() != requiredCurrency {
-                    sawOnlyForeignPrice = true
+                    sawForeignPrice = true
                     continue
                 }
                 sawPrice = true
@@ -757,7 +757,7 @@ public struct SellerFanOut {
         if sawPrice {
             record.reject(.noVerifiedMatch)
         } else {
-            record.reject(sawOnlyForeignPrice ? .foreignCurrency : .noPriceOnAnyLink)
+            record.reject(sawForeignPrice ? .foreignCurrency : .noPriceOnAnyLink)
         }
     }
 

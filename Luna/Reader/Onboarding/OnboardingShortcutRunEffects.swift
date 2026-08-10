@@ -15,9 +15,17 @@ enum OnboardingShortcutRunTiming {
     static let islandExpandDuration: TimeInterval = 0.52
     /// The link bubble's arc up into the expanding island.
     static let bubbleFlightDuration: TimeInterval = 0.68
-    static let islandProgressDuration: TimeInterval = 1.35
+    /// The ring filling. It and `islandTapDelay` are the whole of the island's
+    /// DWELL — the beat between the capsule finishing its inflation and the
+    /// staged finger landing on it — and they were a third longer than that
+    /// beat is worth: the expansion is the thing to watch, and a ring that has
+    /// plainly finished sitting there waiting to be tapped reads as the
+    /// demonstration having paused. Cut together (1.35 + 0.45 → 0.90 + 0.30) so
+    /// the ratio between "still working" and "finished, about to be tapped"
+    /// survives the trim. Nothing about the pop-out or the collapse changes.
+    static let islandProgressDuration: TimeInterval = 0.90
     /// The finished ring rests a moment before the staged finger arrives.
-    static let islandTapDelay: TimeInterval = 0.45
+    static let islandTapDelay: TimeInterval = 0.30
     static let mockTapDuration: TimeInterval = 0.58
     static let islandCollapseDuration: TimeInterval = 0.30
     /// The Safari-to-Messages hop after setup completes or is skipped. The

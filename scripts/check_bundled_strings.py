@@ -125,6 +125,15 @@ def main(argv: list[str]) -> int:
             # Nothing built yet for this root — not this script's failure to
             # report; the build would already have failed.
             continue
+        # The bundle's OWN copy, the one App Intents metadata resolves against.
+        # A target that never got the resource reference has the LunaModels
+        # bundle copies and nothing else, and every intent title silently shows
+        # as a raw key.
+        if not os.path.isfile(os.path.join(root, "en.lproj", TABLE_NAME)):
+            failures.append(
+                f"{root}: has no en.lproj/{TABLE_NAME} of its own — App Intents "
+                "metadata would show raw keys. Run "
+                "scripts/add_strings_to_app_bundles.rb")
         for path in copies_under(root):
             checked += 1
             with open(path, "rb") as handle:
@@ -142,11 +151,12 @@ def main(argv: list[str]) -> int:
         return 0
 
     print(
-        "error: a built copy of the strings table does not match "
-        f"{source_path}. The build system reused a stale copy — the app would "
-        "show wording nobody wrote. Delete the stale product and build again "
-        "(for one app: rm -rf the .app in $BUILT_PRODUCTS_DIR; for all of "
-        "them: use a clean -derivedDataPath).",
+        f"error: a built bundle does not carry the table in {source_path} "
+        f"({len(failures)} of {checked} copies). Where a copy is merely STALE, "
+        "the build system reused it rather than re-copying, and the app would "
+        "show wording nobody wrote — delete the product and build again "
+        "(one app: rm -rf its .app in $BUILT_PRODUCTS_DIR; all of them: build "
+        "into a clean -derivedDataPath).",
         file=sys.stderr,
     )
     for failure in failures:

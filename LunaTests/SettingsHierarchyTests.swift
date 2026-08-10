@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaModels
 import UIKit
 import XCTest
 @testable import Luna
@@ -109,15 +110,24 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(alert.actions.map(\.title), ["Not Now", "OK"])
     }
 
-    /// The Safari extension needs no particular OS or hardware, so its section
-    /// survives on a device with no Action Button to assign the shortcut to —
+    /// The Safari extension needs no particular OS or hardware, so its sections
+    /// survive on a device with no Action Button to assign the shortcut to —
     /// and the screen renames itself to what is left of it.
-    func testWithoutShortcutHardwareOnlyTheSafariSectionRemains() {
+    ///
+    /// What is left is the extension's own two toggles, and each is gated on a
+    /// KIND rather than on the device: the suggestion pill only fires on article
+    /// pages (`handlesArticles`) and the in-page video player only opens on media
+    /// pages (`handlesMedia`). The test host is the CENTRAL Luna app, which
+    /// handles both, so both stand here; Reader would show only "Luna Button" and
+    /// the Downloader only "Video Player" — a split no in-process test can reach,
+    /// since `LunaApp.current` comes from the host bundle id.
+    func testWithoutShortcutHardwareTheKindGatedSafariSectionsRemain() {
         let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
         window = UITestSupport.host(screen)
 
-        XCTAssertEqual(screen.tableView.numberOfSections, 1)
-        XCTAssertEqual(sectionTitles(screen), ["Luna Button"])
+        XCTAssertTrue(LunaApp.current.handlesArticles && LunaApp.current.handlesMedia)
+        XCTAssertEqual(screen.tableView.numberOfSections, 2)
+        XCTAssertEqual(sectionTitles(screen), ["Luna Button", "Video Player"])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: false), "Safari")
     }
@@ -129,8 +139,8 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(
             sectionTitles(screen),
             [
-                "Luna Button", "Apple Intelligence", "Double Save Action",
-                "Action Button",
+                "Luna Button", "Video Player", "Apple Intelligence",
+                "Double Save Action", "Action Button",
             ])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: true),

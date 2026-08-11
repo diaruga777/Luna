@@ -424,6 +424,9 @@ system Settings on the second attempt — through an injected
 `DownloadStorageChoosing`; the real one's own behaviour (the permission request,
 the revert, the inline age, the answered marker) is in
 `AutoDownloadSettingsTests`.
+The cycling labels are pinned there too, driving the row's real slide: each turn
+carries the phrasing of the app whose pick the row arrives with, and the label
+holds its leading position across turns even when a reflow lands mid-slide.
 `WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the

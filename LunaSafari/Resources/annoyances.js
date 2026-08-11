@@ -556,9 +556,9 @@
     //
     // Every failure resolves to ENABLED (the shipped behavior, and what a user who
     // never opened Settings gets): no answer inside a second, a rejected relay, no
-    // `browser` object at all. The Downloader and Price Tracker never even ask
-    // themselves the question differently — their native handler always answers
-    // true, because they expose no control.
+    // `browser` object at all. This script is the same in all four apps and asks
+    // the same question in each; the Downloader's and Price Tracker's native
+    // handler simply always answers true, because they expose no control.
 
     var GATE_PENDING = 0, GATE_ON = 1, GATE_OFF = 2;
     var GATE_TIMEOUT = 1000;

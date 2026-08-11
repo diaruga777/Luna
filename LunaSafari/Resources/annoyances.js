@@ -6,6 +6,13 @@
 // unsolicited newsletter, app-install, notification, survey, ad-interstitial, and
 // ad-block nags only when they are actually overlays. It never targets ordinary ad
 // slots, sponsored cards, or inline publisher promotions.
+//
+// The CONSENT half is the one part the user can switch off ("Decline cookies for
+// me", Settings → Safari in Luna and Reader). A content script cannot reach the
+// native handler, so the answer arrives via a background.js relay — which means it
+// arrives LATE, after this script has already run. Consent actions are therefore
+// DEFERRED until the gate resolves, and every failure mode (no answer, a slow one,
+// no `browser` at all) resolves to ENABLED, the shipped behavior.
 
 (function () {
     "use strict";
@@ -14,8 +21,13 @@
     window.__lunaAnnoyanceSuppressionRan = true;
 
     var HIDDEN_CLASS = "luna-annoyance-hidden";
+    // Set on <html> to switch OFF the companion stylesheet's pre-paint consent
+    // hide (annoyances.css keys every consent selector on its absence).
+    var ALLOW_COOKIES_ATTRIBUTE = "data-luna-cookies-allowed";
     var lastInteraction = -Infinity;
-    var stats = { consentChoices: 0, consentHidden: 0, popoversHidden: 0 };
+    var stats = {
+        consentChoices: 0, consentHidden: 0, popoversHidden: 0, twoStepFlows: 0
+    };
     var retryingConsentRoots = new WeakSet();
 
     // Stable public hooks / markup from the largest CMPs. Text matching below is
@@ -32,8 +44,16 @@
         '[id*="consent-banner" i]', '[class*="consent-banner" i]'
     ].join(",");
 
+    // Each entry is a specific CMP's own documented refuse control. Nothing here
+    // is a shape ("the second button", "the secondary-styled one") — Quantcast's
+    // `.qc-cmp2-summary-buttons [mode="secondary"]` is deliberately ABSENT for
+    // exactly that reason: publishers configure that slot as either "DISAGREE" or
+    // "MORE OPTIONS", and clicking the latter opens a preference centre. Its
+    // DISAGREE variant is caught by the label pass below instead, which reads what
+    // the button actually says.
     var REJECT_SELECTOR = [
         "#onetrust-reject-all-handler",
+        ".ot-pc-refuse-all-handler",
         "#CybotCookiebotDialogBodyButtonDecline",
         "#didomi-notice-disagree-button",
         ".didomi-continue-without-agreeing",
@@ -45,23 +65,92 @@
         ".osano-cm-denyAll",
         "#cmplz-deny",
         ".cmplz-deny",
+        // TrustArc's "Required Cookies Only" control on its own banner.
+        "#truste-consent-required",
+        // Sourcepoint renders its first layer inside an `sp_message_iframe_*`
+        // frame; `all_frames` means this script runs INSIDE that frame, where the
+        // wrapper is `.message-container` rather than the parent document's
+        // `.sp_message_container`. Both are scoped to the exact title, so neither
+        // can match an unrelated button.
+        '.sp_message_container button[title="reject all" i]',
+        '.message-container button[title="reject all" i]',
         '[data-role="reject-all"]',
         '[data-action="reject-all"]'
     ].join(",");
 
     // Exact normalized labels only. Deliberately excludes vague actions such as
-    // "continue", "save", and "close", and never includes an accept action.
+    // "continue", "save", and "close", and never includes an accept action —
+    // exactness IS the safety property here, so nothing below is a substring or a
+    // pattern. Ordered by language: English, French, German, Spanish, Italian,
+    // Dutch, Portuguese, Polish, Danish/Norwegian, Swedish.
     var REJECT_LABELS = new Set([
-        "reject all", "reject optional cookies", "reject non-essential cookies",
-        "reject nonessential cookies", "deny all", "decline all", "decline cookies",
-        "only necessary", "necessary only", "essential only", "use necessary cookies only",
+        "reject", "reject all", "reject cookies", "reject all cookies",
+        "reject optional cookies", "reject non essential cookies",
+        "reject nonessential cookies", "deny all", "deny cookies",
+        "decline", "decline all", "decline cookies", "decline optional cookies",
+        "disagree", "i disagree", "do not agree", "i do not agree", "do not consent",
+        "only necessary", "necessary only", "necessary cookies only",
+        "only necessary cookies", "essential only", "essential cookies only",
+        "only essential cookies", "use necessary cookies only",
         "continue without accepting", "continue without agreeing",
-        "tout refuser", "refuser tout", "uniquement les cookies nécessaires",
-        "alle ablehnen", "nur notwendige cookies", "nur erforderliche cookies",
-        "rechazar todo", "solo necesarias", "solo cookies necesarias",
-        "rifiuta tutto", "solo cookie necessari", "recusar tudo",
-        "apenas cookies necessários", "alles weigeren", "alleen noodzakelijke cookies"
+        "tout refuser", "refuser tout", "refuser", "refuser tous les cookies",
+        "continuer sans accepter", "uniquement les cookies nécessaires",
+        "cookies nécessaires uniquement",
+        "alle ablehnen", "alles ablehnen", "ablehnen", "nur notwendige",
+        "nur notwendige cookies", "nur erforderliche cookies",
+        "nur essenzielle cookies", "weiter ohne einwilligung",
+        "rechazar todo", "rechazar todas", "rechazar cookies",
+        "rechazar todas las cookies", "denegar todo", "solo necesarias",
+        "solo cookies necesarias", "solo las necesarias", "solo esenciales",
+        "continuar sin aceptar",
+        "rifiuta tutto", "rifiuta tutti", "rifiuta tutti i cookie",
+        "solo cookie necessari", "solo i cookie necessari",
+        "continua senza accettare",
+        "alles weigeren", "weiger alles", "alles afwijzen", "afwijzen",
+        "alleen noodzakelijke", "alleen noodzakelijke cookies",
+        "alleen essentiële cookies", "doorgaan zonder accepteren",
+        "recusar tudo", "rejeitar tudo", "rejeitar todos",
+        "rejeitar todos os cookies", "apenas cookies necessários",
+        "apenas os necessários", "continuar sem aceitar",
+        "odrzuć wszystkie", "odrzuć wszystko", "odrzuć wszystkie pliki cookie",
+        "odrzuć", "tylko niezbędne", "tylko niezbędne pliki cookie",
+        "nie zgadzam się",
+        "afvis alle", "afvis alt", "kun nødvendige", "kun nødvendige cookies",
+        "avvis alle", "avvis alt", "bare nødvendige",
+        "avvisa alla", "avvisa allt", "neka alla", "endast nödvändiga",
+        "endast nödvändiga cookies", "bara nödvändiga"
     ]);
+
+    // The one thing Luna must never click, checked at the single click sink rather
+    // than trusted per source: the curated label set above already excludes accept
+    // actions, but a CMP selector and a two-step flow both resolve to whatever
+    // markup a publisher actually shipped. Word-START boundaries matter — "agree"
+    // must not fire on "disagree", and "accept" must fire on "accepting" so the
+    // negation clause below is what saves "continue without accepting".
+    var ACCEPT_WORDS = new RegExp(
+        "\\b(?:accept|agree|allow|opt in|akzept|zustimm|einverstanden|einwillig"
+        + "|accepter|accett|acept|aceit|akkoord|godta|acceptera|tillad"
+        + "|zgadzam|zaakceptuj|zezwól|zulassen)");
+    var REFUSAL_WORDS = new RegExp(
+        "\\b(?:without|sans|sin|senza|sem|ohne|zonder|bez|uden|utan|uten|ikke|inte"
+        + "|nie|niet|non|not|no|nej|nein|reject|refuse|refuser|decline|deny)\\b");
+
+    function readsAsAccept(label) {
+        if (!ACCEPT_WORDS.test(label)) { return false; }
+        // "continue without accepting", "nie zgadzam się", "niet akkoord": an
+        // accept word inside an explicit refusal is still a refusal.
+        return !REFUSAL_WORDS.test(label);
+    }
+
+    // Deterministic two-step refusals, for named CMPs ONLY: a first layer with no
+    // reject button, plus that CMP's own documented refuse-all control one screen
+    // in. Both halves are fixed markup — nothing here searches a preference centre
+    // for a plausible-looking button, and the accept veto still applies to each
+    // click. `scope` is where the second control appears, which for OneTrust is the
+    // document (the panel is a SIBLING of the banner, not a descendant).
+    var TWO_STEP_FLOWS = [
+        { opener: "#onetrust-pc-btn-handler", refuse: ".ot-pc-refuse-all-handler" }
+    ];
 
     var ANNOYANCE_TEXT = [
         /subscribe to (?:our|the) newsletter/,
@@ -159,9 +248,11 @@
         return true;
     }
 
-    function clickReject(root) {
-        var button = exactRejectButton(root);
-        if (!button) { return false; }
+    // The ONE place a consent control is ever activated. Every source of a
+    // button — known selector, exact label, two-step flow — funnels through here,
+    // so the accept veto cannot be forgotten by a new caller.
+    function clickRefusal(button) {
+        if (!isActionable(button) || readsAsAccept(buttonLabel(button))) { return false; }
         try {
             button.click();
             stats.consentChoices++;
@@ -169,6 +260,46 @@
         } catch (e) {
             return false;
         }
+    }
+
+    function clickReject(root) {
+        return clickRefusal(exactRejectButton(root));
+    }
+
+    // A recognized CMP whose first layer offers no reject: open its settings pane
+    // and click its own refuse-all control when that appears. Only the flows in
+    // `TWO_STEP_FLOWS` are attempted, and the opener is vetoed like any other
+    // click — a publisher who relabelled it "Accept and manage" gets nothing.
+    function beginTwoStepRefusal(root) {
+        if (!root || !root.querySelector) { return false; }
+        var scope = (root.getRootNode && root.getRootNode()) || document;
+        for (var i = 0; i < TWO_STEP_FLOWS.length; i++) {
+            var flow = TWO_STEP_FLOWS[i];
+            var opener = root.querySelector(flow.opener) || (scope.querySelector
+                ? scope.querySelector(flow.opener) : null);
+            if (!isActionable(opener) || readsAsAccept(buttonLabel(opener))) { continue; }
+            try {
+                opener.click();
+            } catch (e) {
+                continue;
+            }
+            stats.twoStepFlows++;
+            completeTwoStepRefusal(scope, flow.refuse, 0);
+            return true;
+        }
+        return false;
+    }
+
+    // The second half, retried on the same ladder logic as a hydrating banner:
+    // the pane is usually rendered on demand, so the control does not exist at the
+    // moment the opener is clicked.
+    function completeTwoStepRefusal(scope, selector, attempt) {
+        var delays = [100, 250, 600, 1200];
+        if (scope.querySelector && clickRefusal(scope.querySelector(selector))) { return; }
+        if (attempt >= delays.length) { return; }
+        setTimeout(function () {
+            completeTwoStepRefusal(scope, selector, attempt + 1);
+        }, delays[attempt]);
     }
 
     function retryConsentChoice(root) {
@@ -221,11 +352,26 @@
     function processConsent(element) {
         var root = semanticConsentRoot(element);
         if (!root) { return false; }
-        clickReject(root);
+        // TRUE on every branch: this IS consent UI, so the generic popover pass
+        // must not reconsider it — least of all when the user has asked to answer
+        // cookie prompts themselves, where re-entering as a "popover" would hide
+        // the very dialog we just revealed.
+        if (gate === GATE_OFF) { return true; }
+        if (gate === GATE_PENDING) {
+            deferConsentRoot(root);
+            return true;
+        }
+        answerConsent(root);
+        return true;
+    }
+
+    // Choose the privacy-preserving action, then get the notice out of the way.
+    // Only ever reached with the gate resolved ON.
+    function answerConsent(root) {
+        if (!clickReject(root)) { beginTwoStepRefusal(root); }
         retryConsentChoice(root);
         if (hide(root, "consent")) { stats.consentHidden++; }
         unlockPage();
-        return true;
     }
 
     function hasAnnoyanceLanguage(element) {
@@ -379,10 +525,119 @@
         }
     }
 
+    // ---- The cookie auto-decline gate -------------------------------------
+    //
+    // "Decline cookies for me" (Settings → Safari, Luna and Reader only) is the
+    // one switchable part of this script. A content script cannot call
+    // `sendNativeMessage`, so the answer comes back through background.js — after
+    // this script has already run at document_start. Rather than act and undo,
+    // consent actions WAIT: while the answer is in flight a recognized banner is
+    // remembered and left alone, and the companion stylesheet keeps it hidden, so
+    // the user sees no flash whichever way the answer goes.
+    //
+    // Every failure resolves to ENABLED (the shipped behavior, and what a user who
+    // never opened Settings gets): no answer inside a second, a rejected relay, no
+    // `browser` object at all. The Downloader and Price Tracker never even ask
+    // themselves the question differently — their native handler always answers
+    // true, because they expose no control.
+
+    var GATE_PENDING = 0, GATE_ON = 1, GATE_OFF = 2;
+    var GATE_TIMEOUT = 1000;
+    var gate = GATE_PENDING;
+    // Consent roots recognized while the answer was still in flight. Bounded —
+    // the rescan `applyGate` runs finds anything this list had to drop.
+    var deferredConsentRoots = [];
+
+    function deferConsentRoot(root) {
+        if (deferredConsentRoots.length >= 8) { return; }
+        if (deferredConsentRoots.indexOf(root) >= 0) { return; }
+        deferredConsentRoots.push(root);
+    }
+
+    // Flips the companion stylesheet's pre-paint consent hide on or off. One
+    // attribute on <html>, which every consent selector in annoyances.css is
+    // keyed on — deterministic in a way a competing "revert" stylesheet is not.
+    function setCookiesAllowed(allowed) {
+        if (!document.documentElement) {
+            document.addEventListener("readystatechange", function once() {
+                if (!document.documentElement) { return; }
+                document.removeEventListener("readystatechange", once);
+                setCookiesAllowed(gate === GATE_OFF);
+            });
+            return;
+        }
+        if (allowed) {
+            document.documentElement.setAttribute(ALLOW_COOKIES_ATTRIBUTE, "");
+        } else {
+            document.documentElement.removeAttribute(ALLOW_COOKIES_ATTRIBUTE);
+        }
+    }
+
+    function revealConsentUI() {
+        setCookiesAllowed(true);
+        // And anything this script had already hidden itself, so the late `off`
+        // answer of a slow relay still leaves the page answerable.
+        var hidden = document.querySelectorAll
+            ? document.querySelectorAll('[data-luna-suppressed="consent"]') : [];
+        for (var i = 0; i < hidden.length; i++) {
+            hidden[i].classList.remove(HIDDEN_CLASS);
+            hidden[i].removeAttribute("data-luna-suppressed");
+        }
+    }
+
+    function applyGate(enabled) {
+        gate = enabled ? GATE_ON : GATE_OFF;
+        if (!enabled) {
+            deferredConsentRoots = [];
+            revealConsentUI();
+            return;
+        }
+        setCookiesAllowed(false);
+        var roots = deferredConsentRoots;
+        deferredConsentRoots = [];
+        for (var i = 0; i < roots.length; i++) {
+            if (roots[i].isConnected) { answerConsent(roots[i]); }
+        }
+        if (document.documentElement) { scan(document.documentElement); }
+    }
+
+    function resolveGate() {
+        var override = window.__lunaCookieAutoDecline;
+        if (typeof browser === "undefined" || !browser.runtime || !browser.runtime.sendMessage) {
+            applyGate(typeof override === "boolean" ? override : true);
+            return;
+        }
+        var settled = false;
+        var timer = null;
+        function settle(enabled) {
+            if (settled) { return; }
+            settled = true;
+            if (timer !== null) { clearTimeout(timer); }
+            applyGate(enabled);
+        }
+        timer = setTimeout(function () { settle(true); }, GATE_TIMEOUT);
+        try {
+            var answer = browser.runtime.sendMessage({ type: "annoyanceSettings" });
+            if (!answer || !answer.then) {
+                settle(true);
+                return;
+            }
+            answer.then(function (resp) {
+                settle(!(resp && resp.cookieAutoDecline === false));
+            }).catch(function () { settle(true); });
+        } catch (e) {
+            settle(true);
+        }
+    }
+
     function recordInteraction() { lastInteraction = Date.now(); }
     document.addEventListener("pointerdown", recordInteraction, true);
     document.addEventListener("touchstart", recordInteraction, true);
     document.addEventListener("keydown", recordInteraction, true);
+
+    // Kicked off BEFORE the first scan: with no `browser` to ask (the tests' bare
+    // WKWebView) it resolves synchronously, so nothing is ever deferred there.
+    resolveGate();
 
     if (document.documentElement) {
         observeRoot(document.documentElement);
@@ -401,11 +656,18 @@
     // Bare-WKWebView verification hooks. They are intentionally read-only except
     // for the explicit rescan function used by deterministic fixtures.
     window.__lunaSuppressAnnoyancesNow = function () { scan(document.documentElement); };
+    // The gate, without a background page to relay it: set
+    // `window.__lunaCookieAutoDecline = false` BEFORE this script is evaluated to
+    // start off, or call this to flip it afterwards (which reveals what was
+    // already hidden, exactly as a slow relay answering `false` does).
+    window.__lunaSetCookieAutoDecline = function (enabled) { applyGate(!!enabled); };
     window.__lunaAnnoyanceStats = function () {
         return {
             consentChoices: stats.consentChoices,
             consentHidden: stats.consentHidden,
-            popoversHidden: stats.popoversHidden
+            popoversHidden: stats.popoversHidden,
+            twoStepFlows: stats.twoStepFlows,
+            cookieAutoDecline: gate !== GATE_OFF
         };
     };
 }());

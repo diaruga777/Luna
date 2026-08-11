@@ -31,6 +31,29 @@ function syncBypassRuleset() {
         .catch(function () {});
 }
 
+// The annoyance script's ONE setting ("Decline cookies for me", Settings → Safari
+// in Luna and Reader). annoyances.js runs at document_start in EVERY frame, and a
+// content script can't reach the native handler — so without a cache an
+// iframe-heavy page would fire a native round trip per frame before it could
+// decide whether to touch a cookie banner. Cached for the background page's
+// lifetime and refreshed on tab activation, mirroring syncBypassRuleset() above:
+// change the setting in the app, come back to Safari, and the next tab you touch
+// picks it up. `null` means "not asked yet"; every failure answers true, which is
+// the shipped behavior and what the native side answers for the two apps that
+// expose no control at all.
+var cookieAutoDecline = null;
+function syncAnnoyanceSettings() {
+    return browser.runtime.sendNativeMessage("application.id", { type: "annoyanceSettings" })
+        .then(function (resp) {
+            cookieAutoDecline = !(resp && resp.cookieAutoDecline === false);
+            return cookieAutoDecline;
+        })
+        .catch(function () {
+            cookieAutoDecline = true;
+            return true;
+        });
+}
+
 function report(url) {
     if (!url || !url.startsWith("http")) { return; }
     if (url === lastSent) { return; }
@@ -66,6 +89,7 @@ async function reportActiveTab() {
 
 browser.tabs.onActivated.addListener(reportActiveTab);
 browser.tabs.onActivated.addListener(syncBypassRuleset);
+browser.tabs.onActivated.addListener(syncAnnoyanceSettings);
 
 browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
     if (!tab || !tab.active) { return; }
@@ -114,6 +138,16 @@ browser.runtime.onMessage.addListener(function (message) {
                     appName: ""
                 };
             });
+    }
+    if (message.type === "annoyanceSettings") {
+        // Answered from cache when we have one — annoyances.js asks once per
+        // frame, and every frame of a page wants the same answer.
+        if (cookieAutoDecline !== null) {
+            return Promise.resolve({ cookieAutoDecline: cookieAutoDecline });
+        }
+        return syncAnnoyanceSettings().then(function (on) {
+            return { cookieAutoDecline: on };
+        });
     }
     if (message.type === "setupCelebrationShown") {
         return browser.runtime.sendNativeMessage("application.id", { type: "setupCelebrationShown" })
@@ -194,4 +228,5 @@ browser.runtime.onMessage.addListener(function (message) {
 });
 
 syncBypassRuleset();
+syncAnnoyanceSettings();
 reportActiveTab();

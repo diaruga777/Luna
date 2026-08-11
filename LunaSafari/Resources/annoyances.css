@@ -8,44 +8,69 @@
  * handles late/unknown overlays, and restores scrolling.
  */
 
-.luna-annoyance-hidden,
-#onetrust-banner-sdk,
-#onetrust-consent-sdk > #onetrust-banner-sdk,
-.onetrust-pc-dark-filter,
-#CybotCookiebotDialog,
-#CybotCookiebotDialogBodyUnderlay,
-#didomi-host,
-#didomi-popup,
-.didomi-popup-backdrop,
-#qc-cmp2-container,
-.qc-cmp2-container,
-[id^="sp_message_container_"],
-iframe[id^="sp_message_iframe_"],
-#trustarc-banner-overlay,
-#trustarc-banner-container,
-.truste_overlay,
-.truste_box_overlay,
-.osano-cm-window,
-.osano-cm-dialog,
-.cky-consent-container,
-.cky-overlay,
-#cookie-law-info-bar,
-.cli-modal-backdrop,
-.cli-modal,
-#cmplz-cookiebanner-container,
-.cmplz-cookiebanner,
-.cmplz-soft-cookiewall,
-#consent_blackbar,
-#klaro .cookie-modal,
-#klaro .cookie-notice,
-.klaro .cookie-modal,
-.klaro .cookie-notice,
-[id*="cookie-banner" i],
-[class*="cookie-banner" i],
-[id*="cookie-consent" i],
-[class*="cookie-consent" i],
-[id*="consent-banner" i],
-[class*="consent-banner" i] {
+/* The generic sink annoyances.js hides through, for anything it decided about
+ * itself (late popovers, unknown consent roots). Never gated: it only ever
+ * carries elements the script chose. */
+.luna-annoyance-hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/*
+ * The CONSENT half, and the one half a user can switch off ("Decline cookies for
+ * me", Settings → Safari in Luna and Reader). It stays a declarative rule so a
+ * known dialog never flashes before JavaScript has hydrated — the off switch
+ * rides an attribute on <html> instead, which annoyances.js sets once the native
+ * handler answers that auto-decline is off. That is deterministic in a way a
+ * later "revert" stylesheet is not: an extension stylesheet's cascade origin
+ * relative to a JS-injected one is not something this file gets to assume, and
+ * one attribute either matches or it doesn't.
+ *
+ * `:is()` keeps the prefix from being repeated 26 times, and is forgiving — an
+ * unsupported selector added later drops itself instead of killing the rule.
+ */
+:root:not([data-luna-cookies-allowed]) :is(
+    #onetrust-banner-sdk,
+    #onetrust-consent-sdk > #onetrust-banner-sdk,
+    #onetrust-pc-sdk,
+    .onetrust-pc-dark-filter,
+    #CybotCookiebotDialog,
+    #CybotCookiebotDialogBodyUnderlay,
+    #didomi-host,
+    #didomi-popup,
+    .didomi-popup-backdrop,
+    #qc-cmp2-container,
+    .qc-cmp2-container,
+    [id^="sp_message_container_"],
+    iframe[id^="sp_message_iframe_"],
+    #trustarc-banner-overlay,
+    #trustarc-banner-container,
+    .truste_overlay,
+    .truste_box_overlay,
+    .osano-cm-window,
+    .osano-cm-dialog,
+    .cky-consent-container,
+    .cky-overlay,
+    #cookie-law-info-bar,
+    .cli-modal-backdrop,
+    .cli-modal,
+    #cmplz-cookiebanner-container,
+    .cmplz-cookiebanner,
+    .cmplz-soft-cookiewall,
+    #consent_blackbar,
+    #klaro .cookie-modal,
+    #klaro .cookie-notice,
+    .klaro .cookie-modal,
+    .klaro .cookie-notice,
+    [id*="cookie-banner" i],
+    [class*="cookie-banner" i],
+    [id*="cookie-consent" i],
+    [class*="cookie-consent" i],
+    [id*="consent-banner" i],
+    [class*="consent-banner" i]
+) {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;

@@ -31,6 +31,12 @@ public protocol DownloadStorageChoosing: AnyObject {
     /// The choice as it stands, which on a fresh install is the shipped default
     /// rather than anything the user has said.
     var usesPhotos: Bool { get }
+    /// Whether the STORED choice is already Photos — possibly answered in the
+    /// sibling app that downloads, since the choice itself lives in the shared
+    /// App Group — while THIS process has never been granted Photos access.
+    /// Photos permission is per-app sandbox, so the shared answer alone does
+    /// not mean this process can write to it.
+    var needsPhotosPermissionInThisApp: Bool { get }
     /// Stores downloads in Luna, under the deletion clock.
     func chooseInLuna()
     /// Asks for Photos access FIRST and saves the setting only if it is granted:
@@ -40,6 +46,12 @@ public protocol DownloadStorageChoosing: AnyObject {
     /// Every outcome counts as the user having ANSWERED — a refusal is an answer
     /// — so the row is retired from the next launch either way.
     func choosePhotos(completion: @escaping (DownloadStoragePhotosOutcome) -> Void)
+    /// Relays an ALREADY-STORED Photos choice into this process by asking for
+    /// its own Photos access. Unlike `choosePhotos`, a refusal does not move
+    /// the (already-answered, shared) setting back to Luna — the sibling app
+    /// that made the choice may already be saving to Photos successfully; this
+    /// process simply cannot until the user grants it from Settings.
+    func requestPhotosPermissionRelay(completion: @escaping (DownloadStoragePhotosOutcome) -> Void)
 }
 
 /// Where the installed chooser lives. One per process, set at launch.

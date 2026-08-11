@@ -42,6 +42,14 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
 
     public var usesPhotos: Bool { MediaStorageSettings.option == .photos }
 
+    public var needsPhotosPermissionInThisApp: Bool {
+        guard MediaStorageSettings.option == .photos else { return false }
+        switch authorizationStatus() {
+        case .authorized, .limited: return false
+        default: return true
+        }
+    }
+
     /// "In Luna" carries no clock of its own on this row, so it means the
     /// inline age — unless the user already has an age, in which case the row is
     /// only moving them off Photos and must not silently re-time their library.
@@ -79,6 +87,31 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
                 return
             }
             MediaStorageSettings.choose(.photos)
+            completion(.granted)
+        }
+    }
+
+    public func requestPhotosPermissionRelay(
+        completion: @escaping (DownloadStoragePhotosOutcome) -> Void
+    ) {
+        switch authorizationStatus() {
+        case .authorized, .limited:
+            completion(.granted)
+            return
+        case .denied, .restricted:
+            // The setting is already Photos and stays that way — it is the
+            // sibling app's answer, not this process's to revert — but this
+            // process still cannot write there until Settings says otherwise.
+            completion(.refusedBefore)
+            return
+        default:
+            break
+        }
+        Task { @MainActor in
+            guard await saver.requestReadAuthorization() else {
+                completion(.refused)
+                return
+            }
             completion(.granted)
         }
     }

@@ -834,18 +834,58 @@ final class UtilCardContentViewController: CardContentViewController {
     // MARK: - Where downloads are stored
 
     /// Puts the "Store downloads …" line on the card if this app downloads at
-    /// all and the user has never answered the question. Read once, at
-    /// construction: answering it retires the row from the next launch's card
-    /// rather than pulling it out from under the tap that answered it.
+    /// all, and either the user has never answered the question here or in
+    /// Settings, or the answer standing is Photos from the SIBLING app that
+    /// downloads (the choice lives in the shared App Group; Photos permission
+    /// does not) and this process has never itself been asked for it. Read
+    /// once, at construction: answering it — or resolving the permission
+    /// relay — retires the row from the next launch's card rather than
+    /// pulling it out from under the tap that answered it.
     private func installStorageChooserIfOffered() {
-        guard let storageChoice, storageChoice.isUnanswered else { return }
+        guard let storageChoice else { return }
+        let needsPermissionRelay = storageChoice.needsPhotosPermissionInThisApp
+        guard storageChoice.isUnanswered || needsPermissionRelay else { return }
         let chooser = UtilCardStorageChooserView()
         chooser.setSelection(storageChoice.usesPhotos ? .photos : .luna)
+        chooser.setPermissionError(needsPermissionRelay)
         chooser.onSelect = { [weak self] option in
             self?.applyStorageChoice(option)
         }
+        chooser.onPermissionErrorTapped = { [weak self] in
+            self?.presentPhotosPermissionAlert()
+        }
         view.addSubview(chooser)
         storageChooser = chooser
+        // Fires the instant the row appears — the same system prompt a manual
+        // "Photos" tap would produce, just relayed on the sibling app's behalf
+        // rather than waiting for this app's user to tap anything.
+        if needsPermissionRelay {
+            storageChoice.requestPhotosPermissionRelay { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .granted:
+                    storageChooser?.setPermissionError(false)
+                case .refused, .refusedBefore:
+                    storageChooser?.setPermissionError(true)
+                }
+            }
+        }
+    }
+
+    /// Directs the user to this app's own page in system Settings — the only
+    /// place a denied Photos permission can now be granted.
+    private func presentPhotosPermissionAlert() {
+        let alert = UIAlertController(
+            title: L10n.string("Onboarding_Util_storagePermissionAlertTitle"),
+            message: L10n.string("Onboarding_Util_storagePermissionAlertMessage"),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(
+            title: L10n.string("Common_openSettings"), style: .default
+        ) { [weak self] _ in
+            self?.openSystemSettings()
+        })
+        present(alert, animated: true)
     }
 
     /// Applies a tap on the storage line. "In Luna" is immediate; "in Photos"
@@ -858,18 +898,22 @@ final class UtilCardContentViewController: CardContentViewController {
         case .luna:
             storageChoice.chooseInLuna()
             storageChooser?.setSelection(.luna)
+            storageChooser?.setPermissionError(false)
         case .photos:
             storageChoice.choosePhotos { [weak self] outcome in
                 guard let self else { return }
                 switch outcome {
                 case .granted:
                     storageChooser?.setSelection(.photos)
+                    storageChooser?.setPermissionError(false)
                 case .refused:
                     storageChooser?.setSelection(.luna)
+                    storageChooser?.setPermissionError(false)
                 case .refusedBefore:
                     // iOS will not ask again in-process; Luna's own page in
                     // Settings is the only place this can now be granted.
                     storageChooser?.setSelection(.luna)
+                    storageChooser?.setPermissionError(storageChoice.needsPhotosPermissionInThisApp)
                     openSystemSettings()
                 }
             }

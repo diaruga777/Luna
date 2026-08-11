@@ -42,19 +42,28 @@ final class UtilCardStorageChooserView: UIView {
     private static let collapsedSelectorHeight: CGFloat = 40
     private static let optionRowHeight: CGFloat = 58
     private static let optionRowGap: CGFloat = 10
+    /// The error badge overlaps the selector's top-trailing corner rather than
+    /// claiming its own width — the row's overall size stays fixed whether or
+    /// not permission is missing.
+    private static let permissionErrorBadgeSide: CGFloat = 20
 
     /// The user tapped an option. `luna` is applied by the caller directly;
     /// `photos` may be refused, which is why the caller — not this view — owns
     /// what the selection becomes.
     var onSelect: ((Option) -> Void)?
+    /// The user tapped the red exclamation badge — shown only while the
+    /// selection is Photos and this process still lacks Photos access.
+    var onPermissionErrorTapped: (() -> Void)?
 
     private(set) var selection: Option = .luna
+    private(set) var hasPermissionError = false
 
     private let titleLabel = UILabel()
     private let selector = UIControl()
     private let selectorIcon = UIImageView()
     private let selectorLabel = UILabel()
     private let chevron = UIImageView()
+    private let permissionErrorBadge = UIButton(type: .system)
 
     /// The expansion lives in the CARD, not in this row: it has to cover the
     /// rows and buttons around it, and a row-sized view cannot.
@@ -100,6 +109,21 @@ final class UtilCardStorageChooserView: UIView {
         selector.accessibilityIdentifier = "utilCard.storage.selector"
         addSubview(selector)
 
+        permissionErrorBadge.setImage(
+            UIImage(systemName: "exclamationmark.circle.fill"), for: .normal)
+        permissionErrorBadge.tintColor = .systemRed
+        permissionErrorBadge.backgroundColor = LunaColors.background
+        permissionErrorBadge.layer.cornerRadius = Self.permissionErrorBadgeSide / 2
+        permissionErrorBadge.isHidden = true
+        permissionErrorBadge.isAccessibilityElement = true
+        permissionErrorBadge.accessibilityTraits = .button
+        permissionErrorBadge.accessibilityLabel = L10n.string(
+            "Onboarding_Util_storagePermissionBadgeLabel")
+        permissionErrorBadge.accessibilityIdentifier = "utilCard.storage.permissionError"
+        permissionErrorBadge.addTarget(
+            self, action: #selector(permissionErrorTapped), for: .touchUpInside)
+        addSubview(permissionErrorBadge)
+
         apply(selection: selection)
     }
 
@@ -114,6 +138,20 @@ final class UtilCardStorageChooserView: UIView {
         selection = option
         apply(selection: option)
         setNeedsLayout()
+    }
+
+    /// Whether Photos is selected but this process still lacks Photos access
+    /// — shown as a red exclamation badge on the selector's corner. Tapping it
+    /// is the caller's business (`onPermissionErrorTapped`).
+    func setPermissionError(_ hasError: Bool) {
+        guard hasError != hasPermissionError else { return }
+        hasPermissionError = hasError
+        permissionErrorBadge.isHidden = !hasError
+        setNeedsLayout()
+    }
+
+    @objc private func permissionErrorTapped() {
+        onPermissionErrorTapped?()
     }
 
     private func apply(selection: Option) {
@@ -155,6 +193,14 @@ final class UtilCardStorageChooserView: UIView {
             y: ((selectorHeight - Self.chevronWidth) / 2).rounded(),
             width: Self.chevronWidth,
             height: Self.chevronWidth)
+        // Overlaps the selector's top-trailing corner, like a notification
+        // badge, so its presence never shifts the row's fixed width.
+        let badgeSide = Self.permissionErrorBadgeSide
+        permissionErrorBadge.frame = CGRect(
+            x: selector.frame.maxX - badgeSide * 0.6,
+            y: selector.frame.minY - badgeSide * 0.4,
+            width: badgeSide,
+            height: badgeSide)
 
         // A reflow underneath the open panel would otherwise leave it anchored
         // to where the row used to be.

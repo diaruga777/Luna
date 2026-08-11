@@ -5,6 +5,7 @@
 
 import LunaMediaDownload
 import LunaDesignSystem
+import Photos
 import UIKit
 import LunaModels
 
@@ -78,12 +79,27 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         })
         return pickerCell(
             title: L10n.string("Settings_downloads_storageLabel"), symbol: "internaldrive",
-            identifier: "storagePicker", value: current.displayName, menu: menu)
+            identifier: "storagePicker", value: current.displayName, menu: menu,
+            permissionError: Self.needsPhotosPermissionInThisApp)
     }
 
-    /// A row whose accessory is a pull-down menu button showing the current choice.
+    /// Whether Photos is the stored destination — possibly answered in the
+    /// sibling app that also downloads, since the choice lives in the shared
+    /// App Group — while THIS app has never itself been granted Photos access.
+    private static var needsPhotosPermissionInThisApp: Bool {
+        guard MediaStorageSettings.option == .photos else { return false }
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited: return false
+        default: return true
+        }
+    }
+
+    /// A row whose accessory is a pull-down menu button showing the current
+    /// choice, with an optional red-exclamation permission-error badge ahead
+    /// of it.
     private func pickerCell(
-        title: String, symbol: String, identifier: String, value: String, menu: UIMenu
+        title: String, symbol: String, identifier: String, value: String, menu: UIMenu,
+        permissionError: Bool = false
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -99,8 +115,44 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         button.showsMenuAsPrimaryAction = true
         button.menu = menu
         button.sizeToFit()
-        cell.accessoryView = button
+
+        guard permissionError else {
+            cell.accessoryView = button
+            return cell
+        }
+        let errorButton = UIButton(type: .system)
+        errorButton.setImage(UIImage(systemName: "exclamationmark.circle.fill"), for: .normal)
+        errorButton.tintColor = .systemRed
+        errorButton.accessibilityIdentifier = "\(identifier).permissionError"
+        errorButton.accessibilityLabel = L10n.string(
+            "Settings_downloads_storagePermissionErrorLabel")
+        errorButton.addAction(UIAction { [weak self] _ in
+            self?.presentPhotosPermissionAlert()
+        }, for: .touchUpInside)
+        errorButton.sizeToFit()
+        let stack = UIStackView(arrangedSubviews: [errorButton, button])
+        stack.axis = .horizontal
+        stack.spacing = 12
+        stack.alignment = .center
+        cell.accessoryView = stack
         return cell
+    }
+
+    /// Directs the user to this app's own page in system Settings — the only
+    /// place a denied Photos permission can now be granted.
+    private func presentPhotosPermissionAlert() {
+        let alert = UIAlertController(
+            title: L10n.string("Onboarding_Util_storagePermissionAlertTitle"),
+            message: L10n.string("Onboarding_Util_storagePermissionAlertMessage"),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(
+            title: L10n.string("Common_openSettings"), style: .default
+        ) { _ in
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+            UIApplication.shared.open(url)
+        })
+        present(alert, animated: true)
     }
 
     private func apply(_ policy: AutoDownloadPolicy) {

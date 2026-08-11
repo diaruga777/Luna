@@ -916,6 +916,64 @@ final class UtilCardTests: XCTestCase {
         XCTAssertFalse(chooser.isExpanded)
     }
 
+    /// The choice was already answered — Photos, from the sibling app that
+    /// shares the App Group — but this process has never itself been asked.
+    /// The row reappears (rather than staying retired) specifically to relay
+    /// the permission request, firing it the moment it appears with no tap.
+    func testStorageLineReappearsToRelayAPhotosPermissionAlreadyAnsweredElsewhere() throws {
+        let choice = FakeDownloadStorageChoice(
+            isUnanswered: false, usesPhotos: true, needsPhotosPermissionInThisApp: true,
+            relayOutcome: .granted)
+        let card = makeCard(showsOnboarding: false, storageChoice: choice)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        XCTAssertEqual(choice.relayRequests, 1)
+        XCTAssertEqual(choice.photosRequests, 0)
+        let chooser = try XCTUnwrap(storageChooser(in: card))
+        XCTAssertEqual(chooser.selection, .photos)
+        XCTAssertFalse(chooser.hasPermissionError)
+    }
+
+    /// A refused relay leaves the shared (already-answered) setting alone —
+    /// unlike a fresh `choosePhotos` refusal, it must NOT flip the sibling
+    /// app's choice back to Luna — and keeps the error badge showing.
+    func testARefusedPermissionRelayDoesNotRevertTheSharedChoice() throws {
+        let choice = FakeDownloadStorageChoice(
+            isUnanswered: false, usesPhotos: true, needsPhotosPermissionInThisApp: true,
+            relayOutcome: .refusedBefore)
+        let card = makeCard(showsOnboarding: false, storageChoice: choice)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
+        card.view.layoutIfNeeded()
+
+        XCTAssertEqual(choice.relayRequests, 1)
+        XCTAssertFalse(choice.choseLuna)
+        XCTAssertTrue(choice.usesPhotos)
+        let chooser = try XCTUnwrap(storageChooser(in: card))
+        XCTAssertEqual(chooser.selection, .photos)
+        XCTAssertTrue(chooser.hasPermissionError)
+    }
+
+    /// Tapping the badge sends the user to this app's own page in system
+    /// Settings, with a way to back out.
+    func testTappingThePermissionErrorBadgeOffersSettingsOrCancel() throws {
+        let choice = FakeDownloadStorageChoice(
+            isUnanswered: false, usesPhotos: true, needsPhotosPermissionInThisApp: true,
+            relayOutcome: .refusedBefore)
+        let card = makeCard(showsOnboarding: false, storageChoice: choice)
+        let window = UITestSupport.host(card)
+        defer { _ = window }
+
+        let badge = try XCTUnwrap(
+            card.view.descendant(identifier: "utilCard.storage.permissionError") as? UIControl)
+        badge.sendActions(for: .touchUpInside)
+
+        let alert = try XCTUnwrap(card.presentedViewController as? UIAlertController)
+        XCTAssertEqual(alert.actions.map(\.title), ["Cancel", "Open Settings"])
+    }
+
     private func storageChooser(
         in card: UtilCardContentViewController
     ) -> UtilCardStorageChooserView? {
@@ -1165,19 +1223,27 @@ final class UtilCardTests: XCTestCase {
 final class FakeDownloadStorageChoice: DownloadStorageChoosing {
     var isUnanswered: Bool
     var usesPhotos: Bool
+    var needsPhotosPermissionInThisApp: Bool
     /// What a Photos request comes back with, and how many were made.
     var photosOutcome: DownloadStoragePhotosOutcome
+    /// What a relay request comes back with, and how many were made.
+    var relayOutcome: DownloadStoragePhotosOutcome
     private(set) var photosRequests = 0
+    private(set) var relayRequests = 0
     private(set) var choseLuna = false
 
     init(
         isUnanswered: Bool = true,
         usesPhotos: Bool = true,
-        photosOutcome: DownloadStoragePhotosOutcome = .granted
+        needsPhotosPermissionInThisApp: Bool = false,
+        photosOutcome: DownloadStoragePhotosOutcome = .granted,
+        relayOutcome: DownloadStoragePhotosOutcome = .granted
     ) {
         self.isUnanswered = isUnanswered
         self.usesPhotos = usesPhotos
+        self.needsPhotosPermissionInThisApp = needsPhotosPermissionInThisApp
         self.photosOutcome = photosOutcome
+        self.relayOutcome = relayOutcome
     }
 
     func chooseInLuna() {
@@ -1189,6 +1255,16 @@ final class FakeDownloadStorageChoice: DownloadStorageChoosing {
         photosRequests += 1
         if photosOutcome == .granted { usesPhotos = true } else { usesPhotos = false }
         completion(photosOutcome)
+    }
+
+    func requestPhotosPermissionRelay(
+        completion: @escaping (DownloadStoragePhotosOutcome) -> Void
+    ) {
+        relayRequests += 1
+        // Unlike `choosePhotos`, a refusal does not revert `usesPhotos` — the
+        // sibling app's choice stands regardless of what this process can do.
+        if relayOutcome == .granted { needsPhotosPermissionInThisApp = false }
+        completion(relayOutcome)
     }
 }
 

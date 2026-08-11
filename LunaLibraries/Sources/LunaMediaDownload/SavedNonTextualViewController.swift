@@ -776,7 +776,6 @@ public final class SavedNonTextualViewController: UIViewController {
         let sourceURLString = articleURLString
         let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
         let title = readingItem?.title
-        let creator = readingItem?.channelName
         let previewURL = media.fileURL
         let kind = media.kind
         let persistence = Task.detached { () -> String? in
@@ -787,8 +786,7 @@ public final class SavedNonTextualViewController: UIViewController {
                 let pending = try store.ensureUndownloaded(
                     id: readingItem?.id ?? UUID(),
                     sourceURLString: sourceURLString,
-                    title: title,
-                    creator: creator)
+                    title: title)
                 let saved: SavedMediaItem
                 let photoSaver = PhotoLibrarySaver()
                 if kind.canSaveToPhotos,
@@ -805,12 +803,12 @@ public final class SavedNonTextualViewController: UIViewController {
                     } catch {
                         saved = try store.addDownloadedFile(
                             copy, kind: kind, sourceURLString: sourceURLString, title: title,
-                            creator: creator, requiringItemID: pending.id)
+                            requiringItemID: pending.id)
                     }
                 } else {
                     saved = try store.addDownloadedFile(
                         copy, kind: kind, sourceURLString: sourceURLString, title: title,
-                        creator: creator, requiringItemID: pending.id)
+                        requiringItemID: pending.id)
                 }
                 AutoDownloadSettings.markDownloaded(sourceURLString)
                 return saved.photosLocalIdentifier

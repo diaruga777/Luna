@@ -288,7 +288,6 @@ public final class LiveMediaDownloadManager: NSObject {
                 id: readingItem?.id ?? UUID(),
                 sourceURLString: urlString,
                 title: title ?? readingItem?.title,
-                creator: readingItem?.channelName,
                 dateSaved: readingItem?.dateAdded ?? Date())
             if !LiveMediaDownloadStartPolicy.downloaderShouldStart(
                 storageState: savedItem?.storageState
@@ -410,7 +409,6 @@ public final class LiveMediaDownloadManager: NSObject {
                 id: readingItem?.id ?? UUID(),
                 sourceURLString: sourceURLString,
                 title: title ?? readingItem?.title,
-                creator: readingItem?.channelName,
                 dateSaved: readingItem?.dateAdded ?? Date())
             else {
                 await startFailedActivity(
@@ -434,7 +432,6 @@ public final class LiveMediaDownloadManager: NSObject {
             assetURLString: asset.url.absoluteString,
             mediaKind: asset.kind,
             title: title ?? readingItem?.title ?? Self.title(for: sourceURL),
-            creator: readingItem?.channelName,
             resolveKind: .rescue,
             phase: .downloading,
             progress: 0,
@@ -474,7 +471,6 @@ public final class LiveMediaDownloadManager: NSObject {
             assetURLString: nil,
             mediaKind: nil,
             title: title ?? Self.title(for: gated.sourceURL),
-            creator: gated.readingItem?.channelName,
             resolveKind: nil,
             phase: .resolving,
             progress: 0,
@@ -1782,7 +1778,6 @@ public final class LiveMediaDownloadManager: NSObject {
             kind: kind,
             sourceURLString: job.sourceURLString,
             title: job.title,
-            creator: job.creator,
             fileExtension: job.fileExtension,
             requiringItemID: pending.id)
     }

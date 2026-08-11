@@ -87,14 +87,11 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
     /// `platform`, to dedupe saves whose URLs aren't byte-identical (a share
     /// link vs. its resolved permalink, tracking params, etc.).
     public var platformItemID: String?
-    /// Best-effort creator/author name fetched from the source, shown in place
-    /// of the URL when there's no title.
-    public var creator: String?
 
-    /// Title if fetched, else the creator name, else the raw URL as a last
-    /// resort — the single fallback rule every UI surface should use instead
-    /// of reaching for `sourceURLString` directly.
-    public var displayTitle: String { title ?? creator ?? sourceURLString }
+    /// Title if fetched, else the raw URL as a last resort — the single
+    /// fallback rule every UI surface should use instead of reaching for
+    /// `sourceURLString` directly.
+    public var displayTitle: String { title ?? sourceURLString }
 
     public var isArchived: Bool { archivedAt != nil }
 
@@ -118,14 +115,14 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case id, sourceURLString, title, dateSaved, archivedAt, kind, storageState, fileName, thumbnailFileName
-        case platform, platformItemID, creator
+        case platform, platformItemID
     }
 
     public init(
         id: UUID, sourceURLString: String, title: String?, dateSaved: Date,
         kind: MediaAsset.Kind?, storageState: StorageState,
         thumbnailFileName: String?,
-        platform: ContentPlatform? = nil, platformItemID: String? = nil, creator: String? = nil
+        platform: ContentPlatform? = nil, platformItemID: String? = nil
     ) {
         self.id = id
         self.sourceURLString = sourceURLString
@@ -137,7 +134,6 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         self.thumbnailFileName = thumbnailFileName
         self.platform = platform
         self.platformItemID = platformItemID
-        self.creator = creator
     }
 
     public init(from decoder: Decoder) throws {
@@ -151,7 +147,6 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         platform = try? container.decodeIfPresent(ContentPlatform.self, forKey: .platform)
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
-        creator = try container.decodeIfPresent(String.self, forKey: .creator)
         if let state = try container.decodeIfPresent(StorageState.self, forKey: .storageState) {
             storageState = state
         } else if let legacyFileName = try container.decodeIfPresent(String.self, forKey: .fileName),
@@ -174,7 +169,6 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(thumbnailFileName, forKey: .thumbnailFileName)
         try container.encodeIfPresent(platform, forKey: .platform)
         try container.encodeIfPresent(platformItemID, forKey: .platformItemID)
-        try container.encodeIfPresent(creator, forKey: .creator)
         // Continue writing the legacy key for local rows during the rollout.
         try container.encodeIfPresent(fileName, forKey: .fileName)
     }
@@ -376,7 +370,6 @@ public final class SavedMediaStore {
         sourceURLString: String,
         title: String? = nil,
         kind: MediaAsset.Kind? = nil,
-        creator: String? = nil,
         dateSaved: Date = Date()
     ) throws -> SavedMediaItem {
         let recognized = PlatformRecognizer.recognize(sourceURLString)
@@ -388,7 +381,6 @@ public final class SavedMediaStore {
         if let index = Self.matchIndex(in: items, id: id, sourceURLString: sourceURLString) {
             if items[index].title == nil { items[index].title = title }
             if items[index].kind == nil { items[index].kind = kind }
-            if items[index].creator == nil { items[index].creator = creator }
             if items[index].platform == nil { items[index].platform = recognized?.platform }
             if items[index].platformItemID == nil { items[index].platformItemID = recognized?.itemID }
             do {
@@ -410,8 +402,7 @@ public final class SavedMediaStore {
             storageState: .undownloaded,
             thumbnailFileName: nil,
             platform: recognized?.platform,
-            platformItemID: recognized?.itemID,
-            creator: creator)
+            platformItemID: recognized?.itemID)
         items.append(item)
         do {
             try saveUnlocked(items)
@@ -430,7 +421,6 @@ public final class SavedMediaStore {
         kind: MediaAsset.Kind,
         sourceURLString: String,
         title: String?,
-        creator: String? = nil,
         fileExtension ext: String? = nil,
         dateSaved: Date = Date(),
         requiringItemID: UUID? = nil
@@ -466,8 +456,7 @@ public final class SavedMediaStore {
             storageState: .localFile(fileName: fileName),
             thumbnailFileName: thumbnailName,
             platform: recognized?.platform ?? existing?.platform,
-            platformItemID: recognized?.itemID ?? existing?.platformItemID,
-            creator: creator ?? existing?.creator)
+            platformItemID: recognized?.itemID ?? existing?.platformItemID)
         var persistedItem = item
         func removeNewFiles() {
             try? fm.removeItem(at: destination)
@@ -488,7 +477,6 @@ public final class SavedMediaStore {
         // thumbnail generation were in flight. Merge from the latest manifest,
         // never from the stale pre-I/O snapshot.
         persistedItem.title = title ?? latest?.title ?? existing?.title
-        persistedItem.creator = creator ?? latest?.creator ?? existing?.creator
         persistedItem.platform = recognized?.platform ?? latest?.platform ?? existing?.platform
         persistedItem.platformItemID = recognized?.itemID
             ?? latest?.platformItemID ?? existing?.platformItemID

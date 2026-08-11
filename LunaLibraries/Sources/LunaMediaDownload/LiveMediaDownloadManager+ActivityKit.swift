@@ -82,7 +82,6 @@ extension LiveMediaDownloadManager {
             assetURLString: nil,
             mediaKind: nil,
             title: title ?? L10n.string("Downloader_liveActivity_defaultTitle"),
-            creator: nil,
             resolveKind: nil,
             phase: .failed,
             progress: 0,

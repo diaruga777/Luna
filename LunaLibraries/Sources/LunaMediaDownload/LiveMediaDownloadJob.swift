@@ -71,9 +71,6 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     /// assumption silently became `.image`.
     var mediaKind: MediaAsset.Kind?
     var title: String
-    /// Best-effort creator/author name (from the reading-list item's fetched
-    /// platform metadata), carried through to `SavedMediaStore` on completion.
-    var creator: String?
     var resolveKind: ResolveKind?
     var phase: Phase
     var progress: Double
@@ -111,7 +108,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
 
     init(
         id: String, sourceURLString: String, assetURLString: String? = nil,
-        mediaKind: MediaAsset.Kind? = nil, title: String, creator: String? = nil,
+        mediaKind: MediaAsset.Kind? = nil, title: String,
         resolveKind: ResolveKind? = nil,
         phase: Phase, progress: Double, thumbnailFileName: String? = nil,
         fileExtension: String? = nil,
@@ -131,7 +128,6 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         self.dashManifestURLString = dashManifestURLString
         self.mediaKind = mediaKind
         self.title = title
-        self.creator = creator
         self.resolveKind = resolveKind
         self.phase = phase
         self.progress = progress
@@ -153,7 +149,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case id, sourceURLString, assetURLString, audioURLString, dashManifestURLString
-        case mediaKind, title, creator, resolveKind
+        case mediaKind, title, resolveKind
         case phase, progress, thumbnailFileName, fileExtension
         case expectedByteCount, receivedByteCount, resumeDataFileName
         case timeRange
@@ -173,7 +169,6 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         mediaKind = Self.decodeLegacyMediaKind(
             try c.decodeIfPresent(String.self, forKey: .mediaKind))
         title = try c.decode(String.self, forKey: .title)
-        creator = try c.decodeIfPresent(String.self, forKey: .creator)
         resolveKind = try c.decodeIfPresent(String.self, forKey: .resolveKind)
             .flatMap(ResolveKind.init(rawValue:))
         phase = try c.decode(Phase.self, forKey: .phase)
@@ -211,7 +206,6 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encodeIfPresent(dashManifestURLString, forKey: .dashManifestURLString)
         try c.encodeIfPresent(mediaKind, forKey: .mediaKind)
         try c.encode(title, forKey: .title)
-        try c.encodeIfPresent(creator, forKey: .creator)
         try c.encodeIfPresent(resolveKind, forKey: .resolveKind)
         try c.encode(phase, forKey: .phase)
         try c.encode(progress, forKey: .progress)

@@ -264,7 +264,6 @@ public enum MediaAutoDownloader {
             id: item.id,
             sourceURLString: item.urlString,
             title: item.title,
-            creator: item.channelName,
             dateSaved: item.dateAdded)
     }
 

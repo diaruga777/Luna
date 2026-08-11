@@ -58,8 +58,7 @@ background, after the bounce: see "The save the hand-off did not have time to
 finish" below.
 
 Each row also carries best-effort `platform`/`platformItemID` (from
-`PlatformRecognizer.recognize`, purely parsed from the URL — no network) and `creator`
-(from the same platform metadata fetch that populates the reading-list item's title).
+`PlatformRecognizer.recognize`, purely parsed from the URL — no network).
 Every write path (`ensureUndownloaded`, `addDownloadedFile`) matches an incoming save
 against existing rows by exact URL OR, failing that, by `platform` + `platformItemID`, so
 a share-link token and its resolved permalink — or any other differently-shaped URL for
@@ -67,7 +66,7 @@ the same post — dedupe onto one row instead of creating a duplicate and re-dow
 `SavedMediaStore.existingDownloadedItem(forURLString:)` uses the same matching to find a
 row that's ALREADY `.localFile`/`.photosReference`, so callers can show it instead of
 fetching again; `matchingItem(forURLString:)` does the same match regardless of storage
-state. `SavedMediaItem.displayTitle` falls back title → creator → raw URL — the rule every
+state. `SavedMediaItem.displayTitle` falls back title → raw URL — the rule every
 UI surface uses instead of ever showing the URL when metadata was fetched.
 
 ### Download destination

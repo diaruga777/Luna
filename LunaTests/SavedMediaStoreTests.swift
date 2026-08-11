@@ -110,10 +110,10 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(store.items().count, 1)
     }
 
-    func testAddDownloadedFileDedupesByPlatformItemIDAndPreservesCreator() throws {
+    func testAddDownloadedFileDedupesByPlatformItemIDAndPreservesTitle() throws {
         _ = try store.ensureUndownloaded(
             id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/xyz789/title/",
-            title: "Example", creator: "u/example")
+            title: "Example")
 
         let source = root.appendingPathComponent("source.mp4")
         try Data("video".utf8).write(to: source)
@@ -122,7 +122,6 @@ final class SavedMediaStoreTests: XCTestCase {
 
         XCTAssertEqual(store.items().count, 1)
         XCTAssertEqual(local.title, "Example")
-        XCTAssertEqual(local.creator, "u/example")
         XCTAssertEqual(local.platformItemID, "xyz789")
     }
 
@@ -265,15 +264,11 @@ final class SavedMediaStoreTests: XCTestCase {
             local.id, localIdentifier: localIdentifier, kind: .image))
     }
 
-    func testDisplayTitleFallsBackTitleThenCreatorThenURL() throws {
+    func testDisplayTitleFallsBackFromTitleToURL() throws {
         let urlString = "https://x.com/example/status/99"
         let titled = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: urlString, title: "A title", creator: "A creator")
+            id: UUID(), sourceURLString: urlString, title: "A title")
         XCTAssertEqual(titled.displayTitle, "A title")
-
-        let creatorOnly = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://x.com/example/status/100", creator: "A creator")
-        XCTAssertEqual(creatorOnly.displayTitle, "A creator")
 
         let neither = try store.ensureUndownloaded(
             id: UUID(), sourceURLString: "https://x.com/example/status/101")

@@ -60,6 +60,13 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         /// directly, so `activityState(for:)` (which imports both here)
         /// builds it once at the source instead.
         public var viewURLString: String?
+        /// `<scheme>://media?url=…&share=1` — the FINISHED card's Share button
+        /// (the finished presentation's second `Link`, beside Play). Same
+        /// prebuilt-string reason as `viewURLString` above: a widget cannot
+        /// import `LunaURLClassification`, so `activityState(for:)` builds it.
+        /// Additive and optional — a `ContentState` decoded from an activity
+        /// started by an older build simply has no share link.
+        public var shareURLString: String?
 
         public init(
             phase: Phase,
@@ -69,7 +76,8 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             thumbnailFileName: String? = nil,
             actionURLString: String? = nil,
             suspendDeadline: Date? = nil,
-            viewURLString: String? = nil
+            viewURLString: String? = nil,
+            shareURLString: String? = nil
         ) {
             self.phase = phase
             self.progress = min(1, max(0, progress))
@@ -79,6 +87,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             self.actionURLString = actionURLString
             self.suspendDeadline = suspendDeadline
             self.viewURLString = viewURLString
+            self.shareURLString = shareURLString
         }
     }
 

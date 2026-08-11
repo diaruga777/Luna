@@ -184,6 +184,13 @@ extension LiveMediaDownloadManager {
             // target links only LunaMediaDownload + LunaDesignSystem.
             viewURLString: LunaDeepLink.mediaViewLink(
                 scheme: LunaDeepLink.ownScheme, sourceURLString: job.sourceURLString
+            )?.absoluteString,
+            // The finished card's Share button: the same `media` route plus
+            // `&share=1`, which asks the app to hand the downloaded file to the
+            // system share sheet rather than just centering on its card. Built
+            // here for the same reason `viewURLString` is.
+            shareURLString: LunaDeepLink.mediaShareLink(
+                scheme: LunaDeepLink.ownScheme, sourceURLString: job.sourceURLString
             )?.absoluteString
         )
     }

@@ -12,10 +12,11 @@ import XCTest
 import ActivityKit
 #endif
 
-/// `LiveMediaDownloadManager.activityState(for:)`: the view URL Feature 2c
-/// adds for tap-to-view, populated for every phase including `.finished` (so
-/// the completion alert's tap target works within its normal dismissal
-/// window — the window itself is UNCHANGED, see `claudedocs/media-download.md`).
+/// `LiveMediaDownloadManager.activityState(for:)`: the prebuilt deep links the
+/// widget renders — tap-to-view (every phase, including `.finished`) and the
+/// finished card's Share button. Both are strings rather than `LunaDeepLink`
+/// calls because a widget target cannot import `LunaURLClassification`; see
+/// `claudedocs/media-download.md`.
 @available(iOS 16.1, *)
 final class LiveMediaDownloadActivityStateTests: XCTestCase {
 
@@ -40,9 +41,9 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
         #endif
     }
 
-    /// The completion state is exactly the one `endActivity` sends its final
-    /// alert with — the tap target must survive into `.finished`, not just
-    /// the in-progress phases.
+    /// The completion state is the one the finished card renders during its
+    /// five-second live hold — the tap target must survive into `.finished`,
+    /// not just the in-progress phases.
     func testViewURLSurvivesIntoTheFinishedState() {
         #if canImport(ActivityKit)
         let state = LiveMediaDownloadManager.shared.activityState(
@@ -52,9 +53,32 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
         #endif
     }
 
-    /// Pins `endActivity`'s finished-state dismissal window at its EXISTING
-    /// 20s default — Feature 2c's tap-to-view work rides the alert
-    /// `endActivity` already sends on the final `.finished`/`.failed` update,
+    /// The finished card's Share button target: the same `media` route as the
+    /// Play link, plus `&share=1` — so it centers the same card AND asks for
+    /// the share sheet, and the Play link beside it never does.
+    func testShareURLIsTheViewRoutePlusTheShareFlag() throws {
+        #if canImport(ActivityKit)
+        let state = LiveMediaDownloadManager.shared.activityState(
+            for: job(phase: .finished, sourceURLString: "https://example.com/clip?id=7"))
+        let shareURL = try XCTUnwrap(state.shareURLString.flatMap(URL.init(string:)))
+        let viewURL = try XCTUnwrap(state.viewURLString.flatMap(URL.init(string:)))
+        XCTAssertEqual(
+            LunaDeepLink.mediaViewURLString(from: shareURL), "https://example.com/clip?id=7")
+        XCTAssertTrue(LunaDeepLink.mediaShareRequested(from: shareURL))
+        XCTAssertFalse(LunaDeepLink.mediaShareRequested(from: viewURL))
+        #endif
+    }
+
+    /// Every phase carries the share link, for the same reason the view link is
+    /// unconditional: the widget decides which phase renders a Share button,
+    /// and a state re-sent from a resumed job must not lose it.
+    func testShareURLIsPresentWhileDownloading() {
+        #if canImport(ActivityKit)
+        let state = LiveMediaDownloadManager.shared.activityState(for: job(phase: .downloading))
+        XCTAssertNotNil(state.shareURLString)
+        #endif
+    }
+
     func testViewURLEncodesTheSourceURLAsAQueryItem() {
         #if canImport(ActivityKit)
         let state = LiveMediaDownloadManager.shared.activityState(

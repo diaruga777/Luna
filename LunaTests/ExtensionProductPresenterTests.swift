@@ -21,6 +21,7 @@ import XCTest
 final class ExtensionProductPresenterTests: XCTestCase {
 
     private var tempDirectory: URL!
+    private var snapshotDirectory: URL?
     private var store: ReadingListStore!
     private var presenter: ExtensionProductPresenter!
 
@@ -32,13 +33,14 @@ final class ExtensionProductPresenterTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         presenter = ExtensionProductPresenter()
-        presenter.snapshotProvider = { [] }
+        presenter.snapshotStore = .temporary(directory: &snapshotDirectory)
         presenter.artworkLoader = { _, _ in nil }
     }
 
     override func tearDown() {
         SellerComparisonRunner.installed = nil
         try? FileManager.default.removeItem(at: tempDirectory)
+        if let snapshotDirectory { try? FileManager.default.removeItem(at: snapshotDirectory) }
         super.tearDown()
     }
 

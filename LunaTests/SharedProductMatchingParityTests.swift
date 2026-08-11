@@ -5,6 +5,8 @@
 
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
+import LunaPriceUI
 import XCTest
 
 /// `LunaSafari/SharedProductMatching.swift` is a THIRD hand-written copy of
@@ -66,8 +68,16 @@ final class SharedProductMatchingParityTests: XCTestCase {
             Case(name: "gtin match", expect: true,
                  candidate: candidate(productID: "0012345678905"),
                  snapshot: snapshot(url: "https://a.example/p", gtin: "0012345678905")),
+            // The candidate's own URL decides the retailer FAMILY, so the
+            // snapshot has to sit on a sibling host of `url` for tier 2 to be
+            // what answers. (With a foreign host here the case used to pass on
+            // the fuzzy-name tier instead — both sides defaulted to "Widget" —
+            // and said nothing about retailer scoping at all.)
             Case(name: "retailerItemID same family", expect: true,
                  candidate: candidate(productID: "B000TEST1"),
+                 snapshot: snapshot(url: "https://www.shop.example/dp/B000TEST1", retailerItemID: "B000TEST1")),
+            Case(name: "retailerItemID different family", expect: false,
+                 candidate: candidate(name: "Unrelated Product Entirely", productID: "B000TEST1"),
                  snapshot: snapshot(url: "https://www.amazon.com/dp/B000TEST1", retailerItemID: "B000TEST1")),
             Case(name: "mpn with compatible brand", expect: true,
                  candidate: candidate(brand: "Acme", productID: "MPN-1"),
@@ -78,9 +88,6 @@ final class SharedProductMatchingParityTests: XCTestCase {
             Case(name: "sku same host", expect: true,
                  candidate: candidate(productID: "SKU-1"),
                  snapshot: snapshot(url: "https://shop.example/p", sku: "SKU-1")),
-            // Different name too -- otherwise the fuzzy-name tier (both sides
-            // default to "Widget" with no brand set) would rescue this case
-            // and mask the sku/host check actually being exercised.
             Case(name: "sku different host", expect: false,
                  candidate: candidate(productID: "SKU-1"),
                  snapshot: snapshot(
@@ -88,7 +95,10 @@ final class SharedProductMatchingParityTests: XCTestCase {
             Case(name: "canonical url with tracking params", expect: true,
                  candidate: candidate(),
                  snapshot: snapshot(url: "https://shop.example/p/9?utm_source=x")),
-            Case(name: "fuzzy name with compatible brand", expect: true,
+            // A name is NOT an identifier: two similarly-named products on
+            // unrelated pages, sharing no id, are not the same product on
+            // either side of this pair.
+            Case(name: "similar name, no shared identifier", expect: false,
                  candidate: candidate(name: "Acme Wireless Keyboard Pro", brand: "Acme"),
                  snapshot: snapshot(name: "Acme Wireless Keyboard", url: "https://a.example/p", brand: "Acme")),
             Case(name: "unrelated", expect: false,

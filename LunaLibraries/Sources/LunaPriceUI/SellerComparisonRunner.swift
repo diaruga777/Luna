@@ -52,14 +52,32 @@ public enum SellerComparisonRunner {
         installed = { request, onResult in await liveRun(request, onResult: onResult) }
     }
 
+    /// Where fan-out results are recorded as product snapshots. Test seam; nil
+    /// disables recording.
+    public static var snapshotStore: ProductSnapshotStore? = .shared
+
     /// Runs the fan-out if one is installed. Nil means "no comparison ran" —
     /// which is not the same as "no other seller sells this", and callers must
     /// keep the distinction (nothing is seeded from a nil).
+    ///
+    /// **Every result is recorded as a product snapshot on the way past** —
+    /// each one is a named product at a price on one retailer's page, which is
+    /// exactly what a snapshot is. That includes the results the caller will
+    /// DROP (a retailer the tracker already has, a foreign currency): they are
+    /// still observations, and a later save of that product deserves them.
+    /// The Safari appex's own fan-out has always done this
+    /// (`ComparableSellerFinder`); this is the app-side half.
     public static func run(
         _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult? = nil
     ) async -> SellerFanOutOutcome? {
         guard let installed else { return nil }
-        return await installed(request, onResult)
+        let store = snapshotStore
+        guard store != nil || onResult != nil else { return await installed(request, nil) }
+        let recording: SellerFanOut.OnResult = { result in
+            store?.record(payload: result.snapshotPayload)
+            await onResult?(result)
+        }
+        return await installed(request, recording)
     }
 
     // MARK: - The live wiring

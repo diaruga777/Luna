@@ -61,7 +61,8 @@ public struct PriceHistoryIndexEntry: Codable, Equatable {
 /// they can have trackers to index.
 public enum PriceHistoryIndexWriter {
     /// Mirrors `LunaSafari/SharedProductMatching.swift`'s constants exactly —
-    /// `SharedProductSnapshotsTests` pins both copies to these literal values.
+    /// that file is still a hand-copy of the tracked-index reader, so
+    /// `SharedProductMatchingParityTests` pins the two together.
     public static let relativeDirectory = "Library/ProductSnapshots"
     public static let fileName = "priceHistoryIndex.json"
     public static let maxPointsAgeDays = 365

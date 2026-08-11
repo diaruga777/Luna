@@ -382,9 +382,15 @@ ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own 
 appexes** (`claudedocs/price-comparison.md`): the alternative-seller fan-out —
 bundled seller directory, local candidate ranking, regex-only page parser, match
 verification — runs at save time in the app and the share/action extensions AND
-inside all four Safari extensions. It therefore depends on LunaModels /
-LunaURLClassification / LunaPriceMetadata and **nothing else**, all
-Foundation-only, the same ~80MB-ceiling trade `LunaMediaResolve` makes. Every
+inside all four Safari extensions. **It also owns the product-snapshot store**
+(`ProductSnapshot` / `ProductSnapshotStore`), for exactly that reachability
+reason: a product observation is written by the app, the share/action extensions
+AND the Safari appexes, so it lives in the one kind module all of them link
+rather than in a hand-copy per process (`claudedocs/price-tracking.md`). It
+therefore depends on LunaModels / LunaURLClassification / LunaPriceMetadata /
+LunaAppConfig (the App Group container, bottom-most and dependency-free) and
+**nothing else**, all Foundation-only, the same ~80MB-ceiling trade
+`LunaMediaResolve` makes. Every
 network call and the optional rich page resolution are INJECTED closures, so the
 app can route them through the shared ingest pipeline while the appex uses
 URLSession plus the lean parser. Its link edges are added by
@@ -475,8 +481,7 @@ scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff re
 > geometry suites, `StageRegistryTests`, `WaveKernelSourceTests`, and
 > source-text pins against the unlinked `LunaSafari/` hand-copies (e.g.
 > `SafariSetupCelebrationTests` — the "unused" Swift readers in
-> `LunaSetupStatusStore` are that suite's parity anchor, not dead code; same
-> for `ProductSnapshotStore.makeSnapshot`). A production seam
+> `LunaSetupStatusStore` are that suite's parity anchor, not dead code). A production seam
 > (`…ForTesting`, settable static, injected closure) may exist ONLY while a
 > behavior-asserting test uses it — a seam whose tests die dies with them.
 > **The package declares NO test targets**: `LunaLibraries/Tests/` was deleted

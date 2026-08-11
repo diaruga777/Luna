@@ -151,8 +151,8 @@ final class FreshComparablePricesTests: XCTestCase {
     }
 
     /// The payload must satisfy the SAME validator the page's own extraction
-    /// goes through — `ProductSnapshotStore` is the app-side mirror of
-    /// `SharedProductSnapshots`, pinned to it by `SharedProductSnapshotsTests`.
+    /// goes through: a fan-out result and a visited page are one kind of thing,
+    /// recorded through one `ProductSnapshotStore.makeSnapshot`.
     func testAFetchedResultBecomesAValidSnapshotRecord() {
         let snapshot = ProductSnapshotStore.makeSnapshot(
             fromPayload: result().snapshotPayload, now: now)
@@ -172,27 +172,6 @@ final class FreshComparablePricesTests: XCTestCase {
         XCTAssertNil(payload["gtin"])
         XCTAssertNil(payload["sku"])
         XCTAssertNil(payload["brand"])
-    }
-
-    /// Two lookups on the same day for the same seller page leave ONE record
-    /// carrying the newer price — the store's `(url, day)` identity, which is
-    /// what keeps a repeatedly-visited product page from filling the file.
-    func testASecondLookupTheSameDayOverwritesRatherThanAppends() {
-        let first = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 39.5).snapshotPayload, now: now)!
-        let second = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 34).snapshotPayload, now: now.addingTimeInterval(600))!
-        let merged = ProductSnapshotStore.merging(second, into: [first])
-        XCTAssertEqual(merged.count, 1)
-        XCTAssertEqual(merged[0].price, "34")
-    }
-
-    func testTheNextDaysLookupAppendsAHistoryPoint() {
-        let today = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result().snapshotPayload, now: now)!
-        let tomorrow = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 34).snapshotPayload, now: now.addingTimeInterval(86_400))!
-        XCTAssertEqual(ProductSnapshotStore.merging(tomorrow, into: [today]).count, 2)
     }
 
     func testAResultsPricePointIsStampedNowAndSoIsFresh() {

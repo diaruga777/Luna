@@ -16,6 +16,8 @@ import XCTest
 final class SellerComparisonTests: XCTestCase {
 
     private var tempDirectory: URL!
+    private var snapshotDirectory: URL?
+    private var snapshotStore: ProductSnapshotStore!
     private var store: ReadingListStore!
     private var ingestor: ProductTrackerIngestor!
 
@@ -27,12 +29,16 @@ final class SellerComparisonTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = {}
-        ingestor.snapshotProvider = { [] }
+        snapshotStore = .temporary(directory: &snapshotDirectory)
+        ingestor.snapshotStore = snapshotStore
+        SellerComparisonRunner.snapshotStore = snapshotStore
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: tempDirectory)
+        if let snapshotDirectory { try? FileManager.default.removeItem(at: snapshotDirectory) }
         SellerComparisonRunner.installed = nil
+        SellerComparisonRunner.snapshotStore = .shared
         super.tearDown()
     }
 
@@ -419,6 +425,62 @@ final class SellerComparisonTests: XCTestCase {
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(added, 1)
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 2)
+    }
+
+    // MARK: - Fan-out results are observations
+
+    /// Every seller the fan-out priced is a product observation, and gets
+    /// recorded — INCLUDING the ones this tracker refuses to attach. A seller
+    /// in another currency is useless to a USD tracker's graph today and still
+    /// perfectly good history for a tracker created in that market tomorrow;
+    /// before this, twelve fetched prices were thrown away every save.
+    func testEveryFanOutResultIsRecordedAsAnObservationEvenWhenNotAttached() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        installRunner(results: [
+            result(domain: "a.example", price: "80"),
+            result(domain: "b.example", price: "70", currency: "GBP"),
+        ])
+
+        let added = await runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+
+        XCTAssertEqual(added, 1, "only the same-currency seller joins the tracker")
+        let observed = snapshotStore
+            .snapshots(forKeys: ProductSnapshotKeys.gtinKeys("0012345678905"))
+        XCTAssertEqual(
+            Set(observed.map(\.host)), Set(["a.example", "b.example"]),
+            "both fetched prices must be observable, whatever the tracker did with them")
+        XCTAssertEqual(
+            observed.first { $0.host == "b.example" }?.currency, "GBP")
+    }
+
+    /// The recorded observation is retrievable by the seller's own identifier,
+    /// which is the whole point: a later save of that product finds it without
+    /// ever having seen that URL.
+    func testAFanOutObservationSeedsALaterSaveOfTheSameProduct() async {
+        let item = store.add(urlString: "https://source.example/p/1")
+        store.savePriceTracker(tracker(), for: item.id)
+        installRunner(results: [result(domain: "a.example", price: "80")])
+        _ = await runAndAttach(
+            itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
+
+        var later = PriceTracker(
+            productName: "Acme Widget", firstStoreURL: "https://elsewhere.example/p/9",
+            price: 95, currency: "USD",
+            identifiers: ProductIdentifiers(gtin: "0012345678905"))
+        ProductTrackerMerge.seedHistoryFromSnapshots(
+            into: &later,
+            candidate: ProductInfo(
+                name: "Acme Widget", priceAmount: 95, priceCurrency: "USD", imageURL: nil,
+                brand: "Acme", productID: "0012345678905",
+                identifiers: ProductIdentifiers(gtin: "0012345678905")),
+            candidateURL: URL(string: "https://elsewhere.example/p/9")!,
+            store: snapshotStore)
+
+        let seeded = later.stores.first { $0.urlString.contains("a.example") }
+        XCTAssertNotNil(seeded, "the fan-out's price must reach a later tracker's graph")
+        XCTAssertEqual(seeded?.priceHistory.first?.lowestPrice, 80)
     }
 
     // MARK: - The opportunistic completion hooks

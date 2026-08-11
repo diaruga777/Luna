@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaPriceCompare
 
 /// Answers the "Was $X on <date>" history-pill query entirely inside the
 /// extension process: matches the current page's extracted product data
@@ -60,7 +61,7 @@ enum SharedProductMatching {
 
     /// The full answer for a page's extracted snapshot payload (the same shape
     /// `extractProductSnapshot()` sends as `productSnapshot`).
-    static func historyAnswer(forPageSnapshot page: SharedProductSnapshots.Record) -> HistoryAnswer {
+    static func historyAnswer(forPageSnapshot page: ProductSnapshot) -> HistoryAnswer {
         let index = loadIndex()
         let trackedMatch = index.first { matches(page: page, indexEntry: $0) }
 
@@ -74,7 +75,11 @@ enum SharedProductMatching {
                 }
             }
         }
-        let otherSnapshots = SharedProductSnapshots.load().filter { $0.url != page.url }
+        // Indexed: only observations filed under one of this page's own
+        // identifiers are opened, never the whole store.
+        let otherSnapshots = ProductSnapshotStore.shared
+            .snapshots(forKeys: page.indexKeys)
+            .filter { $0.url != page.url }
         for snapshot in otherSnapshots where matches(page: page, snapshot: snapshot) {
             if let amount = Decimal(string: snapshot.price) {
                 points.append((amount, snapshot.currency, snapshot.day))
@@ -105,7 +110,7 @@ enum SharedProductMatching {
     /// page's own KEYED fields are compared against it in precedence order,
     /// same as `ProductTrackerIngestor`'s tracker side participates in
     /// `SnapshotMatcher` via `ProductMatcher.normalizedID`.
-    static func matches(page: SharedProductSnapshots.Record, indexEntry entry: IndexEntry) -> Bool {
+    static func matches(page: ProductSnapshot, indexEntry entry: IndexEntry) -> Bool {
         let entryID = normalizedID(entry.productID)
         let storeHosts = entry.stores.map(\.host)
         let storeURLs = entry.stores.map(\.url)
@@ -139,7 +144,7 @@ enum SharedProductMatching {
 
     /// Page vs. another passive snapshot — both sides carry the same keyed
     /// identifiers, so each tier compares the matching field directly.
-    static func matches(page: SharedProductSnapshots.Record, snapshot: SharedProductSnapshots.Record) -> Bool {
+    static func matches(page: ProductSnapshot, snapshot: ProductSnapshot) -> Bool {
         if let pageGTIN = normalizedGTIN(normalizedID(page.gtin)),
            let otherGTIN = normalizedGTIN(normalizedID(snapshot.gtin)), pageGTIN == otherGTIN {
             return true
@@ -160,10 +165,9 @@ enum SharedProductMatching {
         if strippedTrackingURL(page.url) == strippedTrackingURL(snapshot.url) {
             return true
         }
-        if brandsCompatible(page.brand, snapshot.brand),
-           nameSimilarity(page.name, snapshot.name) >= nameThreshold {
-            return true
-        }
+        // No fuzzy-name tier, exactly as `SnapshotMatcher` has none: a name is
+        // not an identifier, the store is retrieved BY identifier, and it is
+        // the tier most likely to claim two different products are one.
         return false
     }
 

@@ -1,37 +1,54 @@
 //
 //  SnapshotMatcher.swift
-//  Luna
+//  LunaPriceUI
 //
 
-import LunaModels
 import Foundation
+import LunaHTMLClassification
+import LunaModels
+import LunaPriceCompare
 
-/// Matches passive `ProductSnapshot`s (Safari extension captures) against a
-/// freshly saved product, so `ProductTrackerIngestor` can seed the new (or
-/// merged) tracker's per-store history without waiting for a background
-/// refresh. Pure and order-stable.
+/// Matches stored `ProductSnapshot`s against a product being saved, so a new
+/// price tracker is born with the history Luna already observed
+/// (`ProductTrackerMerge.seedHistoryFromSnapshots`). Pure and order-stable.
+///
+/// **Retrieval is by index, not by scan.** `candidateKeys` turns the product
+/// into the identifier keys `ProductSnapshotStore` files observations under;
+/// the store opens only those records; the tiers below then decide, over that
+/// small pool, which of them really are the same product. The tiers exist
+/// because the keys are a deliberate SUPERSET — the flattened `productID`
+/// carries no record of which kind of id it is, so it is offered at every
+/// scope and disqualified here.
 ///
 /// Precedence, strongest signal first — the FIRST tier that matches ANY
 /// snapshot wins outright (weaker tiers are not also folded in):
 /// 1. GTIN/ISBN equality (zero-padded to 14 digits) — globally unique,
 ///    matches across hosts.
 /// 2. `retailerItemID` equality, same retailer family (host suffix) — an
-///    Amazon ASIN only matches an amazon.* host, etc. The candidate's raw
-///    `productID` participates here too (`ProductMatcher.normalizedID`).
+///    Amazon ASIN only matches an amazon.* host, etc.
 /// 3. `mpn` equality + compatible brand — manufacturer-scoped.
 /// 4. `sku` equality, same host only — retailer-scoped.
-/// 5. Canonical URL equality (tracking params stripped both sides) against
-///    the candidate's own URL or any store URL already on the tracker being
-///    merged into.
-/// 6. Fuzzy name (`ProductMatcher.nameSimilarity >= nameThreshold`) + brand
-///    compatibility.
+/// 5. Canonical URL equality (tracking params stripped both sides) against the
+///    candidate's own URL or any store URL already on the tracker being merged
+///    into. The weak tier, and the last one.
 ///
-/// This is the same identifier family `ProductPageDetector.productID(from:offer:)`
-/// flattens into `ProductInfo.productID` (gtin13/12/14/8/gtin/isbn/mpn/sku/
-/// productID, first match wins) — so a saved product's ONE raw id is compared
-/// against every KEYED snapshot field in turn, at whichever tier that field
-/// belongs to.
+/// There is deliberately NO fuzzy-name tier. A name is not an identifier: it
+/// cannot be indexed, so it would force the scan this design exists to avoid,
+/// and it is the tier most likely to fold another product's price into a graph.
 public enum SnapshotMatcher {
+
+    /// The index keys to look this product up under.
+    public static func candidateKeys(
+        for candidate: ProductInfo, candidateURL: URL, existingStoreURLStrings: [String] = []
+    ) -> [String] {
+        ProductSnapshotKeys.candidateKeys(
+            gtin: candidate.identifiers.gtin,
+            mpn: candidate.identifiers.mpn,
+            sku: candidate.identifiers.sku,
+            flattenedID: candidate.productID,
+            host: candidateURL.host,
+            urlStrings: [candidateURL.absoluteString] + existingStoreURLStrings)
+    }
 
     /// The snapshots that should seed the saved product's tracker history, or
     /// `[]` if nothing matches at any tier. `existingStoreURLStrings` should
@@ -45,7 +62,7 @@ public enum SnapshotMatcher {
         among snapshots: [ProductSnapshot]
     ) -> [ProductSnapshot] {
         // Sorted once, up front, so every tier below folds its matches in a
-        // fixed order regardless of the snapshot file's on-disk order.
+        // fixed order regardless of the pool's order.
         let pool = snapshots.sorted {
             $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url
         }
@@ -53,11 +70,9 @@ public enum SnapshotMatcher {
         let candidateNormalizedID = ProductMatcher.normalizedID(candidate.productID)
 
         // 1. GTIN/ISBN — cross-host. Prefers the KEYED identifier when the
-        // candidate declares one (an in-app save's `ProductInfo.identifiers`
-        // now carries it — see `claudedocs/price-comparison.md`'s "Keyed
-        // identifiers"); falls back to the flattened id exactly as before
-        // when it does not, so a candidate saved before `ProductIdentifiers`
-        // existed matches exactly as it always has.
+        // candidate declares one; falls back to the flattened id when it does
+        // not, so a candidate saved before `ProductIdentifiers` existed matches
+        // exactly as it always has.
         let candidateKeyedGTIN = ProductMatcher.normalizedID(candidate.identifiers.gtin)
         if let candidateGTIN = normalizedGTIN(candidateKeyedGTIN ?? candidateNormalizedID) {
             let matches = pool.filter {
@@ -107,14 +122,10 @@ public enum SnapshotMatcher {
 
         // 5. Canonical URL equality against the candidate or any existing store.
         let strippedTargets = Set(
-            ([candidateURL.absoluteString] + existingStoreURLStrings).map(strippedTrackingURL))
-        let urlMatches = pool.filter { strippedTargets.contains(strippedTrackingURL($0.url)) }
-        if !urlMatches.isEmpty { return urlMatches }
-
-        // 6. Fuzzy name + compatible brand.
-        return pool.filter { snapshot in
-            ProductMatcher.brandsCompatible(candidate.brand, snapshot.brand)
-                && ProductMatcher.nameSimilarity(candidate.name, snapshot.name) >= ProductMatcher.nameThreshold
+            ([candidateURL.absoluteString] + existingStoreURLStrings)
+                .map(ProductSnapshotKeys.strippedTrackingURL))
+        return pool.filter {
+            strippedTargets.contains(ProductSnapshotKeys.strippedTrackingURL($0.url))
         }
     }
 
@@ -123,53 +134,19 @@ public enum SnapshotMatcher {
     /// declared widths still compare equal. A non-numeric value (e.g. an
     /// ISBN-10 with a check letter) compares as-is.
     static func normalizedGTIN(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        guard raw.allSatisfy(\.isNumber), raw.count <= 14 else { return raw }
-        return String(repeating: "0", count: 14 - raw.count) + raw
+        ProductIdentityMatching.normalizedGTIN(raw)
     }
 
     /// Two hosts are the same "retailer family" when they share a registrable
-    /// domain — approximated as the last two dot-separated labels, or the
-    /// last three when the second-to-last label is a known compound suffix
-    /// (`co.uk`, `com.au`, …), so `www.amazon.com` and `smile.amazon.com`
-    /// match but `amazon.com` and `amazon.co.jp` do NOT (a retailer item id
-    /// is not guaranteed to carry across separate national storefronts, and
-    /// treating them as one family would let an unrelated site match by
-    /// coincidence far more often than it would help).
+    /// domain, so `www.amazon.com` and `smile.amazon.com` match but
+    /// `amazon.com` and `amazon.co.jp` do NOT (a retailer item id is not
+    /// guaranteed to carry across separate national storefronts).
     static func hostFamilyMatches(_ lhs: String, _ rhs: String) -> Bool {
-        registrableDomain(lhs) == registrableDomain(rhs)
+        ProductIdentityMatching.hostFamilyMatches(lhs, rhs)
     }
 
-    private static let compoundSuffixes: Set<String> = [
-        "co.uk", "co.jp", "co.nz", "co.in", "com.au", "com.br", "com.mx", "com.tr",
-    ]
-
-    static func registrableDomain(_ host: String) -> String {
-        let labels = host.lowercased().split(separator: ".").map(String.init)
-        guard labels.count >= 2 else { return host.lowercased() }
-        let lastTwo = labels.suffix(2).joined(separator: ".")
-        if labels.count >= 3, compoundSuffixes.contains(lastTwo) {
-            return labels.suffix(3).joined(separator: ".")
-        }
-        return lastTwo
-    }
-
-    /// Strips the same tracking-parameter families the extension strips at
-    /// capture time (`stripTrackingParams` in content.js) before comparing two
-    /// URLs, so query noise picked up between the snapshot and the save can't
-    /// defeat an otherwise-identical page URL.
     static func strippedTrackingURL(_ urlString: String) -> String {
-        guard var components = URLComponents(string: urlString) else { return urlString }
-        let host = (components.host ?? "").lowercased()
-        components.queryItems = components.queryItems?.filter { item in
-            let lower = item.name.lowercased()
-            if ["srsltid", "gclid", "ref"].contains(lower) { return false }
-            if lower.hasPrefix("utm_") { return false }
-            if lower == "tag", host.contains("amazon.") { return false }
-            return true
-        }
-        if components.queryItems?.isEmpty == true { components.queryItems = nil }
-        return components.url?.absoluteString ?? urlString
+        ProductSnapshotKeys.strippedTrackingURL(urlString)
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

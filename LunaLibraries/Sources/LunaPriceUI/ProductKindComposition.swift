@@ -6,6 +6,7 @@
 import LunaHTMLClassification
 import LunaIngest
 import LunaModels
+import LunaPriceCompare
 import LunaPriceIngest
 import LunaShareSurface
 import LunaStorage

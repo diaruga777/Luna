@@ -557,46 +557,113 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
   top guard already blocks re-detection. Paste and the extensions reach the same
   decision for a given URL.
 
-## Passive product snapshots seed history — at save time, and by sweep
+## Product snapshots: captured always, read once, on the save path
 
-Every product-page visit in a product-handling Safari extension is silently recorded
-(`claudedocs/safari-extension.md`'s "Passive product snapshots" section) into an App
-Group JSON file — `{name, price, currency, canonical url, host, keyed identifiers,
-day, capturedAt}`, one record per (url, day). NOT a save: no reading-list row is
-created, nothing is scheduled for refresh, and no alert can ever fire from one.
-`LunaHTMLClassification.ProductSnapshot` is the one Codable shape; `LunaPriceUI
-.ProductSnapshotStore` reads the shared file app-side (own mirrored App-Group path,
-since `LunaSafari` links no package — parity pinned by `SharedProductSnapshotsTests`).
+A **product snapshot** is one observation of one product: its identifiers, its
+price with the currency and locale it was read in, the page it came from, and
+the day. Nothing heavier — no page HTML, no image bytes. `LunaPriceCompare
+.ProductSnapshot` is the one shape.
 
-When `ProductTrackerIngestor.ingest` actually saves a product (new tracker OR merge),
-it matches snapshots against the just-detected `ProductInfo`
-(`LunaHTMLClassification.SnapshotMatcher` — same precedence as `ProductMatcher.
-bestMatch` but over KEYED identifiers: GTIN/ISBN → retailerItemID+host-family →
-mpn+brand → sku+host → canonical URL → fuzzy name+brand; the tracker's single flat
-`productID` participates via `ProductMatcher.normalizedID` against every keyed
-field). Matched snapshots are grouped by HOST: a host the tracker already has a store
+### Capture: everywhere, unconditionally
+
+A snapshot is written for **every product page any Luna process sees** and for
+**every alternative-seller result a fan-out returns**. There is no setting that
+suppresses it. A suggestion mode of "never" silences PILLS; price tracking being
+off means no tracker, not no memory of a price; a per-platform toggle is about
+what Luna offers to do, not about what it noticed. An observation is not a save:
+no reading-list row, nothing scheduled for refresh, and no alert can fire from
+one.
+
+The writers, all through `ProductSnapshotStore.record`:
+
+| Where | What triggers it |
+| --- | --- |
+| App, share extension, action extension | `ProductIngestProcessor.extract` — every page the shared pipeline classifies as a priced product |
+| App / share / action | `SellerComparisonRunner.run` — every result of the save-time fan-out, *including* results the tracker refuses to attach (a domain it already holds, a foreign currency): they are still observations |
+| All four Safari extensions | the `productSnapshot` message from `content.js`, and `ComparableSellerFinder`'s own constrained fan-out |
+
+This was the whole of the bug that made snapshots look unused. Until this, the
+Safari extension's `productSnapshot` message was the **only** writer in the
+codebase — so a user whose product pages arrive through the app, the share sheet
+or the Action Button accumulated an empty store, and every tracker was born with
+a single point no matter how many settings were on.
+
+### The store is indexed, and it is one implementation
+
+`LunaPriceCompare` owns it, because that is the one kind module a Safari appex
+links — so the app, the share/action extensions and all four Safari extensions
+write and read the SAME code. (There used to be a hand-copied
+`LunaSafari/SharedProductSnapshots.swift` with a parity suite standing in for a
+compiler; it is gone.)
+
+```
+Library/ProductSnapshots/
+  snapshotIndex.json          identifier key -> record ids, plus record id -> day
+  records/<record id>.json    one observation each
+```
+
+A lookup decodes the index — a flat string map with no observation bodies — and
+then opens **only** the record files its candidate's identifiers point at. The
+cost is O(candidate identifiers + matched records), not O(store), which is what
+makes reading it synchronously on the save path affordable.
+
+Keys carry their identifier's SCOPE, since the scopes are not interchangeable:
+
+| Key | Scope |
+| --- | --- |
+| `g:<gtin padded to 14>` | global — matches across every retailer |
+| `r:<registrable domain>:<id>` | one retailer family (an ASIN means nothing off amazon.*) |
+| `m:<mpn>` | manufacturer (a compatible brand is still checked) |
+| `s:<host>:<sku>` | one host |
+| `u:<url, tracking params stripped>` | the page itself — the weak tier |
+
+A record id is a hash of `<url>|<day>`, which is also the uniqueness rule:
+revisiting a page the same day updates that day's observation rather than
+accumulating duplicates. Records are individually addressable, so two processes
+observing two different pages never write the same file; only the index is
+read-modify-write, and it is written atomically. Pruning drops anything past 365
+days and caps the store at 5000 observations, oldest day evicted first — deleting
+the record files and the key entries that pointed at them together, so the index
+can never name a record that is gone.
+
+### Consumption: blocking, and part of creating the save
+
+When a price tracker is created — `ProductTrackerIngestor.ingest` in the app,
+`ExtensionProductPresenter.presentPriceEditor` in an extension, on the NEW-tracker
+branch and the MERGE branch alike — it reads the store synchronously and
+populates itself. That read is `ProductTrackerMerge.seedHistoryFromSnapshots`,
+and it is the whole of the read side: **there is no background sweep and no
+deferred job.** A tracker is created with the history Luna already has, or with
+none; it never starts blank and quietly gains some at the next launch.
+
+`SnapshotMatcher.candidateKeys` turns the product into index keys, the store
+returns the small pool those keys name, and `SnapshotMatcher` decides which of
+them really are the same product:
+
+1. GTIN/ISBN equality (zero-padded to 14 digits) — across hosts.
+2. `retailerItemID` equality within one retailer family.
+3. `mpn` equality with a compatible brand.
+4. `sku` equality on the same host.
+5. Canonical URL equality (tracking params stripped both sides), against the
+   candidate's own URL or any store URL already on the tracker being merged into.
+
+The first tier that matches anything wins outright. There is deliberately **no
+fuzzy-name tier**: a name is not an identifier, it cannot be indexed, and it was
+the tier most likely to fold another product's price into a graph. The tracker's
+single flat `productID` — whose kind was thrown away long before it got here —
+is offered at every scope in the lookup and disqualified by the tier check.
+
+Matched observations are grouped by HOST: a host the tracker already has a store
 for gets its `priceHistory` MERGED in (`PriceTracker.mergeHistorySamples`,
-day-bucketed, lowest price wins per day — never touches `initialPrice`/`lastPrice`/
-`lastRefreshed`, which describe a live fetch, not a passive record); a new host gets a
-brand-new store seeded with that history. This is the ONE way a product can have a
-non-empty `priceHistory`/graph at the moment it's first saved, instead of waiting for
-the first background refresh. Snapshots are never deleted by matching — the same
-snapshot can seed a different product later, and remains available to the history
-pill. Seeding refuses a snapshot in another currency than the tracker's
-`initialCurrency` — there is no FX source, so a £ point must not land on a $ graph.
+day-bucketed, lowest price wins per day — never touching `initialPrice` /
+`lastPrice` / `lastRefreshed`, which describe a live fetch); a new host gets a
+brand-new store seeded with that history. Seeding refuses an observation in a
+currency other than the tracker's `initialCurrency` — there is no FX source, so a
+£ point must not land on a $ graph. Observations are never deleted by matching:
+the same one can seed a different product later and remains available to the
+history pill.
 
-**`ProductSnapshotSweep` (LunaPriceUI) is the other consumer**, and it existed
-because save-time seeding alone left the file write-only for anything already
-tracked: browse a tracked product daily and every visit was recorded and never
-read (no past-day graph point, nothing for the index), and a RE-SAVE of the same
-URL takes `ReadingListIngestor`'s URL-equality dedup short-circuit, which never
-seeded at all. The sweep folds matching snapshots into every non-archived
-tracker — the tracker is turned into a `SnapshotMatcher` candidate (its keyed
-identifiers, flattened id, brand, name), so matching is by PRODUCT CODE, with
-URL equality just one tier — and regenerates the index when anything changed.
-It runs where the pending-comparison sweep runs: the product apps'
-`appDidLaunch` and the head of every `PriceRefreshCoordinator.refreshAndNotify`
-cycle. Idempotent (day buckets already holding a sample absorb the re-fold).
+Existing trackers are **not** backfilled. Only new saves read the store.
 
 Immediately after persisting, ingestion regenerates `priceHistoryIndex.json` (see
 below) and fires a SINGLE-tracker refresh (`PriceRefresher.refreshTracker(itemID:)` /
@@ -654,6 +721,18 @@ notifies. See `social-sharing.md`.
 - `SellerComparisonDocumentTests` — the summary document's structure, led by
   self-containment (no `src="http`, no `<link`, no `<script`), the flat-series
   graph, and markup escaping.
+
+- `ProductSnapshotStoreTests` — what a snapshot payload must satisfy, what the
+  identifier index retrieves (and refuses to, off-host), the (url, day) identity,
+  and eviction removing the record FILE and every key that pointed at it.
+- `ProductIngestProcessorTests` — the app/share/action capture site: a classified
+  product page is recorded, filed under every identifier it declared, and a page
+  with no priced product leaves nothing behind.
+- `ProductTrackerIngestorSnapshotSeedingTests` — the blocking read at save
+  creation: one store per matched host, day buckets taking the lowest price,
+  `initialPrice` untouched, and an unmatched product coming out clean.
+- `SnapshotMatcherTests` — the tiers, their scoping, precedence, order stability,
+  and that a similar NAME alone is not a match.
 
 - `ProductPageDetectorTests` — fixtures `LunaTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU

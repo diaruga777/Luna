@@ -838,32 +838,35 @@ already knows about from `GoogleShoppingProductParser`.
 
 One message, `{type: "productSnapshot", snapshot}`, does BOTH jobs in a single round
 trip: the native handler (gated `hostHandlesProducts`) validates and PERSISTS the
-snapshot into an App Group JSON file (`LunaSafari/SharedProductSnapshots.swift` —
-`Library/ProductSnapshots/productSnapshots.json`; deduped by (canonical url, day),
-pruned past 365 days / 2000 records), then ANSWERS the history-pill query by matching
-the page against (a) `priceHistoryIndex.json` (the app-written compact index of
-tracked products — `PriceHistoryIndexWriter`, LunaPriceUI, regenerated after every
-save/refresh/background) and (b) the snapshot file itself, using the SAME identifier
-precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family → mpn+brand
-→ sku+host → canonical URL → fuzzy name) — `LunaSafari/SharedProductMatching.swift` is
-a THIRD hand-written copy of that logic (the extension links no package), pinned by
-`SharedProductMatchingParityTests`. The reply is
+observation through `LunaPriceCompare.ProductSnapshotStore` — the SAME store the app,
+the share extension and the action extension write, not a Safari-local copy
+(`Library/ProductSnapshots/`, an identifier index plus one record file per
+observation, deduped by (canonical url, day), pruned past 365 days / 5000 records;
+see `claudedocs/price-tracking.md`'s "Product snapshots"). Then it ANSWERS the
+history-pill query by matching the page against (a) `priceHistoryIndex.json` (the
+app-written compact index of tracked products — `PriceHistoryIndexWriter`,
+LunaPriceUI, regenerated after every save/refresh/background) and (b) the
+observations the store's index says share one of this page's identifiers, using the
+SAME precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family →
+mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier).
+`LunaSafari/SharedProductMatching.swift` is still a hand-written copy of the
+tracked-INDEX half of that logic, pinned by `SharedProductMatchingParityTests`; the
+snapshot half is no longer copied at all. The reply is
 `{hasHistory, isTracked, amount, currency, day}`: `isTracked` skips the Track pill
 entirely (`renderProductPills`); `hasHistory` — the lowest matched price strictly
 BELOW the page's current price, same currency only, ties broken by earliest date —
 shows a second, **non-interactive** (`pointer-events: none`) pill, `Was $79.99 on
 1/12/25`, stacked above Track when unsaved, alone when already tracked, absent
-entirely when tracked with no cheaper history. Snapshots are NEVER saves: no
+entirely when tracked with no cheaper history. Observations are NEVER saves: no
 reading-list row, no scheduled refresh, no alert — they exist to seed a tracker's
-history at save time (`claudedocs/price-tracking.md`), to fold into EXISTING
-trackers as past-day history via `ProductSnapshotSweep` (LunaPriceUI — run at the
-product apps' launch and at the head of every refresh cycle, matched by product
-code through `SnapshotMatcher`, never by URL equality), and to answer this query.
-Two capture details that were bugs first: the native validators SANITIZE the raw
+history at the moment it is CREATED (`claudedocs/price-tracking.md`) and to answer
+this query. There is no background sweep folding them into existing trackers; the
+read happens once, on the save path.
+Two capture details that were bugs first: the validator SANITIZES the raw
 price text the meta/microdata tiers send (`"$1,299.00"` used to fail
 `Decimal(string:)` and drop the whole record, silently), and the suggestion mode
 `"never"` silences PILLS only — `offerLunaButton` still records the passive
-snapshot through `recordProductSnapshotSilently` (the mode was never about the
+observation through `recordProductSnapshotSilently` (the mode was never about the
 price record).
 
 ### The alternative-seller pill ("$59.00 at Acme")
@@ -879,9 +882,9 @@ content.js (after the productSnapshot reply)  → spinner pill + Track pill
   → runtime.sendMessage {type:"comparableSellers", snapshot}
   → background.js relay → sendNativeMessage
   → SafariWebExtensionHandler → ComparableSellerFinder.answer(forPageSnapshot:)
-      ├─ 1. priceHistoryIndex.json + productSnapshots.json, <24h            ← no network
+      ├─ 1. priceHistoryIndex.json + the snapshot index, <24h               ← no network
       ├─ 2. else SellerFanOut(.constrained) over URLSession                 ← LunaPriceCompare
-      │      └─ results written back via SharedProductSnapshots.record
+      │      └─ results written back via ProductSnapshotStore.record
       └─ reply {found, price, currency, sellerName, url}
   → content.js fills the pill in place — found / "No better price found" /
     "Unable to find better prices" — all three replace the spinner in its slot
@@ -901,7 +904,7 @@ runs two legs in order:
    environment exists. A page declaring **no GTIN and no MPN skips this leg
    entirely**: with name-only matching off, the run could only end in refusals after
    spending 15s and six retailers' bandwidth. Everything it fetches is written back
-   through `SharedProductSnapshots.record` — a fan-out result IS a snapshot — so it
+   through `ProductSnapshotStore.record` — a fan-out result IS an observation — so it
    prunes with everything else and feeds the "Was $X" pill on the next visit.
 
 `FreshComparablePrices` (LunaPriceCompare) is the whole decision, and all four of its

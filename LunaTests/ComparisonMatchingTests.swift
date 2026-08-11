@@ -6,6 +6,7 @@
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaPriceUI
 import XCTest
 
 /// The one decision the feature's credibility rests on: is the page we landed

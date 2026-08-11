@@ -722,6 +722,18 @@ notifies. See `social-sharing.md`.
   self-containment (no `src="http`, no `<link`, no `<script`), the flat-series
   graph, and markup escaping.
 
+- `ProductSnapshotStoreTests` — what a snapshot payload must satisfy, what the
+  identifier index retrieves (and refuses to, off-host), the (url, day) identity,
+  and eviction removing the record FILE and every key that pointed at it.
+- `ProductIngestProcessorTests` — the app/share/action capture site: a classified
+  product page is recorded, filed under every identifier it declared, and a page
+  with no priced product leaves nothing behind.
+- `ProductTrackerIngestorSnapshotSeedingTests` — the blocking read at save
+  creation: one store per matched host, day buckets taking the lowest price,
+  `initialPrice` untouched, and an unmatched product coming out clean.
+- `SnapshotMatcherTests` — the tiers, their scoping, precedence, order stability,
+  and that a similar NAME alone is not a match.
+
 - `ProductPageDetectorTests` — fixtures `LunaTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU
   price, article no-price negative, **bunnings-nextdata** heuristic+embedded-JSON;

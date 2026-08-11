@@ -896,8 +896,9 @@ All in `LunaTests/`:
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
 | `ProductIdentifiersTests` | the keyed value type and its normalization |
 | `FreshComparablePricesTests` | the 24h window and the four refusals; a result's snapshot payload |
+| `ProductSnapshotStoreTests` | what the store accepts, what its identifier index retrieves (and refuses to, off-host), same-day overwrite, and eviction taking the record file AND its keys |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
-| `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, and the two no-op states |
+| `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, the two no-op states, and that EVERY result is recorded as an observation — including the ones the tracker refuses |
 | `LiveNetworkPolicyTests` | that the installed fan-out — and every other live fetcher — refuses to leave the machine from a test process |
 | `SellerComparisonDocumentTests` | the document's self-containment, ordering, flat-series graph and escaping |
 | `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |

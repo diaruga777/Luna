@@ -46,8 +46,8 @@ final class ProductIngestProcessorTests: XCTestCase {
 
     func testAClassifiedProductPageIsRecordedAsAnObservation() async throws {
         let processor = ProductIngestProcessor(snapshotStore: snapshots)
-        let product = try XCTUnwrap(
-            await processor.extract(url: pageURL, html: Self.productHTML))
+        let extracted = await processor.extract(url: pageURL, html: Self.productHTML)
+        let product = try XCTUnwrap(extracted)
         XCTAssertEqual(product.name, "Acme Widget")
 
         let observed = snapshots.snapshots(forKeys: ProductSnapshotKeys.gtinKeys("0012345678905"))

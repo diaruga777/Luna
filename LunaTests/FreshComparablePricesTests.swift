@@ -151,8 +151,8 @@ final class FreshComparablePricesTests: XCTestCase {
     }
 
     /// The payload must satisfy the SAME validator the page's own extraction
-    /// goes through — `ProductSnapshotStore` is the app-side mirror of
-    /// `SharedProductSnapshots`, pinned to it by `SharedProductSnapshotsTests`.
+    /// goes through: a fan-out result and a visited page are one kind of thing,
+    /// recorded through one `ProductSnapshotStore.makeSnapshot`.
     func testAFetchedResultBecomesAValidSnapshotRecord() {
         let snapshot = ProductSnapshotStore.makeSnapshot(
             fromPayload: result().snapshotPayload, now: now)

@@ -29,6 +29,13 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = {}
+        // This suite is about SEEDING, so the fan-out is stubbed out at the
+        // ingestor's own seam rather than left to whatever a previously-run
+        // class left in `SellerComparisonRunner.installed`. With it live, a
+        // merge kicks a comparison that completes empty and re-bases
+        // `initialPrice` onto the store median — a real behaviour, asserted by
+        // `SellerComparisonTests`, and pure noise here.
+        ingestor.comparisonStarter = { _, _, _ in }
         // Never the real App Group store: a test must not read (or write) the
         // observations a developer's own browsing left behind.
         ingestor.snapshotStore = .temporary(directory: &snapshotDirectory)

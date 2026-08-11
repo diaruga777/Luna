@@ -398,7 +398,7 @@ needles look for ("captcha", "unusual traffic", …), so it needed its own.
 | concurrency | 3 | 2 |
 | product URLs per candidate | 3 | 2 |
 | total budget | 35s | 15s (inside the appex's 20s native budget) |
-| per-fetch timeout | 10s | 8s |
+| per-fetch timeout | 10s (raced per fetch) | 8s (in the `URLSession` config) |
 | name-only match | allowed | allowed only when the source has no GTIN/MPN (notably ASIN/SKU-only pages) |
 | `.gtinInPage` / `.mpn` (containment) match | allowed | **allowed** (identifier evidence) |
 | `.nameWithModelCode` (relaxed name) match | allowed | allowed (high similarity + exact model token) |
@@ -626,7 +626,54 @@ a seller whose price only exists after client-side rendering still counts. The
 resolver is raced against twice the profile's per-fetch allowance, because it may
 spend `IngestPipeline.processTimeout` (28 s) on one URL, which is most of the
 run's entire budget; losing that race costs a page, not the run. The whole run is
-capped at `profile.totalBudget + hardCapGrace`.
+capped at `profile.totalBudget + hardCapGrace`. Each app-side page fetch is
+raced against `profile.perFetchTimeout` on its own — see "Every cap here is a
+race, and none of them is a task group" below.
+
+### Every cap here is a race, and none of them is a task group
+
+Both facts in that sentence were learned the hard way, from a live AU run that
+logged candidates 39 s in, past a 40 s hard cap, while the App Intent that
+started it had handed off at 20 s and the user eventually gave up and cancelled.
+
+**A task group is not a deadline.** The obvious spelling — `addTask { work }`,
+`addTask { sleep; nil }`, `group.next()`, `cancelAll()`, return the winner —
+returns when the WORK returns, because a task group awaits every child when its
+scope exits. Cancellation is a request, so the sleep leg only decides what a slow
+answer is *called*. Every cap in this feature was written that way and none of
+them fired: the run's 40 s ceiling, the 20 s on `ProductPageSuggestion.resolve`,
+`PriceFetcher`'s 30 s, the favicon deadlines, and both of the appex's budgets.
+They all sat on top of work that ignores cancellation — a WKWebView render;
+`IngestPipeline`'s own timeout, which has the same shape and is still soft.
+`TimeLimit.run` (LunaModels) is the working form: the work runs in an
+unstructured task, so the deadline leg can stop waiting without being able to
+stop the work. It cancels the loser and abandons it.
+
+**`perFetchTimeout` is enforced, not advisory.** It reads like a hint on the
+profile because the engine issues no request of its own, and the app side
+honoured it nowhere: a candidate fetch was bounded only by
+`URLRequest.timeoutInterval` (20 s), which measures the gap between packets
+rather than the transfer, over a `URLSession.shared` whose
+`timeoutIntervalForResource` is its 7-day default. A retailer dribbling a
+multi-megabyte search page (that run saw 3.8 MB from `betta-au`) trips neither,
+and the engine checks `totalBudget` only BETWEEN candidates — so one slow
+storefront outlives the whole run. The appex enforces it by building its
+`URLSession` around it; `SellerComparisonRunner.fetchPage` races each fetch
+against it.
+
+Two smaller consequences of the same run, both in `WebViewPriceRenderer`: the
+DOM poll's `try? await Task.sleep` swallowed cancellation, so a cancelled render
+stopped pacing and re-scraped a multi-megabyte DOM on the main actor as fast as
+`evaluateJavaScript` could serialize it for the rest of its deadline — which is
+how an abandoned fan-out went on costing the main thread. And the render's stated
+ceiling is now enforced from outside as well as inside, because a WebContent
+process jetsammed mid-scrape (routine, when several megabyte DOMs render at once)
+leaves that continuation with nobody to resume it.
+
+`SellerFanOut.hasExpired` folds `Task.isCancelled` in beside the wall clock. It
+is checked between candidates and between links, which is the only place a caller
+that stopped waiting can stop the candidates still queued behind the one in
+flight.
 
 It is **installed** by `ProductKindComposition.install()`, not called. A process
 that did not compose the product kind has `installed == nil` and every surface

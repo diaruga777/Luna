@@ -59,17 +59,14 @@ public final class PriceFetcher: PriceFetching {
         self.overallTimeoutSeconds = overallTimeoutSeconds
     }
 
+    /// The backstop above is only a backstop if it can return without the work.
+    /// A task group cannot: it awaits every child when its scope exits, so the
+    /// sleeping leg decided what a slow answer was CALLED and never when it
+    /// arrived. `TimeLimit.run` runs the resolution unstructured instead.
     public func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
-        await withTaskGroup(of: ProductPrice?.self) { group in
-            group.addTask { await self.resolvePrice(forURLString: urlString, prefetchedHTML: prefetchedHTML) }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: self.overallTimeoutSeconds * 1_000_000_000)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        await TimeLimit.run(TimeInterval(overallTimeoutSeconds)) {
+            await self.resolvePrice(forURLString: urlString, prefetchedHTML: prefetchedHTML)
+        } ?? nil
     }
 
     /// The actual resolution (static markup → WebView render). Bounded by the
@@ -157,11 +154,37 @@ public enum WebViewPriceRenderer {
     ) async -> String? {
         guard LiveNetworkPolicy.allows(url, context: "WebViewPriceRenderer.renderedSearchHTML")
         else { return nil }
-        return await Renderer().render(
-            url: url, userAgent: deviceSafariUserAgent,
-            pollIntervalSeconds: pollIntervalSeconds,
-            timeoutSeconds: searchRenderTimeoutSeconds, hasPrice: isReady)
+        return await bounded(searchRenderTimeoutSeconds) {
+            await Renderer().render(
+                url: url, userAgent: deviceSafariUserAgent,
+                pollIntervalSeconds: pollIntervalSeconds,
+                timeoutSeconds: searchRenderTimeoutSeconds, hasPrice: isReady)
+        }
     }
+
+    /// The stated ceiling, enforced from OUTSIDE the render as well as inside it.
+    ///
+    /// `render` polls its own deadline between scrapes, which bounds it only for
+    /// as long as each scrape returns. One does not always: `outerHTML` is a
+    /// continuation over `evaluateJavaScript`, and a WebContent process that is
+    /// jetsammed mid-call — the routine end of several megabyte DOMs rendering
+    /// at once, which the fan-out asks for by design — leaves that continuation
+    /// with nobody to resume it. `grace` is for the scrape already in flight
+    /// when the deadline passes; past that the caller stops waiting and the
+    /// WebView is abandoned to ARC.
+    /// `render` is explicitly `@MainActor`: `TimeLimit` runs its work in an
+    /// unstructured task, which inherits no isolation, and `Renderer` owns a
+    /// `WKWebView`.
+    private static func bounded(
+        _ timeoutSeconds: UInt64, _ render: @escaping @MainActor @Sendable () async -> String?
+    ) async -> String? {
+        await TimeLimit.run(TimeInterval(timeoutSeconds) + renderGrace) {
+            await render()
+        } ?? nil
+    }
+
+    /// Slack for the in-flight DOM scrape when the render's own deadline passes.
+    private static let renderGrace: TimeInterval = 3
 
     /// Loads `url` in a fresh off-screen WebView, lets it render, and returns its
     /// rendered HTML. Returns nil on load failure or timeout.
@@ -171,11 +194,14 @@ public enum WebViewPriceRenderer {
         // page load is the one that would be slowest to notice in a test.
         guard LiveNetworkPolicy.allows(url, context: "WebViewPriceRenderer.renderedHTML")
         else { return nil }
-        let renderer = Renderer()
-        return await renderer.render(
-            url: url, userAgent: deviceSafariUserAgent,
-            pollIntervalSeconds: pollIntervalSeconds, timeoutSeconds: renderTimeoutSeconds,
-            hasPrice: { html in detector.staticPrice(urlString: url.absoluteString, html: html) != nil })
+        return await bounded(renderTimeoutSeconds) {
+            await Renderer().render(
+                url: url, userAgent: deviceSafariUserAgent,
+                pollIntervalSeconds: pollIntervalSeconds, timeoutSeconds: renderTimeoutSeconds,
+                hasPrice: { html in
+                    detector.staticPrice(urlString: url.absoluteString, html: html) != nil
+                })
+        }
     }
 
     /// One-shot off-screen WebView render. Owns its WebView for the duration of a
@@ -226,10 +252,19 @@ public enum WebViewPriceRenderer {
             // give up at the hard deadline. Re-scraping at a fixed cadence — rather than
             // sleeping a fixed window then scraping once — removes the JS-vs-sleep race
             // that made the same page sometimes yield a price and sometimes not.
+            //
+            // The cancellation check is not politeness. `try? await Task.sleep`
+            // returns IMMEDIATELY once the task is cancelled, so without it a
+            // cancelled render stops pacing and re-scrapes the DOM as fast as
+            // `evaluateJavaScript` can serialize it — on the main actor, on a
+            // multi-megabyte results page, for the rest of the deadline. Several
+            // of those at once is how a fan-out that had already been given up
+            // on kept the main thread from getting anything else done.
             var latestHTML = await outerHTML(of: webView)
-            while Date() < deadline {
+            while Date() < deadline, !Task.isCancelled {
                 if let html = latestHTML, hasPrice(html) { break }
                 try? await Task.sleep(nanoseconds: UInt64(pollIntervalSeconds * 1_000_000_000))
+                if Task.isCancelled { break }
                 latestHTML = await outerHTML(of: webView)
             }
 

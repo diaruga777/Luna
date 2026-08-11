@@ -235,16 +235,7 @@ enum ComparableSellerFinder {
     /// thing — no alternative seller — so whichever finishes first is simply
     /// the answer.
     private static func withinBudget(_ work: @escaping @Sendable () async -> Answer?) async -> Answer? {
-        await withTaskGroup(of: Answer?.self) { group in
-            group.addTask { await work() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        await TimeLimit.run(budget, operation: work) ?? nil
     }
 
     private static func answer(from point: ComparablePricePoint) -> Answer {

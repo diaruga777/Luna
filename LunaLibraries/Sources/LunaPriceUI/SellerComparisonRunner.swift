@@ -145,12 +145,28 @@ public enum SellerComparisonRunner {
         }
     }
 
-    /// One page, through the app's ordinary fetcher.
+    /// One page, through the app's ordinary fetcher, under the profile's
+    /// per-fetch allowance.
     ///
     /// A refusal is a RESULT here, not an error: the engine's bot-wall rule is
     /// the reason candidates are over-provisioned, and it can only apply that
     /// rule if the status code survives the throw.
+    ///
+    /// **The cap is this closure's job, and it was missing.** `perFetchTimeout`
+    /// is advisory on the profile precisely because the engine makes no request
+    /// of its own — the Safari appex honours it by building its `URLSession`
+    /// around it, and this side simply did not, so a candidate fetch was bounded
+    /// only by `URLRequest.timeoutInterval` (20 s). That interval measures the
+    /// gap between packets, not the transfer, and `URLSession.shared` leaves
+    /// `timeoutIntervalForResource` at its 7-day default: a retailer that dribbles
+    /// a multi-megabyte search page never trips either. One such page could
+    /// outlast the whole run's 35 s budget, which the engine checks only BETWEEN
+    /// candidates.
     static let fetchPage: SellerFanOut.Fetch = { url in
+        await TimeLimit.run(profile.perFetchTimeout) { await uncappedFetchPage(url) } ?? nil
+    }
+
+    private static func uncappedFetchPage(_ url: URL) async -> FetchedPage? {
         do {
             let html = try await ArticleFetcher().fetchHTML(from: url)
             return FetchedPage(url: url, html: html, statusCode: 200)
@@ -194,22 +210,23 @@ public enum SellerComparisonRunner {
             identifiers: identifiers)
     }
 
-    /// Returns `operation`'s value, or nil at `seconds`. The loser is cancelled;
-    /// unlike `CaptureIntentFastPath` this never throws, because every caller
-    /// treats "no comparison" and "a comparison that found nothing" the same way
-    /// at the surface — the save still lands.
+    /// Returns `operation`'s value, or nil at `seconds`. Never throws, because
+    /// every caller treats "no comparison" and "a comparison that found nothing"
+    /// the same way at the surface — the save still lands.
+    ///
+    /// This used to be a task group with a sleeping second child, which is not a
+    /// deadline at all: a group awaits every child when its scope exits, so the
+    /// call returned when the WORK returned and the sleep leg only decided what
+    /// the answer was called. Both caps here sat on top of work that ignores
+    /// cancellation — a WKWebView render, `IngestPipeline`'s own (identically
+    /// shaped, identically soft) 28 s timeout — so neither ever fired. A live
+    /// AU run logged candidates 39 s in, past a 40 s hard cap it would never
+    /// reach, and the intent that started it had long since handed off.
+    /// `TimeLimit.run` is the same race with the work made unstructured, so the
+    /// deadline can stop waiting without needing to stop the work.
     static func withDeadline<T: Sendable>(
         _ seconds: TimeInterval, _ operation: @escaping @Sendable () async -> T
     ) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { await operation() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        await TimeLimit.run(seconds, operation: operation)
     }
 }

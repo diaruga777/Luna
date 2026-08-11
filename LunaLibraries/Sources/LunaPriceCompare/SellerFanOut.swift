@@ -40,7 +40,11 @@ public struct SellerFanOutProfile: Equatable, Sendable {
     /// Wall-clock ceiling for the whole run. Checked between candidates, so a
     /// single hung fetch is the injected `fetch`'s problem to time out.
     public let totalBudget: TimeInterval
-    /// Advisory per-fetch timeout for the injected fetcher to honour.
+    /// Per-fetch ceiling the injected fetcher MUST honour — the only thing
+    /// standing between one slow retailer and a run that outlives `totalBudget`,
+    /// which is checked only between candidates. Both fetchers enforce it:
+    /// the appex builds its `URLSession` around it, the app races each fetch
+    /// against it.
     public let perFetchTimeout: TimeInterval
     /// Whether a name+brand match (no shared identifier) may be accepted.
     public let allowsNameOnlyMatch: Bool
@@ -927,7 +931,16 @@ public struct SellerFanOut {
         return Resolved(page: parsed, html: page.html)
     }
 
+    /// Whether the run should stop launching work: its own budget is spent, or
+    /// whoever started it has given up.
+    ///
+    /// Cancellation belongs in the SAME test as the budget. The engine checks
+    /// this only between candidates and between links — a deliberate trade, since
+    /// bounding an individual fetch is the injected `fetch`'s job — so a caller
+    /// that stopped waiting has no other way to stop the twelve candidates still
+    /// queued behind the one in flight.
     private func hasExpired(_ start: Date) -> Bool {
-        now().timeIntervalSince(start) >= profile.totalBudget
+        if Task.isCancelled { return true }
+        return now().timeIntervalSince(start) >= profile.totalBudget
     }
 }

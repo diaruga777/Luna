@@ -254,16 +254,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// is abandoned (the page falls back to handing the link to the app) rather
     /// than leaving the request — and the page — hanging.
     private static func resolveWithinBudget(_ url: URL) async -> [MediaAsset] {
-        await withTaskGroup(of: [MediaAsset]?.self) { group in
-            group.addTask { await SocialMediaResolver().resolveAssets(for: url) }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(resolveTimeout * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first ?? []
-        }
+        await TimeLimit.run(resolveTimeout) {
+            await SocialMediaResolver().resolveAssets(for: url)
+        } ?? []
     }
 
     // MARK: - Alternative sellers (product hosts only)

@@ -35,17 +35,21 @@ extension ProductSnapshotStore {
         let keys = SnapshotMatcher.candidateKeys(
             for: candidate, candidateURL: candidateURL,
             existingStoreURLStrings: existingStoreURLStrings)
+        let keyedPool = snapshots(forKeys: keys)
         let identified = SnapshotMatcher.identifierMatches(
             for: candidate, candidateURL: candidateURL,
-            existingStoreURLStrings: existingStoreURLStrings, among: snapshots(forKeys: keys))
+            existingStoreURLStrings: existingStoreURLStrings, among: keyedPool)
         guard identified.isEmpty else { return identified }
 
         let namePool = snapshots(
             forKeys: SnapshotMatcher.nameCandidateKeys(for: candidate, candidateURL: candidateURL),
             limit: SnapshotMatcher.fuzzyCandidateLimit)
-        guard !namePool.isEmpty else { return [] }
-        return SnapshotMatcher.fuzzyNameMatches(
-            for: candidate, candidateURL: candidateURL, among: namePool)
+        return SnapshotMatcher.merged(
+            SnapshotMatcher.urlMatches(
+                for: candidateURL, existingStoreURLStrings: existingStoreURLStrings,
+                among: keyedPool),
+            SnapshotMatcher.fuzzyNameMatches(
+                for: candidate, candidateURL: candidateURL, among: namePool))
     }
 
     /// The newest observation of exactly this page, mapped back into the same

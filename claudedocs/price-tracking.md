@@ -651,9 +651,15 @@ them really are the same product:
    .nameThreshold`) with a compatible brand, within ONE retailer family or ONE
    declared brand.
 
-The first tier that matches anything wins outright, and the name tier is
-consulted **only when tiers 1–5 matched nothing at all** — an identifier always
-wins. The tracker's single flat `productID` — whose kind was thrown away long
+**Tiers 1–4 win outright**; the first of them that matches anything is the
+answer, so an identifier always beats a name. Tiers 5 and 6 are **unioned with
+each other** rather than ordered, because the URL tier cannot gate the name
+tier: ingestion records an observation of the page it is classifying *before*
+it seeds the tracker, so on the save path tier 5 is always satisfied by the
+candidate's own page — "tier 5 matched" would just mean "we wrote a row for
+this URL a moment ago", and no other seller's observation could ever be
+reached. One tier contributes this page's own earlier days, the other other
+sellers of the same product. The tracker's single flat `productID` — whose kind was thrown away long
 before it got here — is offered at every scope in the lookup and disqualified by
 the tier check.
 

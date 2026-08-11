@@ -132,6 +132,25 @@ final class SnapshotMatcherTests: XCTestCase {
         XCTAssertEqual(result, [canonical])
     }
 
+    /// The trap this composition exists for: ingestion records an observation
+    /// of the page it is classifying BEFORE it seeds the tracker, so the URL
+    /// tier is always satisfied by the candidate's own page. If that gated the
+    /// name tier, no other seller's observation could ever be reached on a
+    /// save — which is the whole feature.
+    func testTheCandidatesOwnPageDoesNotSuppressTheNameTier() {
+        let ownPageToday = snapshot(
+            name: "Kestrel 6L Stainless Kettle", url: "https://shop.example/p/kettle?variant=blue",
+            day: "2026-01-06", brand: "Kestrel")
+        let otherSeller = snapshot(
+            name: "Kestrel 6L Stainless Kettle", url: "https://rival.example/p/9",
+            day: "2026-01-05", brand: "Kestrel")
+        let result = SnapshotMatcher.matchingSnapshots(
+            for: candidate(name: "Kestrel 6L Stainless Kettle", brand: "Kestrel"),
+            candidateURL: URL(string: "https://shop.example/p/kettle?variant=blue")!,
+            among: [ownPageToday, otherSeller])
+        XCTAssertEqual(result, [otherSeller, ownPageToday])
+    }
+
     func testNameMatchCrossesHostsOnlyWhenBothDeclareTheSameBrand() {
         let sameBrand = snapshot(
             name: "Acme Wireless Mechanical Keyboard", url: "https://a.example/p", brand: "Acme")

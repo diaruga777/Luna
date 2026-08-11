@@ -34,7 +34,11 @@ import LunaPriceCompare
 /// 6. Fuzzy NAME similarity (token Jaccard ≥ `ProductIdentityMatching
 ///    .nameThreshold`) with a compatible brand, within ONE retailer family or
 ///    ONE declared brand. Ranked below every tier above, so an identifier
-///    always wins; reached only when nothing above matched anything.
+///    always wins; reached only when tiers 1–4 matched nothing.
+///
+/// Tiers 1–4 win OUTRIGHT. Tiers 5 and 6 are UNIONED with each other rather
+/// than ordered — see `identifierMatches` for why the URL tier cannot be
+/// allowed to gate the name tier.
 ///
 /// **Why the name tier exists, and why it is last.** A name is not an
 /// identifier, and this tier is the one most likely to fold another product's
@@ -98,12 +102,26 @@ public enum SnapshotMatcher {
             for: candidate, candidateURL: candidateURL,
             existingStoreURLStrings: existingStoreURLStrings, among: snapshots)
         guard identified.isEmpty else { return identified }
-        return fuzzyNameMatches(for: candidate, candidateURL: candidateURL, among: snapshots)
+        return merged(
+            urlMatches(
+                for: candidateURL, existingStoreURLStrings: existingStoreURLStrings,
+                among: snapshots),
+            fuzzyNameMatches(for: candidate, candidateURL: candidateURL, among: snapshots))
     }
 
-    /// Tiers 1–5 — every tier that decides identity from an IDENTIFIER (or the
-    /// page's own url). Empty when none of them matched, which is the only
-    /// condition under which the name tier is consulted.
+    /// Tiers 1–4 — every tier that decides identity from an IDENTIFIER. Empty
+    /// when none matched, which is the only condition under which the URL and
+    /// NAME tiers are consulted.
+    ///
+    /// **The URL tier is deliberately NOT in here**, even though it is stronger
+    /// than a name. It cannot gate the name tier, because on the save path it
+    /// is always satisfied by the candidate's own page: ingestion records an
+    /// observation of the page it is classifying *before* it seeds the tracker
+    /// from the store, so "tier 5 matched" reduces to "we just wrote a row for
+    /// this URL" and no observation of the same product anywhere else could
+    /// ever be reached. The two weak tiers are therefore UNIONED (below)
+    /// instead of ordered against each other: one contributes this page's own
+    /// earlier days, the other other sellers of the same product.
     public static func identifierMatches(
         for candidate: ProductInfo,
         candidateURL: URL,
@@ -169,13 +187,33 @@ public enum SnapshotMatcher {
             if !matches.isEmpty { return matches }
         }
 
-        // 5. Canonical URL equality against the candidate or any existing store.
+        return []
+    }
+
+    /// Tier 5 — canonical URL equality (tracking params stripped both sides)
+    /// against the candidate's own URL or any store URL already on the tracker
+    /// being merged into.
+    public static func urlMatches(
+        for candidateURL: URL, existingStoreURLStrings: [String] = [],
+        among snapshots: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
         let strippedTargets = Set(
             ([candidateURL.absoluteString] + existingStoreURLStrings)
                 .map(ProductSnapshotKeys.strippedTrackingURL))
-        return pool.filter {
-            strippedTargets.contains(ProductSnapshotKeys.strippedTrackingURL($0.url))
-        }
+        return snapshots
+            .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
+            .filter { strippedTargets.contains(ProductSnapshotKeys.strippedTrackingURL($0.url)) }
+    }
+
+    /// The two weak tiers' union, deduplicated on an observation's identity
+    /// (its page and its day) and in the same order every tier returns.
+    public static func merged(
+        _ lhs: [ProductSnapshot], _ rhs: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
+        var seen = Set<String>()
+        return (lhs + rhs)
+            .filter { seen.insert("\($0.url)|\($0.day)").inserted }
+            .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
     }
 
     /// Tier 6 — the fuzzy NAME tier, and the last resort. An observation

@@ -105,6 +105,7 @@ public struct ProductSnapshot: Codable, Equatable, Sendable {
         keys.append(contentsOf: ProductSnapshotKeys.mpnKeys(mpn))
         keys.append(contentsOf: ProductSnapshotKeys.skuKeys(sku, host: host))
         keys.append(ProductSnapshotKeys.urlKey(url))
+        keys.append(contentsOf: ProductSnapshotKeys.nameKeys(name, brand: brand, host: host))
         return orderedUnique(keys)
     }
 }
@@ -148,6 +149,46 @@ public enum ProductSnapshotKeys {
               let host, !host.isEmpty
         else { return [] }
         return ["s:\(host.lowercased()):\(normalized)"]
+    }
+
+    /// How many name tokens a WRITE files itself under. A name longer than this
+    /// files its longest tokens (a long token is the distinctive one — "anc900"
+    /// beats "wireless"), so the index can never grow an entry per word of a
+    /// marketing paragraph.
+    public static let maxIndexedNameTokens = 8
+    /// How many name tokens a LOOKUP asks for. Fewer than the write side, and
+    /// again the longest: retrieval is a union, so ONE shared token is enough
+    /// to surface a record, and each extra token is another dictionary hit.
+    public static let maxQueriedNameTokens = 5
+
+    /// The name-bucket keys — the only non-identifier retrieval tier, and the
+    /// reason a fuzzy-name match does not have to scan the store.
+    ///
+    /// A name cannot be a key on its own (two spellings of one product are the
+    /// whole point of matching by name), so it is filed per TOKEN, and each
+    /// token is scoped the way the fuzzy tier itself is scoped: to the brand
+    /// when one is declared, and to the retailer family the page lives on.
+    /// A lookup unions the same shape, so a candidate finds an observation as
+    /// soon as they share one significant word within one brand or one
+    /// retailer — never across the whole store.
+    public static func nameKeys(
+        _ name: String?, brand: String?, host: String?, limit: Int = maxIndexedNameTokens
+    ) -> [String] {
+        guard let name, !name.isEmpty else { return [] }
+        let tokens = ProductIdentityMatching.nameTokens(name)
+            // Longest first, then alphabetical: a deterministic pick, so the
+            // same name always files (and asks) under the same tokens.
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+            .prefix(limit)
+        guard !tokens.isEmpty else { return [] }
+
+        var scopes: [String] = []
+        if let brandKey = ProductIdentityMatching.comparableBrand(brand) { scopes.append("b:\(brandKey)") }
+        if let host, !host.isEmpty {
+            scopes.append("h:\(ProductIdentityMatching.registrableDomain(host))")
+        }
+        guard !scopes.isEmpty else { return [] }
+        return orderedUnique(scopes.flatMap { scope in tokens.map { "n:\(scope):\($0)" } })
     }
 
     /// The weakest key, and the only one that is not an identifier: the page

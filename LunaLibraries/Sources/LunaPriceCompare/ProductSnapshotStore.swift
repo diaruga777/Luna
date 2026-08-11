@@ -189,13 +189,34 @@ public final class ProductSnapshotStore: @unchecked Sendable {
     /// Every stored observation filed under any of `keys`, newest-day last and
     /// order-stable. This is the whole read path: the index says which record
     /// files to open, and no other file is touched.
+    ///
     public func snapshots(forKeys keys: [String]) -> [ProductSnapshot] {
+        snapshots(forKeys: keys, limit: nil)
+    }
+
+    /// `snapshots(forKeys:)` with a ceiling on how many RECORD FILES are
+    /// opened, keeping the newest days (ties by record id, so the choice is
+    /// deterministic). It exists for the name-bucket keys, whose pool is a
+    /// narrowed guess rather than an identifier hit: a brand's most popular
+    /// word must cost a bounded number of reads on the save path however many
+    /// observations sit behind it. The decision is made from the index's `days`
+    /// map alone — no record is read to find out how old it is.
+    public func snapshots(forKeys keys: [String], limit: Int?) -> [ProductSnapshot] {
         guard !keys.isEmpty else { return [] }
         let index = loadIndex()
         var ids: [String] = []
         var seen = Set<String>()
         for key in keys {
             for id in index.keys[key] ?? [] where seen.insert(id).inserted { ids.append(id) }
+        }
+        if let limit, ids.count > limit {
+            ids = ids
+                .sorted {
+                    let left = index.days[$0] ?? "", right = index.days[$1] ?? ""
+                    return left != right ? left > right : $0 < $1
+                }
+                .prefix(limit)
+                .map { $0 }
         }
         return ids.compactMap(loadRecord)
             .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }

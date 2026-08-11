@@ -137,6 +137,42 @@ final class ProductSnapshotStoreTests: XCTestCase {
                 .isEmpty)
     }
 
+    /// The name buckets: a page that declared no identifier at all is still
+    /// retrievable — by a word of its name, within its own retailer family or
+    /// its own brand — which is what keeps the fuzzy tier a LOOKUP.
+    func testAnIdentifierLessObservationIsFoundByANameTokenInScope() {
+        var value = payload(name: "Kestrel 6L Stainless Kettle", url: "https://shop.example/p/kettle")
+        value["brand"] = "Kestrel"
+        XCTAssertTrue(store.record(payload: value))
+        store.record(payload: payload(name: "Unrelated Thing", url: "https://shop.example/p/other"))
+
+        let inScope = ProductSnapshotKeys.nameKeys(
+            "Kestrel 6L Stainless Kettle Blue", brand: "Kestrel", host: "shop.example")
+        XCTAssertEqual(
+            store.snapshots(forKeys: inScope).map(\.url), ["https://shop.example/p/kettle"])
+
+        let otherBrandElsewhere = ProductSnapshotKeys.nameKeys(
+            "Kestrel 6L Stainless Kettle", brand: "Globex", host: "rival.example")
+        XCTAssertTrue(
+            store.snapshots(forKeys: otherBrandElsewhere).isEmpty,
+            "a name bucket is scoped to a brand or a retailer family, never global")
+    }
+
+    /// The name pool is a guess, so it is capped — and the cap keeps the NEWEST
+    /// days, decided from the index alone.
+    func testALimitedLookupKeepsTheNewestObservations() {
+        for day in 1...5 {
+            let now = ProductSnapshotStore.date(forDay: "2026-01-0\(day)")!
+            store.record(
+                payload: payload(name: "Kestrel Kettle", url: "https://shop.example/p/\(day)"),
+                now: now)
+        }
+        let keys = ProductSnapshotKeys.nameKeys("Kestrel Kettle", brand: nil, host: "shop.example")
+        let limited = store.snapshots(forKeys: keys, limit: 2)
+        XCTAssertEqual(limited.map(\.day), ["2026-01-04", "2026-01-05"])
+        XCTAssertEqual(store.snapshots(forKeys: keys).count, 5)
+    }
+
     func testAKeyNothingWasFiledUnderReturnsNothing() {
         store.record(payload: payload(gtin: "0012345678905"))
         XCTAssertTrue(store.snapshots(forKeys: ProductSnapshotKeys.gtinKeys("9999999999999")).isEmpty)

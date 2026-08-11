@@ -114,20 +114,76 @@ final class SnapshotMatcherTests: XCTestCase {
         XCTAssertEqual(result, [match])
     }
 
-    // MARK: - A name is not an identifier
+    // MARK: - Tier 6: the fuzzy NAME tier, in scope only
 
-    /// Two near-identical names, the same brand, no shared id and different
-    /// pages: not a match. Folding that observation into a graph would put
-    /// another product's price on it, and the store is retrieved BY identifier,
-    /// so a name tier could not be answered from the index anyway.
-    func testASimilarNameAloneIsNotAMatch() {
-        let sameBrandSimilarName = snapshot(
-            name: "Acme Wireless Mechanical Keyboard", url: "https://a.example/p", brand: "Acme")
+    /// The reported bug, at matcher level: the Safari extension filed the
+    /// observation under the page's CANONICAL url while the save is keyed by
+    /// the url the user actually saved (`?variant=`), and the page declares no
+    /// identifier at all. Every tier above has nothing to work with; the name
+    /// on the same retailer is what is left.
+    func testSameHostNameMatchRecoversAnObservationFiledUnderADifferentURL() {
+        let canonical = snapshot(
+            name: "Kestrel 6L Stainless Kettle", url: "https://shop.example/p/kettle",
+            day: "2026-01-01", brand: "Kestrel")
         let result = SnapshotMatcher.matchingSnapshots(
-            for: candidate(name: "Acme Wireless Mechanical Keyboard Pro", brand: "Acme"),
+            for: candidate(name: "Kestrel 6L Stainless Kettle", brand: "Kestrel"),
+            candidateURL: URL(string: "https://shop.example/p/kettle?variant=blue")!,
+            among: [canonical])
+        XCTAssertEqual(result, [canonical])
+    }
+
+    func testNameMatchCrossesHostsOnlyWhenBothDeclareTheSameBrand() {
+        let sameBrand = snapshot(
+            name: "Acme Wireless Mechanical Keyboard", url: "https://a.example/p", brand: "Acme")
+        let unbranded = snapshot(
+            name: "Acme Wireless Mechanical Keyboard", url: "https://b.example/p")
+        let result = SnapshotMatcher.matchingSnapshots(
+            for: candidate(name: "Acme Wireless Mechanical Keyboard", brand: "Acme"),
             candidateURL: URL(string: "https://shop.example/p/9")!,
-            among: [sameBrandSimilarName])
+            among: [sameBrand, unbranded])
+        XCTAssertEqual(
+            result, [sameBrand],
+            "an unbranded listing on an unrelated host is out of scope for a name match")
+    }
+
+    func testADifferentBrandBlocksANameMatchOnTheSameHost() {
+        let otherBrand = snapshot(
+            name: "Acme Wireless Mechanical Keyboard", url: "https://shop.example/p/1",
+            brand: "Globex")
+        let result = SnapshotMatcher.matchingSnapshots(
+            for: candidate(name: "Acme Wireless Mechanical Keyboard", brand: "Acme"),
+            candidateURL: URL(string: "https://shop.example/p/9")!,
+            among: [otherBrand])
         XCTAssertTrue(result.isEmpty)
+    }
+
+    func testASharedWordIsNotANameMatch() {
+        // One token in common out of six: far below the Jaccard threshold, so
+        // the same shop's other keyboard is not this product.
+        let neighbour = snapshot(
+            name: "Globex Ultra Slim Bluetooth Travel Keyboard", url: "https://shop.example/p/1")
+        let result = SnapshotMatcher.matchingSnapshots(
+            for: candidate(name: "Acme Wireless Mechanical Keyboard Pro"),
+            candidateURL: URL(string: "https://shop.example/p/9")!,
+            among: [neighbour])
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func testAnIdentifierMatchBeatsANameMatchOnAnotherPage() {
+        let identified = snapshot(
+            name: "Totally Different Title", url: "https://shop.example/p/1",
+            day: "2026-01-01", gtin: "1234567890123", brand: "Acme")
+        let nameTwin = snapshot(
+            name: "Acme Wireless Mechanical Keyboard", url: "https://shop.example/p/2",
+            day: "2026-01-02", brand: "Acme")
+        let result = SnapshotMatcher.matchingSnapshots(
+            for: candidate(name: "Acme Wireless Mechanical Keyboard", brand: "Acme",
+                           productID: "1234567890123"),
+            candidateURL: URL(string: "https://shop.example/p/9")!,
+            among: [identified, nameTwin])
+        XCTAssertEqual(
+            result, [identified],
+            "the name tier must never join an identifier tier's result")
     }
 
     func testNoTierMatchesReturnsEmpty() {

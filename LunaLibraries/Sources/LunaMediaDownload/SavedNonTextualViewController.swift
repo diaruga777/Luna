@@ -148,6 +148,11 @@ public final class SavedNonTextualViewController: UIViewController {
     /// Drawn inside the media placeholder, not under the buttons — see the type
     /// comment. Hidden except while the file is streaming to disk.
     private let downloadProgress = MoonHorizonProgressBar()
+    /// What fills that bar for a REHEARSAL, which has its file in hand and so no
+    /// transfer to report. Unused by a real save, whose progress is the
+    /// download's own.
+    private lazy var practiceDownloadRamp = PracticeDownloadRamp(
+        bar: downloadProgress)
     private let downloadStatus = UILabel()
     private var didSaveToPhotos = false
     private var isDeleting = false
@@ -472,8 +477,8 @@ public final class SavedNonTextualViewController: UIViewController {
             // only its input is bundled mock data. Resolve it after the hosted
             // sheet has revealed so the inline download/result transition is
             // still visible in the iMessage lesson.
-            applyResolvedMediaState(
-                .ready(DownloadedMedia(fileURL: practiceVideoURL, kind: .video)))
+            beginPracticeDownloadBeat(
+                DownloadedMedia(fileURL: practiceVideoURL, kind: .video))
             return
         }
         if let existing = SavedMediaStore.shared.existingDownloadedItem(forURLString: articleURLString) {
@@ -618,12 +623,30 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
+    /// The rehearsal's download, which has no transfer to report: the bar fills
+    /// on `PracticeDownloadRamp`'s clock — the same one the kind-less practice
+    /// screen fills on — and the bundled file resolves at the top of it.
+    ///
+    /// Without the ramp the bar sat at zero for the whole indication and then the
+    /// finished screen replaced it, so the one thing the media lesson exists to
+    /// show — that a download happened — was the one thing it never drew.
+    private func beginPracticeDownloadBeat(_ media: DownloadedMedia) {
+        applyMediaState(.downloading)
+        practiceDownloadRamp.start { [weak self] in
+            self?.applyResolvedMediaState(.ready(media))
+        }
+    }
+
     /// Plays the media beat over again, off the file already on disk: back to the
     /// download indication, through its minimum, then the same result. No
     /// resolve, no transfer, no second copy.
     private func replayHostedBeat() {
         switch mediaState {
         case let .ready(media):
+            guard !isPracticePreview else {
+                beginPracticeDownloadBeat(media)
+                return
+            }
             applyMediaState(.downloading)
             downloadProgress.setProgress(1, animated: true)
             applyResolvedMediaState(.ready(media))

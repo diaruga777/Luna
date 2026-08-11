@@ -590,6 +590,24 @@ holds the sheet open for `practicePlaybackDuration` (2s) while it does, so the
 demonstration never takes a full-screen-looking hop over a screen it has just
 built.
 
+**A rehearsed download has no progress to report, so a clock reports it**
+(`PracticeDownloadRamp`, LunaShareSurface). The clip ships in the app bundle: it
+is on disk before the screen exists, nothing is transferring, and nothing calls
+the progress closure a real download drives. So the bar sat at 0 for the whole
+indication and the finished screen then replaced it — the one thing the media
+lesson exists to show, that a download HAPPENED, was the one thing it never
+drew. `beginPracticeDownloadBeat` applies `.downloading` and hands the bar to the
+ramp: back to zero, gated on `HostedShareSession.revealDate` (the surface is
+built DETACHED well before the sheet opens, so a beat begun at `viewDidLoad`
+would be over unseen — nil session, as in a real appex, runs immediately), then
+0 → `firstStop` (0.62) → 1 across `duration` (1.5s), and the bundled file
+resolves at the top of it. Two steps rather than one long animation because the
+bar draws its own ease and a single 1.5s ramp reads as a bar nobody is driving.
+The ramp is generation-guarded, so `onReplayBeat` re-runs the whole beat on a
+looping pass instead of snapping the bar to 1. A REAL hosted save is untouched —
+its progress is the download's own, joined from `MediaPreloadCache` where the
+lesson preloaded it.
+
 **The gate that hid it.** That screen asks `MediaDownloadablePlatform.supports`
 before building its media half at all — the right question for a real save, and
 the wrong one here: `instatok.com` is a fictional host that matches no platform
@@ -602,13 +620,12 @@ platform table cannot be asked about.
 
 `ShareSetupPracticeDownloadViewController` — the hand-built rehearsal that keeps
 the media screen's grammar (the badge, the square preview with the bar drawn
-inside it, the full-width Done) over `downloadDuration` (1.5s) and a poster
+inside it, the full-width Done) over the same `PracticeDownloadRamp` and a poster
 frame — remains the fallback for a media host with no registered media
-presenter. It waits on `HostedShareSession.revealDate` before starting its bar,
-because the surface is built DETACHED well before the lesson's sheet opens and a
-beat begun at `viewDidLoad` would be over unseen, and it reports its clip
-through `onMediaFileReady`. Both rehearsals answer `onReplayBeat` by re-running
-their beat on each pass of the looping demonstration.
+presenter, and reports its clip through `onMediaFileReady`. Both rehearsals fill
+their bar from that one ramp (so the two cannot drift into filling at different
+rates) and both answer `onReplayBeat` by re-running their beat on each pass of
+the looping demonstration.
 
 The clip lives in the APP bundle only (`ShareSetupPractice.bundledVideoURL`): a
 rehearsal is worth 400KB in the app that teaches it and is not worth it in eight

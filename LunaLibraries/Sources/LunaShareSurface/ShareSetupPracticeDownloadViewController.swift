@@ -24,7 +24,8 @@ import UIKit
 /// Luna" badge, the square preview with the progress bar drawn inside it, the
 /// full-width Done — over a bundled clip and a fixed beat:
 ///
-/// 1. `downloadDuration` of the progress bar filling under the media glyph;
+/// 1. `PracticeDownloadRamp.duration` of the progress bar filling under the
+///    media glyph;
 /// 2. the clip's own first frame with a play badge over it.
 ///
 /// Hosted (the onboarding save lesson), it also hands the clip to the session, so
@@ -35,11 +36,6 @@ import UIKit
 final class ShareSetupPracticeDownloadViewController: UIViewController,
     ShareSetupPracticePresenting {
     var onDone: (() -> Void)?
-
-    /// How long the rehearsal spends downloading. Long enough to be a download
-    /// that HAPPENED — a bar that fills in a frame reads as a screen changing
-    /// its mind — and short enough that nobody waits through it twice.
-    static let downloadDuration: TimeInterval = 1.5
 
     private let app: LunaApp
     private let videoURL: URL
@@ -53,10 +49,11 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
     private let status = UILabel()
     private let doneButton = UIButton(type: .system)
 
-    /// Cancels the pending beats of a pass that has been replaced — the lesson
-    /// loops, and a stale completion landing over a newer pass would put the
-    /// finished state up while the bar was still filling.
-    private var generation = 0
+    /// The bar's own clock, shared with the media kind's practice screen so the
+    /// two rehearsals fill at the same rate. It also owns the cancellation the
+    /// looping lesson needs, so a stale step cannot put the finished state up
+    /// while a newer pass's bar is still filling.
+    private lazy var ramp = PracticeDownloadRamp(bar: progress)
 
     init(app: LunaApp, videoURL: URL) {
         self.app = app
@@ -200,53 +197,17 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
 
     // MARK: - The beat
 
-    /// Back to the top: the bar at zero under the media glyph. Re-entered on
-    /// every pass of a looping lesson.
+    /// Back to the top: the bar at zero under the media glyph, then filling on
+    /// the rehearsal's clock. Re-entered on every pass of a looping lesson.
     private func beginDownloadBeat() {
-        generation += 1
         pendingIcon.isHidden = false
         posterView.isHidden = true
         playBadge.isHidden = true
         progress.isHidden = false
-        progress.setProgress(0, animated: false)
         status.text = L10n.string("Downloader_media_preview_downloadingStatus")
         status.isHidden = false
         HostedShareSession.current?.awaitsMediaPlayback = true
-        runDownloadRamp(generation: generation)
-    }
-
-    /// The bar filling over `downloadDuration` — but not one moment of it before
-    /// the sheet carrying this screen has finished opening.
-    ///
-    /// The surface is built and loaded DETACHED, well before the lesson's sheet
-    /// slides up (that split is what lets the real save's fetch overlap the
-    /// conversation), so a beat started at `viewDidLoad` would be over before
-    /// anyone saw it. `revealDate` is the same gate the media screen waits on,
-    /// and it is re-armed by `beginReveal()` on every pass.
-    private func runDownloadRamp(generation: Int) {
-        guard generation == self.generation else { return }
-        if let session = HostedShareSession.current, session.revealDate == nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.runDownloadRamp(generation: generation)
-            }
-            return
-        }
-
-        // Two steps rather than one long animation: the bar draws its own ease,
-        // and a single 1.5s ramp reads as a progress bar nobody is driving.
-        progress.setProgress(0.62, animated: true)
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.downloadDuration * 0.55
-        ) { [weak self] in
-            guard let self, generation == self.generation else { return }
-            self.progress.setProgress(1, animated: true)
-        }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.downloadDuration
-        ) { [weak self] in
-            guard let self, generation == self.generation else { return }
-            self.finishDownloadBeat()
-        }
+        ramp.start { [weak self] in self?.finishDownloadBeat() }
     }
 
     /// The file is "on disk": the clip's own first frame under a play badge, and

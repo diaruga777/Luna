@@ -90,9 +90,12 @@ enable it, the content script takes the whole window instead of offering a pill:
 to `<app name>`" button. It dismisses itself after 20s and hands the page back, so
 a pill can still appear if that page earns one. A page refresh dismisses it
 immediately. Once the overlay is attached, its native handler sends the App Group
-Darwin notification `safariCelebrationPresented`; a running onboarding app uses
-that signal to stop its Safari setup-guide PiP video without waiting for Safari to
-return to the foreground.
+Darwin notification `safariCelebrationPresented`, which `LunaSetupStatusStore`
+still re-posts in-process. Onboarding used to listen for it there to stop its
+Safari setup-guide PiP video without waiting for Safari to return to the
+foreground; that guide was retired once the in-app Safari instructions moved to
+the hosted setup page (there is nothing left to narrate in Safari), so nothing
+in the app currently observes this notification.
 
 The premise it disproves is worth stating, because it shapes everything here: a
 Safari extension's **JavaScript** cannot read the container app's state, but its
@@ -145,7 +148,8 @@ Three things constrain the design, none of them fixable in code:
   confirmation therefore appears when access is granted, which may be several taps
   after the switch. This is the same gate `recordExtensionRun` evidence has always
   been behind (the background script needs `tab.url`), so it adds no new failure
-  mode — but the PiP guide has to keep walking the user to the Allow step.
+  mode — the hosted setup page the user was sent to already walks through the
+  Allow step, so nothing further has to narrate it once they're in Safari.
 - **The return hop must be a tap.** An appex cannot open a URL
   (`NSExtensionContext.open` is not available to a Safari web extension handler on
   iOS), and Safari only honours app-scheme navigation under user activation — an

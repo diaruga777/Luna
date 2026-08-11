@@ -315,12 +315,13 @@ uses the existing offline/native demonstrations:
   which the extension pairs with its OWN first run to confirm setup in the page
   and invite the user back — see `claudedocs/safari-extension.md`'s "in-page
   setup confirmation".
-- The hop into REAL Safari opens `https://www.apple.com`
-  (`AppOnboardingViewController.openSafariSetup`). The one requirement is a page
-  Safari's own Reader is never offered on: Reader availability rearranges the
-  address field — the very menu the lesson just taught — so an article-shaped
-  practice page (Wikipedia was one) works against it. A plain homepage is not
-  Reader-eligible and carries nothing to attribute for merely being opened.
+- The hop into REAL Safari opens the RUNNING app's own hosted setup page —
+  `https://luna-site-bm6.pages.dev/setup/<slug>` (`AppOnboardingViewController
+  .openSafariSetup`, slug from the private `LunaApp.safariSetupPageSlug` beside
+  it, matching `site/README.md`'s canonical slugs). The page IS the
+  instructions now, so the hop lands the user on the very page that tells them
+  what to tap next — there is no separate practice-page requirement to satisfy,
+  since the destination is never Reader-eligible chrome to begin with.
 - Save setup uses the Messages replica and there is exactly ONE of it: the
   Action Button shortcut journey. `OnboardingSaveSetupMode` answers
   `.actionButtonShortcut` or `.unavailable`, and a device that answers

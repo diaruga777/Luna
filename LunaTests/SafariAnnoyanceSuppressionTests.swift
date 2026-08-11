@@ -269,23 +269,42 @@ final class SafariAnnoyanceSuppressionTests: XCTestCase {
             "none|block|untouched|false")
     }
 
-    /// The gate is CONSENT only. A newsletter overlay is not a cookie question, and
-    /// nothing about answering cookie prompts yourself asks for those back.
-    func testTheGateDoesNotReachNonConsentAnnoyances() {
+    /// The gate is CONSENT only, ON THE SAME PAGE. A recognized consent root
+    /// normally ends the pass — the consent path is acting on that subtree — but
+    /// with the gate off nothing is acting on it, so ending there would exempt every
+    /// other annoyance on any page that merely CONTAINS a cookie dialog. The dialog
+    /// is excluded by identity instead; the newsletter overlay beside it is not.
+    func testTheGateDoesNotReachNonConsentAnnoyancesOnTheSamePage() {
         let html = """
         <html><body>
         <article><p>Publisher content remains readable.</p></article>
+        <div id="cookie-consent-bar">
+          <p>We use cookies.</p>
+          <button onclick="document.body.dataset.choice='accepted'">Accept all</button>
+          <button onclick="document.body.dataset.choice='refused'">Reject all</button>
+        </div>
         <div id="newsletter" class="newsletter-modal" role="dialog"
              style="position:fixed;inset:0">
           <p>Subscribe to our newsletter</p><button>Not now</button>
         </div>
         </body></html>
         """
+        let expression = """
+        (function () {
+          return [document.querySelector('#cookie-consent-bar').dataset.lunaSuppressed
+                    || 'visible',
+                  document.body.dataset.choice || 'none',
+                  document.querySelector('#newsletter').dataset.lunaSuppressed
+                    || 'visible'].join('|');
+        }())
+        """
         XCTAssertEqual(
-            evaluate(
-                "document.querySelector('#newsletter').dataset.lunaSuppressed || 'visible'",
-                html: html, cookieAutoDecline: false),
-            "popover")
+            evaluate(expression, html: html, cookieAutoDecline: false),
+            "visible|none|popover")
+        // And with the gate on, the consent path owns the page: the banner is
+        // refused and hidden, and the pass stops there rather than second-guessing
+        // what else might be on top of it.
+        XCTAssertEqual(evaluate(expression, html: html), "consent|refused|visible")
     }
 
     // MARK: - What counts as a refusal

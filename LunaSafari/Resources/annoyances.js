@@ -368,20 +368,21 @@
         return null;
     }
 
+    // Returns the consent root it recognized, or null. Non-null on EVERY branch
+    // that found one, including "off": this IS consent UI, so the generic popover
+    // pass must not reconsider it — least of all when the user has asked to answer
+    // cookie prompts themselves, where re-entering as a "popover" would hide the
+    // very dialog we just revealed.
     function processConsent(element) {
         var root = semanticConsentRoot(element);
-        if (!root) { return false; }
-        // TRUE on every branch: this IS consent UI, so the generic popover pass
-        // must not reconsider it — least of all when the user has asked to answer
-        // cookie prompts themselves, where re-entering as a "popover" would hide
-        // the very dialog we just revealed.
-        if (gate === GATE_OFF) { return true; }
+        if (!root) { return null; }
+        if (gate === GATE_OFF) { return root; }
         if (gate === GATE_PENDING) {
             deferConsentRoot(root);
-            return true;
+            return root;
         }
         answerConsent(root);
-        return true;
+        return root;
     }
 
     // Choose the privacy-preserving action, then get the notice out of the way.
@@ -493,10 +494,25 @@
 
     function scan(root) {
         if (!root || root.nodeType !== 1) { return; }
-        if (processConsent(root)) { return; }
+        var consentRoot = processConsent(root);
+        // A recognized consent root normally ENDS the pass: the consent path is
+        // acting on this subtree and a second look could only get in its way. With
+        // the cookie gate off, though, nothing is acting on it — and returning here
+        // would permanently exempt everything under a page that merely CONTAINS a
+        // cookie dialog from the rest of the layer, shadow roots included. So the
+        // pass continues and the dialog is excluded by identity instead: it is the
+        // one element on the page Luna has been told to leave alone, and some cookie
+        // walls do say things like "continue to the site".
+        if (consentRoot && gate !== GATE_OFF) { return; }
         var candidates = candidateOverlays(root);
         for (var i = 0; i < candidates.length; i++) {
-            if (!candidates[i].classList.contains(HIDDEN_CLASS)) { processPopover(candidates[i]); }
+            var candidate = candidates[i];
+            if (consentRoot
+                && (candidate === consentRoot || consentRoot.contains(candidate)
+                    || candidate.contains(consentRoot))) {
+                continue;
+            }
+            if (!candidate.classList.contains(HIDDEN_CLASS)) { processPopover(candidate); }
         }
         discoverShadowRoots(root);
     }

@@ -311,6 +311,82 @@ final class UtilCardTests: XCTestCase {
         }
     }
 
+    /// The cycling labels are the ROW's app, turn for turn: whichever weekly
+    /// pick the row arrives at, both labels arrive carrying that app's own
+    /// phrasing. They used to count for themselves from their own zero while the
+    /// row moved to the slot after the tick's, so the Price Tracker's phrasing
+    /// stood under the Reader's pick.
+    func testCyclingSetupLabelsNameTheAppWhosePickTheRowArrivesAt() throws {
+        seedWeekly(.article, url: "https://a.example.com/x", title: "A Read")
+        seedWeekly(.media, url: "https://b.example.com/x", title: "A Watch")
+        seedWeekly(.product, url: "https://c.example.com/x", title: "A Deal")
+        let card = makeCard(showsOnboarding: true, app: .luna)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+        let host = try XCTUnwrap(card.view.descendants(of: WeeklySaveRowHost.self).first)
+        let buttons = actionButtons(in: card)
+        let safari = try XCTUnwrap(buttons.first)
+        let shortcut = try XCTUnwrap(buttons.last)
+        // The slide itself has to run for the swap to land.
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(false) }
+
+        // Before the first turn the card still speaks for itself.
+        XCTAssertEqual(
+            safari.configuration?.title,
+            OnboardingStrings.Intro.safariAction.value(for: .luna))
+
+        for (app, rowTitle) in [
+            (LunaApp.downloader, "A Watch"),
+            (.priceTracker, "A Deal"),
+            (.reader, "A Read"),
+        ] {
+            host.advance(forward: true, velocity: 0)
+            waitUntil("\(app) never arrived") {
+                self.visibleWeeklyRow(in: host)?.accessibilityLabel?
+                    .contains(rowTitle) == true
+                    && safari.configuration?.title
+                    == OnboardingStrings.Intro.safariAction.value(for: app)
+            }
+            XCTAssertEqual(
+                shortcut.configuration?.title,
+                OnboardingStrings.Intro.shortcutAction.value(for: app))
+        }
+    }
+
+    /// A cycling label slides sideways, and UIKit lays a configuration button's
+    /// title out by assigning its frame — so a layout pass landing mid-slide
+    /// used to bake the offset into the label's centre and walk the title toward
+    /// the trailing edge one turn at a time. It stays where the icon left it.
+    func testCyclingSetupLabelKeepsItsLeadingPositionAcrossTurns() throws {
+        let card = makeCard(showsOnboarding: true, app: .luna)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+        let button = try XCTUnwrap(actionButtons(in: card).first)
+        let label = try XCTUnwrap(button.titleLabel)
+        let restingX = label.frame.minX
+        let cycler = UtilCardSetupTextCycler(
+            safariButton: button,
+            shortcutButton: try XCTUnwrap(actionButtons(in: card).last))
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(false) }
+
+        for app in [LunaApp.reader, .downloader, .priceTracker] {
+            cycler.show(app)
+            // A reflow mid-slide is ordinary — the weekly row appears, a save
+            // lands — and must not move the label either.
+            card.view.layoutIfNeeded()
+            waitUntil("\(app)'s label never settled") {
+                button.configuration?.title
+                    == OnboardingStrings.Intro.safariAction.value(for: app)
+                    && label.transform.isIdentity && label.alpha == 1
+            }
+            XCTAssertEqual(label.frame.minX, restingX, accuracy: 0.5)
+        }
+    }
+
     // MARK: - The email nudge
 
     func testEmailIsEarnedByThreeSavesOrTwoDaysWithTheFirst() {
@@ -1165,6 +1241,26 @@ final class UtilCardTests: XCTestCase {
             defaults: defaults,
             setupStatusStore: LunaSetupStatusStore(defaults: defaults),
             saveSetupMode: saveSetupMode)
+    }
+
+    /// Spins the main run loop until `condition` holds. The label swap lands in
+    /// an animation completion, so a fixed pump would be a guess.
+    private func waitUntil(
+        _ message: String, timeout: TimeInterval = 3,
+        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(condition(), message, file: file, line: line)
+    }
+
+    /// The one weekly row on screen — mid-slide there are two, so this answers
+    /// only once the cycle has settled.
+    private func visibleWeeklyRow(in host: WeeklySaveRowHost) -> UIView? {
+        let showing = host.rows.filter { !$0.isHidden }
+        return showing.count == 1 ? showing[0] : nil
     }
 
     /// The setup block's own buttons, top to bottom — the card's direct button

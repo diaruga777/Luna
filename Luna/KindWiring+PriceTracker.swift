@@ -145,6 +145,9 @@ enum KindWiring {
     /// never actually fires here, but `SceneDelegate` is universal.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
+    /// …and so nothing here can produce a downloaded file to share either.
+    static let mediaShareFileExporter: MediaShareFileExporting? = nil
+
     /// Price Tracker's Safari extension resolves no video (the native handler
     /// gates on `hostHandlesMedia`), so nothing can ever queue a download for it.
     static func drainPendingResolvedMedia(returningToSource: Bool) {}

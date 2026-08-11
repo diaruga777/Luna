@@ -407,6 +407,20 @@ enum KindWiring {
         }
     }
 
+    /// The finished activity's Share button (`&share=1`): a downloaded local
+    /// file becomes a concrete shareable copy with a human-readable name —
+    /// exactly the export the card's own share menu and the App Intent handoff
+    /// use. Anything else has no file to hand over and the route falls back to
+    /// the plain open.
+    static let mediaShareFileExporter: MediaShareFileExporting? = MediaShareFileExporting(
+        export: { itemID in
+            guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
+                  case .localFile = item.storageState
+            else { return nil }
+            return await MediaAutoDownloader.exportFile(from: item)?.fileURL
+        },
+        discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.

@@ -764,6 +764,23 @@ class CardCarouselHostViewController: UIViewController {
         slots.firstIndex(where: request.matches)
     }
 
+    /// Brings the card for `id` to the centre right now, false when this deck has
+    /// none. Picks the item up through the same `pendingTransitionCenteredID`
+    /// seam the archive-tray transition uses; but `reload()` early-returns on an
+    /// unchanged fingerprint — the common case, since whatever preceded this
+    /// (a save, a deep link) already reloaded us — so the target is re-checked
+    /// and centred directly afterwards.
+    @discardableResult
+    final func centerCard(onItemID id: UUID) -> Bool {
+        pendingTransitionCenteredID = id
+        reload()
+        pendingTransitionCenteredID = nil
+        guard let index = slots.firstIndex(where: { $0.id == id }) else { return false }
+        let target = carouselIndex(forSlot: index)
+        if carousel.currentIndex != target { carousel.reloadData(centeringAt: target) }
+        return true
+    }
+
     /// The deck's one reload, in six phases: read, guard, remember where the user
     /// was, adopt, resolve the center, hand the carousel the result.
     ///

@@ -207,10 +207,11 @@ final class SafariReplicaViewController:
     }
 
     /// The Downloader's lesson, mounted with the browser for the same reason
-    /// the price one is: its first layout — three step rows, two buttons and a
-    /// 16:9 stage — is worth paying while the replica is still hidden behind the
-    /// intro card. Under the browser bar and over the page, because Safari's
-    /// chrome is not part of the page an extension draws into.
+    /// the price one is: its first layout — the panel's header, its portrait
+    /// stage and the download capsule — is worth paying while the replica is
+    /// still hidden behind the intro card. Under the browser bar and over the
+    /// page, because Safari's chrome is not part of the page an extension
+    /// draws into.
     private func configureVideoLessonIfNeeded() {
         guard onboardingConfiguration.safariLesson == .videoDownload else {
             return

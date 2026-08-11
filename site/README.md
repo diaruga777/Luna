@@ -1,8 +1,11 @@
 # site — the Luna web pages (Cloudflare Pages)
 
-A free, static site. Today it carries one thing: `/setup/<app>`, a web copy of
-the Safari-extension instructions the in-app onboarding shows on its mock
-`luna.app` page.
+A free, static site. Today it carries one thing: `/setup/<app>`, the
+Safari-extension setup instructions. Each app's own in-app "Set up in Safari"
+button opens `https://luna-site-bm6.pages.dev/setup/<slug>` directly rather
+than showing the mock-`luna.app` onboarding lesson in-app — the in-app version
+was dropped, so these pages are now the ONLY instructions a user sees, read on
+their phone in Safari at the exact moment they're enabling the extension.
 
 ```
 /                       the four setup pages, listed
@@ -49,8 +52,14 @@ Two deliberate differences from the app:
   are the real artwork.
 
 One more: the app fits the longest PREFIX of the prose chunks its screen can
-hold; a web page has room for all of them, so the site always prints every
-chunk.
+hold; a web page has room to print every chunk the strings file gives an
+app's own suffix. The one exception is deliberate, not a screen-space limit:
+the central Luna app's page prints through chunk5 (a "whole family of Luna
+apps" pitch that's true for it), but a facet page (Reader/Downloader/
+PriceTracker) stops at chunk4 even though the `_Luna` fallback would
+otherwise hand it that same family-marketing line — wrong there, since the
+reader is mid-setup on ONE app, not shopping the family. See `Copy.chunks` in
+`scripts/build_site.py`.
 
 ## Previewing locally
 

@@ -204,6 +204,10 @@ public enum SellerComparison {
             let urlString = result.url.absoluteString
             guard result.currency.uppercased() == marketCurrency,
                   !tracker.hasStore(urlString: urlString),
+                  // A fan-out is a passive writer: a seller the user removed
+                  // from this tracker must not be re-attached by one, or the
+                  // points they deleted come back at the next save.
+                  !tracker.rejectsSeller(urlString: urlString),
                   claimedDomains.insert(result.domain).inserted
             else { continue }
             var store = PriceTrackerStore(

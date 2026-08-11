@@ -69,6 +69,10 @@ public enum ProductTrackerMerge {
         let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
         matched.identifiers = matched.identifiers.merging(
             product.identifiers.merging(ProductIdentifiers(brand: product.brand)))
+        // BEFORE seeding: an explicit re-save of a removed seller is the user
+        // asking for that host back, so its observations are eligible again in
+        // the same pass rather than one save later.
+        for storeListing in newStores { matched.clearSellerRejection(urlString: storeListing.urlString) }
         seedHistoryFromSnapshots(
             into: &matched, candidate: product, candidateURL: url, store: snapshotStore)
         for storeListing in newStores { matched.upsertStore(storeListing) }
@@ -126,7 +130,16 @@ public enum ProductTrackerMerge {
                 .sorted { $0.day < $1.day }
                 .compactMap { snapshot in
                     guard let amount = snapshot.priceAmount,
-                          let day = utcDayDate(fromDayString: snapshot.day)
+                          // The INSTANT, not the UTC-midnight of the day
+                          // string: the graph's buckets are local days
+                          // (`PriceTrackerStore.mergeHistorySamples` uses
+                          // `Calendar.current`), and UTC midnight resolves to
+                          // the PREVIOUS local day for every user west of
+                          // Greenwich — an observation dated a day before the
+                          // one they made it on. `capturedAt` is the real
+                          // moment; the day string stays the record's identity.
+                          let day = snapshot.capturedInstant
+                            ?? utcDayDate(fromDayString: snapshot.day)
                     else { return nil }
                     return (day, amount, snapshot.currency)
                 }

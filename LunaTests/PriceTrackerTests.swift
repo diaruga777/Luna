@@ -240,6 +240,77 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.stores.map(\.urlString), ["https://b.example/p"])
     }
 
+    // MARK: - Removing a seller is a rejection, and it sticks
+
+    func testRemovingASellerRefusesEveryPassiveReAdditionOfThatHost() {
+        var tracker = makeTracker()
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "90"), currency: "USD"))
+        XCTAssertTrue(tracker.removeStore(urlString: "https://b.example/p"))
+        XCTAssertTrue(tracker.rejectsSeller(urlString: "https://b.example/p/other"))
+
+        // Snapshot seeding — the passive writer that put it there in the first place.
+        tracker.mergeHistorySamples(
+            [(day: Date(timeIntervalSince1970: 1_700_000_000), price: Decimal(string: "70")!,
+              currency: "USD")],
+            forHost: "b.example", newStoreURLString: "https://b.example/p/other")
+        XCTAssertEqual(tracker.stores.map(\.urlString), ["https://a.example/p"])
+        XCTAssertTrue(
+            tracker.stores.allSatisfy { $0.priceHistory.isEmpty },
+            "a rejected seller's points must not land on another store either")
+    }
+
+    func testAnExplicitReAddOfARejectedSellerBringsItBack() {
+        var tracker = makeTracker()
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "90"), currency: "USD"))
+        XCTAssertTrue(tracker.removeStore(urlString: "https://b.example/p"))
+
+        tracker.clearSellerRejection(urlString: "https://b.example/p")
+        XCTAssertFalse(tracker.rejectsSeller(urlString: "https://b.example/p"))
+        tracker.mergeHistorySamples(
+            [(day: Date(timeIntervalSince1970: 1_700_000_000), price: Decimal(string: "70")!,
+              currency: "USD")],
+            forHost: "b.example", newStoreURLString: "https://b.example/p")
+        XCTAssertTrue(tracker.hasStore(urlString: "https://b.example/p"))
+    }
+
+    func testARejectionSurvivesPersistence() throws {
+        var tracker = makeTracker()
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "90"), currency: "USD"))
+        XCTAssertTrue(tracker.removeStore(urlString: "https://b.example/p"))
+
+        let reloaded = try JSONDecoder().decode(
+            PriceTracker.self, from: JSONEncoder().encode(tracker))
+        XCTAssertTrue(
+            reloaded.rejectsSeller(urlString: "https://b.example/p"),
+            "a rejection the user made must outlive the process that recorded it")
+    }
+
+    /// A snapshot-seeded seller is a row with a price on it: the latest
+    /// observation, and when it was seen. An existing store — which has, or
+    /// will have, a live fetch — is left alone.
+    func testASeededSellerRowCarriesTheLatestObservation() {
+        var tracker = makeTracker(price: "100")
+        let older = Date(timeIntervalSince1970: 1_700_000_000)
+        let newer = older.addingTimeInterval(86_400)
+        tracker.mergeHistorySamples(
+            [(day: older, price: Decimal(string: "80")!, currency: "USD"),
+             (day: newer, price: Decimal(string: "88")!, currency: "USD")],
+            forHost: "b.example", newStoreURLString: "https://b.example/p")
+        let seeded = tracker.stores.first { $0.urlString == "https://b.example/p" }
+        XCTAssertEqual(seeded?.lastPrice, Decimal(string: "88"))
+        XCTAssertEqual(seeded?.lastRefreshed, newer)
+
+        tracker.mergeHistorySamples(
+            [(day: newer, price: Decimal(string: "70")!, currency: "USD")],
+            forHost: "a.example", newStoreURLString: "https://a.example/p")
+        XCTAssertEqual(
+            tracker.stores.first?.lastPrice, Decimal(string: "100"),
+            "an existing store's live price is never overwritten by an observation")
+    }
+
     func testUpsertReplacesExistingStore() {
         var tracker = makeTracker(price: "100")
         tracker.upsertStore(PriceTrackerStore(

@@ -54,17 +54,20 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
 
     private func snapshot(
         price: String, day: String, url: String, gtin: String? = "0012345678905",
-        name: String = "Acme Widget"
+        name: String = "Acme Widget", brand: String? = nil
     ) -> ProductSnapshot {
         ProductSnapshot(
             name: name, price: price, currency: "USD", url: url,
-            host: URL(string: url)!.host!, day: day, capturedAt: "\(day)T00:00:00Z", gtin: gtin)
+            host: URL(string: url)!.host!, day: day, capturedAt: "\(day)T12:00:00Z", gtin: gtin,
+            brand: brand)
     }
 
-    private func product(gtin: String? = "0012345678905") -> ProductInfo {
+    private func product(
+        gtin: String? = "0012345678905", name: String = "Acme Widget", brand: String? = nil
+    ) -> ProductInfo {
         ProductInfo(
-            name: "Acme Widget", priceAmount: Decimal(string: "60")!, priceCurrency: "USD",
-            imageURL: nil, brand: nil, productID: gtin)
+            name: name, priceAmount: Decimal(string: "60")!, priceCurrency: "USD",
+            imageURL: nil, brand: brand, productID: gtin)
     }
 
     /// Awaits the fire-and-forget post-seed refresh Task by fulfilling an
@@ -136,6 +139,93 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         let saved = store.item(withID: item.id)?.priceTracker
         XCTAssertEqual(saved?.stores.count, 1)
         XCTAssertTrue(saved?.stores.first?.priceHistory.isEmpty ?? false)
+    }
+
+    /// The reported failure, through the real store: yesterday's observation
+    /// was filed by the Safari extension under the page's CANONICAL url, the
+    /// page declares no identifier, and today's save is keyed by the url the
+    /// user actually saved. Nothing but the name connects them — and the point
+    /// must still reach the graph, dated the day it was observed.
+    func testAnIdentifierLessObservationFiledUnderTheCanonicalURLStillSeedsTheSave() async {
+        let item = store.add(urlString: "https://shop-a.example/p/kettle?variant=blue")
+        seedSnapshots([snapshot(
+            price: "45", day: "2026-01-05", url: "https://shop-a.example/p/kettle",
+            gtin: nil, name: "Kestrel 6L Stainless Kettle", brand: "Kestrel")])
+        let (expectation, _) = expectRefresh()
+
+        await ingestor.ingest(
+            item, url: URL(string: "https://shop-a.example/p/kettle?variant=blue")!,
+            product: product(gtin: nil, name: "Kestrel 6L Stainless Kettle", brand: "Kestrel"),
+            store: store)
+        await fulfillment(of: [expectation], timeout: 5)
+
+        let saved = store.item(withID: item.id)?.priceTracker
+        let points = PriceHistory.dailySeries(for: saved!)
+        XCTAssertEqual(points.map(\.price), [Decimal(string: "45")])
+        XCTAssertEqual(
+            points.first.map { Calendar.current.startOfDay(for: $0.date) },
+            Calendar.current.startOfDay(
+                for: ISO8601DateFormatter().date(from: "2026-01-05T12:00:00Z")!),
+            "the point belongs on the day the observation was made")
+    }
+
+    /// An observation is a price AT a retailer, so the seller it came from is a
+    /// row on the tracker with that price on it — not an invisible contributor
+    /// to the graph.
+    func testASeededSellerCarriesTheObservedPriceAndDate() async {
+        let item = store.add(urlString: "https://shop-a.example/p/1")
+        seedSnapshots(
+            [snapshot(price: "49", day: "2026-01-05", url: "https://shop-b.example/p/9"),
+             snapshot(price: "44", day: "2026-01-06", url: "https://shop-b.example/p/9")])
+        let (expectation, _) = expectRefresh()
+
+        await ingestor.ingest(item, url: URL(string: "https://shop-a.example/p/1")!,
+                              product: product(), store: store)
+        await fulfillment(of: [expectation], timeout: 5)
+
+        let saved = store.item(withID: item.id)?.priceTracker
+        let seeded = saved?.stores.first { $0.urlString.contains("shop-b.example") }
+        XCTAssertEqual(seeded?.lastPrice, Decimal(string: "44"), "the latest observation is the row's price")
+        XCTAssertEqual(seeded?.currency, "USD")
+        XCTAssertNotNil(seeded?.lastRefreshed, "a row with a price must say when it was seen")
+    }
+
+    /// The recovery path for a wrong match: the removed seller's points leave
+    /// the graph with it, and a LATER save that matches the same observations
+    /// all over again must not put them back.
+    func testARemovedSellerStaysRemovedAcrossALaterSave() async {
+        let item = store.add(urlString: "https://shop-a.example/p/1")
+        seedSnapshots(
+            [snapshot(price: "49", day: "2026-01-05", url: "https://shop-b.example/p/9")])
+        let (firstRefresh, _) = expectRefresh()
+        await ingestor.ingest(item, url: URL(string: "https://shop-a.example/p/1")!,
+                              product: product(), store: store)
+        await fulfillment(of: [firstRefresh], timeout: 5)
+
+        var tracker = store.item(withID: item.id)!.priceTracker!
+        let seededURL = tracker.stores.first { $0.urlString.contains("shop-b.example") }!.urlString
+        XCTAssertTrue(tracker.removeStore(urlString: seededURL))
+        store.updatePriceTracker(tracker, for: item.id)
+        XCTAssertFalse(
+            PriceHistory.dailySeries(for: store.item(withID: item.id)!.priceTracker!)
+                .contains { $0.price == Decimal(string: "49") },
+            "removing the seller takes its points off the graph")
+
+        // A second save of the same product, with the same observation still in
+        // the store — the merge branch, which seeds history all over again.
+        let again = store.add(urlString: "https://shop-a.example/p/1-again")
+        let (secondRefresh, _) = expectRefresh()
+        await ingestor.ingest(again, url: URL(string: "https://shop-a.example/p/1-again")!,
+                              product: product(), store: store)
+        await fulfillment(of: [secondRefresh], timeout: 5)
+
+        let after = store.item(withID: item.id)!.priceTracker!
+        XCTAssertFalse(
+            after.stores.contains { $0.urlString.contains("shop-b.example") },
+            "a rejected seller must not be re-attached by a later save")
+        XCTAssertFalse(
+            PriceHistory.dailySeries(for: after).contains { $0.price == Decimal(string: "49") },
+            "nor may its points come back on their own")
     }
 
     // MARK: - Merge into an existing tracker

@@ -90,6 +90,13 @@ browser.runtime.onMessage.addListener(function (message) {
                     supportsArticles: !!(resp && resp.supportsArticles),
                     supportsMedia: !!(resp && resp.supportsMedia),
                     supportsProducts: !!(resp && resp.supportsProducts),
+                    // ABSENT means ON, exactly as the native side reads the key:
+                    // a non-media host never sends it, and a media host omits
+                    // nothing — so only an explicit `false` suppresses the
+                    // in-page player. This projection is an allow-list, so a
+                    // field missing HERE is a setting that silently does
+                    // nothing however correct the other two processes are.
+                    videoPlayer: (resp && resp.videoPlayer) !== false,
                     celebrateSetup: !!(resp && resp.celebrateSetup),
                     appName: (resp && resp.appName) || ""
                 };
@@ -102,6 +109,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     supportsArticles: false,
                     supportsMedia: false,
                     supportsProducts: false,
+                    videoPlayer: true,
                     celebrateSetup: false,
                     appName: ""
                 };

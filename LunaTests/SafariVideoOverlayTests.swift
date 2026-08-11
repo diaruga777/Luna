@@ -660,6 +660,15 @@ final class SafariVideoOverlayContractTests: XCTestCase {
         XCTAssertTrue(
             handler.contains("payload[\"videoPlayer\"]"),
             "the handler stopped sending the answer content.js waits for")
+        // The FOURTH hop, and the one that was missing: `buttonContext` reaches
+        // the page through background.js, whose reply is an explicit allow-list
+        // of fields. The handler sent `videoPlayer` and content.js read it, but
+        // the relay never copied it — so the toggle was off-by-omission in every
+        // real Safari session while all three "ends" agreed perfectly.
+        XCTAssertTrue(
+            background.contains("videoPlayer:"),
+            "the buttonContext relay drops videoPlayer — a content script can't reach the "
+                + "handler itself, so a field missing from the projection never arrives")
     }
 
     /// And no OTHER file in the extension may grow one either.

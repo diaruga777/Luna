@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -114,20 +115,23 @@ final class SettingsHierarchyTests: XCTestCase {
     /// survive on a device with no Action Button to assign the shortcut to —
     /// and the screen renames itself to what is left of it.
     ///
-    /// What is left is the extension's own two toggles, and each is gated on a
+    /// What is left is the extension's own three toggles, and each is gated on a
     /// KIND rather than on the device: the suggestion pill only fires on article
-    /// pages (`handlesArticles`) and the in-page video player only opens on media
+    /// pages and cookie auto-decline is the article apps' choice to make
+    /// (`handlesArticles`), while the in-page video player only opens on media
     /// pages (`handlesMedia`). The test host is the CENTRAL Luna app, which
-    /// handles both, so both stand here; Reader would show only "Luna Button" and
-    /// the Downloader only "Video Player" — a split no in-process test can reach,
-    /// since `LunaApp.current` comes from the host bundle id.
+    /// handles both kinds, so all three stand here; Reader would show "Luna
+    /// Button" and "Cookie Popups" and the Downloader only "Video Player" — a
+    /// split no in-process test can reach, since `LunaApp.current` comes from the
+    /// host bundle id.
     func testWithoutShortcutHardwareTheKindGatedSafariSectionsRemain() {
         let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
         window = UITestSupport.host(screen)
 
         XCTAssertTrue(LunaApp.current.handlesArticles && LunaApp.current.handlesMedia)
-        XCTAssertEqual(screen.tableView.numberOfSections, 2)
-        XCTAssertEqual(sectionTitles(screen), ["Luna Button", "Video Player"])
+        XCTAssertEqual(screen.tableView.numberOfSections, 3)
+        XCTAssertEqual(
+            sectionTitles(screen), ["Luna Button", "Cookie Popups", "Video Player"])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: false), "Safari")
     }
@@ -139,12 +143,47 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(
             sectionTitles(screen),
             [
-                "Luna Button", "Video Player", "Apple Intelligence",
+                "Luna Button", "Cookie Popups", "Video Player", "Apple Intelligence",
                 "Double Save Action", "Action Button",
             ])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: true),
             "Safari & One-click save")
+    }
+
+    /// The Cookie Popups cell, both directions. The switch must READ the setting
+    /// (shipped default ON, with nothing written) and WRITE it — the appex reads the
+    /// same App Group key as a bare literal, so a cell wired to the wrong property
+    /// would look perfect and change nothing in Safari.
+    func testCookiePopupsToggleReadsAndWritesTheSharedSetting() {
+        let restore = UserDefaults(suiteName: ReadingListStore.appGroupID)?
+            .object(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+        defer {
+            let defaults = UserDefaults(suiteName: ReadingListStore.appGroupID)
+            if let restore {
+                defaults?.set(restore, forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+            } else {
+                defaults?.removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+            }
+        }
+        UserDefaults(suiteName: ReadingListStore.appGroupID)?
+            .removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+
+        let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
+        window = UITestSupport.host(screen)
+        let section = try! XCTUnwrap(sectionTitles(screen).firstIndex(of: "Cookie Popups"))
+        let cell = screen.tableView(
+            screen.tableView, cellForRowAt: IndexPath(row: 0, section: section))
+        let toggle = try! XCTUnwrap(cell.accessoryView as? UISwitch)
+        XCTAssertTrue(toggle.isOn, "an absent key must read as ON")
+
+        toggle.isOn = false
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertFalse(SafariSuggestionSettings.cookieAutoDeclineEnabled)
+
+        toggle.isOn = true
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertTrue(SafariSuggestionSettings.cookieAutoDeclineEnabled)
     }
 
     func testSettingsHasFiveTapDiagnosticsGesture() {

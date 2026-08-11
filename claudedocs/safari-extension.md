@@ -174,13 +174,68 @@ injection used by the Luna action pill.
   selectors (OneTrust, Cookiebot, Didomi, Sourcepoint, TrustArc, Osano, CookieYes,
   Complianz, Klaro, and common cookie/consent banner names). Safari applies it before page
   content renders, so known dialogs do not flash while JavaScript waits for hydration.
+  Every one of those consent selectors sits behind ONE prefix,
+  `:root:not([data-luna-cookies-allowed])` — see "The cookie off switch" below. The
+  generic `.luna-annoyance-hidden` sink the script hides through is a separate, ungated
+  rule: it only ever carries elements the script itself decided about.
 - **Privacy-preserving consent:** `annoyances.js` clicks a CMP's explicit reject action or
-  an exact localized `Reject all` / `Necessary only` equivalent. It never clicks an
-  accept action and does not guess from vague labels such as “Continue” or “Save.” It
+  an exact localized `Reject all` / `Necessary only` equivalent (English, French, German,
+  Spanish, Italian, Dutch, Portuguese, Polish, Danish, Norwegian, Swedish). The label set
+  is **exact-match, and that is the safety property** — no substring or fuzzy matching,
+  and never a vague action such as “Continue” or “Save.” It
   retries briefly because server-rendered banners can exist before their framework has
   attached click handlers. When no safe reject action exists, the notice is hidden and
   scrolling is restored, but Luna does not fabricate a consent string or enable optional
-  cookies.
+  cookies. IAB TCF `__tcfapi` injection is deliberately out of scope.
+- **Never an accept, checked at the sink:** `clickRefusal` is the single place any consent
+  control is activated, and it vetoes anything whose label reads as an accept
+  (`accept`/`agree`/`allow`/`akzept`/`accetta`/`aceptar`/`akkoord`/…, at word starts so
+  “disagree” survives) unless an explicit refusal word negates it (“continue **without**
+  accepting”, “**nie** zgadzam się”). The curated label list already excludes accept
+  actions; the veto exists because a CMP *selector* and a two-step flow resolve to whatever
+  markup a publisher actually shipped — a reject id put on an accept button gets no click.
+- **Two-step refusals, named CMPs only:** when a first layer offers no reject button at
+  all, `TWO_STEP_FLOWS` may open that CMP's own settings pane and click its own documented
+  refuse-all control (today: OneTrust `#onetrust-pc-btn-handler` →
+  `.ot-pc-refuse-all-handler`, with the pane itself in the pre-paint hide so it never
+  flashes). Both halves are fixed markup and both go through the accept veto. Nothing
+  searches a preference centre for a plausible-looking button, and no flow is added on a
+  *shape* — Quantcast's `.qc-cmp2-summary-buttons [mode="secondary"]` is deliberately
+  absent, because publishers configure that slot as either “DISAGREE” or “MORE OPTIONS”;
+  its DISAGREE variant is caught by the label pass, which reads what the button says.
+- **The cookie off switch** — "Decline cookies for me", Settings → Safari, **Luna and
+  Reader only, ON by default**. The whole consent half is gated; the rest of the layer is
+  not. Three things make it work:
+  - **`annoyanceSettings`, its own message.** `annoyances.js` runs at `document_start` and
+    a content script cannot call `sendNativeMessage`, so the answer comes through
+    `background.js`. It is NOT a rider on `buttonContext`: that one is sent by
+    `content.js` at `document_idle`, a whole page load too late to decide whether a banner
+    may be clicked. `background.js` caches the answer for the background page's lifetime
+    and refreshes it on `tabs.onActivated` and at startup (mirroring `syncBypassRuleset`),
+    so `all_frames: true` costs one native round trip per page rather than per iframe.
+  - **The answer arrives late, so consent actions WAIT.** While the gate is pending a
+    recognized banner is remembered and left alone — and the pre-paint CSS keeps it hidden
+    — so the user sees no flash whichever way the answer lands. `processConsent` returns
+    `true` on every branch, including "off": this IS consent UI, so the generic popover
+    pass must never reconsider it. Off then flips ONE attribute on `<html>`
+    (`data-luna-cookies-allowed`), which the stylesheet's consent rule is keyed on, and
+    un-hides anything already hidden as consent. An attribute rather than a competing
+    "revert" stylesheet because an extension stylesheet's cascade origin relative to a
+    JS-injected one is not something the page gets to assume; one attribute either matches
+    or it does not.
+  - **Every failure resolves to ENABLED** — no answer within 1s, a rejected relay, or no
+    `browser` object at all (which is the bare `WKWebView` the tests drive; there,
+    `window.__lunaCookieAutoDecline` set before the script runs is the seam, and
+    `window.__lunaSetCookieAutoDecline(false)` flips it afterwards). Declining is the
+    shipped behavior and what a user who never opened Settings gets.
+
+  Per-app scoping is the same argument as suggestion visibility: the key
+  (`safariCookieAutoDeclineEnabled`) lives in the App-Group suite all four apps share, so
+  the native handler reads it **only** when `hostHandlesArticles` and answers `true`
+  otherwise — the Downloader's and Price Tracker's suppression stays always-on and they
+  show no control, and a Reader "off" cannot reach them. Absent means ON on both sides;
+  nothing writes a default. `SafariAnnoyanceGateContractTests` pins the key, the message
+  name and the reply field across all four files, including the background relay hop.
 - **Late and unfamiliar UI:** a MutationObserver begins at `document_start`, before the
   first page paint, and handles DOM-hydrated CMPs plus open shadow roots. Its generic
   popover fallback requires overlay structure (`dialog`/`aria-modal`, an overlay
@@ -215,7 +270,12 @@ injection used by the Luna action pill.
 - **Tests:** `SafariAnnoyanceSuppressionTests` evaluates the production JS in a bare
   `WKWebView` and verifies OneTrust rejection, generic necessary-only selection,
   newsletter-overlay suppression, preservation of inline advertising and login UI, and
-  the immediate-user-action guard.
+  the immediate-user-action guard. The gate is covered from both sides against the REAL
+  stylesheet inlined into the fixture (so `display` reflects the CSS rule, not just the
+  hidden class): default → not painted and declined, off → painted, untouched and
+  unclicked, a late off answer → reveals what was already hidden, and a newsletter
+  popover → suppressed either way. One table test per mechanism covers the localized
+  labels, the CMP-specific selectors, the OneTrust two-step and the accept veto.
 
 ## "Read in Luna" / "Download in Luna" / "Track in Luna" button
 

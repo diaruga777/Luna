@@ -30,6 +30,12 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// shipped behavior, and a user who never opened Settings has written
     /// nothing.
     private static let videoPlayerKey = "safariVideoPlayerEnabled"
+    /// The annoyance layer's cookie auto-decline off switch, written by the two
+    /// ARTICLE apps' Settings (`SafariSuggestionSettings.cookieAutoDeclineKey`,
+    /// pinned by `SafariAnnoyanceGateContractTests`). Absent means ON — answering
+    /// "necessary cookies only" is the shipped behavior, and a user who never
+    /// opened Settings has written nothing.
+    private static let cookieAutoDeclineKey = "safariCookieAutoDeclineEnabled"
 
     /// A resolve is several chained network fetches (YouTube's is four), so it
     /// needs a real budget — but an appex that never completes its request wedges
@@ -93,6 +99,22 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["celebrateSetup"] = SharedSafariURL.shouldCelebrateSetup(surface: surface)
             payload["appName"] = SharedSafariURL.setupTapAppName(surface: surface)
                 ?? Self.hostDisplayName
+        case "annoyanceSettings":
+            // The document_start annoyance script's one gate, asked through
+            // background.js before it touches a cookie dialog. It is a SEPARATE
+            // message rather than a rider on `buttonContext` because that one is
+            // sent by content.js at document_idle — a whole page load too late to
+            // decide whether a banner may be clicked.
+            //
+            // The key lives in the App-Group suite all four apps share, and only
+            // the two article apps expose the control: a non-article host must
+            // therefore not read it at all, or a Reader "off" would silence the
+            // Downloader's and Price Tracker's always-on suppression too. Same
+            // shape as the `mode` gate above.
+            payload["cookieAutoDecline"] = Self.hostHandlesArticles
+                ? (UserDefaults(suiteName: Self.appGroupID)?
+                    .object(forKey: Self.cookieAutoDeclineKey) as? Bool ?? true)
+                : true
         case "setupCelebrationShown":
             // Written when the overlay renders, not when the decision is made: a
             // context request whose page never showed one must stay eligible.

@@ -39,7 +39,8 @@ and finished by `SettingsViewController`.
 - Save of the Week appears as a top-level category ONLY on a device holding the
   curator's signing key. It is the proposal inbox: promote or delete, both of
   which retire the proposal record.
-- Shortcut & Safari contains Safari suggestion visibility, on-screen URL
+- Shortcut & Safari contains Safari suggestion visibility, Cookie Popups,
+  the in-page Video Player, on-screen URL
   handling, Double Save Articles, and shortcut actions. Media download size is
   automatic, so there is no Download in Background setting. Double Save Articles appears
   only in Luna and Reader (see double-save.md) and defaults to Nothing. Safari
@@ -51,6 +52,21 @@ and finished by `SettingsViewController`.
   their own media/product pills. On a device with neither article handling
   nor an Action Button to set up, the whole "Shortcut & Safari" row is
   omitted from the top-level menu rather than pushing an empty screen.
+- **Cookie Popups — "Decline cookies for me"** (Luna and Reader only, `ON` by
+  default) is the ONE switchable part of the extension's annoyance layer. On,
+  the extension answers a site's cookie question with reject-all /
+  necessary-only before the dialog can be painted; off, the dialog is painted
+  and left completely untouched — including the pre-paint hide, which reverts —
+  so the user answers it themselves. Everything else the layer does (newsletter
+  and app-install popovers, ad interstitials, scroll recovery) is unaffected
+  either way, and Luna never accepts optional cookies in either state. Stored
+  as `SafariSuggestionSettings.cookieAutoDeclineEnabled` in the shared App
+  Group under `safariCookieAutoDeclineEnabled`, with the same **absent means
+  ON** contract as the video player: nothing writes a default. The same
+  per-app reasoning as suggestion visibility applies — Downloader and Price
+  Tracker show no section and their native handler always answers `true`, so a
+  Reader "off" cannot reach through the shared suite and re-enable cookie
+  banners on their pages. Gate path and defaults: `safari-extension.md`.
 - Appearance contains only the theme choice. Reader eclipse navigation is always
   enabled unless the system Reduce Motion accessibility setting is on.
 - Import & Export is two buttons: share every link this app is responsible for as

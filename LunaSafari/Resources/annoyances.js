@@ -29,6 +29,14 @@
         consentChoices: 0, consentHidden: 0, popoversHidden: 0, twoStepFlows: 0
     };
     var retryingConsentRoots = new WeakSet();
+    // A refusal has LANDED for this root / a two-step flow has been started for it.
+    // Every path that can click is idempotent per root, because the MutationObserver
+    // rescans a root every time this script touches it (adding the hidden class is
+    // itself an attribute mutation) and the retry ladder fires four more times. The
+    // action is idempotent for the SITE, but a script that clicks a banner five
+    // times is one that cannot report what it did.
+    var answeredConsentRoots = new WeakSet();
+    var twoStepConsentRoots = new WeakSet();
 
     // Stable public hooks / markup from the largest CMPs. Text matching below is
     // still required as a fallback because publishers can customize templates.
@@ -252,6 +260,10 @@
     // button — known selector, exact label, two-step flow — funnels through here,
     // so the accept veto cannot be forgotten by a new caller.
     function clickRefusal(button) {
+        // The gate, checked HERE too: the retry ladder and a two-step flow both fire
+        // from timers that outlive the decision, so a late "off" answer has to stop
+        // them as well as reveal what was already hidden.
+        if (gate === GATE_OFF) { return false; }
         if (!isActionable(button) || readsAsAccept(buttonLabel(button))) { return false; }
         try {
             button.click();
@@ -263,7 +275,10 @@
     }
 
     function clickReject(root) {
-        return clickRefusal(exactRejectButton(root));
+        if (!root || answeredConsentRoots.has(root)) { return false; }
+        if (!clickRefusal(exactRejectButton(root))) { return false; }
+        answeredConsentRoots.add(root);
+        return true;
     }
 
     // A recognized CMP whose first layer offers no reject: open its settings pane
@@ -271,7 +286,7 @@
     // `TWO_STEP_FLOWS` are attempted, and the opener is vetoed like any other
     // click — a publisher who relabelled it "Accept and manage" gets nothing.
     function beginTwoStepRefusal(root) {
-        if (!root || !root.querySelector) { return false; }
+        if (!root || !root.querySelector || twoStepConsentRoots.has(root)) { return false; }
         var scope = (root.getRootNode && root.getRootNode()) || document;
         for (var i = 0; i < TWO_STEP_FLOWS.length; i++) {
             var flow = TWO_STEP_FLOWS[i];
@@ -283,8 +298,9 @@
             } catch (e) {
                 continue;
             }
+            twoStepConsentRoots.add(root);
             stats.twoStepFlows++;
-            completeTwoStepRefusal(scope, flow.refuse, 0);
+            completeTwoStepRefusal(root, scope, flow.refuse, 0);
             return true;
         }
         return false;
@@ -293,12 +309,15 @@
     // The second half, retried on the same ladder logic as a hydrating banner:
     // the pane is usually rendered on demand, so the control does not exist at the
     // moment the opener is clicked.
-    function completeTwoStepRefusal(scope, selector, attempt) {
+    function completeTwoStepRefusal(root, scope, selector, attempt) {
         var delays = [100, 250, 600, 1200];
-        if (scope.querySelector && clickRefusal(scope.querySelector(selector))) { return; }
+        if (scope.querySelector && clickRefusal(scope.querySelector(selector))) {
+            answeredConsentRoots.add(root);
+            return;
+        }
         if (attempt >= delays.length) { return; }
         setTimeout(function () {
-            completeTwoStepRefusal(scope, selector, attempt + 1);
+            completeTwoStepRefusal(root, scope, selector, attempt + 1);
         }, delays[attempt]);
     }
 
@@ -547,6 +566,8 @@
     // Consent roots recognized while the answer was still in flight. Bounded —
     // the rescan `applyGate` runs finds anything this list had to drop.
     var deferredConsentRoots = [];
+    // Whether the document-start pass has already run (see `applyGate`).
+    var hasScanned = false;
 
     function deferConsentRoot(root) {
         if (deferredConsentRoots.length >= 8) { return; }
@@ -598,7 +619,9 @@
         for (var i = 0; i < roots.length; i++) {
             if (roots[i].isConnected) { answerConsent(roots[i]); }
         }
-        if (document.documentElement) { scan(document.documentElement); }
+        // Only worth a rescan if the answer arrived AFTER the first pass; when there
+        // is no `browser` to ask, this resolves before any scanning has happened.
+        if (hasScanned && document.documentElement) { scan(document.documentElement); }
     }
 
     function resolveGate() {
@@ -640,12 +663,14 @@
     resolveGate();
 
     if (document.documentElement) {
+        hasScanned = true;
         observeRoot(document.documentElement);
         scan(document.documentElement);
     } else {
         document.addEventListener("readystatechange", function startWhenReady() {
             if (!document.documentElement) { return; }
             document.removeEventListener("readystatechange", startWhenReady);
+            hasScanned = true;
             observeRoot(document.documentElement);
             scan(document.documentElement);
         });

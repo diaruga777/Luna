@@ -26,11 +26,22 @@ import UIKit
 /// retired `OnboardingSafariActionsView` (plain configuration, white @ 0.7,
 /// 16pt medium).
 final class OnboardingSafariSetupPopupView: UIView {
-    /// The scrim behind the card. Deliberately light — every host now freezes
-    /// the lesson that raised this popup and then loops it forever underneath,
-    /// so there is always something back there worth keeping legible. Where a
-    /// lesson already carries its own dimming (the price lesson's 70% spotlight
-    /// scrim), the two stack: both stay visible, darker where they overlap.
+    /// The alpha of the FULL-SCREEN scrim behind the card. Deliberately
+    /// light — every host now freezes the lesson that raised this popup and
+    /// then loops it forever underneath, so there is always something back
+    /// there worth keeping legible. Where a lesson already carries its own
+    /// dimming (the price lesson's 70% spotlight scrim), the two stack: both
+    /// stay visible, darker where they overlap.
+    ///
+    /// The scrim itself is NOT a subview of this view — it is a separate
+    /// plain `UIView` `SafariReplicaViewController.showSafariSetupPopup()`
+    /// mounts directly on the window, BELOW this view, entirely independent
+    /// of this view's own layout. That is deliberate: this view's card and
+    /// its border corona rebuild themselves on geometry changes
+    /// (`layoutSubviews` below), and a scrim living inside the same view as
+    /// code that removes-and-reinserts subviews is one more thing that code
+    /// could disturb. A scrim mounted and owned entirely by the host, never
+    /// touched again after `present(fadingInAlongside:)`, cannot be.
     static let scrimAlpha: CGFloat = 0.30
     static let cornerRadius: CGFloat = 26
     private static let horizontalInset: CGFloat = 26
@@ -41,7 +52,6 @@ final class OnboardingSafariSetupPopupView: UIView {
     var onActivate: (() -> Void)?
     var onSkip: (() -> Void)?
 
-    private let scrim = UIView()
     private let card = UIView()
     /// The card's own border corona. Sits behind `card` as a sibling in this
     /// (unclipped) full-bleed view rather than inside it, the same arrangement
@@ -66,10 +76,6 @@ final class OnboardingSafariSetupPopupView: UIView {
         // it while onboarding owns the interaction.
         accessibilityViewIsModal = true
         accessibilityIdentifier = OnboardingStrings.Accessibility.safariActions.value()
-
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(Self.scrimAlpha)
-        scrim.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(scrim)
 
         card.backgroundColor = LunaColors.background
         card.layer.cornerRadius = Self.cornerRadius
@@ -111,11 +117,6 @@ final class OnboardingSafariSetupPopupView: UIView {
         addLayoutGuide(topGuide)
 
         NSLayoutConstraint.activate([
-            scrim.topAnchor.constraint(equalTo: topAnchor),
-            scrim.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrim.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrim.bottomAnchor.constraint(equalTo: bottomAnchor),
-
             topGuide.topAnchor.constraint(equalTo: topAnchor),
             topGuide.heightAnchor.constraint(
                 equalTo: heightAnchor,
@@ -174,7 +175,13 @@ final class OnboardingSafariSetupPopupView: UIView {
             insertSubview(halo, belowSubview: card)
             corona = halo
         }
-        corona?.frame = card.bounds
+        // `corona` is a SIBLING of `card` in this view (unclipped, so the
+        // glow can throw light past card's own edge) rather than a child of
+        // it, so it needs card's FRAME — its position within their shared
+        // superview — not card's bounds, which is always zero-origin and
+        // would pin the halo to this view's own top-left corner regardless
+        // of where the card actually sits.
+        corona?.frame = card.frame
         layOutActivateCorona()
     }
 
@@ -203,17 +210,21 @@ final class OnboardingSafariSetupPopupView: UIView {
 
     // MARK: - Presentation
 
-    func present() {
+    /// - Parameter externalScrim: the host's own full-screen, 30%-black
+    ///   scrim (see the type doc above) — faded in on the SAME animation as
+    ///   this card, so the two arrive as one visual beat even though the
+    ///   scrim is not this view's own subview.
+    func present(fadingInAlongside externalScrim: UIView? = nil) {
         guard !hasAnimatedIn else { return }
         hasAnimatedIn = true
         guard !UIAccessibility.isReduceMotionEnabled else {
-            scrim.alpha = 1
+            externalScrim?.alpha = 1
             card.alpha = 1
             corona?.alpha = 1
             activateCorona?.alpha = OnboardingAttentionPulse.reduceMotionGlowAlpha
             return
         }
-        scrim.alpha = 0
+        externalScrim?.alpha = 0
         card.alpha = 0
         corona?.alpha = 0
         activateCorona?.alpha = 0
@@ -223,7 +234,7 @@ final class OnboardingSafariSetupPopupView: UIView {
             withDuration: 0.42, delay: 0,
             options: [.curveEaseInOut, .beginFromCurrentState]
         ) {
-            self.scrim.alpha = 1
+            externalScrim?.alpha = 1
             self.card.alpha = 1
             self.corona?.alpha = 1
             self.activateCorona?.alpha = 1

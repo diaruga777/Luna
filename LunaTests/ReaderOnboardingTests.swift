@@ -168,6 +168,160 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
+    /// The Downloader's lesson replays its FULL extension-enable beat on a
+    /// rewind, not just its own panel: exercises exactly what
+    /// `cycleSafariInstructionLesson`'s single-lesson fallback runs
+    /// (`resetDemonstration()` then `beginDemonstration()`) directly on the
+    /// video lesson, and confirms the Manage Extensions sheet reappears, its
+    /// toggle flips on, and it dismisses again — independent of (and faster
+    /// to run without) the outer 2.0s freeze timer, which
+    /// `testDownloaderSafariLessonLoopsThroughMultiplePassesUnderThePopup`
+    /// below covers end to end.
+    @MainActor
+    func testVideoLessonReplayFlipsTheToggleAndDismissesTheSheetAgain() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .downloader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        safari.beginDemonstration()
+
+        // Wait for the FIRST pass to reach the playing panel.
+        let firstDeadline = Date(timeIntervalSinceNow: 8)
+        while Date() < firstDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            if let overlay = window.descendants(of: OnboardingVideoDownloadOverlayView.self).first,
+               overlay.backdropBlurWeightForTesting > 0 { break }
+        }
+        let firstOverlay = try XCTUnwrap(
+            window.descendants(of: OnboardingVideoDownloadOverlayView.self).first)
+        XCTAssertGreaterThan(
+            firstOverlay.backdropBlurWeightForTesting, 0,
+            "panel never reached the playing state on the first pass")
+
+        // Simulate exactly what the loop's fallback does.
+        safari.resetDemonstration()
+        safari.beginDemonstration()
+
+        // Poll: within a few seconds the sheet should appear, its toggle
+        // should flip on, and it should dismiss again.
+        let deadline = Date(timeIntervalSinceNow: 15)
+        var sawToggleOn = false
+        var sawSheet = false
+        while Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            if window.descendants(of: OnboardingManageExtensionsSheetView.self)
+                .first != nil {
+                sawSheet = true
+            }
+            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
+                .first, toggle.isOn {
+                sawToggleOn = true
+                break
+            }
+        }
+        XCTAssertTrue(sawSheet, "the replay never showed the sheet at all")
+        XCTAssertTrue(sawToggleOn, "the replay never flips the toggle on")
+    }
+
+    /// End to end, through `AppOnboardingViewController`'s own orchestration
+    /// rather than the `finishSafariLessonForTesting()` shortcut: tap the
+    /// intro's Safari button, let the real lesson play through to its own
+    /// natural setup offer, confirm the 2.0s freeze holds it there, and then
+    /// confirm the loop resets and replays the FULL beat sequence — not just
+    /// once, but across a second pass too, since a single successful replay
+    /// could still mask state that only breaks the next time around.
+    @MainActor
+    func testDownloaderSafariLessonLoopsThroughMultiplePassesUnderThePopup() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .downloader, saveSetupMode: .unavailable),
+            onboardingStore: AppOnboardingStore(app: .downloader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+
+        // Let the REAL lesson play through to its own natural setup offer —
+        // no shortcut. pageHold(3.2) + sheet pass(~1.5) + present(0.45) +
+        // playbackHold(4.0) is the nominal chain.
+        let firstOfferDeadline = Date(timeIntervalSinceNow: 15)
+        while Date() < firstOfferDeadline, !onboarding.hasSafariInstructionsForTesting {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+        XCTAssertTrue(
+            onboarding.hasSafariInstructionsForTesting,
+            "the real lesson never naturally reached its setup offer")
+
+        // The freeze holds `OnboardingDemoLoopTiming.siblingLessonHoldDuration`
+        // (2.0s); shortly after that the loop should reset and replay —
+        // watch for the sheet to reappear and its toggle to flip on again.
+        let replayDeadline = Date(timeIntervalSinceNow: 15)
+        var sawSheetAgain = false
+        var sawToggleOnAgain = false
+        while Date() < replayDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            if window.descendants(of: OnboardingManageExtensionsSheetView.self)
+                .first != nil {
+                sawSheetAgain = true
+            }
+            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
+                .first, toggle.isOn {
+                sawToggleOnAgain = true
+                break
+            }
+        }
+        XCTAssertTrue(sawSheetAgain, "no replay of the sheet after the freeze")
+        XCTAssertTrue(sawToggleOnAgain, "replay's toggle never flips on")
+        XCTAssertTrue(
+            onboarding.hasSafariInstructionsForTesting,
+            "the popup should still be up through the replay")
+
+        // Wait for this sheet to fully clear, then confirm a THIRD pass (the
+        // second replay) also reaches a flipped toggle — the loop has to
+        // survive more than once.
+        let clearDeadline = Date(timeIntervalSinceNow: 5)
+        while Date() < clearDeadline,
+              window.descendants(of: OnboardingManageExtensionsSheetView.self)
+                  .first != nil {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+
+        let secondReplayDeadline = Date(timeIntervalSinceNow: 20)
+        var sawSecondReplayToggleOn = false
+        while Date() < secondReplayDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
+                .first, toggle.isOn {
+                sawSecondReplayToggleOn = true
+                break
+            }
+        }
+        XCTAssertTrue(
+            sawSecondReplayToggleOn,
+            "the SECOND replay never flips its toggle on — a single "
+                + "successful pass is not the same as looping forever")
+    }
+
     /// The one end-of-lesson signal the host cycles on: the Downloader's panel
     /// reports it once it has arrived and the clip is playing — the panel no
     /// longer grows a chin of enable steps to mark that moment, since that ask

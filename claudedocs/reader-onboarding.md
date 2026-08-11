@@ -52,6 +52,27 @@ popup's prominent button opens; the popup itself is presented by
 the older `DemoInstructionOverlay`-based asks, so replicas can keep swapping
 underneath it.
 
+The full-screen scrim is a plain `UIView` `showSafariSetupPopup()` mounts
+directly on the window, ADDED BEFORE the popup rather than carried inside it —
+deliberately: the popup's own card and its border corona rebuild themselves on
+geometry changes (`OnboardingSafariSetupPopupView.layoutSubviews`), and the
+corona is a SIBLING of the card in that view rather than a child of it (so its
+glow can throw light past the card's own edge without being clipped), which
+means it needs the card's `frame` — its position within their shared
+superview — not the card's `bounds`, which is always zero-origin. Getting that
+backwards once pinned a duplicate-looking corona to the popup's own top-left
+corner instead of the card it was meant to outline. Keeping the scrim
+completely outside the view that does this rebuilding means nothing about that
+logic — correct or not — can ever affect whether the scrim stays visible.
+
+The compass button (`OnboardingSafariSetupActionButton`) reuses
+`GlassStyle.actionButtonConfiguration`'s capsule for the "Set up in Safari"
+label and `OnboardingSafariCompassGlyph.image(side:)`'s hand-drawn compass
+(radial-gradient dial, tick marks, a red/white needle at 45°) as its leading
+image, with the `arrow.up.forward.square` "this leaves the app" glyph laid out
+as a separate trailing image view (`UIButton.Configuration` only carries one
+image, and this button needs two, in different roles).
+
 `safariLessonDidReachSetupOffer` now fires this same "last lesson of the first
 cycle raises the popup, everything else is just the next beat" logic for EVERY
 app, not only central Luna with multiple siblings: a faceted app's
@@ -522,14 +543,18 @@ three layers in this z-order, which is the whole trick):
    runs against the close.
 3. **The shared setup popup stacks on top of both.** There is no card of the
    lesson's own any more — `OnboardingSafariSetupCardView` is deleted outright.
-   `SafariReplicaViewController.showSafariSetupPopup()` mounts
-   `OnboardingSafariSetupPopupView` on the WINDOW the instant this overlay
-   reports `onDidReachSetupOffer`, carrying its own 30% scrim on top of this
-   lesson's 70% spotlight — both stay visible, deliberately darker where they
-   overlap, rather than one replacing the other. Being window-hosted rather
-   than a subview of this overlay is also why the popup is never shrunk to fit
-   the room above the closed circle the way the old card was: it uses the same
-   generic top-anchored layout every app's popup does.
+   `SafariReplicaViewController.showSafariSetupPopup()` mounts a plain 30%-black
+   scrim view and then `OnboardingSafariSetupPopupView` on the WINDOW, in that
+   order, the instant this overlay reports `onDidReachSetupOffer`, so both sit
+   above this lesson's own 70% spotlight — both stay visible, deliberately
+   darker where they overlap, rather than one replacing the other. The scrim
+   is deliberately its OWN view rather than a subview of the popup: it is
+   mounted once and never touched again, so nothing in the popup's own layout
+   (its card, its border corona, both of which rebuild on geometry changes)
+   can ever disturb it. Being window-hosted rather than a subview of this
+   overlay is also why the popup is never shrunk to fit the room above the
+   closed circle the way the old card was: it uses the same generic
+   top-anchored layout every app's popup does.
 
 Every lesson ends in the same place now, so `openSafariSetup`, the skip, and
 the return leg with nothing to show for it (`restoreInPageSafariSetup`, which

@@ -81,6 +81,13 @@ final class SafariReplicaViewController:
     /// the same reason: central Luna's cycle keeps swapping the replica
     /// underneath while this stays up.
     private var safariSetupPopup: OnboardingSafariSetupPopupView?
+    /// The popup's full-screen 30% scrim — a plain view the host owns
+    /// directly, mounted BELOW the popup and never touched again after it
+    /// fades in, so nothing in the popup's own layout can disturb it. Covers
+    /// everything under the popup, including a lesson's own dimming (the
+    /// price lesson's 70% spotlight), which stacks underneath it rather than
+    /// being replaced.
+    private var safariSetupScrim: UIView?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
     private var didBeginDemonstration = false
@@ -587,6 +594,18 @@ final class SafariReplicaViewController:
     func showSafariSetupPopup() {
         guard safariSetupPopup == nil else { return }
         guard let host = view.window ?? view else { return }
+
+        // The scrim first, as its own view, so nothing about the popup's own
+        // layout (its card, its border corona) can ever disturb it.
+        let scrim = UIView(frame: host.bounds)
+        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(
+            OnboardingSafariSetupPopupView.scrimAlpha)
+        scrim.isUserInteractionEnabled = false
+        scrim.alpha = 0
+        safariSetupScrim = scrim
+        host.addSubview(scrim)
+
         let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
         popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         popup.onActivate = { [weak self] in self?.onSetUpSafari?() }
@@ -594,7 +613,7 @@ final class SafariReplicaViewController:
         safariSetupPopup = popup
         host.addSubview(popup)
         popup.layoutIfNeeded()
-        popup.present()
+        popup.present(fadingInAlongside: scrim)
     }
 
     /// After a hop to Safari that returns with no evidence, the popup's
@@ -662,10 +681,15 @@ final class SafariReplicaViewController:
             completion()
             return
         }
+        // The scrim is the popup's own, owned separately — nil here when the
+        // instruction overlay (rather than the popup) is what's dismissing.
+        let scrim = safariSetupPopup != nil ? safariSetupScrim : nil
         instructionOverlay = nil
         safariSetupPopup = nil
+        safariSetupScrim = nil
         let changes = {
             overlay.alpha = 0
+            scrim?.alpha = 0
         }
         if animated, !UIAccessibility.isReduceMotionEnabled {
             UIView.animate(
@@ -674,11 +698,13 @@ final class SafariReplicaViewController:
                 animations: changes,
                 completion: { _ in
                     overlay.removeFromSuperview()
+                    scrim?.removeFromSuperview()
                     completion()
                 })
         } else {
             changes()
             overlay.removeFromSuperview()
+            scrim?.removeFromSuperview()
             completion()
         }
     }

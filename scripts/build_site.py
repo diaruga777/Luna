@@ -21,8 +21,11 @@ actions (“Activate Safari” / “Skip” are in-app navigation, not instructi
 the SF Symbols in the step chips: SF Symbols may not be redistributed on the
 web, so the page-menu and puzzle-piece glyphs are hand-drawn SVG stand-ins.
 
-Unlike the app, the page shows EVERY prose chunk: the app takes the longest
-prefix its screen can hold, and a web page has the room for all of it.
+Unlike the app, the page has room to show every prose chunk the app's own
+suffix earns rather than truncating to fit a screen — see `Copy.chunks` for
+the one exception: a facet app (Reader/Downloader/PriceTracker) still stops
+short of the family-marketing chunk that only makes sense on the central
+app's own page.
 
 Usage: python3 scripts/build_site.py [--out site/dist]
 """
@@ -77,6 +80,10 @@ ALIASES = {
 # the 28pt step icon, at better than 3x for either.
 ICON_PX = 256
 
+# `OnboardingSafariPagePalette.background`, matched by <meta name="theme-color">
+# so a phone's Safari chrome doesn't flash white around the page it's opening.
+THEME_COLOR = "#4f5257"
+
 
 # MARK: - Strings
 
@@ -117,10 +124,27 @@ class Copy:
         return value
 
     def chunks(self, prefix: str) -> list[str]:
-        """A `ChunkedDefinition`: `<prefix>1`, `<prefix>2`, … until one is absent."""
+        """A `ChunkedDefinition`: `<prefix>1`, `<prefix>2`, … until one is absent.
+
+        The central Luna app (`_Core`) walks the whole chain, same as `L10n`
+        does in Swift. A FACET app (Reader/Downloader/PriceTracker) stops one
+        chunk earlier than that: it only keeps walking past a chunk that has
+        no override in ITS OWN suffix if that chunk is exactly chunk4 — the
+        universal privacy line (`_Luna`-only, and true of every app, so it's
+        the one inherited chunk a facet still prints). Chunk5 exists only as
+        `_Luna`/`_Core` family-marketing copy ("...whole family of Luna
+        apps...") that would otherwise leak onto a facet's own setup page
+        through the same fallback — wrong there, because the user is mid-task
+        on ONE app, not shopping the family. Central Luna keeps chunk5 (and
+        anything added after it) because that pitch is true for it.
+        """
         collected: list[str] = []
         index = 1
         while (chunk := self.optional(f"{prefix}{index}")) is not None:
+            if self.suffix != "Core":
+                has_own = f"{prefix}{index}_{self.suffix}" in self.table
+                if not has_own and index != 4:
+                    break
             collected.append(chunk)
             index += 1
         return collected
@@ -209,6 +233,7 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
 <title>{html.escape(page_title)}</title>
 <meta name="description" content="{html.escape(prose)}">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="{THEME_COLOR}">
 <meta property="og:title" content="{html.escape(page_title)}">
 <meta property="og:description" content="{html.escape(prose)}">
 <meta property="og:image" content="{icon_href}">
@@ -253,11 +278,13 @@ def render_index(entries: list[tuple[str, str, str]]) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Luna — Safari extension setup</title>
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="{THEME_COLOR}">
 <link rel="icon" href="/assets/icon-luna.png">
 <link rel="stylesheet" href="/assets/setup.css">
 </head>
 <body>
 <main class="page index">
+  <p class="eyebrow">Safari extension setup</p>
   <h1>Turn on the Luna extension in Safari</h1>
   <p class="prose">Pick the app you installed.</p>
   <ul class="app-list">
@@ -304,10 +331,14 @@ body {
   padding-right: max(24px, env(safe-area-inset-right));
 }
 
-/* The header row: 60pt icon, 14pt gap, the two-line headline beside it. */
+/* The header row: 60pt icon, 14pt gap, the headline beside it. Top-aligned
+   rather than centred, because the central app's own title ("Read, watch,
+   and track — not the popups") is long enough to wrap on a 390px phone —
+   centring a wrapped multi-line h1 against a single fixed-height icon reads
+   as misaligned, top-aligned never does. */
 .masthead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
 }
 
@@ -315,20 +346,23 @@ body {
   width: 60px;
   height: 60px;
   flex: 0 0 auto;
+  margin-top: 2px;      /* optical alignment with the h1's first cap-line */
   border-radius: 17px;   /* the app's own corner on a 60pt icon */
   display: block;
 }
 
 h1 {
   margin: 0;
-  font-size: 26px;
+  min-width: 0;          /* let the flex item shrink instead of overflowing */
+  font-size: clamp(21px, 6.2vw, 26px);  /* scales down before it wraps badly */
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.01em;
+  overflow-wrap: break-word;
 }
 
 .byline {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--quiet);
@@ -341,32 +375,52 @@ h1 {
   max-width: 34em;
 }
 
-.steps { margin-top: 32px; }
+/* These three steps are the whole point of the page — the physical actions
+   the reader is mid-way through doing right now — so they get their own
+   panel, a number per step, and copy sized above the surrounding prose. */
+.steps { margin-top: 36px; }
 
 .steps-heading {
-  margin: 0;
+  margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--quiet);
 }
 
 .step-list {
-  margin: 8px 0 0;
-  padding: 0;
+  counter-reset: step;
+  margin: 0;
+  padding: 4px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
   list-style: none;
 }
 
-/* OnboardingSafariEnableStepRowView: a 70pt visual column, a 14pt gap, then
-   the copy — so all three lines of text start on one vertical. */
+/* A numeral column (::before, a counter), a 70pt visual column, a 14pt gap,
+   then the copy — so all three lines of text start on one vertical. A
+   border between rows stands in for margin so touching rows still read as
+   distinct steps without extra vertical space. */
 .step {
+  counter-increment: step;
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 38px;
-  margin-top: 8px;
+  min-height: 44px;
+  padding: 16px 0;
 }
 
-.step:first-child { margin-top: 0; }
+.step + .step {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.step::before {
+  content: counter(step);
+  flex: 0 0 20px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--quiet);
+  text-align: center;
+}
 
 .visual {
   flex: 0 0 70px;
@@ -376,8 +430,9 @@ h1 {
 }
 
 .step-text {
-  font-size: 15px;
-  line-height: 1.25;
+  font-size: 17px;       /* up from 15px — level with .prose, not under it */
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 /* A picture of Safari's chrome: a light plate carrying a dark glyph. */
@@ -435,18 +490,36 @@ h1 {
   background: #fff;
 }
 
-/* The index of setup pages. */
+/* The small label above the index page's own h1 — same visual language as
+   .steps-heading / .byline, so the index reads as one more page of this
+   site rather than a bare directory listing. */
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--quiet);
+}
+
+/* The index of setup pages: same panel-with-dividers treatment as
+   .step-list, so picking an app feels like the same kind of decision as
+   working through its steps. */
 .app-list {
   margin: 24px 0 0;
-  padding: 0;
+  padding: 4px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
   list-style: none;
+}
+
+.app-list li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .app-link {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 0;
+  padding: 14px 0;
   color: #fff;
   font-size: 17px;
   font-weight: 500;
@@ -457,6 +530,7 @@ h1 {
   width: 44px;
   height: 44px;
   border-radius: 12px;
+  flex: 0 0 auto;
 }
 
 .app-link:hover span { text-decoration: underline; }

@@ -385,6 +385,9 @@
 "Onboarding_Safari_subscriptionSubmit_Luna" = "Subscribe for $4.99/month";
 "Onboarding_Safari_subscriptionTitle_Luna" = "Subscribe to keep reading";
 "Onboarding_Safari_title_Luna" = "Read the page, not the popups";
+"Onboarding_Safari_title_Core" = "Read, watch, and track — not the popups";
+"Onboarding_Safari_title_Downloader" = "Save the video, not the popups";
+"Onboarding_Safari_title_PriceTracker" = "Track the price, not the popups";
 
 /* ===== Onboarding_Messages — mock Messages conversation walking through the Action Button save setup (Luna/UtilCard, OnboardingStrings.Messages) ===== */
 "Onboarding_Messages_answer_Luna" = "Nah. Its kinda dead tbh.";

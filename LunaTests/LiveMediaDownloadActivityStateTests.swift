@@ -79,6 +79,40 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
         #endif
     }
 
+    // MARK: - The end-of-life alert (now fired by the `.finished` UPDATE)
+
+    /// The finished card stays LIVE for five seconds, so its alert can no longer
+    /// come from `endActivity` — `updateActivity(for:alerting:)` fires it. Both
+    /// share this one definition, which alerts only for the two results and for
+    /// neither an in-progress phase nor a user cancellation.
+    func testOnlyTheTwoResultPhasesCarryAnEndOfLifeAlert() {
+        #if canImport(ActivityKit)
+        let alerting: [LiveMediaDownloadJob.Phase] = [.finished, .failed]
+        let silent: [LiveMediaDownloadJob.Phase] =
+            [.resolving, .downloading, .waiting, .suspended, .saving]
+        for phase in alerting {
+            XCTAssertNotNil(
+                LiveMediaDownloadManager.endOfLifeAlert(for: job(phase: phase)), "\(phase)")
+        }
+        for phase in silent {
+            XCTAssertNil(
+                LiveMediaDownloadManager.endOfLifeAlert(for: job(phase: phase)), "\(phase)")
+        }
+        #endif
+    }
+
+    /// A bulk import suspends the alerts, and moving the finish alert onto the
+    /// update must not have leaked past that suspension.
+    func testASuspendedImportSilencesTheFinishAlert() {
+        #if canImport(ActivityKit)
+        LiveMediaDownloadManager.suspendActivityAlerts()
+        XCTAssertNil(LiveMediaDownloadManager.endOfLifeAlert(for: job(phase: .finished)))
+        XCTAssertNil(LiveMediaDownloadManager.endOfLifeAlert(for: job(phase: .failed)))
+        LiveMediaDownloadManager.resumeActivityAlerts()
+        XCTAssertNotNil(LiveMediaDownloadManager.endOfLifeAlert(for: job(phase: .finished)))
+        #endif
+    }
+
     func testViewURLEncodesTheSourceURLAsAQueryItem() {
         #if canImport(ActivityKit)
         let state = LiveMediaDownloadManager.shared.activityState(

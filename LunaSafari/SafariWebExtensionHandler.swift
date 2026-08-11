@@ -183,15 +183,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
         let title = (message?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        // The page's own author, read by `content.js` from the document it is
-        // sitting in (`pageAuthor()`) — no network on either side of this
-        // message. Kept with the resolve because that is the moment the page was
-        // in front of us; by Download time the panel may have been open for
-        // minutes. An empty string means the page stated nothing, which stays
-        // nil all the way to the saved row's creator.
-        let author = (message?["author"] as? String)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .flatMap { $0.isEmpty ? nil : $0 }
         if let cached = ResolvedMediaCache.shared.record(forURLString: urlString),
            Date().timeIntervalSince(cached.dateWritten) < Self.playbackResolveReuseLifetime {
             let playable = cached.assets.filter(\.isDirectlyPlayable)
@@ -203,7 +194,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             if !assets.isEmpty {
                 ResolvedMediaCache.shared.store(ResolvedMediaRecord(
                     sourceURLString: urlString, title: title, assets: assets,
-                    dateWritten: Date(), creator: author))
+                    dateWritten: Date()))
             }
             // Only what the page can actually stream. `isDirectlyPlayable` is
             // LunaMediaResolve's rule (no separate audio track to mux, not a
@@ -288,10 +279,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             sourceURLString: record.sourceURLString, title: record.title,
             assets: record.assets, dateWritten: record.dateWritten,
             returnToSourceUntil: Date().addingTimeInterval(
-                Self.downloadReturnHandoffLifetime),
-            // Whatever the page stated when it was resolved travels on: this is
-            // the metadata the app writes instead of fetching.
-            creator: record.creator))
+                Self.downloadReturnHandoffLifetime)))
         return !record.assets.isEmpty
     }
 

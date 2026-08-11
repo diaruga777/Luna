@@ -133,8 +133,8 @@ public enum PendingResolvedMediaDownloads {
     /// (`ReadingListIngestor.prepareSavePress` does the same thing), and leaves
     /// the row `.pending`.
     ///
-    /// The other half — the metadata that gives the row its title, creator and
-    /// kind — is OWED here, durably, in the same breath as the reservation, and
+    /// The other half — the metadata that gives the row its title and kind — is
+    /// OWED here, durably, in the same breath as the reservation, and
     /// then paid immediately from the hand-off itself whenever the record
     /// carries it (`completeFromHandoff`). The debt is written first, and
     /// before the transfer starts, for the same reason the reservation is:
@@ -188,13 +188,8 @@ public enum PendingResolvedMediaDownloads {
     /// refuses an assetless one), so this URL is a video post — the media kind —
     /// and not, say, one of the long-form X posts that read as articles.
     ///
-    /// `creator` rides along when the PAGE stated one (`content.js`'s
-    /// `pageAuthor()` — schema.org author markup, JSON-LD, the author metas, or
-    /// X's rendered byline), so a hand-off-completed row carries the same
-    /// creator a share-sheet save of that page would. A page that states none
-    /// leaves it empty: this path never fabricates one and never goes to the
-    /// network for one. The row THUMBNAIL is the one field still only a fetch
-    /// could add, and the download fetches that poster for its own card anyway
+    /// The row THUMBNAIL is the one field still only a fetch could add, and the
+    /// download fetches that poster for its own card anyway
     /// (`fetchAndPublishThumbnail`) — see `claudedocs/safari-extension.md`.
     @MainActor
     @discardableResult
@@ -204,12 +199,10 @@ public enum PendingResolvedMediaDownloads {
         completions: PendingIngestCompletions = .shared
     ) -> Bool {
         let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let creator = record.creator?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, let recognized = PlatformRecognizer.recognize(urlString),
               store.savePlatformMetadata(
                 platform: recognized.platform, platformItemID: recognized.itemID,
-                title: title, creator: (creator?.isEmpty ?? true) ? nil : creator,
-                thumbnailFileName: nil, for: itemID) != nil
+                title: title, thumbnailFileName: nil, for: itemID) != nil
         else { return false }
         completions.settle(itemID)
         SharedDiagnosticLog.record(

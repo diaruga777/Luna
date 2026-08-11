@@ -716,40 +716,6 @@ finished, and the normal one costs no network at all:
   pressed, or the URL matches no platform rule. Then the row stays owed and the
   app finishes it ITSELF, in the background, with the user already on the page.
 
-**What the page states about its author, and what it doesn't.** `content.js`'s
-`pageAuthor()` reads the creator out of the document that is already open — the
-same posture as the passive product snapshot: no network on either side, only
-what this DOM says. It travels on the resolve message (`resolveMedia`), is kept
-with the cached record, and rides the queued one into `completeFromHandoff`, so
-a hand-off-completed row carries the same creator a share-sheet save would.
-
-The signals, in the order they are trusted — most explicitly published first:
-
-1. **schema.org author markup** — `[itemprop="author"] [itemprop="name"]` (or
-   `creator`). Not a platform rule, but it is what a YouTube watch page ships:
-   `<span itemprop="author"><link itemprop="name" content="Blender">`. Verified
-   live: a real watch page answers `Blender`, and a real `x.com/<user>/status/…`
-   answers the poster's name from this same path.
-2. **JSON-LD `author`/`creator`** — the first `name` under either key, whatever
-   node it hangs off (`VideoObject`, `Article`, a `@graph` entry).
-3. **The author metas** — `author`, `article:author`, `og:article:author`.
-4. **X's rendered byline** — `[data-testid="User-Name"]`, host-gated to
-   x.com/twitter.com and consulted only when nothing above answered, for the
-   logged-in render where X hydrates its own markup. (On the logged-out render
-   verified here, tier 1 already answers and this never fires.)
-
-Two rejections keep it honest, both tested: a value that is a URL is refused
-(`article:author` overwhelmingly holds a profile LINK, and turning a link into a
-name means guessing which path component is a person — a real x.com post ships
-`article:author = https://x.com/jack`), and so is an over-long one (a page that
-has put a byline paragraph in the field). **Nothing is inferred from a title, a
-site name, or a URL.** Measured, logged out: youtube.com → the channel; x.com →
-the poster; example.com → nothing; tiktok.com and instagram.com → nothing at all
-(their logged-out renders carry no author markup — a signed-in Safari may differ,
-and if it does, tier 1 or 4 will pick it up). A page that states nothing leaves
-the row's creator EMPTY: the fast path never fabricates one and never fetches for
-one.
-
 The debt is the mechanism behind both. The reservation and the DEBT are written
 together (`PendingIngestCompletions.owe`, LunaStorage, App-Group backed, 3-day
 lifetime) before anything that can fail or take time — that is the recoverable

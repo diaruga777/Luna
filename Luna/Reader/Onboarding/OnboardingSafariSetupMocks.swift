@@ -123,57 +123,76 @@ final class OnboardingManageExtensionsSheetView: UIView {
 
     func present(completion: @escaping () -> Void) {
         layoutIfNeeded()
-        if UIAccessibility.isReduceMotionEnabled {
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        let duration: TimeInterval = reduceMotion
+            ? 0.2
+            : OnboardingExtensionEnableTiming.sheetPresentDuration
+        if reduceMotion {
             alpha = 0
-            UIView.animate(withDuration: 0.2, animations: {
+            UIView.animate(withDuration: duration) {
                 self.alpha = 1
                 self.scrim.alpha = 1
-            }) { _ in completion() }
-            return
+            }
+        } else {
+            card.transform = CGAffineTransform(
+                translationX: 0, y: offscreenTranslation)
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                usingSpringWithDamping: 0.88,
+                initialSpringVelocity: 0.3,
+                options: [.curveEaseOut, .beginFromCurrentState]
+            ) {
+                self.card.transform = .identity
+            }
+            UIView.animate(withDuration: 0.26) {
+                self.scrim.alpha = 1
+            }
         }
-        card.transform = CGAffineTransform(
-            translationX: 0, y: offscreenTranslation)
-        UIView.animate(
-            withDuration: OnboardingExtensionEnableTiming.sheetPresentDuration,
-            delay: 0,
-            usingSpringWithDamping: 0.88,
-            initialSpringVelocity: 0.3,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            self.card.transform = .identity
-        } completion: { _ in
-            completion()
-        }
-        UIView.animate(withDuration: 0.26) {
-            self.scrim.alpha = 1
-        }
+        // The next beat is driven off a fixed wall-clock delay rather than off
+        // this animation's own completion handler. `UIView.animate`'s
+        // completion is delivered by the render server's commit pipeline, and
+        // under heavy device load that pipeline can report "finished" almost
+        // immediately (with `finished: false`, the animation having been
+        // collapsed rather than actually played) instead of after the
+        // declared duration — which used to let this whole present → toggle →
+        // dismiss sequence race through in a fraction of a millisecond,
+        // shrinking the toggle's on-screen visible window to something no
+        // poll (or person) could ever catch. A timer matching the same
+        // duration keeps this step's pace independent of whether a frame was
+        // ever actually composited.
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + duration, execute: completion)
     }
 
     func turnOnToggle(completion: @escaping () -> Void) {
-        toggle.setOn {
-            completion()
-        }
+        toggle.setOn(completion: completion)
     }
 
     func dismiss(completion: @escaping () -> Void) {
-        if UIAccessibility.isReduceMotionEnabled {
-            UIView.animate(withDuration: 0.2, animations: {
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        let duration: TimeInterval = reduceMotion
+            ? 0.2
+            : OnboardingExtensionEnableTiming.sheetDismissDuration
+        if reduceMotion {
+            UIView.animate(withDuration: duration) {
                 self.alpha = 0
-            }) { _ in
-                self.removeFromSuperview()
-                completion()
             }
-            return
+        } else {
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                options: [.curveEaseIn, .beginFromCurrentState]
+            ) {
+                self.card.transform = CGAffineTransform(
+                    translationX: 0, y: self.offscreenTranslation)
+                self.scrim.alpha = 0
+            }
         }
-        UIView.animate(
-            withDuration: OnboardingExtensionEnableTiming.sheetDismissDuration,
-            delay: 0,
-            options: [.curveEaseIn, .beginFromCurrentState]
-        ) {
-            self.card.transform = CGAffineTransform(
-                translationX: 0, y: self.offscreenTranslation)
-            self.scrim.alpha = 0
-        } completion: { _ in
+        // Same reasoning as `present(completion:)` above: removal and the
+        // completion fire off a fixed timer, not off the animation's own
+        // (load-sensitive) completion delivery.
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             self.removeFromSuperview()
             completion()
         }
@@ -222,10 +241,11 @@ final class OnboardingMockSwitchView: UIView {
             return
         }
         isOn = true
+        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
+            ? 0.1
+            : OnboardingExtensionEnableTiming.toggleDuration
         UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled
-                ? 0.1
-                : OnboardingExtensionEnableTiming.toggleDuration,
+            withDuration: duration,
             delay: 0,
             usingSpringWithDamping: 0.85,
             initialSpringVelocity: 0.4,
@@ -235,8 +255,16 @@ final class OnboardingMockSwitchView: UIView {
             self.knob.center = CGPoint(
                 x: self.bounds.width - 15.5,
                 y: self.bounds.midY)
-        } completion: { _ in
-            completion()
         }
+        // `isOn` is already true (set synchronously above) and stays true for
+        // at least this whole `duration`, whether or not the render server
+        // ever gets to composite the spring animating it: the completion (and
+        // so the caller's next beat, which is what makes this switch — and
+        // the sheet it's on — disappear) is on its own fixed clock rather
+        // than chained off `UIView.animate`'s own completion delivery. See
+        // `OnboardingManageExtensionsSheetView.present(completion:)` for why
+        // that coupling is the thing that broke under load.
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + duration, execute: completion)
     }
 }

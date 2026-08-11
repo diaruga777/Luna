@@ -591,11 +591,13 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   did not register at all rather than skipping, and some 60 others likewise. No
   test files had been deleted (`git diff --diff-filter=D main..HEAD -- LunaTests/`
   is the check). **0 failures is the signal; the total is not.**
-- **Current suite state on the iOS 26.x sim: 2951 tests, 20 skipped, 0 failures**
+- **Current suite state on the iOS 26.x sim: 2992 tests, 20 skipped, 0 failures**
   (measured 2026-08-11 on a FRESH simulator and a fresh `-derivedDataPath`, with NO
-  other simulator booted — see the load caveat below — after the
-  onboarding/Safari/price wave — nine merged branches added ~550 tests over the 2379
-  the wave started from). That growth tipped one pre-existing race into a failure:
+  other simulator booted — see the load caveat below — after the Safari-setup-popup
+  merge: the in-app Safari instructions became the shared popup + hosted setup pages,
+  and the popup/loop suite plus main's Live-Activity wave landed together. The prior
+  same-day measurement was 2951/20/0 after the onboarding/Safari/price wave — nine
+  merged branches added ~550 tests over the 2379 the wave started from). That growth tipped one pre-existing race into a failure:
   `OnboardingHandoffFullContentTests` asserted the onboarding→deck handoff after a
   fixed 50ms pump, but the completion hops through `Task { @MainActor }` and lands
   ~360ms later under a saturated main thread. **A fixed-duration pump is not a wait** —

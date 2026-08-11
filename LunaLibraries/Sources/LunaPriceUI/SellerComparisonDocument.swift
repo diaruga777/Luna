@@ -184,20 +184,12 @@ public enum SellerComparisonDocument {
         }
     }
 
-    /// `operation`'s value, or nil at `seconds`. The loser is cancelled.
+    /// `operation`'s value, or nil at `seconds`. See `TimeLimit` for why this is
+    /// not the task group it looks like it should be.
     static func withDeadline<T: Sendable>(
         _ seconds: TimeInterval, _ operation: @escaping @Sendable () async -> T
     ) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { await operation() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        await TimeLimit.run(seconds, operation: operation)
     }
 
     /// The seller's display name — the same `SellerNaming` answer the product

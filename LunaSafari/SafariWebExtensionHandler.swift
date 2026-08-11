@@ -5,6 +5,7 @@
 
 import LunaMediaResolve
 import LunaModels
+import LunaPriceCompare
 import LunaStorage
 import SafariServices
 
@@ -130,8 +131,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // the SAME round trip — one page-side extraction, one message. Never a
             // save: nothing here schedules a refresh or writes a reading-list row.
             if Self.hostHandlesProducts, let snapshot = message?["snapshot"] as? [String: Any] {
-                SharedProductSnapshots.record(snapshot)
-                if let record = SharedProductSnapshots.makeRecord(from: snapshot, now: Date()) {
+                let now = Date()
+                ProductSnapshotStore.shared.record(payload: snapshot, now: now)
+                if let record = ProductSnapshotStore.makeSnapshot(fromPayload: snapshot, now: now) {
                     let answer = SharedProductMatching.historyAnswer(forPageSnapshot: record)
                     payload["isTracked"] = answer.isTracked
                     payload["hasHistory"] = answer.hasHistory
@@ -263,7 +265,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private func comparableSellers(message: [String: Any]?, context: NSExtensionContext) {
         guard Self.hostHandlesProducts,
               let snapshot = message?["snapshot"] as? [String: Any],
-              let record = SharedProductSnapshots.makeRecord(from: snapshot, now: Date())
+              let record = ProductSnapshotStore.makeSnapshot(fromPayload: snapshot, now: Date())
         else {
             complete(context, with: ComparableSellerFinder.messagePayload(for: nil))
             return

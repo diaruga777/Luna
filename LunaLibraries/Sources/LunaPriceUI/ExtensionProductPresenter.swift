@@ -5,6 +5,7 @@
 
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
 import LunaStorage
 import UIKit
 
@@ -19,9 +20,9 @@ import UIKit
 @MainActor
 public final class ExtensionProductPresenter {
 
-    /// Test seam: which snapshots history-seeding matches against on a merge.
-    /// Production reads the shared App Group file.
-    var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
+    /// Test seam: which snapshot store history-seeding reads. Production reads
+    /// the shared App Group one.
+    var snapshotStore: ProductSnapshotStore = .shared
     /// Test seam for the product-image write. The extension keeps the editor
     /// responsive while this finishes, but persists the file before its host
     /// process is dismissed whenever the network answers in time.
@@ -69,7 +70,7 @@ public final class ExtensionProductPresenter {
             comparisonStarter: { itemID, sourceURL, store in
                 SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: sourceURL, store: store)
             },
-            snapshots: snapshotProvider())
+            snapshotStore: snapshotStore)
 
         let editor: PriceTrackingViewController
         switch outcome {
@@ -92,6 +93,12 @@ public final class ExtensionProductPresenter {
             var tracker = product.makeTracker(
                 fallbackURL: url,
                 alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction)
+            // The same blocking read the in-app save makes. A share-sheet save
+            // of a product Luna has already priced must be born with that
+            // history too — this path used to seed only on the MERGE branch,
+            // so a brand-new tracker from an extension started blank.
+            ProductTrackerMerge.seedHistoryFromSnapshots(
+                into: &tracker, candidate: product, candidateURL: url, store: snapshotStore)
             seedPracticeHistoryIfNeeded(into: &tracker, url: url)
             guard let itemID = store.savePriceTracker(
                 tracker, forURLString: url.absoluteString)

@@ -58,7 +58,7 @@ enum ComparableSellerFinder {
     // MARK: - Entry point
 
     static func answer(
-        forPageSnapshot page: SharedProductSnapshots.Record, now: Date = Date()
+        forPageSnapshot page: ProductSnapshot, now: Date = Date()
     ) async -> Answer? {
         guard let pagePrice = Decimal(string: page.price), pagePrice > 0 else { return nil }
 
@@ -88,7 +88,7 @@ enum ComparableSellerFinder {
     /// Every price Luna already holds for this product, from both files,
     /// filtered by `FreshComparablePrices`' one rule.
     static func cachedAnswer(
-        forPageSnapshot page: SharedProductSnapshots.Record, pagePrice: Decimal, now: Date
+        forPageSnapshot page: ProductSnapshot, pagePrice: Decimal, now: Date
     ) -> Answer? {
         var points = indexPoints(matching: page)
         points.append(contentsOf: snapshotPoints(matching: page))
@@ -104,7 +104,7 @@ enum ComparableSellerFinder {
     /// that day's UTC start — which makes `isFresh` exactly "recorded today",
     /// since today's start is always less than 24h ago and yesterday's never is.
     private static func indexPoints(
-        matching page: SharedProductSnapshots.Record
+        matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
         var points: [ComparablePricePoint] = []
         for entry in SharedProductMatching.loadIndex()
@@ -128,9 +128,10 @@ enum ComparableSellerFinder {
     /// finder itself wrote on an earlier visit, which is what makes a second
     /// lookup for the same product free.
     private static func snapshotPoints(
-        matching page: SharedProductSnapshots.Record
+        matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
-        SharedProductSnapshots.load()
+        ProductSnapshotStore.shared
+            .snapshots(forKeys: page.indexKeys)
             .filter { $0.url != page.url && SharedProductMatching.matches(page: page, snapshot: $0) }
             .compactMap { snapshot in
                 guard let amount = Decimal(string: snapshot.price) else { return nil }
@@ -148,7 +149,7 @@ enum ComparableSellerFinder {
     // MARK: - Leg 2: the constrained fan-out
 
     private static func liveAnswer(
-        forPageSnapshot page: SharedProductSnapshots.Record, pagePrice: Decimal, now: Date
+        forPageSnapshot page: ProductSnapshot, pagePrice: Decimal, now: Date
     ) async -> Answer? {
         let identifiers = ProductIdentifiers(
             gtin: page.gtin, mpn: page.mpn,
@@ -187,7 +188,7 @@ enum ComparableSellerFinder {
         log.info("\(outcome.compactLogLine, privacy: .public)")
 
         for result in outcome.results {
-            SharedProductSnapshots.record(result.snapshotPayload, now: now)
+            ProductSnapshotStore.shared.record(payload: result.snapshotPayload, now: now)
         }
         return FreshComparablePrices.lowestCheaper(
             among: outcome.results.map { $0.pricePoint(now: now) },

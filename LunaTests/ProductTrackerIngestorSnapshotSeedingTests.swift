@@ -5,6 +5,7 @@
 
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
 import LunaStorage
 @testable import LunaPriceUI
 import XCTest
@@ -16,6 +17,7 @@ import XCTest
 final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
 
     private var tempDirectory: URL!
+    private var snapshotDirectory: URL?
     private var store: ReadingListStore!
     private var ingestor: ProductTrackerIngestor!
 
@@ -27,11 +29,20 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = {}
+        // Never the real App Group store: a test must not read (or write) the
+        // observations a developer's own browsing left behind.
+        ingestor.snapshotStore = .temporary(directory: &snapshotDirectory)
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: tempDirectory)
+        if let snapshotDirectory { try? FileManager.default.removeItem(at: snapshotDirectory) }
         super.tearDown()
+    }
+
+    /// Seeds the shared-store the ingestor reads at save time.
+    private func seedSnapshots(_ snapshots: [ProductSnapshot]) {
+        ingestor.snapshotStore = .temporary(snapshots, directory: &snapshotDirectory)
     }
 
     private func snapshot(
@@ -67,10 +78,9 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
     func testNewTrackerSeedsAStorePerNewHostFromMatchedSnapshots() async {
         let itemA = store.add(urlString: "https://shop-a.example/p/1")
         let itemB = store.add(urlString: "https://shop-b.example/p/1")
-        ingestor.snapshotProvider = {
-            [self.snapshot(price: "45", day: "2026-01-05", url: "https://shop-a.example/p/1"),
-             self.snapshot(price: "40", day: "2026-01-06", url: "https://shop-b.example/other")]
-        }
+        seedSnapshots(
+            [snapshot(price: "45", day: "2026-01-05", url: "https://shop-a.example/p/1"),
+             snapshot(price: "40", day: "2026-01-06", url: "https://shop-b.example/other")])
         let (expectation, verify) = expectRefresh()
 
         await ingestor.ingest(itemA, url: URL(string: "https://shop-a.example/p/1")!,
@@ -92,10 +102,9 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
 
     func testDayBucketedHistoryTakesTheLowestPricePerDay() async {
         let item = store.add(urlString: "https://shop-a.example/p/1")
-        ingestor.snapshotProvider = {
-            [self.snapshot(price: "50", day: "2026-01-05", url: "https://shop-a.example/other-a"),
-             self.snapshot(price: "42", day: "2026-01-05", url: "https://shop-a.example/other-b")]
-        }
+        seedSnapshots(
+            [snapshot(price: "50", day: "2026-01-05", url: "https://shop-a.example/other-a"),
+             snapshot(price: "42", day: "2026-01-05", url: "https://shop-a.example/other-b")])
         let (expectation, _) = expectRefresh()
         await ingestor.ingest(item, url: URL(string: "https://shop-a.example/p/1")!,
                               product: product(), store: store)
@@ -109,10 +118,9 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
 
     func testUnmatchedSnapshotsDoNotSeedAnything() async {
         let item = store.add(urlString: "https://shop-a.example/p/1")
-        ingestor.snapshotProvider = {
-            [self.snapshot(price: "10", day: "2026-01-01", url: "https://unrelated.example/p",
-                           gtin: "9999999999999", name: "Something Totally Unrelated")]
-        }
+        seedSnapshots(
+            [snapshot(price: "10", day: "2026-01-01", url: "https://unrelated.example/p",
+                           gtin: "9999999999999", name: "Something Totally Unrelated")])
         let (expectation, _) = expectRefresh()
         await ingestor.ingest(item, url: URL(string: "https://shop-a.example/p/1")!,
                               product: product(), store: store)
@@ -137,10 +145,9 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         store.savePriceTracker(existingTracker, for: existingItem.id)
 
         let newItem = store.add(urlString: "https://shop-c.example/p/1")
-        ingestor.snapshotProvider = {
-            [self.snapshot(price: "48", day: "2026-01-05", url: "https://shop-a.example/other"),
-             self.snapshot(price: "39", day: "2026-01-06", url: "https://shop-d.example/other")]
-        }
+        seedSnapshots(
+            [snapshot(price: "48", day: "2026-01-05", url: "https://shop-a.example/other"),
+             snapshot(price: "39", day: "2026-01-06", url: "https://shop-d.example/other")])
         let (expectation, _) = expectRefresh()
         await ingestor.ingest(newItem, url: URL(string: "https://shop-c.example/p/1")!,
                               product: product(), store: store)

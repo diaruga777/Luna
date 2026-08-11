@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
 import LunaSocial
 import LunaStorage
 import UIKit
@@ -18,9 +19,9 @@ import UIKit
 public final class ProductTrackerIngestor {
     public static let shared = ProductTrackerIngestor()
 
-    /// Test seam: which snapshots history-seeding matches against. Production
-    /// reads the shared App Group file.
-    var snapshotProvider: () -> [ProductSnapshot] = { ProductSnapshotStore.shared.load() }
+    /// Test seam: which snapshot store history-seeding reads. Production reads
+    /// the shared App Group one.
+    var snapshotStore: ProductSnapshotStore = .shared
     /// Test seam: the immediate post-seed refresh. Production drives the real
     /// single-tracker `PriceRefreshCoordinator` (which also regenerates the
     /// history index on completion).
@@ -53,12 +54,12 @@ public final class ProductTrackerIngestor {
     ) async {
         // The merge decision (and its snapshot seeding + identifier union) is
         // shared with the extension's immediate-editor path — see
-        // `ProductTrackerMerge`. This instance's own `snapshotProvider`
+        // `ProductTrackerMerge`. This instance's own `snapshotStore`
         // (tests stub it per-instance) is passed straight through as a
         // parameter rather than bridged via a global.
         let outcome = ProductTrackerMerge.mergeIfPossible(
             product: product, url: url, excludingItemID: item.id, store: store,
-            comparisonStarter: comparisonStarter, snapshots: snapshotProvider())
+            comparisonStarter: comparisonStarter, snapshotStore: snapshotStore)
         if case let .merged(matchID, highlightedURL) = outcome {
             // The tracker that won a merge may predate artwork collection. A
             // duplicate save is still a chance to repair it, so every tracker
@@ -94,8 +95,12 @@ public final class ProductTrackerIngestor {
         if let data = await artworkLoader(product.imageURL, url) {
             tracker.imageFileName = writeArtwork(data, for: item.id, store: store)
         }
+        // BLOCKING, and part of creating the save rather than a job that runs
+        // later: the tracker reaches disk already carrying every price Luna has
+        // observed for this product (`claudedocs/price-tracking.md`'s "Product
+        // snapshots"). One indexed read of a local file.
         ProductTrackerMerge.seedHistoryFromSnapshots(
-            into: &tracker, candidate: product, candidateURL: url, snapshots: snapshotProvider())
+            into: &tracker, candidate: product, candidateURL: url, store: snapshotStore)
         store.savePriceTracker(tracker, for: item.id)
 
         // The alternative-seller fan-out, on the NEW-tracker path only (a merge

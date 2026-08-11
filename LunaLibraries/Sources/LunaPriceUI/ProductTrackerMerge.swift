@@ -6,6 +6,7 @@
 import Foundation
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
 import LunaStorage
 
 /// The merge-or-create decision for a freshly classified product page, shared
@@ -44,7 +45,7 @@ public enum ProductTrackerMerge {
     public static func mergeIfPossible(
         product: ProductInfo, url: URL, excludingItemID: UUID, store: ReadingListStore,
         comparisonStarter: (UUID, URL, ReadingListStore) -> Void,
-        snapshots: [ProductSnapshot] = ProductSnapshotStore.shared.load()
+        snapshotStore: ProductSnapshotStore = .shared
     ) -> Outcome {
         let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
             guard let tracker = $0.priceTracker, $0.id != excludingItemID else { return nil }
@@ -69,7 +70,7 @@ public enum ProductTrackerMerge {
         matched.identifiers = matched.identifiers.merging(
             product.identifiers.merging(ProductIdentifiers(brand: product.brand)))
         seedHistoryFromSnapshots(
-            into: &matched, candidate: product, candidateURL: url, snapshots: snapshots)
+            into: &matched, candidate: product, candidateURL: url, store: snapshotStore)
         for storeListing in newStores { matched.upsertStore(storeListing) }
         store.updatePriceTracker(matched, for: matchID)
 
@@ -85,34 +86,38 @@ public enum ProductTrackerMerge {
         return .merged(itemID: matchID, highlightedURLString: highlighted)
     }
 
-    /// Matches passive Safari snapshots against the just-saved product
-    /// (`SnapshotMatcher`) and folds any that match into the tracker's
+    /// Folds every stored observation of this product into the tracker's
     /// per-store history, grouped by host so a product never gets two stores
-    /// for the same host. Snapshots are never deleted by matching — they
-    /// remain available as history for other products and for the history
-    /// pill.
+    /// for the same host. Snapshots are never deleted by matching — the same
+    /// observation can seed a different product later, and remains available
+    /// to the history pill.
     ///
-    /// Moved here (from `ProductTrackerIngestor`) so the extension's
-    /// immediate-editor path gets the same seeding a new tracker always did —
-    /// a passive snapshot with an offer-level `gtin13` is exactly the kind of
-    /// history a share-sheet save should fold in too.
+    /// **This is a blocking local database read, and it belongs on the save
+    /// path.** It is the whole of the read side: there is no background sweep
+    /// and no deferred job. A tracker is created with the history Luna already
+    /// has, or it is created with none — never with none and then quietly
+    /// gaining some at the next launch. The read is by identifier through
+    /// `ProductSnapshotStore`'s index, so it opens only the records that could
+    /// match rather than decoding the whole store.
     public static func seedHistoryFromSnapshots(
         into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL,
-        snapshots: [ProductSnapshot] = ProductSnapshotStore.shared.load()
+        store snapshotStore: ProductSnapshotStore = .shared
     ) {
-        guard !snapshots.isEmpty else { return }
-        // The tracker's market is its source page's currency. A snapshot of the
-        // same product in another market (the same GTIN browsed on amazon.co.uk
-        // against a USD tracker) is real data Luna cannot use: there is no FX
-        // source, so folding it in would put a £ point on a $ graph and a
-        // foreign store in the seller list.
-        let marketCurrency = tracker.initialCurrency.uppercased()
-        let comparable = snapshots.filter { $0.currency.uppercased() == marketCurrency }
-        guard !comparable.isEmpty else { return }
-        let matched = SnapshotMatcher.matchingSnapshots(
+        let matches = snapshotStore.matchingSnapshots(
             for: candidate, candidateURL: candidateURL,
-            existingStoreURLStrings: tracker.stores.map(\.urlString),
-            among: comparable)
+            existingStoreURLStrings: tracker.stores.map(\.urlString))
+        seedHistory(into: &tracker, from: matches)
+    }
+
+    /// The pure half: fold already-matched observations into `tracker`.
+    static func seedHistory(into tracker: inout PriceTracker, from matches: [ProductSnapshot]) {
+        // The tracker's market is its source page's currency. An observation of
+        // the same product in another market (the same GTIN browsed on
+        // amazon.co.uk against a USD tracker) is real data Luna cannot use:
+        // there is no FX source, so folding it in would put a £ point on a $
+        // graph and a foreign store in the seller list.
+        let marketCurrency = tracker.initialCurrency.uppercased()
+        let matched = matches.filter { $0.currency.uppercased() == marketCurrency }
         guard !matched.isEmpty else { return }
 
         let byHost = Dictionary(grouping: matched) { $0.host.lowercased() }

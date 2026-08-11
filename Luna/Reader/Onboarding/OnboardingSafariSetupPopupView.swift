@@ -164,6 +164,14 @@ final class OnboardingSafariSetupPopupView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard card.bounds.width > 0, card.bounds.height > 0 else { return }
+        // The activate button's frame is solved in the CARD's own layout
+        // pass, which runs after this container's — so on the first pass the
+        // conversion below reads a zero-sized button and builds no corona,
+        // and nothing guarantees this container is ever laid out again. The
+        // card-border corona used to paper over that (its size needed only
+        // `card.bounds`); with the card corona gone, settle the card's
+        // children first so the button's geometry is real on every pass.
+        card.layoutIfNeeded()
         layOutActivateCorona()
     }
 

@@ -114,20 +114,23 @@ final class SettingsHierarchyTests: XCTestCase {
     /// survive on a device with no Action Button to assign the shortcut to —
     /// and the screen renames itself to what is left of it.
     ///
-    /// What is left is the extension's own two toggles, and each is gated on a
+    /// What is left is the extension's own three toggles, and each is gated on a
     /// KIND rather than on the device: the suggestion pill only fires on article
-    /// pages (`handlesArticles`) and the in-page video player only opens on media
+    /// pages and cookie auto-decline is the article apps' choice to make
+    /// (`handlesArticles`), while the in-page video player only opens on media
     /// pages (`handlesMedia`). The test host is the CENTRAL Luna app, which
-    /// handles both, so both stand here; Reader would show only "Luna Button" and
-    /// the Downloader only "Video Player" — a split no in-process test can reach,
-    /// since `LunaApp.current` comes from the host bundle id.
+    /// handles both kinds, so all three stand here; Reader would show "Luna
+    /// Button" and "Cookie Popups" and the Downloader only "Video Player" — a
+    /// split no in-process test can reach, since `LunaApp.current` comes from the
+    /// host bundle id.
     func testWithoutShortcutHardwareTheKindGatedSafariSectionsRemain() {
         let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
         window = UITestSupport.host(screen)
 
         XCTAssertTrue(LunaApp.current.handlesArticles && LunaApp.current.handlesMedia)
-        XCTAssertEqual(screen.tableView.numberOfSections, 2)
-        XCTAssertEqual(sectionTitles(screen), ["Luna Button", "Video Player"])
+        XCTAssertEqual(screen.tableView.numberOfSections, 3)
+        XCTAssertEqual(
+            sectionTitles(screen), ["Luna Button", "Cookie Popups", "Video Player"])
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: false), "Safari")
     }
@@ -139,7 +142,7 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(
             sectionTitles(screen),
             [
-                "Luna Button", "Video Player", "Apple Intelligence",
+                "Luna Button", "Cookie Popups", "Video Player", "Apple Intelligence",
                 "Double Save Action", "Action Button",
             ])
         XCTAssertEqual(

@@ -623,6 +623,9 @@
 "Settings_shortcut_titleSafariOnly_Luna" = "Safari";
 "Settings_shortcut_suggestionButtonSectionHeader_Luna" = "%@ Button";
 "Settings_shortcut_suggestionButtonFooter_Luna" = "When browsing in Safari, choose when the \"%@\" button appears.";
+"Settings_shortcut_cookiePopupsSectionHeader_Luna" = "Cookie Popups";
+"Settings_shortcut_cookiePopupsToggleLabel_Luna" = "Decline cookies for me";
+"Settings_shortcut_cookiePopupsFooter_Luna" = "When a site asks about cookies, Luna answers \"necessary cookies only\" before the popup can appear — it never accepts anything on your behalf. Turn this off to answer cookie prompts yourself; newsletter and app-install popups are hidden either way.";
 "Settings_shortcut_videoPlayerSectionHeader_Luna" = "Video Player";
 "Settings_shortcut_videoPlayerToggleLabel_Luna" = "Play in Safari";
 "Settings_shortcut_videoPlayerFooter_Luna" = "Open a video post in Safari and Luna plays it right there, with one button to download it. Turn this off to leave the page alone — the \"%@\" button still hands the video to Luna.";

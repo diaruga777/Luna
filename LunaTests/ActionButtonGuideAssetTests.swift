@@ -60,18 +60,15 @@ final class ActionButtonGuideAssetTests: XCTestCase {
     }
 
     @MainActor
-    func testOnlyActionButtonGuideStopsOnForeground() async {
-        let actionGuide = SetupGuideVideo(guide: .actionButton)
-        let safariGuide = SetupGuideVideo(guide: .safariExtension)
+    func testActionButtonGuideStopsOnForegroundAndOnActivation() async {
+        let actionGuide = SetupGuideVideo()
         actionGuide.requestPictureInPictureForTesting()
-        safariGuide.requestPictureInPictureForTesting()
 
         NotificationCenter.default.post(
             name: UIApplication.willEnterForegroundNotification,
             object: nil)
         await Task.yield()
         XCTAssertFalse(actionGuide.pictureInPictureRequestedForTesting)
-        XCTAssertTrue(safariGuide.pictureInPictureRequestedForTesting)
 
         actionGuide.requestPictureInPictureForTesting()
         NotificationCenter.default.post(

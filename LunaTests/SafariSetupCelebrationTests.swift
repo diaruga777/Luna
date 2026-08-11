@@ -229,20 +229,6 @@ final class SafariSetupCelebrationTests: XCTestCase {
         }
     }
 
-    func testRenderingTheOverlaySignalsTheMainAppToStopItsSafariGuide() {
-        let extensionSource = Self.source("LunaSafari/SharedSafariURL.swift")
-        let appSource = Self.source(
-            "LunaLibraries/Sources/LunaStorage/LunaSetupStatusStore.swift")
-        let onboardingSource = Self.source(
-            "Luna/Reader/Onboarding/AppOnboardingViewController.swift")
-        for source in [extensionSource, appSource, onboardingSource] {
-            XCTAssertTrue(
-                source.contains("safariCelebrationPresented"),
-                "the Safari confirmation signal must survive the extension-to-app hand-off")
-        }
-        XCTAssertTrue(extensionSource.contains("recordCelebrationShown"))
-        XCTAssertTrue(onboardingSource.contains("safariGuide.stopPictureInPicture()"))
-    }
 }
 
 /// The overlay itself, rendered by the production `content.js` in a bare

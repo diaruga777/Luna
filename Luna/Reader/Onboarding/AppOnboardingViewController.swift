@@ -87,6 +87,19 @@ enum OnboardingJourneyStage: Equatable {
 
 }
 
+/// The hosted setup site's canonical per-app slug (`site/README.md`'s
+/// `/setup/<slug>` list) — the same four pages the site generator builds.
+private extension LunaApp {
+    var safariSetupPageSlug: String {
+        switch self {
+        case .luna: return "luna"
+        case .reader: return "reader"
+        case .downloader: return "downloader"
+        case .priceTracker: return "price-tracker"
+        }
+    }
+}
+
 /// The shared guided first-run deck. It intentionally uses the production
 /// CardCarousel rather than a look-alike. Safari and Shortcut actions enter
 /// their respective facsimiles independently and return through the mock app
@@ -112,8 +125,7 @@ final class AppOnboardingViewController: UIViewController {
     private let setupReplayOriginSnapshot: UIImage?
     private let carousel = CardCarouselViewController()
     private let intro: OnboardingIntroCardContentViewController
-    private let safariGuide = SetupGuideVideo(guide: .safariExtension)
-    private let actionGuide = SetupGuideVideo(guide: .actionButton)
+    private let actionGuide = SetupGuideVideo()
     private var safariReplica: SafariReplicaViewController?
     /// One mounted replica per lesson the app's Safari journey plays. A faceted
     /// app has exactly one; central Luna has its three siblings', which it
@@ -156,7 +168,6 @@ final class AppOnboardingViewController: UIViewController {
     private var isFinishing = false
     private var foregroundObserver: NSObjectProtocol?
     private var setupObserver: NSObjectProtocol?
-    private var safariCelebrationObserver: NSObjectProtocol?
     private var contentObservers: [NSObjectProtocol] = []
     private var knownContentIdentifiers: Set<UUID> = []
     private var savedCardPreviewImage: UIImage?
@@ -275,9 +286,6 @@ final class AppOnboardingViewController: UIViewController {
     deinit {
         if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
         if let setupObserver { NotificationCenter.default.removeObserver(setupObserver) }
-        if let safariCelebrationObserver {
-            NotificationCenter.default.removeObserver(safariCelebrationObserver)
-        }
         for observer in contentObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -399,13 +407,11 @@ final class AppOnboardingViewController: UIViewController {
     private func configureGuidesIfNeeded() {
         guard !didConfigureGuides else { return }
         didConfigureGuides = true
-        for guide in [safariGuide, actionGuide] {
-            let player = guide.playerView
-            player.frame = CGRect(x: 1, y: 1, width: 2, height: 2)
-            player.alpha = 0.01
-            view.insertSubview(player, at: 0)
-            guide.prepare()
-        }
+        let player = actionGuide.playerView
+        player.frame = CGRect(x: 1, y: 1, width: 2, height: 2)
+        player.alpha = 0.01
+        view.insertSubview(player, at: 0)
+        actionGuide.prepare()
     }
 
     private func configureLifecycleObservers() {
@@ -423,15 +429,6 @@ final class AppOnboardingViewController: UIViewController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.setupStatusChanged() }
-        }
-        safariCelebrationObserver = NotificationCenter.default.addObserver(
-            forName: LunaSetupStatusStore.safariCelebrationPresented,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            // The extension has already rendered its in-Safari confirmation.
-            // End only this guide — the action-button guide is unrelated.
-            Task { @MainActor in self?.safariGuide.stopPictureInPicture() }
         }
         LunaSetupStatusStore.startObservingCrossProcessChanges()
         contentObservers = completion.contentWatch.changeNotifications.map { name in
@@ -1291,6 +1288,9 @@ final class AppOnboardingViewController: UIViewController {
         }
     }
 
+    /// Opens the RUNNING app's own setup page (`site/README.md`'s canonical
+    /// slugs — the site is generated from the same `Localizable.strings` the
+    /// in-app popup reads, so the two never drift in wording).
     private func openSafariSetup() {
         guard externalReturn == .none else { return }
         pauseDemoPresentationPlayback()
@@ -1300,14 +1300,15 @@ final class AppOnboardingViewController: UIViewController {
         // in-page confirmation pairs this with its own first run, and both halves
         // have to be on disk before Safari is anywhere near the foreground.
         LunaSetupStatusStore.shared.recordSafariSetupTap(for: configuration.app)
-        safariGuide.startPictureInPicture()
-        // The practice page has to be a page Safari's own Reader never offers
-        // on: Reader availability collapses the address field's page menu into
-        // a Reader control and pushes the extension rows around, which is the
-        // exact menu the lesson just taught. An article-shaped site (Wikipedia
-        // was one) is therefore wrong. A plain homepage is not Reader-eligible,
-        // loads reliably, and being merely OPENED carries nothing to attribute.
-        guard let url = URL(string: "https://www.apple.com")
+        // The page IS the instructions now: the enabling steps that used to be
+        // narrated in-app live on the RUNNING app's own hosted setup page, so
+        // the hop lands the user on the very page that tells them what to tap
+        // next. `configuration.app` (not the sibling the cycle happens to be
+        // showing) matches `recordSafariSetupTap(for:)` above — in central Luna
+        // the cycle walks through sibling lessons, but the extension being
+        // enabled is always central Luna's own.
+        guard let url = URL(
+            string: "https://luna-site-bm6.pages.dev/setup/\(configuration.app.safariSetupPageSlug)")
         else {
             externalOpenFailed(.safari)
             return
@@ -1388,7 +1389,6 @@ final class AppOnboardingViewController: UIViewController {
     private func externalOpenFailed(_ expectedReturn: ExternalReturn) {
         guard externalReturn == expectedReturn else { return }
         externalReturn = .none
-        safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         switch expectedReturn {
         case .none:
@@ -1409,7 +1409,6 @@ final class AppOnboardingViewController: UIViewController {
         case .none:
             contentStoreDidChange()
         case .safari:
-            safariGuide.stopPictureInPicture()
             guard LunaSetupStatusStore.shared.safariRunApplies(
                 to: configuration.app)
             else {
@@ -1643,7 +1642,6 @@ final class AppOnboardingViewController: UIViewController {
         isFinishing = true
         endSaveDemonstration()
         pauseDemoPresentationPlayback()
-        safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         dismissSafariInstructions()
 
@@ -1671,7 +1669,6 @@ final class AppOnboardingViewController: UIViewController {
               let source = sourceController(for: activeDemoSource)
         else { return }
         pauseDemoPresentationPlayback()
-        safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         dismissSafariInstructions()
 
@@ -1725,7 +1722,6 @@ final class AppOnboardingViewController: UIViewController {
         isFinishing = true
         endSaveDemonstration()
         pauseDemoPresentationPlayback()
-        safariGuide.stopPictureInPicture()
         actionGuide.stopPictureInPicture()
         dismissSafariInstructions()
 

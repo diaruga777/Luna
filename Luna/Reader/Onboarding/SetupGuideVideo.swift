@@ -8,22 +8,15 @@ import AVKit
 import LunaModels
 import UIKit
 
-/// A muted setup guide that moves into Picture in Picture while the user is in
-/// Safari or Settings. The clips are the former onboarding guides, now owned by
-/// the util card or Settings rather than a standalone first-launch root.
+/// The Action Button setup guide: a muted clip that moves into Picture in
+/// Picture while the user is in Settings assigning the shortcut. It used to
+/// come in two flavors (this one, and a Safari-extension guide shown while the
+/// user was in Safari) — the Safari half was retired once the in-app Safari
+/// instructions moved to a hosted setup web page the popup links out to, and
+/// there was no longer anything left for a PiP guide to narrate there.
 @MainActor
 final class SetupGuideVideo: NSObject {
-    enum Guide {
-        case safariExtension
-        case actionButton
-
-        fileprivate var resourceName: String {
-            switch self {
-            case .safariExtension: return "SafariExtensionGuide"
-            case .actionButton: return "ActionButtonGuide"
-            }
-        }
-    }
+    private static let resourceName = "ActionButtonGuide"
 
     private final class PlayerLayerView: UIView {
         override static var layerClass: AnyClass { AVPlayerLayer.self }
@@ -32,7 +25,6 @@ final class SetupGuideVideo: NSObject {
 
     let playerView: UIView
 
-    private let guide: Guide
     private let layerView: PlayerLayerView
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
@@ -44,13 +36,12 @@ final class SetupGuideVideo: NSObject {
     private var didLoad = false
     private var didConfigureAudioSession = false
 
-    init(guide: Guide) {
-        self.guide = guide
+    override init() {
         layerView = PlayerLayerView()
         playerView = layerView
         super.init()
         layerView.playerLayer.videoGravity = .resizeAspectFill
-        observeActionButtonReturnIfNeeded()
+        observeReturnToForeground()
     }
 
     deinit {
@@ -98,7 +89,7 @@ final class SetupGuideVideo: NSObject {
         guard !didLoad else { return }
         didLoad = true
 
-        let base = guide.resourceName
+        let base = Self.resourceName
         let surface = base + guideSuffix
         let appearance = currentAppearanceSuffix
         let candidates = [surface + appearance, surface, base + appearance, base]
@@ -132,14 +123,12 @@ final class SetupGuideVideo: NSObject {
         controller.startPictureInPicture()
     }
 
-    /// Unlike the Safari lesson, the Action Button guide should never resume
-    /// just because its host is foregrounded again. Stop at both lifecycle
-    /// boundaries: `willEnterForeground` takes PiP down immediately, while
-    /// `didBecomeActive` covers a system that recreates its PiP state during
-    /// activation. A new Settings tap is the only route that calls `start...`
-    /// and opts back in.
-    private func observeActionButtonReturnIfNeeded() {
-        guard guide == .actionButton else { return }
+    /// The guide should never resume just because its host is foregrounded
+    /// again. Stop at both lifecycle boundaries: `willEnterForeground` takes
+    /// PiP down immediately, while `didBecomeActive` covers a system that
+    /// recreates its PiP state during activation. A new Settings tap is the
+    /// only route that calls `startPictureInPicture()` and opts back in.
+    private func observeReturnToForeground() {
         let center = NotificationCenter.default
         foregroundObserver = center.addObserver(
             forName: UIApplication.willEnterForegroundNotification,

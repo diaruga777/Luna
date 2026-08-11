@@ -82,7 +82,14 @@ PATH_RULES: list[tuple[str, object]] = [
                                                "ProductHistoryPillRenderTests",
                                                "PlatformHostsJSFixtureParityTests",
                                                "ProductPageJSFixtureParityTests",
-                                               "ProductSnapshotJSFixtureParityTests"]),
+                                               "ProductSnapshotJSFixtureParityTests",
+                                               "SafariAnnoyanceSuppressionTests",
+                                               "SafariAnnoyanceGateContractTests"]),
+    # The annoyance stylesheet is not decoration: it IS the pre-paint consent
+    # hide, and the cookie off switch works by making its one gating attribute
+    # stop matching — which the suppression suite asserts against this file.
+    (r"^LunaSafari/Resources/.*\.css$", ["SafariAnnoyanceSuppressionTests",
+                                         "SafariAnnoyanceGateContractTests"]),
     (r"^LunaLibraries/Sources/LunaPaywallBypass/Resources/", ["SiteUnlockTests"]),
     # The bundled seller directory: validated as SHIPPED, and it is the seller
     # universe the candidate ranking draws from.

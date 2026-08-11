@@ -21,8 +21,11 @@ actions (“Activate Safari” / “Skip” are in-app navigation, not instructi
 the SF Symbols in the step chips: SF Symbols may not be redistributed on the
 web, so the page-menu and puzzle-piece glyphs are hand-drawn SVG stand-ins.
 
-Unlike the app, the page shows EVERY prose chunk: the app takes the longest
-prefix its screen can hold, and a web page has the room for all of it.
+Unlike the app, the page has room to show every prose chunk the app's own
+suffix earns rather than truncating to fit a screen — see `Copy.chunks` for
+the one exception: a facet app (Reader/Downloader/PriceTracker) still stops
+short of the family-marketing chunk that only makes sense on the central
+app's own page.
 
 Usage: python3 scripts/build_site.py [--out site/dist]
 """
@@ -117,10 +120,27 @@ class Copy:
         return value
 
     def chunks(self, prefix: str) -> list[str]:
-        """A `ChunkedDefinition`: `<prefix>1`, `<prefix>2`, … until one is absent."""
+        """A `ChunkedDefinition`: `<prefix>1`, `<prefix>2`, … until one is absent.
+
+        The central Luna app (`_Core`) walks the whole chain, same as `L10n`
+        does in Swift. A FACET app (Reader/Downloader/PriceTracker) stops one
+        chunk earlier than that: it only keeps walking past a chunk that has
+        no override in ITS OWN suffix if that chunk is exactly chunk4 — the
+        universal privacy line (`_Luna`-only, and true of every app, so it's
+        the one inherited chunk a facet still prints). Chunk5 exists only as
+        `_Luna`/`_Core` family-marketing copy ("...whole family of Luna
+        apps...") that would otherwise leak onto a facet's own setup page
+        through the same fallback — wrong there, because the user is mid-task
+        on ONE app, not shopping the family. Central Luna keeps chunk5 (and
+        anything added after it) because that pitch is true for it.
+        """
         collected: list[str] = []
         index = 1
         while (chunk := self.optional(f"{prefix}{index}")) is not None:
+            if self.suffix != "Core":
+                has_own = f"{prefix}{index}_{self.suffix}" in self.table
+                if not has_own and index != 4:
+                    break
             collected.append(chunk)
             index += 1
         return collected

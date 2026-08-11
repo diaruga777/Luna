@@ -13,10 +13,17 @@ https://www.nasa.gov/nasa-brand-center/images-and-media/
 
 The bundled clip is a recut, not the source file. The source renders one frame
 per hour of 2026; this takes the run from 14 Dec 2026 04:00 UT (a 22%-lit waxing
-crescent) to the full moon of 24 Dec 2026 02:00 UT, every second hour, scaled to
-960x540 — then plays it backwards to its own first frame, so the loop has no
-seam and the moon waxes and wanes forever. December's is the year's closest full
-moon (apparent diameter 2009"), which is why that lunation and not another.
+crescent) to the full moon of 24 Dec 2026 02:00 UT, every second hour — then
+plays it backwards to its own first frame, so the loop has no seam and the moon
+waxes and wanes forever. December's is the year's closest full moon (apparent
+diameter 2009"), which is why that lunation and not another.
+
+The recut is PORTRAIT, 540x960 (9:16): the source's 1280x720 frame is cropped to
+the 720x720 square centred on the moon disc (the disc spans ~694px, centred at
+x≈638, so the crop starts at x=278), scaled to 540x540, and padded top and
+bottom with the black the sky already is. The lesson's mock post and the
+extension-panel replica both show a portrait video, so the clip carries the
+shape rather than being cropped at runtime.
 
 The clip is used for factual/educational demonstration. No NASA endorsement is
 stated or implied.
@@ -25,7 +32,10 @@ Reproduce with:
   curl -O https://svs.gsfc.nasa.gov/vis/a000000/a005500/a005587/phases_2026_plain_720p30.mp4
   ffmpeg -i phases_2026_plain_720p30.mp4 \
     -vf "select='between(n\,8332\,8570)*not(mod(n-8332\,2))'" -vsync 0 frames/f%04d.png
-  # concat frames forward, then reversed without its duplicated endpoints, at 30fps
-  ffmpeg -f concat -safe 0 -i list.txt -vf scale=960:540:flags=lanczos -r 30 \
+  # list.txt: frames forward, then reversed without the duplicated endpoints,
+  # each with an explicit "duration 0.0333333" line (the concat demuxer
+  # otherwise collapses same-timestamp images).
+  ffmpeg -f concat -safe 0 -i list.txt \
+    -vf "crop=720:720:278:0,scale=540:540:flags=lanczos,pad=540:960:0:210,fps=30" \
     -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 26 -preset veryslow \
     -tune film -movflags +faststart -an LunaMoonPhases.mp4

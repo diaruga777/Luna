@@ -139,6 +139,55 @@ final class LunaDeepLinkTests: XCTestCase {
         XCTAssertNil(LunaDeepLink.mediaViewURLString(from: url))
     }
 
+    // MARK: - Media SHARE link (the finished activity's Share button)
+
+    /// The share link is the view link plus a flag: both the wrapped source URL
+    /// and the share request come back out of it, so the deck still centers on
+    /// the item while the app also raises the share sheet.
+    func testMediaShareLinkRoundTrips() throws {
+        let link = try XCTUnwrap(LunaDeepLink.mediaShareLink(
+            scheme: LunaDeepLink.downloaderScheme,
+            sourceURLString: "https://example.com/clip?id=7&t=3"))
+        XCTAssertEqual(link.host, "media")
+        XCTAssertEqual(
+            LunaDeepLink.mediaViewURLString(from: link), "https://example.com/clip?id=7&t=3")
+        XCTAssertTrue(LunaDeepLink.mediaShareRequested(from: link))
+    }
+
+    func testMediaShareRequestedDistinguishesShareFromPlainView() throws {
+        let viewLink = try XCTUnwrap(LunaDeepLink.mediaViewLink(
+            scheme: LunaDeepLink.downloaderScheme, sourceURLString: "https://example.com/video"))
+        XCTAssertFalse(LunaDeepLink.mediaShareRequested(from: viewLink))
+    }
+
+    func testMediaShareRequestedToleratesExtraAndReorderedQueryItems() {
+        let cases: [(url: String, isShare: Bool)] = [
+            ("lunadownloader://media?share=1&url=https://example.com/video", true),
+            ("luna://media?url=https://example.com/video&ret=safari&share=1", true),
+            // Only the flag's own value counts — a stray `share` means nothing else.
+            ("luna://media?url=https://example.com/video&share=0", false),
+            ("luna://media?url=https://example.com/video&share=yes", false),
+            // Foreign schemes and other hosts never carry the share route.
+            ("https://example.com/media?url=x&share=1", false),
+            ("lunadownloader://read?url=https://example.com&share=1", false),
+        ]
+        for testCase in cases {
+            guard let url = URL(string: testCase.url) else {
+                XCTFail("unparseable test URL \(testCase.url)")
+                continue
+            }
+            XCTAssertEqual(
+                LunaDeepLink.mediaShareRequested(from: url), testCase.isShare, testCase.url)
+        }
+    }
+
+    /// The share link still resolves its source URL when other params sit
+    /// between the two — the whole point of reading bare query items.
+    func testMediaViewURLStringSurvivesTheShareFlag() {
+        let url = URL(string: "luna://media?share=1&url=https://example.com/a%20b")!
+        XCTAssertEqual(LunaDeepLink.mediaViewURLString(from: url), "https://example.com/a b")
+    }
+
     func testPriceTrackerAddSellerLinkRoundTripsTheItemID() throws {
         let id = UUID(uuidString: "78A9292B-5E2C-4CF4-8F5B-B9BE7C13C90E")!
         let link = try XCTUnwrap(LunaDeepLink.priceTrackerAddSellerLink(

@@ -1088,6 +1088,12 @@
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";
 "LiveActivity_downloader_cancelButtonAccessibilityLabel_Luna" = "Cancel download";
 "LiveActivity_downloader_resumeButtonAccessibilityLabel_Luna" = "Resume download";
+/* The finished card, live for five seconds before the activity ends. */
+"LiveActivity_downloader_finishedAccessibilityLabel_Luna" = "Download complete";
+"LiveActivity_downloader_playButtonLabel_Luna" = "Play";
+"LiveActivity_downloader_playButtonAccessibilityLabel_Luna" = "Play the download";
+"LiveActivity_downloader_shareButtonLabel_Luna" = "Share";
+"LiveActivity_downloader_shareButtonAccessibilityLabel_Luna" = "Share the download";
 
 /* ===== Intents_cancelLiveDownload / Intents_resumeLiveDownload — App Intents metadata baked
    as concrete already-suffixed literals directly in LunaDownloaderLiveActivityWidget.swift

@@ -112,43 +112,35 @@ final class WeeklyCyclePacer {
 
 /// The central util card's setup labels advance *with* the weekly row. Only
 /// the labels move; the glass buttons, icons, frames and hit targets stay fixed.
+///
+/// It keeps NO counter of its own. Which app's phrasing is due is asked of the
+/// row — `show(_:)` takes the app owning the kind the row is arriving at — so
+/// the two can never drift apart. They did: the cycler counted from its own
+/// zero while the row advanced to the slot AFTER the one the tick found, so the
+/// Price Tracker's phrasing sat under the Reader's pick.
 @MainActor
 final class UtilCardSetupTextCycler {
     static let animationDuration: TimeInterval = 0.55
 
     private weak var safariButton: UIButton?
     private weak var shortcutButton: UIButton?
-    private let safariTitles: [String]
-    private let shortcutTitles: [String]
     private let baseSafariTitle: String
     private let baseShortcutTitle: String
-    private var index = -1
 
-    init(
-        safariButton: UIButton,
-        shortcutButton: UIButton,
-        apps: [LunaApp]
-    ) {
+    init(safariButton: UIButton, shortcutButton: UIButton) {
         self.safariButton = safariButton
         self.shortcutButton = shortcutButton
         baseSafariTitle = safariButton.configuration?.title ?? ""
         baseShortcutTitle = shortcutButton.configuration?.title ?? ""
-        safariTitles = apps.map { OnboardingStrings.Intro.safariAction.value(for: $0) }
-        shortcutTitles = apps.map { OnboardingStrings.Intro.shortcutAction.value(for: $0) }
         safariButton.clipsToBounds = true
         shortcutButton.clipsToBounds = true
     }
 
-    func advance() {
-        let count = max(safariTitles.count, shortcutTitles.count)
-        guard count > 0 else { return }
-        index = (index + 1) % count
-        if let title = safariTitles[safe: index] {
-            animate(safariButton, to: title)
-        }
-        if let title = shortcutTitles[safe: index] {
-            animate(shortcutButton, to: title)
-        }
+    /// Puts `app`'s own phrasing on both labels — the app whose kind the weekly
+    /// row is showing, so the pair reads as one recommendation.
+    func show(_ app: LunaApp) {
+        animate(safariButton, to: OnboardingStrings.Intro.safariAction.value(for: app))
+        animate(shortcutButton, to: OnboardingStrings.Intro.shortcutAction.value(for: app))
     }
 
     private func animate(_ button: UIButton?, to title: String) {
@@ -182,7 +174,6 @@ final class UtilCardSetupTextCycler {
     }
 
     func reset() {
-        index = -1
         safariButton?.titleLabel?.layer.removeAllAnimations()
         shortcutButton?.titleLabel?.layer.removeAllAnimations()
         UIView.performWithoutAnimation {
@@ -204,11 +195,5 @@ final class UtilCardSetupTextCycler {
         attributes.font = .systemFont(ofSize: 13, weight: .semibold)
         configuration?.attributedTitle = AttributedString(title, attributes: attributes)
         button.configuration = configuration
-    }
-}
-
-private extension Collection {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }

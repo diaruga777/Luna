@@ -141,12 +141,41 @@ public enum LunaDeepLink {
         return components.url
     }
 
+    /// `<scheme>://media?url=…&share=1` — the FINISHED download activity's
+    /// Share button. Deliberately the same `media` route as `mediaViewLink`
+    /// (so `mediaViewURLString(from:)` still recovers the source URL and the
+    /// deck still centers on the item); the flag is the one extra thing it
+    /// asks for — the system share sheet over the downloaded file.
+    public static func mediaShareLink(scheme: String = ownScheme, sourceURLString: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "media"
+        components.queryItems = [
+            URLQueryItem(name: "url", value: sourceURLString),
+            URLQueryItem(name: "share", value: "1"),
+        ]
+        return components.url
+    }
+
     /// The wrapped source URL string from a `<any Luna scheme>://media?url=…`
-    /// link, or nil if `url` isn't one.
+    /// link, or nil if `url` isn't one. Also answers a `&share=1` link — the
+    /// share route is the view route plus a flag.
     public static func mediaViewURLString(from url: URL) -> String? {
         guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "media" else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "url" })?.value
+    }
+
+    /// True for a `<any Luna scheme>://media?url=…&share=1` link — the finished
+    /// activity's Share tap, as opposed to a plain tap-to-view. Reads a bare
+    /// `share` query item rather than a fixed position, so extra or reordered
+    /// params still parse, the same tolerance `mediaViewURLString(from:)` and
+    /// `requestsReturnToSource(_:)` already give theirs.
+    public static func mediaShareRequested(from url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "media"
+        else { return false }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "share" })?.value == "1"
     }
 
     /// Opens a tracked product's card and immediately starts its in-app seller

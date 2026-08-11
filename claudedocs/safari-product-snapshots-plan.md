@@ -463,3 +463,10 @@ against every keyed value.
   15 minutes; that instruction was revoked. Tap-to-view rides the alert `endActivity`
   already sends on the final `.finished`/`.failed` update instead. See
   `claudedocs/media-download.md`.
+  **SUPERSEDED (2026-08-11).** That window turned out to be beside the point: a
+  dismissal policy only governs the Lock Screen's after-end banner, so ending the
+  activity right after the `.finished` update dismissed the LIVE presentation
+  instantly and the completed state was never seen at all. The finished card now
+  gets a real five-second live hold (`finishedLiveHold`) before an `.immediate`
+  end, and carries Play/Share links. `claudedocs/media-download.md` is the
+  description; the 20s default survives only on the FAILURE paths.

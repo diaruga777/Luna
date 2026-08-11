@@ -769,20 +769,11 @@ extension ArticleCardsViewController: ArticleDeckChromeHosting {
 
     var readerCardTopContentInset: CGFloat { Self.contentEdgeFade }
 
-    /// Brings the card for `id` to the centre, false when it has none here.
-    /// Picks up a just-saved item through the same `pendingTransitionCenteredID`
-    /// seam the archive-tray transition uses; but `reload()` early-returns on an
-    /// unchanged fingerprint — the common case, since the save that preceded
-    /// this open already reloaded us — so the target is re-checked and centred
-    /// directly afterwards.
+    /// Brings the card for `id` to the centre, false when it has none here —
+    /// the article chrome's name for the deck host's own `centerCard(onItemID:)`,
+    /// which every deck (and the Live Activity's share route) shares.
     func centerCard(forItemID id: UUID) -> Bool {
-        pendingTransitionCenteredID = id
-        reload()
-        pendingTransitionCenteredID = nil
-        guard let index = slots.firstIndex(where: { $0.id == id }) else { return false }
-        let target = carouselIndex(forSlot: index)
-        if carousel.currentIndex != target { carousel.reloadData(centeringAt: target) }
-        return true
+        centerCard(onItemID: id)
     }
 
     /// Same archive.today CAPTCHA flow as the old list root: on successful

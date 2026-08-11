@@ -4,6 +4,7 @@
 //
 
 import AVFoundation
+import LunaDesignSystem
 import LunaMediaDownload
 import LunaModels
 import UIKit
@@ -93,10 +94,10 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
 
     func testTheDownloadBeatIsLongEnoughToBeADownload() {
         XCTAssertGreaterThanOrEqual(
-            ShareSetupPracticeDownloadViewController.downloadDuration, 1,
+            PracticeDownloadRamp.duration, 1,
             "a bar that fills in a frame reads as a screen changing its mind")
         XCTAssertLessThanOrEqual(
-            ShareSetupPracticeDownloadViewController.downloadDuration, 2.5,
+            PracticeDownloadRamp.duration, 2.5,
             "the lesson loops; nobody should wait through this twice")
     }
 
@@ -134,19 +135,75 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
     /// "Saved to Luna" badge with no video in it anywhere.
     func testThePracticeClipPlaysInThePreviewSquare() throws {
         HostedShareSession.current = nil
+        let controller = try Self.practiceMediaScreen()
+
+        let layer = try XCTUnwrap(
+            Self.playerLayers(in: controller.view).first,
+            "the rehearsal has no player on screen at all")
+        try Self.waitUntil("the rehearsal's clip never loaded") {
+            layer.player != nil
+        }
+        XCTAssertGreaterThan(layer.bounds.width, 100)
+        XCTAssertGreaterThan(layer.bounds.height, 100)
+    }
+
+    /// The rehearsal has its file in hand before the screen exists, so there is
+    /// no transfer to report — and the bar therefore sat at zero for the whole
+    /// indication and then the finished screen replaced it. The one thing the
+    /// Downloader's lesson exists to show, that a download happened, was the one
+    /// thing it never drew.
+    func testTheRehearsalsProgressBarFillsBeforeTheClipArrives() throws {
+        HostedShareSession.current = nil
+        let controller = try Self.practiceMediaScreen()
+        let bar = try XCTUnwrap(
+            Self.progressBars(in: controller.view).first,
+            "the rehearsal has no download bar at all")
+        let layer = try XCTUnwrap(Self.playerLayers(in: controller.view).first)
+
+        XCTAssertFalse(bar.isHidden, "the download indication is not on screen")
+        XCTAssertNil(
+            layer.player,
+            "the clip arrived before the bar had anything to fill")
+        XCTAssertGreaterThan(
+            bar.progress, 0,
+            "the bar is frozen at zero — a download nobody is driving")
+        XCTAssertLessThan(
+            bar.progress, 1, "the bar finished before the beat began")
+
+        try Self.waitUntil("the rehearsal never resolved its clip") {
+            layer.player != nil
+        }
+        XCTAssertEqual(
+            bar.progress, 1, accuracy: 0.001,
+            "the result arrived over an unfinished bar")
+    }
+
+    private static func practiceMediaScreen() throws -> SavedNonTextualViewController {
         let controller = SavedNonTextualViewController(
             articleURLString: ShareSetupPractice.instaTokURLString,
             practiceVideoURL: try XCTUnwrap(ShareSetupPractice.bundledVideoURL),
             onDone: {})
         controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 760)
         controller.view.layoutIfNeeded()
+        return controller
+    }
 
-        let layer = try XCTUnwrap(
-            Self.playerLayers(in: controller.view).first,
-            "the rehearsal has no player on screen at all")
-        XCTAssertNotNil(layer.player, "a player layer with nothing loaded in it")
-        XCTAssertGreaterThan(layer.bounds.width, 100)
-        XCTAssertGreaterThan(layer.bounds.height, 100)
+    /// Polls rather than pumping a fixed duration: the beat is a chain of main-queue
+    /// steps, and a fixed wait is not a wait.
+    private static func waitUntil(
+        _ message: String, timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(condition(), message)
+    }
+
+    private static func progressBars(in view: UIView) -> [MoonHorizonProgressBar] {
+        let own = (view as? MoonHorizonProgressBar).map { [$0] } ?? []
+        return own + view.subviews.flatMap { progressBars(in: $0) }
     }
 
     /// The gate itself is untouched for everything that is not a rehearsal: a

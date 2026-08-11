@@ -17,13 +17,10 @@ enum OnboardingVideoDownloadTiming {
     /// you, and a beat that only registers as a flash states no premise at all.
     static let pageHoldDuration: TimeInterval = 3.2
     static let presentDuration: TimeInterval = 0.45
-    /// The video plays, plainly, before the panel changes underneath it. It has
-    /// to read as *the post's video, playing* — the scrubber moving, the moon
-    /// visibly further along than it was — which is seconds, not one.
+    /// The video plays, plainly, before the panel reports its setup offer. It
+    /// has to read as *the post's video, playing* — the scrubber moving, the
+    /// moon visibly further along than it was — which is seconds, not one.
     static let playbackHoldDuration: TimeInterval = 4.0
-    /// The download button leaving and the setup block arriving, while the
-    /// panel's bottom edge travels down to meet it.
-    static let growDuration: TimeInterval = 0.72
 }
 
 /// A native replica of the panel the Safari extension puts over a video post —
@@ -33,32 +30,37 @@ enum OnboardingVideoDownloadTiming {
 /// Every measurement is that function's own, read straight across from its
 /// inline styles: a 78%-black blurred backdrop, a `calc(100vw - 24px)` panel
 /// capped at 640 in `NIGHT_SURFACE` with a 20pt radius and 10pt padding, a 34pt
-/// round close button over an 8pt gap, a 16:9 black stage at radius 12, and the
+/// round close button over an 8pt gap, a black stage at radius 12, and the
 /// indigo full-width "Download in Luna" capsule 10pt under it. Nothing here is
 /// a stylisation of that panel; a change to either one is a change to both.
+/// **One deliberate deviation**: the stage is the bundled clip's own portrait
+/// (9:16) aspect rather than `content.js`'s landscape 16:9 — see `stageAspect`
+/// below — since the extension's real panel plays whatever aspect a post's own
+/// video is, and this lesson's bundled clip is a portrait one.
 ///
-/// What it does that the real one cannot: once the video has played, the
-/// download button is REPLACED by the three steps that switch the extension on
-/// plus the lesson's own actions, and the panel's bottom edge travels down to
-/// fit them. The panel is the whole lesson, so the page underneath needs no
-/// explainer of its own — which is why the Downloader's Safari demonstration
-/// opens on InstaTok rather than on `luna.app` (`OnboardingSafariLesson`). It is
-/// the media sibling of `OnboardingPriceComparisonOverlayView`, and keeps that
-/// lesson's shape: `begin` / `reset` / `reactivateActions`, mounted with the
-/// browser and generation-guarded so a rewind cancels its pending beats.
+/// The panel STAYS in this one player state for the whole lesson now — it used
+/// to grow a chin of enable steps once the clip had played; that copy moved to
+/// the hosted setup web page, and the panel's own job shrank to just playing
+/// the clip and reporting `onDidReachSetupOffer` once it plainly has. The page
+/// underneath needs no explainer of its own either way — which is why the
+/// Downloader's Safari demonstration opens on InstaTok rather than on
+/// `luna.app` (`OnboardingSafariLesson`). It is the media sibling of
+/// `OnboardingPriceComparisonOverlayView`, and keeps that lesson's shape:
+/// `begin` / `reset`, mounted with the browser and generation-guarded so a
+/// rewind cancels its pending beats.
 ///
-/// Only the two action buttons are live. Everything else — the close button, the
-/// download button, the player's own controls — is a picture of a control, inert
-/// by construction (no target, no gesture recognizer), because a demonstration
-/// that answers a tap is a demonstration that can be taken somewhere it cannot
-/// go.
+/// Nothing in the panel answers a tap any more — not even an activate/skip
+/// pair, since those now live on the shared, window-hosted setup popup rather
+/// than inside this view. The close button, the download button, the player's
+/// own controls remain pictures of controls, inert by construction (no
+/// target, no gesture recognizer), because a demonstration that answers a tap
+/// is a demonstration that can be taken somewhere it cannot go.
 @MainActor
 final class OnboardingVideoDownloadOverlayView: UIView {
-    var onActivateSafari: (() -> Void)?
-    var onSkipSafariSetup: (() -> Void)?
-    /// The lesson has said everything it has to say: the panel is showing the
-    /// enable steps and its two actions. Central Luna, which plays this lesson
-    /// as one of three, uses it to hand over to the next sibling.
+    /// The lesson has said everything it has to say: the panel has arrived and
+    /// the clip is plainly playing. Central Luna, which plays this lesson as
+    /// one of three, uses it to hand over to the next sibling; a faceted app
+    /// uses it to raise the shared setup popup directly.
     var onDidReachSetupOffer: (() -> Void)?
 
     private enum Metrics {
@@ -74,12 +76,6 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         /// `margin: "10px 0 0 0"`, `minHeight: "44px"`.
         static let downloadTopGap: CGFloat = 10
         static let downloadHeight: CGFloat = 44
-        /// The setup block's own rhythm, which the web panel has no equivalent
-        /// of: air under the stage, the heading, the steps, then the actions.
-        static let setupTopGap: CGFloat = 16
-        static let setupHeadingHeight: CGFloat = 18
-        static let setupHeadingGap: CGFloat = 10
-        static let setupActionsGap: CGFloat = 14
     }
 
     /// Not to be confused with the `stage` view below — that name is
@@ -88,9 +84,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         /// Mounted, invisible: the blocked post is being read.
         case idle
         /// The panel is up and the clip is playing under the download button.
+        /// The panel never leaves this state again — the lesson's ending is
+        /// the shared popup arriving above it, not a change to the panel.
         case player
-        /// The download button has given way to the enable steps.
-        case setup
     }
 
     private final class PlayerLayerView: UIView {
@@ -138,33 +134,28 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     private let playerView = PlayerLayerView()
     private let controls = OnboardingVideoDownloadControlsView()
     private let download = UILabel()
-    private let setupContainer = UIView()
-    private let setupHeading = UILabel()
-    private let stepRows: [OnboardingSafariEnableStepRowView]
-    private let actionsView = OnboardingSafariActionsView()
     private var panelCorona: EclipseCoronaView?
-    private var actionsCorona: EclipseCoronaView?
 
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
     private var timeObserver: Any?
     private var lessonStage = LessonStage.idle
+    /// One report per run: the panel arriving and playing lands once, and a
+    /// rewind (`reset`) arms the next run.
+    private var didReportSetupOffer = false
     /// Cancels every pending beat of a run that has been rewound.
     private var generation = 0
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
-        stepRows = OnboardingStrings.Safari
-            .steps(appName: configuration.demonstrationApp.displayName)
-            .map(OnboardingSafariEnableStepRowView.init(step:))
         super.init(frame: .zero)
         accessibilityIdentifier =
             OnboardingStrings.Accessibility.safariVideoOverlay.value()
-        // Mounted with the browser, so the panel's first layout — three step
-        // rows, two buttons and a stage — is paid while the replica is still
-        // hidden behind the intro card. Nothing in it SHOWS until the post has
-        // had its beat, and each piece hides itself rather than the whole view
-        // fading: a panel arriving at partial opacity reads as a page element
-        // rendering rather than as something Luna put there.
+        // Mounted with the browser, so the panel's first layout is paid while
+        // the replica is still hidden behind the intro card. Nothing in it
+        // SHOWS until the post has had its beat, and each piece hides itself
+        // rather than the whole view fading: a panel arriving at partial
+        // opacity reads as a page element rendering rather than as something
+        // Luna put there.
         hidePanel()
 
         blur.isUserInteractionEnabled = false
@@ -224,33 +215,10 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         download.isAccessibilityElement = false
         panel.addSubview(download)
 
-        setupContainer.alpha = 0
-        setupContainer.isHidden = true
-        panel.addSubview(setupContainer)
-
-        setupHeading.text = OnboardingStrings.Safari.stepsHeading.value()
-        setupHeading.font = .systemFont(ofSize: 13, weight: .semibold)
-        setupHeading.textColor = OnboardingSafariPagePalette.quietCopy
-        setupHeading.accessibilityIdentifier =
-            OnboardingStrings.Accessibility.safariStepsHeading.value()
-        setupContainer.addSubview(setupHeading)
-        for (index, row) in stepRows.enumerated() {
-            row.accessibilityIdentifier =
-                OnboardingStrings.Accessibility.safariStep(index)
-            setupContainer.addSubview(row)
-        }
-        actionsView.onActivate = { [weak self] in
-            self?.endActionsPulse()
-            self?.onActivateSafari?()
-        }
-        actionsView.onSkip = { [weak self] in
-            self?.endActionsPulse()
-            self?.onSkipSafariSetup?()
-        }
-        setupContainer.addSubview(actionsView)
-
-        // Everything but the two real buttons is scenery. The panel itself
-        // still takes touches so nothing behind it can be reached either.
+        // Nothing in the panel answers a tap: the ask that used to live here
+        // now lives on the shared, window-hosted setup popup. The panel
+        // itself still takes touches so nothing behind it can be reached
+        // either.
         for scenery in [blur, scrim, close, stage, download] as [UIView] {
             scenery.isUserInteractionEnabled = false
         }
@@ -287,38 +255,31 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         let contentWidth = panelWidth - Metrics.panelPadding * 2
         let available = page.height - Metrics.backdropPadding * 2
 
-        // The stage is 16:9 until the panel it has to fit inside runs out of
-        // room — on the shortest phone the setup block plus a full-height stage
-        // is taller than the page, and letterboxing the clip is the one give
-        // here that costs the lesson nothing.
-        let idealStageHeight = (contentWidth * 9 / 16).rounded()
+        // The stage is the bundled clip's own portrait aspect until the panel
+        // it has to fit inside runs out of room — on the shortest phone a
+        // full-height portrait stage is taller than the page, and
+        // letterboxing the clip is the one give here that costs the lesson
+        // nothing. `stageAspect` is a constant rather than measured off the
+        // player's `AVPlayerItem` because that would make the panel's own
+        // layout depend on an asynchronous asset load; a mismatch just
+        // letterboxes a little more or less inside the same box.
+        let idealStageHeight = (contentWidth * Self.stageAspect).rounded()
         let stageHeight = max(
-            min(
-                idealStageHeight,
-                available - (fixedPanelHeight(stage: 0)
-                    + setupBlockHeight(width: contentWidth))),
+            min(idealStageHeight, available - fixedPanelHeight(stage: 0)),
             idealStageHeight * 0.6)
 
         // The download button gets the panel's own 10pt padding under it, as it
         // does in `content.js` (`padding: "10px"` all round). Without it the
         // capsule ended flush with the panel's bottom edge and its corners were
         // cut by the panel's 20pt radius — the panel read as clipped.
-        let playerHeight = fixedPanelHeight(stage: stageHeight)
+        let panelHeight = fixedPanelHeight(stage: stageHeight)
             + Metrics.downloadTopGap + Metrics.downloadHeight
             + Metrics.panelPadding
-        let setupHeight = fixedPanelHeight(stage: stageHeight)
-            + setupBlockHeight(width: contentWidth)
-        let panelHeight = lessonStage == .setup ? setupHeight : playerHeight
 
-        // The panel's top is the PLAYER state's top in both states, so the
-        // growth is a bottom edge travelling down and the video stays exactly
-        // where the user was watching it. It rises only when the taller panel
-        // would otherwise leave the page.
-        let restingTop = ((page.height - playerHeight) / 2).rounded()
         let top = max(
             Metrics.backdropPadding,
             min(
-                restingTop,
+                ((page.height - panelHeight) / 2).rounded(),
                 page.height - Metrics.backdropPadding - panelHeight))
 
         panel.bounds = CGRect(
@@ -342,30 +303,6 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             y: stage.frame.maxY + Metrics.downloadTopGap,
             width: contentWidth,
             height: Metrics.downloadHeight)
-
-        setupContainer.frame = CGRect(
-            x: left,
-            y: stage.frame.maxY + Metrics.setupTopGap,
-            width: contentWidth,
-            height: setupBlockHeight(width: contentWidth) - Metrics.setupTopGap
-                - Metrics.panelPadding)
-        setupHeading.frame = CGRect(
-            x: 0, y: 0,
-            width: contentWidth, height: Metrics.setupHeadingHeight)
-        var rowY = setupHeading.frame.maxY + Metrics.setupHeadingGap
-        for row in stepRows {
-            row.frame = CGRect(
-                x: 0, y: rowY,
-                width: contentWidth,
-                height: OnboardingSafariEnableStepRowView.preferredHeight)
-            rowY = row.frame.maxY
-        }
-        actionsView.frame = CGRect(
-            x: 0,
-            y: rowY + Metrics.setupActionsGap,
-            width: contentWidth,
-            height: OnboardingSafariActionsView.preferredHeight)
-        layOutActionsCorona()
     }
 
     /// Everything the panel carries whatever state it is in.
@@ -374,26 +311,16 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             + stage
     }
 
-    /// The setup block measured from the stage's bottom edge to the panel's.
-    private func setupBlockHeight(width: CGFloat) -> CGFloat {
-        Metrics.setupTopGap + Metrics.setupHeadingHeight
-            + Metrics.setupHeadingGap
-            + CGFloat(stepRows.count)
-                * OnboardingSafariEnableStepRowView.preferredHeight
-            + Metrics.setupActionsGap
-            + OnboardingSafariActionsView.preferredHeight
-            + Metrics.panelPadding
-    }
+    /// Height ÷ width for the stage box. The extension's own panel
+    /// (`content.js`) plays a post's video at whatever aspect that post's
+    /// video is — usually landscape 16:9 — but this lesson's bundled clip
+    /// (`LunaMoonPhases.mp4`) is a portrait one, so the box it plays in is
+    /// portrait too: 16 (height) ÷ 9 (width), i.e. a 9:16 box.
+    private static let stageAspect: CGFloat = 16.0 / 9.0
 
     /// The corona is built ONCE, for the panel it is first laid out in, and
     /// then rides the panel's own bounds — it is a child of the panel, under
-    /// the surface it wraps. Its raster stretches over the growth rather than
-    /// being replaced: a replacement can only be rasterised for the panel's
-    /// FINAL size, which is a glow the wrong size for every frame of the
-    /// travel, and a glow given its frame from out here jumps to that final
-    /// geometry on any layout pass the animation happens to cross. A soft halo
-    /// stretched by the chin's own travel reads as the same light; a halo
-    /// standing where the panel is going does not.
+    /// the surface it wraps.
     private func layOutPanelCorona() {
         guard panel.bounds.width > 0, panel.bounds.height > 0 else { return }
         if panelCorona == nil {
@@ -410,27 +337,10 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         panelBody.frame = panel.bounds
     }
 
-    private func layOutActionsCorona() {
-        let button = actionsView.activateButton
-        let frame = setupContainer.convert(button.bounds, from: button)
-        guard frame.width > 0, frame.height > 0 else { return }
-        if actionsCorona?.bounds.size != frame.size {
-            actionsCorona?.removeFromSuperview()
-            let corona = EclipseCoronaView(
-                bodySize: frame.size,
-                cornerRadius: frame.height / 2,
-                tint: LunaSurfacePalette.atmosphereTint)
-            corona.alpha = lessonStage == .setup ? 1 : 0
-            setupContainer.insertSubview(corona, belowSubview: actionsView)
-            actionsCorona = corona
-        }
-        actionsCorona?.frame = frame
-    }
-
     // MARK: - The sequence
 
-    /// The whole lesson, on its own clock: the post is left alone, the panel
-    /// arrives playing, and the setup block takes the download button's place.
+    /// The whole lesson, on its own clock: the post is left alone, then the
+    /// panel arrives playing and stays that way for the rest of the lesson.
     func begin(immediately: Bool = false) {
         guard lessonStage == .idle else { return }
         generation += 1
@@ -448,21 +358,19 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     }
 
     /// Rewinds to the blocked post, so a second entry plays the whole sequence
-    /// rather than landing on its finished last frame.
+    /// rather than landing on its finished last frame. Also what the host's
+    /// forever-loop uses to replay this lesson under the shared popup once
+    /// the freeze ends.
     func reset() {
         generation += 1
         lessonStage = .idle
+        didReportSetupOffer = false
         stopPlayback()
         hidePanel()
         panel.transform = .identity
         controls.alpha = 0
         panelCorona?.alpha = 0
-        actionsCorona?.alpha = 0
         download.alpha = 1
-        setupContainer.alpha = 0
-        setupContainer.isHidden = true
-        setupContainer.transform = .identity
-        actionsView.setActionsEnabled(false)
         setNeedsLayout()
     }
 
@@ -509,86 +417,18 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         // finishing its arrival: what it is holding for is a video the user has
         // plainly watched play.
         after(OnboardingVideoDownloadTiming.playbackHoldDuration) { view in
-            view.revealSetupInstructions()
+            view.reportSetupOffer()
         }
     }
 
-    /// The download button goes and the three steps take its place, the panel's
-    /// bottom edge travelling down to fit them.
-    func revealSetupInstructions() {
-        guard lessonStage == .player else { return }
-        lessonStage = .setup
-        setupContainer.isHidden = false
-        actionsView.setActionsEnabled(true)
+    /// The panel has arrived and the clip has plainly played: the setup ask
+    /// fires, and the shared popup takes it from here. One report per run —
+    /// a second call (a stale timer racing a rewind, or a test driving this
+    /// directly) is the same run's already-made offer, not a new one.
+    func reportSetupOffer() {
+        guard lessonStage == .player, !didReportSetupOffer else { return }
+        didReportSetupOffer = true
         onDidReachSetupOffer?()
-
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        let duration = reduceMotion
-            ? 0.24
-            : OnboardingVideoDownloadTiming.growDuration
-        setupContainer.transform = reduceMotion
-            ? .identity
-            : CGAffineTransform(translationX: 0, y: -12)
-
-        UIView.animate(
-            withDuration: duration * 0.4,
-            delay: 0,
-            options: [.curveEaseIn, .beginFromCurrentState]
-        ) {
-            self.download.alpha = 0
-        }
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            usingSpringWithDamping: reduceMotion ? 1 : 0.92,
-            initialSpringVelocity: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState]
-        ) {
-            self.setNeedsLayout()
-            self.layoutIfNeeded()
-        }
-        UIView.animate(
-            withDuration: duration * 0.66,
-            delay: duration * 0.34,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            self.setupContainer.alpha = 1
-            self.setupContainer.transform = .identity
-            self.actionsCorona?.alpha = 1
-        } completion: { [weak self] _ in
-            self?.beginActionsPulse()
-        }
-    }
-
-    /// The return leg from real Safari with nothing to show for it: the panel's
-    /// actions come back.
-    func reactivateActions() {
-        guard lessonStage == .setup else { return }
-        actionsView.setActionsEnabled(true)
-        beginActionsPulse()
-    }
-
-    private func beginActionsPulse() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-        actionsView.activateButton.layer.add(
-            OnboardingAttentionPulse.scale(),
-            forKey: "onboarding.video.actions.pulse")
-        actionsCorona?.layer.add(
-            OnboardingAttentionPulse.scale(),
-            forKey: "onboarding.video.actions.corona.scale")
-        actionsCorona?.layer.add(
-            OnboardingAttentionPulse.glow(
-                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
-            forKey: "onboarding.video.actions.corona.glow")
-    }
-
-    private func endActionsPulse() {
-        actionsView.activateButton.layer.removeAnimation(
-            forKey: "onboarding.video.actions.pulse")
-        actionsCorona?.layer.removeAnimation(
-            forKey: "onboarding.video.actions.corona.scale")
-        actionsCorona?.layer.removeAnimation(
-            forKey: "onboarding.video.actions.corona.glow")
     }
 
     /// Held while the lesson is off screen. The panel keeps its last frame, so
@@ -674,7 +514,6 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         layoutIfNeeded()
     }
 
-    var isShowingSetupInstructionsForTesting: Bool { lessonStage == .setup }
     var panelFrameForTesting: CGRect { panel.frame }
     /// In the overlay's own space, so the two states are directly comparable.
     var stageFrameForTesting: CGRect { convert(stage.bounds, from: stage) }
@@ -689,7 +528,6 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     /// asserting that the blocked post is still on screen behind the answer.
     var backdropDarknessForTesting: CGFloat { scrim.alpha * Self.scrimAlpha }
     var backdropBlurWeightForTesting: CGFloat { blur.alpha }
-    var activateButtonForTesting: UIButton { actionsView.activateButton }
     #endif
 }
 

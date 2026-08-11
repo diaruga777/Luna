@@ -76,6 +76,11 @@ final class SafariReplicaViewController:
     /// again: the bar has slid away and the page has taken back its strip.
     private var isBrowserBarVisible = true
     private var instructionOverlay: DemoInstructionOverlay?
+    /// The ONE popup every lesson's own setup offer ends on now — see
+    /// `showSafariSetupPopup`. Window-hosted, like `instructionOverlay`, for
+    /// the same reason: central Luna's cycle keeps swapping the replica
+    /// underneath while this stays up.
+    private var safariSetupPopup: OnboardingSafariSetupPopupView?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
     private var didBeginDemonstration = false
@@ -86,7 +91,9 @@ final class SafariReplicaViewController:
     private var pageIndex = 0
     private var pageTimer: Timer?
 
-    var hasInstructions: Bool { instructionOverlay != nil }
+    var hasInstructions: Bool {
+        instructionOverlay != nil || safariSetupPopup != nil
+    }
     override var sharedURLString: String {
         let pages = onboardingConfiguration.demoPages
         guard !pages.isEmpty else { return OnboardingDemoPage.lunaPage.sharedURLString }
@@ -119,12 +126,6 @@ final class SafariReplicaViewController:
             ? .black
             : OnboardingSafariPagePalette.background
         configureBrowser()
-        lunaPage?.onActivateSafari = { [weak self] in
-            self?.onSetUpSafari?()
-        }
-        lunaPage?.onSkipSafariSetup = { [weak self] in
-            self?.onSkipSafariSetup?()
-        }
         webView.navigationDelegate = self
         configurePriceLessonIfNeeded()
         configureVideoLessonIfNeeded()
@@ -191,8 +192,6 @@ final class SafariReplicaViewController:
         }
         let lesson = OnboardingPriceComparisonOverlayView(
             configuration: onboardingConfiguration)
-        lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
-        lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
         lesson.onDidReachSetupOffer = { [weak self] in
             self?.lessonDidReachSetupOffer()
         }
@@ -218,8 +217,6 @@ final class SafariReplicaViewController:
         }
         let lesson = OnboardingVideoDownloadOverlayView(
             configuration: onboardingConfiguration)
-        lesson.onActivateSafari = { [weak self] in self?.onSetUpSafari?() }
-        lesson.onSkipSafariSetup = { [weak self] in self?.onSkipSafariSetup?() }
         lesson.onDidReachSetupOffer = { [weak self] in
             self?.lessonDidReachSetupOffer()
         }
@@ -562,10 +559,11 @@ final class SafariReplicaViewController:
             cornerRadius: browserRegion.cornerRadius)
     }
 
-    /// - Parameter style: `.eclipseCard` for an ask that has to STAY up over a
-    ///   demonstration that is still running underneath it — central Luna's,
-    ///   which keeps replaying its three sibling lessons behind this popover.
-    func showSafariPrompt(style: DemoInstructionOverlay.Style = .plain) {
+    /// The wave-driven "you should enable Safari" ask — a different moment
+    /// from a lesson's own setup offer (`showSafariSetupPopup` below):
+    /// this one comes up once a save FROM Safari has been demonstrated,
+    /// wherever that lands in the journey.
+    func showSafariPrompt() {
         setInstruction(
             title: OnboardingStrings.Instruction.safariPrompt(
                 saveBenefit: onboardingConfiguration.saveBenefit,
@@ -576,15 +574,32 @@ final class SafariReplicaViewController:
                     image: UIImage(systemName: "safari.fill"),
                     prominent: true,
                     action: { [weak self] in self?.onSetUpSafari?() }),
-            ],
-            style: style)
+            ])
     }
 
+    /// The ONE ending every Safari lesson shares: raised the instant the
+    /// lesson underneath — the explainer page's clean-up, the video panel's
+    /// arrival, or the price comparison landing — reports
+    /// `onDidReachSetupOffer`. Window-hosted, over a light scrim, precisely
+    /// because the host freezes that lesson and then loops it forever
+    /// underneath rather than stopping it.
+    func showSafariSetupPopup() {
+        guard safariSetupPopup == nil else { return }
+        guard let host = view.window ?? view else { return }
+        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
+        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        popup.onActivate = { [weak self] in self?.onSetUpSafari?() }
+        popup.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
+        safariSetupPopup = popup
+        host.addSubview(popup)
+        popup.layoutIfNeeded()
+        popup.present()
+    }
 
+    /// After a hop to Safari that returns with no evidence, the popup's
+    /// buttons come back live and the plea starts breathing again.
     func restoreInPageSafariSetup() {
-        lunaPage?.reactivateActions()
-        priceLesson?.reactivateActions()
-        videoLesson?.reactivateActions()
+        safariSetupPopup?.reactivate()
         videoLesson?.setPlaying(true)
     }
 
@@ -641,11 +656,13 @@ final class SafariReplicaViewController:
     }
 
     func dismissInstructions(animated: Bool, completion: @escaping () -> Void) {
-        guard let overlay = instructionOverlay else {
+        guard let overlay = (instructionOverlay as UIView?) ?? (safariSetupPopup as UIView?)
+        else {
             completion()
             return
         }
         instructionOverlay = nil
+        safariSetupPopup = nil
         let changes = {
             overlay.alpha = 0
         }
@@ -667,10 +684,9 @@ final class SafariReplicaViewController:
 
     private func setInstruction(
         title: String?,
-        actions: [DemoInstructionOverlay.Action],
-        style: DemoInstructionOverlay.Style = .plain
+        actions: [DemoInstructionOverlay.Action]
     ) {
-        let overlay = instructionOverlay ?? DemoInstructionOverlay(style: style)
+        let overlay = instructionOverlay ?? DemoInstructionOverlay()
         overlay.configure(title: title, actions: actions)
         if instructionOverlay == nil {
             guard let host = view.window ?? view else { return }

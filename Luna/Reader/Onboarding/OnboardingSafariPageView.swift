@@ -13,9 +13,6 @@ enum OnboardingSafariPagePalette {
     static let paper = UIColor(white: 0.98, alpha: 1)
     static let ink = UIColor(white: 0.10, alpha: 1)
     static let inkSecondary = UIColor(white: 0.44, alpha: 1)
-    /// The page's own quieter type — byline and section heading — against its
-    /// dark neutral grey.
-    static let quietCopy = UIColor(white: 1, alpha: 0.62)
 }
 
 enum OnboardingSafariPageTiming {
@@ -28,29 +25,27 @@ enum OnboardingSafariPageTiming {
     static let cascadeFrontSpeed: CGFloat = 420
 }
 
-/// Luna's own `luna.app` page about the Safari extension, as Safari would show
-/// it. The page loads already buried under ads, popups and a subscription wall;
-/// once the mock extension-enable sequence completes, the clutter crumbles
-/// bottom-to-top. The content itself never goes anywhere or animates: what the
-/// extension takes away is the clutter, so the page underneath stays exactly
-/// where the reader last saw it.
+/// Luna's own `luna.app` page — a plausible-looking mock article, not a real
+/// explanation of the extension any more — as Safari would show it. The page
+/// loads already buried under ads, popups and a subscription wall; once the
+/// mock extension-enable sequence completes, the clutter crumbles
+/// bottom-to-top and reveals the article underneath. The content itself never
+/// goes anywhere or animates: what the extension takes away is the clutter, so
+/// the page underneath stays exactly where the reader last saw it.
 ///
-/// The content is the explanation (`OnboardingSafariExtensionCopy`): what the
-/// extension takes off a page, that it all happens on the device, that anything
-/// worth keeping is one tap from Luna — then the three steps that switch it on,
-/// each beside a picture of the exact chrome it names. Its own call to action is
-/// the LAST thing on the page rather than a card floating over it, and the
-/// steps and actions are anchored to the bottom above the browser chrome
-/// whatever the screen's height: the Safari button — wearing the launch eclipse
-/// corona, and once the page is clean breathing for its tap exactly as the
-/// Messages pills do — sits where the wave first enters, and the copy stacks
-/// upward from it.
+/// The content used to be the extension's own explanation
+/// (`OnboardingSafariExtensionCopy`) plus the three steps that switch it on and
+/// the page's own Activate Safari / Skip actions, anchored to the bottom above
+/// the browser chrome. All of that is gone: the instructions now live on the
+/// hosted setup web page, and the ask that used to be this page's own call to
+/// action is now the shared, window-hosted `OnboardingSafariSetupPopupView` —
+/// raised by `SafariReplicaViewController` off this page's `cleanUpClutter`
+/// completion, not by anything in here. What is left is decoration: the app
+/// icon, a lorem ipsum headline, and lorem ipsum body copy that fills the page
+/// like a real article once the wave has revealed it.
 ///
-/// It is native instead of HTML so those glyph-level effects are possible.
+/// It is native instead of HTML so the wave's glyph-level effects are possible.
 final class OnboardingSafariPageView: UIView {
-    var onActivateSafari: (() -> Void)?
-    var onSkipSafariSetup: (() -> Void)?
-
     private enum Stage {
         case blocked
         /// Everything heavy is done and committed: the clutter is swapped for
@@ -70,26 +65,17 @@ final class OnboardingSafariPageView: UIView {
         var delay: TimeInterval { arrival + scatter }
     }
 
-    /// Hosts every piece of the page, the actions included. It never scrolls —
-    /// nothing on the page sits below the fold — so every coordinate the
-    /// clutter and the shatter use stays screen-fixed, and content frames are
-    /// directly comparable with the clutter's.
+    /// Hosts every piece of the page. It never scrolls — nothing on the page
+    /// sits below the fold — so every coordinate the clutter and the shatter
+    /// use stays screen-fixed, and content frames are directly comparable
+    /// with the clutter's.
     private let scrollView = UIScrollView()
 
     private let appIcon: MoonRevealContentView
     private let headline: MoonRevealLineView
-    private let byline: MoonRevealLineView
+    /// The mock article's body — lorem ipsum now, filling whatever room is
+    /// left below the header like a real article would.
     private let explainer: MoonRevealLineView
-    private let stepsHeading: MoonRevealLineView
-    private let stepRows: [MoonRevealContentView]
-    private let actionsView: OnboardingSafariActionsView
-    private let actions: MoonRevealContentView
-    /// The eclipse corona rides behind the Safari button itself, swelling in
-    /// once the page is clean.
-    private var actionsCorona: EclipseCoronaView?
-    /// True from the corona's ignition until the user takes one of the page's
-    /// actions: the button and its corona are breathing for the tap.
-    private var isPulsingActions = false
 
     private let clutterContainer = UIView()
     private let adBanners: [OnboardingAdBannerView] = [
@@ -133,16 +119,9 @@ final class OnboardingSafariPageView: UIView {
     /// wipe is prepared.
     private var waveOrigin: CGFloat = 0
 
-    /// Whose prose the page prints. The chunks differ per app, so the fitting
-    /// pass needs to know which list it is choosing a prefix of.
-    private let app: LunaApp
-
     init(configuration: OnboardingSurfaceConfiguration = .current) {
-        // Safari lists this app's own extension under this app's own name; the
-        // page's steps have to say the same thing (see the copy's note).
         let appName = configuration.demonstrationApp.displayName
         let background = OnboardingSafariPagePalette.background
-        app = configuration.demonstrationApp
         appIcon = MoonRevealContentView(
             image: LunaAppIconImage.image(for: configuration.demonstrationApp)
                 ?? UIImage(systemName: "moon.stars.fill"),
@@ -150,7 +129,7 @@ final class OnboardingSafariPageView: UIView {
             accessibilityLabel: appName,
             sweepsUpward: true)
         headline = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.title,
+            text: OnboardingStrings.Safari.mockHeadline.value(),
             initiallyRevealed: true,
             font: UIFont.systemFont(ofSize: 26, weight: .bold),
             textAlignment: .left,
@@ -158,21 +137,10 @@ final class OnboardingSafariPageView: UIView {
             minimumScaleFactor: 0.82,
             occluderColor: background,
             sweepsUpward: true)
-        byline = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.byline(appName: appName),
-            initiallyRevealed: true,
-            font: .systemFont(ofSize: 13, weight: .semibold),
-            textAlignment: .left,
-            numberOfLines: 1,
-            minimumScaleFactor: 0.9,
-            textColor: OnboardingSafariPagePalette.quietCopy,
-            occluderColor: background,
-            sweepsUpward: true)
         // The shortest valid prose, so the page is publishable before it has a
         // size; `layOutContent` grows it to whatever the screen can hold.
         explainer = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.explainerPrefix(
-                1, for: configuration.app),
+            text: Self.mockParagraphPrefix(1),
             initiallyRevealed: true,
             font: Self.proseFont,
             textAlignment: .left,
@@ -181,29 +149,6 @@ final class OnboardingSafariPageView: UIView {
             lineSpacing: Self.proseLineSpacing,
             occluderColor: background,
             sweepsUpward: true)
-        stepsHeading = MoonRevealLineView(
-            text: OnboardingSafariExtensionCopy.stepsHeading,
-            initiallyRevealed: true,
-            font: .systemFont(ofSize: 13, weight: .semibold),
-            textAlignment: .left,
-            numberOfLines: 1,
-            minimumScaleFactor: 0.9,
-            textColor: OnboardingSafariPagePalette.quietCopy,
-            occluderColor: background,
-            sweepsUpward: true)
-        stepRows = OnboardingSafariExtensionCopy.steps(appName: appName)
-            .map { step in
-                MoonRevealContentView(
-                    content: OnboardingSafariEnableStepRowView(step: step),
-                    accessibilityLabel: step.text,
-                    sweepsUpward: true)
-            }
-        let actionsView = OnboardingSafariActionsView()
-        self.actionsView = actionsView
-        actions = MoonRevealContentView(
-            content: actionsView,
-            accessibilityLabel: nil,
-            sweepsUpward: true)
 
         super.init(frame: .zero)
         backgroundColor = background
@@ -211,14 +156,7 @@ final class OnboardingSafariPageView: UIView {
 
         appIcon.accessibilityIdentifier = OnboardingStrings.Accessibility.safariAppIcon.value()
         headline.accessibilityIdentifier = OnboardingStrings.Accessibility.safariHeadline.value()
-        byline.accessibilityIdentifier = OnboardingStrings.Accessibility.safariByline.value()
         explainer.accessibilityIdentifier = OnboardingStrings.Accessibility.safariExplainer.value()
-        stepsHeading.accessibilityIdentifier =
-            OnboardingStrings.Accessibility.safariStepsHeading.value()
-        for (index, row) in stepRows.enumerated() {
-            row.accessibilityIdentifier = OnboardingStrings.Accessibility.safariStep(index)
-        }
-        actions.accessibilityIdentifier = OnboardingStrings.Accessibility.safariActions.value()
         scrollView.isScrollEnabled = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.contentInsetAdjustmentBehavior = .never
@@ -226,28 +164,12 @@ final class OnboardingSafariPageView: UIView {
 
         scrollView.addSubview(appIcon)
         scrollView.addSubview(headline)
-        scrollView.addSubview(byline)
         scrollView.addSubview(explainer)
-        scrollView.addSubview(stepsHeading)
-        for row in stepRows {
-            scrollView.addSubview(row)
-        }
-        scrollView.addSubview(actions)
-
-        // Either action answers the button's plea, so either one ends it.
-        actionsView.onActivate = { [weak self] in
-            self?.endActionsPulse()
-            self?.onActivateSafari?()
-        }
-        actionsView.onSkip = { [weak self] in
-            self?.endActionsPulse()
-            self?.onSkipSafariSetup?()
-        }
 
         // Every fake obstruction is a decoration, buried over the page from
         // the very first frame; the mock extension-enable pass clears them.
-        // The clutter sits ABOVE the whole page — the actions included — so no
-        // element's own light can spill over a white popup during the wave.
+        // The clutter sits ABOVE the whole page so no element's own light can
+        // spill over a white popup during the wave.
         clutterContainer.isUserInteractionEnabled = false
         clutterContainer.accessibilityIdentifier =
             OnboardingStrings.Accessibility.safariClutter.value()
@@ -271,8 +193,7 @@ final class OnboardingSafariPageView: UIView {
     }
 
     /// What a page with no bar over it still keeps clear: the home-area strip
-    /// with air above it, never less than the bar's own controls were worth, so
-    /// the Safari button stays a thumb's reach off the bottom edge.
+    /// with air above it, never less than the bar's own controls were worth.
     static var clearedChromeReserve: CGFloat {
         max(SafariBottomBar.chromeHeight, SafariBottomBar.homeAreaHeight + 20)
     }
@@ -282,8 +203,8 @@ final class OnboardingSafariPageView: UIView {
     private var bottomReserve = OnboardingSafariPageView.chromeReserve
 
     /// The browser bar is leaving (or coming back), and the page's bottom
-    /// reserve follows it: with the bar gone the steps and the actions take
-    /// back its strip, and they dodge it again the moment it returns.
+    /// reserve follows it: with the bar gone the body copy takes back its
+    /// strip, and dodges it again the moment it returns.
     ///
     /// Call this BEFORE `prepareCleanUp`, never during the wave: every shatter
     /// tile is cut from the page as it stands, and its arrival from the front's
@@ -308,41 +229,25 @@ final class OnboardingSafariPageView: UIView {
         layOutClutter()
     }
 
-    /// THE PAGE IS PINNED AT BOTH ENDS, AND THE PROSE FILLS WHAT IS LEFT.
+    /// THE HEADER IS PINNED AT THE TOP, AND THE BODY FILLS WHAT IS LEFT.
     ///
-    /// The header starts at `minimumTopInset`; the actions block ends exactly on
-    /// the browser chrome's reserve, with the steps and their heading stacked
-    /// above it — so the Safari button is in the same place on every screen, the
-    /// wave has no dead middle to climb through, and the furniture (icon,
-    /// headline, three steps, both buttons) is identical at every size. The only
-    /// thing that varies is the PROSE: it takes the largest cumulative prefix of
-    /// its chunks that fits between the byline and the steps heading, and
-    /// whatever is left over becomes air above the steps. That slack is the
-    /// tolerance the chunk granularity needs — no screen has to land on an exact
-    /// multiple of a sub-topic. A container too short even for chunk one falls
-    /// back to truncating it, rather than pushing the actions under the chrome.
+    /// The header starts at `minimumTopInset`; the body copy runs from below it
+    /// down to the browser chrome's current reserve, taking the largest
+    /// cumulative prefix of the lorem ipsum paragraphs that fits — so a short
+    /// phone shows one paragraph and a tall iPad shows several, exactly the way
+    /// a real article's copy would fill more or less of a taller page. This is
+    /// decoration now, not content anyone reads for meaning, so there is no
+    /// floor to protect the way the old furniture-plus-prose layout did: a
+    /// container too short even for paragraph one just truncates it.
     private func layOutContent(columnWidth: CGFloat, horizontalInset: CGFloat) {
         let bottomLimit = bounds.height - bottomReserve
-        let rowHeight = OnboardingSafariEnableStepRowView.preferredHeight
-        let actionsHeight = OnboardingSafariActionsView.preferredHeight
-        let stepsHeight = CGFloat(stepRows.count) * rowHeight
-            + CGFloat(max(stepRows.count - 1, 0)) * Self.stepGap
-        let bottomGroupHeight = Self.headingHeight + Self.headingGap
-            + stepsHeight + Self.stepsToActionsGap + actionsHeight
-        let bottomGroupTop = bottomLimit - bottomGroupHeight
-
         var y = Self.minimumTopInset
-        let proseTop = y + Self.headerHeight + Self.bylineGap
-            + Self.bylineHeight + Self.proseGap
-        // The prose is fitted against the FULL chrome reserve however much room
+        let bodyTop = y + Self.headerHeight + Self.bodyGap
+        // The body is fitted against the FULL chrome reserve however much room
         // the page currently has: releasing the browser bar's strip mid-lesson
-        // must not make another chunk of copy appear out of nowhere. The
-        // reclaimed room becomes air above the steps instead.
-        let proseRoom = max(
-            0,
-            bounds.height - Self.chromeReserve - bottomGroupHeight
-                - Self.proseToStepsGap - proseTop)
-        let prose = fittedProse(columnWidth: columnWidth, room: proseRoom)
+        // must not make another paragraph appear out of nowhere.
+        let bodyRoom = max(0, bounds.height - Self.chromeReserve - bodyTop)
+        let prose = fittedProse(columnWidth: columnWidth, room: bodyRoom)
         explainer.setStyledText(prose.attributedText, accessibilityText: prose.text)
 
         appIcon.frame = CGRect(
@@ -358,60 +263,35 @@ final class OnboardingSafariPageView: UIView {
                     - Self.headerIconGap,
                 0),
             height: Self.headerHeight)
-        y += Self.headerHeight + Self.bylineGap
-        byline.frame = CGRect(
-            x: horizontalInset, y: y, width: columnWidth, height: Self.bylineHeight)
-        y += Self.bylineHeight + Self.proseGap
+        y += Self.headerHeight + Self.bodyGap
         explainer.frame = CGRect(
             x: horizontalInset,
             y: y,
             width: columnWidth,
-            height: prose.height)
-
-        y = bottomGroupTop
-        stepsHeading.frame = CGRect(
-            x: horizontalInset,
-            y: y,
-            width: columnWidth,
-            height: Self.headingHeight)
-        y += Self.headingHeight + Self.headingGap
-        for row in stepRows {
-            row.frame = CGRect(
-                x: horizontalInset, y: y, width: columnWidth, height: rowHeight)
-            y += rowHeight + Self.stepGap
-        }
-        actions.frame = CGRect(
-            x: horizontalInset,
-            y: bottomLimit - actionsHeight,
-            width: columnWidth,
-            height: actionsHeight)
+            height: min(prose.height, max(bottomLimit - y, 0)))
 
         scrollView.frame = bounds
         scrollView.contentSize = bounds.size
-        layOutActionsCorona()
     }
 
-    /// The largest cumulative chunk prefix that fits `room`, with the height to
-    /// draw it at. Pure geometry over a width and a height — never an idiom or a
-    /// size class (see CLAUDE.md's iPad rule): an iPad in half-screen Split View
-    /// and a phone are the same fitting problem.
-    ///
-    /// Chunk one is the floor. When even it overruns (a degenerately short
-    /// container), it is kept and its label truncates — the page never drops its
-    /// opening sentence, and never lets the prose push the actions down.
+    /// The largest cumulative paragraph prefix that fits `room`, with the
+    /// height to draw it at. Pure geometry over a width and a height — never an
+    /// idiom or a size class (see CLAUDE.md's iPad rule): an iPad in
+    /// half-screen Split View and a phone are the same fitting problem.
     private func fittedProse(
         columnWidth: CGFloat,
         room: CGFloat
     ) -> (text: String, attributedText: NSAttributedString, height: CGFloat) {
-        let chunks = OnboardingSafariExtensionCopy.explainerChunks(for: app)
-        guard !chunks.isEmpty else { return ("", NSAttributedString(), 0) }
-        var prose = Self.formattedProse(chunks: Array(chunks.prefix(1)))
+        let paragraphs = OnboardingStrings.Safari.mockParagraphs.value()
+        guard !paragraphs.isEmpty else { return ("", NSAttributedString(), 0) }
+        var prose = Self.formattedProse(paragraphs: Array(paragraphs.prefix(1)))
         var height = Self.proseHeight(of: prose.attributedText, width: columnWidth)
-        guard chunks.count > 1 else {
+        guard paragraphs.count > 1 else {
             return (prose.text, prose.attributedText, min(height, room))
         }
-        for count in 2...chunks.count {
-            let candidate = Self.formattedProse(chunks: Array(chunks.prefix(count)))
+        for count in 2...paragraphs.count {
+            let candidate = Self.formattedProse(
+                paragraphs: Array(paragraphs.prefix(count)))
             let candidateHeight = Self.proseHeight(
                 of: candidate.attributedText, width: columnWidth)
             guard candidateHeight <= room else { break }
@@ -421,10 +301,17 @@ final class OnboardingSafariPageView: UIView {
         return (prose.text, prose.attributedText, min(height, room))
     }
 
-    /// THE prose typography, defined once. The measurement above, the label the
-    /// page builds, and the tests that assert the fit all read these — the three
-    /// used to carry their own copies of "17pt regular, lineSpacing 5", which is
-    /// three places for one number to drift.
+    /// The prefix of the lorem ipsum body the page is publishable with before
+    /// it has a size; `layOutContent` grows it to whatever the screen can hold.
+    private static func mockParagraphPrefix(_ count: Int) -> String {
+        OnboardingStrings.Safari.mockParagraphs.value()
+            .prefix(max(count, 1))
+            .joined(separator: "\n")
+    }
+
+    /// THE prose typography, defined once. The measurement below and the label
+    /// the page builds both read these, rather than each carrying their own
+    /// copy of "17pt regular, lineSpacing 5".
     static let proseFont = UIFont.systemFont(ofSize: 17, weight: .regular)
     static let proseLineSpacing: CGFloat = 5
 
@@ -434,31 +321,23 @@ final class OnboardingSafariPageView: UIView {
         return [.font: proseFont, .paragraphStyle: style]
     }
 
-    /// The first three ideas are features, so they read as a compact list.
-    /// Any later chunks remain ordinary paragraphs. This changes hierarchy,
-    /// never the localized words themselves.
-    static func formattedProse(chunks: [String]) -> (text: String, attributedText: NSAttributedString) {
+    /// Plain paragraphs, each with a little breathing room under it — no
+    /// bullets or hierarchy, since this is filler copy rather than a feature
+    /// list any more.
+    static func formattedProse(
+        paragraphs: [String]
+    ) -> (text: String, attributedText: NSAttributedString) {
         let result = NSMutableAttributedString()
-        let featureCount = min(chunks.count, 3)
-        for (index, chunk) in chunks.enumerated() {
+        for (index, paragraph) in paragraphs.enumerated() {
             if index > 0 { result.append(NSAttributedString(string: "\n")) }
             let style = NSMutableParagraphStyle()
             style.lineSpacing = proseLineSpacing
-            if index < featureCount {
-                style.firstLineHeadIndent = 0
-                style.headIndent = 20
-                style.paragraphSpacing = index == featureCount - 1 ? 9 : 4
-                result.append(NSAttributedString(
-                    string: "• \(chunk)",
-                    attributes: [.font: proseFont, .paragraphStyle: style]))
-            } else {
-                style.paragraphSpacing = 9
-                result.append(NSAttributedString(
-                    string: chunk,
-                    attributes: [.font: proseFont, .paragraphStyle: style]))
-            }
+            style.paragraphSpacing = 9
+            result.append(NSAttributedString(
+                string: paragraph,
+                attributes: [.font: proseFont, .paragraphStyle: style]))
         }
-        return (chunks.joined(separator: "\n"), result)
+        return (paragraphs.joined(separator: "\n"), result)
     }
 
     static func proseHeight(of text: String, width: CGFloat) -> CGFloat {
@@ -475,51 +354,15 @@ final class OnboardingSafariPageView: UIView {
             context: nil).height)
     }
 
-    // Every one of these is spent against ONE budget: the shortest phone Luna
-    // ships to (375×667) has to hold the whole stack above the browser chrome
-    // with the FIRST prose chunk at its natural height. There is about a line of
-    // slack at these numbers —
-    // `testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse`
-    // fails the moment a gap or that chunk grows past it.
     /// The header's own row: the headline's two lines, with the app icon
     /// centred against them.
     private static let headerHeight: CGFloat = 64
     private static let headerIconSide: CGFloat = 60
     private static let headerIconGap: CGFloat = 14
-    private static let bylineHeight: CGFloat = 20
-    private static let bylineGap: CGFloat = 8
-    private static let proseGap: CGFloat = 10
-    private static let headingHeight: CGFloat = 18
-    private static let headingGap: CGFloat = 8
-    private static let stepGap: CGFloat = 8
-    private static let stepsToActionsGap: CGFloat = 18
-    /// The least the prose above may be left from the steps below it.
-    private static let proseToStepsGap: CGFloat = 20
+    /// The gap between the header row and the body copy underneath it.
+    private static let bodyGap: CGFloat = 10
     /// Where the page starts when there is no air left to give it.
     static let minimumTopInset: CGFloat = 24
-
-    /// The corona is the Safari button's own, not the block's: it takes the
-    /// button's exact capsule geometry and sits directly behind it.
-    private func layOutActionsCorona() {
-        actions.layoutIfNeeded()
-        let button = actionsView.activateButton
-        let coronaFrame = scrollView.convert(button.bounds, from: button)
-        guard coronaFrame.width > 0, coronaFrame.height > 0 else { return }
-        if actionsCorona?.bounds.size != coronaFrame.size {
-            actionsCorona?.removeFromSuperview()
-            let corona = EclipseCoronaView(
-                bodySize: coronaFrame.size,
-                cornerRadius: coronaFrame.height / 2,
-                tint: LunaSurfacePalette.atmosphereTint)
-            corona.alpha = stage == .revealed ? 1 : 0
-            scrollView.insertSubview(corona, belowSubview: actions)
-            actionsCorona = corona
-            // A resize builds a new corona; the breath it replaces has to carry
-            // over, or a rotation mid-plea leaves the button pulsing alone.
-            applyActionsPulse()
-        }
-        actionsCorona?.frame = coronaFrame
-    }
 
     private func layOutClutter() {
         clutterContainer.frame = bounds
@@ -605,15 +448,17 @@ final class OnboardingSafariPageView: UIView {
     }
 
     /// Shatters every obstruction bottom-to-top. The content beneath stays
-    /// stationary; only the obstruction tiles move. The page's own actions are
-    /// inert until the whole page is clean, and the corona then swells in behind
-    /// the Safari button.
+    /// stationary; only the obstruction tiles move.
     ///
     /// The cascade starts one run-loop turn after `prepareCleanUp`'s work,
     /// never in the same turn: the preparation's heavy commit (tiles and
     /// rasters) otherwise lands between an animation's added wall-clock anchor
     /// and its first rendered frame, and the light at the top of the page —
     /// shine and all — starts already finished.
+    ///
+    /// `completion` is what raises the shared setup popup
+    /// (`SafariReplicaViewController.presentExtensionsSheet`'s call site) —
+    /// this page carries no ask of its own any more.
     func cleanUpClutter(completion: (() -> Void)? = nil) {
         guard stage == .blocked || stage == .primed else {
             completion?()
@@ -627,97 +472,19 @@ final class OnboardingSafariPageView: UIView {
 
             view.afterDelay(shatterFinish + 0.12) { view in
                 view.stage = .revealed
-                view.actionsView.setActionsEnabled(true)
-                view.igniteActionsCorona()
                 completion?()
             }
         }
     }
 
-    /// The corona blooms only once the page is whole. Bringing it up with the
-    /// wave still climbing put a lamp behind the one element the light had
-    /// already left. The breath waits for the bloom to finish — an opacity
-    /// pulse added mid-fade fights the fade for the same layer.
-    private func igniteActionsCorona() {
-        guard let corona = actionsCorona else { return }
-        guard !UIAccessibility.isReduceMotionEnabled else {
-            corona.alpha = 1
-            return
-        }
-        UIView.animate(withDuration: 0.5) {
-            corona.alpha = 1
-        } completion: { [weak self] _ in
-            self?.beginActionsPulse()
-        }
-    }
-
-    /// The Safari button asks for its tap exactly as the Messages pills do:
-    /// `OnboardingAttentionPulse`'s breath, at the same rate and the same
-    /// scale. Its glow is the corona it already wears rather than a shadow of
-    /// its own, so the corona scales WITH the button — the two share a centre,
-    /// so the light stays wrapped around the capsule — and brightens up to its
-    /// own full strength on every swell.
-    ///
-    /// Deliberately NOT guarded on already-pulsing: CoreAnimation strips every
-    /// animation off a layer when the app backgrounds, which is exactly what
-    /// the hop out to Safari does, so the return leg has to be able to put the
-    /// breath back rather than believe its own flag.
-    private static let pulseAnimationKey =
-        OnboardingStrings.AnimationKeys.attentionPulse.value()
-    /// The corona carries two of the breath's curves at once, and one layer
-    /// cannot file both under the same key.
-    private static let pulseScaleKey =
-        OnboardingStrings.AnimationKeys.attentionPulseScale.value()
-
-    private func beginActionsPulse() {
-        guard stage == .revealed,
-              !UIAccessibility.isReduceMotionEnabled
-        else { return }
-        isPulsingActions = true
-        applyActionsPulse()
-    }
-
-    private func applyActionsPulse() {
-        guard isPulsingActions else { return }
-        actionsView.activateButton.layer.add(
-            OnboardingAttentionPulse.scale(), forKey: Self.pulseAnimationKey)
-        // The corona shares the button's centre, so it swells WITH it and the
-        // light stays wrapped around the capsule. Unlike a pill's, this one is
-        // already burning: its breath falls to the trough and back to full
-        // rather than lighting from nothing.
-        guard let corona = actionsCorona else { return }
-        corona.layer.add(
-            OnboardingAttentionPulse.scale(), forKey: Self.pulseScaleKey)
-        corona.layer.add(
-            OnboardingAttentionPulse.glow(
-                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
-            forKey: Self.pulseAnimationKey)
-    }
-
-    private func endActionsPulse() {
-        isPulsingActions = false
-        actionsView.activateButton.layer.removeAnimation(
-            forKey: Self.pulseAnimationKey)
-        actionsCorona?.layer.removeAnimation(forKey: Self.pulseAnimationKey)
-        actionsCorona?.layer.removeAnimation(forKey: Self.pulseScaleKey)
-    }
-
-    /// Returning from Safari without the extension having run re-offers the
-    /// page's own actions — and asks for the tap again.
-    func reactivateActions() {
-        actionsView.setActionsEnabled(true)
-        beginActionsPulse()
-    }
-
     /// Puts the page back exactly as it loads — buried under every
-    /// obstruction, content beneath them, actions inert, corona dark — so the
-    /// whole demonstration can play again.
+    /// obstruction, content beneath them — so the whole demonstration can
+    /// play again.
     ///
     /// The Safari lesson is deliberately re-enterable: skipping returns to the
-    /// intro with its button still live. Without this, a second entry landed on
-    /// the finished page with nothing left to run and both of its buttons
-    /// disabled by the tap that left (`OnboardingSafariActionsView` disables
-    /// them on the way out), which is a dead end with no way back to the intro.
+    /// intro with its button still live, and central Luna's forever-loop
+    /// replays each sibling lesson under the shared popup. Without this, a
+    /// second entry landed on the finished page with nothing left to run.
     func restoreBuriedPage() {
         // Drops anything the previous wipe still has scheduled.
         sequenceGeneration += 1
@@ -734,19 +501,8 @@ final class OnboardingSafariPageView: UIView {
             obstruction.alpha = 1
             obstruction.transform = .identity
         }
-        actionsView.setActionsEnabled(false)
-        // A buried page asks for nothing: the plea belongs to the clean page,
-        // and the next cascade's corona ignition starts it again.
-        endActionsPulse()
-        actionsCorona?.alpha = 0
         setNeedsLayout()
     }
-
-    #if DEBUG
-    /// The flag, not the animations: CoreAnimation drops an animation off a
-    /// backgrounded layer, so only this survives a test that spins the run loop.
-    var isPulsingActionsForTesting: Bool { isPulsingActions }
-    #endif
 
     /// Splits one obstruction into still image tiles that exactly cover it,
     /// each carrying the flight (delay and transform) the sweep will give it.

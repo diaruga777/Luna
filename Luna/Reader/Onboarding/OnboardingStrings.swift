@@ -216,17 +216,18 @@ enum OnboardingStrings {
     }
 
     enum Safari {
+        /// **Retired from the app, kept in the strings file.** `title`,
+        /// `bylineTemplate`, `explainerChunks`, `stepsHeading`, `pageMenuStep`,
+        /// `manageExtensionsStepTemplate` and `appStepTemplate` printed the
+        /// step-by-step instructions the explainer page, the video panel and
+        /// the price lesson's setup card used to end on. That copy now lives on
+        /// the hosted setup web page instead, and `scripts/build_site.py` reads
+        /// these exact keys out of `Localizable.strings` to build it — so the
+        /// definitions stay here, unreferenced by any Swift call site (except
+        /// `manageExtensionsTitle`, still read by the Manage Extensions sheet
+        /// mock every lesson plays before its own ask), never renamed.
         static let title = Definition(key: "Onboarding_Safari_title")
         static let bylineTemplate = Definition(key: "Onboarding_Safari_bylineTemplate")
-        /// The page's prose, per app, in the order it reads — and it is only
-        /// ever shown as a PREFIX of this list. The page's own header, steps and
-        /// actions are fixed furniture, so what is left over between them is the
-        /// only room the prose has; the page picks the longest prefix that fits
-        /// (`OnboardingSafariPageView.fittedProse`). Chunk one therefore has to
-        /// stand alone on the shortest phone Luna ships to, and every later
-        /// chunk is depth a taller screen (or an iPad's wider column) can
-        /// afford. Each ends on a sentence boundary that finishes its own
-        /// sub-topic, so no prefix ever cuts an idea in half.
         static let explainerChunks = ChunkedDefinition(keyPrefix: "Onboarding_Safari_explainerChunk")
         static let stepsHeading = Definition(key: "Onboarding_Safari_stepsHeading")
         static let manageExtensionsTitle = Definition(key: "Onboarding_Safari_manageExtensionsTitle")
@@ -234,12 +235,24 @@ enum OnboardingStrings {
         static let manageExtensionsStepTemplate = Definition(
             key: "Onboarding_Safari_manageExtensionsStepTemplate")
         static let appStepTemplate = Definition(key: "Onboarding_Safari_appStepTemplate")
+        /// The mock explainer page's decoration, now that its own copy has
+        /// moved to the hosted setup site: a lorem ipsum headline and however
+        /// many lorem ipsum paragraphs fit, filling the page like an article the
+        /// wave can reveal. Unlike `explainerChunks` this is read-until-missing
+        /// with no per-app siblings — the page's furniture is identical in every
+        /// app now, so the filler text needs no app-specific wording either.
+        static let mockHeadline = Definition(key: "Onboarding_Safari_mockHeadline")
+        static let mockParagraphs = ChunkedDefinition(keyPrefix: "Onboarding_Safari_mockParagraph")
         /// The alternative-seller pill's two states, as the extension itself
         /// words them (`_locales/en/messages.json`: `findingSellers`,
         /// `priceAtSeller`) — the lesson is a replica of that pill, so the copy
         /// has to be the copy.
         static let pricePillLooking = Definition(key: "Onboarding_Safari_pricePillLooking")
-        static let activate = Definition(key: "Onboarding_Safari_activate")
+        /// The shared setup popup's one prominent action. Distinct from the
+        /// retired `activate` ("Activate Safari") — the popup's button opens the
+        /// hosted setup page rather than the in-app explainer, so it earns its
+        /// own wording.
+        static let setUpInSafari = Definition(key: "Onboarding_Safari_setUpInSafari")
         static let skip = Definition(key: "Onboarding_Safari_skip")
         /// The extension's own in-page video panel, replicated by the
         /// Downloader's lesson. It is the SAME wording `content.js` ships in
@@ -264,25 +277,6 @@ enum OnboardingStrings {
 
         static func pricePillFound(price: String, seller: String) -> String {
             L10n.string("Onboarding_Safari_pricePillFoundTemplate", price, seller)
-        }
-
-        static func byline(appName: String) -> String {
-            bylineTemplate.value().replacingOccurrences(of: "%@", with: appName)
-        }
-
-        static func steps(appName: String) -> [OnboardingSafariExtensionCopy.Step] {
-            [
-                .init(chrome: .pageMenu, text: pageMenuStep.value()),
-                .init(
-                    chrome: .manageExtensions,
-                    text: manageExtensionsStepTemplate.value()
-                        .replacingOccurrences(
-                            of: "%@", with: manageExtensionsTitle.value())),
-                .init(
-                    chrome: .app,
-                    text: appStepTemplate.value()
-                        .replacingOccurrences(of: "%@", with: appName)),
-            ]
         }
     }
 
@@ -377,9 +371,10 @@ enum OnboardingStrings {
             shared: "onboarding.safari.videoOverlay")
         static let safariAppIcon = Definition(shared: "onboarding.safari.page.appIcon")
         static let safariHeadline = Definition(shared: "onboarding.safari.page.headline")
-        static let safariByline = Definition(shared: "onboarding.safari.page.byline")
         static let safariExplainer = Definition(shared: "onboarding.safari.page.explainer")
-        static let safariStepsHeading = Definition(shared: "onboarding.safari.page.stepsHeading")
+        /// The shared setup popup's action stack — reused from the retired
+        /// `OnboardingSafariActionsView`, so tests and UI automation keep one
+        /// vocabulary for "the two buttons a Safari lesson ends on".
         static let safariActions = Definition(shared: "onboarding.safari.page.actions")
         static let safariActivate = Definition(shared: "onboarding.safari.page.activate")
         static let safariSkip = Definition(shared: "onboarding.safari.page.skip")
@@ -398,14 +393,8 @@ enum OnboardingStrings {
         static let safariURLBar = Definition(shared: "onboarding.safari.urlBar")
         static let safariManageExtensionsSheet = Definition(shared: "onboarding.safari.manageExtensionsSheet")
         static let safariManageExtensionsToggle = Definition(shared: "onboarding.safari.manageExtensionsToggle")
-        static let safariStepPrefix = Definition(shared: "onboarding.safari.page.step.")
         static let safariPricePill = Definition(shared: "onboarding.safari.pricePill")
         static let safariPriceSpotlight = Definition(shared: "onboarding.safari.priceSpotlight")
-        static let safariSetupCard = Definition(shared: "onboarding.safari.setupCard")
-
-        static func safariStep(_ index: Int) -> String {
-            "\(safariStepPrefix.value())\(index)"
-        }
     }
 
     enum AnimationKeys {
@@ -465,56 +454,15 @@ struct OnboardingIntroCopy: Equatable {
     }
 }
 
-/// Compatibility façade for the Safari explainer page. Its definitions live
-/// in `OnboardingStrings.Safari`.
+/// Compatibility façade for the Manage Extensions sheet mock — the one piece
+/// of the old Safari explainer copy still read by Swift. `title`, `byline`,
+/// `explainerChunks`/`explainerPrefix`/`explainer`, `stepsHeading` and `steps`
+/// used to live here too, printing the step-by-step instructions the
+/// explainer page, the video panel and the price lesson's setup card ended
+/// on; all three are gone, and that copy now lives on the hosted setup web
+/// page instead (see `OnboardingStrings.Safari`'s note on the retired keys).
 enum OnboardingSafariExtensionCopy {
-    struct Step {
-        enum Chrome {
-            case pageMenu
-            case manageExtensions
-            case app
-        }
-
-        let chrome: Chrome
-        let text: String
-    }
-
-    static var title: String { OnboardingStrings.Safari.title.value() }
-    static func byline(appName: String) -> String {
-        OnboardingStrings.Safari.byline(appName: appName)
-    }
-    /// What joins two chunks into a valid prefix. One space: the chunks are
-    /// sentences of one paragraph, not paragraphs of their own.
-    static let chunkSeparator = " "
-
-    /// The page's prose in the order it reads. Only a PREFIX of this ever
-    /// appears — see `OnboardingStrings.Safari.explainerChunks`.
-    static func explainerChunks(for app: LunaApp = .current) -> [String] {
-        OnboardingStrings.Safari.explainerChunks.value(for: app)
-    }
-
-    /// The cumulative join of the first `count` chunks — the only shape the
-    /// page is ever allowed to display.
-    static func explainerPrefix(_ count: Int, for app: LunaApp = .current) -> String {
-        explainerChunks(for: app).prefix(max(count, 1))
-            .joined(separator: chunkSeparator)
-    }
-
-    /// Every chunk joined: the longest prefix, and so the whole of the page's
-    /// copy. Used where the text as a body of prose matters (copy audits, an
-    /// iPad's column) rather than what fits a given screen.
-    static func explainer(for app: LunaApp = .current) -> String {
-        explainerPrefix(explainerChunks(for: app).count, for: app)
-    }
-
-    static var stepsHeading: String { OnboardingStrings.Safari.stepsHeading.value() }
     static var manageExtensionsTitle: String {
         OnboardingStrings.Safari.manageExtensionsTitle.value()
-    }
-
-    static func steps(appName: String) -> [Step] {
-        OnboardingStrings.Safari.steps(appName: appName).map {
-            Step(chrome: $0.chrome, text: $0.text)
-        }
     }
 }

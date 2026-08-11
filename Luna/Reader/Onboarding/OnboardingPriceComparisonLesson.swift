@@ -261,257 +261,6 @@ final class OnboardingSpotlightScrimView: UIView {
     }
 }
 
-/// The Safari setup instructions on a card of their own: the same three enable
-/// steps and the same two actions the `luna.app` explainer prints down its page,
-/// wearing the launch eclipse corona as its border.
-///
-/// It sizes itself to its contents — the widest step line, never wider than a
-/// readable column — because it is a card over somebody else's page rather than
-/// a page of its own, and a full-width panel here would read as the site having
-/// been replaced.
-final class OnboardingSafariSetupCardView: UIView {
-    static let cornerRadius: CGFloat = 26
-    private static let horizontalInset: CGFloat = 20
-    private static let verticalInset: CGFloat = 22
-    private static let headingHeight: CGFloat = 18
-    private static let headingGap: CGFloat = 10
-    private static let stepGap: CGFloat = 8
-    private static let stepsToActionsGap: CGFloat = 18
-    private static let pulseKey =
-        "onboarding.priceLesson.attentionPulse"
-
-    var onActivate: (() -> Void)?
-    var onSkip: (() -> Void)?
-
-    private let body = UIView()
-    private var corona: EclipseCoronaView?
-    private var activateCorona: EclipseCoronaView?
-    private let heading = UILabel()
-    private let stepTexts: [String]
-    private let stepRows: [OnboardingSafariEnableStepRowView]
-    private let actionsView = OnboardingSafariActionsView()
-    private var isPulsing = false
-
-    init(configuration: OnboardingSurfaceConfiguration) {
-        let steps = OnboardingSafariExtensionCopy.steps(
-            appName: configuration.demonstrationApp.displayName)
-        stepTexts = steps.map(\.text)
-        stepRows = steps.map(OnboardingSafariEnableStepRowView.init(step:))
-        super.init(frame: .zero)
-        accessibilityIdentifier =
-            OnboardingStrings.Accessibility.safariSetupCard.value()
-        clipsToBounds = false
-
-        body.backgroundColor = LunaColors.background
-        body.layer.cornerRadius = Self.cornerRadius
-        body.layer.cornerCurve = .continuous
-        body.clipsToBounds = true
-        addSubview(body)
-
-        heading.text = OnboardingSafariExtensionCopy.stepsHeading
-        heading.font = .systemFont(ofSize: 13, weight: .semibold)
-        heading.textColor = OnboardingSafariPagePalette.quietCopy
-        heading.accessibilityIdentifier =
-            OnboardingStrings.Accessibility.safariStepsHeading.value()
-        body.addSubview(heading)
-
-        for (index, row) in stepRows.enumerated() {
-            row.isAccessibilityElement = true
-            row.accessibilityLabel = stepTexts[index]
-            row.accessibilityIdentifier =
-                OnboardingStrings.Accessibility.safariStep(index)
-            body.addSubview(row)
-        }
-
-        actionsView.onActivate = { [weak self] in
-            self?.endPulse()
-            self?.onActivate?()
-        }
-        actionsView.onSkip = { [weak self] in
-            self?.endPulse()
-            self?.onSkip?()
-        }
-        // Inert until the card is on screen: the lesson mounts it at alpha 0
-        // while the page is still being demonstrated.
-        actionsView.setActionsEnabled(false)
-        body.addSubview(actionsView)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    /// Hugging, not filling: the card is as wide as its widest line of copy
-    /// needs, bounded by a readable column and by the room it is given.
-    func preferredSize(fitting available: CGSize) -> CGSize {
-        let maximumWidth = min(available.width, LunaLayout.readableWidth)
-        let maximumContent = max(maximumWidth - Self.horizontalInset * 2, 0)
-        let textColumn = OnboardingSafariEnableStepRowView.visualColumnWidth
-            + OnboardingSafariEnableStepRowView.visualToTextGap
-        let naturalText = stepTexts.reduce(CGFloat.zero) { widest, text in
-            max(widest, ceil((text as NSString).size(withAttributes: [
-                .font: OnboardingSafariEnableStepRowView.labelFont,
-            ]).width))
-        }
-        let naturalRow = textColumn + min(naturalText, max(maximumContent - textColumn, 0))
-        let content = min(
-            maximumContent,
-            max(
-                OnboardingSafariActionsView.minimumActivateWidth,
-                max(naturalRow, ceil(heading.intrinsicContentSize.width))))
-        let rowHeight = OnboardingSafariEnableStepRowView.preferredHeight
-        let height = Self.verticalInset * 2
-            + Self.headingHeight + Self.headingGap
-            + CGFloat(stepRows.count) * rowHeight
-            + CGFloat(max(stepRows.count - 1, 0)) * Self.stepGap
-            + Self.stepsToActionsGap
-            + OnboardingSafariActionsView.preferredHeight
-        return CGSize(width: content + Self.horizontalInset * 2, height: height)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        body.frame = bounds
-        layOutCorona()
-        let contentWidth = max(bounds.width - Self.horizontalInset * 2, 0)
-        var y = Self.verticalInset
-        heading.frame = CGRect(
-            x: Self.horizontalInset,
-            y: y,
-            width: contentWidth,
-            height: Self.headingHeight)
-        y += Self.headingHeight + Self.headingGap
-        for row in stepRows {
-            row.frame = CGRect(
-                x: Self.horizontalInset,
-                y: y,
-                width: contentWidth,
-                height: OnboardingSafariEnableStepRowView.preferredHeight)
-            y += OnboardingSafariEnableStepRowView.preferredHeight + Self.stepGap
-        }
-        y += Self.stepsToActionsGap - Self.stepGap
-        actionsView.frame = CGRect(
-            x: Self.horizontalInset,
-            y: y,
-            width: contentWidth,
-            height: OnboardingSafariActionsView.preferredHeight)
-        layOutActivateCorona()
-    }
-
-    /// The corona is the card's border, so it takes the card's own geometry and
-    /// sits directly behind it. Rebuilt only when the card resizes — the raster
-    /// is cached per geometry, and this card's geometry is settled long before
-    /// it is ever shown.
-    private func layOutCorona() {
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        if corona?.bounds.size != bounds.size {
-            corona?.removeFromSuperview()
-            let halo = EclipseCoronaView(
-                bodySize: bounds.size,
-                cornerRadius: Self.cornerRadius,
-                tint: LunaSurfacePalette.atmosphereTint)
-            insertSubview(halo, belowSubview: body)
-            corona = halo
-        }
-        corona?.frame = bounds
-    }
-
-    /// The card has its own eclipse edge, while the actionable Safari control
-    /// needs the Reader flow's tighter corona wrapped directly around its
-    /// capsule. Keeping them separate makes the instruction card legible AND
-    /// makes the exact button asking for a tap unmistakable.
-    private func layOutActivateCorona() {
-        let button = actionsView.activateButton
-        let frame = body.convert(button.bounds, from: button)
-        guard frame.width > 0, frame.height > 0 else { return }
-        if activateCorona?.bounds.size != frame.size {
-            activateCorona?.removeFromSuperview()
-            let halo = EclipseCoronaView(
-                bodySize: frame.size,
-                cornerRadius: frame.height / 2,
-                tint: LunaSurfacePalette.atmosphereTint)
-            body.insertSubview(halo, belowSubview: actionsView)
-            activateCorona = halo
-            applyPulse()
-        }
-        activateCorona?.frame = frame
-    }
-
-    /// Brings the card up over the closed spotlight and asks for its tap.
-    func present() {
-        actionsView.setActionsEnabled(true)
-        guard !UIAccessibility.isReduceMotionEnabled else {
-            alpha = 1
-            transform = .identity
-            return
-        }
-        alpha = 0
-        transform = CGAffineTransform(translationX: 0, y: 14)
-            .scaledBy(x: 0.97, y: 0.97)
-        UIView.animate(
-            withDuration: OnboardingPriceComparisonTiming.cardRevealDuration,
-            delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState]
-        ) {
-            self.alpha = 1
-            self.transform = .identity
-        } completion: { [weak self] _ in
-            self?.beginPulse()
-        }
-    }
-
-    /// Takes the card back off screen and out of the interaction, inert, for a
-    /// replay of the lesson.
-    func prepareToPresentAgain() {
-        endPulse()
-        actionsView.setActionsEnabled(false)
-        alpha = 0
-        transform = .identity
-    }
-
-    /// Returning from Safari without the extension having run re-offers the
-    /// card's actions — and asks for the tap again.
-    func reactivateActions() {
-        actionsView.setActionsEnabled(true)
-        beginPulse()
-    }
-
-    /// The same breath the explainer page's own call to action wears, for the
-    /// same reason it is not guarded on already-pulsing: Core Animation strips
-    /// every animation off a layer when the app backgrounds, which is exactly
-    /// what the hop out to Safari does.
-    private func beginPulse() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-        isPulsing = true
-        applyPulse()
-    }
-
-    private func applyPulse() {
-        guard isPulsing else { return }
-        actionsView.activateButton.layer.add(
-            OnboardingAttentionPulse.scale(), forKey: Self.pulseKey)
-        activateCorona?.layer.add(
-            OnboardingAttentionPulse.scale(), forKey: "\(Self.pulseKey).coronaScale")
-        activateCorona?.layer.add(
-            OnboardingAttentionPulse.glow(
-                from: OnboardingAttentionPulse.litCoronaTroughAlpha),
-            forKey: "\(Self.pulseKey).coronaGlow")
-    }
-
-    private func endPulse() {
-        isPulsing = false
-        actionsView.activateButton.layer.removeAnimation(forKey: Self.pulseKey)
-        activateCorona?.layer.removeAnimation(forKey: "\(Self.pulseKey).coronaScale")
-        activateCorona?.layer.removeAnimation(forKey: "\(Self.pulseKey).coronaGlow")
-    }
-
-    #if DEBUG
-    /// The flag, not the animations: Core Animation drops an animation off a
-    /// backgrounded layer, so only this survives a test that spins the run loop.
-    var isPulsingForTesting: Bool { isPulsing }
-    var activateButtonForTesting: UIButton { actionsView.activateButton }
-    #endif
-}
-
 /// The price tracker's Safari lesson, played over the mock product page.
 ///
 /// The explainer page every other app opens on argues for the extension in
@@ -521,9 +270,14 @@ final class OnboardingSafariSetupCardView: UIView {
 /// is about to ask the user to switch on has already been seen working, on the
 /// page they were already looking at.
 ///
-/// The order of the three layers is the whole trick: the pill is page content,
-/// the scrim dims everything but the hole over that pill, and the setup card
-/// sits above both.
+/// The order used to be three layers: the pill is page content, the scrim
+/// dims everything but the hole over that pill, and a setup card sat above
+/// both. The card is gone — the ask now comes from the shared
+/// `OnboardingSafariSetupPopupView`, hosted by the enclosing
+/// `SafariReplicaViewController` rather than by this view — so the trick is
+/// just the first two layers: the pill, and the spotlight that closes on it.
+/// The popup's own 30% scrim stacks on top of this spotlight's 70% once it
+/// arrives; both stay visible, deliberately darker where they overlap.
 final class OnboardingPriceComparisonOverlayView: UIView {
     private enum Stage {
         case idle
@@ -532,11 +286,9 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         case offering
     }
 
-    var onActivateSafari: (() -> Void)?
-    var onSkipSafariSetup: (() -> Void)?
     /// The lesson has said everything it has to say: the comparison is on the
-    /// page and the setup card is coming up over it. Central Luna, which plays
-    /// this lesson as one of three, uses it to hand over to the next sibling.
+    /// page and the closed spotlight is holding it there. The host raises the
+    /// shared popup the instant this fires.
     var onDidReachSetupOffer: (() -> Void)?
 
     /// Where the pill floats, measured up from the page's bottom edge: clear of
@@ -545,18 +297,13 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     private static var pillBottomInset: CGFloat {
         SafariBottomBar.reservedPageHeight + 24
     }
-    /// What the card keeps clear of the closed circle.
-    private static let cardToSpotlightGap: CGFloat = 24
-    private static let cardEdgeInset: CGFloat = 24
 
     private let pill = OnboardingSellerPillView()
     private let spotlight = OnboardingSpotlightScrimView()
-    private let card: OnboardingSafariSetupCardView
     private var stage = Stage.idle
     private var generation = 0
 
     init(configuration: OnboardingSurfaceConfiguration) {
-        card = OnboardingSafariSetupCardView(configuration: configuration)
         super.init(frame: .zero)
         backgroundColor = .clear
 
@@ -565,18 +312,13 @@ final class OnboardingPriceComparisonOverlayView: UIView {
 
         spotlight.alpha = 0
         addSubview(spotlight)
-
-        card.alpha = 0
-        card.onActivate = { [weak self] in self?.onActivateSafari?() }
-        card.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
-        addSubview(card)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// Nothing here is in the way until the card is up: a tap that lands on the
-    /// overlay itself belongs to whatever is under it.
+    /// Nothing here answers a tap: the popup that ends the lesson is a
+    /// separate, window-hosted view.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
         return hit === self ? nil : hit
@@ -592,36 +334,10 @@ final class OnboardingPriceComparisonOverlayView: UIView {
             height: pillSize.height)
         spotlight.frame = bounds
         spotlight.focusRect = pill.frame
-        layOutCard()
     }
 
-    /// The card fills the room ABOVE the closed circle, centred in what is left
-    /// of it — the one place it can sit without covering the very pill the
-    /// spotlight just isolated.
-    private func layOutCard() {
-        let available = CGSize(
-            width: max(bounds.width - Self.cardEdgeInset * 2, 0),
-            height: max(bounds.height - Self.cardEdgeInset * 2, 0))
-        guard available.width > 0 else { return }
-        let size = card.preferredSize(fitting: available)
-        let ceiling = safeAreaInsets.top + Self.cardEdgeInset
-        let floor = spotlight.focusRect.midY - spotlight.collapsedRadius
-            - Self.cardToSpotlightGap
-        // Centred in the room above the circle when there is room to centre it
-        // in; otherwise as high as it may sit. The card is never SHRUNK to fit
-        // — a clipped button is worse than a card that reaches down toward the
-        // light it is standing over.
-        let room = max(floor - ceiling, 0)
-        let y = ceiling + max((room - size.height) / 2, 0)
-        card.frame = CGRect(
-            x: ((bounds.width - size.width) / 2).rounded(),
-            y: y.rounded(),
-            width: size.width,
-            height: size.height)
-    }
-
-    /// Runs the whole lesson: the lookup, its answer, the spotlight closing on
-    /// it, and the setup card over the top.
+    /// Runs the whole lesson: the lookup, its answer, and the spotlight
+    /// closing on it — the setup offer fires the instant that closing lands.
     func begin(afterEnablingExtension: Bool = false) {
         guard stage == .idle else { return }
         stage = .looking
@@ -639,7 +355,9 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     }
 
     /// Rewinds to the page as it loads, so a second entry into the lesson plays
-    /// the whole sequence rather than landing on its finished last frame.
+    /// the whole sequence rather than landing on its finished last frame. Also
+    /// what the host's forever-loop uses to replay this lesson under the
+    /// popup once the freeze ends.
     func reset() {
         generation += 1
         stage = .idle
@@ -648,16 +366,8 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         pill.prepareToLookAgain()
         spotlight.alpha = 0
         spotlight.reopen()
-        card.prepareToPresentAgain()
         accessibilityViewIsModal = false
         setNeedsLayout()
-    }
-
-    /// The return leg from real Safari with nothing to show for it: the card's
-    /// actions come back, and it asks again.
-    func reactivateActions() {
-        guard stage == .offering else { return }
-        card.reactivateActions()
     }
 
     private func revealPill() {
@@ -735,16 +445,15 @@ final class OnboardingPriceComparisonOverlayView: UIView {
                 animations: settle)
         }
         after(OnboardingPriceComparisonTiming.instructionsDelay) { view in
-            view.presentSetupCard()
+            view.reportSetupOffer()
         }
     }
 
-    private func presentSetupCard() {
+    private func reportSetupOffer() {
         stage = .offering
-        // The card owns the interaction from here; the page behind it is a
-        // finished demonstration.
+        // The shared popup owns the interaction from here; the page behind it
+        // is a finished demonstration, closed spotlight and all.
         accessibilityViewIsModal = true
-        card.present()
         onDidReachSetupOffer?()
     }
 
@@ -764,7 +473,6 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     }
 
     #if DEBUG
-    var setupCardForTesting: OnboardingSafariSetupCardView { card }
     var sellerPillForTesting: OnboardingSellerPillView { pill }
     var spotlightForTesting: OnboardingSpotlightScrimView { spotlight }
     #endif

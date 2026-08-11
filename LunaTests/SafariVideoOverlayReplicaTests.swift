@@ -113,12 +113,16 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
         XCTAssertEqual(overlay.closeFrameForTesting.width, 34, accuracy: 0.01)
         XCTAssertEqual(overlay.closeFrameForTesting.height, 34, accuracy: 0.01)
 
-        // The stage: 16:9, and the panel's 10pt padding either side of it.
+        // The stage: the panel's 10pt padding either side of it. Its ASPECT is
+        // a deliberate deviation from the extension's own 16:9 — the lesson's
+        // bundled clip is portrait, so the replica's stage is 9:16 — so that
+        // one parity check is intentionally not pinned here; see
+        // `OnboardingVideoDownloadOverlayView.stageAspect`.
         XCTAssertTrue(builder.contains(#"aspectRatio: "16 / 9""#))
         XCTAssertTrue(builder.contains(#"padding: "10px""#))
         let stage = overlay.stageFrameForTesting
         XCTAssertEqual(stage.width, panel.width - 20, accuracy: 0.5)
-        XCTAssertEqual(stage.height, (stage.width * 9 / 16).rounded(), accuracy: 1)
+        XCTAssertEqual(stage.height, (stage.width * 16 / 9).rounded(), accuracy: 1)
 
         // The download button: full width, 44 tall at least, in the media kind's
         // tint — which is the Downloader's identity colour, so the lesson's
@@ -153,7 +157,8 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
     /// The one place the replica deliberately parts company with `content.js`.
     /// In Safari the backdrop buries the page you already know; in the lesson
     /// that page is the question the panel answers, so it has to stay legible
-    /// behind it — in BOTH states, for the whole demonstration.
+    /// behind it for the whole demonstration — which is now just the one
+    /// player state, since the panel no longer grows a second one.
     func testTheBlockedPostIsStillVisibleBehindThePanel() throws {
         let builder = try videoOverlayBuilder()
         XCTAssertTrue(
@@ -163,17 +168,13 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
         let (overlay, window) = makeOverlay()
         defer { window.isHidden = true }
 
-        for state in ["player", "setup"] {
-            XCTAssertLessThan(
-                overlay.backdropDarknessForTesting, 0.5,
-                "the \(state) state buries the post the lesson is about")
-            XCTAssertGreaterThan(
-                overlay.backdropDarknessForTesting, 0,
-                "the panel still has to read as something in FRONT of the page")
-            XCTAssertLessThan(overlay.backdropBlurWeightForTesting, 1)
-            overlay.revealSetupInstructions()
-            overlay.layoutIfNeeded()
-        }
+        XCTAssertLessThan(
+            overlay.backdropDarknessForTesting, 0.5,
+            "the player state buries the post the lesson is about")
+        XCTAssertGreaterThan(
+            overlay.backdropDarknessForTesting, 0,
+            "the panel still has to read as something in FRONT of the page")
+        XCTAssertLessThan(overlay.backdropBlurWeightForTesting, 1)
     }
 
     /// Every beat is long enough to be taken in. The lesson has three subjects
@@ -192,74 +193,41 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
             "the hold is what the panel is FOR; its arrival is a transition")
     }
 
-    // MARK: - The growth
+    // MARK: - The stage fits on the shortest phone
 
-    func testTheGrowthExtendsDownwardAndLeavesTheVideoWhereItWas() throws {
-        let (overlay, window) = makeOverlay()
-        defer { window.isHidden = true }
-
-        let stageBefore = overlay.stageFrameForTesting
-        let panelBefore = overlay.panelFrameForTesting
-        XCTAssertFalse(overlay.isShowingSetupInstructionsForTesting)
-
-        overlay.revealSetupInstructions()
-        overlay.layoutIfNeeded()
-        let stageAfter = overlay.stageFrameForTesting
-        let panelAfter = overlay.panelFrameForTesting
-
-        XCTAssertTrue(overlay.isShowingSetupInstructionsForTesting)
-
-        // The stage never resizes: it is measured once, for both states, so the
-        // clip cannot change shape under the growth.
-        XCTAssertEqual(stageBefore.height, stageAfter.height, accuracy: 0.5)
-        XCTAssertEqual(stageBefore.width, stageAfter.width, accuracy: 0.5)
-        XCTAssertEqual(stageBefore.minX, stageAfter.minX, accuracy: 0.5)
-
-        // The growth is a BOTTOM edge travelling down. The top may rise, but
-        // only as far as keeping the taller panel on the page requires — here,
-        // an order of magnitude less than the bottom travels.
-        let bottomTravel = panelAfter.maxY - panelBefore.maxY
-        let topTravel = panelBefore.minY - panelAfter.minY
-        XCTAssertGreaterThan(
-            bottomTravel, 100,
-            "the setup block has to have made the panel meaningfully taller")
-        XCTAssertGreaterThanOrEqual(topTravel, 0, "the panel never sinks")
-        XCTAssertGreaterThan(bottomTravel, topTravel * 5)
-        XCTAssertEqual(
-            stageBefore.minY - stageAfter.minY, topTravel, accuracy: 0.5,
-            "the stage is rigid inside the panel; it moves only with its top")
-        XCTAssertLessThanOrEqual(
-            panelAfter.maxY,
-            overlay.bounds.height - SafariBottomBar.reservedPageHeight,
-            "the grown panel still clears the mock browser bar")
-    }
-
-    /// The shortest phone Luna ships to is the one the setup block does not fit
-    /// on at a full-height stage; it letterboxes the clip rather than pushing
-    /// the buttons off the page.
-    func testTheGrownPanelStaysOnTheShortestPhone() throws {
+    /// The panel stays in its one player state for the whole lesson now — the
+    /// grow beat that used to swap the download button for enable steps is
+    /// gone, that ask having moved to the shared setup popup. What remains to
+    /// verify is that the now-portrait stage still fits: the shortest phone
+    /// Luna ships to is the one a full-height 9:16 stage does not fit on, and
+    /// letterboxing the clip is the give that costs the lesson nothing.
+    func testTheStageLetterboxesToFitOnTheShortestPhone() throws {
         let (overlay, window) = makeOverlay(in: CGSize(width: 375, height: 667))
         defer { window.isHidden = true }
-        overlay.revealSetupInstructions()
-        overlay.layoutIfNeeded()
 
         let panel = overlay.panelFrameForTesting
+        let stage = overlay.stageFrameForTesting
         XCTAssertGreaterThanOrEqual(panel.minY, 0)
         XCTAssertLessThanOrEqual(
             panel.maxY,
             overlay.bounds.height - SafariBottomBar.reservedPageHeight)
-        XCTAssertTrue(
-            overlay.activateButtonForTesting.isUserInteractionEnabled,
-            "the Safari button is the way out of the lesson and must be live")
+        // Letterboxed rather than its full portrait height: on this phone the
+        // ideal 9:16 box would overrun the panel's own budget.
+        XCTAssertLessThan(
+            stage.height, (stage.width * 16 / 9).rounded(),
+            "the shortest phone has to letterbox the portrait clip")
+        XCTAssertGreaterThan(
+            stage.height, 0, "a stage collapsed to nothing is not a letterbox")
     }
 
-    // MARK: - Nothing else answers a tap
+    // MARK: - Nothing in the panel answers a tap
 
-    func testOnlyTheLessonsOwnActionsTakeATouch() throws {
+    /// Not even an activate/skip pair any more: that ask now lives on the
+    /// shared, window-hosted setup popup rather than inside the panel, so
+    /// NOTHING in the panel should intercept a touch.
+    func testNothingInThePanelAnswersATouch() throws {
         let (overlay, window) = makeOverlay()
         defer { window.isHidden = true }
-        overlay.revealSetupInstructions()
-        overlay.layoutIfNeeded()
 
         func hit(_ point: CGPoint) -> UIView? {
             window.hitTest(window.convert(point, from: overlay), with: nil)
@@ -276,15 +244,6 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
                 target is UIControl,
                 "\(name) is a picture of a control and must not answer a tap")
         }
-
-        let activate = overlay.activateButtonForTesting
-        let centre = overlay.convert(
-            CGPoint(x: activate.bounds.midX, y: activate.bounds.midY),
-            from: activate)
-        let target = hit(centre)
-        XCTAssertTrue(
-            target === activate || target?.isDescendant(of: activate) == true,
-            "Activate Safari is shadowed by \(String(describing: target))")
     }
 
     // MARK: -

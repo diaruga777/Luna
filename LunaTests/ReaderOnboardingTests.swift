@@ -156,7 +156,9 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     /// The one end-of-lesson signal the host cycles on: the Downloader's panel
-    /// reports it the moment the enable steps take the download button's place.
+    /// reports it once it has arrived and the clip is playing — the panel no
+    /// longer grows a chin of enable steps to mark that moment, since that ask
+    /// now lives on the shared setup popup instead.
     @MainActor
     func testTheVideoLessonReportsReachingItsSetupOffer() {
         let overlay = OnboardingVideoDownloadOverlayView(
@@ -168,9 +170,9 @@ final class ReaderOnboardingTests: XCTestCase {
         overlay.onDidReachSetupOffer = { reported += 1 }
 
         overlay.enterPlayerStateForTesting()
-        overlay.revealSetupInstructions()
+        overlay.reportSetupOffer()
         // A second call is the same run's already-made offer, not a new one.
-        overlay.revealSetupInstructions()
+        overlay.reportSetupOffer()
 
         XCTAssertEqual(reported, 1)
     }
@@ -519,10 +521,12 @@ final class ReaderOnboardingTests: XCTestCase {
     /// overlays can shadow each other. Pressing the intro's Safari action
     /// expands the replica full-bleed over the app's production root (mounted
     /// as a CHILD, not swapped in for it); the staged sequence (buried page,
-    /// Manage Extensions sheet, wipe) leaves the page's own actions hittable
-    /// rather than covered by anything it put up; and skipping returns to an
-    /// intro whose Safari button is still ENABLED — a skipped lesson keeps its
-    /// button, only a completed one is retired.
+    /// Manage Extensions sheet, wipe) ends with the shared setup popup's own
+    /// Set-up/Skip buttons hittable — they live on the WINDOW now, not inside
+    /// `OnboardingSafariPageView`, so a Reader-faceted app has exactly this one
+    /// popup rather than the page's own former actions; and skipping returns
+    /// to an intro whose Safari button is still ENABLED — a skipped lesson
+    /// keeps its button, only a completed one is retired.
     ///
     /// The deadlines below are failure caps, not waits: every loop breaks the
     /// moment its condition holds.
@@ -574,10 +578,12 @@ final class ReaderOnboardingTests: XCTestCase {
             "The production root must be mounted behind Safari during the save")
 
         // Ride the real staged sequence — the buried page, the Manage
-        // Extensions sheet with its toggle, then the wipe — until the page's
-        // own actions come out of the sweep hittable.
+        // Extensions sheet with its toggle, then the wipe — until the shared
+        // setup popup's own buttons come up hittable. The popup is
+        // window-hosted (a sibling of `onboarding.view`, not a descendant of
+        // it), so the search has to be over the WINDOW.
         func hitView(for label: String) -> (button: UIButton, hit: UIView?)? {
-            guard let action = onboarding.view
+            guard let action = window
                 .descendants(of: UIButton.self).first(where: {
                     $0.accessibilityLabel == label
                 })
@@ -595,20 +601,20 @@ final class ReaderOnboardingTests: XCTestCase {
         let deadline = Date(timeIntervalSinceNow: 10)
         while Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            if isHittable(OnboardingStrings.Safari.activate.value()),
+            if isHittable(OnboardingStrings.Safari.setUpInSafari.value()),
                isHittable(OnboardingStrings.Safari.skip.value()) { break }
         }
 
         for label in [
-            OnboardingStrings.Safari.activate.value(),
+            OnboardingStrings.Safari.setUpInSafari.value(),
             OnboardingStrings.Safari.skip.value(),
         ] {
             let probe = try XCTUnwrap(hitView(for: label))
-            let lunaPage = onboarding.view
-                .descendants(of: OnboardingSafariPageView.self).first
+            let popup = window
+                .descendants(of: OnboardingSafariSetupPopupView.self).first
             let buttonFrame = window.convert(
                 probe.button.bounds, from: probe.button)
-            let pageFrame = lunaPage.map {
+            let popupFrame = popup.map {
                 window.convert($0.bounds, from: $0)
             }
             XCTAssertTrue(
@@ -617,7 +623,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 """
                 \(label) is shadowed by \(String(describing: probe.hit)); \
                 button in window: \(buttonFrame), \
-                page in window: \(String(describing: pageFrame)), \
+                popup in window: \(String(describing: popupFrame)), \
                 button superview chain: \(sequence(
                     first: probe.button as UIView, next: \.superview)
                     .map { "\(type(of: $0)) \($0.frame) hidden=\($0.isHidden) alpha=\($0.alpha)" }
@@ -629,7 +635,7 @@ final class ReaderOnboardingTests: XCTestCase {
         // the three-action intro card — still enabled, marked skipped rather
         // than completed, since the shortcut lesson isn't done yet.
         let skip = try XCTUnwrap(
-            onboarding.view.descendants(of: UIButton.self).first {
+            window.descendants(of: UIButton.self).first {
                 $0.accessibilityLabel == OnboardingStrings.Safari.skip.value()
             })
         skip.sendActions(for: .touchUpInside)
@@ -654,15 +660,18 @@ final class ReaderOnboardingTests: XCTestCase {
 
     /// The price tracker's Safari lesson is a different demonstration with the
     /// same ending. It runs on the mock product page instead of the explainer:
-    /// the seller pill answers there, the scrim closes on it, and the setup
-    /// card over the top offers the same two actions — which have to be
-    /// hittable through a scrim that covers the whole screen, and which have to
-    /// be ABOVE it, or the lesson ends on a card nobody can reach.
+    /// the seller pill answers there, the lesson's own 70% spotlight scrim
+    /// closes on it, and the shared setup popup — window-hosted, not a card
+    /// inside the lesson's own view any more — comes up above BOTH that
+    /// spotlight and its own 30% scrim, stacked and both still visible. Its
+    /// buttons have to be hittable through that stack, or the lesson ends on
+    /// an ask nobody can reach; and the re-entry contract (a hop to Safari
+    /// with nothing to show for it) has to put the buttons live again.
     ///
     /// The deadline is a failure cap, not a wait: the loop breaks the moment
-    /// the card is up.
+    /// the popup is up.
     @MainActor
-    func testPriceLessonEndsOnAHittableSetupCardOverTheAnsweredPill() throws {
+    func testPriceLessonEndsOnAHittableSetupPopupOverTheAnsweredPill() throws {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .priceTracker))
         let window = UIWindow(frame: CGRect(
@@ -673,16 +682,21 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
+        // Wires the one thing a real host wires: raise the shared popup the
+        // instant the lesson reports its own setup offer.
+        safari.onDidReachSetupOffer = { [weak safari] in
+            safari?.showSafariSetupPopup()
+        }
         safari.beginDemonstration()
         let overlay = try XCTUnwrap(
             window.descendants(of: OnboardingPriceComparisonOverlayView.self)
                 .first,
             "The price tracker's Safari lesson must mount its own overlay")
 
-        // The card's own buttons, not the window's: an app whose lesson is the
-        // explainer mounts a page carrying identically labelled ones.
+        // The popup's own buttons: it is window-hosted, a SIBLING of the
+        // replica's view rather than a descendant of the price overlay.
         func hitView(for label: String) -> (button: UIButton, hit: UIView?)? {
-            guard let action = overlay.descendants(of: UIButton.self).first(where: {
+            guard let action = window.descendants(of: UIButton.self).first(where: {
                 $0.accessibilityLabel == label
             })
             else { return nil }
@@ -698,7 +712,7 @@ final class ReaderOnboardingTests: XCTestCase {
         }
 
         let labels = [
-            OnboardingStrings.Safari.activate.value(),
+            OnboardingStrings.Safari.setUpInSafari.value(),
             OnboardingStrings.Safari.skip.value(),
         ]
         let deadline = Date(timeIntervalSinceNow: 12)
@@ -722,19 +736,38 @@ final class ReaderOnboardingTests: XCTestCase {
             "The pill must have left its waiting state for the price it found")
         XCTAssertTrue(
             overlay.spotlightForTesting.isCollapsedForTesting,
-            "The spotlight must have closed on the pill")
-        let subviews = overlay.subviews
-        XCTAssertTrue(
-            (subviews.firstIndex(of: overlay.setupCardForTesting) ?? -1)
-                > (subviews.firstIndex(of: overlay.spotlightForTesting) ?? -1),
-            "The setup card must sit above the scrim it is offered over")
+            "The lesson's own spotlight must have closed on the pill")
+        XCTAssertGreaterThan(
+            overlay.spotlightForTesting.alpha, 0,
+            "the spotlight stays up — the popup's scrim stacks on top of it "
+                + "rather than replacing it")
+
+        // The popup sits above the whole replica — spotlight and all — since
+        // it is added directly to the window rather than into the lesson's
+        // own view hierarchy.
+        let popup = try XCTUnwrap(
+            window.descendants(of: OnboardingSafariSetupPopupView.self).first)
+        let windowSubviews = window.subviews
+        XCTAssertGreaterThan(
+            windowSubviews.firstIndex(of: popup) ?? -1,
+            windowSubviews.firstIndex(of: safari.view) ?? -1,
+            "The setup popup must sit above the replica it is offered over")
+
+        // The return leg from real Safari with nothing to show for it: the
+        // popup's buttons come back live rather than staying disabled from
+        // whichever tap sent the user there.
+        popup.setActionsEnabled(false)
+        safari.restoreInPageSafariSetup()
+        XCTAssertTrue(popup.activateButtonForTesting.isUserInteractionEnabled)
+        XCTAssertTrue(popup.skipButtonForTesting.isUserInteractionEnabled)
 
         // The lesson is re-enterable, so a second entry looks for the price
-        // again rather than opening on the finished last frame.
+        // again rather than opening on the finished last frame — the popup
+        // itself is untouched by this, since the host's forever-loop is what
+        // resets and replays the lesson underneath it.
         safari.resetDemonstration()
         XCTAssertTrue(overlay.sellerPillForTesting.isLooking)
         XCTAssertFalse(overlay.spotlightForTesting.isCollapsedForTesting)
-        XCTAssertEqual(overlay.setupCardForTesting.alpha, 0)
     }
 
     /// Every recovery route stays reachable when the external open fails, and

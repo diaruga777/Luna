@@ -60,6 +60,12 @@ private func viewURL(for state: LiveMediaDownloadAttributes.ContentState) -> URL
     state.viewURLString.flatMap(URL.init(string:))
 }
 
+/// The finished card's Share target — the same `media` route plus `&share=1`,
+/// prebuilt by `activityState(for:)` for the same reason `viewURLString` is.
+private func shareURL(for state: LiveMediaDownloadAttributes.ContentState) -> URL? {
+    state.shareURLString.flatMap(URL.init(string:))
+}
+
 struct LunaDownloaderLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LiveMediaDownloadAttributes.self) { context in
@@ -88,8 +94,10 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                     .widgetURL(viewURL(for: context.state))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 4) {
-                        if context.state.phase != .failed {
+                    VStack(spacing: 6) {
+                        // A finished card reads as done: no progress track, and
+                        // the two things there are left to do with the file.
+                        if context.state.phase != .failed, context.state.phase != .finished {
                             MoonHorizonProgressView(progress: context.state.progress)
                                 .frame(height: 20)
                         }
@@ -100,6 +108,9 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                             Spacer(minLength: 0)
                             ActivityControlButton(context: context)
                         }
+                        if context.state.phase == .finished {
+                            FinishedActionsView(state: context.state)
+                        }
                     }
                 }
             } compactLeading: {
@@ -108,6 +119,13 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                 if context.state.phase == .failed {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                } else if context.state.phase == .finished {
+                    // A percentage that has nowhere left to go reads as a stalled
+                    // transfer; the completed card says so instead.
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityLabel(
+                            L10n.string("LiveActivity_downloader_finishedAccessibilityLabel"))
                 } else if context.state.phase == .suspended {
                     Image(systemName: "arrow.clockwise.circle.fill")
                 } else {
@@ -153,13 +171,54 @@ private struct DownloadActivityView: View {
                     ActivityControlButton(context: context)
                 }
             }
-            // The moon horizon spans the full width of the activity, below the row.
-            if context.state.phase != .failed {
+            // The moon horizon spans the full width of the activity, below the
+            // row — except once the transfer is done, where a full track would
+            // read as a stalled progress bar rather than a result. The finished
+            // card puts its two actions in that space instead.
+            if context.state.phase == .finished {
+                FinishedActionsView(state: context.state)
+            } else if context.state.phase != .failed {
                 MoonHorizonProgressView(progress: context.state.progress)
                     .frame(height: 24)
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// The finished card's two affordances. `Link`s rather than buttons: a widget
+/// cannot present anything itself, so each one opens the app on a route that
+/// does — Play on the tap-to-view link (the same one the whole card carries),
+/// Share on that route plus `&share=1`, which raises the system share sheet
+/// over the downloaded file (`SceneDelegate.openMediaDeepLink`).
+private struct FinishedActionsView: View {
+    let state: LiveMediaDownloadAttributes.ContentState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let playURL = viewURL(for: state) {
+                Link(destination: playURL) {
+                    Label(
+                        L10n.string("LiveActivity_downloader_playButtonLabel"),
+                        systemImage: "play.fill")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .accessibilityLabel(
+                    L10n.string("LiveActivity_downloader_playButtonAccessibilityLabel"))
+            }
+            if let shareURL = shareURL(for: state) {
+                Link(destination: shareURL) {
+                    Label(
+                        L10n.string("LiveActivity_downloader_shareButtonLabel"),
+                        systemImage: "square.and.arrow.up")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .accessibilityLabel(
+                    L10n.string("LiveActivity_downloader_shareButtonAccessibilityLabel"))
+            }
+        }
     }
 }
 

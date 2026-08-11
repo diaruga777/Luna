@@ -19,12 +19,12 @@ import UIKit
 /// web page the prominent button opens — and every lesson ends on this one
 /// popup instead.
 ///
-/// Visually it borrows two things wholesale: the night-surface card with a
-/// static launch `EclipseCoronaView` worn as its border, exactly like
-/// `OnboardingSafariSetupCardView` and `DemoInstructionOverlay`'s retired
-/// `.eclipseCard` style did, and the Skip button's own styling from the
-/// retired `OnboardingSafariActionsView` (plain configuration, white @ 0.7,
-/// 16pt medium).
+/// Visually it borrows two things wholesale: the night-surface card itself
+/// (no border corona of its own — that glow is reserved for the "Set up in
+/// Safari" button below, so it reads as the one actionable thing here rather
+/// than the whole card), and the Skip button's own styling from the retired
+/// `OnboardingSafariActionsView` (plain configuration, white @ 0.7, 16pt
+/// medium).
 final class OnboardingSafariSetupPopupView: UIView {
     /// The alpha of the FULL-SCREEN scrim behind the card. Deliberately
     /// light — every host now freezes the lesson that raised this popup and
@@ -37,8 +37,8 @@ final class OnboardingSafariSetupPopupView: UIView {
     /// `SafariSetupScrimView` that `AppOnboardingViewController
     /// .showSafariSetupPopup()` mounts directly on the window, BELOW this
     /// view, entirely independent of this view's own layout. That is
-    /// deliberate, for two reasons: this view's card and its border corona
-    /// rebuild themselves on geometry changes (`layoutSubviews` below), and a
+    /// deliberate, for two reasons: this view's activate-button corona
+    /// rebuilds itself on geometry changes (`layoutSubviews` below), and a
     /// scrim living inside the same view as code that removes-and-reinserts
     /// subviews is one more thing that code could disturb; and the popup
     /// itself is raised from whichever `SafariReplicaViewController` happens
@@ -47,7 +47,7 @@ final class OnboardingSafariSetupPopupView: UIView {
     /// (and popup) owned by ONE of those swapped-out replicas is owned by an
     /// object that does not outlive the swap; owned by the controller that
     /// runs the swap, both outlive every one of them.
-    static let scrimAlpha: CGFloat = 0.30
+    static let scrimAlpha: CGFloat = 0.40
     static let cornerRadius: CGFloat = 26
     private static let horizontalInset: CGFloat = 26
     private static let verticalInset: CGFloat = 24
@@ -58,10 +58,6 @@ final class OnboardingSafariSetupPopupView: UIView {
     var onSkip: (() -> Void)?
 
     private let card = UIView()
-    /// The card's own border corona. Sits behind `card` as a sibling in this
-    /// (unclipped) full-bleed view rather than inside it, the same arrangement
-    /// `DemoInstructionOverlay` and `OnboardingSafariSetupCardView` use.
-    private var corona: EclipseCoronaView?
     private let activateButton: OnboardingSafariSetupActionButton
     /// The tight corona wrapped directly around the activate button's own
     /// capsule — the actionable control, made unmistakable, distinct from the
@@ -168,30 +164,11 @@ final class OnboardingSafariSetupPopupView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard card.bounds.width > 0, card.bounds.height > 0 else { return }
-        if corona?.bounds.size != card.bounds.size {
-            corona?.removeFromSuperview()
-            let halo = EclipseCoronaView(
-                bodySize: card.bounds.size,
-                cornerRadius: Self.cornerRadius,
-                tint: LunaSurfacePalette.atmosphereTint)
-            // Already on screen: a resize (a rotation, an iPad Split View
-            // change) must not make the border pop back in from nothing.
-            halo.alpha = hasAnimatedIn ? 1 : 0
-            insertSubview(halo, belowSubview: card)
-            corona = halo
-        }
-        // `corona` is a SIBLING of `card` in this view (unclipped, so the
-        // glow can throw light past card's own edge) rather than a child of
-        // it, so it needs card's FRAME — its position within their shared
-        // superview — not card's bounds, which is always zero-origin and
-        // would pin the halo to this view's own top-left corner regardless
-        // of where the card actually sits.
-        corona?.frame = card.frame
         layOutActivateCorona()
     }
 
-    /// The corona is the card's own, not the activate button's — see
-    /// `activateCorona` above for that one. Rebuilt only when the button's own
+    /// The card carries no corona of its own — only the activate button
+    /// does (`activateCorona` above). Rebuilt only when the button's own
     /// geometry changes.
     private func layOutActivateCorona() {
         let frame = card.convert(activateButton.bounds, from: activateButton)
@@ -215,7 +192,7 @@ final class OnboardingSafariSetupPopupView: UIView {
 
     // MARK: - Presentation
 
-    /// - Parameter externalScrim: the host's own full-screen, 30%-black
+    /// - Parameter externalScrim: the host's own full-screen, 40%-black
     ///   scrim (see the type doc above) — faded in on the SAME animation as
     ///   this card, so the two arrive as one visual beat even though the
     ///   scrim is not this view's own subview.
@@ -225,13 +202,11 @@ final class OnboardingSafariSetupPopupView: UIView {
         guard !UIAccessibility.isReduceMotionEnabled else {
             externalScrim?.alpha = 1
             card.alpha = 1
-            corona?.alpha = 1
             activateCorona?.alpha = OnboardingAttentionPulse.reduceMotionGlowAlpha
             return
         }
         externalScrim?.alpha = 0
         card.alpha = 0
-        corona?.alpha = 0
         activateCorona?.alpha = 0
         card.transform = CGAffineTransform(translationX: 0, y: 10)
             .scaledBy(x: 0.985, y: 0.985)
@@ -241,7 +216,6 @@ final class OnboardingSafariSetupPopupView: UIView {
         ) {
             externalScrim?.alpha = 1
             self.card.alpha = 1
-            self.corona?.alpha = 1
             self.activateCorona?.alpha = 1
             self.card.transform = .identity
         } completion: { [weak self] _ in
@@ -327,7 +301,7 @@ final class OnboardingSafariSetupPopupView: UIView {
     #endif
 }
 
-/// The popup's full-screen 30%-black scrim. A distinct, named type (rather
+/// The popup's full-screen 40%-black scrim. A distinct, named type (rather
 /// than a bare `UIView`) so anything that needs to find or count it — the
 /// host's own teardown, a test — can do so precisely instead of guessing at a
 /// plain view by its background color. Exactly one is ever mounted, and it is
@@ -339,24 +313,34 @@ final class SafariSetupScrimView: UIView {}
 
 /// The popup's one prominent action: a hand-drawn full-colour Safari-style
 /// compass on the LEFT (never Apple's Safari icon asset, never the monochrome
-/// `safari` SF Symbol — this button is Luna's own artwork), the label, and the
-/// `arrow.up.forward.square` glyph on the RIGHT that says "this leaves the
-/// app". `GlassStyle.actionButtonConfiguration` gives it the same glass
-/// capsule every other prominent action button wears; the trailing glyph is a
-/// plain overlaid image view rather than a second `UIButton.Configuration`
-/// image, since a configuration can only place one image, and this button
-/// needs two — one on each side, in different roles.
+/// `safari` SF Symbol — this button is Luna's own artwork), the label, and a
+/// hand-drawn "opens externally" glyph on the RIGHT that says "this leaves
+/// the app" — see `OnboardingExternalLinkGlyph` below for why that one is
+/// hand-drawn too, rather than SF Symbol's `arrow.up.forward.square`.
+/// `GlassStyle.actionButtonConfiguration` gives it the same glass capsule
+/// every other prominent action button wears; the trailing glyph is a plain
+/// overlaid image view rather than a second `UIButton.Configuration` image,
+/// since a configuration can only place one image, and this button needs
+/// two — one on each side, in different roles.
 final class OnboardingSafariSetupActionButton: UIButton {
     static let height: CGFloat = 52
     static let minimumWidth: CGFloat = 214
     private static let compassSide: CGFloat = 22
-    private static let trailingGlyphSide: CGFloat = 15
-    private static let trailingGlyphTrailingInset: CGFloat = 16
+    private static let trailingGlyphSide: CGFloat = 16
+    /// The gap between the label's own trailing edge and the glyph —
+    /// tightened so the glyph reads as punctuating the label rather than
+    /// floating apart from it.
+    private static let trailingGlyphGap: CGFloat = 5
+    /// The glyph's own distance from the button's trailing edge.
+    private static let trailingGlyphRightInset: CGFloat = 14
+    /// A few points above the label's vertical center — optically aligned
+    /// with its cap height rather than its full line height, the way a
+    /// superscript-ish external-link mark usually sits next to text.
+    private static let trailingGlyphRise: CGFloat = 3
 
-    private let trailingGlyph = UIImageView(image: UIImage(
-        systemName: "arrow.up.forward.square",
-        withConfiguration: UIImage.SymbolConfiguration(
-            pointSize: 15, weight: .semibold)))
+    private let trailingGlyph = UIImageView(
+        image: OnboardingExternalLinkGlyph.image(
+            side: OnboardingSafariSetupActionButton.trailingGlyphSide))
 
     init(title: String) {
         super.init(frame: .zero)
@@ -369,8 +353,8 @@ final class OnboardingSafariSetupActionButton: UIButton {
         // cannot itself carry.
         config.contentInsets = NSDirectionalEdgeInsets(
             top: 13, leading: 20, bottom: 13,
-            trailing: Self.trailingGlyphTrailingInset * 2
-                + Self.trailingGlyphSide)
+            trailing: Self.trailingGlyphRightInset
+                + Self.trailingGlyphGap + Self.trailingGlyphSide)
         configuration = config
 
         trailingGlyph.tintColor = .white
@@ -385,10 +369,108 @@ final class OnboardingSafariSetupActionButton: UIButton {
         super.layoutSubviews()
         trailingGlyph.frame = CGRect(
             x: bounds.width - Self.trailingGlyphSide
-                - Self.trailingGlyphTrailingInset,
-            y: ((bounds.height - Self.trailingGlyphSide) / 2).rounded(),
+                - Self.trailingGlyphRightInset,
+            y: ((bounds.height - Self.trailingGlyphSide) / 2).rounded()
+                - Self.trailingGlyphRise,
             width: Self.trailingGlyphSide,
             height: Self.trailingGlyphSide)
+    }
+}
+
+/// A hand-drawn "opens externally" glyph, replacing SF Symbol's
+/// `arrow.up.forward.square`: a rounded square whose top-right corner is left
+/// open, with the arrow's shaft rising from inside the box and its head
+/// poking out through that opening rather than stopping at the box's own
+/// edge — the box does not fully contain the arrow, which is the whole point
+/// of the mark (the classic "this opens somewhere else" glyph). Rendered as a
+/// TEMPLATE image, like every other monochrome control glyph, so the
+/// button's own white tint colours it rather than a fixed colour being baked
+/// into the image — it has to match the label's white exactly, and stay in
+/// sync if that ever changes.
+enum OnboardingExternalLinkGlyph {
+    static func image(side: CGFloat, scale: CGFloat = 3) -> UIImage {
+        // Roughly an SF Symbol semibold's stroke weight at this point size.
+        let strokeWidth: CGFloat = max(side * 0.11, 1.3)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(
+            size: CGSize(width: side, height: side), format: format
+        ).image { context in
+            let cg = context.cgContext
+            cg.setLineWidth(strokeWidth)
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            UIColor.black.setStroke()
+
+            // The box sits toward the bottom-left, leaving the top-right free
+            // for the arrow to poke into — and, at that same corner, open.
+            let boxSide = side - strokeWidth - side * 0.24
+            let boxRect = CGRect(
+                x: strokeWidth / 2,
+                y: side - boxSide - strokeWidth / 2,
+                width: boxSide, height: boxSide)
+            let cornerRadius = boxSide * 0.26
+            // How far short of the top-right corner the top edge and right
+            // edge each stop — the width of the opening.
+            let gap = boxSide * 0.40
+
+            let box = UIBezierPath()
+            box.move(to: CGPoint(x: boxRect.maxX, y: boxRect.minY + gap))
+            box.addLine(to: CGPoint(x: boxRect.maxX, y: boxRect.maxY - cornerRadius))
+            box.addArc(
+                withCenter: CGPoint(
+                    x: boxRect.maxX - cornerRadius, y: boxRect.maxY - cornerRadius),
+                radius: cornerRadius, startAngle: 0, endAngle: .pi / 2,
+                clockwise: true)
+            box.addLine(to: CGPoint(x: boxRect.minX + cornerRadius, y: boxRect.maxY))
+            box.addArc(
+                withCenter: CGPoint(
+                    x: boxRect.minX + cornerRadius, y: boxRect.maxY - cornerRadius),
+                radius: cornerRadius, startAngle: .pi / 2, endAngle: .pi,
+                clockwise: true)
+            box.addLine(to: CGPoint(x: boxRect.minX, y: boxRect.minY + cornerRadius))
+            box.addArc(
+                withCenter: CGPoint(
+                    x: boxRect.minX + cornerRadius, y: boxRect.minY + cornerRadius),
+                radius: cornerRadius, startAngle: .pi, endAngle: .pi * 1.5,
+                clockwise: true)
+            box.addLine(to: CGPoint(x: boxRect.maxX - gap, y: boxRect.minY))
+            box.lineWidth = strokeWidth
+            box.stroke()
+
+            // The shaft starts inside the box and ends past its (open)
+            // top-right corner, out at the full glyph's own top-right —
+            // clear of the box entirely, not just touching its edge.
+            let shaftStart = CGPoint(
+                x: boxRect.midX - boxSide * 0.05,
+                y: boxRect.midY + boxSide * 0.08)
+            let tip = CGPoint(
+                x: side - strokeWidth / 2,
+                y: strokeWidth / 2)
+            let shaft = UIBezierPath()
+            shaft.move(to: shaftStart)
+            shaft.addLine(to: tip)
+            shaft.lineWidth = strokeWidth
+            shaft.stroke()
+
+            let headLength = boxSide * 0.32
+            let angle = atan2(tip.y - shaftStart.y, tip.x - shaftStart.x)
+            let leftWing = CGPoint(
+                x: tip.x - cos(angle - .pi / 6) * headLength,
+                y: tip.y - sin(angle - .pi / 6) * headLength)
+            let rightWing = CGPoint(
+                x: tip.x - cos(angle + .pi / 6) * headLength,
+                y: tip.y - sin(angle + .pi / 6) * headLength)
+            let head = UIBezierPath()
+            head.move(to: leftWing)
+            head.addLine(to: tip)
+            head.addLine(to: rightWing)
+            head.lineWidth = strokeWidth
+            head.lineJoinStyle = .round
+            head.stroke()
+        }
+        return image.withRenderingMode(.alwaysTemplate)
     }
 }
 

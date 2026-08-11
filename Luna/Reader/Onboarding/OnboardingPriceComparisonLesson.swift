@@ -276,7 +276,7 @@ final class OnboardingSpotlightScrimView: UIView {
 /// `OnboardingSafariSetupPopupView`, hosted by the enclosing
 /// `SafariReplicaViewController` rather than by this view — so the trick is
 /// just the first two layers: the pill, and the spotlight that closes on it.
-/// The popup's own 30% scrim stacks on top of this spotlight's 70% once it
+/// The popup's own 40% scrim stacks on top of this spotlight's 70% once it
 /// arrives; both stay visible, deliberately darker where they overlap.
 final class OnboardingPriceComparisonOverlayView: UIView {
     private enum Stage {

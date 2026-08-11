@@ -41,9 +41,11 @@ app played one sibling and stopped.
 **Every lesson in every app now ends on the SAME popup**,
 `OnboardingSafariSetupPopupView` (`Luna/Reader/Onboarding/
 OnboardingSafariSetupPopupView.swift`): a minimal "Set up in Safari" / "Skip"
-card — nothing else, no title, no steps — wearing the launch corona as its
-border, over a scrim light enough to keep whatever is running underneath it
-legible. It replaces THREE different former endings: the explainer page's own
+card — nothing else, no title, no steps, no border corona of its own — over a
+scrim light enough to keep whatever is running underneath it legible. Only
+the "Set up in Safari" button wears a corona (plus its attention pulse); the
+card is plain so the glow reads as pointing at the one actionable thing
+rather than the whole popup. It replaces THREE different former endings: the explainer page's own
 inline steps-and-buttons block, the video panel's grow-a-chin-of-enable-steps
 beat, and the price lesson's `OnboardingSafariSetupCardView`. The step-by-step
 instructions those used to print now live on the hosted setup web page the
@@ -63,8 +65,8 @@ cycle reassigns that property to a different sibling on every swap, so an
 owner that is a specific replica instance is an owner that gets swapped away
 from being "current" while still nominally holding the popup. In practice a
 cross-sibling swap could tear the scrim down while the popup card stayed (the
-scrim and the popup's own corona rebuild are both driven off the same
-geometry-change machinery the swap disturbs) — the exact split-ownership trap
+scrim and the popup's activate-button corona rebuild are both driven off the
+same geometry-change machinery the swap disturbs) — the exact split-ownership trap
 this section already warned about for the older `DemoInstructionOverlay`
 design. Moving both onto `AppOnboardingViewController` — the one object that
 runs every swap and therefore outlives all of them — removes the trap
@@ -79,27 +81,29 @@ any replica's `hasInstructions`, so it still answers correctly for both.
 
 The full-screen scrim is a distinct type, `SafariSetupScrimView`, that
 `showSafariSetupPopup()` mounts directly on the window, ADDED BEFORE the popup
-rather than carried inside it — deliberately: the popup's own card and its
-border corona rebuild themselves on geometry changes
-(`OnboardingSafariSetupPopupView.layoutSubviews`), and the corona is a SIBLING
-of the card in that view rather than a child of it (so its glow can throw
-light past the card's own edge without being clipped), which means it needs
-the card's `frame` — its position within their shared superview — not the
-card's `bounds`, which is always zero-origin. Getting that backwards once
-pinned a duplicate-looking corona to the popup's own top-left corner instead
-of the card it was meant to outline. Keeping the scrim completely outside the
-view that does this rebuilding means nothing about that logic — correct or
-not — can ever affect whether the scrim stays visible; being a named type
-rather than a bare `UIView` is what lets a test find and count it precisely
+rather than carried inside it — deliberately: the popup's own activate-button
+corona rebuilds itself on geometry changes
+(`OnboardingSafariSetupPopupView.layOutActivateCorona`), and the card carries
+none of its own to disturb anything either way. Keeping the scrim completely
+outside the view that does this rebuilding means nothing about that logic —
+correct or not — can ever affect whether the scrim stays visible; being a
+named type rather than a bare `UIView` is what lets a test find and count it
+precisely
 (`ReaderOnboardingTests.testCentralSafariLessonKeepsExactlyOneScrimAcrossASwap`).
+Its alpha is 0.40 (`OnboardingSafariSetupPopupView.scrimAlpha`).
 
 The compass button (`OnboardingSafariSetupActionButton`) reuses
 `GlassStyle.actionButtonConfiguration`'s capsule for the "Set up in Safari"
 label and `OnboardingSafariCompassGlyph.image(side:)`'s hand-drawn compass
 (radial-gradient dial, tick marks, a red/white needle at 45°) as its leading
-image, with the `arrow.up.forward.square` "this leaves the app" glyph laid out
-as a separate trailing image view (`UIButton.Configuration` only carries one
-image, and this button needs two, in different roles).
+image, with `OnboardingExternalLinkGlyph.image(side:)`'s hand-drawn "this
+leaves the app" mark — a rounded square with its top-right corner left open
+and an arrowhead poking out through that opening — laid out as a separate
+trailing image view (`UIButton.Configuration` only carries one image, and
+this button needs two, in different roles), tucked close to the label and
+raised a few points above its vertical center. Never SF Symbol's
+`arrow.up.forward.square`: that glyph fully encloses its arrow, which reads
+wrong for a mark whose entire point is "this goes somewhere else."
 
 `safariLessonDidReachSetupOffer` now fires this same "last lesson of the first
 cycle raises the popup, everything else is just the next beat" logic for EVERY
@@ -580,8 +584,8 @@ three layers in this z-order, which is the whole trick):
    both stay visible, deliberately darker where they overlap, rather than one
    replacing the other. The scrim is deliberately its OWN view rather than a
    subview of the popup: it is mounted once and never touched again, so
-   nothing in the popup's own layout (its card, its border corona, both of
-   which rebuild on geometry changes) can ever disturb it — and it is owned by
+   nothing in the popup's own layout (its activate-button corona, which
+   rebuilds on geometry changes) can ever disturb it — and it is owned by
    the host controller, not by this lesson's own replica, so a cross-sibling
    swap (central Luna's cycle) can't disturb it either. Being window-hosted
    rather than a subview of this overlay is also why the popup is never

@@ -147,7 +147,7 @@ final class AppOnboardingViewController: UIViewController {
     /// that is underneath the popup, so an object that gets swapped out is the
     /// wrong owner. See `showSafariSetupPopup()`.
     private var safariSetupPopup: OnboardingSafariSetupPopupView?
-    /// The popup's full-screen 30% scrim — mounted directly on the window
+    /// The popup's full-screen 40% scrim — mounted directly on the window
     /// BELOW the popup and never touched again after it fades in, alongside
     /// (never inside) the popup for the same reason
     /// `OnboardingSafariSetupPopupView`'s own doc comment gives.

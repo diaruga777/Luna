@@ -120,7 +120,7 @@ final class ReaderOnboardingTests: XCTestCase {
     /// Luna's cycle reassigns `safariReplica` to a different sibling on every
     /// swap — an owner that stops being "current" on the very next swap.
     /// Reported symptom: after one or two cross-sibling swaps, the popup card
-    /// stayed but its 30% scrim vanished, leaving the lesson full-bright
+    /// stayed but its 40% scrim vanished, leaving the lesson full-bright
     /// underneath. Walks the cycle across TWO swaps under a live popup and
     /// checks, after each, that exactly one scrim is mounted at its full
     /// alpha alongside the still-live popup — polling the condition rather
@@ -173,9 +173,9 @@ final class ReaderOnboardingTests: XCTestCase {
                 file: file, line: line)
             let scrim = try XCTUnwrap(scrims.first, label, file: file, line: line)
             // The view itself is fully faded IN (opaque presentation, not
-            // mid-fade or torn down) — the 30% dimming lives in its
-            // background color's own alpha component, checked separately
-            // below, not in this `UIView.alpha`.
+            // mid-fade or torn down) — the dimming lives in its background
+            // color's own alpha component, checked separately below, not in
+            // this `UIView.alpha`.
             XCTAssertEqual(
                 scrim.alpha, 1, accuracy: 0.001,
                 "\(label): the scrim view itself must be fully presented",
@@ -184,7 +184,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 scrim.backgroundColor?.cgColor.alpha ?? -1,
                 OnboardingSafariSetupPopupView.scrimAlpha,
                 accuracy: 0.001,
-                "\(label): the scrim's dimming must stay at its 0.30 alpha",
+                "\(label): the scrim's dimming must stay at its constant alpha",
                 file: file, line: line)
             XCTAssertNotNil(
                 window.descendants(of: OnboardingSafariSetupPopupView.self).first,
@@ -951,7 +951,7 @@ final class ReaderOnboardingTests: XCTestCase {
     /// the seller pill answers there, the lesson's own 70% spotlight scrim
     /// closes on it, and the shared setup popup — window-hosted, not a card
     /// inside the lesson's own view any more — comes up above BOTH that
-    /// spotlight and its own 30% scrim, stacked and both still visible. Its
+    /// spotlight and its own 40% scrim, stacked and both still visible. Its
     /// buttons have to be hittable through that stack, or the lesson ends on
     /// an ask nobody can reach; and the re-entry contract (a hop to Safari
     /// with nothing to show for it) has to put the buttons live again.

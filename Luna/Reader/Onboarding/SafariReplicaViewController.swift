@@ -76,18 +76,6 @@ final class SafariReplicaViewController:
     /// again: the bar has slid away and the page has taken back its strip.
     private var isBrowserBarVisible = true
     private var instructionOverlay: DemoInstructionOverlay?
-    /// The ONE popup every lesson's own setup offer ends on now — see
-    /// `showSafariSetupPopup`. Window-hosted, like `instructionOverlay`, for
-    /// the same reason: central Luna's cycle keeps swapping the replica
-    /// underneath while this stays up.
-    private var safariSetupPopup: OnboardingSafariSetupPopupView?
-    /// The popup's full-screen 30% scrim — a plain view the host owns
-    /// directly, mounted BELOW the popup and never touched again after it
-    /// fades in, so nothing in the popup's own layout can disturb it. Covers
-    /// everything under the popup, including a lesson's own dimming (the
-    /// price lesson's 70% spotlight), which stacks underneath it rather than
-    /// being replaced.
-    private var safariSetupScrim: UIView?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
     private var didBeginDemonstration = false
@@ -98,8 +86,13 @@ final class SafariReplicaViewController:
     private var pageIndex = 0
     private var pageTimer: Timer?
 
+    /// Only this replica's OWN instruction overlay — the shared "Set up in
+    /// Safari" / "Skip" popup every lesson ends on now lives one level up, on
+    /// `AppOnboardingViewController`, precisely so it is never one of these
+    /// per-replica things a cross-sibling swap could disturb (see
+    /// `AppOnboardingViewController.showSafariSetupPopup()`).
     var hasInstructions: Bool {
-        instructionOverlay != nil || safariSetupPopup != nil
+        instructionOverlay != nil
     }
     override var sharedURLString: String {
         let pages = onboardingConfiguration.demoPages
@@ -568,9 +561,9 @@ final class SafariReplicaViewController:
     }
 
     /// The wave-driven "you should enable Safari" ask — a different moment
-    /// from a lesson's own setup offer (`showSafariSetupPopup` below):
-    /// this one comes up once a save FROM Safari has been demonstrated,
-    /// wherever that lands in the journey.
+    /// from a lesson's own setup offer (`AppOnboardingViewController
+    /// .showSafariSetupPopup()`): this one comes up once a save FROM Safari
+    /// has been demonstrated, wherever that lands in the journey.
     func showSafariPrompt() {
         setInstruction(
             title: OnboardingStrings.Instruction.safariPrompt(
@@ -585,41 +578,13 @@ final class SafariReplicaViewController:
             ])
     }
 
-    /// The ONE ending every Safari lesson shares: raised the instant the
-    /// lesson underneath — the explainer page's clean-up, the video panel's
-    /// arrival, or the price comparison landing — reports
-    /// `onDidReachSetupOffer`. Window-hosted, over a light scrim, precisely
-    /// because the host freezes that lesson and then loops it forever
-    /// underneath rather than stopping it.
-    func showSafariSetupPopup() {
-        guard safariSetupPopup == nil else { return }
-        guard let host = view.window ?? view else { return }
-
-        // The scrim first, as its own view, so nothing about the popup's own
-        // layout (its card, its border corona) can ever disturb it.
-        let scrim = UIView(frame: host.bounds)
-        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(
-            OnboardingSafariSetupPopupView.scrimAlpha)
-        scrim.isUserInteractionEnabled = false
-        scrim.alpha = 0
-        safariSetupScrim = scrim
-        host.addSubview(scrim)
-
-        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
-        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        popup.onActivate = { [weak self] in self?.onSetUpSafari?() }
-        popup.onSkip = { [weak self] in self?.onSkipSafariSetup?() }
-        safariSetupPopup = popup
-        host.addSubview(popup)
-        popup.layoutIfNeeded()
-        popup.present(fadingInAlongside: scrim)
-    }
-
-    /// After a hop to Safari that returns with no evidence, the popup's
-    /// buttons come back live and the plea starts breathing again.
-    func restoreInPageSafariSetup() {
-        safariSetupPopup?.reactivate()
+    /// After a hop to Safari that returns with no evidence, this replica's
+    /// OWN video panel (if it has one) resumes playing. The shared setup
+    /// popup's own buttons/pulse are restored by whichever object raised it
+    /// now — `AppOnboardingViewController.restoreSharedSafariSetupPopupIfNeeded()`
+    /// — not per replica; see that type's doc for why the popup no longer
+    /// lives here at all.
+    func resumeVideoLessonAfterExternalReturn() {
         videoLesson?.setPlaying(true)
     }
 
@@ -676,21 +641,12 @@ final class SafariReplicaViewController:
     }
 
     func dismissInstructions(animated: Bool, completion: @escaping () -> Void) {
-        guard let overlay = (instructionOverlay as UIView?) ?? (safariSetupPopup as UIView?)
-        else {
+        guard let overlay = instructionOverlay else {
             completion()
             return
         }
-        // The scrim is the popup's own, owned separately — nil here when the
-        // instruction overlay (rather than the popup) is what's dismissing.
-        let scrim = safariSetupPopup != nil ? safariSetupScrim : nil
         instructionOverlay = nil
-        safariSetupPopup = nil
-        safariSetupScrim = nil
-        let changes = {
-            overlay.alpha = 0
-            scrim?.alpha = 0
-        }
+        let changes = { overlay.alpha = 0 }
         if animated, !UIAccessibility.isReduceMotionEnabled {
             UIView.animate(
                 withDuration: 0.28, delay: 0,
@@ -698,13 +654,11 @@ final class SafariReplicaViewController:
                 animations: changes,
                 completion: { _ in
                     overlay.removeFromSuperview()
-                    scrim?.removeFromSuperview()
                     completion()
                 })
         } else {
             changes()
             overlay.removeFromSuperview()
-            scrim?.removeFromSuperview()
             completion()
         }
     }

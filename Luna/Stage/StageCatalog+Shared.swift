@@ -111,10 +111,27 @@ enum SharedStageCatalog {
                 seed: { StageFixtures.seedEmpty() },
                 make: {
                     let safari = SafariReplicaViewController()
-                    // The real host raises the shared popup off this signal;
-                    // a bare replica (no host) wires it directly.
+                    // In production the popup (and its scrim) is
+                    // `AppOnboardingViewController`'s own state, raised off
+                    // this same signal — see that type's
+                    // `showSafariSetupPopup()`. This stage reviews the bare
+                    // replica with no such host, so it mounts an equivalent
+                    // pair directly instead.
                     safari.onDidReachSetupOffer = { [weak safari] in
-                        safari?.showSafariSetupPopup()
+                        guard let safari,
+                              let host = safari.view.window ?? safari.view
+                        else { return }
+                        let scrim = SafariSetupScrimView(frame: host.bounds)
+                        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                        scrim.backgroundColor = UIColor.black.withAlphaComponent(
+                            OnboardingSafariSetupPopupView.scrimAlpha)
+                        scrim.isUserInteractionEnabled = false
+                        host.addSubview(scrim)
+                        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
+                        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                        host.addSubview(popup)
+                        popup.layoutIfNeeded()
+                        popup.present(fadingInAlongside: scrim)
                     }
                     // The real entry starts the sequence once the incoming card
                     // has finished expanding; here, once the browser has been

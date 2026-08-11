@@ -34,14 +34,19 @@ final class OnboardingSafariSetupPopupView: UIView {
     /// stay visible, darker where they overlap.
     ///
     /// The scrim itself is NOT a subview of this view — it is a separate
-    /// plain `UIView` `SafariReplicaViewController.showSafariSetupPopup()`
-    /// mounts directly on the window, BELOW this view, entirely independent
-    /// of this view's own layout. That is deliberate: this view's card and
-    /// its border corona rebuild themselves on geometry changes
-    /// (`layoutSubviews` below), and a scrim living inside the same view as
-    /// code that removes-and-reinserts subviews is one more thing that code
-    /// could disturb. A scrim mounted and owned entirely by the host, never
-    /// touched again after `present(fadingInAlongside:)`, cannot be.
+    /// `SafariSetupScrimView` that `AppOnboardingViewController
+    /// .showSafariSetupPopup()` mounts directly on the window, BELOW this
+    /// view, entirely independent of this view's own layout. That is
+    /// deliberate, for two reasons: this view's card and its border corona
+    /// rebuild themselves on geometry changes (`layoutSubviews` below), and a
+    /// scrim living inside the same view as code that removes-and-reinserts
+    /// subviews is one more thing that code could disturb; and the popup
+    /// itself is raised from whichever `SafariReplicaViewController` happens
+    /// to be on screen when the lesson reaches its setup offer, while central
+    /// Luna's cycle keeps swapping which sibling that is underneath. A scrim
+    /// (and popup) owned by ONE of those swapped-out replicas is owned by an
+    /// object that does not outlive the swap; owned by the controller that
+    /// runs the swap, both outlive every one of them.
     static let scrimAlpha: CGFloat = 0.30
     static let cornerRadius: CGFloat = 26
     private static let horizontalInset: CGFloat = 26
@@ -321,6 +326,16 @@ final class OnboardingSafariSetupPopupView: UIView {
     var skipButtonForTesting: UIButton { skipButton }
     #endif
 }
+
+/// The popup's full-screen 30%-black scrim. A distinct, named type (rather
+/// than a bare `UIView`) so anything that needs to find or count it — the
+/// host's own teardown, a test — can do so precisely instead of guessing at a
+/// plain view by its background color. Exactly one is ever mounted, and it is
+/// owned directly by `AppOnboardingViewController.showSafariSetupPopup()`,
+/// for the same reason that controller owns the popup itself now rather than
+/// whichever `SafariReplicaViewController` happened to raise it — see this
+/// file's `OnboardingSafariSetupPopupView.scrimAlpha` doc comment above.
+final class SafariSetupScrimView: UIView {}
 
 /// The popup's one prominent action: a hand-drawn full-colour Safari-style
 /// compass on the LEFT (never Apple's Safari icon asset, never the monochrome

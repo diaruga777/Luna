@@ -48,22 +48,50 @@ inline steps-and-buttons block, the video panel's grow-a-chin-of-enable-steps
 beat, and the price lesson's `OnboardingSafariSetupCardView`. The step-by-step
 instructions those used to print now live on the hosted setup web page the
 popup's prominent button opens; the popup itself is presented by
-`SafariReplicaViewController.showSafariSetupPopup()`, window-hosted exactly like
-the older `DemoInstructionOverlay`-based asks, so replicas can keep swapping
-underneath it.
+`AppOnboardingViewController.showSafariSetupPopup()`, window-hosted exactly
+like the older `DemoInstructionOverlay`-based asks.
 
-The full-screen scrim is a plain `UIView` `showSafariSetupPopup()` mounts
-directly on the window, ADDED BEFORE the popup rather than carried inside it —
-deliberately: the popup's own card and its border corona rebuild themselves on
-geometry changes (`OnboardingSafariSetupPopupView.layoutSubviews`), and the
-corona is a SIBLING of the card in that view rather than a child of it (so its
-glow can throw light past the card's own edge without being clipped), which
-means it needs the card's `frame` — its position within their shared
-superview — not the card's `bounds`, which is always zero-origin. Getting that
-backwards once pinned a duplicate-looking corona to the popup's own top-left
-corner instead of the card it was meant to outline. Keeping the scrim
-completely outside the view that does this rebuilding means nothing about that
-logic — correct or not — can ever affect whether the scrim stays visible.
+**The popup and its scrim are owned by `AppOnboardingViewController` itself,
+not by any `SafariReplicaViewController`.** They used to be raised (and
+window-hosted) by whichever replica was on screen when the lesson reached its
+own setup offer — documented, at the time, as deliberately fine because both
+were mounted on the window rather than inside that replica's own view, so
+hiding the replica during a later cross-sibling swap couldn't touch them.
+That reasoning covered the REPLICA'S OWN VIEW being hidden; it did not cover
+the replica OBJECT itself no longer being `safariReplica` — central Luna's
+cycle reassigns that property to a different sibling on every swap, so an
+owner that is a specific replica instance is an owner that gets swapped away
+from being "current" while still nominally holding the popup. In practice a
+cross-sibling swap could tear the scrim down while the popup card stayed (the
+scrim and the popup's own corona rebuild are both driven off the same
+geometry-change machinery the swap disturbs) — the exact split-ownership trap
+this section already warned about for the older `DemoInstructionOverlay`
+design. Moving both onto `AppOnboardingViewController` — the one object that
+runs every swap and therefore outlives all of them — removes the trap
+structurally instead of patching around it: `showSafariSetupPopup()`,
+`dismissSharedSafariSetupPopup(animated:completion:)` and
+`restoreSharedSafariSetupPopupIfNeeded()` are its methods now, and
+`SafariReplicaViewController` keeps only its OWN per-lesson
+`instructionOverlay` (the Safari prompt, the shortcut/Action Button ask, the
+external-open failure — asks that belong to a single lesson, never cycled
+under). `hasSafariInstructions` checks the host's own `safariSetupPopup` OR
+any replica's `hasInstructions`, so it still answers correctly for both.
+
+The full-screen scrim is a distinct type, `SafariSetupScrimView`, that
+`showSafariSetupPopup()` mounts directly on the window, ADDED BEFORE the popup
+rather than carried inside it — deliberately: the popup's own card and its
+border corona rebuild themselves on geometry changes
+(`OnboardingSafariSetupPopupView.layoutSubviews`), and the corona is a SIBLING
+of the card in that view rather than a child of it (so its glow can throw
+light past the card's own edge without being clipped), which means it needs
+the card's `frame` — its position within their shared superview — not the
+card's `bounds`, which is always zero-origin. Getting that backwards once
+pinned a duplicate-looking corona to the popup's own top-left corner instead
+of the card it was meant to outline. Keeping the scrim completely outside the
+view that does this rebuilding means nothing about that logic — correct or
+not — can ever affect whether the scrim stays visible; being a named type
+rather than a bare `UIView` is what lets a test find and count it precisely
+(`ReaderOnboardingTests.testCentralSafariLessonKeepsExactlyOneScrimAcrossASwap`).
 
 The compass button (`OnboardingSafariSetupActionButton`) reuses
 `GlassStyle.actionButtonConfiguration`'s capsule for the "Set up in Safari"
@@ -88,10 +116,12 @@ special case.
 
 Re-entering the lesson rewinds to the first sibling. An external hop stops the
 cycle (`pauseDemoPresentationPlayback`), and a Safari return with no extension
-evidence calls `restoreInPageSafariSetup()` on every mounted replica — the popup
-may be owned by one that isn't currently on screen — which re-enables the
-popup's buttons and re-applies its attention pulse, then resumes the loop
-(`resumeSafariLessonLoopIfNeeded`).
+evidence calls `restoreSharedSafariSetupPopupIfNeeded()` once (the popup is the
+host's own state, so there is exactly one place to restore it) — which
+re-enables the popup's buttons and re-applies its attention pulse — plus each
+replica's own `resumeVideoLessonAfterExternalReturn()` (a replica's video
+lesson, if it has one, still isn't necessarily the one currently on screen),
+then resumes the loop (`resumeSafariLessonLoopIfNeeded`).
 
 ## Launch root
 
@@ -543,26 +573,29 @@ three layers in this z-order, which is the whole trick):
    runs against the close.
 3. **The shared setup popup stacks on top of both.** There is no card of the
    lesson's own any more — `OnboardingSafariSetupCardView` is deleted outright.
-   `SafariReplicaViewController.showSafariSetupPopup()` mounts a plain 30%-black
-   scrim view and then `OnboardingSafariSetupPopupView` on the WINDOW, in that
-   order, the instant this overlay reports `onDidReachSetupOffer`, so both sit
-   above this lesson's own 70% spotlight — both stay visible, deliberately
-   darker where they overlap, rather than one replacing the other. The scrim
-   is deliberately its OWN view rather than a subview of the popup: it is
-   mounted once and never touched again, so nothing in the popup's own layout
-   (its card, its border corona, both of which rebuild on geometry changes)
-   can ever disturb it. Being window-hosted rather than a subview of this
-   overlay is also why the popup is never shrunk to fit the room above the
-   closed circle the way the old card was: it uses the same generic
-   top-anchored layout every app's popup does.
+   `AppOnboardingViewController.showSafariSetupPopup()` mounts a
+   `SafariSetupScrimView` and then `OnboardingSafariSetupPopupView` on the
+   WINDOW, in that order, the instant this overlay reports
+   `onDidReachSetupOffer`, so both sit above this lesson's own 70% spotlight —
+   both stay visible, deliberately darker where they overlap, rather than one
+   replacing the other. The scrim is deliberately its OWN view rather than a
+   subview of the popup: it is mounted once and never touched again, so
+   nothing in the popup's own layout (its card, its border corona, both of
+   which rebuild on geometry changes) can ever disturb it — and it is owned by
+   the host controller, not by this lesson's own replica, so a cross-sibling
+   swap (central Luna's cycle) can't disturb it either. Being window-hosted
+   rather than a subview of this overlay is also why the popup is never
+   shrunk to fit the room above the closed circle the way the old card was: it
+   uses the same generic top-anchored layout every app's popup does.
 
 Every lesson ends in the same place now, so `openSafariSetup`, the skip, and
-the return leg with nothing to show for it (`restoreInPageSafariSetup`, which
-re-enables the popup's buttons and re-applies its attention pulse) are shared
-across all three Safari lessons. The lesson is re-enterable like the
-explainer's: `resetDemonstration` puts the pill back to looking and reopens
-the hole — the popup itself is untouched by a reset, since the host's
-forever-loop is what put the lesson back in motion underneath it.
+the return leg with nothing to show for it
+(`restoreSharedSafariSetupPopupIfNeeded`, which re-enables the popup's buttons
+and re-applies its attention pulse) are shared across all three Safari
+lessons. The lesson is re-enterable like the explainer's: `resetDemonstration`
+puts the pill back to looking and reopens the hole — the popup itself is
+untouched by a reset, since the host's forever-loop is what put the lesson
+back in motion underneath it.
 
 ### The save lesson performs a real save
 

@@ -115,6 +115,127 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
+    /// The regression this guards: the shared popup's scrim used to be owned
+    /// by whichever `SafariReplicaViewController` raised it, and central
+    /// Luna's cycle reassigns `safariReplica` to a different sibling on every
+    /// swap — an owner that stops being "current" on the very next swap.
+    /// Reported symptom: after one or two cross-sibling swaps, the popup card
+    /// stayed but its 30% scrim vanished, leaving the lesson full-bright
+    /// underneath. Walks the cycle across TWO swaps under a live popup and
+    /// checks, after each, that exactly one scrim is mounted at its full
+    /// alpha alongside the still-live popup — polling the condition rather
+    /// than trusting a fixed pump, since the swap's own completion still runs
+    /// off a real animation-completion callback.
+    @MainActor
+    func testCentralSafariLessonKeepsExactlyOneScrimAcrossCrossSiblingSwaps()
+        throws
+    {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .luna,
+                saveSetupMode: .unavailable,
+                demonstrationApp: .reader),
+            onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        func pollUntil(
+            _ timeout: TimeInterval = 5, _ condition: () -> Bool
+        ) {
+            let deadline = Date(timeIntervalSinceNow: timeout)
+            while Date() < deadline, !condition() {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            }
+        }
+
+        func assertExactlyOneLiveScrim(
+            _ label: String, file: StaticString = #filePath, line: UInt = #line
+        ) throws {
+            let scrims = window.descendants(of: SafariSetupScrimView.self)
+            XCTAssertEqual(
+                scrims.count, 1,
+                "\(label): expected exactly one scrim, found \(scrims.count)",
+                file: file, line: line)
+            let scrim = try XCTUnwrap(scrims.first, label, file: file, line: line)
+            // The view itself is fully faded IN (opaque presentation, not
+            // mid-fade or torn down) — the 30% dimming lives in its
+            // background color's own alpha component, checked separately
+            // below, not in this `UIView.alpha`.
+            XCTAssertEqual(
+                scrim.alpha, 1, accuracy: 0.001,
+                "\(label): the scrim view itself must be fully presented",
+                file: file, line: line)
+            XCTAssertEqual(
+                scrim.backgroundColor?.cgColor.alpha ?? -1,
+                OnboardingSafariSetupPopupView.scrimAlpha,
+                accuracy: 0.001,
+                "\(label): the scrim's dimming must stay at its 0.30 alpha",
+                file: file, line: line)
+            XCTAssertNotNil(
+                window.descendants(of: OnboardingSafariSetupPopupView.self).first,
+                "\(label): the popup card must still be up too",
+                file: file, line: line)
+            XCTAssertTrue(
+                onboarding.hasSafariInstructionsForTesting, label,
+                file: file, line: line)
+        }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+        // The tap's own app-switcher hop has to clear (`appSwitcher == nil`)
+        // before a lesson ending is accepted — matching the settle window the
+        // sibling-cycling test above uses for the same tap.
+        spinRunLoop(0.3)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
+
+        // Walk the first full cycle with nothing over it yet — a
+        // demonstration, not an ask — then close it on the third ending.
+        onboarding.finishSafariLessonForTesting()
+        pollUntil { onboarding.safariDemonstrationAppForTesting == .downloader }
+        onboarding.finishSafariLessonForTesting()
+        pollUntil { onboarding.safariDemonstrationAppForTesting == .priceTracker }
+        onboarding.finishSafariLessonForTesting()
+        pollUntil { onboarding.hasSafariInstructionsForTesting }
+        try assertExactlyOneLiveScrim("popup just raised, before any swap")
+
+        // First cross-sibling swap under the live popup: priceTracker wraps
+        // to reader. No new `finishSafariLessonForTesting()` call is needed —
+        // the popup's own raise already scheduled this swap.
+        pollUntil(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3) {
+            onboarding.safariDemonstrationAppForTesting == .reader
+        }
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
+        try assertExactlyOneLiveScrim("one swap in")
+
+        // Second cross-sibling swap: reader -> downloader. The reported bug
+        // specifically needed "one or two swaps in," so this is the swap that
+        // matters most.
+        onboarding.finishSafariLessonForTesting()
+        pollUntil(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3) {
+            onboarding.safariDemonstrationAppForTesting == .downloader
+        }
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
+        try assertExactlyOneLiveScrim("two swaps in")
+    }
+
     /// A faceted app has ONE lesson. It ends on the shared setup popup exactly
     /// like central Luna's siblings do — every app's Safari lesson shares that
     /// one ending now — and since there is no sibling to hand off to, the same
@@ -839,29 +960,51 @@ final class ReaderOnboardingTests: XCTestCase {
     /// the popup is up.
     @MainActor
     func testPriceLessonEndsOnAHittableSetupPopupOverTheAnsweredPill() throws {
-        let safari = SafariReplicaViewController(
-            configuration: .configuration(for: .priceTracker))
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Through the real host, not a bare replica: the popup is
+        // `AppOnboardingViewController`'s own state now, not the replica's.
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .priceTracker, saveSetupMode: .unavailable),
+            onboardingStore: AppOnboardingStore(app: .priceTracker, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: AppLaunchGeometry.referenceSize))
-        window.rootViewController = safari
+        window.rootViewController = onboarding
         window.makeKeyAndVisible()
-        safari.view.layoutIfNeeded()
+        onboarding.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        // Wires the one thing a real host wires: raise the shared popup the
-        // instant the lesson reports its own setup offer.
-        safari.onDidReachSetupOffer = { [weak safari] in
-            safari?.showSafariSetupPopup()
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+
+        // Let the REAL lesson run to its own natural setup offer — no
+        // shortcut — so the overlay's states below reflect what actually
+        // happened, not a forced signal.
+        let offerDeadline = Date(timeIntervalSinceNow: 15)
+        while Date() < offerDeadline, !onboarding.hasSafariInstructionsForTesting {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
         }
-        safari.beginDemonstration()
+        XCTAssertTrue(
+            onboarding.hasSafariInstructionsForTesting,
+            "the real lesson never naturally reached its setup offer")
         let overlay = try XCTUnwrap(
             window.descendants(of: OnboardingPriceComparisonOverlayView.self)
                 .first,
             "The price tracker's Safari lesson must mount its own overlay")
 
         // The popup's own buttons: it is window-hosted, a SIBLING of the
-        // replica's view rather than a descendant of the price overlay.
+        // whole onboarding hierarchy rather than a descendant of the price
+        // overlay.
         func hitView(for label: String) -> (button: UIButton, hit: UIView?)? {
             guard let action = window.descendants(of: UIButton.self).first(where: {
                 $0.accessibilityLabel == label
@@ -909,32 +1052,24 @@ final class ReaderOnboardingTests: XCTestCase {
             "the spotlight stays up — the popup's scrim stacks on top of it "
                 + "rather than replacing it")
 
-        // The popup sits above the whole replica — spotlight and all — since
-        // it is added directly to the window rather than into the lesson's
-        // own view hierarchy.
+        // The popup sits above the WHOLE onboarding hierarchy — replica,
+        // spotlight and all — since it is added directly to the window rather
+        // than into `onboarding.view`'s own subtree.
         let popup = try XCTUnwrap(
             window.descendants(of: OnboardingSafariSetupPopupView.self).first)
         let windowSubviews = window.subviews
         XCTAssertGreaterThan(
             windowSubviews.firstIndex(of: popup) ?? -1,
-            windowSubviews.firstIndex(of: safari.view) ?? -1,
-            "The setup popup must sit above the replica it is offered over")
+            windowSubviews.firstIndex(of: onboarding.view) ?? -1,
+            "The setup popup must sit above the whole onboarding hierarchy")
 
         // The return leg from real Safari with nothing to show for it: the
         // popup's buttons come back live rather than staying disabled from
         // whichever tap sent the user there.
         popup.setActionsEnabled(false)
-        safari.restoreInPageSafariSetup()
+        onboarding.restoreSharedSafariSetupPopupForTesting()
         XCTAssertTrue(popup.activateButtonForTesting.isUserInteractionEnabled)
         XCTAssertTrue(popup.skipButtonForTesting.isUserInteractionEnabled)
-
-        // The lesson is re-enterable, so a second entry looks for the price
-        // again rather than opening on the finished last frame — the popup
-        // itself is untouched by this, since the host's forever-loop is what
-        // resets and replays the lesson underneath it.
-        safari.resetDemonstration()
-        XCTAssertTrue(overlay.sellerPillForTesting.isLooking)
-        XCTAssertFalse(overlay.spotlightForTesting.isCollapsedForTesting)
     }
 
     /// Every recovery route stays reachable when the external open fails, and

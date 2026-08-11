@@ -140,6 +140,18 @@ final class AppOnboardingViewController: UIViewController {
     /// full cycle and stays for the rest of the lesson, so later passes must not
     /// raise or reconfigure it.
     private var didRaiseSafariSetupPopover = false
+    /// The ONE popup every Safari lesson's own setup offer ends on, in every
+    /// app. Owned directly by this controller rather than by whichever
+    /// `SafariReplicaViewController` happened to be on screen when the lesson
+    /// reached its offer — central Luna's cycle keeps swapping which sibling
+    /// that is underneath the popup, so an object that gets swapped out is the
+    /// wrong owner. See `showSafariSetupPopup()`.
+    private var safariSetupPopup: OnboardingSafariSetupPopupView?
+    /// The popup's full-screen 30% scrim — mounted directly on the window
+    /// BELOW the popup and never touched again after it fades in, alongside
+    /// (never inside) the popup for the same reason
+    /// `OnboardingSafariSetupPopupView`'s own doc comment gives.
+    private var safariSetupScrim: SafariSetupScrimView?
     private var messagesReplica: MessagesReplicaViewController?
     /// The save lesson's engine, built the moment the user taps into it: it
     /// resolves the link, starts the real work, and owns the real share surface
@@ -200,6 +212,17 @@ final class AppOnboardingViewController: UIViewController {
         guard let app = safariDemonstrationAppForTesting else { return }
         safariLessonDidReachSetupOffer(app)
     }
+
+    /// Simulates the return leg from a real hop to Safari that brought back no
+    /// extension evidence, without an actual `UIApplication.open` round trip.
+    func restoreSharedSafariSetupPopupForTesting() {
+        restoreSharedSafariSetupPopupIfNeeded()
+    }
+
+    /// The shared popup's scrim, directly — nil whenever no popup is up. Tests
+    /// use this (rather than hunting the window for a `SafariSetupScrimView`)
+    /// to confirm ownership stays put across a cross-sibling swap.
+    var safariSetupScrimForTesting: UIView? { safariSetupScrim }
 
     /// Enters the Safari lesson the way the util card's button does, for the
     /// staged screen that reviews the whole journey (`claudedocs/staging.md`).
@@ -887,9 +910,87 @@ final class AppOnboardingViewController: UIViewController {
         _ = journeyStage.completedSave(from: .safari)
         transitionDemo(to: .fullScreen, source: .safari) { [weak self] in
             guard let self, !self.isFinishing else { return }
-            self.safariReplica?.showSafariSetupPopup()
+            self.showSafariSetupPopup()
             self.scheduleSafariInstructionReplay()
         }
+    }
+
+    /// The ONE ending every Safari lesson shares, in every app: raised the
+    /// instant the lesson underneath — the explainer page's clean-up, the
+    /// video panel's arrival, or the price comparison landing — reports
+    /// `onDidReachSetupOffer`. Mounted directly on the window by THIS
+    /// controller rather than by whichever `SafariReplicaViewController`
+    /// happens to be running the lesson: central Luna's cycle swaps which
+    /// sibling that is while the popup stays up, so the popup (and its scrim)
+    /// need an owner that outlives every one of those swaps. This controller
+    /// is that owner — it is what runs the swap in the first place.
+    private func showSafariSetupPopup() {
+        guard safariSetupPopup == nil else { return }
+        guard let host = view.window ?? view else { return }
+
+        // The scrim first, as its own view, so nothing about the popup's own
+        // layout (its card, its border corona) can ever disturb it.
+        let scrim = SafariSetupScrimView(frame: host.bounds)
+        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(
+            OnboardingSafariSetupPopupView.scrimAlpha)
+        scrim.isUserInteractionEnabled = false
+        scrim.alpha = 0
+        safariSetupScrim = scrim
+        host.addSubview(scrim)
+
+        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
+        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        popup.onActivate = { [weak self] in self?.openSafariSetup() }
+        popup.onSkip = { [weak self] in self?.skipSafariSetupAndContinue() }
+        safariSetupPopup = popup
+        host.addSubview(popup)
+        popup.layoutIfNeeded()
+        popup.present(fadingInAlongside: scrim)
+    }
+
+    /// Tears down the shared popup and its scrim TOGETHER, as one unit, and
+    /// only when there is actually a popup up — the guard that keeps a
+    /// cross-sibling swap (which never calls this) from being able to remove
+    /// either half on its own.
+    private func dismissSharedSafariSetupPopup(
+        animated: Bool, completion: @escaping () -> Void
+    ) {
+        guard let popup = safariSetupPopup else {
+            completion()
+            return
+        }
+        let scrim = safariSetupScrim
+        safariSetupPopup = nil
+        safariSetupScrim = nil
+        let changes = {
+            popup.alpha = 0
+            scrim?.alpha = 0
+        }
+        if animated, !UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(
+                withDuration: 0.28, delay: 0,
+                options: [.curveEaseInOut],
+                animations: changes,
+                completion: { _ in
+                    popup.removeFromSuperview()
+                    scrim?.removeFromSuperview()
+                    completion()
+                })
+        } else {
+            changes()
+            popup.removeFromSuperview()
+            scrim?.removeFromSuperview()
+            completion()
+        }
+    }
+
+    /// After a hop to real Safari that brought back no extension evidence,
+    /// the popup's buttons come back live and its plea starts breathing again.
+    /// A no-op when this controller isn't the popup's owner — which, now that
+    /// there is only ever one owner, is simply whenever no popup is up.
+    private func restoreSharedSafariSetupPopupIfNeeded() {
+        safariSetupPopup?.reactivate()
     }
 
     /// Puts the loop back after a hop to real Safari that brought no extension
@@ -906,13 +1007,15 @@ final class AppOnboardingViewController: UIViewController {
         scheduleSafariInstructionReplay()
     }
 
-    /// Whether any of the mounted sibling replicas is showing an instruction
-    /// overlay OR the shared setup popup. Either outlives the replica that
-    /// raised it — both are hosted on the window and the lessons swap
-    /// underneath — so asking only the current one would answer for the wrong
-    /// lesson.
+    /// Whether the shared setup popup is up, or any mounted sibling replica is
+    /// showing one of its OWN instruction overlays (the Safari prompt, the
+    /// shortcut/Action Button ask, the external-open failure — asks that
+    /// belong to a single lesson rather than to the cycle as a whole). The
+    /// popup itself is this controller's own state now, not any replica's, so
+    /// it no longer matters which replica is currently on screen.
     private var hasSafariInstructions: Bool {
-        safariReplicas.values.contains { $0.hasInstructions }
+        safariSetupPopup != nil
+            || safariReplicas.values.contains { $0.hasInstructions }
     }
 
     /// Replays the next sibling lesson below the window-hosted popup. The
@@ -1188,6 +1291,7 @@ final class AppOnboardingViewController: UIViewController {
         for safari in safariReplicas.values {
             safari.dismissInstructions(animated: false) {}
         }
+        dismissSharedSafariSetupPopup(animated: false) {}
     }
 
     #if DEBUG
@@ -1325,9 +1429,10 @@ final class AppOnboardingViewController: UIViewController {
     ///
     /// `.safariSetup` counts as well as `.safariDemonstration`: a hop to real
     /// Safari that brought back no extension evidence puts both of the page's
-    /// actions back (`restoreInPageSafariSetup`), and the skip has to be one of
-    /// them. What the stage guard is really for is the OTHER lesson — plus the
-    /// app-switcher hops, named outright rather than left to the stage.
+    /// actions back (`restoreSharedSafariSetupPopupIfNeeded`), and the skip
+    /// has to be one of them. What the stage guard is really for is the OTHER
+    /// lesson — plus the app-switcher hops, named outright rather than left to
+    /// the stage.
     private func skipSafariSetupAndContinue() {
         guard externalReturn == .none,
               !isFinishing,
@@ -1412,12 +1517,13 @@ final class AppOnboardingViewController: UIViewController {
             guard LunaSetupStatusStore.shared.safariRunApplies(
                 to: configuration.app)
             else {
-                // The popup may be owned by a replica other than the one
-                // currently on screen — central Luna's cycle can have moved
-                // on since it was raised — so every replica gets a chance to
-                // restore it rather than just the current one.
+                // The shared popup is this controller's own state, so there is
+                // exactly one place to restore it. Each replica's own video
+                // lesson (if it has one) still resumes independently — it
+                // isn't necessarily the one currently on screen either.
+                restoreSharedSafariSetupPopupIfNeeded()
                 for replica in safariReplicas.values {
-                    replica.restoreInPageSafariSetup()
+                    replica.resumeVideoLessonAfterExternalReturn()
                 }
                 resumeSafariLessonLoopIfNeeded()
                 return

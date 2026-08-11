@@ -36,7 +36,14 @@ Two consequences run through the whole design:
    `LeanProductURLParityTests`. The identity primitives are NOT copied — they
    were moved DOWN into `LunaModels` as `ProductIdentityMatching`, which every
    tier can share, and `ComparisonMatchingParityTests` pins them to
-   `ProductMatcher`/`SnapshotMatcher`'s long-standing copies.
+   `ProductMatcher`/`SnapshotMatcher`'s long-standing copies. The **product
+   snapshot store** (`ProductSnapshot`, `ProductSnapshotStore`,
+   `ProductSnapshotKeys`) lives in this module for the same reachability
+   reason and is NOT a copy of anything: it is the one implementation the app,
+   the share/action extensions and all four Safari extensions share. That is
+   the module's only dependency beyond the three named above — `LunaAppConfig`,
+   for the App Group container, which every appex that links this module
+   already links.
 
 `DuckDuckGoSearch` moved `LunaIntents` → `LunaFetch` for the same reachability
 reason: only the four apps link LunaIntents, and the share/action extensions run
@@ -675,7 +682,7 @@ now used by both `ProductTrackerIngestor.ingest`'s new-tracker branch and the
 extension presenter: it runs `ProductMatcher.bestMatch` against every OTHER
 tracker (excluding the just-classified placeholder item), and on a match
 unions the candidate's keyed identifiers into the matched tracker's empty
-slots, seeds snapshot history exactly as a new tracker always did, and adds
+slots, seeds snapshot history exactly as a new tracker does, and adds
 the new store — returning `.newTracker` when nothing matched, so each caller
 still creates its own way (the app awaits an image download; the extension,
 which cannot afford that, does not). On a merge, the extension opens the
@@ -683,12 +690,18 @@ SAME editor on the matched tracker's item, in `.merge` mode
 (`PriceTrackingViewController.Mode.merge`, previously defined but never
 wired to a caller), instead of duplicating.
 
+Both branches of that presenter now seed. The NEW-tracker branch used not to:
+a share-sheet save of a product Luna had already priced started blank while the
+merge branch beside it did not.
+
 `SnapshotMatcher`'s candidate side (the seeding's own snapshot matching)
-now prefers the candidate's KEYED identifiers (`ProductInfo.identifiers
+prefers the candidate's KEYED identifiers (`ProductInfo.identifiers
 .gtin`/`.mpn`/`.sku`) over the flattened `productID`, falling back to the
 flattened value when the candidate carries none — the seeding path and
 `ProductMatcher`'s own keyed-GTIN tier can no longer disagree about a
-candidate that has one.
+candidate that has one. Retrieval is by index (see
+`claudedocs/price-tracking.md`'s "Product snapshots"), so seeding never
+decodes the whole store, and there is no fuzzy-name tier.
 
 ### Re-saves of a seller-less tracker kick a comparison
 
@@ -804,9 +817,14 @@ The constrained profile's one caller today. `LunaSafari/ComparableSellerFinder
 the App Group first (the app-written history index + the passive snapshot file,
 matched by the extension's existing tiers), then — only if those have nothing —
 the fan-out, fetched through a bare ephemeral `URLSession` carrying
-`WebFetchConstants.safariUserAgent`. Results are written back as passive
-snapshots (`ComparableSellerResult.snapshotPayload`), so a price found for a pill
-feeds everything snapshots already feed.
+`WebFetchConstants.safariUserAgent`. Results are written back as
+observations (`ComparableSellerResult.snapshotPayload` → `ProductSnapshotStore
+.record`), so a price found for a pill feeds everything snapshots already feed.
+The APP's fan-out does the same, in `SellerComparisonRunner.run`, for every
+result — including the ones the tracker refuses to attach (a domain it already
+holds, a foreign currency): those are still real observations, and a tracker
+created in that market later deserves them. Both legs read through the store's
+identifier index rather than scanning the file.
 
 `FreshComparablePrices` is the answer rule, and every part of it is a refusal:
 older than **24h**, a different currency (there is no FX source), not strictly

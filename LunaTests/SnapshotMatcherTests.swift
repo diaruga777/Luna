@@ -5,6 +5,8 @@
 
 import LunaHTMLClassification
 import LunaModels
+import LunaPriceCompare
+import LunaPriceUI
 import XCTest
 
 /// `SnapshotMatcher`: each precedence tier, host-family scoping, sku-same-host,
@@ -112,19 +114,20 @@ final class SnapshotMatcherTests: XCTestCase {
         XCTAssertEqual(result, [match])
     }
 
-    // MARK: - Tier 6: fuzzy name, brand-gated
+    // MARK: - A name is not an identifier
 
-    func testFuzzyNameRequiresCompatibleBrandAndThreshold() {
-        let closeEnough = snapshot(
+    /// Two near-identical names, the same brand, no shared id and different
+    /// pages: not a match. Folding that observation into a graph would put
+    /// another product's price on it, and the store is retrieved BY identifier,
+    /// so a name tier could not be answered from the index anyway.
+    func testASimilarNameAloneIsNotAMatch() {
+        let sameBrandSimilarName = snapshot(
             name: "Acme Wireless Mechanical Keyboard", url: "https://a.example/p", brand: "Acme")
-        let tooDifferent = snapshot(name: "Totally Unrelated Item", url: "https://b.example/p", brand: "Acme")
-        let wrongBrand = snapshot(
-            name: "Acme Wireless Mechanical Keyboard", url: "https://c.example/p", brand: "Globex")
         let result = SnapshotMatcher.matchingSnapshots(
             for: candidate(name: "Acme Wireless Mechanical Keyboard Pro", brand: "Acme"),
             candidateURL: URL(string: "https://shop.example/p/9")!,
-            among: [closeEnough, tooDifferent, wrongBrand])
-        XCTAssertEqual(result, [closeEnough])
+            among: [sameBrandSimilarName])
+        XCTAssertTrue(result.isEmpty)
     }
 
     func testNoTierMatchesReturnsEmpty() {
@@ -138,14 +141,14 @@ final class SnapshotMatcherTests: XCTestCase {
 
     // MARK: - Precedence: a higher tier wins outright
 
-    func testAGTINMatchWinsOverAWeakerFuzzyNameCoincidence() {
+    func testAGTINMatchWinsOverAWeakerURLTierCoincidence() {
         let gtinMatch = snapshot(name: "Totally Different Title", url: "https://a.example/p", gtin: "1234567890123")
-        let fuzzyOnly = snapshot(name: "Widget", url: "https://b.example/p")
+        let urlOnly = snapshot(name: "Widget", url: "https://shop.example/p/9")
         let result = SnapshotMatcher.matchingSnapshots(
             for: candidate(name: "Widget", productID: "1234567890123"),
             candidateURL: URL(string: "https://shop.example/p/9")!,
-            among: [gtinMatch, fuzzyOnly])
-        XCTAssertEqual(result, [gtinMatch], "GTIN precedence must exclude the weaker fuzzy-name match")
+            among: [gtinMatch, urlOnly])
+        XCTAssertEqual(result, [gtinMatch], "GTIN precedence must exclude the weaker URL match")
     }
 
     // MARK: - Determinism

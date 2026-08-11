@@ -174,27 +174,6 @@ final class FreshComparablePricesTests: XCTestCase {
         XCTAssertNil(payload["brand"])
     }
 
-    /// Two lookups on the same day for the same seller page leave ONE record
-    /// carrying the newer price — the store's `(url, day)` identity, which is
-    /// what keeps a repeatedly-visited product page from filling the file.
-    func testASecondLookupTheSameDayOverwritesRatherThanAppends() {
-        let first = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 39.5).snapshotPayload, now: now)!
-        let second = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 34).snapshotPayload, now: now.addingTimeInterval(600))!
-        let merged = ProductSnapshotStore.merging(second, into: [first])
-        XCTAssertEqual(merged.count, 1)
-        XCTAssertEqual(merged[0].price, "34")
-    }
-
-    func testTheNextDaysLookupAppendsAHistoryPoint() {
-        let today = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result().snapshotPayload, now: now)!
-        let tomorrow = ProductSnapshotStore.makeSnapshot(
-            fromPayload: result(price: 34).snapshotPayload, now: now.addingTimeInterval(86_400))!
-        XCTAssertEqual(ProductSnapshotStore.merging(tomorrow, into: [today]).count, 2)
-    }
-
     func testAResultsPricePointIsStampedNowAndSoIsFresh() {
         let point = result().pricePoint(now: now)
         XCTAssertEqual(point.domain, "acme.example")

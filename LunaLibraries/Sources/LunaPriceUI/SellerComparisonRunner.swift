@@ -72,7 +72,8 @@ public enum SellerComparisonRunner {
     ) async -> SellerFanOutOutcome? {
         guard let installed else { return nil }
         let store = snapshotStore
-        let recording: SellerFanOut.OnResult? = (store == nil && onResult == nil) ? nil : { result in
+        guard store != nil || onResult != nil else { return await installed(request, nil) }
+        let recording: SellerFanOut.OnResult = { result in
             store?.record(payload: result.snapshotPayload)
             await onResult?(result)
         }

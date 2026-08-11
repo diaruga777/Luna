@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -148,6 +149,41 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(
             ShortcutSettingsScreen.screenTitle(showsShortcutSetup: true),
             "Safari & One-click save")
+    }
+
+    /// The Cookie Popups cell, both directions. The switch must READ the setting
+    /// (shipped default ON, with nothing written) and WRITE it — the appex reads the
+    /// same App Group key as a bare literal, so a cell wired to the wrong property
+    /// would look perfect and change nothing in Safari.
+    func testCookiePopupsToggleReadsAndWritesTheSharedSetting() {
+        let restore = UserDefaults(suiteName: ReadingListStore.appGroupID)?
+            .object(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+        defer {
+            let defaults = UserDefaults(suiteName: ReadingListStore.appGroupID)
+            if let restore {
+                defaults?.set(restore, forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+            } else {
+                defaults?.removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+            }
+        }
+        UserDefaults(suiteName: ReadingListStore.appGroupID)?
+            .removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
+
+        let screen = ShortcutSettingsScreen(showsShortcutSetup: false)
+        window = UITestSupport.host(screen)
+        let section = try! XCTUnwrap(sectionTitles(screen).firstIndex(of: "Cookie Popups"))
+        let cell = screen.tableView(
+            screen.tableView, cellForRowAt: IndexPath(row: 0, section: section))
+        let toggle = try! XCTUnwrap(cell.accessoryView as? UISwitch)
+        XCTAssertTrue(toggle.isOn, "an absent key must read as ON")
+
+        toggle.isOn = false
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertFalse(SafariSuggestionSettings.cookieAutoDeclineEnabled)
+
+        toggle.isOn = true
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertTrue(SafariSuggestionSettings.cookieAutoDeclineEnabled)
     }
 
     func testSettingsHasFiveTapDiagnosticsGesture() {

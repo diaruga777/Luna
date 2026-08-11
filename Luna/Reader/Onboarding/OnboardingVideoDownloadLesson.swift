@@ -255,6 +255,13 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         let contentWidth = panelWidth - Metrics.panelPadding * 2
         let available = page.height - Metrics.backdropPadding * 2
 
+        // Everything the panel carries besides the stage itself: the header
+        // row above it and the download button (plus its own trailing
+        // padding) below it.
+        let nonStageChrome = fixedPanelHeight(stage: 0)
+            + Metrics.downloadTopGap + Metrics.downloadHeight
+            + Metrics.panelPadding
+
         // The stage is the bundled clip's own portrait aspect until the panel
         // it has to fit inside runs out of room — on the shortest phone a
         // full-height portrait stage is taller than the page, and
@@ -265,7 +272,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         // letterboxes a little more or less inside the same box.
         let idealStageHeight = (contentWidth * Self.stageAspect).rounded()
         let stageHeight = max(
-            min(idealStageHeight, available - fixedPanelHeight(stage: 0)),
+            min(idealStageHeight, available - nonStageChrome),
             idealStageHeight * 0.6)
 
         // The download button gets the panel's own 10pt padding under it, as it

@@ -30,28 +30,47 @@ page, seller pill and spotlight. Nothing new is authored for the central app.
 The hand-over runs off ONE signal. Every lesson ends by asking for the same
 thing, so each reports reaching its own ask —
 `SafariReplicaViewController.onDidReachSetupOffer`, raised once per run from the
-explainer's `cleanUpClutter` completion, the video panel's step reveal, or the
-product card's arrival — and the host holds
-(`OnboardingDemoLoopTiming.siblingLessonHoldDuration`), cross-fades to the next
-replica, rewinds it and begins it. It never has to know which lesson it is
+explainer's `cleanUpClutter` completion, the video panel's own arrival (once the
+clip has plainly played), or the product card's arrival — and the host holds
+(`OnboardingDemoLoopTiming.siblingLessonHoldDuration`, 2.0s), cross-fades to the
+next replica, rewinds it and begins it. It never has to know which lesson it is
 playing. **The signal is what makes the cycle exist**: it used to hang off
 `onActionButtonWaveFinished`, which no Safari lesson ever fires, so the central
 app played one sibling and stopped.
 
-The pass that finishes the FIRST full cycle raises the Safari ask, and the cycle
-carries on beneath it. The ask is `DemoInstructionOverlay` in its `.eclipseCard`
-style: the prompt and its one Set Up Safari button on a card wearing the launch
-corona, over a scrim light enough to keep the lessons legible underneath — the
-full-bleed style stays for asks that arrive over a finished demonstration. It is
-hosted on the WINDOW, so the replicas swap under it; `hasSafariInstructions` asks
-every replica rather than the current one for that reason.
+**Every lesson in every app now ends on the SAME popup**,
+`OnboardingSafariSetupPopupView` (`Luna/Reader/Onboarding/
+OnboardingSafariSetupPopupView.swift`): a minimal "Set up in Safari" / "Skip"
+card — nothing else, no title, no steps — wearing the launch corona as its
+border, over a scrim light enough to keep whatever is running underneath it
+legible. It replaces THREE different former endings: the explainer page's own
+inline steps-and-buttons block, the video panel's grow-a-chin-of-enable-steps
+beat, and the price lesson's `OnboardingSafariSetupCardView`. The step-by-step
+instructions those used to print now live on the hosted setup web page the
+popup's prominent button opens; the popup itself is presented by
+`SafariReplicaViewController.showSafariSetupPopup()`, window-hosted exactly like
+the older `DemoInstructionOverlay`-based asks, so replicas can keep swapping
+underneath it.
+
+`safariLessonDidReachSetupOffer` now fires this same "last lesson of the first
+cycle raises the popup, everything else is just the next beat" logic for EVERY
+app, not only central Luna with multiple siblings: a faceted app's
+`safariDemonstrationApps` has exactly one entry, so its own single ending
+trivially satisfies "last lesson of the first cycle," and the popup comes up on
+that app's very first pass through its lesson. From there the SAME forever-loop
+that cycles central Luna's three siblings underneath the popup also covers a
+faceted app — `cycleSafariInstructionLesson`'s fallback (`apps.count <= 1`) just
+resets and replays the one lesson in place rather than cross-fading to a sibling.
+So "the lesson resets and replays under the popup, forever, until answered" is
+one mechanism for all four apps, not a central-only behavior with a faceted
+special case.
 
 Re-entering the lesson rewinds to the first sibling. An external hop stops the
 cycle (`pauseDemoPresentationPlayback`), and a Safari return with no extension
-evidence puts it back rather than leaving one frozen frame under a live ask.
-
-A faceted app's `safariDemonstrationApps` is one entry, so none of this engages:
-its single lesson ends on its own mock UI's ask, exactly as before.
+evidence calls `restoreInPageSafariSetup()` on every mounted replica — the popup
+may be owned by one that isn't currently on screen — which re-enables the
+popup's buttons and re-applies its attention pulse, then resumes the loop
+(`resumeSafariLessonLoopIfNeeded`).
 
 ## Launch root
 
@@ -275,8 +294,10 @@ uses the existing offline/native demonstrations:
 
 - Safari runs ONE of three demonstrations, chosen by
   `OnboardingSurfaceConfiguration.safariLesson` (`OnboardingSafariLesson`). All
-  three end in the same place — the three enable steps and the Activate Safari /
-  Skip pair — and differ only in what they show first:
+  three end in the same place — the shared `OnboardingSafariSetupPopupView`
+  coming up above them — and differ only in what they show first. None of the
+  three prints its own step-by-step instructions any more: that copy moved to
+  the hosted setup web page, which the popup's prominent button opens.
   - `.extensionExplainer` — the native `luna.app` page, buried under ads and
     popups, then that app's own mock page (Reader `[.lunaPage]`, central all
     three). What the extension takes AWAY, told by the clearing wave below.
@@ -310,42 +331,35 @@ uses the existing offline/native demonstrations:
   Settings rejects a route.
 - Reduce Motion replaces waves and switcher choreography with short fades.
 
-### The Safari explainer's prose fits the screen it lands on
+### The Safari explainer page is decoration now, not an explanation
 
-The page's furniture is pinned at both ends: the header at
-`OnboardingSafariPageView.minimumTopInset`, the actions block ending exactly on
-`chromeReserve` (the mock browser bar's reserve plus 12), the steps and their
-heading stacked above it. Iconography, all three step rows and both buttons appear
-at every size, unchanged.
+`OnboardingSafariPageView` used to argue for the extension: a headline, a
+byline, per-app prose, three enable steps each beside a picture of the exact
+Safari chrome it named, and its own Activate Safari / Skip pair anchored above
+the browser chrome. All of that instructional content moved to the hosted
+setup web page, and what is left on the page is pure decoration — an app icon,
+a lorem ipsum headline, and lorem ipsum body copy — dressed up to still read
+as a plausible article once the wave reveals it. The byline, the steps and the
+actions block are gone outright, not just re-worded.
 
-The bottom reserve is the bar's, so it goes when the bar does
-(`setReservesBrowserChrome`, dropping to `clearedChromeReserve`) — see the wave
-below. The PROSE fit is deliberately measured against the FULL `chromeReserve`
-either way: reclaiming the strip must not make another chunk of copy appear
-mid-lesson, so the reclaimed room becomes air above the steps instead.
+The header still pins at `OnboardingSafariPageView.minimumTopInset`; the body
+copy now just runs from below it down to the current bottom reserve
+(`chromeReserve` while the mock browser bar is up, `clearedChromeReserve` once
+`setReservesBrowserChrome` releases it for the wave). The body is still fitted
+rather than fixed: `OnboardingStrings.Safari.mockParagraphs` is a
+`ChunkedDefinition` — several lorem ipsum paragraphs, universal rather than
+per-app since the furniture is now identical in every app — and the page
+prints the largest cumulative prefix that fits (`fittedProse`), so a short
+phone shows one paragraph and a tall iPad shows several, the way a real
+article's copy would fill more or less of a taller page. There is no floor to
+protect any more (no steps or actions to keep clear of): a container too short
+even for paragraph one just truncates it.
 
-The PROSE is the only variable. `OnboardingStrings.Safari.explainerChunks` is a
-`ChunkedDefinition` — an ordered list per app, not one string — and the page prints
-the largest cumulative prefix that fits between the byline and the steps heading
-(`fittedProse`). Each chunk closes its own sub-topic, so a screen that only holds
-the first two never shows half an idea; the leftover room becomes air above the
-steps, which is the tolerance chunk granularity needs across screen sizes. Chunk
-one is the sentence that must survive 375×667 on its own. A container too short
-even for that keeps it and truncates, rather than pushing the actions under the
-chrome.
-
-Copy differs per app (Reader/central lead with cleanup and one-tap saving,
-Downloader with saving the video off its own page, Price Tracker with tracking a
-price from it). The 17pt/lineSpacing-5 typography lives once, in
-`OnboardingSafariPageView.proseFont` / `proseLineSpacing` / `proseHeight(of:width:)`,
-read by the measurement, the label and the tests. `MoonRevealLineView.setText`
-names the prose during layout and returns early on unchanged text, which is what
-keeps a layout-time text change from scheduling another layout pass.
-
-Per-app selection and the fit at {375×667, 393×852, 430×932, 744×1133, 1024×1366}
-are asserted by `testSafariPageGrowsItsProseByWholeChunksAcrossEveryScreen`,
-`testSafariPageFitsTheShortestPhoneWithoutTruncatingItsProse` and
-`testSafariExplainerCopyIsPerAppAndChunked`.
+The 17pt/lineSpacing-5 typography still lives once, in
+`OnboardingSafariPageView.proseFont` / `proseLineSpacing` /
+`proseHeight(of:width:)`. `MoonRevealLineView.setText` names the prose during
+layout and returns early on unchanged text, which is what keeps a layout-time
+text change from scheduling another layout pass.
 
 ### The Downloader's lesson is the blocked post, answered
 
@@ -357,38 +371,43 @@ browser loads exactly one thing, the bundled `InstaTok.html`, and the
 demonstration is the extension doing its actual job.
 
 It is the media sibling of the price lesson below and keeps its shape — mounted
-with the browser, `begin` / `reset` / `reactivateActions`, generation-guarded so a
-rewind cancels its pending beats. Its own beats:
+with the browser, `begin` / `reset`, generation-guarded so a rewind cancels its
+pending beats. Its own beats:
 
 | beat | what is on screen |
 | --- | --- |
 | `pageHoldDuration` (3.2s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
 | `presentDuration` (0.45s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
-| `playbackHoldDuration` (4.0s) | the video plays, plainly, under a full-width "Download in Luna" |
-| `growDuration` (0.72s) | the download button goes, the three enable steps and the lesson's actions arrive in its place, and the panel's bottom edge travels down to hold them |
+| `playbackHoldDuration` (4.0s) | the video plays, plainly, under a full-width "Download in Luna" — the panel then reports its setup offer and STAYS exactly like this; it no longer grows a chin of enable steps |
 
-**The two holds are the lesson; the two transitions are plumbing.** The lesson
-has three subjects in sequence — the wall, the video, the steps — and at the
+**The one hold is the lesson; the transition is plumbing.** The lesson used to
+have three subjects in sequence — the wall, the video, the steps — and at the
 brisk timings it opened with, each was overtaken by the next before it
-registered: the wall read as a flash, and the panel had barely arrived before the
-instructions replaced its button. So the holds are counted in seconds and pinned
-that way by `testEachBeatIsLongEnoughToRead`. The playback hold is counted from
-the CLIP starting rather than from the panel finishing its arrival, because what
-it is holding for is a video the user has plainly watched play.
+registered. The panel's own third subject is gone now (that ask lives on the
+shared setup popup, raised by the host off `onDidReachSetupOffer`), so what
+remains is two holds, both still counted in seconds and pinned that way by
+`testEachBeatIsLongEnoughToRead`. The playback hold is counted from the CLIP
+starting rather than from the panel finishing its arrival, because what it is
+holding for is a video the user has plainly watched play.
 
 **The panel is a replica, not a stylisation.** Every measurement in it is read
 straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
 `calc(100vw - 24px)` panel capped at 640 in
 `NIGHT_SURFACE` at radius 20 with 10pt padding, the 34pt round close button over
-an 8pt gap, the black stage at radius 12 (16:9 here, since the lesson's clip is
-16:9 — in Safari the stage takes the CLIP's shape, clamped between that 16:9 and
-the visible viewport), the full-width capsule 10pt under it at `minHeight: 44` in
-the media kind's tint (`LunaSurfacePalette.baseColor(for: .downloader)`, which is
-what `KIND_TINTS.media` hand-copies). A change to either one is a change to
-both, and `SafariVideoOverlayReplicaTests` pins the two files' shared numbers
-and the shared string to each other.
+an 8pt gap, the black stage at radius 12, the full-width capsule 10pt under it at
+`minHeight: 44` in the media kind's tint (`LunaSurfacePalette.baseColor(for:
+.downloader)`, which is what `KIND_TINTS.media` hand-copies). A change to either
+one is a change to both, and `SafariVideoOverlayReplicaTests` pins the two
+files' shared numbers and the shared string to each other — with ONE
+deliberate exception: the stage's ASPECT. In Safari the stage takes the CLIP's
+own shape, clamped between the extension's default 16:9 and the visible
+viewport; this lesson's bundled clip is a portrait re-cut, so its stage is
+9:16 (`OnboardingVideoDownloadOverlayView.stageAspect`) rather than matching
+`content.js`'s 16:9 — a constant rather than something measured off the
+`AVPlayerItem` asynchronously, so the panel's own layout never depends on an
+asset load.
 
-Four things about it that are NOT the web panel:
+Three things about it that are NOT the web panel:
 
 - **The backdrop is half the extension's weight, and the post never goes away.**
   `content.js` puts the panel over `rgba(0, 0, 0, 0.78)` and a 4px blur, which is
@@ -398,30 +417,19 @@ Four things about it that are NOT the web panel:
   answer arrives would show the user two unrelated screens. Both layers stay, so
   the panel still reads as something Luna put in front of the page, at
   `scrimAlpha` 0.34 and `backdropBlurAlpha` 0.45; the post plays on behind them
-  through both states, for the whole demonstration.
+  for the whole demonstration.
   `testTheBlockedPostIsStillVisibleBehindThePanel` states the deviation against
   the extension's own value, so it fails if either side moves.
-- **The stage's height is decided once, for both states.** It is 16:9 until the
-  panel it has to fit inside runs out of room — on a 375×667 phone the setup
-  block plus a full-height stage is taller than the page — and then the clip
-  letterboxes rather than the panel resizing between beats. A video that changed
-  size while the instructions arrived would be the one thing the growth must not
-  do.
-- **The panel's top is the PLAYER state's top in both states.** The growth is a
-  bottom edge travelling down; the top rises only as far as keeping the taller
-  panel on the page requires — 23pt on a 393×852 phone against 217pt of bottom
-  travel, and nothing at all on anything roomier. The video keeps its place
-  under the instructions arriving beneath it rather than being pushed up by
-  them. **Only the panel moves**: `panel` is geometry, and the surface
-  (`panelBody`) plus the eclipse corona are autoresizing CHILDREN of it, so the
-  one animation carries them. A corona sitting beside the panel and given its
-  frame from `layoutSubviews` cannot be told anything but the panel's FINAL
-  frame — so any layout pass the growth crossed drew the glow at the size the
-  panel was still travelling toward, and the growth read as unfolding from the
-  top-left corner.
-- **Only the two action buttons are live.** The close button, the download button
-  and the player's controls have no target and no gesture recognizer. A picture
-  that answered a tap is a route out of a lesson into a page that does not exist.
+- **The stage letterboxes on the shortest phone.** The portrait stage's ideal
+  height (`contentWidth × 16⁄9`) is taller than a 375×667 phone's panel budget,
+  so the stage clamps down and the clip letterboxes rather than the panel
+  overrunning the page — `testTheStageLetterboxesToFitOnTheShortestPhone`
+  pins that the clamp engages and the panel still clears the mock browser bar.
+- **Nothing in the panel answers a tap.** Not even an activate/skip pair any
+  more: the close button, the download button and the player's controls have
+  no target and no gesture recognizer, and the ask that used to live here now
+  lives entirely on the shared, window-hosted setup popup instead
+  (`testNothingInThePanelAnswersATouch`).
 
 The clip itself is `LunaMoonPhases.mp4`, and the page and the panel play the same
 one — the panel is showing the post's video, not a second video. It is a recut of
@@ -511,23 +519,24 @@ three layers in this z-order, which is the whole trick):
    to inherit UIKit's animation actions from, so every path assignment is
    wrapped in a disabled-actions transaction or Core Animation's implicit fade
    runs against the close.
-3. **The card sits over both.** `OnboardingSafariSetupCardView` carries the SAME
-   three enable steps and the same Activate Safari / Skip pair the explainer
-   prints down its page, on a body wearing a static launch `EclipseCoronaView`
-   as its border. The Activate Safari capsule also wears its own tight corona
-   and both pulse with `OnboardingAttentionPulse`; the popup itself stays still.
-   It hugs its
-   contents — widest step line at `OnboardingSafariEnableStepRowView.labelFont`,
-   floored by `OnboardingSafariActionsView.minimumActivateWidth`, capped at a
-   readable column — because it is a card over somebody else's page rather than
-   a page of its own, and it is laid out in the room ABOVE the closed circle so
-   it never covers the pill the spotlight just isolated.
+3. **The shared setup popup stacks on top of both.** There is no card of the
+   lesson's own any more — `OnboardingSafariSetupCardView` is deleted outright.
+   `SafariReplicaViewController.showSafariSetupPopup()` mounts
+   `OnboardingSafariSetupPopupView` on the WINDOW the instant this overlay
+   reports `onDidReachSetupOffer`, carrying its own 30% scrim on top of this
+   lesson's 70% spotlight — both stay visible, deliberately darker where they
+   overlap, rather than one replacing the other. Being window-hosted rather
+   than a subview of this overlay is also why the popup is never shrunk to fit
+   the room above the closed circle the way the old card was: it uses the same
+   generic top-anchored layout every app's popup does.
 
-Both lessons end in the same place, so `openSafariSetup`, the skip, and the
-return leg with nothing to show for it (`restoreInPageSafariSetup`, which
-re-enables the card's actions and asks again) are shared. The lesson is
-re-enterable like the explainer's: `resetDemonstration` puts the pill back to
-looking, reopens the hole and takes the card back off screen.
+Every lesson ends in the same place now, so `openSafariSetup`, the skip, and
+the return leg with nothing to show for it (`restoreInPageSafariSetup`, which
+re-enables the popup's buttons and re-applies its attention pulse) are shared
+across all three Safari lessons. The lesson is re-enterable like the
+explainer's: `resetDemonstration` puts the pill back to looking and reopens
+the hole — the popup itself is untouched by a reset, since the host's
+forever-loop is what put the lesson back in motion underneath it.
 
 ### The save lesson performs a real save
 
@@ -746,11 +755,12 @@ controller: `-onboardingStage`, `-forceActionButtonSetup`,
 Relevant tests:
 
 - `UtilCardTests`: launch variants, persistent controls, weekly save callback;
-- `ReaderOnboardingTests`: per-app markers, central inheritance, the Safari page's
-  fitting/prefix contract, the hardware rule behind `.actionButtonShortcut` vs
-  `.unavailable`, that entering either lesson stores nothing, and that the price
-  lesson ends on a setup card whose actions are hittable through — and above —
-  its own scrim;
+- `ReaderOnboardingTests`: per-app markers, central inheritance, the hardware
+  rule behind `.actionButtonShortcut` vs `.unavailable`, that entering either
+  lesson stores nothing, that every app's Safari lesson (faceted or central)
+  raises the shared setup popup and loops underneath it, and that the price
+  lesson ends on that popup hittable through — and above — its own stacked
+  scrims;
 - `OnboardingSaveDemoTests`: link resolution's three branches, the hosted surface
   (practice preview, the real offline failure, one-shot completion, the evidence
   guard), the sheet's chrome-only contract, and the rehearsal's cleanup;

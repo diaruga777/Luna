@@ -105,12 +105,17 @@ enum SharedStageCatalog {
                 id: "onboarding.safari-lesson", screen: "Safari lesson",
                 variant: "full demonstration",
                 summary: "The mock browser from its first frame: this app's demonstration "
-                    + "runs, and the lesson settles on the enable steps and the Safari "
-                    + "button.",
+                    + "runs, and the lesson settles on the shared setup popup above it, "
+                    + "looping underneath until it is answered.",
                 kind: .shared,
                 seed: { StageFixtures.seedEmpty() },
                 make: {
                     let safari = SafariReplicaViewController()
+                    // The real host raises the shared popup off this signal;
+                    // a bare replica (no host) wires it directly.
+                    safari.onDidReachSetupOffer = { [weak safari] in
+                        safari?.showSafariSetupPopup()
+                    }
                     // The real entry starts the sequence once the incoming card
                     // has finished expanding; here, once the browser has been
                     // laid out at its full size.
@@ -126,7 +131,7 @@ enum SharedStageCatalog {
                 variant: "whole journey",
                 summary: "The lesson as the util card enters it, host and all. In central "
                     + "Luna that is the three sibling lessons in rank order, and the "
-                    + "eclipse-bordered setup ask that comes up once the first full cycle "
+                    + "shared setup popup that comes up once the first full cycle "
                     + "is done — the lessons keep replaying underneath it.",
                 kind: .shared,
                 seed: { StageFixtures.seedEmpty() },

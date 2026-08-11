@@ -115,10 +115,14 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
-    /// A faceted app has ONE lesson, and its ending is the ask its own mock UI
-    /// carries: nothing cycles, and no popover is raised over it.
+    /// A faceted app has ONE lesson. It ends on the shared setup popup exactly
+    /// like central Luna's siblings do — every app's Safari lesson shares that
+    /// one ending now — and since there is no sibling to hand off to, the same
+    /// forever-loop that cycles central's three siblings underneath the popup
+    /// just resets and replays this ONE lesson in place, pass after pass,
+    /// with the popup staying up (raised once, not re-raised) throughout.
     @MainActor
-    func testAFacetedAppsSafariLessonNeitherCyclesNorRaisesTheAsk() throws {
+    func testAFacetedAppsSafariLessonRaisesTheSharedPopupAndLoopsInPlace() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -149,10 +153,19 @@ final class ReaderOnboardingTests: XCTestCase {
         safariButton.sendActions(for: .touchUpInside)
         spinRunLoop(0.3)
         onboarding.finishSafariLessonForTesting()
-        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        spinRunLoop(0.1)
 
         XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
-        XCTAssertFalse(onboarding.hasSafariInstructionsForTesting)
+        XCTAssertTrue(
+            onboarding.hasSafariInstructionsForTesting,
+            "the one lesson's own ending is where the shared popup comes up")
+
+        // The freeze ends and the lesson resets and replays in place — the
+        // popup itself is untouched by that, so it is still up rather than
+        // needing to be raised a second time.
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
+        XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
     /// The one end-of-lesson signal the host cycles on: the Downloader's panel

@@ -245,7 +245,7 @@
       "id": "onboarding.safari-lesson",
       "screen": "Safari lesson",
       "variant": "full demonstration",
-      "summary": "The mock browser from its first frame: this app's demonstration runs, and the lesson settles on the enable steps and the Safari button.",
+      "summary": "The mock browser from its first frame: this app's demonstration runs, and the lesson settles on the shared setup popup above it, looping underneath until it is answered.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
@@ -253,7 +253,7 @@
       "id": "onboarding.safari-lesson-journey",
       "screen": "Safari lesson",
       "variant": "whole journey",
-      "summary": "The lesson as the util card enters it, host and all. In central Luna that is the three sibling lessons in rank order, and the eclipse-bordered setup ask that comes up once the first full cycle is done — the lessons keep replaying underneath it.",
+      "summary": "The lesson as the util card enters it, host and all. In central Luna that is the three sibling lessons in rank order, and the shared setup popup that comes up once the first full cycle is done — the lessons keep replaying underneath it.",
       "kind": "shared",
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },

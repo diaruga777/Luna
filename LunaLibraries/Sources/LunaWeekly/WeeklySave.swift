@@ -18,21 +18,22 @@ public enum WeeklySaveKind: String, Codable, CaseIterable, Sendable {
     /// The kinds an app is allowed to fetch and display. The runtime mirror of
     /// the same three-way split `LunaApp.handlesArticles/Media/Products` draws.
     public static func kinds(for app: LunaApp) -> [WeeklySaveKind] {
-        switch app {
-        case .luna:
-            // Central Luna's fetch order is the same Reader → Downloader →
-            // Price Tracker ranking used by its onboarding examples.
-            return LunaApp.onboardingRankedSiblings.compactMap {
-                switch $0 {
-                case .reader: return .article
-                case .downloader: return .media
-                case .priceTracker: return .product
-                case .luna: return nil
-                }
-            }
-        case .reader: return [.article]
-        case .downloader: return [.media]
-        case .priceTracker: return [.product]
+        guard app == .luna else { return allCases.filter { $0.owningApp == app } }
+        // Central Luna's fetch order — which is also the order its util card
+        // cycles them in — is the same Reader → Downloader → Price Tracker
+        // ranking used by its onboarding examples.
+        return LunaApp.onboardingRankedSiblings.compactMap { sibling in
+            allCases.first { $0.owningApp == sibling }
+        }
+    }
+
+    /// The standalone app this kind belongs to — the one whose colour, noun and
+    /// phrasing dress it, including while central Luna cycles all three.
+    public var owningApp: LunaApp {
+        switch self {
+        case .article: return .reader
+        case .media: return .downloader
+        case .product: return .priceTracker
         }
     }
 

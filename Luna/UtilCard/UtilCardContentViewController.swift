@@ -108,9 +108,9 @@ final class UtilCardContentViewController: CardContentViewController {
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
-    private let safariButton = UIButton(type: .system)
-    private let saveSetupButton = UIButton(type: .system)
-    private let emailButton = UIButton(type: .system)
+    private let safariButton = UtilCardSetupActionButton(type: .system)
+    private let saveSetupButton = UtilCardSetupActionButton(type: .system)
+    private let emailButton = UtilCardSetupActionButton(type: .system)
     private let orLabel = UILabel()
     private let pasteRow = OnboardingPasteRow()
     /// The inline "Store downloads …" line, present only while the download
@@ -644,9 +644,12 @@ final class UtilCardContentViewController: CardContentViewController {
         if app == .luna, showsOnboarding {
             setupTextCycler = UtilCardSetupTextCycler(
                 safariButton: safariButton,
-                shortcutButton: saveSetupButton,
-                apps: LunaApp.onboardingRankedSiblings)
-            weeklyHost.onCycle = { [weak self] in self?.setupTextCycler?.advance() }
+                shortcutButton: saveSetupButton)
+            // The row names which app is due; the labels never count for
+            // themselves, so the phrasing and the pick are always the same app's.
+            weeklyHost.onCycle = { [weak self] kind in
+                self?.setupTextCycler?.show(kind.owningApp)
+            }
         }
     }
 

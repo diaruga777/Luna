@@ -138,7 +138,31 @@ shifts either icon.
 central Luna, `UtilCardSetupTextCycler` advances the Safari and shortcut
 buttons' labels through every sibling app's own phrasing as the weekly row
 cycles, so those two buttons stay stretched edge to edge — the room a longer
-sibling phrase might need. Every other app's label never changes, so stretching
+sibling phrase might need.
+
+**The labels are the ROW's app, and they hold no counter of their own.**
+`WeeklySaveRowHost.onCycle` reports the KIND the row is arriving at — from
+`settle`, the one place that knows the destination, which an auto-advance and a
+committed swipe both reach — and the card puts `kind.owningApp`'s phrasing on
+both labels. The cycler used to count from its own zero on each tick while the
+row moved on to the slot AFTER the one that tick found, so the pair drifted a
+turn apart (the Price Tracker's phrasing under the Reader's pick) and a manual
+swipe desynced them too. Before the first turn the labels still carry central
+Luna's own line; a card leaving centre resets to it.
+
+**A cycling label must never be laid out mid-slide.** UIKit positions a
+configuration button's title by ASSIGNING ITS FRAME, and assigning a frame to a
+transformed view makes UIKit solve for the centre that puts the *transformed*
+view there — so every layout pass landing inside a 0.55s slide baked the offset
+into the label's centre and walked the title toward the trailing edge one turn at
+a time until it read as right-aligned. `UtilCardSetupActionButton` (the class all
+three setup buttons use) lifts the transform off for the duration of
+`layoutSubviews` and puts it back after, so the slide is a pure overlay on a
+label UIKit always lays out at rest. `WeeklySaveRowHost.layoutSubviews` answers
+the same conflict the other way, by skipping rows it is animating — an option
+only open to a view that assigns those frames itself.
+
+Every other app's label never changes, so stretching
 it edge to edge just reads as too wide: `UtilCardContentViewController
 .compactSetupButtonWidth` sizes the Safari and shortcut buttons to their own
 content and centers them in the block on those three apps, while leaving the
@@ -400,6 +424,9 @@ system Settings on the second attempt — through an injected
 `DownloadStorageChoosing`; the real one's own behaviour (the permission request,
 the revert, the inline age, the answered marker) is in
 `AutoDownloadSettingsTests`.
+The cycling labels are pinned there too, driving the row's real slide: each turn
+carries the phrasing of the app whose pick the row arrives with, and the label
+holds its leading position across turns even when a reflow lands mid-slide.
 `WeeklyRowHostTests` covers the
 row host, its eclipse and the cycle pacer. `CarouselScrubberUtilityChipTests`
 pins the strip chip's geometry. Carousel-host and price screen tests pin the

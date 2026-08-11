@@ -20,8 +20,11 @@ final class WeeklySaveRowHost: UIView {
     /// The card asks for a relayout whenever the slot appears or disappears.
     var onPresenceChange: (() -> Void)?
     /// The central onboarding labels subscribe here rather than maintaining a
-    /// second timer, so both changes begin on the same clock tick.
-    var onCycle: (() -> Void)?
+    /// second timer, so both changes begin on the same clock tick — and it
+    /// carries the kind the row is arriving AT, not the one it is leaving, so a
+    /// subscriber can never be a turn behind. A manual swipe reports too: the
+    /// labels follow the row whoever moved it.
+    var onCycle: ((WeeklySaveKind) -> Void)?
     /// Whether the deck already holds this URL — installed by the util card so
     /// an answered pick shows dimmed under a checkmark rather than offered.
     var isSaved: ((_ urlString: String) -> Bool)? {
@@ -93,7 +96,6 @@ final class WeeklySaveRowHost: UIView {
         addGestureRecognizer(pan)
 
         pacer.onAdvance = { [weak self] in
-            self?.onCycle?()
             self?.advance(forward: true, velocity: 0)
         }
         pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
@@ -334,6 +336,11 @@ final class WeeklySaveRowHost: UIView {
     private func settle(
         to target: Int, forward: Bool, velocity: CGFloat, commit: Bool
     ) {
+        // Reported here rather than from the pacer's tick: this is the one place
+        // that knows the DESTINATION, and it is reached by an auto-advance and a
+        // committed swipe alike. A cancelled drag changes nothing, so it says
+        // nothing.
+        if commit, let kind = kind(atSlot: target) { onCycle?(kind) }
         let width = max(clip.bounds.width, 1)
         let outgoing = rows[index]
         let incoming = rows[target]
@@ -453,6 +460,18 @@ final class WeeklySaveRowHost: UIView {
 
     private func slotIsEmpty(_ offset: Int) -> Bool {
         slots.indices.contains(offset) && slots[offset] == nil
+    }
+
+    /// Which kind owns a cycle slot — an EMPTY central turn included, which is
+    /// why this reads the app's kind order rather than the slot's display: a
+    /// missing pick still spends its turn in the cycle, and whatever follows the
+    /// row (the setup labels) has to name the right app through it.
+    private func kind(atSlot offset: Int) -> WeeklySaveKind? {
+        if app == .luna {
+            let kinds = WeeklySaveKind.kinds(for: app)
+            return kinds.indices.contains(offset) ? kinds[offset] : nil
+        }
+        return slots.indices.contains(offset) ? slots[offset]?.save.kind : nil
     }
 
     /// Each kind carries the tint of the standalone app that owns it, including

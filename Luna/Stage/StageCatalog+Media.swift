@@ -238,11 +238,18 @@ enum MediaStageCatalog {
 private final class StageDownloadStorageChoice: DownloadStorageChoosing {
     var isUnanswered = true
     var usesPhotos = false
+    var needsPhotosPermissionInThisApp = false
 
     func chooseInLuna() { usesPhotos = false }
 
     func choosePhotos(completion: @escaping (DownloadStoragePhotosOutcome) -> Void) {
         usesPhotos = true
+        completion(.granted)
+    }
+
+    func requestPhotosPermissionRelay(
+        completion: @escaping (DownloadStoragePhotosOutcome) -> Void
+    ) {
         completion(.granted)
     }
 }

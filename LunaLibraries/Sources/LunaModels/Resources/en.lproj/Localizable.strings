@@ -417,6 +417,9 @@
 "Onboarding_Util_storage1Label_Luna" = "Store downloads";
 "Onboarding_Util_storage2InLuna_Luna" = "in Luna";
 "Onboarding_Util_storage3InPhotos_Luna" = "in Photos";
+"Onboarding_Util_storagePermissionAlertMessage_Luna" = "Downloads are set to save to Photos, but this app hasn't been given permission yet. Allow Photos access in Settings to continue.";
+"Onboarding_Util_storagePermissionAlertTitle_Luna" = "Photos Access Needed";
+"Onboarding_Util_storagePermissionBadgeLabel_Luna" = "Photos access needed";
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
 
 /* ===== Settings_diagnostics — Settings → (5-tap) Diagnostics screen: header
@@ -484,6 +487,7 @@
 "Settings_downloads_autoDownloadFooter_Luna" = "Start downloading immediately when you save a link, or wait until you're on Wi-Fi or you tap to view.";
 "Settings_downloads_storageLabel_Luna" = "Storage";
 "Settings_downloads_storageFooter_Luna" = "Store downloaded files in Photos or in Luna with auto-delete. Photos storage is managed by your device and iCloud.";
+"Settings_downloads_storagePermissionErrorLabel_Luna" = "Photos access needed";
 
 /* ===== Settings_email — Settings → Email: the Sharing Account section (also
  * the inline sign-in form until an account exists), Import from Email, and

@@ -649,6 +649,14 @@ meaningless. `apply` also refuses a seller on a registrable domain the tracker
 already holds: the engine keys its own results per domain but cannot know what
 the tracker was already carrying.
 
+`apply` refuses one more thing, for the same "the engine cannot know" reason: a
+host the user REMOVED from this tracker's seller list
+(`PriceTracker.rejectedSellerHosts`, see `claudedocs/price-tracking.md`'s
+"Rejecting a seller"). A fan-out is a passive writer, and re-attaching a seller
+the user deleted would bring back the graph points they deleted with it. Only an
+explicit re-add — saving that seller's page, or adding it from the + menu —
+clears the rejection.
+
 **Nobody waits for it except the intents.** A fan-out is up to 35 s of other
 people's web servers. It used to sit between the save and the UI: a share sheet
 that looked stuck, and an editor that opened half a minute after the tap. The
@@ -898,7 +906,7 @@ All in `LunaTests/`:
 | `FreshComparablePricesTests` | the 24h window and the four refusals; a result's snapshot payload |
 | `ProductSnapshotStoreTests` | what the store accepts, what its identifier index retrieves (and refuses to, off-host), same-day overwrite, and eviction taking the record file AND its keys |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
-| `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, the two no-op states, and that EVERY result is recorded as an observation — including the ones the tracker refuses |
+| `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the refusal to re-attach a seller the user removed, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, the two no-op states, and that EVERY result is recorded as an observation — including the ones the tracker refuses |
 | `LiveNetworkPolicyTests` | that the installed fan-out — and every other live fetcher — refuses to leave the machine from a test process |
 | `SellerComparisonDocumentTests` | the document's self-containment, ordering, flat-series graph and escaping |
 | `ProductComparisonIntentTests` | the `comparison` checkpoint, v1-decodes/v+1-refused, the seam's absence in non-product apps, the freshness rule |

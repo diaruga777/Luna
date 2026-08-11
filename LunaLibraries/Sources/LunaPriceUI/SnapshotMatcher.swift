@@ -30,14 +30,40 @@ import LunaPriceCompare
 /// 4. `sku` equality, same host only — retailer-scoped.
 /// 5. Canonical URL equality (tracking params stripped both sides) against the
 ///    candidate's own URL or any store URL already on the tracker being merged
-///    into. The weak tier, and the last one.
+///    into. The weak tier, and the last one that is evidence of identity.
+/// 6. Fuzzy NAME similarity (token Jaccard ≥ `ProductIdentityMatching
+///    .nameThreshold`) with a compatible brand, within ONE retailer family or
+///    ONE declared brand. Ranked below every tier above, so an identifier
+///    always wins; reached only when tiers 1–4 matched nothing.
 ///
-/// There is deliberately NO fuzzy-name tier. A name is not an identifier: it
-/// cannot be indexed, so it would force the scan this design exists to avoid,
-/// and it is the tier most likely to fold another product's price into a graph.
+/// Tiers 1–4 win OUTRIGHT. Tiers 5 and 6 are UNIONED with each other rather
+/// than ordered — see `identifierMatches` for why the URL tier cannot be
+/// allowed to gate the name tier.
+///
+/// **Why the name tier exists, and why it is last.** A name is not an
+/// identifier, and this tier is the one most likely to fold another product's
+/// price into a graph — but the majority of retail pages declare no GTIN, MPN
+/// or SKU at all, and the Safari extension files an observation under the
+/// page's CANONICAL url while a later save is keyed by the url the user
+/// actually saved. When those differ (a `?variant=`, a slug, a share link)
+/// there is nothing else left, and the observation is unreachable forever. The
+/// user's recovery for a wrong match is direct: removing the seller takes its
+/// points off the graph and records the rejection (`PriceTracker
+/// .rejectedSellerHosts`), so a bad fold is one long-press to undo and never
+/// comes back.
+///
+/// **It is still a lookup, not a scan.** `ProductSnapshotKeys.nameKeys` files
+/// every observation under its longest name tokens, scoped to its brand and to
+/// its retailer family; a candidate asks the same shape and reads at most
+/// `fuzzyCandidateLimit` records.
 public enum SnapshotMatcher {
 
-    /// The index keys to look this product up under.
+    /// The most record files a NAME lookup may open. A name bucket is a
+    /// narrowed guess rather than an identifier hit, so it gets a hard ceiling
+    /// on the save path — newest days first (decided from the index alone).
+    public static let fuzzyCandidateLimit = 40
+
+    /// The index keys to look this product up under — identifier tiers only.
     public static func candidateKeys(
         for candidate: ProductInfo, candidateURL: URL, existingStoreURLStrings: [String] = []
     ) -> [String] {
@@ -50,12 +76,53 @@ public enum SnapshotMatcher {
             urlStrings: [candidateURL.absoluteString] + existingStoreURLStrings)
     }
 
+    /// The name-bucket keys for the fuzzy tier, asked ONLY when every
+    /// identifier tier came back empty. Scoped exactly as the tier is: this
+    /// product's brand, and this page's retailer family.
+    public static func nameCandidateKeys(
+        for candidate: ProductInfo, candidateURL: URL
+    ) -> [String] {
+        ProductSnapshotKeys.nameKeys(
+            candidate.name, brand: candidate.brand ?? candidate.identifiers.brand,
+            host: candidateURL.host, limit: ProductSnapshotKeys.maxQueriedNameTokens)
+    }
+
     /// The snapshots that should seed the saved product's tracker history, or
     /// `[]` if nothing matches at any tier. `existingStoreURLStrings` should
     /// include every store URL already on the tracker `candidate` is being
     /// merged into (empty for a brand-new tracker) — tier 5 matches against
     /// those too, not just `candidateURL`.
     public static func matchingSnapshots(
+        for candidate: ProductInfo,
+        candidateURL: URL,
+        existingStoreURLStrings: [String] = [],
+        among snapshots: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
+        let identified = identifierMatches(
+            for: candidate, candidateURL: candidateURL,
+            existingStoreURLStrings: existingStoreURLStrings, among: snapshots)
+        guard identified.isEmpty else { return identified }
+        return merged(
+            urlMatches(
+                for: candidateURL, existingStoreURLStrings: existingStoreURLStrings,
+                among: snapshots),
+            fuzzyNameMatches(for: candidate, candidateURL: candidateURL, among: snapshots))
+    }
+
+    /// Tiers 1–4 — every tier that decides identity from an IDENTIFIER. Empty
+    /// when none matched, which is the only condition under which the URL and
+    /// NAME tiers are consulted.
+    ///
+    /// **The URL tier is deliberately NOT in here**, even though it is stronger
+    /// than a name. It cannot gate the name tier, because on the save path it
+    /// is always satisfied by the candidate's own page: ingestion records an
+    /// observation of the page it is classifying *before* it seeds the tracker
+    /// from the store, so "tier 5 matched" reduces to "we just wrote a row for
+    /// this URL" and no observation of the same product anywhere else could
+    /// ever be reached. The two weak tiers are therefore UNIONED (below)
+    /// instead of ordered against each other: one contributes this page's own
+    /// earlier days, the other other sellers of the same product.
+    public static func identifierMatches(
         for candidate: ProductInfo,
         candidateURL: URL,
         existingStoreURLStrings: [String] = [],
@@ -120,13 +187,68 @@ public enum SnapshotMatcher {
             if !matches.isEmpty { return matches }
         }
 
-        // 5. Canonical URL equality against the candidate or any existing store.
+        return []
+    }
+
+    /// Tier 5 — canonical URL equality (tracking params stripped both sides)
+    /// against the candidate's own URL or any store URL already on the tracker
+    /// being merged into.
+    public static func urlMatches(
+        for candidateURL: URL, existingStoreURLStrings: [String] = [],
+        among snapshots: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
         let strippedTargets = Set(
             ([candidateURL.absoluteString] + existingStoreURLStrings)
                 .map(ProductSnapshotKeys.strippedTrackingURL))
-        return pool.filter {
-            strippedTargets.contains(ProductSnapshotKeys.strippedTrackingURL($0.url))
-        }
+        return snapshots
+            .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
+            .filter { strippedTargets.contains(ProductSnapshotKeys.strippedTrackingURL($0.url)) }
+    }
+
+    /// The two weak tiers' union, deduplicated on an observation's identity
+    /// (its page and its day) and in the same order every tier returns.
+    public static func merged(
+        _ lhs: [ProductSnapshot], _ rhs: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
+        var seen = Set<String>()
+        return (lhs + rhs)
+            .filter { seen.insert("\($0.url)|\($0.day)").inserted }
+            .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
+    }
+
+    /// Tier 6 — the fuzzy NAME tier, and the last resort. An observation
+    /// qualifies when its name overlaps the candidate's past
+    /// `ProductIdentityMatching.nameThreshold`, its brand is compatible, and it
+    /// is in scope: the same retailer family, or the same explicitly declared
+    /// brand. The scope is not decoration — it is the same narrowing the index
+    /// keys apply, so a hand-supplied pool cannot match wider than a lookup
+    /// would have retrieved.
+    ///
+    /// Order-stable (by day, then url, like every tier), and it returns EVERY
+    /// qualifying observation rather than a single best: a name match that
+    /// holds for one day's price holds for the rest of that seller's history.
+    public static func fuzzyNameMatches(
+        for candidate: ProductInfo, candidateURL: URL, among snapshots: [ProductSnapshot]
+    ) -> [ProductSnapshot] {
+        guard !candidate.name.isEmpty else { return [] }
+        let candidateHost = candidateURL.host?.lowercased()
+        let candidateBrand = ProductIdentityMatching.comparableBrand(
+            candidate.brand ?? candidate.identifiers.brand)
+        return snapshots
+            .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
+            .filter { snapshot in
+                guard ProductMatcher.brandsCompatible(candidate.brand, snapshot.brand) else {
+                    return false
+                }
+                let sameFamily = candidateHost.map {
+                    hostFamilyMatches($0, snapshot.host.lowercased())
+                } ?? false
+                let sameBrand = candidateBrand != nil
+                    && candidateBrand == ProductIdentityMatching.comparableBrand(snapshot.brand)
+                guard sameFamily || sameBrand else { return false }
+                return ProductIdentityMatching.nameSimilarity(candidate.name, snapshot.name)
+                    >= ProductIdentityMatching.nameThreshold
+            }
     }
 
     /// Zero-pads a purely-numeric id to 14 digits (the GTIN-14 numberspace

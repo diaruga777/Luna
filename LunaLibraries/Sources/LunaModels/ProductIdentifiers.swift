@@ -113,6 +113,17 @@ public enum ProductIdentityMatching {
         return lhs == rhs
     }
 
+    /// The comparable tokens of a product name: lowercased alphanumeric words,
+    /// stop-words and single characters removed. Public because the snapshot
+    /// index files a name under its tokens (`ProductSnapshotKeys.nameKeys`) —
+    /// the bucketing that lets a fuzzy-name match be a narrowed lookup instead
+    /// of a scan — and both sides must tokenize identically.
+    public static func nameTokens(_ name: String) -> Set<String> { tokens(name) }
+
+    /// A brand reduced for comparison (lowercased alphanumerics), or nil when
+    /// nothing is declared. Shared with the name-bucket key derivation.
+    public static func comparableBrand(_ raw: String?) -> String? { normalizedBrand(raw) }
+
     /// Jaccard token overlap of two normalized product names (0…1). Tokens are
     /// lowercased alphanumeric words with stop-words removed.
     public static func nameSimilarity(_ lhs: String, _ rhs: String) -> Double {

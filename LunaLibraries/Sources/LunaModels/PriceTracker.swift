@@ -160,6 +160,22 @@ public struct PriceTracker: Codable, Equatable {
     /// the user opens an alerting tracker; cleared on a fresh drop (see
     /// `markAlertViewed`).
     public var alertAcknowledgedAt: Date?
+    /// The hosts the user has taken OFF this tracker's seller list, lowercased.
+    ///
+    /// Removing a seller removes its price points from the graph (they live in
+    /// that store's own `priceHistory`), and this is what makes the removal
+    /// STICK: passive writers — snapshot seeding on a later save, an
+    /// alternative-seller fan-out, a re-observation of the same page — all
+    /// refuse a host listed here, so a seller the user rejected cannot quietly
+    /// come back with the points they just deleted. It is the recovery path for
+    /// a wrong fuzzy-name match (`SnapshotMatcher`'s tier 6), which is what
+    /// makes that tier affordable at all.
+    ///
+    /// Rejection is not permanent by decree: an EXPLICIT re-add (saving that
+    /// seller's page again, or adding it from the + menu) clears it, because
+    /// that is the user asking for it back.
+    public private(set) var rejectedSellerHosts: [String]
+
     /// A save-time alternative-seller fan-out that has been STARTED and not yet
     /// finished. Nil the rest of the time.
     ///
@@ -313,6 +329,7 @@ public struct PriceTracker: Codable, Equatable {
         self.isArchived = false
         self.alertAcknowledgedAt = nil
         self.pendingComparison = nil
+        self.rejectedSellerHosts = []
     }
 
     /// Creates a tracker from multiple seller listings, preserving their display
@@ -345,6 +362,7 @@ public struct PriceTracker: Codable, Equatable {
         self.isArchived = false
         self.alertAcknowledgedAt = nil
         self.pendingComparison = nil
+        self.rejectedSellerHosts = []
     }
 
     /// Marks the current alert as viewed (the user opened the alerting tracker), so
@@ -373,8 +391,20 @@ public struct PriceTracker: Codable, Equatable {
 
     /// Merges history samples for one HOST into whichever of this tracker's
     /// stores already lives at that host (case-insensitive), or — when none
-    /// does — creates a new store there (`newStoreURLString`, with no live
-    /// `lastPrice`/`lastRefreshed`: these are passive samples, not a fetch).
+    /// does — creates a new SELLER there.
+    ///
+    /// A new store is created carrying the latest sample as its `lastPrice`
+    /// (and that observation's instant as `lastRefreshed`), because an
+    /// observation of a price at a retailer IS that retailer's row on this
+    /// tracker: a seller with a blank price reads as "we know nothing about
+    /// this shop" when in fact we know what it charged and when. An EXISTING
+    /// store is left alone — it has, or will have, a live fetch of its own, and
+    /// a historical reading must never masquerade as one.
+    ///
+    /// A host the user has rejected (`rejectedSellerHosts`) is refused
+    /// outright: this is the passive path, and a deleted seller does not come
+    /// back through it.
+    ///
     /// A no-op deduping guarantee: this is the ONE way `ProductTrackerIngestor`
     /// seeds snapshot history, so a product never gets two stores for the
     /// same host.
@@ -385,24 +415,56 @@ public struct PriceTracker: Codable, Equatable {
     ) {
         guard let firstCurrency = samples.first?.currency else { return }
         let lowerHost = host.lowercased()
+        guard !rejectsSeller(host: lowerHost) else { return }
         if let index = stores.firstIndex(where: { URL(string: $0.urlString)?.host?.lowercased() == lowerHost }) {
             stores[index].mergeHistorySamples(samples)
         } else {
+            let latest = samples.max { $0.day < $1.day }
             var newStore = PriceTrackerStore(
-                urlString: newStoreURLString, lastPrice: nil, currency: firstCurrency, lastRefreshed: nil)
+                urlString: newStoreURLString, lastPrice: latest?.price,
+                currency: latest?.currency ?? firstCurrency, lastRefreshed: latest?.day)
             newStore.mergeHistorySamples(samples)
             upsertStore(newStore)
         }
     }
 
     /// Removes a store URL; no-ops if it would empty the tracker (the ≥1 invariant).
+    ///
+    /// Removal is always the USER's doing (the seller row's Remove), so it is
+    /// also the one place a rejection is recorded: the store's points leave the
+    /// graph with it, and `rejectedSellerHosts` is what keeps the passive
+    /// writers from putting them back on the next save, refresh or observation.
     @discardableResult
     public mutating func removeStore(urlString: String) -> Bool {
         guard stores.count > 1, stores.contains(where: { $0.urlString == urlString }) else {
             return false
         }
         stores.removeAll { $0.urlString == urlString }
+        if let host = URL(string: urlString)?.host?.lowercased(), !host.isEmpty,
+           !rejectedSellerHosts.contains(host) {
+            rejectedSellerHosts.append(host)
+        }
         return true
+    }
+
+    /// Whether `host` is one the user removed from this tracker.
+    public func rejectsSeller(host: String?) -> Bool {
+        guard let host = host?.lowercased(), !host.isEmpty else { return false }
+        return rejectedSellerHosts.contains(host)
+    }
+
+    /// Whether the seller at `urlString` is rejected — the form every passive
+    /// writer asks, since they hold a URL rather than a host.
+    public func rejectsSeller(urlString: String) -> Bool {
+        rejectsSeller(host: URL(string: urlString)?.host)
+    }
+
+    /// Takes a host off the rejected list — the EXPLICIT re-add. Saving that
+    /// seller's page again, or adding it from the + menu, is the user asking
+    /// for it back, and nothing passive calls this.
+    public mutating func clearSellerRejection(urlString: String) {
+        guard let host = URL(string: urlString)?.host?.lowercased() else { return }
+        rejectedSellerHosts.removeAll { $0 == host }
     }
 
     /// Updates the fetched price for an existing store (background refresh). A price
@@ -531,7 +593,7 @@ public struct PriceTracker: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case productName, stores, brand, productID, identifiers, imageFileName
         case initialPrice, initialCurrency, alertThresholdFraction, isArchived
-        case alertAcknowledgedAt, pendingComparison
+        case alertAcknowledgedAt, pendingComparison, rejectedSellerHosts
     }
 
     public init(from decoder: Decoder) throws {
@@ -559,6 +621,10 @@ public struct PriceTracker: Codable, Equatable {
         // fan-out went asynchronous, and absent again the moment a run finishes.
         pendingComparison = try container.decodeIfPresent(
             PendingSellerComparison.self, forKey: .pendingComparison)
+        // Additive: absent for every tracker saved before a seller could be
+        // rejected, which reads as "nothing rejected".
+        rejectedSellerHosts = (try container.decodeIfPresent(
+            [String].self, forKey: .rejectedSellerHosts) ?? []).map { $0.lowercased() }
         let decodedInitial = try container.decodeIfPresent(Decimal.self, forKey: .initialPrice)
         // Repair the ≥1-store invariant for any malformed persisted payload.
         if decodedStores.isEmpty {

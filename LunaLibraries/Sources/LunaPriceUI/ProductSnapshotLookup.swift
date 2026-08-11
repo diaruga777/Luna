@@ -23,17 +23,33 @@ extension ProductSnapshotStore {
     /// retrieved by identifier through the index, then tiered by
     /// `SnapshotMatcher`. This is the read `ProductTrackerIngestor` makes,
     /// synchronously, while a price tracker is being created.
+    /// Two retrievals, in tier order, and the second one usually never happens:
+    /// the identifier keys first, and only when they yield NO match the
+    /// name-bucket keys — capped at `SnapshotMatcher.fuzzyCandidateLimit`
+    /// records. Cost: O(candidate identifiers + matched records), plus, on the
+    /// identifier-less pages that need it, ≤ (2 scopes × 5 tokens) index hits
+    /// and ≤ 40 record reads. Never O(store).
     public func matchingSnapshots(
         for candidate: ProductInfo, candidateURL: URL, existingStoreURLStrings: [String] = []
     ) -> [ProductSnapshot] {
         let keys = SnapshotMatcher.candidateKeys(
             for: candidate, candidateURL: candidateURL,
             existingStoreURLStrings: existingStoreURLStrings)
-        let pool = snapshots(forKeys: keys)
-        guard !pool.isEmpty else { return [] }
-        return SnapshotMatcher.matchingSnapshots(
+        let keyedPool = snapshots(forKeys: keys)
+        let identified = SnapshotMatcher.identifierMatches(
             for: candidate, candidateURL: candidateURL,
-            existingStoreURLStrings: existingStoreURLStrings, among: pool)
+            existingStoreURLStrings: existingStoreURLStrings, among: keyedPool)
+        guard identified.isEmpty else { return identified }
+
+        let namePool = snapshots(
+            forKeys: SnapshotMatcher.nameCandidateKeys(for: candidate, candidateURL: candidateURL),
+            limit: SnapshotMatcher.fuzzyCandidateLimit)
+        return SnapshotMatcher.merged(
+            SnapshotMatcher.urlMatches(
+                for: candidateURL, existingStoreURLStrings: existingStoreURLStrings,
+                among: keyedPool),
+            SnapshotMatcher.fuzzyNameMatches(
+                for: candidate, candidateURL: candidateURL, among: namePool))
     }
 
     /// The newest observation of exactly this page, mapped back into the same

@@ -616,6 +616,7 @@ Keys carry their identifier's SCOPE, since the scopes are not interchangeable:
 | `m:<mpn>` | manufacturer (a compatible brand is still checked) |
 | `s:<host>:<sku>` | one host |
 | `u:<url, tracking params stripped>` | the page itself — the weak tier |
+| `n:b:<brand>:<token>` / `n:h:<registrable domain>:<token>` | one word of the NAME, scoped to a brand or a retailer family — the fuzzy tier's bucket |
 
 A record id is a hash of `<url>|<day>`, which is also the uniqueness rule:
 revisiting a page the same day updates that day's observation rather than
@@ -646,22 +647,80 @@ them really are the same product:
 4. `sku` equality on the same host.
 5. Canonical URL equality (tracking params stripped both sides), against the
    candidate's own URL or any store URL already on the tracker being merged into.
+6. **Fuzzy NAME similarity** (token Jaccard ≥ `ProductIdentityMatching
+   .nameThreshold`) with a compatible brand, within ONE retailer family or ONE
+   declared brand.
 
-The first tier that matches anything wins outright. There is deliberately **no
-fuzzy-name tier**: a name is not an identifier, it cannot be indexed, and it was
-the tier most likely to fold another product's price into a graph. The tracker's
-single flat `productID` — whose kind was thrown away long before it got here —
-is offered at every scope in the lookup and disqualified by the tier check.
+**Tiers 1–4 win outright**; the first of them that matches anything is the
+answer, so an identifier always beats a name. Tiers 5 and 6 are **unioned with
+each other** rather than ordered, because the URL tier cannot gate the name
+tier: ingestion records an observation of the page it is classifying *before*
+it seeds the tracker, so on the save path tier 5 is always satisfied by the
+candidate's own page — "tier 5 matched" would just mean "we wrote a row for
+this URL a moment ago", and no other seller's observation could ever be
+reached. One tier contributes this page's own earlier days, the other other
+sellers of the same product. The tracker's single flat `productID` — whose kind was thrown away long
+before it got here — is offered at every scope in the lookup and disqualified by
+the tier check.
 
-Matched observations are grouped by HOST: a host the tracker already has a store
-for gets its `priceHistory` MERGED in (`PriceTracker.mergeHistorySamples`,
-day-bucketed, lowest price wins per day — never touching `initialPrice` /
-`lastPrice` / `lastRefreshed`, which describe a live fetch); a new host gets a
-brand-new store seeded with that history. Seeding refuses an observation in a
-currency other than the tracker's `initialCurrency` — there is no FX source, so a
-£ point must not land on a $ graph. Observations are never deleted by matching:
-the same one can seed a different product later and remains available to the
-history pill.
+**Why a name tier, when a name is not an identifier.** Most retail pages declare
+no GTIN, MPN or SKU at all, and the two halves of this feature key the same page
+differently: `content.js` files an observation under the page's **canonical**
+URL (`<link rel=canonical>`), while a save is keyed by the URL the user actually
+saved. A `?variant=`, a slug, a share link — and tier 5 misses too, leaving the
+observation unreachable forever. That is the cross-process, cross-day gap the
+graph was missing points to. The tier is the riskiest one (it can fold another
+product's price in), which is affordable only because the user can undo it: see
+**Rejecting a seller** below.
+
+**And it is still a lookup, not a scan.** `ProductSnapshotKeys.nameKeys` files
+every observation under its longest name tokens (≤ 8), each scoped twice —
+`n:b:<brand>:<token>` and `n:h:<registrable domain>:<token>` — and a candidate
+asks the same shape with its ≤ 5 longest tokens. So the name pool costs ≤ 10
+dictionary hits into the already-decoded index, and it is capped at
+`SnapshotMatcher.fuzzyCandidateLimit` (40) record reads, newest days first,
+chosen from the index's `days` map without opening a record to find out how old
+it is. Total worst case on the save path: O(candidate identifiers + matched
+records) + 10 index hits + 40 reads. Never O(store).
+
+Matched observations are grouped by HOST, **and every host becomes a seller
+row**: a host the tracker already has a store for gets its `priceHistory` MERGED
+in (`PriceTracker.mergeHistorySamples`, day-bucketed, lowest price wins per day
+— never touching that store's `lastPrice` / `lastRefreshed`, which describe a
+live fetch, nor `initialPrice`); a new host gets a brand-new store seeded with
+that history **and carrying the latest observation as its `lastPrice` /
+`lastRefreshed`**. An observation is a price at a retailer, so the retailer it
+came from is a row with that price on it — a blank price would read as "we know
+nothing about this shop" when we know what it charged and when. Buckets come
+from the observation's `capturedAt` INSTANT rather than the UTC midnight of its
+`day` string: the graph's buckets are local days, so UTC midnight would date
+every observation a day early for every user west of Greenwich. Seeding refuses
+an observation in a currency other than the tracker's `initialCurrency` — there
+is no FX source, so a £ point must not land on a $ graph. Observations are never
+deleted by matching: the same one can seed a different product later and remains
+available to the history pill.
+
+### Rejecting a seller (and why tier 6 is affordable)
+
+Removing a seller from the list — the row's long-press → Remove — takes its
+price points off the graph with it, because the points live in that store's own
+`priceHistory` and `PriceHistory.dailySeries` reads the stores. It must STAY
+gone, so the removal also records the host in `PriceTracker
+.rejectedSellerHosts` (persisted, absent-key-tolerant, and `removeStore` is the
+only writer — the one funnel every removal goes through).
+
+Every PASSIVE writer then refuses that host:
+
+| Writer | Where the refusal is |
+| --- | --- |
+| snapshot seeding on a later save | `PriceTracker.mergeHistorySamples(_:forHost:newStoreURLString:)` — one guard, since that is the only way seeding attaches anything |
+| the alternative-seller fan-out | `SellerComparison.apply` |
+| a background refresh | nothing to refuse: refreshing never ADDS a store |
+
+An EXPLICIT re-add clears the rejection — saving that seller's page again
+(`ProductTrackerMerge.mergeIfPossible`, before it seeds, so the same save gets
+the history back too) or adding it from the + menu. The user asking for it is
+the one thing that is not a resurrection.
 
 Existing trackers are **not** backfilled. Only new saves read the store.
 

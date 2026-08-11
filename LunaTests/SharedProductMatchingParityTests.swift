@@ -95,10 +95,18 @@ final class SharedProductMatchingParityTests: XCTestCase {
             Case(name: "canonical url with tracking params", expect: true,
                  candidate: candidate(),
                  snapshot: snapshot(url: "https://shop.example/p/9?utm_source=x")),
-            // A name is NOT an identifier: two similarly-named products on
-            // unrelated pages, sharing no id, are not the same product on
-            // either side of this pair.
-            Case(name: "similar name, no shared identifier", expect: false,
+            // The name tier, which BOTH sides have and both put last. The
+            // extension's copy has always had it; the app's lost it for a
+            // while, and that split is what made a Safari observation of an
+            // identifier-less page unreachable from a later save.
+            //
+            // The one deliberate difference is scope: the app's tier requires
+            // the same retailer family or the same DECLARED brand, because its
+            // pool has to be retrievable from the snapshot index by key
+            // (`ProductSnapshotKeys.nameKeys`), while the extension's runs over
+            // a compact index it already holds. Both sides agree here — one
+            // brand, declared on both.
+            Case(name: "similar name, same declared brand", expect: true,
                  candidate: candidate(name: "Acme Wireless Keyboard Pro", brand: "Acme"),
                  snapshot: snapshot(name: "Acme Wireless Keyboard", url: "https://a.example/p", brand: "Acme")),
             Case(name: "unrelated", expect: false,

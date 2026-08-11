@@ -670,6 +670,9 @@ public final class ProductDetailViewController: UIViewController {
                     }
                     return
                 }
+                // Adding a seller by hand is the explicit re-add: if this host
+                // was removed once, the user has just asked for it back.
+                current.clearSellerRejection(urlString: urlString)
                 current.upsertStore(PriceTrackerStore(
                     urlString: urlString, lastPrice: price.amount,
                     currency: price.currency, lastRefreshed: Date()))
@@ -711,6 +714,7 @@ public final class ProductDetailViewController: UIViewController {
                     message: L10n.string("PriceTracker_tracking_stillNoPriceMessage"))
                 return
             }
+            current.clearSellerRejection(urlString: urlString)
             current.upsertStore(PriceTrackerStore(
                 urlString: urlString, lastPrice: resolved.amount,
                 currency: resolved.currency, lastRefreshed: Date()))
@@ -722,6 +726,11 @@ public final class ProductDetailViewController: UIViewController {
     private func removeSeller(urlString: String) {
         guard var tracker, tracker.removeStore(urlString: urlString) else { return }
         store.updatePriceTracker(tracker, for: itemID)
+        // The seller's points left the graph with it; the compact mirror the
+        // Safari pill reads is built from the same stores, so it has to be
+        // rebuilt now rather than at the next refresh — otherwise the page in
+        // Safari keeps quoting a price the user just deleted.
+        PriceHistoryIndexWriter.regenerate(store: store)
         reload()
     }
 }

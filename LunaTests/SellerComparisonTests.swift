@@ -161,6 +161,23 @@ final class SellerComparisonTests: XCTestCase {
         XCTAssertEqual(subject.stores.count, 1)
     }
 
+    /// A fan-out is a passive writer, so it may not undo the user's own
+    /// removal: the seller they took off this tracker stays off, however
+    /// cheaply it turns up again.
+    func testASellerTheUserRemovedIsNeverReAttachedByAFanOut() {
+        var subject = tracker()
+        subject.upsertStore(PriceTrackerStore(
+            urlString: "https://a.example/p/1", lastPrice: 90, currency: "USD"))
+        XCTAssertTrue(subject.removeStore(urlString: "https://a.example/p/1"))
+
+        let added = SellerComparison.apply(
+            [result(domain: "a.example", price: "40", path: "/p/2"),
+             result(domain: "b.example", price: "80")],
+            to: &subject)
+        XCTAssertEqual(added, 1)
+        XCTAssertFalse(subject.stores.contains { $0.urlString.contains("a.example") })
+    }
+
     // MARK: - The pending marker
 
     /// The marker is what survives the extension process that started the run.

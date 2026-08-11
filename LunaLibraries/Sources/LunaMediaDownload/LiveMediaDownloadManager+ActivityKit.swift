@@ -105,13 +105,21 @@ extension LiveMediaDownloadManager {
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
     }
 
-    func updateActivity(for job: LiveMediaDownloadJob) async {
+    /// `alerting` fires the end-of-life system alert (banner + sound) with this
+    /// update instead of leaving it to `endActivity` — which is how the FINISHED
+    /// state can alert and still stay live afterwards (see `finishedLiveHold`).
+    func updateActivity(for job: LiveMediaDownloadJob, alerting: Bool = false) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *) else { return }
         let state = activityState(for: job)
+        let alert = alerting ? Self.endOfLifeAlert(for: job) : nil
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
-            await activity.update(using: state)
+            if let alert {
+                await activity.update(using: state, alertConfiguration: alert)
+            } else {
+                await activity.update(using: state)
+            }
         }
         #endif
     }
@@ -120,25 +128,7 @@ extension LiveMediaDownloadManager {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *) else { return }
         let state = activityState(for: job)
-        // A final alert right before ending — a silent Dynamic Island collapse
-        // is easy to miss, so both a successful finish and a failure surface
-        // as a system alert (banner + sound), matching the one at start. Not
-        // for a user-canceled (still `.suspended` when torn down) job — that's
-        // an intentional dismissal, not a result worth alerting about — and not
-        // while alerts are suspended (a bulk import, where every transfer's
-        // start and finish would buzz over the import's own progress bar).
-        var alert: AlertConfiguration?
-        switch job.phase {
-        case .finished, .failed:
-            alert = Self.areActivityAlertsSuspended ? nil : AlertConfiguration(
-                title: job.phase == .failed
-                    ? L10n.resource("Downloader_liveActivity_status_downloadFailed")
-                    : L10n.resource("Downloader_liveActivity_alert_downloadFinishedTitle"),
-                body: "\(job.title)",
-                sound: .default)
-        default:
-            alert = nil
-        }
+        let alert = Self.endOfLifeAlert(for: job)
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
             if let alert {
@@ -148,6 +138,71 @@ extension LiveMediaDownloadManager {
         }
         #endif
     }
+
+    /// Ends every activity for `jobID` right now — no alert, and no lingering
+    /// lock-screen tail. The second half of the finished flow (the live hold has
+    /// already shown the completed card and its alert already fired with the
+    /// `.finished` update), and the orphan reaper's one tool.
+    func endActivitiesImmediately(jobID: String) async {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        for activity in Activity<LiveMediaDownloadAttributes>.activities
+            where activity.attributes.jobID == jobID {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        #endif
+    }
+
+    /// Ends any activity whose job is gone from `keepingJobIDs` — a card
+    /// stranded by a process death inside the finished live hold, or by any
+    /// other termination between `store.remove` and `end`. Nothing else can
+    /// clear it: an activity outlives the process that requested it, and a job
+    /// that no longer exists will never reach an end call of its own. Cards
+    /// mid-hold in THIS process are in `keepingJobIDs` too, so a foreground
+    /// while one is on screen doesn't cut its five seconds short.
+    ///
+    /// Only `.active` activities are reaped. An already-ENDED one is a failure
+    /// card living out its `failureDismissalDelay` on the Lock Screen with its
+    /// job already removed — deliberate, and not this sweep's business.
+    func reapOrphanedActivities(keepingJobIDs: Set<String>) async {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        for activity in Activity<LiveMediaDownloadAttributes>.activities
+            where activity.activityState == .active
+                && !keepingJobIDs.contains(activity.attributes.jobID) {
+            SharedDiagnosticLog.record(
+                "reaped orphaned live activity for job \(activity.attributes.jobID)",
+                category: "media-download")
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        #endif
+    }
+
+    #if canImport(ActivityKit)
+    /// The one end-of-life alert definition, shared by the finished update and
+    /// `endActivity`. A silent Dynamic Island collapse is easy to miss, so both
+    /// a successful finish and a failure surface as a system alert (banner +
+    /// sound), matching the one at start. Not for a user-canceled (still
+    /// `.suspended` when torn down) job — that's an intentional dismissal, not
+    /// a result worth alerting about — and not while alerts are suspended (a
+    /// bulk import, where every transfer's start and finish would buzz over the
+    /// import's own progress bar).
+    @available(iOS 16.1, *)
+    static func endOfLifeAlert(for job: LiveMediaDownloadJob) -> AlertConfiguration? {
+        switch job.phase {
+        case .finished, .failed:
+            guard !areActivityAlertsSuspended else { return nil }
+            return AlertConfiguration(
+                title: job.phase == .failed
+                    ? L10n.resource("Downloader_liveActivity_status_downloadFailed")
+                    : L10n.resource("Downloader_liveActivity_alert_downloadFinishedTitle"),
+                body: "\(job.title)",
+                sound: .default)
+        default:
+            return nil
+        }
+    }
+    #endif
 
     /// Tears every Live Activity down at once, immediately and without an alert
     /// — the factory reset's media leg, installed on `FactoryReset` by the media

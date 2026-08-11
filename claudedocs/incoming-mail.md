@@ -35,7 +35,7 @@ still KEEPS only its own kinds from what it imports.
   `multipart/alternative` carrying a base64 `text/html` part; the raw blob is
   unreadable without this.
 - **`MailArticleBuilder`**: email → `ArticleContent` (subject → title, sender →
-  author + `channelName`); body via `MIMEBody` then the readability extractor
+  author + `senderName`); body via `MIMEBody` then the readability extractor
   (HTML) or plain-text paragraphs, with footer junk trimmed.
 - **`IncomingMailSettings`** (standard defaults; main-app only): `isEnabled`,
   `allowedSenders: [String]`, `subjectFilters: [String]` (case-insensitive

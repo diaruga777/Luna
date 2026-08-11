@@ -63,7 +63,7 @@ enum MediaStageCatalog {
                 platform: .instagram, hoursAgo: 1),
             StageFixtures.platformPost(
                 seed: "stage-video", url: videoURL, title: "A Short Film About Rain",
-                platform: .youtube, channel: "Kurzgesagt", daysAgo: 1),
+                platform: .youtube, daysAgo: 1),
         ])
 
         var items = [undownloadedVideo()]
@@ -78,7 +78,7 @@ enum MediaStageCatalog {
                     sourceURLString: imageURL, title: "A Saved Photo",
                     dateSaved: StageFixtures.ago(hours: 1), kind: .image,
                     storageState: .localFile(fileName: fileName), thumbnailFileName: nil,
-                    platform: .instagram, platformItemID: "stage-image", creator: "creator"),
+                    platform: .instagram, platformItemID: "stage-image"),
                 at: 0)
         }
         SavedMediaStore.shared.seedForTesting(items: items)
@@ -90,7 +90,7 @@ enum MediaStageCatalog {
             sourceURLString: videoURL, title: "A Short Film About Rain",
             dateSaved: StageFixtures.ago(days: 1), kind: .video,
             storageState: .undownloaded, thumbnailFileName: nil,
-            platform: .youtube, platformItemID: "stage-video", creator: "Kurzgesagt")
+            platform: .youtube, platformItemID: "stage-video")
     }
 
     // MARK: - Download states

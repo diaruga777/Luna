@@ -245,7 +245,7 @@ enum SharedStageCatalog {
             title: "A Hard-Paywalled Story", state: .needsCaptcha, daysAgo: 2))
         items.append(StageFixtures.platformPost(
             seed: "stage-video", url: "https://youtube.com/watch?v=stage",
-            title: "A Saved Video", platform: .youtube, channel: "Kurzgesagt", daysAgo: 3))
+            title: "A Saved Video", platform: .youtube, daysAgo: 3))
         items.append(StageFixtures.alertingTracker(
             seed: "stage-tracker", name: "Discounted Gadget",
             url: "https://store.example.com/gadget", from: 200, to: 150, daysAgo: 4))

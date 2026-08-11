@@ -537,26 +537,16 @@ public final class ReadingListStore {
         }
     }
 
-    /// Sets the leading-label source (e.g. the email sender for imported mail,
-    /// shown where the host would be).
-    public func setChannelName(_ name: String, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].channelName != name else { return false }
-            all[index].channelName = name
-            return true
-        }
-    }
-
     /// Records the stable sender identity for an incoming-email item while
-    /// retaining the parsed name as a fallback when no contact exists.
+    /// retaining the parsed name as a fallback when no contact exists. The only
+    /// writer of `senderName`.
     public func setIncomingSender(email: String, displayName: String, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             let changed = all[index].incomingSenderEmail != email
-                || all[index].channelName != displayName
+                || all[index].senderName != displayName
             all[index].incomingSenderEmail = email
-            all[index].channelName = displayName
+            all[index].senderName = displayName
             return changed
         }
     }

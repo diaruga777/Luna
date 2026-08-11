@@ -126,11 +126,8 @@ public final class EmailShareCenter {
             } else if let thumb = item?.thumbnailFileName {
                 heroImage = inlineImage(fileName: thumb, cid: "hero")
             }
-        } else {
-            if let creator = item?.channelName { detailLines.append(creator) }
-            if let thumb = item?.thumbnailFileName {
-                heroImage = inlineImage(fileName: thumb, cid: "hero")
-            }
+        } else if let thumb = item?.thumbnailFileName {
+            heroImage = inlineImage(fileName: thumb, cid: "hero")
         }
 
         let rendered = EmailContentRenderer.renderCard(

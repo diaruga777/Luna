@@ -106,7 +106,17 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
     public var readingProgress: Double?
-    public var channelName: String?
+    /// Display name of whoever sent an email-captured save — a newsletter's
+    /// publisher, or the friend who shared the link. It is the ONLY meaning this
+    /// field carries: it feeds the sender initials badge (`ArticleSourceBadge`)
+    /// and the reader card's sender label (`ArticleCardPresenter
+    /// .resolvedSenderName`), both of which read it only when
+    /// `effectiveCaptureSource == .email`. Nothing else writes it.
+    ///
+    /// It was once `channelName` and doubled as a media item's creator/channel;
+    /// that second meaning is gone (no surface displayed it), and the decoder
+    /// migrates the old key for email rows only — see `init(from:)`.
+    public var senderName: String?
     /// Normalized sender address for an incoming-email save. The UI resolves
     /// this through the contact store so later renames appear immediately.
     public var incomingSenderEmail: String?
@@ -224,7 +234,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSpokenWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
-        self.channelName = nil
+        self.senderName = nil
         self.incomingSenderEmail = nil
         self.thumbnailFileName = nil
         self.sharedByUsername = nil
@@ -261,7 +271,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         documentType: String? = nil,
         platform: ContentPlatform? = nil,
         platformItemID: String? = nil,
-        channelName: String? = nil,
+        senderName: String? = nil,
         incomingSenderEmail: String? = nil,
         captureSource: CaptureSource? = nil,
         priceTracker: PriceTracker? = nil
@@ -284,7 +294,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSpokenWordIndex = nil
         self.wordCount = wordCount
         self.readingProgress = readingProgress
-        self.channelName = channelName
+        self.senderName = senderName
         self.incomingSenderEmail = incomingSenderEmail
         self.thumbnailFileName = nil
         self.sharedByUsername = sharedByUsername
@@ -330,6 +340,9 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// "kindle" id, which is all that existed before).
     private enum LegacyCodingKeys: String, CodingKey {
         case sendState, dateSent, originalPageFileName
+        /// `senderName`'s former name, when it also held a media item's
+        /// creator/channel. Read for email rows only (see `init(from:)`).
+        case channelName
     }
 
     // Manual decoding so items saved before readState existed still decode.
@@ -367,7 +380,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
-        channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
         incomingSenderEmail = try container.decodeIfPresent(String.self, forKey: .incomingSenderEmail)
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
@@ -401,6 +413,21 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
         captureSource = Self.tolerant(CaptureSource.self, container, .captureSource)
         priceTracker = try container.decodeIfPresent(PriceTracker.self, forKey: .priceTracker)
+
+        // `senderName` was written as `channelName` until the media
+        // creator/channel concept was removed. That one key held two unrelated
+        // meanings — an email sender's display name AND a video's creator — so
+        // the old value is only carried over for rows that are actually email
+        // captures, which is exactly the set the sender badge reads. A media
+        // row's creator is dropped on the next write, deliberately.
+        if let senderName = try container.decodeIfPresent(String.self, forKey: .senderName) {
+            self.senderName = senderName
+        } else if captureSource == .email || URL(string: urlString)?.scheme == "lunamail" {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            self.senderName = try legacy.decodeIfPresent(String.self, forKey: .channelName)
+        } else {
+            self.senderName = nil
+        }
     }
 
     /// Decodes a string-backed enum field, mapping an absent key OR an unknown

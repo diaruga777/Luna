@@ -88,13 +88,13 @@ enum StageFixtures {
     /// the two must agree (`MediaCardPresenter.media(for:)`).
     static func platformPost(
         seed: String, url: String, title: String, platform: ContentPlatform,
-        channel: String? = nil, daysAgo: Int = 0, hoursAgo: Int = 0
+        daysAgo: Int = 0, hoursAgo: Int = 0
     ) -> ReadingListItem {
         ReadingListItem(
             seed: seed, urlString: url, title: title,
             dateAdded: ago(days: daysAgo, hours: hoursAgo),
             state: .ready, platform: platform, platformItemID: seed,
-            channelName: channel, captureSource: .shareSheet)
+            captureSource: .shareSheet)
     }
 
     /// The article body every staged reader shows.

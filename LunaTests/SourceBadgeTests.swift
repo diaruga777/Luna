@@ -61,18 +61,51 @@ final class SourceBadgeTests: XCTestCase {
     private func fixture(
         url: String,
         captureSource: CaptureSource? = nil,
-        channelName: String? = nil,
+        senderName: String? = nil,
         documentType: String? = nil
     ) -> ReadingListItem {
         ReadingListItem(
             seed: "badge-\(url)", urlString: url, title: "T", dateAdded: Date(timeIntervalSince1970: 0),
-            documentType: documentType, channelName: channelName, captureSource: captureSource)
+            documentType: documentType, senderName: senderName, captureSource: captureSource)
     }
 
     func testEmailWithSenderGetsInitialsBadge() {
         let item = fixture(
-            url: "lunamail://msg-1", captureSource: .email, channelName: "The Atlantic")
+            url: "lunamail://msg-1", captureSource: .email, senderName: "The Atlantic")
         XCTAssertEqual(ArticleSourceBadge.fallback(for: item), .sender("The Atlantic"))
+    }
+
+    /// A row written before the media-creator concept was removed stored its
+    /// sender under the old `channelName` key. Upgrading must not cost an email
+    /// import its sender badge, so the decoder carries that key over — for email
+    /// rows only, which is the one meaning it is allowed to have kept.
+    func testEmailRowWrittenWithTheLegacyKeyKeepsItsSenderBadge() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","urlString":"lunamail://msg-legacy","title":"T",
+         "dateAdded":0,"state":"ready","readState":"unopened",
+         "captureSource":"email","channelName":"The Atlantic",
+         "sendStates":{},"datesSent":{},"sendFailureCounts":{},
+         "sendNextAttemptDates":{},"sendLastErrors":{}}
+        """
+        let item = try JSONDecoder().decode(ReadingListItem.self, from: Data(json.utf8))
+
+        XCTAssertEqual(item.senderName, "The Atlantic")
+        XCTAssertEqual(ArticleSourceBadge.fallback(for: item), .sender("The Atlantic"))
+    }
+
+    /// The same legacy key on a MEDIA row held a creator, not a sender. That
+    /// meaning is gone, so it is dropped rather than migrated into `senderName`.
+    func testMediaRowWrittenWithTheLegacyKeyDropsItsCreator() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","urlString":"https://youtube.com/watch?v=abc",
+         "title":"T","dateAdded":0,"state":"ready","readState":"unopened",
+         "captureSource":"shareSheet","channelName":"Kurzgesagt",
+         "sendStates":{},"datesSent":{},"sendFailureCounts":{},
+         "sendNextAttemptDates":{},"sendLastErrors":{}}
+        """
+        let item = try JSONDecoder().decode(ReadingListItem.self, from: Data(json.utf8))
+
+        XCTAssertNil(item.senderName)
     }
 
     func testEmailWithoutSenderGetsMailSymbol() {

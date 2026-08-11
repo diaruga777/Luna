@@ -140,7 +140,7 @@ final class FriendSharingTests: XCTestCase {
     func testIncomingEmailUsesCurrentContactName() {
         var item = ReadingListItem(urlString: "https://example.com/article")
         item.captureSource = .email
-        item.channelName = "Original Name"
+        item.senderName = "Original Name"
         item.incomingSenderEmail = "sender@example.com"
 
         XCTAssertEqual(
@@ -153,7 +153,7 @@ final class FriendSharingTests: XCTestCase {
     func testIncomingEmailFallsBackToCapturedName() {
         var item = ReadingListItem(urlString: "lunamail://message")
         item.captureSource = .email
-        item.channelName = "Newsletter Name"
+        item.senderName = "Newsletter Name"
         item.incomingSenderEmail = "news@example.com"
 
         XCTAssertEqual(
@@ -164,7 +164,7 @@ final class FriendSharingTests: XCTestCase {
     func testNonEmailItemHasNoSenderLabel() {
         var item = ReadingListItem(urlString: "https://example.com/article")
         item.captureSource = .shareSheet
-        item.channelName = "Publisher"
+        item.senderName = "Publisher"
 
         XCTAssertNil(ArticleCardPresenter.resolvedSenderName(for: item) { _ in "Contact" })
     }

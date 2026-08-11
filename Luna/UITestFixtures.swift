@@ -171,13 +171,12 @@ enum UITestFixtures {
 
         func platform(
             seed: String, url: String, title: String, daysAgo: Int,
-            platform: ContentPlatform, creator: String?, channel: String? = nil
+            platform: ContentPlatform
         ) -> ReadingListItem {
             ReadingListItem(
                 seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo),
                 state: .ready, readState: .unopened,
                 platform: platform, platformItemID: seed,
-                channelName: channel,
                 captureSource: .shareSheet)
         }
 
@@ -205,17 +204,17 @@ enum UITestFixtures {
 
         // Platform posts
         items.append(platform(seed: "x", url: "https://x.com/user/status/123",
-                             title: "A post on X", daysAgo: 1, platform: .x, creator: "@user"))
+                             title: "A post on X", daysAgo: 1, platform: .x))
         items.append(platform(seed: "bsky", url: "https://bsky.app/profile/u/post/abc",
-                             title: "A Bluesky post", daysAgo: 1, platform: .bluesky, creator: "u.bsky.social"))
+                             title: "A Bluesky post", daysAgo: 1, platform: .bluesky))
         items.append(platform(seed: "reddit", url: "https://reddit.com/r/swift/comments/x/title",
-                             title: "A Reddit thread", daysAgo: 1, platform: .reddit, creator: "r/swift"))
-        items.append(platform(seed: "tiktok", url: "https://tiktok.com/@creator/video/9",
-                             title: "A TikTok", daysAgo: 1, platform: .tiktok, creator: "@creator"))
+                             title: "A Reddit thread", daysAgo: 1, platform: .reddit))
+        items.append(platform(seed: "tiktok", url: "https://tiktok.com/@user/video/9",
+                             title: "A TikTok", daysAgo: 1, platform: .tiktok))
         items.append(platform(seed: "ig", url: "https://instagram.com/p/abc",
-                             title: "An Instagram post", daysAgo: 1, platform: .instagram, creator: "creator"))
+                             title: "An Instagram post", daysAgo: 1, platform: .instagram))
         items.append(platform(seed: "fb", url: "https://facebook.com/post/1",
-                             title: "A Facebook post", daysAgo: 1, platform: .facebook, creator: "A Page"))
+                             title: "A Facebook post", daysAgo: 1, platform: .facebook))
         // Price trackers — normal + alerting
         items.append(ReadingListItem(
             seed: "pt-normal", urlString: "https://store.example.com/widget",

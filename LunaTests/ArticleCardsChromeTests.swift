@@ -546,7 +546,7 @@ final class ArticleCardsChromeTests: XCTestCase {
             dateAdded: Date(), state: .ready, wordCount: 480)
         if let senderName {
             item.captureSource = .email
-            item.channelName = senderName
+            item.senderName = senderName
             item.incomingSenderEmail = "sender@example.com"
         }
         let content = UITestFixtures.sampleArticleContent(title: title)

@@ -44,7 +44,7 @@ App-Group keychain access group.
   / `.share(urlString:title:to:)`: validates/normalizes recipient addresses,
   renders the item as a full article (`EmailContentRenderer.renderArticle`,
   inline images) or a compact card (`renderCard` — hero image from a price
-  snapshot/thumbnail, detail lines for creator/media title), builds the raw
+  snapshot/thumbnail, detail lines for a tracked price), builds the raw
   MIME with the `X-Luna-Share` header via `EmailMIMEBuilder`, and sends through
   the connected account's `EmailTransport` (`MailTransportFactory.make`).
   Records every recipient as a contact on send.

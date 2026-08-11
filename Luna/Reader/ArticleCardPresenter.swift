@@ -247,6 +247,6 @@ final class ArticleCardPresenter: CardKindPresenting {
            let currentName = contactNameForEmail(email) {
             return currentName
         }
-        return item.channelName
+        return item.senderName
     }
 }

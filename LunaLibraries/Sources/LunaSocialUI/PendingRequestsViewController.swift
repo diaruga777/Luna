@@ -77,7 +77,6 @@ public final class PendingRequestsViewController: NavHeaderTableController {
 
     private func importAndRemove(_ request: PendingRequest) {
         if let item = ReadingListStore.shared.addIfAbsent(urlString: request.urlString, source: .email) {
-            ReadingListStore.shared.setChannelName(request.displaySender, for: item.id)
             ReadingListStore.shared.setIncomingSender(
                 email: request.senderEmail, displayName: request.displaySender, for: item.id)
             Task { await ReadingListIngestor.shared.ingest(item) }

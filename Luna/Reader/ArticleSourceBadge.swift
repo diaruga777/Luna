@@ -16,7 +16,7 @@ enum ArticleSourceBadge {
 
     static func fallback(for item: ReadingListItem) -> CarouselSourceBadge {
         if item.effectiveCaptureSource == .email || item.url?.scheme == "lunamail" {
-            if let sender = item.channelName,
+            if let sender = item.senderName,
                !CarouselSourceBadge.initials(fromName: sender).isEmpty {
                 return .sender(sender)
             }

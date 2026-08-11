@@ -186,13 +186,54 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// saved item (a local file) or opens it in Photos (a Photos-backed save),
     /// without a save. Still-downloading or an unknown URL simply lands on the
     /// deck — today's behavior for any other cold/foreground launch.
+    ///
+    /// The finished card's Share button is the same route plus `&share=1`: it
+    /// centers the card AND raises the system share sheet over the downloaded
+    /// file. Every case that has no file to share (a Photos-backed save, still
+    /// downloading, an unknown URL, an app that links no media kind) reaches
+    /// exactly the behavior above instead.
     private func openMediaDeepLink(_ url: URL) {
         guard let urlString = LunaDeepLink.mediaViewURLString(from: url), let nav = mainNavigationController
         else { return }
         nav.popToRootViewController(animated: false)
-        if case let .centerAndOpen(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString),
-           let item = ReadingListStore.shared.item(withID: itemID) {
+        guard case let .centerAndOpen(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString),
+              let item = ReadingListStore.shared.item(withID: itemID)
+        else { return }
+        if LunaDeepLink.mediaShareRequested(from: url),
+           let exporter = KindWiring.mediaShareFileExporter {
+            shareDownloadedMedia(item, using: exporter, in: nav)
+        } else {
             (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
+        }
+    }
+
+    /// Centers the deck on the downloaded item, then hands a materialized copy
+    /// of its file to `UIActivityViewController`. Producing that copy is the
+    /// media kind's job (`MediaShareFileExporting`) and can fail — a file that
+    /// moved to Photos or vanished — in which case this degrades to the plain
+    /// open the link would otherwise have done.
+    private func shareDownloadedMedia(
+        _ item: ReadingListItem, using exporter: MediaShareFileExporting,
+        in nav: UINavigationController
+    ) {
+        let deck = nav.viewControllers.first
+        (deck as? CardCarouselHostViewController)?.centerCard(onItemID: item.id)
+        Task { @MainActor in
+            guard let fileURL = await exporter.export(item.id) else {
+                (deck as? ExternalItemOpening)?.openExternally(item)
+                return
+            }
+            let activity = UIActivityViewController(
+                activityItems: [fileURL], applicationActivities: nil)
+            activity.completionWithItemsHandler = { _, _, _, _ in exporter.discard(fileURL) }
+            // On iPad this presents as a popover, which needs an anchor; the
+            // centered card is the only thing this launch pointed at.
+            let anchor = deck?.view ?? nav.view
+            activity.popoverPresentationController?.sourceView = anchor
+            activity.popoverPresentationController?.sourceRect = CGRect(
+                x: (anchor?.bounds.midX ?? 0), y: (anchor?.bounds.midY ?? 0),
+                width: 0, height: 0)
+            (nav.presentedViewController ?? nav).present(activity, animated: true)
         }
     }
 

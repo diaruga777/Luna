@@ -329,12 +329,65 @@ which every deck root now provides via the base `CardCarouselHostViewController`
 invented); still-downloading or an unknown URL just lands on the deck, the same as
 any other cold/foreground launch.
 
-**The finished-state dismissal window is UNCHANGED** (`endActivity`'s 20s default) —
-tap-to-view instead rides the alert `endActivity` already sends on its final
-`.finished`/`.failed` update (title + body + sound, same shape as the download-started
-alert), which re-presents the activity prominently regardless of foreground/background
-state; the fix here was making sure that final alerting state carries the view URL, not
-lengthening how long the card lingers.
+**The finished card gets FIVE SECONDS live, and a dismissal policy cannot buy them.**
+ActivityKit's `dismissalPolicy` governs only the Lock Screen's after-end banner: the
+LIVE presentation — the Dynamic Island the user is watching from Safari — is gone the
+instant `end()` is called. `save()` used to `end` immediately after its `.finished`
+update, so the completed state never had any screen time at all: the island froze at
+whatever progress the app saw before it suspended (a background `URLSession` sends no
+progress to a suspended process — expected) and then simply vanished. The finished flow
+is now three steps, in `LiveMediaDownloadManager`:
+
+1. **Update to `.finished`, alerting.** The end-of-life alert (title + body + sound,
+   same shape as the download-started one, and still suppressed while
+   `areActivityAlertsSuspended` — a bulk import) rides the UPDATE now rather than an
+   end call, since the activity is not ending yet. `updateActivity(for:alerting:)` and
+   `endActivity` share the one `endOfLifeAlert(for:)` definition.
+2. **Clean the store up immediately** (`removeRedditStaging`, `store.remove`) — the
+   save is complete and there is nothing left to recover.
+3. **Hold, then end `.immediate`.** `holdFinishedActivity` sleeps
+   `finishedLiveHold` (5s) in a detached task under its OWN
+   `BackgroundExecutionLease`, so a process woken purely to finish this download
+   survives its own hold — deliberately **not** `startTrackedBackgroundWork`, whose
+   counter gates the `handleEventsForBackgroundURLSession` completion handler and must
+   not be held five extra seconds. Only afterwards does it delete the job's files
+   (`store.removeFiles`): the widget reads its thumbnail off disk on EVERY render, so
+   it has to outlive the card — which is also why a finished job used to leak its
+   `<jobID>.jpg` in the App Group forever.
+
+Because the job record is gone during the hold, a process killed inside those five
+seconds would strand an active card that nothing could ever end (an activity outlives
+the process that requested it). So `resumeUnfinishedDownloads` — launch, foreground,
+the overnight pass — finishes with an **orphan reaper**:
+`reapOrphanedActivities(keepingJobIDs:)` ends, immediately and without an alert, any
+`.active` activity whose `attributes.jobID` the store no longer knows. Cards mid-hold
+in THIS process are exempt (`jobIDsInFinishedHold`), and already-ENDED activities are
+left alone — that's a failure card living out its `failureDismissalDelay`, deliberate
+and none of the reaper's business. The FAILURE paths (`failJob`, `startFailedActivity`,
+`tearDownSuspendedJob`) are otherwise unchanged: they still end with a dismissal delay
+rather than a live hold.
+
+**What the finished card shows** (`LunaDownloaderLiveActivityWidget.swift` — one source
+file, compiled into both widget targets): the thumbnail, the title, the completed
+message (`Saved to Luna` / `Saved to Photos`, from `job.statusMessage`), and where the
+moon-horizon progress track was, two `Link`s — **Play** (`play.fill`) and **Share**
+(`square.and.arrow.up`). A full track would read as a stalled transfer rather than a
+result, so it is not drawn at `.finished`, and compact trailing shows a checkmark
+instead of a percentage with nowhere left to go. Links rather than buttons because a
+widget cannot present anything itself: Play opens `viewURLString` (the tap-to-view route
+above), Share opens `shareURLString` — the SAME `media` route plus `&share=1`
+(`LunaDeepLink.mediaShareLink` / `mediaShareRequested(from:)`, tolerant of reordered
+query items, and `mediaViewURLString(from:)` still recovers the source URL from it), so
+`SceneDelegate.openMediaDeepLink` centers the same card and then raises
+`UIActivityViewController` over a materialized copy of the file. Producing that copy is
+the media kind's answer, `KindWiring.mediaShareFileExporter` — a
+`MediaShareFileExporting` of plain Foundation closures (so the universal shell names no
+media type), non-nil only in `Luna`/`LunaDownloader`, wrapping the same
+`MediaAutoDownloader.exportFile` + `MediaDownloadStorage.discardIntentExport` pair the
+card's own share menu and the App Intent handoff use. Everything with no file to hand
+over — a `.photosReference` save, a transfer still running, an unknown URL, an export
+that fails, an app that links no media kind — degrades to exactly the tap-to-view
+behavior described above.
 
 ## Finishing the hand-off's save
 

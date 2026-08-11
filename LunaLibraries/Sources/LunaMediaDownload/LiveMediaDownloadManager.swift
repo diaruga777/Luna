@@ -161,11 +161,25 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private static let sessionIdentifier = "com.hsanabria.luna.mediaDownload.background"
     static let failureDismissalDelay: TimeInterval = 14
+    /// How long the FINISHED card stays LIVE before its activity is ended.
+    ///
+    /// ActivityKit's dismissal policy governs only the Lock Screen's after-end
+    /// banner: the live presentation — the Dynamic Island the user is watching
+    /// from Safari — goes the instant `end()` is called. So the completed state
+    /// (thumbnail, Play, Share) can only get screen time from a real delay
+    /// before ending, never from a later dismissal date.
+    static let finishedLiveHold: TimeInterval = 5
     private static let maxTransientAttempts = 2
     private static let suspensionGracePeriod: TimeInterval = 5
     private let store = JobStore()
     private let saver: PhotoLibrarySaving
     private var backgroundCompletionHandler: (() -> Void)?
+    /// Job ids whose finished card is inside its `finishedLiveHold`. Their store
+    /// record is already gone — the save completed, there is nothing left to
+    /// recover — so the orphan reaper would otherwise mistake a card that is
+    /// deliberately still on screen for one stranded by a dead process.
+    private var heldFinishedJobIDs: Set<String> = []
+    private let heldFinishedLock = NSLock()
     private let backgroundWorkLock = NSLock()
     private var pendingBackgroundWork = 0
     private var backgroundEventsFinished = false
@@ -693,6 +707,11 @@ public final class LiveMediaDownloadManager: NSObject {
         } else {
             await startPendingWiFiDownloads(manual: true)
         }
+        // Anything still on screen for a job this sweep found no trace of was
+        // stranded by a dead process (most plausibly one killed inside a
+        // finished card's live hold) and would otherwise never be ended.
+        await reapOrphanedActivities(
+            keepingJobIDs: Set(store.jobs().map(\.id)).union(jobIDsInFinishedHold()))
     }
 
     /// Job ids currently backed by a real URLSession task. `taskDescription`
@@ -1740,16 +1759,60 @@ public final class LiveMediaDownloadManager: NSObject {
             job.progress = 1
             job.errorMessage = nil
             store.upsert(job)
-            await updateActivity(for: job)
+            // The completion alert rides the `.finished` UPDATE rather than an
+            // end call, because the activity is not ending yet — the finished
+            // card has five seconds to be seen first.
+            await updateActivity(for: job, alerting: true)
             if job.isDownloaderOwned {
                 postDownloaderJobProgress(job: job, progress: 1)
             }
-            await endActivity(for: job)
             removeRedditStaging(jobID: job.id)
             store.remove(job.id)
+            holdFinishedActivity(for: job)
         } catch {
             await failJob(job, message: MediaDownloadError.saveFailed.message)
         }
+    }
+
+    /// The finished card's `finishedLiveHold` seconds on screen, then an
+    /// immediate dismissal — the spec's "persist live for 5 seconds, then
+    /// dismiss itself". See `finishedLiveHold` for why a dismissal policy
+    /// cannot do this.
+    ///
+    /// Deliberately NOT `startTrackedBackgroundWork`: that counter gates the
+    /// `handleEventsForBackgroundURLSession` completion handler, which must be
+    /// released as soon as the transfer's real work is done and not held for
+    /// five extra seconds. This takes its own `BackgroundExecutionLease`
+    /// instead, so a process woken in the background purely to finish this
+    /// download survives its own hold.
+    private func holdFinishedActivity(for job: LiveMediaDownloadJob) {
+        let lease = BackgroundExecutionLease(name: "MediaDownloadFinishedHold")
+        markFinishedHold(job.id, held: true)
+        Task.detached(priority: .utility) { [self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(Self.finishedLiveHold * 1_000_000_000))
+            await endActivitiesImmediately(jobID: job.id)
+            markFinishedHold(job.id, held: false)
+            // The widget reads the thumbnail off disk on EVERY render, so it has
+            // to outlive the card; nothing refers to it once the card is gone,
+            // and a finished job used to leak it here forever.
+            store.removeFiles(for: job)
+            lease.end()
+        }
+    }
+
+    private func markFinishedHold(_ jobID: String, held: Bool) {
+        heldFinishedLock.lock()
+        if held {
+            heldFinishedJobIDs.insert(jobID)
+        } else {
+            heldFinishedJobIDs.remove(jobID)
+        }
+        heldFinishedLock.unlock()
+    }
+
+    private func jobIDsInFinishedHold() -> Set<String> {
+        heldFinishedLock.withLock { heldFinishedJobIDs }
     }
 
     private func finishDownloaderStorage(

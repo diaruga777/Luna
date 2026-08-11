@@ -585,14 +585,13 @@ public final class ReadingListStore {
     /// nil and the item still renders (logo + deep link).
     public func savePlatformMetadata(
         platform: ContentPlatform, platformItemID: String?, title: String?,
-        creator: String?, thumbnailFileName: String?, for itemID: UUID
+        thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
         let result: ReadingListItem? = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].platform = platform
             all[index].platformItemID = platformItemID
             if let title, !title.isEmpty { all[index].title = title }
-            if let creator, !creator.isEmpty { all[index].channelName = creator }
             if let thumbnailFileName { all[index].thumbnailFileName = thumbnailFileName }
             all[index].state = .ready
             return all[index]

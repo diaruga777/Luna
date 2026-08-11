@@ -274,7 +274,7 @@ public final class ShareSurfaceDriver {
     ) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
         _ = store.savePlatformMetadata(
-            platform: platform, platformItemID: itemID, title: nil, creator: nil,
+            platform: platform, platformItemID: itemID, title: nil,
             thumbnailFileName: nil, for: saved.id)
     }
 

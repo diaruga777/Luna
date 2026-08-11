@@ -25,18 +25,6 @@ public enum XLink {
     }
 
     public static func appURL(tweetID: String) -> URL? { URL(string: "twitter://status?id=\(tweetID)") }
-
-    /// The author handle ("@user") from `(x|twitter).com/<user>/status/<id>`.
-    public static func handle(from urlString: String) -> String? {
-        guard PlatformRecognizer.recognize(urlString)?.platform == .x,
-              let url = URL(string: urlString) else { return nil }
-        let segments = Array(url.pathComponents.dropFirst())
-        guard let statusIndex = segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
-              statusIndex >= 1 else { return nil }
-        let user = segments[statusIndex - 1]
-        guard !user.isEmpty, user.lowercased() != "i" else { return nil }
-        return "@\(user)"
-    }
 }
 
 /// X posts. Opens the X/Twitter app via `twitter://status?id=`, else Safari
@@ -44,10 +32,6 @@ public enum XLink {
 public struct XPlatform: PlatformModule {
     public let platform: ContentPlatform = .x
     public let glyphSymbolName = "bird.fill"
-
-    public func subtitle(for item: ReadingListItem) -> String? {
-        item.channelName ?? XLink.handle(from: item.urlString)
-    }
 
     public func appDeepLink(for item: ReadingListItem) -> URL? {
         (item.platformItemID).flatMap(XLink.appURL(tweetID:))
@@ -86,8 +70,6 @@ public struct XMetadataFetcher: PlatformMetadataFetching {
               let tweet = decoded.tweet
         else { return nil }
 
-        let creator = tweet.author?.name
-            ?? tweet.author?.screen_name.map { "@\($0)" }
         let title = tweet.text.map { String($0.prefix(140)) }
 
         // Attached photo or video still frame, if any.
@@ -97,6 +79,6 @@ public struct XMetadataFetcher: PlatformMetadataFetching {
         if let imageURLString, let imageURL = URL(string: imageURLString) {
             thumbnailData = try? await URLSession.shared.data(from: imageURL).0
         }
-        return PlatformMetadata(title: title, creator: creator, thumbnailData: thumbnailData)
+        return PlatformMetadata(title: title, thumbnailData: thumbnailData)
     }
 }

@@ -17,8 +17,8 @@ public final class PlatformItemIngestor {
 
     public init() {}
 
-    /// Ingests a recognized platform item: best-effort metadata (title/creator/
-    /// thumbnail via the module's optional fetcher), then marks `.ready`.
+    /// Ingests a recognized platform item: best-effort metadata (title/thumbnail
+    /// via the module's optional fetcher), then marks `.ready`.
     /// Recognized platform items NEVER enter `.failed` — they render from a logo
     /// + deep link even when metadata is unavailable.
     public func ingest(
@@ -42,7 +42,6 @@ public final class PlatformItemIngestor {
             platform: match.platform,
             platformItemID: match.itemID,
             title: metadata?.title,
-            creator: metadata?.creator,
             thumbnailFileName: thumbnailFileName,
             for: item.id)
 

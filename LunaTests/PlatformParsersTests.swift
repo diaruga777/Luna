@@ -26,7 +26,6 @@ final class PlatformParsersTests: XCTestCase {
     /// silently returning nil.
     func testXRecognizesAnyTwitterSubdomain() {
         XCTAssertEqual(XLink.tweetID(from: "https://some-other.twitter.com/jack/status/20"), "20")
-        XCTAssertEqual(XLink.handle(from: "https://some-other.twitter.com/jack/status/20"), "@jack")
     }
 
     func testTikTokRecognizesHostAndVideoID() {

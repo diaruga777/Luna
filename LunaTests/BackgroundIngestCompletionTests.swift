@@ -93,7 +93,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         let store = ReadingListStore(containerURL: scratch)
         let item = store.add(urlString: "https://x.com/luna/status/1")
         _ = store.savePlatformMetadata(
-            platform: .x, platformItemID: "1", title: "A post", creator: nil,
+            platform: .x, platformItemID: "1", title: "A post",
             thumbnailFileName: nil, for: item.id)
         XCTAssertEqual(store.item(withID: item.id)?.state, .ready)
         let queue = completions()
@@ -126,14 +126,12 @@ final class BackgroundIngestCompletionTests: XCTestCase {
 
     // MARK: - The hand-off's two paths
 
-    private func handoffRecord(
-        urlString: String, title: String?, creator: String? = nil
-    ) -> ResolvedMediaRecord {
+    private func handoffRecord(urlString: String, title: String?) -> ResolvedMediaRecord {
         ResolvedMediaRecord(
             sourceURLString: urlString, title: title,
             assets: [MediaAsset(
                 url: URL(string: "https://cdn.example.com/video.mp4")!, kind: .video)],
-            dateWritten: Date(), creator: creator)
+            dateWritten: Date())
     }
 
     /// The normal path: the extension resolved this post to render its player,
@@ -148,34 +146,15 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
             for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
-                               title: "A resolved clip", creator: "Blender"),
+                               title: "A resolved clip"),
             store: store, completions: queue)
         let item = try XCTUnwrap(store.item(forURLString: saved))
 
         XCTAssertEqual(item.state, .ready)
         XCTAssertEqual(item.title, "A resolved clip")
-        XCTAssertEqual(item.channelName, "Blender")
         XCTAssertEqual(item.platform, .youtube)
         XCTAssertEqual(item.platformItemID, videoID)
         XCTAssertTrue(queue.owed().isEmpty)
-    }
-
-    /// A page that states no author leaves the row's creator EMPTY. The hand-off
-    /// path never invents one from a title or a site name, and never goes to the
-    /// network to find one — that is what keeps it a no-fetch path.
-    @MainActor
-    func testHandoffWithNoAuthorLeavesTheCreatorEmpty() throws {
-        let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
-        let store = ReadingListStore(containerURL: scratch)
-        let queue = completions()
-        let saved = PendingResolvedMediaDownloads.persistSave(
-            for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
-                               title: "A resolved clip", creator: nil),
-            store: store, completions: queue)
-        let item = try XCTUnwrap(store.item(forURLString: saved))
-
-        XCTAssertEqual(item.state, .ready)
-        XCTAssertNil(item.channelName)
     }
 
     /// The fallback: the resolve had not finished when Download was pressed, so

@@ -12,7 +12,6 @@ public struct InstagramPlatform: PlatformModule {
     public let platform: ContentPlatform = .instagram
     public let glyphSymbolName = "camera.fill"
 
-    public func subtitle(for item: ReadingListItem) -> String? { item.channelName }
     public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 

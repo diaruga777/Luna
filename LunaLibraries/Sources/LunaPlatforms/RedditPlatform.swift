@@ -9,15 +9,6 @@ import Foundation
 
 /// Recognizes Reddit post links: `reddit.com/r/<sub>/comments/<id>/<slug>`. Pure.
 public enum RedditLink {
-    /// The subreddit ("r/<name>") from a permalink path, if present.
-    public static func subreddit(from urlString: String) -> String? {
-        guard let url = URL(string: urlString) else { return nil }
-        let segments = Array(url.pathComponents.dropFirst())
-        guard let index = segments.firstIndex(where: { $0.lowercased() == "r" }),
-              index + 1 < segments.count, !segments[index + 1].isEmpty else { return nil }
-        return "r/\(segments[index + 1])"
-    }
-
     /// The public JSON metadata URL for a permalink.
     public static func jsonURL(for urlString: String) -> URL? {
         guard var components = URLComponents(string: urlString) else { return nil }
@@ -36,9 +27,6 @@ public struct RedditPlatform: PlatformModule {
     public let platform: ContentPlatform = .reddit
     public let glyphSymbolName = "bubble.left.and.text.bubble.right.fill"
 
-    public func subtitle(for item: ReadingListItem) -> String? {
-        item.channelName ?? RedditLink.subreddit(from: item.urlString)
-    }
     public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 
@@ -64,14 +52,12 @@ public struct RedditMetadataFetcher: PlatformMetadataFetching {
         else { return nil }
 
         let title = postData["title"] as? String
-        let subreddit = postData["subreddit_name_prefixed"] as? String
-            ?? (postData["subreddit"] as? String).map { "r/\($0)" }
 
         var thumbnailData: Data?
         if let imageURL = Self.bestImageURL(in: postData) {
             thumbnailData = try? await URLSession.shared.data(from: imageURL).0
         }
-        return PlatformMetadata(title: title, creator: subreddit, thumbnailData: thumbnailData)
+        return PlatformMetadata(title: title, thumbnailData: thumbnailData)
     }
 
     /// Reddit posts hide their image in several shapes depending on type — a

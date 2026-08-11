@@ -24,7 +24,7 @@ Music/Apple Podcasts pages, since the app has no way to act on them.
 
 `IngestPipeline` routes recognized social/video URLs directly to their typed
 outcomes, so they never enter article extraction. `ReadingListIngestor` persists
-the platform, item identifier, available title/creator, and thumbnail, then marks
+the platform, item identifier, available title, and thumbnail, then marks
 the item ready. Platform items do not become failed articles when metadata is
 unavailable.
 

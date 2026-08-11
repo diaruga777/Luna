@@ -11,7 +11,6 @@ public struct FacebookPlatform: PlatformModule {
     public let platform: ContentPlatform = .facebook
     public let glyphSymbolName = "play.tv.fill"
 
-    public func subtitle(for item: ReadingListItem) -> String? { item.channelName }
     public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 
@@ -26,6 +25,6 @@ public struct OpenGraphMetadataFetcher: PlatformMetadataFetching {
         if let imageURL = og.imageURL {
             thumbnailData = try? await URLSession.shared.data(from: imageURL).0
         }
-        return PlatformMetadata(title: og.title, creator: nil, thumbnailData: thumbnailData)
+        return PlatformMetadata(title: og.title, thumbnailData: thumbnailData)
     }
 }

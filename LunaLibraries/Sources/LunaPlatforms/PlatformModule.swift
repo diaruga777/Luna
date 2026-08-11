@@ -40,9 +40,6 @@ public protocol PlatformModule {
     /// SF Symbol used as the row glyph / thumbnail fallback (until brand logos ship).
     var glyphSymbolName: String { get }
 
-    /// Subtitle line for the list row (creator/handle/artist), or nil.
-    func subtitle(for item: ReadingListItem) -> String?
-
     /// Native-app deep link to open the item, or nil (→ embed/Safari).
     func appDeepLink(for item: ReadingListItem) -> URL?
 
@@ -61,7 +58,6 @@ public extension PlatformModule {
 /// nil — the item still renders from its logo + deep link.
 public struct PlatformMetadata {
     public var title: String?
-    public var creator: String?
     public var thumbnailData: Data?
 }
 

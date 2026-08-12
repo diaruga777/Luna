@@ -191,6 +191,92 @@ final class URLRescueDirectiveTests: XCTestCase {
         guard case .failure(.giveUp) = validate(RescuePlanResponse(kind: "give_up")) else { return XCTFail() }
     }
 
+    // MARK: - The widened action space
+
+    func testOpenInBrowserIsATerminalDirective() {
+        guard case .success(.directive(.openInBrowser)) = validate(RescuePlanResponse(kind: "open_in_browser"))
+        else { return XCTFail("open_in_browser must validate as its own directive") }
+    }
+
+    func testSearchCarriesTheQueryThrough() {
+        let plan = RescuePlanResponse(kind: "search", searchQuery: "  the missing article  ")
+        guard case .success(.needsSearch(let query)) = validate(plan) else {
+            return XCTFail("expected a search resolution")
+        }
+        XCTAssertEqual(query, "the missing article")
+    }
+
+    func testAnEmptySearchQueryIsRejected() {
+        guard case .failure(.emptySearchQuery) = validate(RescuePlanResponse(kind: "search")) else {
+            return XCTFail("a search with no query is nothing to run")
+        }
+    }
+
+    /// The inspect round is a free fetch, so its URL is held to exactly the
+    /// reroute host policy — a free fetch of any host the model names would be an
+    /// exfiltration channel.
+    func testInspectURLObeysTheRerouteHostPolicy() {
+        guard case .success(.needsInspection(let url)) = validate(
+            RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://amp.example.com/index"))
+        else { return XCTFail("same-domain inspect should be allowed") }
+        XCTAssertEqual(url.host, "amp.example.com")
+
+        guard case .failure(.badInspectURL) = validate(
+            RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://attacker.test/collect"))
+        else { return XCTFail("off-domain inspect must be rejected") }
+    }
+
+    /// The round cap is the validator's to enforce on the engine's behalf: on a
+    /// follow-up round the intermediate kinds are simply not available, so a
+    /// loop is structurally impossible rather than prompt-discouraged.
+    func testIntermediateKindsAreRefusedOnAFollowUpRound() {
+        let search = validator.validate(
+            plan: RescuePlanResponse(kind: "search", searchQuery: "again"),
+            request: request(), digest: "", supportsArticlePayload: false,
+            allowsIntermediate: false)
+        guard case .failure(.searchNotAvailable) = search else { return XCTFail("nested search") }
+
+        let inspect = validator.validate(
+            plan: RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://amp.example.com/x"),
+            request: request(), digest: "", supportsArticlePayload: false,
+            allowsIntermediate: false)
+        guard case .failure(.inspectNotAvailable) = inspect else { return XCTFail("nested inspect") }
+    }
+
+    /// The search leg's ONLY relaxation: a URL the engine put in front of the
+    /// model. Everything else about the host policy stands.
+    func testCandidateListRelaxesTheHostRuleForItsOwnURLsOnly() {
+        let offDomain = "https://syndicated.test/story"
+        let plan = RescuePlanResponse(kind: "reroute", rerouteURLString: offDomain)
+
+        guard case .failure(.rerouteHostNotAllowed) = validate(plan) else {
+            return XCTFail("off-domain reroute is refused without a candidate list")
+        }
+        guard case .success(.directive(.reroute(let reroute))) = validator.validate(
+            plan: plan, request: request(), digest: "", supportsArticlePayload: false,
+            candidates: [offDomain], allowsIntermediate: false)
+        else { return XCTFail("a listed candidate must be accepted") }
+        XCTAssertEqual(reroute.url.absoluteString, offDomain)
+
+        guard case .failure(.rerouteHostNotAllowed) = validator.validate(
+            plan: RescuePlanResponse(kind: "reroute", rerouteURLString: "https://attacker.test/x"),
+            request: request(), digest: "", supportsArticlePayload: false,
+            candidates: [offDomain], allowsIntermediate: false)
+        else { return XCTFail("a candidate list must not whitelist the whole web") }
+    }
+
+    /// Widening the action space must not relax any EVIDENCE rule: a product
+    /// price still has to appear verbatim in the digest, candidate list or not.
+    func testTheCandidateListDoesNotRelaxPayloadEvidence() {
+        let plan = RescuePlanResponse(
+            kind: "product", productName: "Widget",
+            productPriceAmount: "129.99", productCurrency: "USD")
+        guard case .failure(.priceNotEvidenced) = validator.validate(
+            plan: plan, request: request(hint: .product), digest: "no price here",
+            supportsArticlePayload: false, candidates: ["https://syndicated.test/story"])
+        else { return XCTFail("an unevidenced price stays rejected") }
+    }
+
     // MARK: - Article payload validation
 
     func testArticlePayloadEvidencedAccepted() {

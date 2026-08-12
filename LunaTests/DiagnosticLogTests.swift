@@ -61,6 +61,33 @@ final class DiagnosticLogTests: XCTestCase {
         XCTAssertTrue(exported.contains("[push] exported event"))
     }
 
+    // MARK: - The rescue stats line
+    //
+    // The one place URL rescue is measurable at all. Before it, the only durable
+    // record was the per-item ledger, pruned the moment an item disappeared — so
+    // "has this ever accomplished anything" had no answer.
+
+    @MainActor
+    func testRescueStatsLineSaysNothingHasBeenTriedYet() {
+        let stats = RescueStatsStore(containerURL: scratchDirectory)
+        let screen = DiagnosticsViewController(log: log, rescueStats: stats)
+        XCTAssertTrue(screen.rescueStatsText().contains("nothing attempted"))
+    }
+
+    @MainActor
+    func testRescueStatsLineReportsAttemptsRecoveriesAndMethods() {
+        let stats = RescueStatsStore(containerURL: scratchDirectory)
+        stats.recordAttempt(); stats.recordAttempt(); stats.recordAttempt()
+        stats.record(.rescued, method: "search")
+        stats.record(.browserHandoff, method: "browserHandoff")
+        stats.record(.guardrailed)
+
+        let screen = DiagnosticsViewController(log: log, rescueStats: stats)
+        let text = screen.rescueStatsText()
+        XCTAssertTrue(text.contains("3"), "the attempt count reaches the screen: \(text)")
+        XCTAssertTrue(text.contains("search 1"), "the method breakdown reaches it too: \(text)")
+    }
+
     /// The file is trimmed once it exceeds `maxBytes`, but keeps recent lines.
     func testTrimsWhenOverSizeCap() {
         let smallLog = DiagnosticLog(containerURL: scratchDirectory, maxBytes: 2_000)

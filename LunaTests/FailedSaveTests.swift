@@ -361,6 +361,20 @@ final class FailedSaveCardFactoryTests: XCTestCase {
         XCTAssertEqual(ledger.entry(id)?.attemptCount, 1)
     }
 
+    /// A guardrailed item's card must stop offering a button that cannot work —
+    /// and must NOT claim the `.spent` state, which promises the button comes
+    /// back after an update. This one never does.
+    ///
+    /// Writes to the shared ledger (the factory reads the singleton), so it uses
+    /// a fresh id and never clears anything another test could be watching.
+    func testAGuardrailedCardGoesTerminalRatherThanOfferingARetry() {
+        var item = ReadingListItem(urlString: "https://example.com/guardrailed-\(UUID().uuidString)")
+        item.state = .failed
+        RescueLedgerStore.shared.recordGuardrail(item.id)
+        let model = FailedSaveCardFactory.makeModel(for: item)
+        XCTAssertEqual(model.rescueState, .unavailable)
+    }
+
     private func temporaryDirectory() -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

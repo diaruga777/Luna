@@ -121,19 +121,61 @@ final class WeeklyCyclePacer {
 @MainActor
 final class UtilCardSetupTextCycler {
     static let animationDuration: TimeInterval = 0.55
+    /// The setup labels begin their cadence as soon as the actions are on
+    /// screen, before the weekly row is allowed to take over that cadence.
+    static let interval = WeeklyCyclePacer.interval
+
+    typealias Scheduler = (
+        _ interval: TimeInterval, _ tick: @escaping () -> Void
+    ) -> () -> Void
 
     private weak var safariButton: UIButton?
     private weak var shortcutButton: UIButton?
     private let baseSafariTitle: String
     private let baseShortcutTitle: String
+    private let scheduler: Scheduler
+    private var cancel: (() -> Void)?
+    private var nextAppIndex = 0
 
-    init(safariButton: UIButton, shortcutButton: UIButton) {
+    /// Fired at the start of each label transition. The util card uses this
+    /// boundary to introduce the weekly row, so it never fades in halfway
+    /// through a changing title.
+    var onCycleStart: ((LunaApp) -> Void)?
+
+    init(
+        safariButton: UIButton,
+        shortcutButton: UIButton,
+        scheduler: @escaping Scheduler = UtilCardSetupTextCycler.timerScheduler
+    ) {
         self.safariButton = safariButton
         self.shortcutButton = shortcutButton
         baseSafariTitle = safariButton.configuration?.title ?? ""
         baseShortcutTitle = shortcutButton.configuration?.title ?? ""
+        self.scheduler = scheduler
         safariButton.clipsToBounds = true
         shortcutButton.clipsToBounds = true
+    }
+
+    deinit { cancel?() }
+
+    /// Begins the opening cadence. Once the weekly row is visible, its own
+    /// pacer reports the destination app through `show(_:)` instead.
+    func startCycling() {
+        guard !UIAccessibility.isReduceMotionEnabled, cancel == nil else { return }
+        cancel = scheduler(Self.interval) { [weak self] in self?.advanceCycle() }
+    }
+
+    func stopCycling() {
+        cancel?()
+        cancel = nil
+    }
+
+    private func advanceCycle() {
+        let apps: [LunaApp] = [.reader, .downloader, .priceTracker]
+        let app = apps[nextAppIndex]
+        nextAppIndex = (nextAppIndex + 1) % apps.count
+        onCycleStart?(app)
+        show(app)
     }
 
     /// Puts `app`'s own phrasing on both labels — the app whose kind the weekly
@@ -174,6 +216,8 @@ final class UtilCardSetupTextCycler {
     }
 
     func reset() {
+        stopCycling()
+        nextAppIndex = 0
         safariButton?.titleLabel?.layer.removeAllAnimations()
         shortcutButton?.titleLabel?.layer.removeAllAnimations()
         UIView.performWithoutAnimation {
@@ -195,5 +239,13 @@ final class UtilCardSetupTextCycler {
         attributes.font = .systemFont(ofSize: 13, weight: .semibold)
         configuration?.attributedTitle = AttributedString(title, attributes: attributes)
         button.configuration = configuration
+    }
+
+    private static let timerScheduler: Scheduler = { interval, tick in
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            tick()
+        }
+        timer.tolerance = interval * 0.25
+        return { timer.invalidate() }
     }
 }

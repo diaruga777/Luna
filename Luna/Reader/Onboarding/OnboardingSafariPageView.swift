@@ -190,35 +190,14 @@ final class OnboardingSafariPageView: UIView {
     required init?(coder: NSCoder) { nil }
 
     /// What the mock browser bar covers at the bottom of the page, plus a
-    /// little air. The page's content stops here while the bar is up.
+    /// little air. The page's content stops here, for the whole of the lesson:
+    /// the bar stays up from the first frame to the last, so this reserve never
+    /// changes and the wave never has to be measured against a moving layout.
     static var chromeReserve: CGFloat {
         SafariBottomBar.reservedPageHeight + 12
     }
 
-    /// What a page with no bar over it still keeps clear: the home-area strip
-    /// with air above it, never less than the bar's own controls were worth.
-    static var clearedChromeReserve: CGFloat {
-        max(SafariBottomBar.chromeHeight, SafariBottomBar.homeAreaHeight + 20)
-    }
-
-    /// What the page currently keeps clear at its bottom — `chromeReserve`
-    /// while the browser bar is up, `clearedChromeReserve` once it has gone.
-    private var bottomReserve = OnboardingSafariPageView.chromeReserve
-
-    /// The browser bar is leaving (or coming back), and the page's bottom
-    /// reserve follows it: with the bar gone the body copy takes back its
-    /// strip, and dodges it again the moment it returns.
-    ///
-    /// Call this BEFORE `prepareCleanUp`, never during the wave: every shatter
-    /// tile is cut from the page as it stands, and its arrival from the front's
-    /// entry edge, so the geometry the wave will cross has to be settled first.
-    func setReservesBrowserChrome(_ reserves: Bool) {
-        let reserve = reserves ? Self.chromeReserve : Self.clearedChromeReserve
-        guard reserve != bottomReserve else { return }
-        bottomReserve = reserve
-        setNeedsLayout()
-        layoutIfNeeded()
-    }
+    private var bottomReserve: CGFloat { Self.chromeReserve }
 
     override func layoutSubviews() {
         super.layoutSubviews()

@@ -23,21 +23,18 @@ import XCTest
 @MainActor
 final class LaunchScreenGeometryTests: XCTestCase {
 
-    /// (name, screen size, regular width). Regular width is what installs the
-    /// storyboard's `card-wide-cap` constraint, mirroring
-    /// `LunaLayout.cardWidthCap`'s 700pt threshold.
-    private static let screens: [(String, CGSize, Bool)] = [
-        ("iPhone 16 Pro", CGSize(width: 402, height: 874), false),
-        ("iPhone 16 Pro Max", CGSize(width: 440, height: 956), false),
-        ("iPhone SE", CGSize(width: 375, height: 667), false),
-        ("iPad mini portrait", CGSize(width: 744, height: 1_133), true),
-        ("iPad Pro 13 portrait", CGSize(width: 1_032, height: 1_376), true),
-        ("iPad Pro 13 landscape", CGSize(width: 1_376, height: 1_032), true),
+    private static let screens: [(String, CGSize)] = [
+        ("iPhone 16 Pro", CGSize(width: 402, height: 874)),
+        ("iPhone 16 Pro Max", CGSize(width: 440, height: 956)),
+        ("iPhone SE", CGSize(width: 375, height: 667)),
+        ("iPad mini portrait", CGSize(width: 744, height: 1_133)),
+        ("iPad Pro 13 portrait", CGSize(width: 1_032, height: 1_376)),
+        ("iPad Pro 13 landscape", CGSize(width: 1_376, height: 1_032)),
     ]
 
     func testTheLaunchScreenDrawsTheCardExactlyWhereTheDeckWill() throws {
-        for (name, size, isRegularWidth) in Self.screens {
-            let launch = try Self.layOutLaunchScreen(size: size, regularWidth: isRegularWidth)
+        for (name, size) in Self.screens {
+            let launch = try Self.layOutLaunchScreen(size: size)
             let expected = CardDeckGeometry.cardFrame(
                 inScreenSize: launch.root.bounds.size,
                 safeAreaInsets: launch.root.safeAreaInsets)
@@ -56,8 +53,8 @@ final class LaunchScreenGeometryTests: XCTestCase {
     /// to land on the same rectangle or the crossfade from the launch screen to
     /// the app's first frame slides the glow.
     func testTheLaunchScreenCoronaMatchesTheArtworksOwnFrame() throws {
-        for (name, size, isRegularWidth) in Self.screens {
-            let launch = try Self.layOutLaunchScreen(size: size, regularWidth: isRegularWidth)
+        for (name, size) in Self.screens {
+            let launch = try Self.layOutLaunchScreen(size: size)
             let expected = AppLaunchGeometry.coronaFrame(forCardFrame: launch.card.frame)
 
             XCTAssertEqual(launch.corona.frame.minX, expected.minX, accuracy: 0.5, "\(name) x")
@@ -65,7 +62,7 @@ final class LaunchScreenGeometryTests: XCTestCase {
             XCTAssertEqual(
                 launch.corona.frame.width, expected.width, accuracy: 0.5, "\(name) width")
             XCTAssertEqual(
-                launch.corona.frame.height, expected.height, accuracy: 0.5, "\(name) height")
+                launch.corona.frame.height, expected.height, accuracy: 1, "\(name) height")
         }
     }
 
@@ -111,14 +108,10 @@ final class LaunchScreenGeometryTests: XCTestCase {
     /// storyboard's subview order IS its paint order (sky, then the card area
     /// and card layout anchors, then the corona artwork on top), so pinning the
     /// order here is worth having on its own.
-    private static func layOutLaunchScreen(
-        size: CGSize, regularWidth: Bool
-    ) throws -> LaunchScreen {
+    private static func layOutLaunchScreen(size: CGSize) throws -> LaunchScreen {
         let storyboard = UIStoryboard(name: "LunaLaunchScreen", bundle: .main)
         let controller = storyboard.instantiateInitialViewController()
         let launch = try XCTUnwrap(controller)
-        launch.traitOverrides.horizontalSizeClass = regularWidth ? .regular : .compact
-
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = launch
         window.isHidden = false

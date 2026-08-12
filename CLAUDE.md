@@ -189,11 +189,11 @@ stable Xcode 26.2.
 > iPhone are the same layout problem; a 13" iPad in landscape is a different one from the
 > same device in portrait. The threshold is 700pt: above every iPhone (widest 440), below
 > every iPad in portrait (narrowest 744). Three consequences worth knowing before touching
-> layout: **(1)** a carousel card is capped at half the container minus padding, and the
-> inset is `wideEdgePadding + columnGap / 2` precisely so two capped cards plus their gap
-> span the container minus one padding each side — so the side-by-side reader reuses ONE
-> card width for both columns (`claudedocs/card-carousel.md`). **(2)** On a wide screen a
-> nested reader is a second CARD beside the first, not a tab over it, installed as a CHILD
+> layout: **(1)** a carousel card aspect-fits its complete usable card area, so tall iPads
+> use their spare height rather than holding a phone-sized card in whitespace. A second
+> reader column is offered only when two full-size cards fit with the normal outer padding
+> (typically landscape; `claudedocs/card-carousel.md`). **(2)** On a wide screen that has
+> room for it, a nested reader is a second CARD beside the first, not a tab over it, installed as a CHILD
 > rather than a modal — a presentation container swallows every touch outside the presented
 > frame, which is exactly the touches the card next door needs (`claudedocs/readers.md`).
 > **(3)** Everything else that was a full-width band keeps a readable column instead

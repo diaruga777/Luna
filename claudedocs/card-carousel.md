@@ -144,12 +144,9 @@ The date moves in exactly three ways, and no others:
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
-- **On a wide container the card is capped at half the width minus padding**
-  (`LunaLayout.cardWidthCap`; see "Wide containers" below). The subtracted inset
-  is `wideEdgePadding + columnGap / 2`, so TWO capped cards plus the gap between
-  them span exactly the container minus one padding each side — which is what
-  lets the side-by-side inline reader reuse one card width for both columns
-  instead of resizing the card it slides aside.
+- The card aspect-fits the whole available card area on every screen. That area
+  has already reserved the top controls, scrubber, vertical padding, and paging
+  insets, so tall iPads use their otherwise empty height without covering chrome.
 - All four roots have no header bar. The Downloader scrub strip is bounded between
   the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
   horizontal inset), with no edge blur that could show as a band on black.
@@ -182,11 +179,13 @@ threshold is 700pt: above every iPhone (widest 440), below every iPad in portrai
 
 Consequences for the deck:
 
-- The card is capped at half the width minus padding. It keeps the exact 9:16
-  either way: capping the width must not start letterboxing a video.
-  `LunaLayout.tallestCardAspectRatio` is gone with the fit that used it — a card
-  allowed to grow past 9:16 into an iPad's spare height was, by definition, a
-  card of a different size than the one beside it.
+- The card aspect-fits the complete usable card area, keeping its exact 9:16
+  shape. A tall iPad therefore shows a larger root card instead of a narrow
+  phone-sized card surrounded by unused vertical space.
+- A side-by-side reader opens only when two of those full-size cards plus their
+  gap fit within the normal outer padding (typically landscape). In portrait it
+  uses the existing overlay presentation, rather than shrinking the root card
+  in anticipation of a second column.
 - Everything pinned to the screen edges came loose from the card, so it follows
   the card's column instead: the scrub strip
   (`CardCarouselViewController.alignScrubberToCardColumn`, keeping the exact

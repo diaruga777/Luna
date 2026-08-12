@@ -8,26 +8,18 @@
     everywhere else. What it draws now is the same rule the live deck uses
     (CardDeckGeometry): a card area below the safe area plus the deck's 48pt
     chrome clearance and above the 104pt scrub-strip runway, with the largest
-    exact-9:16 card centered in it — capped at half the width minus padding once
-    the screen is iPad-wide.
+    exact-9:16 card centered in it, aspect-fitted to all available space.
 
     Reading the numbers, all of which have a named Swift counterpart:
       48         CardDeckGeometry.topClearance
       104        CardDeckGeometry.bottomChromeHeight (96pt strip + 8pt gap)
       24         CardCarouselMetrics.peek + edgeGap (14 + 10), doubled to 48
       12         CardCarouselMetrics.verticalPadding, doubled to 24
-      0.5 / -36  LunaLayout.cardWidthCap: width/2 - wideEdgePadding - columnGap/2
       1.84       AppLaunchGeometry.coronaWidthMultiple (1 + 2 * 0.42)
       0.7029     AppLaunchGeometry.coronaAspectRatio
     LaunchScreenGeometryTests loads this file and checks the resulting frames
     against those constants at six screen sizes, so the two cannot drift.
 
-    The width cap is the one genuinely conditional rule — a cliff at 700pt
-    (LunaLayout.wideThreshold), and a launch storyboard has no way to express a
-    step function — so it is installed by default and EXCLUDED in the
-    compact-width variation. Every iPhone Luna ships to is compact-width in
-    portrait; an iPad at full width is regular, and a half-width iPad window is
-    compact, which is the same call LunaLayout makes about it.
 -->
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="26504" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch-controller">
     <device id="retina6_12" orientation="portrait" appearance="dark"/>
@@ -95,18 +87,12 @@
                             <constraint firstItem="launch-card" firstAttribute="height" relation="lessThanOrEqual" secondItem="launch-card-area" secondAttribute="height" constant="-24" id="card-height-limit"/>
                             <constraint firstItem="launch-card" firstAttribute="width" relation="lessThanOrEqual" secondItem="launch-card-area" secondAttribute="width" constant="-48" id="card-width-limit"/>
                             <constraint firstItem="launch-card" firstAttribute="height" secondItem="launch-card-area" secondAttribute="height" constant="-24" priority="999" id="card-grow"/>
-                            <constraint firstItem="launch-card" firstAttribute="width" relation="lessThanOrEqual" secondItem="launch-root" secondAttribute="width" multiplier="0.5" constant="-36" id="card-wide-cap"/>
 
                             <constraint firstItem="launch-corona" firstAttribute="centerX" secondItem="launch-card" secondAttribute="centerX" id="corona-center-x"/>
                             <constraint firstItem="launch-corona" firstAttribute="centerY" secondItem="launch-card" secondAttribute="centerY" id="corona-center-y"/>
                             <constraint firstItem="launch-corona" firstAttribute="width" secondItem="launch-card" secondAttribute="width" multiplier="1.84" id="corona-width"/>
                             <constraint firstItem="launch-corona" firstAttribute="width" secondItem="launch-corona" secondAttribute="height" multiplier="0.7028862478777589" id="corona-aspect"/>
                         </constraints>
-                        <variation key="widthClass=compact">
-                            <mask key="constraints">
-                                <exclude reference="card-wide-cap"/>
-                            </mask>
-                        </variation>
                     </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="launch-responder" userLabel="First Responder" sceneMemberID="firstResponder"/>

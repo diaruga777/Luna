@@ -164,8 +164,7 @@ be a single 402×874 image pinned to all four edges with `scaleToFill`, so the
 card inside it was the right size on the recorder's phone and a non-uniform
 stretch of it everywhere else. It now reproduces `CardDeckGeometry` in Interface
 Builder constants — safe area + 48pt clearance, 104pt strip runway, the largest
-exact-9:16 card centered in what is left, capped at half the width on a
-regular-width screen — and scales the corona artwork to `1.84 ×` that card's
+exact-9:16 card aspect-fitted into what is left — and scales the corona artwork to `1.84 ×` that card's
 width. `LaunchScreenGeometryTests` loads the storyboard at six screen sizes and
 checks both frames against the Swift geometry, which is the only thing keeping
 IB constants and Swift constants in step.

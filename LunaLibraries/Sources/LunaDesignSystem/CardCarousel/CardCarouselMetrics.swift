@@ -63,11 +63,10 @@ public struct CardCarouselMetrics: Equatable {
     /// justifies a different frame: the frame is the deck's, and the deck's
     /// frame is a function of the screen (`CardDeckGeometry`).
     ///
-    /// On a container wide enough to have room to spare (`LunaLayout.isWide`),
-    /// the card is additionally capped at `LunaLayout.cardWidthCap` — half the
-    /// container minus padding. A card stretched across an iPad reads as a
-    /// blown-up phone layout, and the cap is what leaves room for the
-    /// side-by-side reader's second column at the identical width.
+    /// This is deliberately an aspect-fit calculation, not a wide-screen width
+    /// cap. The card area has already reserved the deck's top controls and
+    /// scrubber, so a tall iPad can use that otherwise empty vertical space
+    /// while still leaving the same paging insets at its sides.
     public static func resolve(
         containerSize: CGSize,
         peek: CGFloat = Self.peek,
@@ -76,10 +75,7 @@ public struct CardCarouselMetrics: Equatable {
         verticalPadding: CGFloat = Self.verticalPadding
     ) -> CardCarouselMetrics {
         let availableHeight = max(40, containerSize.height - verticalPadding * 2)
-        let widthCap = LunaLayout.cardWidthCap(forContainerWidth: containerSize.width)
-        let availableWidth = min(
-            max(40, containerSize.width - (peek + edgeGap) * 2),
-            widthCap ?? .greatestFiniteMagnitude)
+        let availableWidth = max(40, containerSize.width - (peek + edgeGap) * 2)
         var height = availableHeight
         var width = height * cardAspectRatio
         if width > availableWidth {

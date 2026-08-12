@@ -50,31 +50,6 @@ public enum LunaLayout {
         width >= wideThreshold
     }
 
-    /// How far a capped card's center sits from the container's center when the
-    /// container holds two of them side by side. Half a card plus half the gap.
-    ///
-    /// Derived from the same numbers as `cardWidthCap`, so a left column at
-    /// `-columnCenterOffset` and a right column at `+columnCenterOffset` land
-    /// exactly `wideEdgePadding` inside each container edge.
-    public static func columnCenterOffset(forContainerWidth width: CGFloat) -> CGFloat {
-        (cardWidthCap(forContainerWidth: width) ?? width) / 2 + columnGap / 2
-    }
-
-    /// The widest a single carousel card may be: **half the container minus
-    /// padding**, once the container is wide enough for a full-width card to
-    /// read as a stretched phone layout. `nil` on a phone-shaped container,
-    /// where the card keeps every point it can get.
-    ///
-    /// The subtracted inset is `wideEdgePadding + columnGap / 2`, not just the
-    /// edge padding, so that TWO capped cards plus the gap between them span
-    /// exactly the container minus `wideEdgePadding` on each side. That is what
-    /// lets the side-by-side reader reuse this one width for both of its
-    /// columns instead of resizing the card it slides aside.
-    public static func cardWidthCap(forContainerWidth width: CGFloat) -> CGFloat? {
-        guard isWide(containerWidth: width) else { return nil }
-        return max(40, width / 2 - wideEdgePadding - columnGap / 2)
-    }
-
     /// A centered, readability-capped width for text-forward content.
     public static func contentWidth(forContainerWidth width: CGFloat) -> CGFloat {
         guard isWide(containerWidth: width) else { return width }

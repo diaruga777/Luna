@@ -19,8 +19,8 @@ import XCTest
 @MainActor
 final class InlineReaderColumnTests: XCTestCase {
 
-    /// An iPad-portrait-sized deck, wide enough for two columns.
-    private static let wideSize = CGSize(width: 1024, height: 1366)
+    /// An iPad-landscape-sized deck, wide enough for two aspect-fit columns.
+    private static let wideSize = CGSize(width: 1366, height: 1024)
     /// An iPhone-sized deck, which keeps the overlay behaviour.
     private static let narrowSize = CGSize(width: 402, height: 874)
 
@@ -53,8 +53,7 @@ final class InlineReaderColumnTests: XCTestCase {
     // MARK: - Geometry
 
     /// The two cards are the same size by construction — the left one is not
-    /// resized, it is moved — and together they span the container minus one
-    /// edge padding on each side.
+    /// resized, it is moved — and together remain centered in the container.
     func testTheColumnIsTheSameCardOneColumnToTheRight() throws {
         let controller = makeController(size: Self.wideSize)
         let restingBefore = try XCTUnwrap(
@@ -74,9 +73,8 @@ final class InlineReaderColumnTests: XCTestCase {
             right.minX - left.maxX, LunaLayout.columnGap, accuracy: 0.5,
             "the two columns should be exactly one gap apart")
         XCTAssertEqual(
-            left.minX, LunaLayout.wideEdgePadding, accuracy: 0.5)
-        XCTAssertEqual(
-            Self.wideSize.width - right.maxX, LunaLayout.wideEdgePadding, accuracy: 0.5)
+            left.minX, Self.wideSize.width - right.maxX, accuracy: 0.5,
+            "the available horizontal space should be shared evenly")
 
         // The left card MOVED; it kept its size.
         XCTAssertEqual(left.size.width, restingBefore.size.width, accuracy: 0.5)

@@ -894,8 +894,10 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     /// How far left the deck steps to make room for a second column. Negative;
     /// zero when the screen has no room for one.
     private var columnAsideShift: CGFloat {
-        guard LunaLayout.isWide(containerWidth: view.bounds.width) else { return 0 }
-        return -LunaLayout.columnCenterOffset(forContainerWidth: view.bounds.width)
+        guard let cardFrame = carousel.restingCenteredCardFrame(in: view),
+              canFitInlineReaderColumns(cardWidth: cardFrame.width)
+        else { return 0 }
+        return -(cardFrame.width + LunaLayout.columnGap) / 2
     }
 
     /// Whether this screen can hold a second reader column beside the card.
@@ -903,12 +905,23 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     /// between the two nested-reader behaviours, and the tests assert on it.
     var hasRoomForColumn: Bool { columnAsideShift < 0 }
 
+    /// Root cards aspect-fit their whole usable height, so an iPad in portrait
+    /// may deliberately be too tall to accommodate a second full-size column.
+    /// Keep the paired reader only where both cards fit with the normal outer
+    /// padding instead of shrinking the root card merely to reserve a column
+    /// the user has not opened.
+    private func canFitInlineReaderColumns(cardWidth: CGFloat) -> Bool {
+        guard LunaLayout.isWide(containerWidth: view.bounds.width) else { return false }
+        return cardWidth * 2 + LunaLayout.columnGap
+            <= view.bounds.width - LunaLayout.wideEdgePadding * 2
+    }
+
     /// The right column's frame in this view's space — the card's own footprint,
     /// one full column over.
     ///
     /// Derived from the LEFT card rather than measured on its own, so the two
-    /// cards are the same size by construction. That is the whole reason
-    /// `LunaLayout` caps a card at half the width minus padding.
+    /// cards are the same size by construction. This layout is offered only
+    /// when two aspect-fit root cards already fit side by side.
     ///
     /// `restingCenteredCardFrame` already includes whatever shift the deck has
     /// taken, so the offset backs that out and then steps one column right —

@@ -113,48 +113,19 @@ final class CardCarouselMetricsTests: XCTestCase {
 
     // MARK: - Wide containers (iPad)
 
-    /// The half-width cap, which is the whole reason two reader columns fit.
-    /// Capping the width must not start letterboxing the card vertically: the
-    /// aspect is exact on an iPad exactly as it is on a phone.
-    func testWideContainerCapsTheCardAtHalfTheWidthMinusPadding() throws {
+    /// A tall iPad should use its available height rather than leaving most of
+    /// it empty to preserve room for a possible second reader column.
+    func testTallWideContainerAspectFitsTheAvailableHeight() {
         let container = CGSize(width: 1024, height: 1200)
-        let cap = try XCTUnwrap(LunaLayout.cardWidthCap(forContainerWidth: container.width))
-        XCTAssertEqual(cap, 1024 / 2 - 36, accuracy: 0.01)
-
         let metrics = CardCarouselMetrics.resolve(containerSize: container)
-        XCTAssertEqual(metrics.cardSize.width, cap, accuracy: 0.01)
+        XCTAssertEqual(
+            metrics.cardSize.height,
+            container.height - CardCarouselMetrics.verticalPadding * 2,
+            accuracy: 0.01)
         XCTAssertEqual(
             metrics.cardSize.width / metrics.cardSize.height,
             CardCarouselMetrics.cardAspectRatio,
             accuracy: 0.0001)
-    }
-
-    /// Two capped cards plus the gap between them span exactly the container
-    /// minus one edge padding on each side — the geometry the side-by-side
-    /// reader relies on to reuse one card width for both of its columns.
-    func testTwoCappedCardsAndTheGapFillTheContainerBetweenItsEdgePaddings() throws {
-        for width in [744, 834, 1024, 1366] as [CGFloat] {
-            let cap = try XCTUnwrap(LunaLayout.cardWidthCap(forContainerWidth: width))
-            XCTAssertEqual(
-                cap * 2 + LunaLayout.columnGap,
-                width - LunaLayout.wideEdgePadding * 2,
-                accuracy: 0.01)
-            XCTAssertEqual(
-                LunaLayout.columnCenterOffset(forContainerWidth: width),
-                cap / 2 + LunaLayout.columnGap / 2,
-                accuracy: 0.01)
-        }
-    }
-
-    /// The threshold is a cliff, so pin both sides of it: one point below, the
-    /// card still takes every point the peeks leave.
-    func testJustBelowTheThresholdNothingIsCapped() {
-        let width = LunaLayout.wideThreshold - 1
-        XCTAssertNil(LunaLayout.cardWidthCap(forContainerWidth: width))
-        let metrics = CardCarouselMetrics.resolve(
-            containerSize: CGSize(width: width, height: 2000),
-            peek: 14, edgeGap: 10, verticalPadding: 12)
-        XCTAssertEqual(metrics.cardSize.width, width - 2 * (14 + 10), accuracy: 0.01)
     }
 
     func testTinyContainerDegradesGracefully() {

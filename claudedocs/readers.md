@@ -197,8 +197,8 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
     already ran against any container, so the same eclipse plays either way
     (`animateColumnAppearance` / `animateColumnDismissal`).
   - Both columns are the same card: the left one is MOVED, never resized, so the
-    right column is derived from it by one offset. That is what the half-width cap
-    in `claudedocs/card-carousel.md` is for.
+    right column is derived from it by one offset. The paired layout is offered
+    only when two aspect-fit cards fit without shrinking the root card.
   - A column carries its OWN controls — one floating glass bar inside its card's
     bottom edge with close, the mode switcher, read-aloud and share. The deck's
     screen-level pill row belongs to the card next door, which is still being

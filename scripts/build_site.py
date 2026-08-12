@@ -33,6 +33,7 @@ Usage: python3 scripts/build_site.py [--out site/dist]
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import re
 import shutil
@@ -194,15 +195,15 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
         # SF `hand.tap` stand-in: an outline tapping hand — index finger up,
         # two curled knuckles, a thumb tucked against the palm — with three
         # motion ticks fanned around the fingertip. The hand is drawn upright
-        # and rotated -45° so the finger points up-left, radially into the
-        # tick fan (the ticks' inner ends sit on a circle around ~(10.9, 10.2),
-        # and the rotated fingertip lands at its centre-facing point).
+        # and rotated -25° so the finger points up and to the left, its tip
+        # tucked into the tick fan (the translate puts the fingertip cap's
+        # centre at (8.6, 8.3), just inside the ticks' inner ends).
         return (
-            '<svg class="tap-glyph" viewBox="0 0 28 26" fill="none" '
+            '<svg class="tap-glyph" viewBox="0 0 24 26" fill="none" '
             'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
             'stroke-linejoin="round" aria-hidden="true">'
             '<path d="M7.2 2 8.1 3.7 M3.6 4.8 5.3 5.9 M2 9.2 3.9 9.5"/>'
-            '<g transform="translate(-4.1 3.5) rotate(-45 12.7 5)">'
+            '<g transform="translate(-4.08 3.34) rotate(-25 12.7 5)">'
             '<path d="M11 15.5 V5 a1.7 1.7 0 0 1 3.4 0 V11 a1.7 1.7 0 0 1 3.4 0 '
             "v0.8 a1.7 1.7 0 0 1 3.4 0 v2.7 c0 2.2 -0.6 3.5 -1.5 4.8 "
             "c-0.5 0.8 -0.8 1.7 -0.8 2.7 h-6.8 c0 -1 -0.3 -1.9 -0.9 -2.7 "
@@ -217,7 +218,7 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
     )
 
 
-def render_page(slug: str, copy: Copy, icon_href: str) -> str:
+def render_page(slug: str, copy: Copy, icon_href: str, css_href: str) -> str:
     app_name = copy.string("LunaApp_displayName")
     title = copy.string("Onboarding_Safari_title")
     byline = copy.string("Onboarding_Safari_bylineTemplate").replace("%@", app_name)
@@ -272,7 +273,7 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
 <meta property="og:image" content="{icon_href}">
 <link rel="icon" href="{icon_href}">
 <link rel="apple-touch-icon" href="{icon_href}">
-<link rel="stylesheet" href="/assets/setup.css">
+<link rel="stylesheet" href="{css_href}">
 </head>
 <body>
 <main class="page">
@@ -296,7 +297,7 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
 """
 
 
-def render_index(entries: list[tuple[str, str, str]]) -> str:
+def render_index(entries: list[tuple[str, str, str]], css_href: str) -> str:
     """The bare directory of setup pages: name, icon, link."""
     items = "\n".join(
         '      <li><a class="app-link" href="/setup/{slug}/">'
@@ -314,7 +315,7 @@ def render_index(entries: list[tuple[str, str, str]]) -> str:
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="{THEME_COLOR}">
 <link rel="icon" href="/assets/icon-luna.png">
-<link rel="stylesheet" href="/assets/setup.css">
+<link rel="stylesheet" href="{css_href}">
 </head>
 <body>
 <main class="page index">
@@ -641,6 +642,12 @@ def build(out: Path) -> None:
         shutil.rmtree(out)
     (out / "assets").mkdir(parents=True)
 
+    # The stylesheet URL carries a content hash so a page and its CSS can
+    # never be served split: /assets/* is cached for an hour, and an HTML
+    # change whose look lives in the CSS otherwise renders with the stale
+    # sheet until that hour runs out.
+    css_href = f"/assets/setup.css?v={hashlib.sha256(CSS.encode()).hexdigest()[:8]}"
+
     entries: list[tuple[str, str, str]] = []
     for slug, suffix, icon_source in APPS:
         icon_href = f"/assets/icon-{slug}.png"
@@ -650,13 +657,13 @@ def build(out: Path) -> None:
         page_dir = out / "setup" / slug
         page_dir.mkdir(parents=True)
         (page_dir / "index.html").write_text(
-            render_page(slug, copy, icon_href), encoding="utf-8"
+            render_page(slug, copy, icon_href, css_href), encoding="utf-8"
         )
         entries.append((slug, copy.string("LunaApp_displayName"), icon_href))
 
     (out / "assets/setup.css").write_text(CSS, encoding="utf-8")
-    (out / "index.html").write_text(render_index(entries), encoding="utf-8")
-    (out / "setup/index.html").write_text(render_index(entries), encoding="utf-8")
+    (out / "index.html").write_text(render_index(entries, css_href), encoding="utf-8")
+    (out / "setup/index.html").write_text(render_index(entries, css_href), encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
 
     redirects = "".join(

@@ -74,7 +74,7 @@ h1 {
   max-width: 34em;
 }
 
-/* These three steps are the whole point of the page — the physical actions
+/* These four steps are the whole point of the page — the physical actions
    the reader is mid-way through doing right now — so they get their own
    panel, a number per step, and copy sized above the surrounding prose. */
 .steps { margin-top: 36px; }
@@ -156,17 +156,26 @@ h1 {
 
 .chip-rounded .glyph { width: 19px; height: 19px; }
 
-.app-visual {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .step-icon {
   width: 28px;
   height: 28px;
   border-radius: 7px;
   display: block;
+}
+
+.inline-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.inline-step-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-block;
+  vertical-align: -5px;
 }
 
 /* Already on: the step is what the setting looks like once you've done it. */
@@ -187,6 +196,27 @@ h1 {
   height: 16px;
   border-radius: 8px;
   background: #fff;
+}
+
+.system-button {
+  display: inline-block;
+  padding: 0.18em 0.55em 0.2em;
+  border-radius: 0.62em;
+  background: #0a84ff;
+  color: #fff;
+  font-size: 0.92em;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+  vertical-align: 0.02em;
+}
+
+.privacy-explainer {
+  margin: 20px 0 0;
+  max-width: 36em;
+  color: var(--quiet);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 /* The small label above the index page's own h1 — same visual language as

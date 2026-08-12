@@ -3,7 +3,7 @@
 
 The only page it renders today is `/setup/<app>`, a static reproduction of the
 mock `luna.app` page the in-app Safari lesson shows — the same headline, byline,
-prose and three enable steps, drawn with the same chrome pictures and the app's
+prose and four enable steps, drawn with the same chrome pictures and the app's
 own icon.
 
 Everything it prints comes from the shipping app rather than a copy:
@@ -158,8 +158,8 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
 
     `pageMenu` and `manageExtensions` are light plates carrying a glyph — a
     capsule for Safari's address field, a rounded rect for the menu row it
-    opens. `app` is the app's own icon beside the switch, already on: the step
-    shows what the setting looks like once it is done.
+    opens. `switch` is the setting's already-on switch, while the app icon is
+    rendered inline in that step's text.
     """
     if kind == "pageMenu":
         # SF `text.justify.leading`: justified lines with a short leading last one.
@@ -174,24 +174,26 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
         return f'<span class="chip chip-capsule">{glyph}</span>'
 
     if kind == "manageExtensions":
-        # SF `puzzlepiece.extension.fill`: knob on top, socket on the right. Both
-        # are MAJOR arcs (large-arc-flag 1) — a minor arc over the same chord is
-        # a shallow bump, and the piece stops reading as a puzzle piece at 19px.
-        # The translate re-centres the body under the knob's extra height.
+        # SF `puzzlepiece.extension.fill`: the real piece has a female socket on
+        # the left and a male tab sticking out on the right. Explicit curves
+        # make the socket/tab orientation unambiguous at 19px.
         glyph = (
             '<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">'
-            '<path transform="translate(0 1.6)" d="M7 5h2.4a2.9 2.9 0 1 1 5.2 0H17'
-            "a2 2 0 0 1 2 2v2.4a2.9 2.9 0 1 0 0 5.2V17a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2"
-            'V7a2 2 0 0 1 2-2Z"/>'
+            '<path d="M7 4h10a2 2 0 0 1 2 2v3'
+            'c2 0 3 1.3 3 3s-1 3-3 3v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3'
+            'c2 0 3-1.3 3-3s-1-3-3-3V6a2 2 0 0 1 2-2Z"/>'
             "</svg>"
         )
         return f'<span class="chip chip-rounded">{glyph}</span>'
 
+    if kind == "switch":
+        return '<span class="switch" aria-hidden="true"><span class="knob"></span></span>'
+
+    if kind == "empty":
+        return '<span aria-hidden="true"></span>'
+
     return (
-        '<span class="app-visual">'
         f'<img class="step-icon" src="{icon_href}" alt="{html.escape(app_name)}">'
-        '<span class="switch"><span class="knob"></span></span>'
-        "</span>"
     )
 
 
@@ -202,6 +204,10 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
     prose = " ".join(copy.chunks("Onboarding_Safari_explainerChunk"))
     steps_heading = copy.string("Onboarding_Safari_stepsHeading")
 
+    inline_app = (
+        f'<span class="inline-app"><img class="inline-step-icon" src="{icon_href}" '
+        f'alt="" aria-hidden="true">{html.escape(app_name)}</span>'
+    )
     steps = [
         ("pageMenu", copy.string("Onboarding_Safari_pageMenuStep")),
         (
@@ -211,16 +217,23 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
             ),
         ),
         (
-            "app",
-            copy.string("Onboarding_Safari_appStepTemplate").replace("%@", app_name),
+            "switch",
+            copy.string("Onboarding_Safari_appStepTemplate").replace("%@", inline_app),
         ),
+        ("empty", 'Select <span class="system-button">Allow on all websites</span>'),
     ]
 
+    def render_row(kind: str, text: str) -> str:
+        rendered_text = text if kind in ("switch", "empty") else html.escape(text)
+        return (
+            '        <li class="step">\n'
+            f'          <span class="visual">{step_visual(kind, icon_href, app_name)}</span>\n'
+            f'          <span class="step-text">{rendered_text}</span>\n'
+            '        </li>'
+        )
+
     rows = "\n".join(
-        "        <li class=\"step\">\n"
-        f"          <span class=\"visual\">{step_visual(kind, icon_href, app_name)}</span>\n"
-        f"          <span class=\"step-text\">{html.escape(text)}</span>\n"
-        "        </li>"
+        render_row(kind, text)
         for kind, text in steps
     )
 
@@ -256,6 +269,7 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
 {rows}
     </ol>
   </section>
+  <p class="privacy-explainer">Your browsing history and data is kept entirely on device. Luna works on your phone to improve your browsing experience and let you retrieve your own history locally.</p>
 </main>
 </body>
 </html>
@@ -375,7 +389,7 @@ h1 {
   max-width: 34em;
 }
 
-/* These three steps are the whole point of the page — the physical actions
+/* These four steps are the whole point of the page — the physical actions
    the reader is mid-way through doing right now — so they get their own
    panel, a number per step, and copy sized above the surrounding prose. */
 .steps { margin-top: 36px; }
@@ -457,17 +471,26 @@ h1 {
 
 .chip-rounded .glyph { width: 19px; height: 19px; }
 
-.app-visual {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .step-icon {
   width: 28px;
   height: 28px;
   border-radius: 7px;
   display: block;
+}
+
+.inline-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.inline-step-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-block;
+  vertical-align: -5px;
 }
 
 /* Already on: the step is what the setting looks like once you've done it. */
@@ -488,6 +511,27 @@ h1 {
   height: 16px;
   border-radius: 8px;
   background: #fff;
+}
+
+.system-button {
+  display: inline-block;
+  padding: 0.18em 0.55em 0.2em;
+  border-radius: 0.62em;
+  background: #0a84ff;
+  color: #fff;
+  font-size: 0.92em;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+  vertical-align: 0.02em;
+}
+
+.privacy-explainer {
+  margin: 20px 0 0;
+  max-width: 36em;
+  color: var(--quiet);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 /* The small label above the index page's own h1 — same visual language as

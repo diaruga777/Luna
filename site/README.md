@@ -30,7 +30,9 @@ python3 scripts/build_site.py          # → site/dist
 Cloudflare's side. **Re-run the generator after touching Safari onboarding copy
 or an app icon**, and commit what changes.
 
-Nothing in the page is hand-written copy. The generator reads:
+The prose and app names are read from the app's strings. The generator also
+adds the site-only Safari permission labels and the local-only privacy note.
+The generator reads:
 
 | what | from |
 | --- | --- |

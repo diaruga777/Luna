@@ -125,6 +125,7 @@ h1 {
   flex: 0 0 70px;
   display: flex;
   align-items: center;
+  justify-content: center;  /* the four visuals share a centre axis */
   min-height: 30px;
 }
 

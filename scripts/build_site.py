@@ -193,17 +193,22 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
     if kind == "tap":
         # SF `hand.tap` stand-in: an outline tapping hand — index finger up,
         # two curled knuckles, a thumb tucked against the palm — with three
-        # motion ticks radiating off the fingertip's upper left.
+        # motion ticks fanned around the fingertip. The hand is drawn upright
+        # and rotated -45° so the finger points up-left, radially into the
+        # tick fan (the ticks' inner ends sit on a circle around ~(10.9, 10.2),
+        # and the rotated fingertip lands at its centre-facing point).
         return (
-            '<svg class="tap-glyph" viewBox="0 0 26 26" fill="none" '
+            '<svg class="tap-glyph" viewBox="0 0 28 26" fill="none" '
             'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
             'stroke-linejoin="round" aria-hidden="true">'
             '<path d="M7.2 2 8.1 3.7 M3.6 4.8 5.3 5.9 M2 9.2 3.9 9.5"/>'
+            '<g transform="translate(-4.1 3.5) rotate(-45 12.7 5)">'
             '<path d="M11 15.5 V5 a1.7 1.7 0 0 1 3.4 0 V11 a1.7 1.7 0 0 1 3.4 0 '
             "v0.8 a1.7 1.7 0 0 1 3.4 0 v2.7 c0 2.2 -0.6 3.5 -1.5 4.8 "
             "c-0.5 0.8 -0.8 1.7 -0.8 2.7 h-6.8 c0 -1 -0.3 -1.9 -0.9 -2.7 "
             "c-0.9 -1.2 -2.2 -2.3 -3 -4 c-0.4 -0.85 0.25 -1.8 1.2 -1.8 "
             'c0.55 0 1.1 0.25 1.45 0.7 l1.15 1.35 Z"/>'
+            "</g>"
             "</svg>"
         )
 
@@ -455,6 +460,7 @@ h1 {
   flex: 0 0 70px;
   display: flex;
   align-items: center;
+  justify-content: center;  /* the four visuals share a centre axis */
   min-height: 30px;
 }
 

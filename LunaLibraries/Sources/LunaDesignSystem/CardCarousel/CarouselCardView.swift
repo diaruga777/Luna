@@ -13,6 +13,12 @@ import LunaModels
 
 public final class CarouselCardView: CardSurfaceView {
 
+    /// The geometry shared by every card-local floating control. Hosts that
+    /// temporarily move the mute button beyond the card use these values to
+    /// preserve its exact card-mode margin against their new edge.
+    public static let muteButtonInset: CGFloat = 12
+    public static let muteButtonDiameter: CGFloat = 36
+
     /// Fired when the user taps the mute button. The carousel owns the actual
     /// mute state (it spans cards); the card only reports the tap.
     public var onMuteToggle: (() -> Void)?
@@ -57,10 +63,10 @@ public final class CarouselCardView: CardSurfaceView {
         muteButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(muteButton)
         NSLayoutConstraint.activate([
-            muteButton.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            muteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            muteButton.widthAnchor.constraint(equalToConstant: 36),
-            muteButton.heightAnchor.constraint(equalToConstant: 36),
+            muteButton.topAnchor.constraint(equalTo: topAnchor, constant: Self.muteButtonInset),
+            muteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.muteButtonInset),
+            muteButton.widthAnchor.constraint(equalToConstant: Self.muteButtonDiameter),
+            muteButton.heightAnchor.constraint(equalToConstant: Self.muteButtonDiameter),
         ])
         updateMuteIcon(muted: true)
     }
@@ -70,6 +76,14 @@ public final class CarouselCardView: CardSurfaceView {
 
     public func setMuteButtonVisible(_ visible: Bool) {
         muteButton.isHidden = !visible
+    }
+
+    /// Translates the mute toggle independently of its card. The carousel uses
+    /// this while a reader card sheds its surrounding chrome: the card can keep
+    /// animating its viewport while the toggle lands at the safe screen edge.
+    public func setMuteButtonTranslation(_ translation: CGPoint) {
+        muteButton.transform = CGAffineTransform(
+            translationX: translation.x, y: translation.y)
     }
 
     /// Hides the card's own surface tone (animatable). While immersed the

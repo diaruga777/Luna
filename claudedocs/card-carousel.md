@@ -346,6 +346,10 @@ Consequences for the deck:
   a hardware volume key also unmutes (KVO on `AVAudioSession.outputVolume`). The
   carousel keeps the session `.ambient(mixWithOthers)` while muted and `.playback`
   when unmuted (`managesAudioSession` opts out for hosts with their own audio stack).
+  The Reader/Core article deck opts into a different immersed seat: when card chrome
+  is dismissed, the same control translates with the card animation to the safe
+  screen top-right, preserving its 12pt card inset; it returns to the card corner
+  as chrome returns. Other decks keep the card-local position.
 
 ## Content controllers
 

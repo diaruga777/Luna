@@ -93,6 +93,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // mode) read against a same-tone background; fades with the chrome on
         // immersion.
         style.showsCardBorder = true
+        // When a scroll reader dismisses its card chrome, its audio mute
+        // toggle follows the hosted scroll indicator to the safe screen edge.
+        // The shared ArticleCards controller backs both Luna Reader and Luna
+        // Core, so this one setting covers their identical reader surface.
+        style.movesMuteButtonToScreenEdgeWhenImmersed = true
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         // The cards themselves come from the ONE provider, exactly as the other
         // three apps' roots do. This class contributes screen chrome and nothing

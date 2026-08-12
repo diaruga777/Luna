@@ -503,11 +503,11 @@ the four schemes (the OS only delivers what the running app registered);
 `LunaDeepLink.ownScheme` reads the running bundle's registered scheme for links that must
 reopen the current app (e.g. the Live Activity photos-permission action URL).
 
-App side: `SceneDelegate.openReader` ingests the URL (`handleSavePress`) then opens it via
-the deck's tap routing (`ArticleCardsViewController`) — so a paywalled article opens straight into
-the in-app archive reader, a ready article into the native reader. The "Locked Only" mode and
-the in-app paywall handling share one detector (`PaywallDetector`), so a reader logged in via
-their browser sees a full article and isn't flagged.
+App side: `SceneDelegate.openReader` ingests the URL (`handleSavePress`) then centers its
+saved card. A Safari/app-scheme handoff never opens the saved source URL in an in-app browser;
+the only deep link that may launch web UI is the explicit `price-add-seller` route from the
+share/action extensions. The "Locked Only" mode and the in-app paywall handling still share one
+detector (`PaywallDetector`) whenever the user intentionally opens a reader card.
 
 Downloader-platform flow:
 1. content.js asks background `{type:"buttonContext"}`; background relays to the native

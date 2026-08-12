@@ -24,6 +24,7 @@ public final class VideoCardContentViewController: CardContentViewController {
     private var wantsPlaying = false
     private var endObserver: NSObjectProtocol?
     private var readyForDisplayObservation: NSKeyValueObservation?
+    private var backgroundObserver: NSObjectProtocol?
     /// Identifies the ITEM this player is showing, so the speed the user picks
     /// outlives the controller — a card unmounts as soon as it is two slots
     /// from center and is rebuilt from scratch on the way back.
@@ -49,6 +50,9 @@ public final class VideoCardContentViewController: CardContentViewController {
     deinit {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
+        }
+        if let backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
         }
     }
 
@@ -93,15 +97,21 @@ public final class VideoCardContentViewController: CardContentViewController {
             DispatchQueue.main.async { self?.install(item) }
         }
 
-        // Backgrounding pauses the AVPlayer at the system level without
-        // clearing our intent; resume a still-centered card on return.
+        // A download can finish while its host app is backgrounded. Keep the
+        // card's intent, but never allow a card player to continue talking
+        // there; a still-centered card resumes only after the app is active.
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.player.pause()
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(applicationDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     @objc private func applicationDidBecomeActive() {
-        if wantsPlaying { player.play() }
+        if wantsPlaying, UIApplication.shared.applicationState == .active { player.play() }
     }
 
     private func install(_ item: AVPlayerItem?) {
@@ -125,7 +135,7 @@ public final class VideoCardContentViewController: CardContentViewController {
                 self.audioAvailabilityChanged?()
             }
         }
-        if wantsPlaying {
+        if wantsPlaying, UIApplication.shared.applicationState == .active {
             player.play()
         } else {
             // Decode the first frame NOW, while this card is still a neighbor:
@@ -169,7 +179,11 @@ public final class VideoCardContentViewController: CardContentViewController {
     public override func setPlaying(_ playing: Bool) {
         let changed = wantsPlaying != playing
         wantsPlaying = playing
-        if playing { player.play() } else { player.pause() }
+        if playing, UIApplication.shared.applicationState == .active {
+            player.play()
+        } else {
+            player.pause()
+        }
         if changed { playbackStateChanged?() }
     }
 

@@ -77,13 +77,14 @@ struct LunaDownloaderLiveActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     ThumbnailView(state: context.state)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 48, height: 40)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(context.attributes.title)
-                            .font(.headline)
-                            .lineLimit(1)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
                         if context.state.phase == .failed {
                             Text(context.state.message)
                                 .font(.caption)
@@ -101,12 +102,14 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                             MoonHorizonProgressView(progress: context.state.progress)
                                 .frame(height: 20)
                         }
-                        HStack(spacing: 10) {
-                            Text(context.state.message)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                            ActivityControlButton(context: context)
+                        if context.state.phase != .finished {
+                            HStack(spacing: 10) {
+                                Text(context.state.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
+                                ActivityControlButton(context: context)
+                            }
                         }
                         if context.state.phase == .finished {
                             FinishedActionsView(state: context.state)
@@ -147,16 +150,19 @@ private struct DownloadActivityView: View {
         VStack(spacing: 4) {
             HStack(spacing: 12) {
                 ThumbnailView(state: context.state)
-                    .frame(width: 64, height: 64)
+                    .frame(width: 56, height: 52)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(context.attributes.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(context.state.message)
-                        .font(.subheadline)
-                        .foregroundStyle(context.state.phase == .failed ? .red : .secondary)
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    if context.state.phase != .finished {
+                        Text(context.state.message)
+                            .font(.subheadline)
+                            .foregroundStyle(context.state.phase == .failed ? .red : .secondary)
+                            .lineLimit(2)
+                    }
                     if context.state.phase == .failed,
                        let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
                         Link(destination: actionURL) {

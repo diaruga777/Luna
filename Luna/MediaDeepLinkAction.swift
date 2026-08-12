@@ -13,8 +13,9 @@ import Foundation
 /// switches on it without ever naming a media-kind symbol.
 enum MediaDeepLinkAction: Equatable {
     /// A downloaded local file — `SceneDelegate` centers the deck on this
-    /// reading-list item and opens it (`ExternalItemOpening`).
-    case centerAndOpen(UUID)
+    /// saved item. The card itself is the destination; a handoff must not
+    /// open the source URL in an in-app browser.
+    case center(UUID)
     /// A Photos-backed save — already handled (opened Photos); nothing further.
     case openedExternally
     /// Still downloading, or the URL matches no row — land on the deck, the

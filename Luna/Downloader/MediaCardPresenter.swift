@@ -63,6 +63,11 @@ final class MediaCardPresenter: CardKindPresenting {
     private(set) var archiveDownloadProgress: [UUID: Double] = [:]
     private weak var progressHost: (any CardPresenterHost)?
     private var isReconcilingPhotos = false
+    private var backgroundObserver: NSObjectProtocol?
+
+    deinit {
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+    }
 
     /// The downloaded media behind a save, if Luna holds any.
     ///
@@ -138,6 +143,15 @@ final class MediaCardPresenter: CardKindPresenting {
 
     func willBeginObservingStores(host: CardPresenterHost) {
         progressHost = host
+        if backgroundObserver == nil {
+            backgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                // AVPlayerViewController's player otherwise keeps its playback
+                // session when a download completion backgrounds the app.
+                self?.activePlayer?.pause()
+            }
+        }
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT
         // process, so an in-process `.savedMediaChanged` post never reaches it)
         // back to a `.savedMediaChanged` post here via a Darwin notification.

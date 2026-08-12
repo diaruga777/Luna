@@ -386,18 +386,17 @@ final class OnboardingSafariSetupActionButton: UIButton {
 }
 
 /// A hand-drawn "opens externally" glyph, replacing SF Symbol's
-/// `arrow.up.forward.square`: a rounded square whose top-right corner is left
-/// open, with the arrow's shaft rising from inside the box and its head
-/// poking out through that opening rather than stopping at the box's own
-/// edge — the box does not fully contain the arrow, which is the whole point
-/// of the mark (the classic "this opens somewhere else" glyph). Rendered as a
+/// `arrow.up.forward.square`: a thick rounded box with an opening in its
+/// top-right corner and an arrow that escapes through it. The arrowhead uses
+/// the reference mark's square corner — a horizontal arm to the left and a
+/// vertical arm below the tip — rather than a diagonal chevron. Rendered as a
 /// TEMPLATE image, like every other monochrome control glyph, so the
 /// button's own white tint colours it rather than a fixed colour being baked
-/// into the image — it has to match the label's white exactly, and stay in
-/// sync if that ever changes.
+/// into the image.
 enum OnboardingExternalLinkGlyph {
     static func image(side: CGFloat, scale: CGFloat = 3) -> UIImage {
-        // Roughly an SF Symbol semibold's stroke weight at this point size.
+        // Match the supplied mark's heavy, rounded stroke at the existing
+        // 16pt button size.
         let strokeWidth: CGFloat = max(side * 0.11, 1.3)
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
@@ -413,7 +412,7 @@ enum OnboardingExternalLinkGlyph {
 
             // The box sits toward the bottom-left, leaving the top-right free
             // for the arrow to poke into — and, at that same corner, open.
-            let boxSide = side - strokeWidth - side * 0.24
+            let boxSide = side - strokeWidth - side * 0.10
             let boxRect = CGRect(
                 x: strokeWidth / 2,
                 y: side - boxSide - strokeWidth / 2,
@@ -421,7 +420,7 @@ enum OnboardingExternalLinkGlyph {
             let cornerRadius = boxSide * 0.26
             // How far short of the top-right corner the top edge and right
             // edge each stop — the width of the opening.
-            let gap = boxSide * 0.40
+            let gap = boxSide * 0.28
 
             let box = UIBezierPath()
             box.move(to: CGPoint(x: boxRect.maxX, y: boxRect.minY + gap))
@@ -447,33 +446,28 @@ enum OnboardingExternalLinkGlyph {
             box.lineWidth = strokeWidth
             box.stroke()
 
-            // The shaft starts inside the box and ends past its (open)
-            // top-right corner, out at the full glyph's own top-right —
-            // clear of the box entirely, not just touching its edge.
+            // The shaft starts inside the box and ends at the open corner,
+            // with the arrowhead escaping beyond the box on two orthogonal
+            // arms, as in the supplied reference.
             let shaftStart = CGPoint(
-                x: boxRect.midX - boxSide * 0.05,
-                y: boxRect.midY + boxSide * 0.08)
+                x: boxRect.minX + boxSide * 0.25,
+                y: boxRect.maxY - boxSide * 0.22)
             let tip = CGPoint(
                 x: side - strokeWidth / 2,
-                y: strokeWidth / 2)
+                y: boxRect.minY)
             let shaft = UIBezierPath()
             shaft.move(to: shaftStart)
             shaft.addLine(to: tip)
             shaft.lineWidth = strokeWidth
             shaft.stroke()
 
-            let headLength = boxSide * 0.32
-            let angle = atan2(tip.y - shaftStart.y, tip.x - shaftStart.x)
-            let leftWing = CGPoint(
-                x: tip.x - cos(angle - .pi / 6) * headLength,
-                y: tip.y - sin(angle - .pi / 6) * headLength)
-            let rightWing = CGPoint(
-                x: tip.x - cos(angle + .pi / 6) * headLength,
-                y: tip.y - sin(angle + .pi / 6) * headLength)
+            let headLength = boxSide * 0.36
+            let leftWing = CGPoint(x: tip.x - headLength, y: tip.y)
+            let lowerWing = CGPoint(x: tip.x, y: tip.y + headLength)
             let head = UIBezierPath()
             head.move(to: leftWing)
             head.addLine(to: tip)
-            head.addLine(to: rightWing)
+            head.addLine(to: lowerWing)
             head.lineWidth = strokeWidth
             head.lineJoinStyle = .round
             head.stroke()

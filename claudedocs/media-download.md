@@ -322,8 +322,9 @@ Photos-permission failure link) rather than a widget-side `LunaDeepLink` call.
 `KindWiring.mediaDeepLinkAction(forURLString:)` — one answer per app, since only
 `Luna`/`LunaDownloader` link the media module (Reader/Price Tracker return `.none`,
 never actually reachable there since neither ever runs the Live Activity):
-`.localFile` centers the deck on that item and opens it (`ExternalItemOpening`,
-which every deck root now provides via the base `CardCarouselHostViewController`);
+`.localFile` centers the deck on that item's card; it does **not** open the
+source URL in an in-app browser. The card is the handoff destination. The finished
+card's separate Share link still centers the card and raises the system share sheet.
 `.photosReference` reuses the card's own "open in Photos" mechanism
 (`MediaCardFactory.openInPhotos`, the `photos-redirect://` scheme — no new scheme was
 invented); still-downloading or an unknown URL just lands on the deck, the same as
@@ -455,7 +456,9 @@ adopted whichever job started first — is deleted.
 on load) and never own the transfer, which lives in `LiveMediaDownloadManager`'s
 shared-container background `URLSession`. So paging the card off screen, leaving
 the Downloader screen, or backgrounding the app tears the view down without
-touching the download; only the Live Activity's explicit pause
+touching the download. Any card or full-screen player pauses on backgrounding,
+so a completed background transfer can never start or continue video audio;
+only the Live Activity's explicit pause
 (`LiveMediaDownloadManager.suspend(jobID:)`, called solely from the widget's
 intent) ever suspends one. A card recreated mid-transfer re-reads the snapshot and
 picks the bar up where it is, and out-of-app progress remains the Live Activity's

@@ -196,14 +196,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let urlString = LunaDeepLink.mediaViewURLString(from: url), let nav = mainNavigationController
         else { return }
         nav.popToRootViewController(animated: false)
-        guard case let .centerAndOpen(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString),
-              let item = ReadingListStore.shared.item(withID: itemID)
+        guard case let .center(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString)
         else { return }
         if LunaDeepLink.mediaShareRequested(from: url),
+           let item = ReadingListStore.shared.item(withID: itemID),
            let exporter = KindWiring.mediaShareFileExporter {
             shareDownloadedMedia(item, using: exporter, in: nav)
         } else {
-            (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
+            (nav.viewControllers.first as? CardCarouselHostViewController)?.centerCard(onItemID: itemID)
         }
     }
 
@@ -296,9 +296,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 await UIApplication.shared.open(originalURL)
                 return
             }
-            // Both root shapes (list / article cards) conform to
-            // `ExternalItemOpening`, so no kind-specific downcast is needed.
-            (nav.viewControllers.first as? ExternalItemOpening)?.openExternally(item)
+            // A Safari (or other app-scheme) handoff lands on the saved card.
+            // It must never open the source URL in an in-app browser; that
+            // would re-show the page the user just saved instead of Luna's
+            // reader/product/media card. The one deep-link exception is the
+            // explicit price-add-seller route handled at the start of `route`.
+            (nav.viewControllers.first as? CardCarouselHostViewController)?.centerCard(onItemID: item.id)
         }
     }
 

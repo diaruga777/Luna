@@ -160,6 +160,7 @@ public final class SavedNonTextualViewController: UIViewController {
     /// The player behind the currently-presented full-screen video, held weakly
     /// (the player VC owns it) so we can pause it while a share sheet is up.
     private weak var activePlayer: AVPlayer?
+    private var backgroundObserver: NSObjectProtocol?
 
     public init(
         articleURLString: String, showsSystemShare: Bool = false,
@@ -177,6 +178,7 @@ public final class SavedNonTextualViewController: UIViewController {
 
     deinit {
         practicePlayer?.pause()
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
         // Delete a downloaded-but-never-saved preview file when the screen closes
         // (any dismissal path), so previews don't accumulate in the temp dir.
         if let url = unsavedPreviewFileURL {
@@ -194,6 +196,13 @@ public final class SavedNonTextualViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // An extension preview must never keep audio alive behind its host.
+            self?.activePlayer?.pause()
+            self?.practicePlayer?.pause()
+        }
 
         installContentColumn()
 

@@ -198,6 +198,11 @@ public enum IngestPipeline {
                 let outcome = ArticleFetcher.isHardPaywallHost(url)
                     ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
                     : .failed(.timedOut)
+                SaveDiagnostics.record(
+                    "pipeline: budget of \(Int(timeout))s elapsed — "
+                        + (ArticleFetcher.isHardPaywallHost(url)
+                            ? "hard-paywall host, parking for archive" : "failing timedOut"),
+                    category: "ingest")
                 return IngestResult(url: url, outcome: outcome)
             }
             let first = await group.next() ?? IngestResult(url: input.url, outcome: .failed(.timedOut))
@@ -221,11 +226,16 @@ public enum IngestPipeline {
         // stripped unwrap (Facebook deep links, Apple/Google News, shorteners).
         let unwrapped = await URLUnwrapper.unwrap(input.url, session: session)
         let url = unwrapped.url
+        if unwrapped.didUnwrap {
+            SaveDiagnostics.record(
+                "pipeline: unwrapped → \(SaveDiagnostics.url(url))", category: "ingest")
+        }
 
         // (2) Classify deterministically (URL-only). Platform/video/document are
         // decided here, before any fetch, so they can never reach HTML article
         // extraction. A social post gets one further question asked of it in (2b).
         let kind = Classifier.classify(url: url, documentType: input.documentType)
+        SaveDiagnostics.record("pipeline: classified \(kind)", category: "ingest")
         switch kind {
         case .document(let type):
             return IngestResult(url: url, outcome: .document(type: type))
@@ -244,6 +254,9 @@ public enum IngestPipeline {
             if let socialTextProcessor,
                let read = await socialTextProcessor.article(
                     platform: platform, itemID: itemID, url: url) {
+                SaveDiagnostics.record(
+                    "pipeline: social post read as long-form article, "
+                        + "\(read.content.bodyTextLength)ch", category: "ingest")
                 return IngestResult(url: url, outcome: .article(read.content, html: read.html))
             }
             return IngestResult(url: url, outcome: .social(platform, itemID: itemID))
@@ -280,6 +293,9 @@ public enum IngestPipeline {
         // instead of spending a round-trip (and, for a shop host, a price scrape)
         // discovering it. `forceArticle` is the user overriding us on purpose.
         if !input.forceArticle, isMultiItemListingURL(url, classifiedKind: classifiedKind) {
+            SaveDiagnostics.record(
+                "pipeline: vetoed as a multi-item listing URL — no single item to save",
+                category: "ingest")
             return .failed(.notContent)
         }
 
@@ -293,6 +309,12 @@ public enum IngestPipeline {
         } else {
             directHTML = try? await fetcher.fetchHTML(from: url)
         }
+        SaveDiagnostics.record(
+            "pipeline: direct HTML "
+                + (directHTML.map { "\($0.count)ch" } ?? "unavailable")
+                + (input.prefetchedHTML != nil ? " (prefetched by the surface)" : "")
+                + (input.forceArticle ? " (forceArticle: skipped)" : ""),
+            category: "ingest")
 
         // (3a) Product handling — a product page becomes a tracker and is NEVER
         // paywall-bypassed. `forceArticle` skips this entirely. A deterministic
@@ -319,10 +341,24 @@ public enum IngestPipeline {
             // (shared detector); whether it can be PROCESSED depends on the
             // linked product processor. Without one, the save is dropped as
             // Price-Tracker-owned — never silently re-read as an article.
-            guard let productProcessor else { return .unsupported(owner: .priceTracker) }
+            SaveDiagnostics.record(
+                "pipeline: product path entered (\(classifiedKind))", category: "price")
+            guard let productProcessor else {
+                SaveDiagnostics.record(
+                    "pipeline: no product processor linked — Price-Tracker-owned",
+                    category: "price")
+                return .unsupported(owner: .priceTracker)
+            }
             if let product = await productProcessor.extract(url: url, html: directHTML ?? "") {
+                SaveDiagnostics.record(
+                    "pipeline: product extracted — \(product.priceAmount) "
+                        + "\(product.priceCurrency), \(product.sellers.count) seller(s)",
+                    category: "price")
                 return .product(product, html: directHTML ?? "")
             }
+            SaveDiagnostics.record(
+                "pipeline: no trustworthy price — falling through to the article path",
+                category: "price")
             // No trustworthy price → fall through to the article path below
             // (matching the pre-split behavior; a product-handling app without
             // an article processor then reports the article kind unsupported).
@@ -344,13 +380,21 @@ public enum IngestPipeline {
            !ArticleFetcher.isHardPaywallHost(url),
            !(directHTML.map(declaresPaywall) ?? false),
            ListingPage.isNonContentPage(url: url, html: directHTML) {
+            SaveDiagnostics.record(
+                "pipeline: vetoed as an index/front/listing page — nothing here to read",
+                category: "ingest")
             return .failed(.notContent)
         }
 
         // (3b) Resolve the article: direct fetch (reusing `directHTML`), then the
         // silent bypass strategies the gate allows — article-kind processing,
         // present only in article-handling apps.
-        guard let articleProcessor else { return .unsupported(owner: .reader) }
+        guard let articleProcessor else {
+            SaveDiagnostics.record(
+                "pipeline: no article processor linked — Reader-owned", category: "ingest")
+            return .unsupported(owner: .reader)
+        }
+        SaveDiagnostics.record("pipeline: article path entered", category: "ingest")
         return await articleProcessor.process(
             url: url, directHTML: directHTML,
             trustsPrefetchedHTML: input.trustsPrefetchedHTML, fetcher: fetcher)

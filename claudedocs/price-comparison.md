@@ -371,6 +371,16 @@ shareable `DiagnosticLog` under the `SellerComparison` category; the Safari find
 logs the one compact line an appex with a hard memory ceiling can afford. Tests
 assert on the rejections rather than on log text.
 
+This value-with-a-`logLine` shape is now the pattern the rest of the pipeline
+follows: `BypassAttempt` (`LunaPaywallBypass/BypassRunner.swift`) reports one
+line per silent bypass strategy into a save's own trace exactly this way. Note
+the difference in destination, though — the fan-out writes to the general
+`DiagnosticLog` because a comparison run is not tied to one failing save, while
+per-save instrumentation goes through `SaveDiagnostics.record` and is silent
+unless a save is in flight (`claudedocs/save-diagnostics.md`). The product legs
+that DO run inside a save — `ProductIngestProcessor`, `ProductMetadataExtractor`,
+`PriceFetcher` — record there under the `price` category.
+
 **Bot walls are expected, not exceptional.** 401/403/405/429/503, or a
 challenge interstitial served with a 200, marks the whole host out for the run —
 following its product links would just collect more refusals (unless it is a

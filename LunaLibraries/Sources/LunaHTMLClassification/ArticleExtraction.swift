@@ -82,9 +82,23 @@ public struct ArticleExtraction {
             html = try await fetch()
         } catch {
             onFetchError?(error)
+            SaveDiagnostics.record(
+                "extract \(SaveDiagnostics.url(baseURL)): fetch failed — "
+                    + SaveDiagnostics.snippet("\(error)"),
+                category: "fetch")
             return nil
         }
-        guard let content = try? extract(html: html, baseURL: baseURL) else { return nil }
+        guard let content = try? extract(html: html, baseURL: baseURL) else {
+            SaveDiagnostics.record(
+                "extract \(SaveDiagnostics.url(baseURL)): \(html.count)ch of HTML "
+                    + "yielded no extractable document",
+                category: "ingest")
+            return nil
+        }
+        SaveDiagnostics.record(
+            "extract \(SaveDiagnostics.url(baseURL)): \(content.bodyTextLength)ch body, "
+                + "title \(content.title.isEmpty ? "absent" : "present")",
+            category: "ingest")
         return ExtractedArticle(content: content, sourceHTML: html)
     }
 }

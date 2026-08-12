@@ -438,6 +438,7 @@ public final class ReadingListStore {
             if let found = all.first(where: { $0.id == item.id }) { self.removeFiles(for: found) }
             all.removeAll { $0.id == item.id }
         }
+        SaveDiagnosticsStore.shared.delete(for: item.id)
     }
 
     /// Moves an item into or out of its surface's archive tray. Archiving keeps
@@ -588,7 +589,7 @@ public final class ReadingListStore {
         }
         // No longer failed: drop the sidecar's failure detail so a LATER failure
         // starts from a clean count and reason.
-        if result != nil { SaveFailureStore.shared.clear(itemID) }
+        if result != nil { Self.clearFailureRecords(itemID) }
         return result
     }
 
@@ -686,7 +687,7 @@ public final class ReadingListStore {
             all[index].state = .ready
             return all[index]
         }
-        if result != nil { SaveFailureStore.shared.clear(itemID) }
+        if result != nil { Self.clearFailureRecords(itemID) }
         return result
     }
 
@@ -796,7 +797,7 @@ public final class ReadingListStore {
         }
         // Keep the failure sidecar in step with the state this write landed on.
         if saved.state == .ready {
-            SaveFailureStore.shared.clear(item.id)
+            Self.clearFailureRecords(item.id)
         } else if saved.state == .failed {
             SaveFailureStore.shared.recordFailure(item.id, reason: .couldNotSave)
         }
@@ -819,7 +820,17 @@ public final class ReadingListStore {
             return true
         }
         // A locked-but-titled item is not a failed save; it has its own UX.
+        Self.clearFailureRecords(itemID)
+    }
+
+    /// Everything a FAILED item accumulates outside `readingList.json`: the
+    /// reason/count sidecar and the diagnostic trace. They are dropped together,
+    /// because an item that is no longer failed carrying last week's trace is
+    /// worse than carrying none — the failed card would offer to share a story
+    /// about a save that has since worked.
+    static func clearFailureRecords(_ itemID: UUID) {
         SaveFailureStore.shared.clear(itemID)
+        SaveDiagnosticsStore.shared.delete(for: itemID)
     }
 
     #if DEBUG

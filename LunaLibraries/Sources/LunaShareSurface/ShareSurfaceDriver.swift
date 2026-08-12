@@ -43,6 +43,11 @@ public final class ShareSurfaceDriver {
     private let surfaceDecision: (Outcome) -> SurfaceSupport.Decision
     /// The app the extension is running in, for the error copy + deep links.
     private let currentApp: LunaApp
+    /// This request's diagnostic trace, created in `ingestAndPresent` and read
+    /// back by `present`'s failure leg. Held rather than passed because
+    /// `present` is also the fixture's direct entry point (a driver built for a
+    /// single Outcome simply has none, and records nothing).
+    private var recorder: SaveDiagnosticsRecorder?
 
     public init(
         host: ExtensionHost,
@@ -71,8 +76,24 @@ public final class ShareSurfaceDriver {
         // placeholder; a later blocked decision must never then delete that
         // pre-existing canonical item merely because it has the resolved URL.
         let pendingItemID = store.item(forURLString: originalURL.absoluteString)?.id
-        let result = await process(IngestInput(
-            url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
+        // Same per-save trace the app records, mirrored through the SYNCHRONOUS
+        // logger: an extension can be jetsammed the instant it finishes, so an
+        // async queue hop would lose the tail of the story
+        // (`claudedocs/save-diagnostics.md`).
+        let recorder = pendingItemID.map { itemID in
+            SaveDiagnosticsRecorder(itemID: itemID) { message, category in
+                SharedDiagnosticLog.record(message, category: category)
+            }
+        }
+        self.recorder = recorder
+        recorder?.record(
+            "ingest: begin \(SaveDiagnostics.url(originalURL)) source=shareSheet"
+                + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
+            category: "ingest")
+        let result = await SaveDiagnostics.$recorder.withValue(recorder) {
+            await process(IngestInput(
+                url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
+        }
 
         let url = result.url
         if url != originalURL, let item = store.item(forURLString: originalURL.absoluteString) {
@@ -104,10 +125,16 @@ public final class ShareSurfaceDriver {
         guard let host else { return }
 
         if case let .unsupported(owner) = surfaceDecision(outcome) {
+            discardDiagnostics(url: url)
             discardUnsupportedSave(url: url, itemID: blockedItemID)
             presentUnsupportedError(owner: owner)
             return
         }
+
+        // Anything that isn't a failure sheds its trace here — including a save
+        // that succeeded on a retry of an item that had failed before, which is
+        // the case that would otherwise keep exporting a stale story.
+        if case .failed = outcome {} else { discardDiagnostics(url: url) }
 
         switch outcome {
         case let .article(content, html):
@@ -146,13 +173,23 @@ public final class ShareSurfaceDriver {
             guard let article = Self.requireArticlePresenter(host: host) else { return }
             presentArchive(url: url, title: title, presenter: article)
 
-        case .failed:
+        case let .failed(reason):
             // NEVER a misleading "Saved". Mark the row failed so the main app's list
             // shows it, then offer the Apple-Intelligence rescue hand-off: the action
             // extension (which has UI) presents the rescue card; the zero-UI share
             // extension completes quietly (the main app's background sweep still
             // rescues it if auto-rescue is on).
-            store.item(forURLString: url.absoluteString).map { store.markFailed($0.id) }
+            //
+            // `markFailed` alone used to be the whole of it, which left extension
+            // failures as the ONE path with no reason and no count — so the card
+            // couldn't explain itself and the rescue's failure-kind mapping had
+            // nothing to read. Every other failure path pairs the two; so does
+            // this one now.
+            if let item = store.item(forURLString: url.absoluteString) {
+                store.markFailed(item.id)
+                SaveFailureStore.shared.recordFailure(item.id, reason: reason)
+                flushDiagnostics(itemID: item.id, reason: reason)
+            }
             if host.readerMode != nil {
                 presentRescueFailure(url: url)
             } else {
@@ -188,6 +225,32 @@ public final class ShareSurfaceDriver {
             },
             onDone: { [weak host] in host?.completeSilently() })
         host.presentModally(card)
+    }
+
+    // MARK: - Diagnostics
+
+    /// Writes this request's buffered trace into the item's sidecar under an
+    /// attempt separator, so the failed card in the main app can share it. The
+    /// same shape `ReadingListIngestor.flushDiagnostics` writes — an item that
+    /// failed in the extension and again on the app's launch sweep ends up with
+    /// both attempts in one file.
+    private func flushDiagnostics(itemID: UUID, reason: SaveFailureReason?) {
+        guard let recorder else { return }
+        let lines = recorder.drainLines()
+        guard !lines.isEmpty else { return }
+        let attempt = SaveFailureStore.shared.record(for: itemID)?.failureCount ?? 1
+        let separator = "— attempt \(attempt) via shareSheet, "
+            + (reason.map { String(describing: $0) } ?? "unknown") + " —"
+        SaveDiagnosticsStore.shared.appendLines([separator] + lines, for: itemID)
+    }
+
+    /// Drops the buffer and any file an earlier attempt left, for every outcome
+    /// that isn't a failure.
+    private func discardDiagnostics(url: URL) {
+        _ = recorder?.drainLines()
+        let itemID = store.item(forURLString: url.absoluteString)?.id ?? recorder?.itemID
+        guard let itemID else { return }
+        SaveDiagnosticsStore.shared.delete(for: itemID)
     }
 
     // MARK: - Per-kind presenter lookup

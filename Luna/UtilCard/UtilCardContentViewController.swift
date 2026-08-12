@@ -222,6 +222,15 @@ final class UtilCardContentViewController: CardContentViewController {
             if !animatesIntro {
                 headline.showFinishedState()
                 didSettleHeadline = true
+                // A reload (e.g. from a save elsewhere in the deck) rebuilds this
+                // controller from scratch, so `introHeadlineHasYieldedToWeekly`
+                // starts back at its default. A live weekly pick already claims
+                // the seat regardless of onboarding, so settle straight into the
+                // yielded state rather than letting the headline reappear above it.
+                if !weeklyHost.isEmpty {
+                    headline.isHidden = true
+                    introHeadlineHasYieldedToWeekly = true
+                }
             }
         }
         view.addSubview(weeklyHost)
@@ -1110,9 +1119,11 @@ final class UtilURLRow: UIControl {
     ) {
         if let weeklyTint { applyWeeklyTint(weeklyTint) }
         previewKind = preview.kind
-        thumbnail.image = preview.image ?? UIImage(
+        let artwork = preview.image
+        thumbnail.image = artwork ?? UIImage(
             systemName: preview.kind == .media ? "play.rectangle.fill"
                 : preview.kind == .product ? "bag.fill" : "safari.fill")
+        applyThumbnailPresentation(for: artwork)
         titleLabel.text = preview.title
         let host = URL(string: preview.urlString)?.host ?? preview.subtitle ?? preview.urlString
         subtitleLabel.text = host
@@ -1123,6 +1134,26 @@ final class UtilURLRow: UIControl {
         accessibilityLabel = [weeklyRibbon?.text, titleLabel.text, subtitleLabel.text]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    /// A photograph fills the square; a site's own mark is FITTED into it.
+    ///
+    /// Both arrive here as "the preview's image", but a wordmark logo (the
+    /// widest thing `FaviconFetcher` can hand back — 700×197 is a real one) put
+    /// through `.scaleAspectFill` shows three cropped letters. A fitted mark
+    /// needs the subtle fill behind it that `CarouselSourceBadgeView` gives
+    /// transparent favicons, since plenty of them are dark artwork on nothing at
+    /// all and the row is near-black.
+    private func applyThumbnailPresentation(for artwork: UIImage?) {
+        guard let artwork, artwork.size.width > 0, artwork.size.height > 0 else {
+            thumbnail.contentMode = .scaleAspectFill
+            thumbnail.backgroundColor = .clear
+            return
+        }
+        let ratio = artwork.size.width / artwork.size.height
+        let isMark = ratio > 1.3 || ratio < 1 / 1.3
+        thumbnail.contentMode = isMark ? .scaleAspectFit : .scaleAspectFill
+        thumbnail.backgroundColor = isMark ? LunaColors.tertiaryFill : .clear
     }
 
     private func applyWeeklyTint(_ tint: UIColor) {
@@ -1255,6 +1286,7 @@ extension UtilURLRow: UtilCardSaveTransitionArtworkProviding {
         thumbnailCopy.frame = thumbnail.convert(thumbnail.bounds, to: coordinateView)
         thumbnailCopy.contentMode = thumbnail.contentMode
         thumbnailCopy.tintColor = thumbnail.tintColor
+        thumbnailCopy.backgroundColor = thumbnail.backgroundColor
         thumbnailCopy.clipsToBounds = true
         thumbnailCopy.layer.cornerRadius = thumbnail.layer.cornerRadius
         thumbnailCopy.layer.cornerCurve = .continuous

@@ -97,11 +97,33 @@ public struct ProductMetadataExtractor {
     ) async -> ProductMetadata? {
         // ONE parse of the static markup; ONE price source (host rule, else generic).
         if let metadata = metadata(url: url, html: html) {
+            SaveDiagnostics.record(
+                "product: static markup yielded \(metadata.price.amount) "
+                    + "\(metadata.price.currency)",
+                category: "price")
             return metadata
         }
         // Render tier — main-app only, and only if static found no price.
-        guard let render, let rendered = await render(url) else { return nil }
-        return metadata(url: url, html: rendered)
+        guard let render else {
+            SaveDiagnostics.record(
+                "product: no price in \(html.count)ch of static markup, no render tier here",
+                category: "price")
+            return nil
+        }
+        guard let rendered = await render(url) else {
+            SaveDiagnostics.record(
+                "product: no price in \(html.count)ch of static markup, render tier "
+                    + "returned nothing",
+                category: "price")
+            return nil
+        }
+        let renderedMetadata = metadata(url: url, html: rendered)
+        SaveDiagnostics.record(
+            "product: render tier returned \(rendered.count)ch → "
+                + (renderedMetadata.map { "\($0.price.amount) \($0.price.currency)" }
+                    ?? "still no price"),
+            category: "price")
+        return renderedMetadata
     }
 
     /// The pure (no-network) static path: parse once, resolve the price via the host

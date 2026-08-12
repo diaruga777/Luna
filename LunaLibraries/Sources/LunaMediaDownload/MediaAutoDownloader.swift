@@ -40,6 +40,14 @@ public enum MediaAutoDownloader {
             AutoDownloadSettings.markDownloaded(urlString)
             return true
         } catch {
+            if case MediaDownloadError.noMedia = error {
+                MediaSaveFailureRecording.recordNoMedia(
+                    sourceURLString: urlString, detail: "the post exposed no playable asset")
+            } else {
+                SaveDiagnostics.record(
+                    "media: auto-download failed — \(SaveDiagnostics.snippet("\(error)"))",
+                    category: "media")
+            }
             return false
         }
     }

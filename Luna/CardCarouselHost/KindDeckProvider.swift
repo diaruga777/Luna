@@ -365,6 +365,7 @@ final class KindDeckProvider: CardDeckProviding {
             // A failed save has no extracted text, no eBook and no audio, so the
             // richer ladder has nothing to offer: the link is the whole of it.
             return FailedSaveCardFactory.makeMenu(
+                for: item, host: host,
                 shareLink: { [weak self] in
                     guard let self else { return }
                     SendToFriendSheet.shareLink(

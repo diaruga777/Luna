@@ -112,15 +112,31 @@ public final class ReadingListIngestor {
 
         let url = initialURL
 
+        // Everything this save's legs observe goes into ONE buffered trace,
+        // correlated by the item's id and mirrored line-by-line into the general
+        // diagnostics stream. Bound as a task-local, so the fetcher, the bypass
+        // runner, the classifier and the resolvers record without threading an
+        // argument through six modules (`claudedocs/save-diagnostics.md`).
+        let recorder = SaveDiagnosticsRecorder(itemID: item.id) { message, category in
+            DiagnosticLog.shared.record(message, category: category)
+        }
+        recorder.record(
+            "ingest: begin \(SaveDiagnostics.url(url)) source=\(item.effectiveCaptureSource.rawValue)"
+                + (forceArticle ? " forceArticle" : "")
+                + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
+            category: "ingest")
+
         // The ONE shared pipeline resolves wrappers, classifies, and processes every
         // URL. Its result carries the exact final URL, so this store is repointed
         // without independently repeating the unwrap work.
-        let result = await IngestPipeline.processResolved(
-            IngestInput(url: url, source: item.effectiveCaptureSource,
-                        documentType: item.sanitizedDocumentType,
-                        prefetchedHTML: prefetchedHTML, forceArticle: forceArticle,
-                        trustsPrefetchedHTML: trustsPrefetchedHTML),
-            fetcher: fetcher)
+        let result = await SaveDiagnostics.$recorder.withValue(recorder) {
+            await IngestPipeline.processResolved(
+                IngestInput(url: url, source: item.effectiveCaptureSource,
+                            documentType: item.sanitizedDocumentType,
+                            prefetchedHTML: prefetchedHTML, forceArticle: forceArticle,
+                            trustsPrefetchedHTML: trustsPrefetchedHTML),
+                fetcher: fetcher)
+        }
 
         // A normal App Intent may cancel this work when its 20 s fast-path
         // budget expires, then resume it under SaveIntent's extended runtime.
@@ -129,9 +145,16 @@ public final class ReadingListIngestor {
         // will apply exactly one result.
         guard !Task.isCancelled else { return .supported }
 
-        let decision = await applyResult(
-            result, for: item, forceArticle: forceArticle,
-            allowsInteractivePrompt: allowsInteractivePrompt)
+        // The persist tail stays inside the binding: the media leg only learns
+        // that a classified post has no downloadable asset while its handler
+        // runs, and that discovery belongs in the same trace.
+        let decision = await SaveDiagnostics.$recorder.withValue(recorder) {
+            await applyResult(
+                result, for: item, forceArticle: forceArticle,
+                allowsInteractivePrompt: allowsInteractivePrompt)
+        }
+        flushDiagnostics(recorder, outcome: result.outcome, decision: decision,
+                         source: item.effectiveCaptureSource)
 
         // URL-Rescue hook: a genuine `.failed` first pass is the one place a
         // rescue may help. `itemJustFailed` re-reads the item from the store and
@@ -226,6 +249,48 @@ public final class ReadingListIngestor {
             result, for: item, forceArticle: forceArticle, allowsInteractivePrompt: interactive)
         if case .unsupported = decision { return false }
         return true
+    }
+
+    /// Commits or discards a save's buffered trace, which is the whole point of
+    /// buffering it: a save that worked leaves nothing behind (and sheds any
+    /// trace an EARLIER failed attempt left, so a recovered item stops carrying
+    /// a stale story), while a save that failed writes its complete attempt to
+    /// the item's sidecar under an attempt separator.
+    ///
+    /// Retries append rather than replace — the launch sweep re-enters `ingest`
+    /// for every `.failed` item, so the file accumulates "attempt 1 …, attempt
+    /// 2 …" and the shared export shows whether the failure is stable.
+    ///
+    /// A surface-DROPPED save (another app's kind) is not a failure of this app
+    /// and its item no longer exists, so it discards like a success.
+    private func flushDiagnostics(
+        _ recorder: SaveDiagnosticsRecorder, outcome: Outcome,
+        decision: SurfaceSupport.Decision, source: CaptureSource
+    ) {
+        let reason: SaveFailureReason?
+        let failed: Bool
+        if case let .failed(outcomeReason) = outcome {
+            failed = true
+            reason = outcomeReason
+        } else {
+            // A classified-but-broken save (media with no downloadable asset)
+            // reports a success outcome and marks the recorder instead.
+            reason = recorder.terminalFailure
+            failed = reason != nil
+        }
+
+        guard failed, decision == .supported else {
+            _ = recorder.drainLines()
+            SaveDiagnosticsStore.shared.delete(for: recorder.itemID)
+            return
+        }
+
+        let lines = recorder.drainLines()
+        guard !lines.isEmpty else { return }
+        let attempt = SaveFailureStore.shared.record(for: recorder.itemID)?.failureCount ?? 1
+        let separator = "— attempt \(attempt) via \(source.rawValue), "
+            + (reason.map { String(describing: $0) } ?? "unknown") + " —"
+        SaveDiagnosticsStore.shared.appendLines([separator] + lines, for: recorder.itemID)
     }
 
     /// `.paste`/`.manual` are the only sources with a live UI able to show the
@@ -354,9 +419,15 @@ public final class ReadingListIngestor {
             // only the states that an automated pass can actually move forward.
             // The sweep has no UI: blocked non-exempt leftovers are discarded
             // silently, while email/friend-share items remain exempt.
-            for item in self.store.items() where item.state == .pending || item.state == .failed {
+            let items = self.store.items()
+            for item in items where item.state == .pending || item.state == .failed {
                 Task { await self.ingest(item, allowsInteractivePrompt: false) }
             }
+            // The sweep already holds the whole list, which is the one thing a
+            // trace-file prune needs: a `saveDiagnostics/<uuid>.log` whose item
+            // was deleted from another app (or wiped by a reinstall of a
+            // sibling) has nothing left to explain.
+            SaveDiagnosticsStore.shared.prune(keeping: Set(items.map(\.id)))
             self.backfillMissingWebArchives()
             self.backfillMissingThumbnails()
             completion?()

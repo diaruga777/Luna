@@ -33,14 +33,19 @@ final class URLRescueCoordinatorTests: XCTestCase {
 
     /// A fake engine recording each perform call; returns a configurable result.
     private final class RecordingEngine {
-        var succeed: Bool
+        var result: URLRescueCoordinator.RescueRunResult
         var available: Bool
         private(set) var performedIDs: [UUID] = []
         private(set) var performedHints: [RescueHint?] = []
         private(set) var performedInteractive: [Bool] = []
         let expectation: XCTestExpectation?
-        init(succeed: Bool, available: Bool = true, expectation: XCTestExpectation? = nil) {
-            self.succeed = succeed; self.available = available; self.expectation = expectation
+        init(result: URLRescueCoordinator.RescueRunResult, available: Bool = true,
+             expectation: XCTestExpectation? = nil) {
+            self.result = result; self.available = available; self.expectation = expectation
+        }
+        convenience init(succeed: Bool, available: Bool = true, expectation: XCTestExpectation? = nil) {
+            self.init(result: succeed ? .advanced : .notRecovered,
+                      available: available, expectation: expectation)
         }
         func engine() -> URLRescueCoordinator.Engine {
             URLRescueCoordinator.Engine(
@@ -50,7 +55,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
                     self.performedHints.append(hint)
                     self.performedInteractive.append(interactive)
                     self.expectation?.fulfill()
-                    return self.succeed
+                    return self.result
                 })
         }
     }

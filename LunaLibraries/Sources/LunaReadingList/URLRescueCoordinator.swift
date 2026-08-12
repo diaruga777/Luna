@@ -23,18 +23,41 @@ import UIKit
 public final class URLRescueCoordinator {
     public static let shared = URLRescueCoordinator()
 
+    /// How one rescue attempt ended, as much as this module needs to know. The
+    /// bridge used to return a bare Bool, which conflated three different
+    /// not-recovered endings with one another: a real verdict on the page (spend
+    /// the user's one visible attempt), a model that never got to look (don't),
+    /// and a safety guardrail (never ask again).
+    public enum RescueRunResult: Equatable {
+        /// The item left `.failed` — content recovered, media downloading, or
+        /// handed to the interactive unlock tier.
+        case advanced
+        /// The model looked and could not recover it.
+        case notRecovered
+        /// The model never really answered — assets unavailable, another request
+        /// holding the session, no model at all, a quota wall. Must not spend the
+        /// per-version attempt.
+        case transient
+        /// A content-safety guardrail (or a flat refusal) rejected the prompt.
+        /// PERMANENT for this item: the prompt is derived from the page.
+        case guardrailed
+        /// The rescue DID recover content, but this app's surface doesn't show
+        /// that kind, so the save was dropped on the way in. Not the user's
+        /// attempt to lose.
+        case surfaceDropped
+    }
+
     /// The app-shell-installed bridge to the `LunaURLRescue` engine + persistence.
     /// nil ⇒ rescue is inert (extensions, tests, or the engine unavailable).
     public struct Engine {
         /// Cheap "is a model usable" gate; drives whether affordances appear.
         public var isAvailable: () -> Bool
         /// Runs a rescue for `item` with `hint`; `interactive` picks the budget.
-        /// Returns true when the item advanced (ready /
-        /// tracker / media). The closure itself records the ledger + persists.
-        public var perform: (ReadingListItem, RescueHint?, _ interactive: Bool) async -> Bool
+        /// The closure itself applies the outcome and persists.
+        public var perform: (ReadingListItem, RescueHint?, _ interactive: Bool) async -> RescueRunResult
 
         public init(isAvailable: @escaping () -> Bool,
-                    perform: @escaping (ReadingListItem, RescueHint?, _ interactive: Bool) async -> Bool) {
+                    perform: @escaping (ReadingListItem, RescueHint?, _ interactive: Bool) async -> RescueRunResult) {
             self.isAvailable = isAvailable
             self.perform = perform
         }
@@ -46,6 +69,7 @@ public final class URLRescueCoordinator {
     private let ledger: RescueLedgerStore
     private let pending: PendingRescueRequestStore
     private let failures: SaveFailureStore
+    private let stats: RescueStatsStore
     private let debounceInterval: TimeInterval
     private let now: () -> Date
     private let workQueue = DispatchQueue(label: "com.hsanabria.luna.urlRescueCoordinator", qos: .utility)
@@ -73,6 +97,7 @@ public final class URLRescueCoordinator {
         ledger: RescueLedgerStore = .shared,
         pending: PendingRescueRequestStore = .shared,
         failures: SaveFailureStore = .shared,
+        stats: RescueStatsStore = .shared,
         debounceInterval: TimeInterval = 1.5,
         now: @escaping () -> Date = Date.init
     ) {
@@ -80,6 +105,7 @@ public final class URLRescueCoordinator {
         self.ledger = ledger
         self.pending = pending
         self.failures = failures
+        self.stats = stats
         self.debounceInterval = debounceInterval
         self.now = now
     }
@@ -157,6 +183,11 @@ public final class URLRescueCoordinator {
     /// app version, so a card that comes back still failed goes terminal.
     public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
         guard let engine = Self.engine, engine.isAvailable() else { return }
+        // A guardrailed item is permanently out of reach; the tap must not spend
+        // 90 seconds re-proving it. The card doesn't offer the button either
+        // (`FailedSaveCardFactory.rescueState`), so this is belt-and-braces for
+        // the other entry points (the deep-link drain, a stale row menu).
+        guard !ledger.isGuardrailed(itemID) else { return }
         Task { [weak self] in
             await self?.runRescue(
                 itemID: itemID, hint: hint, interactive: true,
@@ -181,9 +212,10 @@ public final class URLRescueCoordinator {
     @discardableResult
     public func rescueAndWait(itemID: UUID, hint: RescueHint? = nil) async -> Bool {
         guard let engine = Self.engine, engine.isAvailable() else { return false }
+        guard !ledger.isGuardrailed(itemID) else { return false }
         return await runRescue(
             itemID: itemID, hint: hint, interactive: true,
-            countsAgainstBudget: false, spendsVersionAttempt: true)
+            countsAgainstBudget: false, spendsVersionAttempt: true) == .advanced
     }
 
     /// Whether `itemID` is being rescued right now (for the "trying harder…" row).
@@ -287,6 +319,15 @@ public final class URLRescueCoordinator {
         }
         // Opportunistic cleanup of ledger rows for items no longer present.
         ledger.prune(keeping: Set(store.items().map(\.id)))
+
+        // One aggregate line per sweep that actually did something. Rescue had no
+        // measurement of any kind before this: the per-item ledger is pruned the
+        // moment an item disappears, so "it never accomplishes anything" was
+        // neither confirmable nor refutable from a shared log.
+        if launched > 0 {
+            SharedDiagnosticLog.record(
+                "sweep launched=\(launched) \(stats.summaryLine())", category: "rescue")
+        }
     }
 
     // MARK: - Run
@@ -297,14 +338,14 @@ public final class URLRescueCoordinator {
     private func runRescue(
         itemID: UUID, hint: RescueHint?, interactive: Bool,
         countsAgainstBudget: Bool, spendsVersionAttempt: Bool = false
-    ) async -> Bool {
-        guard let engine = Self.engine else { return false }
+    ) async -> RescueRunResult {
+        guard let engine = Self.engine else { return .notRecovered }
         // Re-read: the item may have advanced or been deleted since we scheduled.
         // Rescue anything not-yet-ready — the "only .failed" gating for AUTOMATIC
         // rescue is enforced at the call sites (itemJustFailed / the sweep); a
         // manual or drained request may target a still-.pending item.
-        guard let item = store.item(withID: itemID), item.state != .ready else { return false }
-        guard beginInFlight(itemID) else { return false }
+        guard let item = store.item(withID: itemID), item.state != .ready else { return .notRecovered }
+        guard beginInFlight(itemID) else { return .notRecovered }
         defer {
             endInFlight(itemID)
             postReadingListChanged()
@@ -313,16 +354,29 @@ public final class URLRescueCoordinator {
         if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
         postReadingListChanged() // flip row to "trying harder…"
 
-        let succeeded = await engine.perform(item, hint, interactive)
-        if succeeded {
+        let result = await engine.perform(item, hint, interactive)
+        switch result {
+        case .advanced:
             ledger.recordSuccess(itemID, hint: hint)
-        } else if spendsVersionAttempt {
-            // The user asked for AI and AI didn't recover it. Record WHICH version
-            // spent the attempt, so the card can say so plainly now and offer
-            // itself again after the next update.
-            failures.recordAIAttempt(itemID)
+        case .guardrailed:
+            // Permanent, and the ledger is what makes it permanent: no sweep and
+            // no tap will reach this item again, so nothing is gained by also
+            // marking the version attempt spent.
+            ledger.recordGuardrail(itemID)
+        case .notRecovered:
+            if spendsVersionAttempt {
+                // The user asked for AI and AI didn't recover it. Record WHICH
+                // version spent the attempt, so the card can say so plainly now
+                // and offer itself again after the next update.
+                failures.recordAIAttempt(itemID)
+            }
+        case .transient, .surfaceDropped:
+            // The model never saw the page, or it DID recover the content and
+            // this app's surface dropped it. Neither is a verdict the user's one
+            // visible attempt should pay for.
+            break
         }
-        return succeeded
+        return result
     }
 
     /// `.readingListChanged` is a UI-refresh notification, and its list/deck

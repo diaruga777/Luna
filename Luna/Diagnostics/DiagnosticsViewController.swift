@@ -23,6 +23,10 @@ final class DiagnosticsViewController: UIViewController {
     /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
     private let eraseButton = UIButton(type: .system)
+    /// The one place URL rescue is measurable. Internal so a test can read the
+    /// rendered line without screenshotting a live log.
+    let rescueStatsLabel = UILabel()
+    private let rescueStats: RescueStatsStore
     /// Where the curator pastes the Save of the Week signing key. Hidden behind
     /// the same five taps as the log itself: it is not a user-facing feature.
     private let weeklyKeyButton = UIButton(type: .system)
@@ -30,8 +34,10 @@ final class DiagnosticsViewController: UIViewController {
     /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
     private let popGestureClaim = InteractivePopGestureClaim()
 
-    init(log: DiagnosticLogging = DiagnosticLog.shared) {
+    init(log: DiagnosticLogging = DiagnosticLog.shared,
+         rescueStats: RescueStatsStore = .shared) {
         self.log = log
+        self.rescueStats = rescueStats
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -66,6 +72,13 @@ final class DiagnosticsViewController: UIViewController {
         ])
         let headerBottom = header.mount(in: self)
 
+        rescueStatsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
+        rescueStatsLabel.textColor = LunaColors.secondaryText
+        rescueStatsLabel.numberOfLines = 0
+        rescueStatsLabel.accessibilityIdentifier = "diagnostics.rescueStats"
+        rescueStatsLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(rescueStatsLabel)
+
         var eraseConfiguration = UIButton.Configuration.plain()
         eraseConfiguration.title = L10n.string("Settings_diagnostics_eraseAllDataButton")
         eraseConfiguration.baseForegroundColor = .systemRed
@@ -87,7 +100,10 @@ final class DiagnosticsViewController: UIViewController {
         view.addSubview(bottomButtons)
 
         NSLayoutConstraint.activate([
-            textView.topAnchor.constraint(equalTo: headerBottom),
+            rescueStatsLabel.topAnchor.constraint(equalTo: headerBottom, constant: 4),
+            rescueStatsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            rescueStatsLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            textView.topAnchor.constraint(equalTo: rescueStatsLabel.bottomAnchor, constant: 4),
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             textView.bottomAnchor.constraint(
@@ -206,7 +222,28 @@ final class DiagnosticsViewController: UIViewController {
         popGestureClaim.release()
     }
 
+    /// "Rescue: 12 tried · 3 recovered (reroute 2, search 1) · 1 blocked".
+    /// Rendered from the aggregate counters sidecar — the only measurement URL
+    /// rescue has, and the answer to "has this ever accomplished anything".
+    /// Internal so a test can assert the numbers reach the screen.
+    func rescueStatsText() -> String {
+        let stats = rescueStats.snapshot()
+        guard stats.attempts > 0 else {
+            return L10n.string("Settings_diagnostics_rescueStatsNone")
+        }
+        let recovered = stats.outcome(.rescued)
+        let methods = stats.methodSummary
+        let detail = methods.isEmpty
+            ? L10n.string("Settings_diagnostics_rescueStatsRecovered", recovered)
+            : L10n.string("Settings_diagnostics_rescueStatsRecoveredBy", recovered, methods)
+        return L10n.string(
+            "Settings_diagnostics_rescueStatsLine",
+            stats.attempts, detail,
+            stats.outcome(.browserHandoff), stats.outcome(.guardrailed))
+    }
+
     private func reload() {
+        rescueStatsLabel.text = rescueStatsText()
         let text = log.contents()
         textView.text = text.isEmpty ? L10n.string("Settings_diagnostics_emptyLogPlaceholder") : text
         // Show the most recent lines.

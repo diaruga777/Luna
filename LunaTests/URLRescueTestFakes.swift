@@ -110,6 +110,40 @@ final class RecordingPipeline {
     }
 }
 
+/// A per-save diagnostic trace held in memory. `contents` returns nil until
+/// something is put there — which is the state a real install is in for every
+/// failure recorded before the trace file existed, so BOTH cases have to be
+/// exercised against the same fake.
+final class FakeRescueTraceStore: RescueTraceStoring {
+    private var traces: [UUID: String]
+    private(set) var appended: [(itemID: UUID, line: String)] = []
+
+    init(traces: [UUID: String] = [:]) { self.traces = traces }
+
+    func contents(for itemID: UUID) -> String? { traces[itemID] }
+
+    func appendLine(_ line: String, for itemID: UUID) {
+        appended.append((itemID, line))
+        traces[itemID, default: ""] += line + "\n"
+    }
+
+    /// Every line this store was handed for `itemID`, joined.
+    func appendedText(for itemID: UUID) -> String {
+        appended.filter { $0.itemID == itemID }.map(\.line).joined(separator: "\n")
+    }
+}
+
+/// A search provider returning canned results and recording each query.
+final class FakeRescueSearch {
+    var results: [RescueSearchResult]
+    private(set) var queries: [String] = []
+    init(results: [RescueSearchResult] = []) { self.results = results }
+    func run(_ query: String) async -> [RescueSearchResult] {
+        queries.append(query)
+        return results
+    }
+}
+
 /// A media resolver returning canned assets.
 final class FakeMediaResolver: SocialMediaResolving {
     var assets: [MediaAsset]

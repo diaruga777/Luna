@@ -78,29 +78,82 @@ enum URLRescueWiring {
 
     private static func perform(
         engine: URLRescueEngine, item: ReadingListItem, hint: RescueHint?, interactive: Bool
-    ) async -> Bool {
-        guard let url = item.url else { return false }
+    ) async -> URLRescueCoordinator.RescueRunResult {
+        guard let url = item.url else { return .notRecovered }
+        let record = SaveFailureStore.shared.record(for: item.id)
         // No hint means the MODEL classifies the page — the failed-save
         // card sends nil, and so does every automatic path. Only a surface that
         // genuinely knows the kind (the price editor, the media card) passes one.
+        //
+        // The rest of what travels here is EVIDENCE, not instruction: the item id
+        // (the key into the per-save diagnostic trace), the recorded failure
+        // reason, the best title Luna recovered, and whether the browser handoff
+        // has already been offered.
         let request = RescueRequest(
             url: url, source: item.effectiveCaptureSource,
             failureKind: failureKind(for: item, hint: hint),
-            hint: hint)
+            hint: hint,
+            itemID: item.id,
+            failureReason: record?.reason,
+            pageTitle: record?.resolvedTitle ?? item.title,
+            browserHandoffTried: RescueLedgerStore.shared.hasHandedToBrowser(item.id))
         let outcome = await engine.rescue(request) { stage in
             URLRescueCoordinator.shared.reportProgress(item.id, stage: stage)
         }
         switch outcome {
         case .rescued(let result, _):
-            return await ReadingListIngestor.shared.applyRescued(result, forItemID: item.id, interactive: interactive)
+            let applied = await ReadingListIngestor.shared.applyRescued(
+                result, forItemID: item.id, interactive: interactive)
+            if applied { return .advanced }
+            // The model DID recover the content and this app's surface dropped it
+            // on the way in (a Reader rescuing a product page, say). That is not
+            // the user's one attempt to lose, and it reads as an outright failure
+            // in the log unless it is named.
+            DiagnosticLog.shared.record(
+                "apply outcome=surface-dropped host=\(url.host ?? "?")", category: "rescue")
+            return .surfaceDropped
         case .rescuedMedia(let assets, _):
             // Download the engine-resolved assets without re-running platform
             // resolution (the source page already failed to resolve normally).
             // Media-kind apps install the starter; elsewhere the save stays failed.
-            guard let mediaRescueStarter else { return false }
+            guard let mediaRescueStarter else { return .surfaceDropped }
             return await mediaRescueStarter(url.absoluteString, item.title, assets)
-        case .unrescuable, .unavailable, .quotaExhausted, .failed:
-            return false
+                ? .advanced : .notRecovered
+        case .needsBrowser:
+            // Not a recovery, but not a dead end either: the item moves to the
+            // interactive archive-unlock tier, which is a card the user can act
+            // on. `markNeedsCaptcha` clears the failure sidecar itself.
+            //
+            // Only in an app that HAS that tier. `.needsCaptcha` is rendered by
+            // the article deck, which the Downloader and the Price Tracker don't
+            // compile — parking an item there would hide it in a state their
+            // decks have no card for. `LinkImportRunner.articleUnlocker` is the
+            // existing seam for exactly this question (the two article-handling
+            // KindWirings install it), so the gate is the one already in use
+            // rather than a second one that could disagree with it.
+            guard LinkImportRunner.articleUnlocker != nil else {
+                DiagnosticLog.shared.record(
+                    "browser handoff declined (no unlock tier) host=\(url.host ?? "?")",
+                    category: "rescue")
+                return .notRecovered
+            }
+            RescueLedgerStore.shared.recordBrowserHandoff(item.id)
+            ReadingListStore.shared.markNeedsCaptcha(
+                item.id, title: record?.resolvedTitle ?? item.title)
+            SaveDiagnosticsStore.shared.delete(for: item.id)
+            return .advanced
+        case .failed(.guardrailViolation):
+            return .guardrailed
+        case .unavailable, .quotaExhausted:
+            return .transient
+        case .failed(let error):
+            if case .transientModel = error { return .transient }
+            if case .rateLimited = error { return .transient }
+            if case .networkFailure = error { return .transient }
+            if case .serviceUnavailable = error { return .transient }
+            return .notRecovered
+        case .unrescuable:
+            return .notRecovered
         }
     }
 

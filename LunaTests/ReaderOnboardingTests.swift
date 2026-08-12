@@ -1496,8 +1496,8 @@ final class ReaderOnboardingTests: XCTestCase {
     /// reserved for it from the start.
     func testASecondHeadlineLineArrivesWithoutDisturbingTheFirst() throws {
         let copy = OnboardingStrings.introCopy(for: .downloader)
-        XCTAssertEqual(copy.initialText, "Watch and download.")
-        XCTAssertEqual(copy.finalText, "Watch and download.\nWithout signing in.")
+        XCTAssertEqual(copy.initialText, "Download any video.")
+        XCTAssertEqual(copy.finalText, "Download any video.\nNo sign in required.")
 
         let headline = OnboardingIntroHeadlineView(copy: copy)
         XCTAssertEqual(headline.lines.count, 2)
@@ -1530,7 +1530,7 @@ final class ReaderOnboardingTests: XCTestCase {
         wait(for: [firstBeat], timeout: 5)
         XCTAssertTrue(firstLine.isFullyRevealed)
         XCTAssertFalse(secondLine.isFullyRevealed)
-        XCTAssertEqual(headline.accessibilityLabel, "Watch and download.")
+        XCTAssertEqual(headline.accessibilityLabel, "Download any video.")
 
         let firstFrame = firstLine.frame
         let secondBeat = expectation(description: "the second line arrives")

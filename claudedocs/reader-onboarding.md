@@ -207,7 +207,7 @@ second beat animates the difference between them.
 |---|---|---|---|
 | Reader | “Read.” | “Read more.” | `Read` |
 | Luna | “All your Luna apps.” | “One Luna app.” | ` Luna app` |
-| Downloader | “Watch and download.” | “Watch and download.<br>Without signing in.” | the whole first line |
+| Downloader | “Download any video.” | “Download any video.<br>No sign in required.” | the whole first line |
 | Price Tracker | “Get the best price.” | “Get the best price. Always.” | `Get the best price.` |
 
 **A headline may be more than one LINE**, written with `\n` in the strings file

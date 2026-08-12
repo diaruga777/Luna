@@ -267,19 +267,19 @@
 "Onboarding_Intro_headline1Initial_Luna" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
-"Onboarding_Intro_headline1Initial_Downloader" = "Watch and download.";
+"Onboarding_Intro_headline1Initial_Downloader" = "Download any video.";
 "Onboarding_Intro_headline1Initial_PriceTracker" = "Get the best price.";
 "Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Core" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
-"Onboarding_Intro_headline2Final_Downloader" = "Watch and download.\nWithout signing in.";
+"Onboarding_Intro_headline2Final_Downloader" = "Download any video.\nNo sign in required.";
 "Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price. Always.";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
 "Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
-"Onboarding_Intro_safariAction_Reader" = "Stop pop-ups and content walls in Safari";
+"Onboarding_Intro_safariAction_Reader" = "Unlock reading in Safari";
 "Onboarding_Intro_safariAction_Downloader" = "Download and watch in Safari";
-"Onboarding_Intro_safariAction_PriceTracker" = "Scan for better deals in Safari";
+"Onboarding_Intro_safariAction_PriceTracker" = "Show best prices right in Safari";
 "Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
 "Onboarding_Intro_saveBenefit_Core" = "Save anything";
 "Onboarding_Intro_saveBenefit_Reader" = "Read offline later";
@@ -287,7 +287,7 @@
 "Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
 "Onboarding_Intro_shortcutAction_Luna" = "Save in one click";
 "Onboarding_Intro_shortcutAction_Reader" = "Unlock & save in one click";
-"Onboarding_Intro_shortcutAction_Downloader" = "Save videos in one click";
+"Onboarding_Intro_shortcutAction_Downloader" = "Download videos in 1 click";
 "Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in one click";
 "Onboarding_Intro_unableToLoadPage_Luna" = "Unable to load website";
 
@@ -406,7 +406,11 @@
 "Onboarding_Messages_settingsSetup_Luna" = "Just set your action button to it in";
 "Onboarding_Messages_shortcutPillAccessibilityLabel_Luna" = "Install the Luna shortcut";
 "Onboarding_Messages_shortcutPillTitle_Luna" = "Install Luna Shortcut";
-"Onboarding_Messages_shortcutSetup_Luna" = "This saves on-screen links";
+"Onboarding_Messages_shortcutSetup_Luna" = "You can use this to save any links on your screen";
+"Onboarding_Messages_shortcutSetup_Core" = "You can use this to save any links on your screen";
+"Onboarding_Messages_shortcutSetup_Reader" = "You can use this to save any article links on your screen";
+"Onboarding_Messages_shortcutSetup_Downloader" = "You can use this to save any video links on your screen";
+"Onboarding_Messages_shortcutSetup_PriceTracker" = "You can use this to save any shopping links on your screen";
 "Onboarding_Messages_skipPillAccessibilityLabel_Luna" = "Skip setup";
 "Onboarding_Messages_skipPillTitle_Luna" = "skip setup";
 "Onboarding_Messages_skipSetup_Luna" = "Or";

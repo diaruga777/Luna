@@ -389,86 +389,72 @@ final class OnboardingSafariSetupActionButton: UIButton {
 /// `arrow.up.forward.square`: a thick rounded box with an opening in its
 /// top-right corner and an arrow that escapes through it. The arrowhead uses
 /// the reference mark's square corner — a horizontal arm to the left and a
-/// vertical arm below the tip — rather than a diagonal chevron. Rendered as a
-/// TEMPLATE image, like every other monochrome control glyph, so the
-/// button's own white tint colours it rather than a fixed colour being baked
-/// into the image.
+/// vertical arm below the tip — rather than a diagonal chevron. The geometry
+/// is TRACED from the supplied reference artwork (`open_app_icon.svg`, a
+/// 200-unit canvas): every coordinate in `image(side:scale:)` is that mark's
+/// centerline geometry, scaled uniformly. Rendered as a TEMPLATE image, like
+/// every other monochrome control glyph, so the button's own white tint
+/// colours it rather than a fixed colour being baked into the image.
 enum OnboardingExternalLinkGlyph {
     static func image(side: CGFloat, scale: CGFloat = 3) -> UIImage {
-        // Match the supplied mark's heavy, rounded stroke at the existing
-        // 16pt button size.
-        let strokeWidth: CGFloat = max(side * 0.11, 1.3)
+        // The reference mark's stroke is 16 units on its 200-unit canvas.
+        let unit = side / 200
+        let strokeWidth: CGFloat = max(16 * unit, 1)
+        let point = { (x: CGFloat, y: CGFloat) in
+            CGPoint(x: x * unit, y: y * unit)
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = false
         let image = UIGraphicsImageRenderer(
             size: CGSize(width: side, height: side), format: format
-        ).image { context in
-            let cg = context.cgContext
-            cg.setLineWidth(strokeWidth)
-            cg.setLineCap(.round)
-            cg.setLineJoin(.round)
+        ).image { _ in
             UIColor.black.setStroke()
 
-            // The box sits toward the bottom-left, leaving the top-right free
-            // for the arrow to poke into — and, at that same corner, open.
-            let boxSide = side - strokeWidth - side * 0.10
-            let boxRect = CGRect(
-                x: strokeWidth / 2,
-                y: side - boxSide - strokeWidth / 2,
-                width: boxSide, height: boxSide)
-            let cornerRadius = boxSide * 0.26
-            // How far short of the top-right corner the top edge and right
-            // edge each stop — the width of the opening.
-            let gap = boxSide * 0.28
-
+            // The box fills the canvas, its top-right quadrant open for the
+            // arrow: the top edge stops at x=82 and the right edge resumes
+            // at y=118. Both loose ends are square-cut in the reference,
+            // so this path keeps the default butt cap.
+            let cornerRadius = 12 * unit
             let box = UIBezierPath()
-            box.move(to: CGPoint(x: boxRect.maxX, y: boxRect.minY + gap))
-            box.addLine(to: CGPoint(x: boxRect.maxX, y: boxRect.maxY - cornerRadius))
+            box.move(to: point(192, 118))
+            box.addLine(to: point(192, 180))
             box.addArc(
-                withCenter: CGPoint(
-                    x: boxRect.maxX - cornerRadius, y: boxRect.maxY - cornerRadius),
+                withCenter: point(180, 180),
                 radius: cornerRadius, startAngle: 0, endAngle: .pi / 2,
                 clockwise: true)
-            box.addLine(to: CGPoint(x: boxRect.minX + cornerRadius, y: boxRect.maxY))
+            box.addLine(to: point(20, 192))
             box.addArc(
-                withCenter: CGPoint(
-                    x: boxRect.minX + cornerRadius, y: boxRect.maxY - cornerRadius),
+                withCenter: point(20, 180),
                 radius: cornerRadius, startAngle: .pi / 2, endAngle: .pi,
                 clockwise: true)
-            box.addLine(to: CGPoint(x: boxRect.minX, y: boxRect.minY + cornerRadius))
+            box.addLine(to: point(8, 20))
             box.addArc(
-                withCenter: CGPoint(
-                    x: boxRect.minX + cornerRadius, y: boxRect.minY + cornerRadius),
+                withCenter: point(20, 20),
                 radius: cornerRadius, startAngle: .pi, endAngle: .pi * 1.5,
                 clockwise: true)
-            box.addLine(to: CGPoint(x: boxRect.maxX - gap, y: boxRect.minY))
+            box.addLine(to: point(82, 8))
             box.lineWidth = strokeWidth
             box.stroke()
 
-            // The shaft starts inside the box and ends at the open corner,
-            // with the arrowhead escaping beyond the box on two orthogonal
-            // arms, as in the supplied reference.
-            let shaftStart = CGPoint(
-                x: boxRect.minX + boxSide * 0.25,
-                y: boxRect.maxY - boxSide * 0.22)
-            let tip = CGPoint(
-                x: side - strokeWidth / 2,
-                y: boxRect.minY)
+            // The shaft starts at the box's centre and runs at 45° to the
+            // canvas's top-right corner, through the opening.
+            let tip = point(192, 8)
             let shaft = UIBezierPath()
-            shaft.move(to: shaftStart)
+            shaft.move(to: point(103, 97))
             shaft.addLine(to: tip)
             shaft.lineWidth = strokeWidth
+            shaft.lineCapStyle = .round
             shaft.stroke()
 
-            let headLength = boxSide * 0.36
-            let leftWing = CGPoint(x: tip.x - headLength, y: tip.y)
-            let lowerWing = CGPoint(x: tip.x, y: tip.y + headLength)
+            // The arrowhead's two arms trail 72 units behind the tip — one
+            // to the left along the top, one downward along the right.
             let head = UIBezierPath()
-            head.move(to: leftWing)
+            head.move(to: point(120, 8))
             head.addLine(to: tip)
-            head.addLine(to: lowerWing)
+            head.addLine(to: point(192, 80))
             head.lineWidth = strokeWidth
+            head.lineCapStyle = .round
             head.lineJoinStyle = .round
             head.stroke()
         }

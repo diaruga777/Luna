@@ -310,11 +310,21 @@ final class RecentURLMatcher {
         }
     }
 
+    /// The site's icon, resolved the way every OTHER surface in Luna resolves
+    /// it — `FaviconFetcher`, which is what `SiteIconCache` puts behind a saved
+    /// card's source badge.
+    ///
+    /// This used to GET `<scheme>://<host>/favicon.ico` and nothing else, which
+    /// is the one candidate a site is least likely to have: a WordPress install
+    /// with no site icon set REDIRECTS that path to WordPress's own blue "W",
+    /// so the row wore a stranger's logo (and any site declaring its icon only
+    /// through `<link rel="icon">` got no artwork at all). The fetcher tries the
+    /// well-known apple-touch icon, then the icons the homepage declares, and
+    /// only then `/favicon.ico` — so a row now shows the same mark the card
+    /// shows once the link is saved.
     private static func faviconData(for url: URL) async -> Data? {
-        guard let host = url.host,
-              let favicon = URL(string: "\(url.scheme ?? "https")://\(host)/favicon.ico")
-        else { return nil }
-        return await imageData(at: favicon)
+        guard let data = await FaviconFetcher().fetchIconData(forPageURL: url) else { return nil }
+        return compressedData(UIImage(data: data))
     }
 
     private static func imageData(at url: URL?) async -> Data? {
@@ -329,15 +339,31 @@ final class RecentURLMatcher {
         return compressedData(image)
     }
 
-    private static func compressedData(_ image: UIImage?) -> Data? {
+    /// Downscales for the row's 52pt thumbnail and encodes.
+    ///
+    /// JPEG for photographs, PNG for anything with an alpha channel: a site
+    /// icon is routinely a dark mark on transparency, and JPEG has no alpha to
+    /// keep — flattened, it composites onto black and disappears into the row it
+    /// is drawn on. Exposed for `RecentURLMatcherTests`, which pins exactly that.
+    static func compressedData(_ image: UIImage?) -> Data? {
         guard let image else { return nil }
         let longest: CGFloat = 220
         let scale = min(1, longest / max(image.size.width, image.size.height, 1))
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let resized = renderer.image { _ in
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = !hasAlpha(image)
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: size))
         }
-        return resized.jpegData(compressionQuality: 0.72)
+        return format.opaque ? resized.jpegData(compressionQuality: 0.72) : resized.pngData()
+    }
+
+    /// Whether the image's own pixel format carries transparency.
+    private static func hasAlpha(_ image: UIImage) -> Bool {
+        guard let alpha = image.cgImage?.alphaInfo else { return false }
+        switch alpha {
+        case .none, .noneSkipFirst, .noneSkipLast: return false
+        default: return true
+        }
     }
 }

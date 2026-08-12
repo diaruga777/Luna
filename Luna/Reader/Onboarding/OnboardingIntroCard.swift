@@ -367,7 +367,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         switch state {
         case .completed:
             button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
-            button.configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(0.42)
+            button.configuration?.baseForegroundColor = UIColor.systemGreen.withAlphaComponent(0.42)
             button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
             button.accessibilityValue = OnboardingStrings.Intro.completed.value()
         case .pending, .skipped:

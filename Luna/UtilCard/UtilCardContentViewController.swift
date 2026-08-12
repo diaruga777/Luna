@@ -812,7 +812,7 @@ final class UtilCardContentViewController: CardContentViewController {
             }
         }
         button.configuration?.baseForegroundColor = finished
-            ? UIColor.white.withAlphaComponent(0.42)
+            ? UIColor.systemGreen.withAlphaComponent(0.42)
             : LunaColors.primaryText
         button.configuration?.baseBackgroundColor = finished
             ? UIColor.white.withAlphaComponent(0.08)

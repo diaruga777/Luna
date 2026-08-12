@@ -27,12 +27,19 @@ struct RescuePlanDraft {
     load the page in a browser and run JavaScript that returns its content. \
     "product": the product name, price, and currency read verbatim from the \
     digest. "article": you will be asked for the full text next. "media_url": a \
-    direct media-file URL found in the digest. "give_up": nothing here can work.
-    """, .anyOf(["article", "product", "reroute", "webjs", "media_url", "give_up"]))
+    direct media-file URL found in the digest. "search": give a web search query \
+    and pick from the real results. "inspect_url": have one more URL digested \
+    before deciding. "open_in_browser": only a real browser session can get in. \
+    "give_up": nothing here can work.
+    """, .anyOf(["article", "product", "reroute", "webjs", "media_url", "search",
+                 "inspect_url", "open_in_browser", "give_up"]))
     let kind: String
 
-    @Guide(description: "For reroute/webjs: an https URL on the SAME site (or its amp/mobile/print/canonical variant) to load instead. Omit otherwise.")
+    @Guide(description: "For reroute/webjs: an https URL on the SAME site (or its amp/mobile/print/canonical variant) to load instead. For inspect_url: the https URL you want digested. Omit otherwise.")
     let rerouteURLString: String?
+
+    @Guide(description: "For search: the web search query that would find this exact content, e.g. its headline plus the site name. Omit otherwise.")
+    let searchQuery: String?
 
     @Guide(description: "Browser identity for the re-fetch, only if a specific one is needed.",
            .anyOf(["iphone_safari", "desktop_safari", "googlebot", "facebook_crawler"]))
@@ -76,6 +83,7 @@ extension RescuePlanDraft {
         RescuePlanResponse(
             kind: kind,
             rerouteURLString: rerouteURLString,
+            searchQuery: searchQuery,
             userAgentToken: userAgentToken,
             refererString: refererString,
             acceptLanguage: acceptLanguage,

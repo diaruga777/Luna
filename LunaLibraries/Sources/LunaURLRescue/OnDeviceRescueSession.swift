@@ -68,13 +68,39 @@ public final class OnDeviceRescueSession: RescueModelSession {
         return newSession
     }
 
+    /// Every `GenerationError` case gets its own verdict — three of them used to,
+    /// and everything else became an anonymous `.other` that spent the item's
+    /// one attempt on a call the model never really answered.
+    ///
+    /// The three cases named directly are the ones the stable SDK has always
+    /// had. The rest are matched on the case NAME rather than by pattern, because
+    /// `GenerationError`'s case list has grown across OS releases and Luna
+    /// compiles against two SDKs (Xcode 27 beta for development, stable 26.2 for
+    /// the archive): naming a case the archiving SDK lacks would not fail a
+    /// rescue, it would fail the BUILD. `String(describing:)` of an enum value
+    /// is its case name, so this stays correct as cases are added and degrades to
+    /// `.other` for one nobody has taught it yet.
     static func normalize(_ error: LanguageModelSession.GenerationError) -> RescueModelError {
         switch error {
         case .guardrailViolation: return .guardrailViolation
         case .exceededContextWindowSize: return .exceededContextWindowSize
         case .rateLimited: return .rateLimited
-        default: return .other(error)
+        default: return classify(caseName: String(describing: error), fallback: error)
         }
+    }
+
+    /// Internal (not private) so a test can pin the name→verdict table without
+    /// constructing framework error values it cannot construct.
+    static func classify(caseName: String, fallback: Error) -> RescueModelError {
+        let name = caseName.lowercased()
+        if name.hasPrefix("assetsunavailable") { return .assetsUnavailable }
+        if name.hasPrefix("concurrentrequests") { return .concurrentRequests }
+        if name.hasPrefix("refusal") { return .refusal }
+        if name.hasPrefix("decodingfailure") { return .decodingFailure }
+        if name.hasPrefix("unsupportedguide") || name.hasPrefix("unsupportedlanguage") {
+            return .unsupportedSchemaOrLocale
+        }
+        return .other(fallback)
     }
 }
 #endif

@@ -45,18 +45,47 @@ public struct RescueRequest {
     /// Nil ⇒ the engine best-effort refetches before building the digest.
     public let fetchedHTML: String?
 
+    /// The reading-list item this rescue is for, when there is one. It is the
+    /// key into the per-save diagnostic trace — read as failure EVIDENCE for the
+    /// prompt, and written back with each rescue's own decisions. Nil for the
+    /// ad-hoc callers that have no item (the price editor's resolver), which
+    /// simply run without evidence.
+    public let itemID: UUID?
+    /// The recorded reason the save failed, straight off `SaveFailureStore`.
+    /// Turns the prompt's one canned sentence into the actual fact — the HTTP
+    /// status, the subscribe redirect — so the model isn't re-deriving it.
+    public let failureReason: SaveFailureReason?
+    /// The best title Luna recovered for the failed page (the failure sidecar's
+    /// `resolvedTitle`, else the item's own). ONLY used to gate the search
+    /// leg's cross-domain reroutes: a syndicated copy has to be recognizably the
+    /// same article, and this is what "the same" is measured against.
+    public let pageTitle: String?
+    /// Whether this item has already been handed to the interactive
+    /// archive-unlock tier. The deterministic `browserMayRecover` fast-path is
+    /// once-only — a second handoff would just re-park a card the user already
+    /// declined to unlock.
+    public let browserHandoffTried: Bool
+
     public init(
         url: URL,
         source: CaptureSource,
         failureKind: FailureKind,
         hint: RescueHint? = nil,
-        fetchedHTML: String? = nil
+        fetchedHTML: String? = nil,
+        itemID: UUID? = nil,
+        failureReason: SaveFailureReason? = nil,
+        pageTitle: String? = nil,
+        browserHandoffTried: Bool = false
     ) {
         self.url = url
         self.source = source
         self.failureKind = failureKind
         self.hint = hint
         self.fetchedHTML = fetchedHTML
+        self.itemID = itemID
+        self.failureReason = failureReason
+        self.pageTitle = pageTitle
+        self.browserHandoffTried = browserHandoffTried
     }
 
     /// Whether a plan carrying `kind`'s payload is legal here. No hint accepts all

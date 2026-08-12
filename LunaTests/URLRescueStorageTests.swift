@@ -170,6 +170,202 @@ final class URLRescueStorageTests: XCTestCase {
         store.isEnabled = true // reset shared defaults for other tests
     }
 
+    // MARK: - Guardrail permanence
+
+    /// The budget's whole shape (2 attempts, 24h apart, reopened by an update)
+    /// is beside the point once a guardrail lands: it is not a budget, it is a
+    /// verdict.
+    func testAGuardrailOutranksTheAttemptBudgetAndSurvivesAnUpdate() {
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let store = makeLedgerStore(now: { clock })
+        let id = UUID()
+        store.recordGuardrail(id)
+        XCTAssertTrue(store.isGuardrailed(id))
+        XCTAssertFalse(store.shouldAutoRescue(id))
+
+        clock = clock.addingTimeInterval(RescueLedgerStore.autoRetrySpacing * 30)
+        store.resetAttempts(for: [id])
+        XCTAssertFalse(store.shouldAutoRescue(id),
+                       "an app update changes Luna's extraction code, not Apple's safety model")
+    }
+
+    func testTheBrowserHandoffIsRecordedOncePerItem() {
+        let store = makeLedgerStore(now: { Date() })
+        let id = UUID()
+        XCTAssertFalse(store.hasHandedToBrowser(id))
+        store.recordBrowserHandoff(id)
+        XCTAssertTrue(store.hasHandedToBrowser(id))
+    }
+
+    // MARK: - RescueStatsStore
+
+    private func makeStatsStore() -> RescueStatsStore {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return RescueStatsStore(containerURL: dir)
+    }
+
+    /// Counters have to survive the process, or a sweep's summary line resets to
+    /// zero on every launch and measures nothing.
+    func testCountersPersistAcrossStoreInstances() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let first = RescueStatsStore(containerURL: dir)
+        first.recordAttempt()
+        first.record(.rescued, method: "reroute")
+        first.recordCachedRuleHit()
+
+        let reopened = RescueStatsStore(containerURL: dir)
+        XCTAssertEqual(reopened.snapshot().attempts, 1)
+        XCTAssertEqual(reopened.snapshot().outcome(.rescued), 1)
+        XCTAssertEqual(reopened.snapshot().methods["reroute"], 1)
+        XCTAssertEqual(reopened.snapshot().cachedRuleHits, 1)
+    }
+
+    /// The summary line is what a sweep logs and what Diagnostics reads, so it
+    /// has to name the numbers rather than just the total.
+    func testSummaryLineNamesOutcomesAndMethods() {
+        let store = makeStatsStore()
+        store.recordAttempt()
+        store.recordAttempt()
+        store.record(.rescued, method: "search")
+        store.record(.guardrailed)
+
+        let line = store.summaryLine()
+        XCTAssertTrue(line.contains("attempts=2"))
+        XCTAssertTrue(line.contains("rescued=1"))
+        XCTAssertTrue(line.contains("guardrailed=1"))
+        XCTAssertTrue(line.contains("search 1"))
+    }
+
+    /// Zero-valued buckets would make every line a wall of noise.
+    func testSummaryLineOmitsEmptyBuckets() {
+        let store = makeStatsStore()
+        store.recordAttempt()
+        XCTAssertFalse(store.summaryLine().contains("guardrailed"))
+    }
+
+    // MARK: - RescueFailureEvidence
+
+    private let sampleTrace = """
+    2026-08-13T10:00:00Z [ingest] start https://example.com/story
+    2026-08-13T10:00:01Z [fetch] status=403 refused
+    2026-08-13T10:00:01Z [fetch] status=403 refused
+    2026-08-13T10:00:02Z [bypass] strategy=googlebot status=403
+    2026-08-13T10:00:03Z [reader] extracted 0 blocks
+    """
+
+    /// Compression, not truncation: the ladder's repeats collapse to one line
+    /// with a count, which is what the model needs to know happened.
+    func testRepeatedLinesCollapseWithACount() {
+        let evidence = RescueFailureEvidence.build(trace: sampleTrace, maxCharacters: 4_000)
+        XCTAssertNotNil(evidence)
+        XCTAssertTrue(evidence!.contains("[fetch] status=403 refused (×2)"))
+        XCTAssertEqual(evidence!.components(separatedBy: "status=403 refused").count - 1, 1)
+    }
+
+    /// Timestamps cost tokens and the ORDER already carries the only temporal
+    /// fact that matters.
+    func testTimestampsAreDroppedButCategoriesKept() {
+        let evidence = RescueFailureEvidence.build(trace: sampleTrace, maxCharacters: 4_000) ?? ""
+        XCTAssertFalse(evidence.contains("2026-08-13T10:00:00Z"))
+        XCTAssertTrue(evidence.contains("[bypass]"))
+    }
+
+    /// A trace accumulates every retry; the newest pass is the one whose evidence
+    /// is still true.
+    func testOnlyTheLastAttemptSurvives() {
+        let trace = """
+        2026-08-13T09:00:00Z [ingest] start https://example.com/story
+        2026-08-13T09:00:01Z [fetch] status=500 ancient failure
+        2026-08-13T10:00:00Z [ingest] start https://example.com/story
+        2026-08-13T10:00:01Z [fetch] status=403 today's failure
+        """
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""
+        XCTAssertTrue(evidence.contains("today's failure"))
+        XCTAssertFalse(evidence.contains("ancient failure"))
+    }
+
+    /// The segmentation is only worth anything if it recognizes the shape the
+    /// REAL writers use. Both `ReadingListIngestor` and `ShareSurfaceDriver` open
+    /// a trace with `ingest: begin <url> source=…`, and this parser is maintained
+    /// independently of them — so pin the two together here rather than
+    /// discovering the mismatch as silently-unsegmented evidence on a device.
+    func testTheRealRecordersOpeningLineIsRecognizedAsAnAttemptBoundary() {
+        XCTAssertTrue(RescueFailureEvidence.isAttemptBoundary(
+            "ingest: begin https://example.com/story source=shareSheet"))
+        XCTAssertFalse(RescueFailureEvidence.isAttemptBoundary(
+            "pipeline: classified article"))
+        XCTAssertFalse(RescueFailureEvidence.isAttemptBoundary(
+            "resolve: no silent strategy qualified"))
+    }
+
+    /// A previous rescue's own narration must NOT segment away the ingest record
+    /// it was reasoning about — that record is the most useful thing in the file,
+    /// and a rescue that only sees the last rescue's account of itself is back to
+    /// being blind. The earlier attempt's verdict stays, as evidence.
+    func testAPreviousRescueDoesNotSegmentAwayTheIngestRecord() {
+        let trace = """
+        2026-08-13T10:00:00.000Z [ingest] ingest: begin https://example.com/story source=manual
+        2026-08-13T10:00:01.000Z [fetch] fetch: status=403 refused
+        2026-08-13T10:05:00.000Z [rescue] start host=example.com hint=auto
+        2026-08-13T10:05:30.000Z [rescue] apply outcome=unrescuable host=example.com
+        """
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""
+        XCTAssertTrue(evidence.contains("status=403 refused"))
+        XCTAssertTrue(evidence.contains("outcome=unrescuable"),
+                      "what the last rescue already tried is evidence too")
+    }
+
+    /// …end to end, in the recorder's real line format.
+    func testALiveShapedTraceSegmentsToItsLastPass() {
+        let trace = """
+        2026-08-13T10:00:00.123Z [ingest] ingest: begin https://example.com/story source=shareSheet
+        2026-08-13T10:00:01.000Z [fetch] fetch: status=500 first pass
+        2026-08-13T11:00:00.000Z [ingest] ingest: begin https://example.com/story source=manual
+        2026-08-13T11:00:01.000Z [fetch] fetch: status=403 second pass
+        2026-08-13T11:00:02.000Z [bypass] resolve: no silent strategy qualified
+        """
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""
+        XCTAssertTrue(evidence.contains("second pass"))
+        XCTAssertTrue(evidence.contains("no silent strategy qualified"))
+        XCTAssertFalse(evidence.contains("first pass"))
+    }
+
+    /// Over budget, the least diagnostic lines go first and the OLDEST survivors
+    /// go next — what reaches the model is the newest and most telling.
+    func testBudgetKeepsTheNewestSignalBearingLines() {
+        let noise = (0..<50).map { "2026-08-13T10:00:00Z [ui] rendered frame \($0)" }
+        let trace = (noise + ["2026-08-13T10:01:00Z [fetch] status=429 challenge"])
+            .joined(separator: "\n")
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 120) ?? ""
+        XCTAssertTrue(evidence.contains("status=429"))
+        XCTAssertFalse(evidence.contains("rendered frame"))
+    }
+
+    /// Nil is the normal case on a real install for a while — every failure
+    /// recorded before the trace file existed — and it must read as "no evidence",
+    /// never as an empty fenced section.
+    func testAnAbsentTraceProducesNoEvidence() {
+        XCTAssertNil(RescueFailureEvidence.build(trace: nil, maxCharacters: 4_000))
+        XCTAssertNil(RescueFailureEvidence.build(trace: "", maxCharacters: 4_000))
+        XCTAssertNil(RescueFailureEvidence.build(trace: sampleTrace, maxCharacters: 0))
+    }
+
+    /// Evidence takes its slice out of the digest's, and only when there IS
+    /// evidence — a trace-less rescue must see the budget it always saw.
+    func testTheBudgetSplitOnlyAppliesWhenThereIsEvidence() {
+        let whole = URLRescueEngine.split(budget: .onDevice, hasEvidence: false)
+        XCTAssertEqual(whole.digest.maxCharacters, RescueDigestBudget.onDevice.maxCharacters)
+        XCTAssertEqual(whole.evidence, 0)
+
+        let split = URLRescueEngine.split(budget: .onDevice, hasEvidence: true)
+        XCTAssertEqual(split.digest.maxCharacters + split.evidence,
+                       RescueDigestBudget.onDevice.maxCharacters)
+        XCTAssertGreaterThan(split.evidence, 0)
+        XCTAssertLessThan(split.evidence, split.digest.maxCharacters)
+    }
+
     func testRewriteDerivation() {
         let base = URL(string: "https://www.example.com/a/b")!
         XCTAssertEqual(URLRescueEngine.rewrite(from: base, to: base), RescueLearnedRule.URLRewrite.none)

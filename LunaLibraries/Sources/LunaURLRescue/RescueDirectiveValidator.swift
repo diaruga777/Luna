@@ -33,28 +33,52 @@ public struct RescueDirectiveValidator {
         case priceNotEvidenced
         case badCurrency
         case emptyProductName
+        case emptySearchQuery
+        case searchNotAvailable
+        case badInspectURL
+        case inspectNotAvailable
         case giveUp
     }
 
     // MARK: - Plan validation
 
     /// What a validated plan tells the engine to do next.
-    public enum PlanResolution {
+    public enum PlanResolution: Equatable {
         /// A directive ready to apply immediately.
         case directive(RescueDirective)
         /// The plan chose "article" and the model can produce it — the engine
         /// must make the follow-up article-payload call, then call
         /// `validateArticlePayload`.
         case needsArticlePayload
+        /// The plan chose "search": the engine runs this query, filters the live
+        /// results through `RescueSearchCandidates`, and asks the model to pick
+        /// one. The model never supplies the URL.
+        case needsSearch(query: String)
+        /// The plan chose "inspect_url": the engine digests this page and asks
+        /// once more. The ROUND CAP is the engine's, not the prompt's — this
+        /// resolution is simply refused on the second round (`allowsIntermediate`).
+        case needsInspection(url: URL)
     }
 
     /// Validates a plan for `request`. `digest` is the exact text the model saw.
     /// `supportsArticlePayload` gates the "article" kind.
+    ///
+    /// - Parameters:
+    ///   - candidates: URLs the ENGINE offered the model in a search round. A
+    ///     reroute to one of these skips the same-registrable-domain rule (and
+    ///     only that rule) — the whole point of the search leg is finding the
+    ///     content somewhere else, and the safety comes from the list being
+    ///     built by the engine from live results rather than by the model.
+    ///   - allowsIntermediate: false on a follow-up round, which is what makes
+    ///     "one search round, one inspect round" structural rather than a
+    ///     promise the prompt asks the model to keep.
     public func validate(
         plan: RescuePlanResponse,
         request: RescueRequest,
         digest: String,
-        supportsArticlePayload: Bool
+        supportsArticlePayload: Bool,
+        candidates: Set<String> = [],
+        allowsIntermediate: Bool = true
     ) -> Result<PlanResolution, Rejection> {
         let kind = plan.kind.lowercased()
         switch kind {
@@ -62,10 +86,26 @@ public struct RescueDirectiveValidator {
             return .failure(.giveUp)
 
         case "reroute":
-            return validateReroute(plan, request: request).map { .directive($0) }
+            return validateReroute(plan, request: request, candidates: candidates).map { .directive($0) }
 
         case "webjs":
             return validateWebJS(plan, request: request).map { .directive($0) }
+
+        case "open_in_browser":
+            return .success(.directive(.openInBrowser))
+
+        case "search":
+            guard allowsIntermediate else { return .failure(.searchNotAvailable) }
+            guard let query = plan.searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  query.count >= 3, query.count <= 200 else { return .failure(.emptySearchQuery) }
+            return .success(.needsSearch(query: query))
+
+        case "inspect_url":
+            guard allowsIntermediate else { return .failure(.inspectNotAvailable) }
+            guard let raw = plan.rerouteURLString, let url = normalizedHTTPSURL(raw),
+                  isAllowedRerouteHost(candidate: url, original: request.url)
+            else { return .failure(.badInspectURL) }
+            return .success(.needsInspection(url: url))
 
         case "media_url":
             guard request.allows(.media) else { return salvage(plan, request: request, illegal: kind).map { .directive($0) } }
@@ -106,12 +146,15 @@ public struct RescueDirectiveValidator {
 
     // MARK: - Reroute
 
-    private func validateReroute(_ plan: RescuePlanResponse, request: RescueRequest) -> Result<RescueDirective, Rejection> {
+    private func validateReroute(
+        _ plan: RescuePlanResponse, request: RescueRequest, candidates: Set<String> = []
+    ) -> Result<RescueDirective, Rejection> {
         guard let raw = plan.rerouteURLString, let url = normalizedHTTPSURL(raw) else {
             return .failure(.badRerouteURL)
         }
         guard url.absoluteString != request.url.absoluteString else { return .failure(.rerouteEqualsOriginal) }
-        guard isAllowedRerouteHost(candidate: url, original: request.url) else {
+        guard candidates.contains(url.absoluteString)
+                || isAllowedRerouteHost(candidate: url, original: request.url) else {
             return .failure(.rerouteHostNotAllowed)
         }
         let headers = validatedHeaders(plan)

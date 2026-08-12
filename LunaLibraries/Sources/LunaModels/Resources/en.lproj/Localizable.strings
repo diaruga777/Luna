@@ -457,6 +457,11 @@
 "Settings_diagnostics_weeklyKeyAcceptedTitle_Luna" = "Key Accepted";
 "Settings_diagnostics_weeklyKeyAcceptedMessage_Luna" = "This device can now promote Saves of the Week.";
 
+"Settings_diagnostics_rescueStatsNone_Luna" = "Rescue: nothing attempted yet.";
+"Settings_diagnostics_rescueStatsRecovered_Luna" = "%lld recovered";
+"Settings_diagnostics_rescueStatsRecoveredBy_Luna" = "%lld recovered (%@)";
+"Settings_diagnostics_rescueStatsLine_Luna" = "Rescue: %lld tried · %@ · %lld sent to browser · %lld blocked";
+
 "Settings_diagnostics_emptyLogPlaceholder_Luna" = "No diagnostics recorded yet.";
 "Settings_diagnostics_exportFailedTitle_Luna" = "Export Failed";
 "Settings_diagnostics_exportFailedMessage_Luna" = "Couldn't write the log file.";

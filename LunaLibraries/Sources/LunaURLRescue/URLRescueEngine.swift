@@ -19,11 +19,21 @@ import LunaURLClassification
 /// The "no second LLM pass" guarantee is structural: the applier's `runPipeline`
 /// closure defaults to the raw `IngestPipeline.processResolved`, so a
 /// rescue-triggered re-run can never recurse into rescue.
+///
+/// Model rounds are bounded in CODE, never by asking the prompt to behave: the
+/// plan call gets one digest-halving retry on overflow, and at most ONE
+/// intermediate round (a search selection or a single `inspect_url` look) may
+/// follow it, because the follow-up call is validated with
+/// `allowsIntermediate: false`.
 public final class URLRescueEngine {
     /// Hard ceiling on a whole rescue attempt.
     public static let totalBudget: TimeInterval = 90
     /// Per model round-trip.
     public static let llmCallTimeout: TimeInterval = 30
+    /// The slice of the character budget the failure-evidence excerpt takes when
+    /// there IS one. The digest keeps the rest, and the overflow retry halves the
+    /// whole budget, so both shrink together.
+    static let evidenceShare = 0.15
 
     private let session: RescueModelSession
     private let digestBuilder: RescueDigestBuilder
@@ -31,6 +41,9 @@ public final class URLRescueEngine {
     private let applier: RescueDirectiveApplier
     private let ruleStore: RescueRuleStoring
     private let fetcher: HTMLFetching
+    private let traceStore: RescueTraceStoring
+    private let stats: RescueStatsStore
+    private let search: (String) async -> [RescueSearchResult]
     private let now: () -> Date
 
     public init(
@@ -39,6 +52,9 @@ public final class URLRescueEngine {
         ruleStore: RescueRuleStoring = RescueRuleStore.shared,
         fetcher: HTMLFetching = ArticleFetcher(),
         mediaResolver: SocialMediaResolving = NoMediaResolver(),
+        traceStore: RescueTraceStoring = SaveDiagnosticsStore.shared,
+        stats: RescueStatsStore = .shared,
+        search: @escaping (String) async -> [RescueSearchResult] = RescueSearchProvider.duckDuckGo,
         runPipeline: @escaping (IngestInput) async -> IngestResult
             = { await IngestPipeline.processResolved($0) },
         now: @escaping () -> Date = Date.init
@@ -51,6 +67,9 @@ public final class URLRescueEngine {
             mediaResolver: mediaResolver, runPipeline: runPipeline)
         self.ruleStore = ruleStore
         self.fetcher = fetcher
+        self.traceStore = traceStore
+        self.stats = stats
+        self.search = search
         self.now = now
     }
 
@@ -70,19 +89,27 @@ public final class URLRescueEngine {
         onProgress: @escaping (RescueStage) -> Void = { _ in }
     ) async -> RescueOutcome {
         let host = request.url.host ?? "?"
-        log("start host=\(host) hint=\(request.hintKey)")
+        // Read the trace BEFORE the first log line. This engine appends its own
+        // decisions to the same file, so reading it later would feed the rescue
+        // its own "start" line back as evidence of what already failed — the
+        // model's log excerpt has to be the state of the world before this
+        // attempt, not a mirror.
+        let trace = request.itemID.flatMap { traceStore.contents(for: $0) }
+        log("start host=\(host) hint=\(request.hintKey)", request)
         onProgress(.queued)
+        stats.recordAttempt()
 
         // Bound the whole attempt.
         let outcome = await withTimeout(seconds: Self.totalBudget, fallback: .failed(.timedOut)) {
-            await self.runRescue(request, host: host, onProgress: onProgress)
+            await self.runRescue(request, host: host, trace: trace, onProgress: onProgress)
         }
         onProgress(.finished)
+        recordStats(for: outcome)
         return outcome
     }
 
     private func runRescue(
-        _ request: RescueRequest, host: String,
+        _ request: RescueRequest, host: String, trace: String?,
         onProgress: @escaping (RescueStage) -> Void
     ) async -> RescueOutcome {
         // This engine outlives every attempt, so the model session must not:
@@ -92,118 +119,243 @@ public final class URLRescueEngine {
 
         // (1) Learned rule — deterministic, before any LLM.
         if let cached = ruleStore.rule(forHost: host, hint: request.hint) {
-            log("cachedRule hit host=\(host)")
+            log("cachedRule hit host=\(host)", request)
             if let directive = directiveFromRule(cached, request: request) {
                 onProgress(.replayingRule)
                 let outcome = await applier.apply(directive, request: request)
                 if outcome.succeeded {
                     ruleStore.recordSuccess(cached)
-                    log("cachedRule success host=\(host)")
+                    stats.recordCachedRuleHit()
+                    log("cachedRule success host=\(host)", request)
                     return Self.relabel(outcome, as: .cachedRule)
                 }
                 ruleStore.recordFailure(forHost: host, hint: request.hint)
-                log("cachedRule fail host=\(host)")
+                log("cachedRule fail host=\(host)", request)
             }
         }
 
-        // (2) Model availability.
-        guard session.isAvailable else { log("unavailable host=\(host)"); return .unavailable }
+        // (2) The deterministic browser fast-path, BEFORE the model.
+        //
+        // A 401/403/429 is the server saying "not you" to a background fetch;
+        // `SaveFailureReason.browserMayRecover` documents the measurement that a
+        // real WKWebView session routinely gets a 200 for the very same page. The
+        // model has nothing to read in that case (the fetch was refused, so there
+        // is no HTML), and asking it costs 30 seconds to arrive at the answer we
+        // already have. Ordering it ahead of the availability gate is deliberate
+        // too: on a device with no Apple Intelligence at all this is still the
+        // right move.
+        if request.failureReason?.browserMayRecover == true, !request.browserHandoffTried {
+            log("browserFastPath host=\(host) reason=\(Self.reasonToken(request.failureReason))", request)
+            return .needsBrowser
+        }
 
-        // (3) HTML → digest (best-effort refetch when the caller didn't hand us HTML).
+        // (3) Model availability.
+        guard session.isAvailable else { log("unavailable host=\(host)", request); return .unavailable }
+
+        // (4) HTML → digest (best-effort refetch when the caller didn't hand us HTML).
+        //
+        // An empty result no longer ends the rescue. Reroute, search and the
+        // browser handoff need no page HTML, and the pages most in need of rescue
+        // — bot-walled, paywalled — are exactly the ones whose refetch fails, so
+        // dying here meant never asking about the cases that matter most.
         let html: String?
+        var fetchFailure: String?
         if let prefetched = request.fetchedHTML {
             html = prefetched
         } else {
             onProgress(.fetching)
-            html = try? await fetcher.fetchHTML(from: request.url)
+            do {
+                html = try await fetcher.fetchHTML(from: request.url)
+            } catch {
+                html = nil
+                fetchFailure = Self.fetchFailureToken(error)
+            }
         }
-        guard let html, !html.isEmpty else {
-            log("no-html host=\(host)")
-            return .unrescuable
+        let pageHTML: String? = (html?.isEmpty == false) ? html : nil
+        if pageHTML == nil {
+            log("no-html host=\(host) reason=\(fetchFailure ?? "empty")", request)
         }
+
         let supportsArticle = session.supportsArticlePayload
         var budget: RescueDigestBudget = supportsArticle ? .privateCloud : .onDevice
 
-        // (4) Plan call, with one digest-halving retry on context overflow.
+        // (5) Plan call, with one digest-halving retry on context overflow.
         let instructions = RescuePrompts.planInstructions(hint: request.hint, allowsArticlePayload: supportsArticle)
         session.prewarm(instructions: instructions)
 
         var plan: RescuePlanResponse?
+        var digest = ""
         for attempt in 0..<2 {
             onProgress(.digesting)
-            let digest = digestBuilder.buildDigest(url: request.url, html: html, hint: request.hint, budget: budget)
-            log("digest chars=\(digest.count) est-tokens=\(RescueDigestBudget.estimatedTokens(forCharacters: digest.count)) attempt=\(attempt)")
+            let split = Self.split(budget: budget, hasEvidence: trace != nil)
+            digest = pageHTML.map {
+                digestBuilder.buildDigest(
+                    url: request.url, html: $0, hint: request.hint, budget: split.digest)
+            } ?? RescuePrompts.unavailableDigest(reason: fetchFailure ?? "empty response")
+            let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: split.evidence)
+            log("digest chars=\(digest.count) evidence chars=\(evidence?.count ?? 0) "
+                + "est-tokens=\(RescueDigestBudget.estimatedTokens(forCharacters: digest.count + (evidence?.count ?? 0))) attempt=\(attempt)",
+                request)
             let prompt = RescuePrompts.planPrompt(
                 url: request.url, hint: request.hint,
-                failureKind: request.failureKind, digest: digest)
+                failureKind: request.failureKind, failureReason: request.failureReason,
+                digest: digest, evidence: evidence)
             do {
                 onProgress(.thinking)
                 plan = try await callPlan(instructions: instructions, prompt: prompt)
                 break
             } catch let error as RescueModelError {
-                switch error {
-                case .exceededContextWindowSize where attempt == 0:
+                if case .exceededContextWindowSize = error, attempt == 0 {
                     budget = budget.halved
                     continue
-                case .guardrailViolation:
-                    log("guardrail host=\(host)")
-                    return .unrescuable
-                case .quotaLimitReached:
-                    log("quota host=\(host)")
-                    return .quotaExhausted
-                case .rateLimited:
-                    return .failed(.rateLimited)
-                case .networkFailure:
-                    return .failed(.networkFailure)
-                case .serviceUnavailable:
-                    return .failed(.serviceUnavailable)
-                case .modelUnavailable:
-                    return .unavailable
-                case .exceededContextWindowSize:
-                    return .failed(.exceededContextWindowSize)
-                case .other(let underlying):
-                    return .failed(.other(underlying))
                 }
+                return modelOutcome(error, host: host, request: request)
             } catch {
                 return .failed(.other(error))
             }
         }
         guard let plan else { return .unrescuable }
-        log("plan kind=\(plan.kind) host=\(host)")
+        log("plan kind=\(plan.kind) host=\(host)", request)
 
-        // (5) Validate → resolve → (optionally) article-payload follow-up.
-        let digestForValidation = digestBuilder.buildDigest(
-            url: request.url, html: html, hint: request.hint, budget: budget)
+        // (6) Validate → (optionally) one intermediate round → directive.
         let resolution = validator.validate(
-            plan: plan, request: request, digest: digestForValidation, supportsArticlePayload: supportsArticle)
+            plan: plan, request: request, digest: digest,
+            supportsArticlePayload: supportsArticle)
 
         let directive: RescueDirective
+        var method: RescueMethod?
         switch resolution {
         case .failure(let rejection):
-            log("reject reason=\(rejection) host=\(host)")
+            log("reject reason=\(rejection) host=\(host)", request)
             return .unrescuable
         case .success(.directive(let d)):
             directive = d
         case .success(.needsArticlePayload):
             onProgress(.reading)
             guard let payloadDirective = await requestArticlePayload(
-                request: request, digest: digestForValidation, host: host) else {
+                request: request, digest: digest, host: host) else {
                 return .unrescuable
             }
             directive = payloadDirective
+        case .success(.needsSearch(let query)):
+            guard let selected = await runSearchRound(
+                query: query, request: request, host: host,
+                supportsArticle: supportsArticle, onProgress: onProgress) else {
+                return .unrescuable
+            }
+            directive = selected
+            method = .search
+        case .success(.needsInspection(let inspectURL)):
+            guard let inspected = await runInspectRound(
+                inspectURL: inspectURL, request: request, host: host, budget: budget,
+                trace: trace, supportsArticle: supportsArticle, onProgress: onProgress) else {
+                return .unrescuable
+            }
+            directive = inspected
         }
 
-        // (6) Apply.
+        // (7) Apply.
         onProgress(.applying)
-        let outcome = await applier.apply(directive, request: request)
-        log("apply outcome=\(outcomeLabel(outcome)) host=\(host)")
+        let outcome = await applier.apply(directive, request: request, method: method)
+        log("apply outcome=\(outcomeLabel(outcome)) host=\(host)", request)
 
-        // (7) On a successful reroute/webJS, learn a rule.
+        // (8) On a successful reroute/webJS, learn a rule.
         if outcome.succeeded, let rule = derivedRule(from: directive, request: request) {
             ruleStore.store(rule)
-            log("rule stored host=\(host)")
+            log("rule stored host=\(host)", request)
         }
         return outcome
+    }
+
+    // MARK: - Intermediate rounds
+    //
+    // Both consume the ONE intermediate round the engine allows: their follow-up
+    // call is validated with `allowsIntermediate: false`, so a model that answers
+    // "search" to a search round, or "inspect_url" to an inspection, is rejected
+    // rather than looping. The cap lives here, in code — never in the prompt.
+
+    /// The search leg. The engine runs the query, filters the live results
+    /// through `RescueSearchCandidates`, and asks the model to SELECT one; the
+    /// validator then relaxes its host rule for exactly those URLs. The model
+    /// never supplies a URL of its own at any point.
+    private func runSearchRound(
+        query: String, request: RescueRequest, host: String,
+        supportsArticle: Bool, onProgress: @escaping (RescueStage) -> Void
+    ) async -> RescueDirective? {
+        let results = await search(query)
+        let candidates = RescueSearchCandidates.filter(
+            results, request: request, registrableDomain: { validator.registrableDomain($0) })
+        log("search results=\(results.count) candidates=\(candidates.count) host=\(host)", request)
+        guard !candidates.isEmpty else { return nil }
+
+        let allowed = Set(candidates.map(\.url.absoluteString))
+        let prompt = RescuePrompts.searchPrompt(
+            url: request.url, title: request.pageTitle, results: candidates)
+        onProgress(.thinking)
+        let plan: RescuePlanResponse
+        do {
+            plan = try await callPlan(instructions: RescuePrompts.searchInstructions, prompt: prompt)
+        } catch let error as RescueModelError {
+            log("search round failed host=\(host) error=\(error.logToken)", request)
+            return nil
+        } catch {
+            return nil
+        }
+        switch validator.validate(
+            plan: plan, request: request, digest: "", supportsArticlePayload: supportsArticle,
+            candidates: allowed, allowsIntermediate: false
+        ) {
+        case .success(.directive(let directive)):
+            log("search picked host=\(host)", request)
+            return directive
+        case .success, .failure:
+            log("search selection rejected host=\(host)", request)
+            return nil
+        }
+    }
+
+    /// The inspect leg: digest ONE more page at half budget and ask again.
+    private func runInspectRound(
+        inspectURL: URL, request: RescueRequest, host: String,
+        budget: RescueDigestBudget, trace: String?, supportsArticle: Bool,
+        onProgress: @escaping (RescueStage) -> Void
+    ) async -> RescueDirective? {
+        onProgress(.fetching)
+        guard let html = try? await fetcher.fetchHTML(from: inspectURL), !html.isEmpty else {
+            log("inspect fetch failed host=\(inspectURL.host ?? "?")", request)
+            return nil
+        }
+        onProgress(.digesting)
+        let split = Self.split(budget: budget.halved, hasEvidence: trace != nil)
+        let digest = digestBuilder.buildDigest(
+            url: inspectURL, html: html, hint: request.hint, budget: split.digest)
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: split.evidence)
+        let prompt = RescuePrompts.inspectPrompt(
+            originalURL: request.url, inspectedURL: inspectURL,
+            digest: digest, evidence: evidence)
+        let instructions = RescuePrompts.inspectInstructions(
+            hint: request.hint, allowsArticlePayload: supportsArticle)
+        onProgress(.thinking)
+        let plan: RescuePlanResponse
+        do {
+            plan = try await callPlan(instructions: instructions, prompt: prompt)
+        } catch let error as RescueModelError {
+            log("inspect round failed host=\(host) error=\(error.logToken)", request)
+            return nil
+        } catch {
+            return nil
+        }
+        log("inspect plan kind=\(plan.kind) host=\(host)", request)
+        switch validator.validate(
+            plan: plan, request: request, digest: digest,
+            supportsArticlePayload: supportsArticle, allowsIntermediate: false
+        ) {
+        case .success(.directive(let directive)):
+            return directive
+        case .success, .failure(_):
+            log("inspect selection rejected host=\(host)", request)
+            return nil
+        }
     }
 
     // MARK: - LLM calls (each time-boxed)
@@ -224,13 +376,57 @@ public final class URLRescueEngine {
             switch validator.validateArticlePayload(response, digest: digest) {
             case .success(let directive): return directive
             case .failure(let rejection):
-                log("article reject reason=\(rejection) host=\(host)")
+                log("article reject reason=\(rejection) host=\(host)", request)
                 return nil
             }
         } catch {
-            log("article call failed host=\(host)")
+            log("article call failed host=\(host)", request)
             return nil
         }
+    }
+
+    /// Every model error gets its own log line and its own verdict — the three
+    /// that used to be mapped, and the ones that used to vanish into `.other`.
+    private func modelOutcome(
+        _ error: RescueModelError, host: String, request: RescueRequest
+    ) -> RescueOutcome {
+        log("model error=\(error.logToken) host=\(host)", request)
+        switch error {
+        case .guardrailViolation, .refusal:
+            // Permanent for this URL: the prompt is derived from the page.
+            return .failed(.guardrailViolation)
+        case .quotaLimitReached:
+            return .quotaExhausted
+        case .rateLimited:
+            return .failed(.rateLimited)
+        case .networkFailure:
+            return .failed(.networkFailure)
+        case .serviceUnavailable:
+            return .failed(.serviceUnavailable)
+        case .modelUnavailable:
+            return .unavailable
+        case .assetsUnavailable, .concurrentRequests:
+            return .failed(.transientModel(token: error.logToken))
+        case .exceededContextWindowSize:
+            return .failed(.exceededContextWindowSize)
+        case .decodingFailure, .unsupportedSchemaOrLocale:
+            return .unrescuable
+        case .other(let underlying):
+            return .failed(.other(underlying))
+        }
+    }
+
+    // MARK: - Budgets
+
+    /// Splits a character budget between the page digest and the failure
+    /// evidence. With no trace the digest keeps everything, so a rescue on a
+    /// device that never recorded one looks exactly as it did before.
+    static func split(
+        budget: RescueDigestBudget, hasEvidence: Bool
+    ) -> (digest: RescueDigestBudget, evidence: Int) {
+        guard hasEvidence else { return (budget, 0) }
+        let evidence = Int(Double(budget.maxCharacters) * evidenceShare)
+        return (RescueDigestBudget(maxCharacters: budget.maxCharacters - evidence), evidence)
     }
 
     // MARK: - Learned rules
@@ -333,8 +529,69 @@ public final class URLRescueEngine {
 
     // MARK: - Diagnostics + timeouts
 
-    private func log(_ message: String) {
+    /// Writes to the general stream AND, when the rescue is for a known item, to
+    /// that item's own save trace — so the file a failed card exports explains
+    /// what the rescue decided, not just what the first pass saw. Model OUTPUT is
+    /// summarized (kinds, hosts, lengths) rather than quoted verbatim.
+    private func log(_ message: String, _ request: RescueRequest? = nil) {
         SharedDiagnosticLog.record(message, category: "rescue")
+        guard let itemID = request?.itemID else { return }
+        traceStore.appendLine(
+            "\(Self.traceTimestamps.string(from: now())) [rescue] \(message)", for: itemID)
+    }
+
+    private static let traceTimestamps: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private func recordStats(for outcome: RescueOutcome) {
+        switch outcome {
+        case .rescued(_, let method): stats.record(.rescued, method: method.rawValue)
+        case .rescuedMedia(_, let method): stats.record(.rescued, method: method.rawValue)
+        case .needsBrowser: stats.record(.browserHandoff, method: RescueMethod.browserHandoff.rawValue)
+        case .unrescuable: stats.record(.unrescuable)
+        case .unavailable: stats.record(.modelUnavailable)
+        case .quotaExhausted: stats.record(.modelError)
+        case .failed(let error):
+            switch error {
+            case .guardrailViolation: stats.record(.guardrailed)
+            case .timedOut: stats.record(.timedOut)
+            default: stats.record(.modelError)
+            }
+        }
+    }
+
+    /// A short, host-safe token for why a refetch failed — never the error's
+    /// localized description, which can quote a server's own message.
+    static func fetchFailureToken(_ error: Error) -> String {
+        if let fetchError = error as? ArticleFetcher.FetchError {
+            switch fetchError {
+            case .badResponse(let status):
+                return status.map { "http \($0)" } ?? "bad response"
+            case .notHTML: return "not HTML"
+            case .tooLarge: return "too large"
+            case .subscribeRedirect(let landedOn):
+                return "redirected to \(landedOn.absoluteString)"
+            }
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorTimedOut: return "timed out"
+            case NSURLErrorNotConnectedToInternet: return "offline"
+            case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed: return "host not found"
+            default: return "network error \(nsError.code)"
+            }
+        }
+        return "fetch error"
+    }
+
+    static func reasonToken(_ reason: SaveFailureReason?) -> String {
+        guard let reason else { return "unknown" }
+        if case let .httpStatus(code) = reason { return "http\(code)" }
+        return String(describing: reason)
     }
 
     /// Re-tag a successful outcome's method (used to mark a cache-hit rescue
@@ -351,6 +608,7 @@ public final class URLRescueEngine {
         switch outcome {
         case .rescued(_, let m): return "rescued(\(m.rawValue))"
         case .rescuedMedia(_, let m): return "rescuedMedia(\(m.rawValue))"
+        case .needsBrowser: return "needsBrowser"
         case .unrescuable: return "unrescuable"
         case .unavailable: return "unavailable"
         case .quotaExhausted: return "quotaExhausted"

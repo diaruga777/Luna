@@ -7,7 +7,7 @@ is otherwise a dead end. URL Rescue invokes Apple's **FoundationModels** LLM
 builds) with the URL, a token-budgeted digest of the fetched HTML, and a content
 hint, and applies ONE validated directive to recover the save.
 
-## The three directive kinds
+## The directive kinds
 
 1. **Final payload** — article blocks (→ `ArticleContent`) or product info (→
    `ProductInfo`). The full-article payload is **PCC-only**: the on-device model's
@@ -20,6 +20,18 @@ hint, and applies ONE validated directive to recover the save.
 3. **WebJS** — JavaScript run in an off-screen, cookie-less `WKWebView` loading
    the (possibly rewritten) URL, returning HTML / JSON / a media URL fed back to
    extraction. Combines with (2).
+4. **`search`** — an INTERMEDIATE kind. The model emits a query (`searchQuery`);
+   the engine runs `DuckDuckGoSearch.entries`, filters the live results, and asks
+   the model to SELECT one, which is then applied as a reroute (method
+   `.search`). The model never supplies a URL at any point — see "Search host
+   policy" below.
+5. **`inspect_url`** — the other intermediate kind: one more page digested (at
+   half budget) before the model commits. Same host policy as a reroute, because
+   a free fetch of any host the model names is an exfiltration channel.
+6. **`open_in_browser`** — terminal, and the one directive that recovers nothing:
+   it converts the failure into the interactive archive-unlock tier
+   (`.needsCaptcha`) instead of a dead card. See `claudedocs/failed-saves.md`.
+7. **`give_up`**.
 
 ## Module layout (`LunaURLRescue`, main-app only)
 
@@ -59,11 +71,116 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
   Group): a working reroute/JS is replayed deterministically BEFORE the next LLM
   call. 30-day expiry, 3-failure eviction, 200-entry LRU, `urlRescue.rulesEnabled`
   kill switch. Cached rules are re-validated through the same validator.
-- **`URLRescueEngine`** — orchestrates: cached rule → availability → digest →
-  plan call (one digest-halving retry on context overflow) → optional PCC
-  article-payload call (≤2 round-trips) → validate → apply → learn. 90s total
-  budget, 30s per call. **Never throws** — every failure folds into a
-  `RescueOutcome`. Logs to `SharedDiagnosticLog` category `"rescue"` (hosts only).
+- **`RescueFailureEvidence`** — compresses the per-save diagnostic trace into the
+  prompt's log excerpt. See "What the model is told" below.
+- **`RescueSearch`** — `RescueSearchResult` + `RescueSearchProvider.duckDuckGo`
+  (the injected default) + `RescueSearchCandidates`, which owns the search leg's
+  host policy.
+- **`RescueTraceStoring`** — the engine's seam onto `SaveDiagnosticsStore`
+  (read evidence, append the rescue's own decisions). A protocol so both the
+  populated and the nil case are testable; `NoRescueTraceStore` is the default
+  for callers with no reading-list item.
+- **`URLRescueEngine`** — orchestrates: cached rule → browser fast-path →
+  availability → digest+evidence → plan call (one digest-halving retry on
+  context overflow) → at most ONE intermediate round (search selection or an
+  inspect look) → optional PCC article-payload call → validate → apply → learn.
+  90s total budget, 30s per call. **Never throws** — every failure folds into a
+  `RescueOutcome`. Logs to `SharedDiagnosticLog` category `"rescue"` (hosts only)
+  and, when the request carries an item id, to that item's own trace.
+
+## Bounds are structural, never asked for
+
+Every limit lives in code, because a prompt cannot be relied on to keep a
+promise:
+
+- **One pipeline re-entry.** The applier's `runPipeline` closure defaults to the
+  RAW `IngestPipeline.processResolved`, so a rescue-triggered re-run can never
+  recurse into rescue. This is the invariant `KindCompositionRootTests`-adjacent
+  suites pin; do not wrap it.
+- **One intermediate round.** The follow-up call after a `search` or an
+  `inspect_url` is validated with `allowsIntermediate: false`, so those kinds
+  simply aren't available on the second round. A model that answers "search" to
+  a search round is rejected, not looped.
+- **90s / 30s.** `raceAgainstTimeout` is deliberately NOT a task group — a
+  cancellation-deaf `respond` once wedged the failed card forever. Extend the
+  loop inside it; don't restructure it.
+
+## What the model is told
+
+The plan prompt carries the URL, ONE sentence naming what already failed, a
+fenced **log excerpt**, and a fenced **page digest**. All page-derived material
+is in the PROMPT and labeled untrusted; the task contract is in the static
+instructions only.
+
+- **The failure sentence** is built from the recorded `SaveFailureReason` — the
+  actual status code, the subscribe-redirect landing, the transport failure —
+  rather than one of three canned sentences that told the model almost nothing.
+- **The log excerpt** (`RescueFailureEvidence`) is the per-save trace
+  (`SaveDiagnosticsStore.contents(for:)`, Plan A's writer) compressed to the LAST
+  attempt's lines: `ISO8601 [category] message` parsed, timestamps dropped
+  (order carries the only temporal fact that matters), identical lines collapsed
+  with a `(×N)` count, and — when over budget — low-signal lines dropped first,
+  then the OLDEST survivors, so what reaches the model is the newest and most
+  diagnostic. The instructions add the rule that makes it worth its tokens:
+  don't re-propose what the log already shows failing.
+- **Budget.** Evidence takes 15% of the character budget, the digest the rest,
+  and both derive from the same budget each round — so the digest-halving
+  overflow retry halves the evidence too. With no trace (every failure recorded
+  before Plan A shipped, and every extension-side failure not yet flushed) the
+  section is absent and the prompt is exactly what it always was.
+- **No HTML is no longer instant death.** A refetch that returns nothing used to
+  end the rescue as `.unrescuable` before the model was ever asked — and a
+  bot-walled or paywalled page, the kind most in need of rescue, is exactly the
+  page whose refetch fails. The digest section becomes an explicit
+  "PAGE DIGEST: unavailable (fetch failed: …)" marker naming which strategies are
+  therefore impossible, and reroute / search / inspect / open_in_browser proceed.
+
+## Search host policy
+
+The model never invents a URL: it selects from a list the ENGINE built from live
+results, and `RescueDirectiveValidator.validate(…, candidates:)` relaxes the
+reroute-host rule for exactly those strings. Which results reach the list is
+`RescueSearchCandidates`:
+
+- **Same registrable domain** — always allowed.
+- **Cross-domain** — only for an article rescue (nil or `.article` hint) whose
+  result title strongly matches the title Luna recovered for the failed page
+  (≥60% word overlap on the shorter title, stop words removed). A syndicated
+  copy or a canonical home is the same article; a different seller's listing or
+  a different creator's post is a different THING, so `product` and `media`
+  never cross a domain however good the title looks.
+
+Widening the ACTION space relaxes no EVIDENCE rule: a product price still has to
+appear verbatim in the digest, an article payload still has to pass the
+prefix spot-check, a media URL still needs an extension or verbatim evidence.
+
+## Errors, and what they cost
+
+`OnDeviceRescueSession.normalize` maps every `GenerationError`, each with its own
+log line and its own verdict. Three cases are named directly (the ones the stable
+SDK has always had); the rest are matched on the case NAME via
+`String(describing:)`, because Luna compiles against two SDKs and naming a case
+the archiving SDK lacks would fail the BUILD, not a rescue.
+
+| Model error | Verdict | Spends the version attempt? |
+| --- | --- | --- |
+| guardrailViolation, refusal | permanent for this URL | no — the ledger blocks it forever instead |
+| assetsUnavailable, concurrentRequests | transient | no |
+| rateLimited, networkFailure, serviceUnavailable | transient | no |
+| quotaLimitReached | `.quotaExhausted` | no |
+| decodingFailure, unsupportedGuide/Locale | `.unrescuable` | no (distinct log line) |
+| exceededContextWindowSize (after the halving retry) | failed | yes |
+
+## Measurement
+
+`RescueStatsStore` (`rescueStats.json`, LunaStorage) counts attempts, outcomes by
+bucket, successes by method, and cached-rule hits. Counts only — nothing
+identifies an item, a URL or a host — so the file outlives item deletion, which
+the per-item ledger deliberately does not. Surfaced two ways: a line at the top of
+the Diagnostics screen, and one `[rescue] sweep launched=… attempts=… …` line per
+sweep that launched anything. Before this the feature had no telemetry of any
+kind, so "I've yet to see it accomplish anything" was neither confirmable nor
+refutable.
 
 ## Integration + UX
 

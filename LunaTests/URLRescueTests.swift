@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import LunaFetch
 import LunaIngest
 import LunaModels
 import LunaShareSurface
@@ -48,11 +49,17 @@ final class URLRescueTests: XCTestCase {
         scriptRunner: RescueScriptRunning = FakeRescueScriptRunner(),
         ruleStore: RescueRuleStoring = InMemoryRescueRuleStore(),
         media: FakeMediaResolver = FakeMediaResolver(),
+        fetcher: HTMLFetching = FakeRescueHTMLFetcher(html: "<html></html>"),
+        traceStore: RescueTraceStoring = FakeRescueTraceStore(),
+        stats: RescueStatsStore? = nil,
+        search: FakeRescueSearch = FakeRescueSearch(),
         pipeline: RecordingPipeline = RecordingPipeline(results: [IngestResult(url: URL(string: "https://www.example.com/story")!, outcome: .failed(nil))])
     ) -> (URLRescueEngine, RecordingPipeline) {
         let engine = URLRescueEngine(
             session: session, scriptRunner: scriptRunner, ruleStore: ruleStore,
-            fetcher: FakeRescueHTMLFetcher(html: "<html></html>"), mediaResolver: media,
+            fetcher: fetcher, mediaResolver: media,
+            traceStore: traceStore, stats: stats ?? RescueStatsStore(containerURL: scratch),
+            search: { await search.run($0) },
             runPipeline: { await pipeline.run($0) })
         return (engine, pipeline)
     }
@@ -63,11 +70,46 @@ final class URLRescueTests: XCTestCase {
         guard case .unavailable = outcome else { return XCTFail("expected unavailable") }
     }
 
-    func testGuardrailIsUnrescuable() async {
+    /// A guardrail is a verdict on the prompt, and the prompt is derived from the
+    /// page — so it must surface as its own PERMANENT failure rather than the
+    /// ordinary "couldn't do it" that leaves the card offering a retry.
+    func testGuardrailIsAPermanentFailureRatherThanPlainUnrescuable() async {
         let session = FakeRescueModelSession(responses: [.failure(.guardrailViolation)])
         let (engine, _) = makeEngine(session: session)
         let outcome = await engine.rescue(request())
-        guard case .unrescuable = outcome else { return XCTFail("guardrail → unrescuable") }
+        guard case .failed(.guardrailViolation) = outcome else {
+            return XCTFail("guardrail → failed(.guardrailViolation)")
+        }
+        XCTAssertTrue(outcome.isPermanentlyBlocked)
+    }
+
+    /// A flat refusal is the same kind of verdict and used to vanish into an
+    /// anonymous `.other`.
+    func testRefusalIsAlsoPermanent() async {
+        let session = FakeRescueModelSession(responses: [.failure(.refusal)])
+        let (engine, _) = makeEngine(session: session)
+        let outcome = await engine.rescue(request())
+        XCTAssertTrue(outcome.isPermanentlyBlocked)
+    }
+
+    /// The model never saw the page in either case, so neither may spend the
+    /// item's one visible attempt.
+    func testTransientModelErrorsDoNotSpendTheVersionAttempt() async {
+        for error in [RescueModelError.assetsUnavailable, .concurrentRequests] {
+            let session = FakeRescueModelSession(responses: [.failure(error)])
+            let (engine, _) = makeEngine(session: session)
+            let outcome = await engine.rescue(request())
+            XCTAssertFalse(outcome.spendsVersionAttempt,
+                           "\(error.logToken) must not spend the attempt")
+        }
+    }
+
+    /// …while a plain "I looked and nothing works" does.
+    func testAGenuineGiveUpSpendsTheVersionAttempt() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        let outcome = await engine.rescue(request())
+        XCTAssertTrue(outcome.spendsVersionAttempt)
     }
 
     func testQuotaExhausted() async {
@@ -253,6 +295,402 @@ final class URLRescueTests: XCTestCase {
         // First call overflowed, second (halved) succeeded → rescued.
         guard case .rescued = outcome else { return XCTFail("expected retry to succeed") }
         XCTAssertEqual(session.planPrompts.count, 2, "exactly one retry after overflow")
+    }
+
+    // MARK: - Failure evidence in the prompt
+
+    private func traceStore(_ trace: String, for itemID: UUID) -> FakeRescueTraceStore {
+        FakeRescueTraceStore(traces: [itemID: trace])
+    }
+
+    /// The default reason is deliberately NOT one of the client-refusal codes:
+    /// those take the deterministic browser fast-path and never reach the model,
+    /// which is its own test below.
+    private func evidenceRequest(
+        itemID: UUID, reason: SaveFailureReason? = .notReadable,
+        html: String? = "<html><body>page body</body></html>"
+    ) -> RescueRequest {
+        RescueRequest(
+            url: url, source: .manual, failureKind: .articleFailed, hint: nil,
+            fetchedHTML: html, itemID: itemID, failureReason: reason,
+            pageTitle: "The Vanishing Middle Class of Rome")
+    }
+
+    /// The whole point of work item 1: what the pipeline already learned reaches
+    /// the model, fenced as untrusted page-derived content.
+    func testTracedFailureReachesThePromptFencedAsUntrusted() async {
+        let itemID = UUID()
+        let trace = """
+        2026-08-13T10:00:00Z [fetch] start https://www.example.com/story
+        2026-08-13T10:00:01Z [fetch] status=403 blocked by DataDome
+        2026-08-13T10:00:02Z [bypass] strategy=googlebot status=403
+        """
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session, traceStore: traceStore(trace, for: itemID))
+        _ = await engine.rescue(evidenceRequest(itemID: itemID))
+
+        guard let prompt = session.planPrompts.first else { return XCTFail("no prompt") }
+        XCTAssertTrue(prompt.contains("--- WHAT THE APP ALREADY TRIED (log excerpt, untrusted) ---"))
+        XCTAssertTrue(prompt.contains("--- END LOG EXCERPT ---"))
+        XCTAssertTrue(prompt.contains("strategy=googlebot"), "the bypass ladder is the evidence")
+        // The excerpt is page-derived, so it must be in the PROMPT and never the
+        // task contract.
+        XCTAssertFalse(session.planInstructions.first?.contains("DataDome") == true)
+    }
+
+    /// An install with no trace for this item — every failure recorded before the
+    /// trace file existed — must produce exactly the prompt it always did.
+    ///
+    /// This is also the guard on a subtler thing: the engine WRITES its own
+    /// decisions to the same file, so reading the trace after the attempt's first
+    /// log line would feed the rescue its own "start" back as evidence of what
+    /// already failed. The excerpt has to be the state of the world before this
+    /// attempt, not a mirror of it.
+    func testNoTraceMeansNoEvidenceSection() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let store = FakeRescueTraceStore()
+        let (engine, _) = makeEngine(session: session, traceStore: store)
+        _ = await engine.rescue(evidenceRequest(itemID: UUID()))
+        XCTAssertFalse(session.planPrompts.first?.contains("LOG EXCERPT") == true)
+        XCTAssertFalse(store.appended.isEmpty, "the rescue still wrote its own lines")
+    }
+
+    /// The recorded reason, not one of three canned sentences: the model is told
+    /// WHICH refusal it is looking at.
+    func testTheFailureSentenceCarriesTheRecordedStatusCode() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        _ = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .httpStatus(404)))
+        XCTAssertTrue(session.planPrompts.first?.contains("HTTP 404") == true)
+    }
+
+    func testTheFailureSentenceNamesASubscribeRedirect() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        _ = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .subscribeRedirect))
+        XCTAssertTrue(session.planPrompts.first?.contains("subscribe") == true)
+    }
+
+    /// Overflow halves the whole budget, so the evidence must shrink with the
+    /// digest rather than crowding the retry out of the window it just made room in.
+    func testContextOverflowHalvesTheEvidenceToo() async {
+        let itemID = UUID()
+        let trace = (0..<400).map { "2026-08-13T10:00:00Z [fetch] status=403 attempt \($0)" }
+            .joined(separator: "\n")
+        let session = FakeRescueModelSession(responses: [
+            .failure(.exceededContextWindowSize),
+            .plan(RescuePlanResponse(kind: "give_up")),
+        ])
+        let (engine, _) = makeEngine(session: session, traceStore: traceStore(trace, for: itemID))
+        _ = await engine.rescue(evidenceRequest(itemID: itemID))
+
+        XCTAssertEqual(session.planPrompts.count, 2)
+        let first = Self.evidenceSection(of: session.planPrompts[0])
+        let second = Self.evidenceSection(of: session.planPrompts[1])
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertLessThan(second.count, first.count, "the retry must shrink the evidence too")
+    }
+
+    private static func evidenceSection(of prompt: String) -> String {
+        guard let start = prompt.range(of: "--- WHAT THE APP ALREADY TRIED (log excerpt, untrusted) ---"),
+              let end = prompt.range(of: "--- END LOG EXCERPT ---") else { return "" }
+        return String(prompt[start.upperBound..<end.lowerBound])
+    }
+
+    /// The rescue's own decisions join the trace the failed card exports, so the
+    /// file explains the rescue and not just the first pass.
+    func testRescueDecisionsAreAppendedToTheItemsTrace() async {
+        let itemID = UUID()
+        let store = FakeRescueTraceStore()
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session, traceStore: store)
+        _ = await engine.rescue(evidenceRequest(itemID: itemID))
+
+        let written = store.appendedText(for: itemID)
+        XCTAssertTrue(written.contains("[rescue] start"))
+        XCTAssertTrue(written.contains("plan kind=give_up"))
+    }
+
+    /// No item, no trace: the price editor's ad-hoc resolution has no reading-list
+    /// row to write against and must not invent one.
+    func testAnItemlessRequestWritesNoTrace() async {
+        let store = FakeRescueTraceStore()
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session, traceStore: store)
+        _ = await engine.rescue(request())
+        XCTAssertTrue(store.appended.isEmpty)
+    }
+
+    // MARK: - No HTML is no longer instant death
+
+    /// The pages most in need of rescue are the ones whose refetch fails. Dying
+    /// here without asking meant never asking about the cases that matter most.
+    func testAFailedRefetchStillAsksTheModel() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story"))
+        ])
+        let good = IngestResult(url: URL(string: "https://amp.example.com/story")!,
+                                outcome: .article(ArticleContent(title: "T", blocks: [
+                                    .init(kind: .paragraph, text: String(repeating: "word ", count: 300), links: [])
+                                ]), html: "h"))
+        let (engine, _) = makeEngine(
+            session: session, fetcher: FakeRescueHTMLFetcher(html: nil),
+            pipeline: RecordingPipeline(results: [good]))
+        let outcome = await engine.rescue(request(html: nil))
+
+        XCTAssertEqual(session.planPrompts.count, 1, "the model must be asked anyway")
+        XCTAssertTrue(session.planPrompts.first?.contains("PAGE DIGEST: unavailable") == true)
+        guard case .rescued = outcome else { return XCTFail("a reroute needs no page HTML") }
+    }
+
+    /// …and the marker has to say the page is gone, or the model will happily
+    /// answer "product" about a digest that isn't there.
+    func testTheUnavailableDigestMarkerNamesWhatIsImpossible() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session, fetcher: FakeRescueHTMLFetcher(html: nil))
+        _ = await engine.rescue(request(html: nil))
+        let prompt = session.planPrompts.first ?? ""
+        XCTAssertTrue(prompt.contains("reroute, search"))
+        XCTAssertTrue(prompt.contains("impossible"))
+    }
+
+    // MARK: - search
+
+    private func searchResult(_ urlString: String, _ title: String) -> RescueSearchResult {
+        RescueSearchResult(url: URL(string: urlString)!, title: title)
+    }
+
+    /// The model emits a QUERY; the engine runs it and the model picks from the
+    /// real results. Two rounds, and the second prompt is the result listing.
+    func testSearchRunsTheQueryThenLetsTheModelPick() async {
+        let search = FakeRescueSearch(results: [
+            searchResult("https://www.example.com/2024/story-full", "The Vanishing Middle Class of Rome"),
+        ])
+        let good = IngestResult(url: URL(string: "https://www.example.com/2024/story-full")!,
+                                outcome: .article(ArticleContent(title: "T", blocks: [
+                                    .init(kind: .paragraph, text: String(repeating: "word ", count: 300), links: [])
+                                ]), html: "h"))
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "search", searchQuery: "vanishing middle class rome")),
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://www.example.com/2024/story-full")),
+        ])
+        let (engine, pipe) = makeEngine(
+            session: session, search: search, pipeline: RecordingPipeline(results: [good]))
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+
+        XCTAssertEqual(search.queries, ["vanishing middle class rome"])
+        guard case .rescued(_, let method) = outcome else { return XCTFail("expected a rescue") }
+        XCTAssertEqual(method, .search, "a search-sourced reroute is its own method")
+        XCTAssertEqual(pipe.inputs.count, 1, "still exactly one pipeline re-entry")
+        XCTAssertEqual(session.planPrompts.count, 2)
+        XCTAssertTrue(session.planPrompts[1].contains("--- SEARCH RESULTS (untrusted) ---"))
+        XCTAssertTrue(session.planPrompts[1].contains("story-full"))
+    }
+
+    /// The relaxation is for URLs the ENGINE offered, not for any URL the model
+    /// can name — otherwise "search" would be a hole straight through the reroute
+    /// host policy.
+    func testAModelInventedURLIsRejectedEvenInASearchRound() async {
+        let search = FakeRescueSearch(results: [
+            searchResult("https://www.example.com/2024/story-full", "The Vanishing Middle Class of Rome"),
+        ])
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "search", searchQuery: "middle class rome")),
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://attacker.test/exfiltrate")),
+        ])
+        let (engine, pipe) = makeEngine(session: session, search: search)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+        guard case .unrescuable = outcome else { return XCTFail("an off-list URL must be refused") }
+        XCTAssertTrue(pipe.inputs.isEmpty)
+    }
+
+    /// A cross-domain result is a DIFFERENT thing unless the title says otherwise —
+    /// and for a product or a media post it is a different thing regardless.
+    func testCrossDomainCandidatesNeedATitleMatch() {
+        let request = RescueRequest(
+            url: url, source: .manual, failureKind: .articleFailed,
+            pageTitle: "The Vanishing Middle Class of Rome")
+        let validator = RescueDirectiveValidator()
+        let kept = RescueSearchCandidates.filter([
+            searchResult("https://syndicated.test/rome", "The Vanishing Middle Class of Rome"),
+            searchResult("https://unrelated.test/other", "Cheap Flights to Rome"),
+        ], request: request, registrableDomain: { validator.registrableDomain($0) })
+        XCTAssertEqual(kept.map(\.url.host), ["syndicated.test"])
+    }
+
+    func testAProductSearchNeverLeavesTheOriginalDomain() {
+        let request = RescueRequest(
+            url: url, source: .manual, failureKind: .productNoPrice, hint: .product,
+            pageTitle: "Acme Widget Pro 3000")
+        let validator = RescueDirectiveValidator()
+        let kept = RescueSearchCandidates.filter([
+            searchResult("https://otherseller.test/widget", "Acme Widget Pro 3000"),
+            searchResult("https://www.example.com/widget", "Acme Widget Pro 3000"),
+        ], request: request, registrableDomain: { validator.registrableDomain($0) })
+        XCTAssertEqual(kept.map(\.url.host), ["www.example.com"])
+    }
+
+    func testASearchThatFindsNothingIsUnrescuableRatherThanFreeform() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "search", searchQuery: "nothing at all")),
+        ])
+        let (engine, _) = makeEngine(session: session, search: FakeRescueSearch(results: []))
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+        guard case .unrescuable = outcome else { return XCTFail("no candidates → unrescuable") }
+        XCTAssertEqual(session.planPrompts.count, 1, "no second call without candidates")
+    }
+
+    // MARK: - inspect_url
+
+    func testInspectRoundDigestsThePageAndThenCommits() async {
+        let good = IngestResult(url: URL(string: "https://amp.example.com/story")!,
+                                outcome: .article(ArticleContent(title: "T", blocks: [
+                                    .init(kind: .paragraph, text: String(repeating: "word ", count: 300), links: [])
+                                ]), html: "h"))
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://amp.example.com/index")),
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story")),
+        ])
+        let (engine, _) = makeEngine(
+            session: session,
+            fetcher: FakeRescueHTMLFetcher(html: "<html><body>the index page</body></html>"),
+            pipeline: RecordingPipeline(results: [good]))
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+
+        guard case .rescued = outcome else { return XCTFail("expected a rescue after inspection") }
+        XCTAssertEqual(session.planPrompts.count, 2)
+        XCTAssertTrue(session.planPrompts[1].contains("You asked to inspect: https://amp.example.com/index"))
+        XCTAssertTrue(session.planPrompts[1].contains("INSPECTED PAGE DIGEST"))
+    }
+
+    /// The round cap is structural — the follow-up call is validated with
+    /// intermediate kinds refused, so a model that asks to inspect again is
+    /// rejected instead of looping. This is the test that would catch someone
+    /// moving the bound into the prompt.
+    func testASecondInspectRequestIsRefusedRatherThanLooping() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://amp.example.com/a")),
+            .plan(RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://amp.example.com/b")),
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story")),
+        ])
+        let (engine, pipe) = makeEngine(
+            session: session,
+            fetcher: FakeRescueHTMLFetcher(html: "<html><body>page</body></html>"))
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+        guard case .unrescuable = outcome else { return XCTFail("a second inspect must be refused") }
+        XCTAssertEqual(session.planPrompts.count, 2, "exactly one inspect round")
+        XCTAssertTrue(pipe.inputs.isEmpty)
+    }
+
+    /// Likewise for search: one intermediate round, whichever kind it was.
+    func testASearchInsideASearchRoundIsRefused() async {
+        let search = FakeRescueSearch(results: [
+            searchResult("https://www.example.com/other", "The Vanishing Middle Class of Rome"),
+        ])
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "search", searchQuery: "one")),
+            .plan(RescuePlanResponse(kind: "search", searchQuery: "two")),
+        ])
+        let (engine, _) = makeEngine(session: session, search: search)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+        guard case .unrescuable = outcome else { return XCTFail("nested search must be refused") }
+        XCTAssertEqual(search.queries, ["one"])
+    }
+
+    /// An inspect URL is held to the same host policy as a reroute — the round is
+    /// a free fetch, and a free fetch of any host the model names is an
+    /// exfiltration channel.
+    func testAnOffHostInspectURLIsRejectedBeforeAnyFetch() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "inspect_url", rerouteURLString: "https://attacker.test/collect")),
+        ])
+        let (engine, _) = makeEngine(session: session)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID()))
+        guard case .unrescuable = outcome else { return XCTFail("off-host inspect must be rejected") }
+        XCTAssertEqual(session.planPrompts.count, 1)
+    }
+
+    // MARK: - open_in_browser
+
+    func testTheModelCanRouteToTheBrowserUnlockTier() async {
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "open_in_browser")),
+        ])
+        let (engine, pipe) = makeEngine(session: session)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .notReadable))
+        guard case .needsBrowser = outcome else { return XCTFail("expected the browser handoff") }
+        XCTAssertTrue(pipe.inputs.isEmpty, "nothing is fetched — that is the whole finding")
+        XCTAssertFalse(outcome.spendsVersionAttempt)
+    }
+
+    /// The deterministic leg: a client-refusal status with an untried archive
+    /// tier goes straight there, ahead of the model.
+    func testABrowserRecoverableRefusalSkipsTheModelEntirely() async {
+        let session = FakeRescueModelSession(responses: [])
+        let (engine, _) = makeEngine(session: session)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .httpStatus(403)))
+        guard case .needsBrowser = outcome else { return XCTFail("expected the fast path") }
+        XCTAssertEqual(session.prewarmCount, 0, "the fast path must not touch the model")
+    }
+
+    /// Once the user has been offered the unlock screen, a second handoff would
+    /// just re-park a card they already chose not to unlock — so the model gets
+    /// its turn instead.
+    func testASecondBrowserHandoffFallsThroughToTheModel() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        let request = RescueRequest(
+            url: url, source: .manual, failureKind: .articleFailed, hint: nil,
+            fetchedHTML: "<html><body>x</body></html>", itemID: UUID(),
+            failureReason: .httpStatus(403), browserHandoffTried: true)
+        let outcome = await engine.rescue(request)
+        guard case .unrescuable = outcome else { return XCTFail("expected the model's give_up") }
+        XCTAssertEqual(session.planPrompts.count, 1)
+    }
+
+    /// A 404 is not a refusal — the page is gone and no client can conjure it, so
+    /// the fast path must not fire.
+    func testAGoneStatusDoesNotTakeTheBrowserFastPath() async {
+        let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
+        let (engine, _) = makeEngine(session: session)
+        let outcome = await engine.rescue(evidenceRequest(itemID: UUID(), reason: .httpStatus(404)))
+        guard case .unrescuable = outcome else { return XCTFail("404 must reach the model") }
+    }
+
+    // MARK: - Stats
+
+    func testEachOutcomeIncrementsItsOwnCounter() async {
+        let stats = RescueStatsStore(containerURL: scratch)
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "give_up")),
+            .failure(.guardrailViolation),
+        ])
+        let (engine, _) = makeEngine(session: session, stats: stats)
+        _ = await engine.rescue(request())
+        _ = await engine.rescue(request())
+
+        let snapshot = stats.snapshot()
+        XCTAssertEqual(snapshot.attempts, 2)
+        XCTAssertEqual(snapshot.outcome(.unrescuable), 1)
+        XCTAssertEqual(snapshot.outcome(.guardrailed), 1)
+    }
+
+    func testASuccessfulRescueIsCountedByItsMethod() async {
+        let stats = RescueStatsStore(containerURL: scratch)
+        let good = IngestResult(url: URL(string: "https://amp.example.com/story")!,
+                                outcome: .article(ArticleContent(title: "T", blocks: [
+                                    .init(kind: .paragraph, text: String(repeating: "word ", count: 300), links: [])
+                                ]), html: "h"))
+        let session = FakeRescueModelSession(responses: [
+            .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story"))
+        ])
+        let (engine, _) = makeEngine(session: session, stats: stats,
+                                     pipeline: RecordingPipeline(results: [good]))
+        _ = await engine.rescue(request(hint: .article))
+
+        XCTAssertEqual(stats.snapshot().outcome(.rescued), 1)
+        XCTAssertEqual(stats.snapshot().methods["reroute"], 1)
+        XCTAssertTrue(stats.summaryLine().contains("rescued=1"))
     }
 
     // MARK: - RescueDigestBuilder

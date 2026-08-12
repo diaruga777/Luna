@@ -33,14 +33,19 @@ final class URLRescueCoordinatorTests: XCTestCase {
 
     /// A fake engine recording each perform call; returns a configurable result.
     private final class RecordingEngine {
-        var succeed: Bool
+        var result: URLRescueCoordinator.RescueRunResult
         var available: Bool
         private(set) var performedIDs: [UUID] = []
         private(set) var performedHints: [RescueHint?] = []
         private(set) var performedInteractive: [Bool] = []
         let expectation: XCTestExpectation?
-        init(succeed: Bool, available: Bool = true, expectation: XCTestExpectation? = nil) {
-            self.succeed = succeed; self.available = available; self.expectation = expectation
+        init(result: URLRescueCoordinator.RescueRunResult, available: Bool = true,
+             expectation: XCTestExpectation? = nil) {
+            self.result = result; self.available = available; self.expectation = expectation
+        }
+        convenience init(succeed: Bool, available: Bool = true, expectation: XCTestExpectation? = nil) {
+            self.init(result: succeed ? .advanced : .notRecovered,
+                      available: available, expectation: expectation)
         }
         func engine() -> URLRescueCoordinator.Engine {
             URLRescueCoordinator.Engine(
@@ -50,7 +55,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
                     self.performedHints.append(hint)
                     self.performedInteractive.append(interactive)
                     self.expectation?.fulfill()
-                    return self.succeed
+                    return self.result
                 })
         }
     }
@@ -267,6 +272,93 @@ final class URLRescueCoordinatorTests: XCTestCase {
 
     /// The AUTOMATIC sweep must not burn the user's one visible attempt — the
     /// button is theirs to press.
+    /// The model never saw the page — assets downloading, another request holding
+    /// the session — so the user's one visible attempt must survive it.
+    func testATransientModelFailureDoesNotSpendTheVersionAttempt() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(result: .transient, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        let item = failedItem()
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        wait(for: [exp], timeout: 2)
+        settle()
+        XCTAssertFalse(failures.hasSpentAIAttempt(item.id))
+    }
+
+    /// The rescue DID recover the content; this app's surface dropped it on the
+    /// way in. That is not the user's attempt to lose either.
+    func testASurfaceDroppedRescueDoesNotSpendTheVersionAttempt() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(result: .surfaceDropped, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        let item = failedItem()
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        wait(for: [exp], timeout: 2)
+        settle()
+        XCTAssertFalse(failures.hasSpentAIAttempt(item.id))
+    }
+
+    // MARK: - Guardrail permanence
+
+    /// A guardrail is a verdict on the prompt, and the prompt is derived from the
+    /// page: the same page trips it every time. The ledger is what makes that
+    /// permanent.
+    func testAGuardrailedRescueMarksTheItemPermanentlyBlocked() {
+        let exp = expectation(description: "perform")
+        let fake = RecordingEngine(result: .guardrailed, expectation: exp)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = makeCoordinator()
+        let item = failedItem()
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        wait(for: [exp], timeout: 2)
+        XCTAssertTrueEventually { self.ledger.isGuardrailed(item.id) }
+        XCTAssertFalse(ledger.shouldAutoRescue(item.id), "no automatic retry either")
+    }
+
+    /// …and no later tap may spend 90 seconds re-proving it.
+    func testAGuardrailedItemIsNeverAttemptedAgain() {
+        ledger.recordGuardrail(UUID())   // an unrelated row must not matter
+        let fake = RecordingEngine(succeed: false)
+        URLRescueCoordinator.engine = fake.engine()
+        let coordinator = makeCoordinator()
+        let item = failedItem()
+        ledger.recordGuardrail(item.id)
+
+        coordinator.requestManualRescue(itemID: item.id, hint: nil)
+        settle()
+        XCTAssertTrue(fake.performedIDs.isEmpty)
+    }
+
+    /// An app update reopens a spent VERSION attempt, because Luna's extraction
+    /// code changed. It does not reopen a guardrail, because Apple's safety model
+    /// didn't.
+    func testAnUpdateDoesNotReopenAGuardrailedItem() {
+        let failures = SaveFailureStore(containerURL: tempDir)
+        let item = failedItem()
+        failures.recordAIAttempt(item.id, version: "0.9 (1)")
+        ledger.recordGuardrail(item.id)
+
+        let coordinator = URLRescueCoordinator(
+            store: store, ledger: ledger, pending: pending, failures: failures)
+        coordinator.reopenStaleVersionAttempts()
+        XCTAssertFalse(ledger.shouldAutoRescue(item.id))
+    }
+
+    private func settle(_ interval: TimeInterval = 0.3) {
+        let waited = expectation(description: "settle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { waited.fulfill() }
+        wait(for: [waited], timeout: 2)
+    }
+
     func testAnAutomaticRescueDoesNotSpendTheVersionAttempt() {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")

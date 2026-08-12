@@ -61,6 +61,15 @@ enum FailedSaveCardFactory {
         if URLRescueCoordinator.shared.isRescuing(item.id) {
             return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
         }
+        // A guardrailed item is terminal for good, not just for this version: the
+        // prompt is derived from the page, so the same page trips the same safety
+        // guardrail on every future build too. `.unavailable` rather than
+        // `.spent` because `.spent` promises the button comes back after an
+        // update, and this one never does. (The two render identically — no
+        // button, the apology, Delete — so this is a promise, not a pixel.)
+        if RescueLedgerStore.shared.isGuardrailed(item.id) {
+            return .unavailable
+        }
         if SaveFailureStore.shared.hasSpentAIAttempt(item.id) {
             return .spent
         }

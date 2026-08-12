@@ -6,12 +6,35 @@
 import LunaReaderUI
 import UIKit
 
+/// The scroll-reader chrome policy is intentionally about the host viewport,
+/// not the portrait card nested inside it. Every iPad gets tap-only chrome even
+/// in a narrow multitasking window; a future foldable/landscape phone gets it
+/// when its available screen is wider than tall.
+enum ReaderCardViewportPolicy {
+    static func usesTapOnlyScrollChrome(
+        userInterfaceIdiom: UIUserInterfaceIdiom,
+        viewportSize: CGSize
+    ) -> Bool {
+        userInterfaceIdiom == .pad || viewportSize.width > viewportSize.height
+    }
+}
+
 /// Detects "is the user reading on, or surfacing" under an arbitrary reader
 /// hierarchy and reports it as a single immersion signal: KVO on every nested
 /// scroll view for the scroll reader's direction, `onPlaybackStateChanged` on
 /// every nested RSVP controller for its play state. Generic over any reader
 /// hosted anywhere — nothing here is carousel- or card-specific.
 final class ScrollDirectionImmersionTracker {
+
+    /// False on large/wide hosts, where scrolling must never change card chrome.
+    /// RSVP callbacks remain active because its play/pause state is independent
+    /// of this scroll-only gate.
+    var allowsScrollDrivenImmersion = true {
+        didSet {
+            guard !allowsScrollDrivenImmersion else { return }
+            scrollRuns = [:]
+        }
+    }
 
     /// The reader wants the host chrome faded away (true — reading is under
     /// way) or back in (false — the user is surfacing). `extendsCard` mirrors
@@ -118,7 +141,9 @@ final class ScrollDirectionImmersionTracker {
     /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
         let key = ObjectIdentifier(scrollView)
-        guard isActive, scrollView.isDragging || scrollView.isDecelerating else {
+        guard isActive, allowsScrollDrivenImmersion,
+              scrollView.isDragging || scrollView.isDecelerating
+        else {
             scrollRuns[key] = nil
             return
         }

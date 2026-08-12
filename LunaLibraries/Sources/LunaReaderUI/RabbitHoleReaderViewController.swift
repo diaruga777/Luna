@@ -395,6 +395,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// changes across those.
     public var focusedContentScrollView: UIScrollView? { layers[safe: focus]?.contentScrollView }
 
+    /// The focused scrolling text reader, nil for RSVP, Original, and web
+    /// layers. Exposed for the Reader card's large-width glyph transition.
+    public var focusedScrollReader: ScrollReaderViewController? {
+        layers[safe: focus]?.activeScrollReader
+    }
+
     /// The focused layer's RSVP playback state, or nil when the focused layer
     /// is not showing the speed reader. A host whose chrome follows the reader
     /// asks this on `readerContentHierarchyDidChange`: RSVP's chrome state IS

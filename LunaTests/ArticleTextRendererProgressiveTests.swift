@@ -224,6 +224,38 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         XCTAssertEqual(textView?.contentOffset.y ?? -1, capturedOffset, accuracy: 1.0)
     }
 
+    func testCardWidthTransitionBuildsIndividualGlyphMovesAndRestoresLiveText() throws {
+        var item = ReadingListItem(urlString: "https://example.com/reflow")
+        item.state = .ready
+        let content = ArticleContent(
+            title: "Reflow",
+            blocks: [paragraph(String(repeating: "Every character moves smoothly. ", count: 30))])
+        let reader = ScrollReaderViewController(item: item, content: content)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 500, height: 800)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        let textView = try XCTUnwrap(firstTextView(in: reader.view))
+
+        let prepared = reader.prepareForCardViewportTransition(
+            to: CGSize(width: 900, height: 1_000),
+            destinationTopChromeInset: 80)
+
+        if UIAccessibility.isReduceMotionEnabled {
+            XCTAssertFalse(prepared)
+            return
+        }
+        XCTAssertTrue(prepared)
+        XCTAssertGreaterThan(reader.viewportReflowGlyphCountForTesting, 20)
+        XCTAssertEqual(textView.alpha, 0, accuracy: 0.001,
+                       "the live jumping TextKit layout stays hidden behind its glyphs")
+        reader.animatePreparedCardViewportTransition()
+        reader.view.frame = CGRect(x: 0, y: 0, width: 900, height: 1_000)
+        reader.view.layoutIfNeeded()
+        reader.finishCardViewportTransition(completed: true)
+        XCTAssertEqual(reader.viewportReflowGlyphCountForTesting, 0)
+        XCTAssertEqual(textView.alpha, 1, accuracy: 0.001)
+    }
+
     private func firstTextView(in view: UIView) -> UITextView? {
         if let tv = view as? UITextView { return tv }
         for sub in view.subviews { if let found = firstTextView(in: sub) { return found } }

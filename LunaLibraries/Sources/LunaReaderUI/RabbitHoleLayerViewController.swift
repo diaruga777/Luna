@@ -826,6 +826,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return Self.firstScrollView(in: root)
     }
 
+    /// The live scrolling text reader when Scroll is the selected mode. The
+    /// outer card uses this narrow accessor only to coordinate width reflow.
+    public var activeScrollReader: ScrollReaderViewController? {
+        readerChild as? ScrollReaderViewController
+    }
+
     public var isRSVPPlaying: Bool? {
         readerMode == .rsvp ? rsvpReader.isPlaying : nil
     }

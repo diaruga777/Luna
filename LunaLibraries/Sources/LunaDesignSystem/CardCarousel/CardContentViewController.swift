@@ -74,6 +74,20 @@ open class CardContentViewController: UIViewController {
     /// over whitespace, letting the card present its context menu there.
     open func longPressSelectsContent(at point: CGPoint) -> Bool { false }
 
+    /// Gives content a chance to replace an ordinary bounds interpolation with
+    /// a transition tailored to its rendering model. The Reader uses this to
+    /// animate TextKit glyphs between their old and newly reflowed locations
+    /// while the card itself expands. Other card kinds keep the no-op default.
+    open func prepareForCardViewportTransition(to size: CGSize) {}
+
+    /// Commits the prepared viewport transition inside the carousel's animation
+    /// block. Implementations should only change animatable presentation state
+    /// here; expensive capture/layout belongs in `prepare...` above.
+    open func animatePreparedCardViewportTransition() {}
+
+    /// Retires any temporary presentation installed for the viewport change.
+    open func finishCardViewportTransition(completed: Bool) {}
+
     /// The card became the centered card: playable content should (re)start,
     /// looping, honoring the mute state last applied via `setMuted`.
     open func cardDidBecomeCentered() {

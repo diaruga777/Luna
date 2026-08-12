@@ -669,7 +669,9 @@ public final class CardCarouselViewController: UIViewController {
     /// `extendsCard`) the centered card's bottom edge extends into the room
     /// the strip frees up. The card's top, sides, and corner radius never
     /// move — the host's header and the card's own header stay exactly as
-    /// they are.
+    /// they are. A caller may opt the immersed card into a near-full-width
+    /// viewport with `horizontalInset`; this is used only by the large-screen
+    /// scrolling Reader.
     public private(set) var isImmersed = false
 
     /// Whether the current immersion extends the centered card's bottom edge
@@ -677,6 +679,10 @@ public final class CardCarouselViewController: UIViewController {
     /// layout (the RSVP reader) immerses WITHOUT the extension, so nothing
     /// inside the card moves — only the chrome fades.
     private var immersionExtendsCard = true
+
+    /// Nil keeps the centered card's resting width. A value expands it to the
+    /// carousel bounds with this much breathing room on either side.
+    private var immersionHorizontalInset: CGFloat?
 
     /// A host-owned decorative view behind the cards — the starfield — that the
     /// carousel treats as its own chrome: it fades out with the scrub strip and
@@ -692,23 +698,41 @@ public final class CardCarouselViewController: UIViewController {
         cardAreaTopConstraint.constant = inset
     }
 
-    public func setImmersed(_ immersed: Bool, extendsCard: Bool = true, animated: Bool = false) {
+    public func setImmersed(
+        _ immersed: Bool,
+        extendsCard: Bool = true,
+        horizontalInset: CGFloat? = nil,
+        animated: Bool = false
+    ) {
         // A transition starts un-immersed: an edge page pan first surfaces the
         // carousel synchronously. This drops any later spurious fade-out — e.g.
         // a reader still decelerating while the user pages away — that would
         // fight the eclipse's manipulation of the same card.
         guard !isTransitioning else { return }
+        let resolvedHorizontalInset = immersed ? horizontalInset.map { max(0, $0) } : nil
         if immersed == isImmersed {
             // Already immersed but the extension mode changed (e.g. a mode
             // switch from scroll to RSVP mid-immersion) — re-apply the card
             // frame without re-reporting the unchanged immersion state.
-            guard immersed, immersionExtendsCard != extendsCard else { return }
+            guard immersed,
+                  immersionExtendsCard != extendsCard
+                    || immersionHorizontalInset != resolvedHorizontalInset
+            else { return }
             immersionExtendsCard = extendsCard
+            immersionHorizontalInset = resolvedHorizontalInset
             if animated {
+                prepareCenteredContentForImmersionLayout()
+                let transitioningContent = slots[currentIndex]?.content
                 UIView.animate(
                     withDuration: 0.32, delay: 0,
-                    options: [.curveEaseInOut, .allowUserInteraction],
-                    animations: applyImmersionLayout)
+                    options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+                    animations: {
+                        self.applyImmersionLayout()
+                        transitioningContent?.animatePreparedCardViewportTransition()
+                    },
+                    completion: { completed in
+                        transitioningContent?.finishCardViewportTransition(completed: completed)
+                    })
             } else {
                 applyImmersionLayout()
             }
@@ -716,13 +740,23 @@ public final class CardCarouselViewController: UIViewController {
         }
         isImmersed = immersed
         immersionExtendsCard = extendsCard
+        immersionHorizontalInset = resolvedHorizontalInset
         scrubber.isUserInteractionEnabled = !immersed && !isColumnAside
         // Immersion hands the runway under the card to the reader's own chrome.
         updatePlaybackControls()
         if animated {
+            prepareCenteredContentForImmersionLayout()
+            let transitioningContent = slots[currentIndex]?.content
             UIView.animate(
-                withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
-                animations: applyImmersionLayout)
+                withDuration: 0.32, delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState],
+                animations: {
+                    self.applyImmersionLayout()
+                    transitioningContent?.animatePreparedCardViewportTransition()
+                },
+                completion: { completed in
+                    transitioningContent?.finishCardViewportTransition(completed: completed)
+                })
         } else {
             applyImmersionLayout()
         }
@@ -801,6 +835,12 @@ public final class CardCarouselViewController: UIViewController {
         guard let metrics, let slot = slots[currentIndex] else { return }
         let resting = metrics.centeredCardFrame()
         var frame = resting
+        if isImmersed, let horizontalInset = immersionHorizontalInset {
+            let target = view.convert(view.bounds, to: cardArea)
+            let width = max(1, target.width - horizontalInset * 2)
+            frame.origin.x = target.midX - width / 2
+            frame.size.width = width
+        }
         if isImmersed, immersionExtendsCard {
             // Extend only the bottom edge to the carousel view's bottom (the
             // room the faded scrub strip frees up).
@@ -810,8 +850,30 @@ public final class CardCarouselViewController: UIViewController {
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: frame.size)
         slot.card.center = CGPoint(x: frame.midX, y: frame.midY)
+        // Resolve every nested content frame at the destination inside the
+        // same animation transaction. Reader text animates independently, but
+        // its clipping viewport must share the card's exact interpolation.
+        slot.card.layoutIfNeeded()
         // The card must ride above its (fading) peeking neighbors.
         if isImmersed { cardArea.bringSubviewToFront(slot.card) }
+    }
+
+    /// Resolve the destination frame before UIKit starts interpolating the
+    /// card, so text content can prepare a true old-layout → new-layout reflow.
+    private func prepareCenteredContentForImmersionLayout() {
+        guard let metrics, let slot = slots[currentIndex] else { return }
+        var frame = metrics.centeredCardFrame()
+        if isImmersed, let horizontalInset = immersionHorizontalInset {
+            let target = view.convert(view.bounds, to: cardArea)
+            let width = max(1, target.width - horizontalInset * 2)
+            frame.origin.x = target.midX - width / 2
+            frame.size.width = width
+        }
+        if isImmersed, immersionExtendsCard {
+            let target = view.convert(view.bounds, to: cardArea)
+            frame.size.height = max(target.maxY - frame.minY, frame.height)
+        }
+        slot.content.prepareForCardViewportTransition(to: frame.size)
     }
 
     /// Pages by `step` cards. Single steps run the eclipse transition (unless

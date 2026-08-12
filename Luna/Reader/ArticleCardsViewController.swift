@@ -11,10 +11,10 @@
 //    (side cards too, so paging never shows a placeholder). The card view IS
 //    the fullscreen reader view — one header, one layout — so "fullscreen"
 //    is not a separate presentation.
-//  - Going fullscreen is a chrome fade, nothing more: the peeking side cards
-//    and the bottom scrub strip fade away and the card's bottom edge extends
-//    into the freed room. Scrolling down in the scroll reader fades them
-//    out; scrolling up — from anywhere in the article — fades them back in.
+//  - Going fullscreen fades the peeking side cards and bottom scrub strip, and
+//    extends the card into the freed room. On iPad / a wider-than-tall host,
+//    Scroll also expands nearly full width and is tap-only; portrait phones
+//    keep direction-driven scroll chrome (down hides, up restores).
 //    In RSVP, playing fades them out and pausing fades them back. The
 //    reader's own header never moves or changes.
 //  - Long-pressing a card exposes its archive action through a context menu.
@@ -67,6 +67,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// (wide screens only). Strongly held through containment; this reference is
     /// the flag "the deck is paired" that immersion, paging, and the trays check.
     private weak var inlineColumn: SplitWebOverlayViewController?
+
+    /// A dismissed scroll-reader card nearly fills the large/wide viewport.
+    /// The remaining gap keeps the rounded mask legible against the screen.
+    private static let expandedReaderHorizontalInset: CGFloat = 16
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -826,7 +830,11 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // over the column's own controls.
         guard inlineColumn == nil else { return }
         card.setCardChromeVisible(!immersed, animated: true)
-        carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+        carousel.setImmersed(
+            immersed,
+            extendsCard: extendsCard,
+            horizontalInset: expandedReaderInset(for: card, immersed: immersed),
+            animated: true)
         // The archive peek is card chrome too: it fades away with the
         // side-card peeks and returns with them.
         archiveTray?.setChromeHidden(immersed, animated: true)
@@ -851,7 +859,11 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool
     ) {
         guard card.isCentered, carousel.isImmersed, inlineColumn == nil else { return }
-        carousel.setImmersed(true, extendsCard: extendsCard, animated: true)
+        carousel.setImmersed(
+            true,
+            extendsCard: extendsCard,
+            horizontalInset: expandedReaderInset(for: card, immersed: true),
+            animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
             options: [.curveEaseInOut, .allowUserInteraction]
@@ -887,6 +899,25 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     ) -> CGRect? {
         guard let restingFrame = carousel.restingCenteredCardFrame(in: view) else { return nil }
         return view.convert(restingFrame, to: nil)
+    }
+
+    func readerCardUsesTapOnlyScrollChrome(
+        _ card: ReaderCardContentViewController
+    ) -> Bool {
+        ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
+            userInterfaceIdiom: traitCollection.userInterfaceIdiom,
+            viewportSize: view.bounds.size)
+    }
+
+    private func expandedReaderInset(
+        for card: ReaderCardContentViewController,
+        immersed: Bool
+    ) -> CGFloat? {
+        guard immersed,
+              readerCardUsesTapOnlyScrollChrome(card),
+              card.rabbitHoleReader?.focusedScrollReader != nil
+        else { return nil }
+        return Self.expandedReaderHorizontalInset
     }
 
     // MARK: - The second column (wide screens)
@@ -1077,6 +1108,8 @@ protocol ReaderCardContentDelegate: AnyObject {
     /// fades.
     func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool)
+    /// Whether the host viewport reserves scroll-reader chrome changes for taps.
+    func readerCardUsesTapOnlyScrollChrome(_ card: ReaderCardContentViewController) -> Bool
     /// The card's live content changed what an immersed layout should do with
     /// the room the faded strip frees — a scroll→RSVP switch trades a scrolling
     /// surface for a fixed one. Applied only while ALREADY immersed; it never
@@ -1140,6 +1173,12 @@ final class ReaderCardContentViewController: CardContentViewController,
     /// prefix-to-full article swap) so the pinned/scrolling title copies never
     /// trade visibility for a single frame after a card transition.
     private var pendingProgrammaticTitleUpdate: DispatchWorkItem?
+    /// The title copy mounted inside UITextView is outside TextKit's attributed
+    /// string. A flattened copy keeps it visible above the per-glyph body
+    /// transition while the live text view is temporarily hidden for reflow.
+    private var viewportTitleSnapshot: UIView?
+    private var viewportTitleDestinationFrame: CGRect?
+    private weak var viewportTransitionScrollReader: ScrollReaderViewController?
     /// Which copy currently owns the title — see `updateTitleHandoffLatch()`.
     private var pinnedTitleHasTakenOver = false
     private(set) var isCentered = false
@@ -1304,6 +1343,8 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        immersionTracker.allowsScrollDrivenImmersion =
+            !(delegate?.readerCardUsesTapOnlyScrollChrome(self) ?? false)
         // Bake the inline reader's eclipse corona now rather than on the first
         // article open. (The carousel prewarms its own card geometry separately.)
         SplitWebOverlayViewController.prewarmEclipseCorona(
@@ -1330,6 +1371,8 @@ final class ReaderCardContentViewController: CardContentViewController,
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
+        immersionTracker.allowsScrollDrivenImmersion =
+            !(delegate?.readerCardUsesTapOnlyScrollChrome(self) ?? false)
         immersionTracker.isActive = true
         rabbitHoleReader?.activatePrimaryContent()
         if let rabbitHoleReader { delegate?.readerCard(self, didBecomeReady: rabbitHoleReader) }
@@ -1521,6 +1564,51 @@ final class ReaderCardContentViewController: CardContentViewController,
     func setCardChromeVisible(_ visible: Bool, animated: Bool) {
         cardChromeVisible = visible
         updatePinnedTitleVisibility(animated: animated)
+    }
+
+    override func prepareForCardViewportTransition(to size: CGSize) {
+        viewportTitleSnapshot?.removeFromSuperview()
+        viewportTitleSnapshot = nil
+        viewportTitleDestinationFrame = nil
+        viewportTransitionScrollReader = nil
+        let destinationTitleHeight = titleHeader.heightThatFits(
+            width: size.width, topInset: baseTopContentInset)
+        guard let scrollReader = rabbitHoleReader?.focusedScrollReader,
+              scrollReader.prepareForCardViewportTransition(
+                to: size,
+                destinationTopChromeInset: destinationTitleHeight) == true
+        else { return }
+        viewportTransitionScrollReader = scrollReader
+
+        let sourceFrame = scrollTitleHeader.convert(scrollTitleHeader.bounds, to: view)
+        guard sourceFrame.intersects(view.bounds.insetBy(dx: 0, dy: -4)),
+              let snapshot = scrollTitleHeader.snapshotView(afterScreenUpdates: false)
+        else { return }
+        snapshot.frame = sourceFrame
+        snapshot.isUserInteractionEnabled = false
+        view.addSubview(snapshot)
+        viewportTitleSnapshot = snapshot
+        let destinationOffset = scrollReader.preparedCardViewportDestinationOffsetY ?? 0
+        let readerOrigin = scrollReader.view.convert(CGPoint.zero, to: view)
+        viewportTitleDestinationFrame = CGRect(
+            x: readerOrigin.x,
+            y: readerOrigin.y - destinationTitleHeight - destinationOffset,
+            width: size.width, height: destinationTitleHeight)
+    }
+
+    override func animatePreparedCardViewportTransition() {
+        viewportTransitionScrollReader?.animatePreparedCardViewportTransition()
+        if let destination = viewportTitleDestinationFrame {
+            viewportTitleSnapshot?.frame = destination
+        }
+    }
+
+    override func finishCardViewportTransition(completed: Bool) {
+        viewportTransitionScrollReader?.finishCardViewportTransition(completed: completed)
+        viewportTransitionScrollReader = nil
+        viewportTitleSnapshot?.removeFromSuperview()
+        viewportTitleSnapshot = nil
+        viewportTitleDestinationFrame = nil
     }
 
     /// Moves the permanent title copy into whichever scroll surface is focused

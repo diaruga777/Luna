@@ -83,6 +83,37 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(miniCarousel.transform, .identity)
     }
 
+    func testWideScrollCardTapExpandsToSmallScreenInsetsAndSecondTapRestores() throws {
+        let controller = makeArticleController(
+            seed: "wide-tap-immersion",
+            title: "Wide Tap Immersion",
+            size: CGSize(width: 1_024, height: 768))
+        let resting = try XCTUnwrap(
+            controller.carousel.restingCenteredCardFrame(in: controller.view))
+        let liveCard = try XCTUnwrap(
+            controller.carousel.cardView(at: controller.carousel.currentIndex))
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        let expanded = liveCard.convert(liveCard.bounds, to: controller.view)
+        XCTAssertTrue(controller.carousel.isImmersed)
+        XCTAssertEqual(expanded.minX, 16, accuracy: 0.5)
+        XCTAssertEqual(expanded.maxX, controller.view.bounds.maxX - 16, accuracy: 0.5)
+        XCTAssertGreaterThan(expanded.width, resting.width)
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        let restored = liveCard.convert(liveCard.bounds, to: controller.view)
+        XCTAssertFalse(controller.carousel.isImmersed)
+        XCTAssertEqual(restored.minX, resting.minX, accuracy: 0.5)
+        XCTAssertEqual(restored.width, resting.width, accuracy: 0.5)
+    }
+
     /// The read-aloud and back circles belong to the CARD's top corners, not the
     /// screen's: the card sits `peek + edgeGap` inside the screen edges, so
     /// screen-relative insets left them straddling its rim (half the circle
@@ -539,7 +570,10 @@ final class ArticleCardsChromeTests: XCTestCase {
     }
 
     private func makeArticleController(
-        seed: String, title: String, senderName: String? = nil
+        seed: String,
+        title: String,
+        senderName: String? = nil,
+        size: CGSize = CGSize(width: 402, height: 874)
     ) -> ArticleCardsViewController {
         var item = ReadingListItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: title,
@@ -553,7 +587,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         ReadingListStore.shared.seedForTesting(items: [item], contents: [item.id: content])
         let controller = ArticleCardsViewController()
         controller.loadViewIfNeeded()
-        controller.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        controller.view.frame = CGRect(origin: .zero, size: size)
         controller.beginAppearanceTransition(true, animated: false)
         controller.endAppearanceTransition()
         controller.view.layoutIfNeeded()

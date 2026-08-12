@@ -757,6 +757,93 @@ final class CardCarouselChromeBackdropTests: XCTestCase {
     }
 }
 
+@MainActor
+private final class ViewportTransitionSpyContent: CardContentViewController {
+    private(set) var preparedSizes: [CGSize] = []
+    private(set) var animateCount = 0
+    private(set) var completions: [Bool] = []
+
+    override func prepareForCardViewportTransition(to size: CGSize) {
+        preparedSizes.append(size)
+    }
+
+    override func animatePreparedCardViewportTransition() {
+        animateCount += 1
+    }
+
+    override func finishCardViewportTransition(completed: Bool) {
+        completions.append(completed)
+    }
+}
+
+@MainActor
+private final class OneCardViewportDataSource: @preconcurrency CardCarouselDataSource {
+    let content = ViewportTransitionSpyContent()
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 1 }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController { content }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) { completion(nil) }
+}
+
+@MainActor
+final class CardCarouselExpandedImmersionTests: XCTestCase {
+
+    private func makeCarousel() -> (CardCarouselViewController, OneCardViewportDataSource) {
+        let source = OneCardViewportDataSource()
+        let carousel = CardCarouselViewController()
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 1_024, height: 1_366)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData()
+        carousel.view.layoutIfNeeded()
+        return (carousel, source)
+    }
+
+    func testHorizontalInsetExpandsOnlyTheImmersedCenteredCard() throws {
+        let (carousel, _) = makeCarousel()
+        let resting = try XCTUnwrap(carousel.restingCenteredCardFrame(in: carousel.view))
+
+        carousel.setImmersed(
+            true, extendsCard: true, horizontalInset: 16, animated: false)
+        let expandedCard = try XCTUnwrap(carousel.cardView(at: 0))
+        let expanded = expandedCard.convert(expandedCard.bounds, to: carousel.view)
+        XCTAssertEqual(expanded.minX, 16, accuracy: 0.5)
+        XCTAssertEqual(expanded.maxX, 1_008, accuracy: 0.5)
+        XCTAssertGreaterThan(expanded.width, resting.width)
+
+        carousel.setImmersed(false, animated: false)
+        let restored = expandedCard.convert(expandedCard.bounds, to: carousel.view)
+        XCTAssertEqual(restored.minX, resting.minX, accuracy: 0.5)
+        XCTAssertEqual(restored.width, resting.width, accuracy: 0.5)
+    }
+
+    func testAnimatedExpansionCoordinatesContentWithDestinationSize() throws {
+        let (carousel, source) = makeCarousel()
+        carousel.setImmersed(
+            true, extendsCard: true, horizontalInset: 16, animated: true)
+
+        let prepared = try XCTUnwrap(source.content.preparedSizes.last)
+        XCTAssertEqual(prepared.width, 992, accuracy: 0.5)
+        XCTAssertEqual(source.content.animateCount, 1)
+        // Complete the property animation deterministically in the test runloop.
+        let completion = expectation(description: "viewport transition completed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { completion.fulfill() }
+        wait(for: [completion], timeout: 1)
+        XCTAssertEqual(source.content.completions.count, 1,
+                       "the content must always retire its temporary presentation")
+    }
+}
+
 /// The strip's util chip: the deck's permanent first card reads as a mark over a
 /// button rather than as a save's still or a favicon-and-skeleton mini card.
 @MainActor

@@ -78,6 +78,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// playback. Views are enabled only while visible to bound decode/CPU cost.
     private var animatedImageViews: [AnimatedArticleImageView] = []
     private let textView = QuotingTextView(usingTextLayoutManager: false)
+    /// Temporary per-glyph presentation used only while a large card changes
+    /// width. The live text view stays masked but hidden until its final TextKit
+    /// layout and anchored content offset are ready.
+    private var viewportReflowTransition: TextViewportReflowTransition?
     private let store = ReadingListStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
@@ -114,6 +118,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public var renderedTextLengthForTesting: Int { rendered.text.length }
     public var wordCountForTesting: Int { wordMap.wordCount }
     public var animatedImageViewCountForTesting: Int { animatedImageViews.count }
+    public var viewportReflowGlyphCountForTesting: Int {
+        viewportReflowTransition?.glyphCount ?? 0
+    }
     #endif
 
     /// Host-controlled guard for embedded previews whose UIKit appearance must
@@ -435,6 +442,65 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         contentSizeObservation?.invalidate()
     }
 
+    // MARK: - Card viewport reflow
+
+    /// Captures this scroll reader's current TextKit layout and a hypothetical
+    /// layout at `size`. Kept public for the card host; standalone readers never
+    /// call it and retain their ordinary UIKit resizing behavior.
+    @discardableResult
+    public func prepareForCardViewportTransition(
+        to size: CGSize,
+        destinationTopChromeInset: CGFloat? = nil
+    ) -> Bool {
+        viewportReflowTransition?.finish()
+        viewportReflowTransition = nil
+        guard isViewLoaded else { return false }
+        let horizontal = Self.horizontalTextInset(forViewportWidth: size.width)
+        let insets = UIEdgeInsets(top: 20, left: horizontal, bottom: 40, right: horizontal)
+        let destinationAdjustedTopInset: CGFloat
+        if let destinationTopChromeInset {
+            let automaticAdjustment = textView.adjustedContentInset.top - textView.contentInset.top
+            destinationAdjustedTopInset = destinationTopChromeInset + automaticAdjustment
+        } else {
+            destinationAdjustedTopInset = textView.adjustedContentInset.top
+        }
+        viewportReflowTransition = TextViewportReflowTransition.prepare(
+            textView: textView,
+            in: view,
+            destinationSize: size,
+            destinationTextInsets: insets,
+            destinationAdjustedTopInset: destinationAdjustedTopInset)
+        return viewportReflowTransition != nil
+    }
+
+    /// Called inside the card's own 0.32-second ease-in-out transaction.
+    public func animatePreparedCardViewportTransition() {
+        viewportReflowTransition?.animate()
+    }
+
+    /// The content offset the prepared destination layout will adopt. The card
+    /// uses it to place its separate scrolling title copy at the exact same
+    /// endpoint as the TextKit body.
+    public var preparedCardViewportDestinationOffsetY: CGFloat? {
+        viewportReflowTransition?.destinationContentOffsetY
+    }
+
+    /// Reveals the live final TextKit layout at exactly the endpoint occupied by
+    /// the temporary glyphs, then retires their clipped overlay.
+    public func finishCardViewportTransition(completed: Bool) {
+        guard let transition = viewportReflowTransition else { return }
+        viewportReflowTransition = nil
+        view.layoutIfNeeded()
+        ScrollPresentationState.setSuppressed(true, for: textView)
+        textView.contentOffset.y = completed
+            ? clampedContentOffsetY(transition.destinationContentOffsetY)
+            : textView.contentOffset.y
+        ScrollPresentationState.setSuppressed(false, for: textView)
+        transition.finish()
+        layoutCompletionArea()
+        layoutAnimatedImageViews()
+    }
+
     /// The bottom of TextKit's laid-out article, independent of the scroll view's
     /// content inset and any footer subviews. Unlike `contentSize.height`, this
     /// remains stable while the bottom footer geometry is being updated.
@@ -613,7 +679,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Keep the text in a readable column on wide screens (iPad / landscape).
-        let horizontal = max(20, (view.bounds.width - LunaLayout.readableWidth) / 2)
+        let horizontal = Self.horizontalTextInset(forViewportWidth: view.bounds.width)
         if abs(textView.textContainerInset.left - horizontal) > 0.5 {
             textView.textContainerInset = UIEdgeInsets(
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
@@ -628,6 +694,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             applyInitialScrollPosition()
             revealContent()
         }
+    }
+
+    static func horizontalTextInset(forViewportWidth width: CGFloat) -> CGFloat {
+        max(20, (width - LunaLayout.readableWidth) / 2)
     }
 
     // MARK: - Progressive (two-phase) load

@@ -55,8 +55,12 @@ offset within that title region is normalized to zero when Scroll or Original pe
 so reopening shows the title in full instead of restoring a clipped fragment. That
 canonical zero is converted back to UIKit's inset-relative top offset on restore
 (`-adjustedContentInset.top`); applying it as raw zero would hide the title again. The
-top inset never changes during either transition, so hiding chrome cannot move the
-reader or its content offset. Both copies' backgrounds begin at the card's top edge,
+top inset never changes during either transition on a portrait phone-shaped host, so
+hiding chrome cannot move the reader or its content offset there. On the large/wide
+Scroll transition described below, the wider title may wrap to a different height;
+the TextKit transition resolves that destination inset up front and anchors the same
+reading glyph, so the title-height change cannot jump the passage. Both copies'
+backgrounds begin at the card's top edge,
 while the favicon is vertically centered against one-, two-, or three-line titles.
 The host applies that stable inset when each card controller is constructed, including
 an off-window card staged for a ±2 scrubber eclipse, so its title is already present
@@ -87,19 +91,42 @@ suppresses the scroll reader's old attributed-string title to avoid a third copy
 Fullscreen, share-extension, and non-carousel readers keep the original inline title.
 
 Reader and Downloader carousel cards share the same restrained glass rim: a 1.5pt
-effect ring with a 0.5pt low-contrast highlight. Reader scroll chrome dismisses after
-100pt of downward travel and returns after 50pt upward, enough to ignore tiny jitter
-without making the reader reverse a large part of the page. Two positions override the
-directional rule outright (`ScrollDirectionImmersionTracker`): at the very top the
-chrome always returns, and it returns again as the end of the content lands on the
-viewport's bottom edge. Because that bottom restore is about to take ownership, a
-downward gesture near the end must NOT dismiss — the last half-viewport is a dead zone.
+effect ring with a 0.5pt low-contrast highlight. On a portrait phone-shaped host,
+Reader scroll chrome dismisses after 100pt of downward travel and returns after 50pt
+upward, enough to ignore tiny jitter without making the reader reverse a large part of
+the page. Two positions override the directional rule outright
+(`ScrollDirectionImmersionTracker`): at the very top the chrome always returns, and it
+returns again as the end of the content lands on the viewport's bottom edge. Because
+that bottom restore is about to take ownership, a downward gesture near the end must
+NOT dismiss — the last half-viewport is a dead zone.
 **That zone is capped at a quarter of the whole scroll range**, because it is a
 fraction of the VIEWPORT measured from the end of the CONTENT: on an article only a
 little longer than one screen the uncapped zone covered the entire scroll range, so no
 downward gesture anywhere in the article could dismiss the chrome at all — every card
 read as permanently surfaced. A long article is unaffected (the cap sits far above half
 a viewport). Tests: `ScrollDirectionImmersionTrackerTests`.
+
+**Large/wide Scroll is tap-only and width-expanding.** `ReaderCardViewportPolicy`
+selects this behavior for every iPad (including iPad mini and narrow multitasking
+windows), plus any host whose available width is greater than its height (the geometry
+hook for a future foldable iPhone). In that mode `allowsScrollDrivenImmersion` is false:
+scrolling down, scrolling up, reaching the top, and reaching the bottom never change
+card chrome. A plain card tap is the only Scroll show/hide toggle. RSVP keeps its
+existing play/pause-driven chrome behavior, and Original/web mode does not gain the
+width expansion.
+
+When a tap hides chrome in large/wide Scroll, the centered card expands horizontally to
+the host bounds with a 16pt outer inset, as well as taking the freed footer lane. The
+reverse tap contracts it to the ordinary aspect-fit card. `TextViewportReflowTransition`
+builds a second TextKit layout for the destination width before the 0.32s transition,
+anchors the glyph around the upper quarter of the viewport, and temporarily replaces
+the live jumping layout with per-glyph images. Every glyph whose old→new path intersects
+the viewport translates to its real destination; a glyph entering or leaving uses its
+real hypothetical offscreen endpoint. The overlay clips continuously while the card's
+rounded content viewport expands/contracts, then the final live TextKit layout is
+revealed at the anchored offset. Reduce Motion skips the per-glyph overlay. Tests:
+`ReaderCardViewportPolicyTests`, `CardCarouselExpandedImmersionTests`, and
+`ArticleTextRendererProgressiveTests.testCardWidthTransitionBuildsIndividualGlyphMovesAndRestoresLiveText`.
 
 Original mode applies the same stable top content inset directly to its WKWebView.
 Archive **capture** enables content JavaScript and waits for the DOM/CSS/font/layout

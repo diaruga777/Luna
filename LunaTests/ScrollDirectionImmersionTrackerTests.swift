@@ -254,6 +254,24 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
+    func testTapOnlyModeIgnoresScrollDirectionAndPositionOverrides() {
+        tracker.allowsScrollDrivenImmersion = false
+        drag(to: 0)
+        drag(to: 150)
+        drag(to: 500)
+        drag(to: 0)
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testTurningOnTapOnlyModeDropsAnInProgressDirectionalRun() {
+        drag(to: 0)
+        drag(to: 80)
+        tracker.allowsScrollDrivenImmersion = false
+        tracker.allowsScrollDrivenImmersion = true
+        drag(to: 110)
+        XCTAssertTrue(events.isEmpty, "the old 80pt run must not survive the policy change")
+    }
+
     // MARK: - Only a real drag/deceleration counts
 
     func testProgrammaticOffsetChangesWithoutDraggingOrDeceleratingAreIgnored() {
@@ -281,5 +299,26 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         drag(to: 60)
         drag(to: 110)
         XCTAssertEqual(events.count, 1, "a duplicate KVO registration would fire this twice")
+    }
+}
+
+final class ReaderCardViewportPolicyTests: XCTestCase {
+
+    func testEveryIPadUsesTapOnlyScrollChromeIncludingNarrowWindows() {
+        XCTAssertTrue(ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
+            userInterfaceIdiom: .pad,
+            viewportSize: CGSize(width: 500, height: 900)))
+    }
+
+    func testWiderThanTallPhoneUsesTapOnlyScrollChrome() {
+        XCTAssertTrue(ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
+            userInterfaceIdiom: .phone,
+            viewportSize: CGSize(width: 900, height: 500)))
+    }
+
+    func testPortraitPhoneKeepsDirectionalScrollChrome() {
+        XCTAssertFalse(ReaderCardViewportPolicy.usesTapOnlyScrollChrome(
+            userInterfaceIdiom: .phone,
+            viewportSize: CGSize(width: 430, height: 932)))
     }
 }

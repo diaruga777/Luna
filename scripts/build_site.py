@@ -189,9 +189,6 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
     if kind == "switch":
         return '<span class="switch" aria-hidden="true"><span class="knob"></span></span>'
 
-    if kind == "empty":
-        return '<span aria-hidden="true"></span>'
-
     return (
         f'<img class="step-icon" src="{icon_href}" alt="{html.escape(app_name)}">'
     )
@@ -225,9 +222,17 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
 
     def render_row(kind: str, text: str) -> str:
         rendered_text = text if kind in ("switch", "empty") else html.escape(text)
+        # A step with no chrome picture drops the visual column entirely, so
+        # its text starts where the other steps' icons do — which is what lets
+        # the "Allow on all websites" step fit one line on a phone.
+        visual = (
+            ""
+            if kind == "empty"
+            else f'          <span class="visual">{step_visual(kind, icon_href, app_name)}</span>\n'
+        )
         return (
             '        <li class="step">\n'
-            f'          <span class="visual">{step_visual(kind, icon_href, app_name)}</span>\n'
+            f"{visual}"
             f'          <span class="step-text">{rendered_text}</span>\n'
             '        </li>'
         )
@@ -478,10 +483,11 @@ h1 {
   display: block;
 }
 
+/* Plain inline, NOT inline-flex: a flex span takes its baseline from the
+   icon's bottom edge, which floats the icon and name a few px above the
+   "Switch on" text beside them. Inline, the name shares the surrounding
+   baseline exactly and the icon is nudged down to sit centred on it. */
 .inline-app {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   white-space: nowrap;
 }
 
@@ -490,7 +496,8 @@ h1 {
   height: 24px;
   border-radius: 6px;
   display: inline-block;
-  vertical-align: -5px;
+  vertical-align: -6px;   /* centres the 24px icon on 17px text */
+  margin-right: 6px;
 }
 
 /* Already on: the step is what the setting looks like once you've done it. */

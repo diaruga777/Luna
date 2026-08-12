@@ -364,22 +364,31 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
         symbol: String
     ) {
         button.isEnabled = state != .completed
-        switch state {
-        case .completed:
-            button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
-            button.configuration?.baseForegroundColor = UIColor.systemGreen.withAlphaComponent(0.42)
-            button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
-            button.accessibilityValue = OnboardingStrings.Intro.completed.value()
-        case .pending, .skipped:
-            button.configuration?.image = UIImage(systemName: symbol)
-            if button === shortcutButton, let saveIcon = saveActionIcon() {
-                button.configuration?.image = Self.buttonIcon(saveIcon)
+        button.accessibilityValue = state == .completed
+            ? OnboardingStrings.Intro.completed.value()
+            : nil
+        // Disabling the button (the completed state) makes UIButton.Configuration
+        // re-derive its colors for `.disabled` afterward, which washes the custom
+        // green back toward white — reasserting it from a configurationUpdateHandler
+        // runs last and wins.
+        let applyStyle: (UIButton) -> Void = { [weak self] button in
+            switch state {
+            case .completed:
+                button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
+                button.configuration?.baseForegroundColor = UIColor.systemGreen.withAlphaComponent(0.42)
+                button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.08)
+            case .pending, .skipped:
+                button.configuration?.image = UIImage(systemName: symbol)
+                if button === self?.shortcutButton, let saveIcon = self?.saveActionIcon() {
+                    button.configuration?.image = Self.buttonIcon(saveIcon)
+                }
+                button.configuration?.baseForegroundColor = LunaColors.primaryText
+                button.configuration?.baseBackgroundColor =
+                    LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
             }
-            button.configuration?.baseForegroundColor = LunaColors.primaryText
-            button.configuration?.baseBackgroundColor =
-                LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
-            button.accessibilityValue = nil
         }
+        button.configurationUpdateHandler = applyStyle
+        applyStyle(button)
     }
 
     @objc private func safariTapped() {

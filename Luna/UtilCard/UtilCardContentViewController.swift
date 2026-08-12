@@ -840,28 +840,36 @@ final class UtilCardContentViewController: CardContentViewController {
         offer: UtilCardSetupButton
     ) {
         button.isEnabled = !finished
-        if finished {
-            button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
-        } else {
-            switch offer {
-            case .safari:
-                button.configuration?.image = UIImage(systemName: "safari.fill")
-            case .save:
-                button.configuration?.image = saveSetupIcon()
-                    ?? UIImage(systemName: "square.and.arrow.up")
-            case .email:
-                button.configuration?.image = UIImage(systemName: "envelope.fill")
-            }
-        }
-        button.configuration?.baseForegroundColor = finished
-            ? UIColor.systemGreen.withAlphaComponent(0.42)
-            : LunaColors.primaryText
-        button.configuration?.baseBackgroundColor = finished
-            ? UIColor.white.withAlphaComponent(0.08)
-            : LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
         button.accessibilityValue = finished
             ? OnboardingStrings.Intro.completed.value()
             : nil
+        // Disabling the button (the finished state) makes UIButton.Configuration
+        // re-derive its colors for `.disabled` afterward, which washes the custom
+        // green back toward white — reasserting it from a configurationUpdateHandler
+        // runs last and wins.
+        let applyStyle: (UIButton) -> Void = { [weak self] button in
+            if finished {
+                button.configuration?.image = UIImage(systemName: "checkmark.circle.fill")
+            } else {
+                switch offer {
+                case .safari:
+                    button.configuration?.image = UIImage(systemName: "safari.fill")
+                case .save:
+                    button.configuration?.image = self?.saveSetupIcon()
+                        ?? UIImage(systemName: "square.and.arrow.up")
+                case .email:
+                    button.configuration?.image = UIImage(systemName: "envelope.fill")
+                }
+            }
+            button.configuration?.baseForegroundColor = finished
+                ? UIColor.systemGreen.withAlphaComponent(0.42)
+                : LunaColors.primaryText
+            button.configuration?.baseBackgroundColor = finished
+                ? UIColor.white.withAlphaComponent(0.08)
+                : LunaSurfacePalette.baseColor.withAlphaComponent(0.24)
+        }
+        button.configurationUpdateHandler = applyStyle
+        applyStyle(button)
     }
 
     @objc private func safariTapped() {

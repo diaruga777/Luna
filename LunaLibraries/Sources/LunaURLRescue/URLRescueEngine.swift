@@ -89,13 +89,19 @@ public final class URLRescueEngine {
         onProgress: @escaping (RescueStage) -> Void = { _ in }
     ) async -> RescueOutcome {
         let host = request.url.host ?? "?"
+        // Read the trace BEFORE the first log line. This engine appends its own
+        // decisions to the same file, so reading it later would feed the rescue
+        // its own "start" line back as evidence of what already failed — the
+        // model's log excerpt has to be the state of the world before this
+        // attempt, not a mirror.
+        let trace = request.itemID.flatMap { traceStore.contents(for: $0) }
         log("start host=\(host) hint=\(request.hintKey)", request)
         onProgress(.queued)
         stats.recordAttempt()
 
         // Bound the whole attempt.
         let outcome = await withTimeout(seconds: Self.totalBudget, fallback: .failed(.timedOut)) {
-            await self.runRescue(request, host: host, onProgress: onProgress)
+            await self.runRescue(request, host: host, trace: trace, onProgress: onProgress)
         }
         onProgress(.finished)
         recordStats(for: outcome)
@@ -103,7 +109,7 @@ public final class URLRescueEngine {
     }
 
     private func runRescue(
-        _ request: RescueRequest, host: String,
+        _ request: RescueRequest, host: String, trace: String?,
         onProgress: @escaping (RescueStage) -> Void
     ) async -> RescueOutcome {
         // This engine outlives every attempt, so the model session must not:
@@ -172,7 +178,6 @@ public final class URLRescueEngine {
 
         let supportsArticle = session.supportsArticlePayload
         var budget: RescueDigestBudget = supportsArticle ? .privateCloud : .onDevice
-        let trace = request.itemID.flatMap { traceStore.contents(for: $0) }
 
         // (5) Plan call, with one digest-halving retry on context overflow.
         let instructions = RescuePrompts.planInstructions(hint: request.hint, allowsArticlePayload: supportsArticle)

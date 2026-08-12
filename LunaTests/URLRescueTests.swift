@@ -340,11 +340,19 @@ final class URLRescueTests: XCTestCase {
 
     /// An install with no trace for this item — every failure recorded before the
     /// trace file existed — must produce exactly the prompt it always did.
+    ///
+    /// This is also the guard on a subtler thing: the engine WRITES its own
+    /// decisions to the same file, so reading the trace after the attempt's first
+    /// log line would feed the rescue its own "start" back as evidence of what
+    /// already failed. The excerpt has to be the state of the world before this
+    /// attempt, not a mirror of it.
     func testNoTraceMeansNoEvidenceSection() async {
         let session = FakeRescueModelSession(responses: [.plan(RescuePlanResponse(kind: "give_up"))])
-        let (engine, _) = makeEngine(session: session, traceStore: FakeRescueTraceStore())
+        let store = FakeRescueTraceStore()
+        let (engine, _) = makeEngine(session: session, traceStore: store)
         _ = await engine.rescue(evidenceRequest(itemID: UUID()))
         XCTAssertFalse(session.planPrompts.first?.contains("LOG EXCERPT") == true)
+        XCTAssertFalse(store.appended.isEmpty, "the rescue still wrote its own lines")
     }
 
     /// The recorded reason, not one of three canned sentences: the model is told

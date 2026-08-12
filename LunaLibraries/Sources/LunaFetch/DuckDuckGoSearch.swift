@@ -41,6 +41,87 @@ public enum DuckDuckGoSearch {
         return resultURLs(inHTML: html)
     }
 
+    /// One organic result with its link TEXT — what DuckDuckGo prints as the
+    /// result headline. `results(forQuery:)` throws the text away because its
+    /// callers only ever navigate; the URL-rescue search leg needs it, because a
+    /// cross-domain reroute is only allowed when the result is recognizably the
+    /// same article (`RescueSearchCandidates.titlesMatch`).
+    public struct Entry: Equatable, Sendable {
+        public let url: URL
+        public let title: String?
+        public init(url: URL, title: String?) {
+            self.url = url
+            self.title = title
+        }
+    }
+
+    /// The same search as `results(forQuery:)`, keeping each result's headline.
+    /// Returns an empty array (not nil) on any failure — the one caller treats
+    /// "no candidates" and "search unavailable" identically.
+    public static func entries(forQuery query: String) async -> [Entry] {
+        guard var components = URLComponents(string: "https://html.duckduckgo.com/html/") else { return [] }
+        components.queryItems = [URLQueryItem(name: "q", value: query)]
+        guard let url = components.url,
+              LiveNetworkPolicy.allows(url, context: "DuckDuckGoSearch.entries")
+        else { return [] }
+        var request = URLRequest(url: url, timeoutInterval: 12)
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              let html = String(data: data, encoding: .utf8)
+        else { return [] }
+        guard http.statusCode != anomalyStatusCode, !isAnomalyPage(html),
+              (200..<300).contains(http.statusCode) else { return [] }
+        return resultEntries(inHTML: html)
+    }
+
+    /// Result URL + link text, in document order, deduplicated by URL. Built
+    /// from the same `result__a` anchors `resultURLs(inHTML:)` reads, so the two
+    /// stay in step on shape changes.
+    public static func resultEntries(inHTML html: String) -> [Entry] {
+        var seen: Set<String> = []
+        return resultAnchors(in: html).compactMap { anchor -> Entry? in
+            guard let resolved = resolvedResultURLString(fromHref: anchor.href),
+                  seen.insert(resolved).inserted,
+                  let url = URL(string: resolved) else { return nil }
+            let title = plainText(anchor.text)
+            return Entry(url: url, title: title.isEmpty ? nil : title)
+        }
+    }
+
+    /// Every `result__a` anchor's href AND inner markup, in document order.
+    static func resultAnchors(in html: String) -> [(href: String, text: String)] {
+        let pattern = #"<a\b[^>]*(?:class="result__a"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="result__a")[^>]*>([\s\S]*?)</a>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        else { return [] }
+        let range = NSRange(html.startIndex..., in: html)
+        return regex.matches(in: html, range: range).compactMap { match in
+            var href: String?
+            for group in 1...2 where match.range(at: group).location != NSNotFound {
+                guard let r = Range(match.range(at: group), in: html) else { continue }
+                href = String(html[r]).replacingOccurrences(of: "&amp;", with: "&")
+                break
+            }
+            guard let href else { return nil }
+            let text = Range(match.range(at: 3), in: html).map { String(html[$0]) } ?? ""
+            return (href, text)
+        }
+    }
+
+    /// Strips the `<b>` highlighting DuckDuckGo wraps query terms in and decodes
+    /// the handful of entities a headline actually carries.
+    static func plainText(_ markup: String) -> String {
+        var text = markup.replacingOccurrences(
+            of: "<[^>]+>", with: "", options: [.regularExpression])
+        for (entity, character) in [
+            ("&amp;", "&"), ("&quot;", "\""), ("&#x27;", "'"), ("&#39;", "'"),
+            ("&lt;", "<"), ("&gt;", ">"), ("&nbsp;", " "),
+        ] {
+            text = text.replacingOccurrences(of: entity, with: character)
+        }
+        return text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
     /// The status DuckDuckGo's bot-detection anomaly page is sometimes served
     /// with — distinct from an ordinary 2xx, so it must be checked before the
     /// range guard rather than folded into "not 2xx" (a real 2xx result page

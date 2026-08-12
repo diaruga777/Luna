@@ -20,7 +20,12 @@ struct RescueDirectiveApplier {
     /// `IngestPipeline.processResolved`, never its rescuing wrapper.
     let runPipeline: (IngestInput) async -> IngestResult
 
-    func apply(_ directive: RescueDirective, request: RescueRequest) async -> RescueOutcome {
+    /// `method` overrides how a successful outcome is LABELLED — the search leg
+    /// applies an ordinary reroute directive but wants it counted as `.search`,
+    /// because its candidate URL came from outside the page.
+    func apply(
+        _ directive: RescueDirective, request: RescueRequest, method: RescueMethod? = nil
+    ) async -> RescueOutcome {
         switch directive {
         case let .articlePayload(content):
             return .rescued(
@@ -33,13 +38,19 @@ struct RescueDirectiveApplier {
                 method: .productPayload)
 
         case let .reroute(reroute):
-            return await applyReroute(reroute, request: request, method: .reroute)
+            return await applyReroute(reroute, request: request, method: method ?? .reroute)
 
         case let .webJS(script):
             return await applyWebJS(script, request: request)
 
         case let .mediaURL(url):
             return await applyMediaURL(url, method: .mediaURL)
+
+        case .openInBrowser:
+            // Nothing is fetched here on purpose: the whole finding is that no
+            // background fetch will pass this door. The integration layer moves
+            // the item to the interactive unlock tier.
+            return .needsBrowser
 
         case .giveUp:
             return .unrescuable

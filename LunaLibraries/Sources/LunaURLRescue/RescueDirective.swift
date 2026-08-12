@@ -84,6 +84,14 @@ public enum RescueDirective: Equatable {
     case webJS(RescueScript)
     /// A direct media-file URL evidenced by the digest.
     case mediaURL(URL)
+    /// Hand the page to the interactive archive-unlock tier: no automated fetch
+    /// will pass this door, but a real browser session with the user's own
+    /// cookies routinely does (`SaveFailureReason.browserMayRecover` documents
+    /// the measurement). Terminal for the engine — nothing is fetched or
+    /// re-ingested here; the integration layer moves the item to
+    /// `.needsCaptcha`, which is a live card the user can act on rather than a
+    /// dead one.
+    case openInBrowser
     /// The model concluded nothing here can work.
     case giveUp
 }
@@ -97,6 +105,12 @@ public enum RescueMethod: String {
     case reroute
     case webJS
     case mediaURL
+    /// A reroute the model SELECTED from live search results rather than read
+    /// off the digest. Tracked separately because it is the one method whose
+    /// candidate URL came from outside the page.
+    case search
+    /// The interactive browser handoff.
+    case browserHandoff
 }
 
 /// Every failure the engine can report, normalized — callers never see a
@@ -113,6 +127,9 @@ public enum URLRescueError: Error {
     case timedOut
     /// The model's plan failed validation beyond salvage.
     case invalidDirective(reason: String)
+    /// The model never got to consider the page — its assets were unavailable,
+    /// or another request held the session. Must not spend the item's attempt.
+    case transientModel(token: String)
     case other(Error)
 }
 
@@ -124,6 +141,12 @@ public enum RescueOutcome {
     case rescued(IngestResult, method: RescueMethod)
     /// The rescue produced downloadable media assets (media hint only).
     case rescuedMedia([MediaAsset], method: RescueMethod)
+    /// The rescue's verdict is "only a real browser gets in" — the integration
+    /// layer moves the item to the interactive archive-unlock tier. Not
+    /// `succeeded` (no content was obtained), but it ADVANCES the item out of
+    /// `.failed`, so the coordinator treats it as a resolution rather than a
+    /// spent attempt.
+    case needsBrowser
     /// The model gave up, or every directive failed validation/application.
     case unrescuable
     /// No usable model right now (pre-iOS-26, Apple Intelligence off, stub build).
@@ -137,7 +160,40 @@ public enum RescueOutcome {
     public var succeeded: Bool {
         switch self {
         case .rescued, .rescuedMedia: return true
-        case .unrescuable, .unavailable, .quotaExhausted, .failed: return false
+        case .needsBrowser, .unrescuable, .unavailable, .quotaExhausted, .failed:
+            return false
         }
+    }
+
+    /// Whether this outcome should spend the item's once-per-app-version manual
+    /// attempt. False whenever the model never really got to answer — no model
+    /// at all, a quota wall, a transient model error, or a browser handoff that
+    /// moved the item somewhere it can still be acted on. The user's one visible
+    /// attempt is for a real verdict on the page.
+    public var spendsVersionAttempt: Bool {
+        switch self {
+        case .rescued, .rescuedMedia, .needsBrowser, .unavailable, .quotaExhausted:
+            return false
+        case .failed(let error):
+            switch error {
+            case .transientModel, .modelUnavailable, .rateLimited, .networkFailure,
+                 .serviceUnavailable, .quotaLimitReached:
+                return false
+            case .guardrailViolation, .exceededContextWindowSize, .timedOut,
+                 .invalidDirective, .other:
+                return true
+            }
+        case .unrescuable:
+            return true
+        }
+    }
+
+    /// Whether the failure is PERMANENT for this URL, so no automatic sweep and
+    /// no manual tap should ever try it again. A content-safety guardrail (or a
+    /// flat refusal) is a verdict on the prompt, and the prompt is derived from
+    /// the page — the same page will trip it every time.
+    public var isPermanentlyBlocked: Bool {
+        guard case .failed(.guardrailViolation) = self else { return false }
+        return true
     }
 }

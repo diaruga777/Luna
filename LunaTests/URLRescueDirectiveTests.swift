@@ -322,7 +322,8 @@ final class URLRescueDirectiveTests: XCTestCase {
     func testAutoPromptStatesTheFailureRatherThanAHint() {
         let prompt = RescuePrompts.planPrompt(
             url: URL(string: "https://example.com/x")!, hint: nil,
-            failureKind: .articleFailed, digest: "digest")
+            failureKind: .articleFailed, failureReason: nil,
+            digest: "digest", evidence: nil)
         XCTAssertFalse(prompt.contains("Content hint:"))
         XCTAssertTrue(prompt.contains("What already failed:"))
         XCTAssertTrue(prompt.contains("no usable text"))
@@ -331,7 +332,8 @@ final class URLRescueDirectiveTests: XCTestCase {
     func testConcretePromptStillCarriesTheHint() {
         let prompt = RescuePrompts.planPrompt(
             url: URL(string: "https://example.com/x")!, hint: .media,
-            failureKind: .mediaNoAssets, digest: "digest")
+            failureKind: .mediaNoAssets, failureReason: nil,
+            digest: "digest", evidence: nil)
         XCTAssertTrue(prompt.contains("Content hint: media"))
     }
 

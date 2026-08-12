@@ -95,6 +95,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     private var islandView: OnboardingDynamicIslandRunView?
     private var mockTap: OnboardingMockTapIndicatorView?
     private var flyingBubble: UIView?
+    private var appliedConversationMetrics: OnboardingMessagesLayoutMetrics?
     /// The real share surface, in a sheet, run by the demo controller. Injected
     /// by the onboarding host, which owns the resolved link and the lesson's
     /// lifetime — a conversation replica has no business deciding what gets saved.
@@ -161,6 +162,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        applyConversationMetricsIfNeeded()
         // Until the first message lands, the conversation waits just below its
         // resting spot; each reveal then springs the thread up from there.
         if revealedRows.isEmpty {
@@ -341,7 +343,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             arriving.isHidden = false
             if !usesPreviousSetupConversation {
                 conversationStack.setCustomSpacing(
-                    OnboardingMessageRow.groupedSpacing, after: rowView(.shortcut))
+                    appliedConversationMetrics?.groupedSpacing
+                        ?? OnboardingMessageRow.groupedSpacing,
+                    after: rowView(.shortcut))
             }
             view.layoutIfNeeded()
             let shove = conversationStack.bounds.height - heightBefore
@@ -714,7 +718,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
 
         senderNameLabel.translatesAutoresizingMaskIntoConstraints = false
         senderNameLabel.text = OnboardingStrings.Messages.senderName.value()
-        senderNameLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        senderNameLabel.font = .systemFont(ofSize: 15, weight: .medium)
         senderNameLabel.textColor = UIColor(white: 0.12, alpha: 1)
         senderNameLabel.textAlignment = .center
         senderNameLabel.accessibilityIdentifier =
@@ -794,23 +798,49 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         // arrival's rise) underneath the opaque composer.
         view.insertSubview(conversationStack, belowSubview: composer)
 
-        // The thread is a replica of a PHONE conversation, so it keeps phone width
-        // and centres on anything wider. Two bubbles pinned to opposite edges of
-        // an iPad, a thousand points apart, stop reading as a conversation. The
-        // header and composer bars stay full width, as they would in any
-        // single-pane iPad app.
-        let threadWidth = conversationStack.widthAnchor.constraint(
-            lessThanOrEqualToConstant: LunaLayout.phoneReplicaWidth)
-        let fullWidth = conversationStack.widthAnchor.constraint(
-            equalTo: view.widthAnchor)
-        fullWidth.priority = .defaultHigh
+        // Messages uses the whole detail pane on larger screens. Each bubble
+        // still has a readable cap, but incoming and outgoing rows live at the
+        // opposite sides of the canvas instead of collapsing into a phone-width
+        // column in the centre.
         NSLayoutConstraint.activate([
-            conversationStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            threadWidth,
-            fullWidth,
+            conversationStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            conversationStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             conversationStack.bottomAnchor.constraint(
                 equalTo: composer.topAnchor, constant: -12),
         ])
+    }
+
+    /// Applies the same width-based policy that the real Messages detail view
+    /// uses: a phone-shaped pane retains compact bubbles; a wide pane gives the
+    /// conversation its full width, larger edge insets, and more air between
+    /// sender changes. This intentionally keys off the current container, not
+    /// `userInterfaceIdiom`, so Split View and a resizable window stay honest.
+    private func applyConversationMetricsIfNeeded() {
+        let metrics = OnboardingMessagesLayoutMetrics(
+            containerWidth: view.bounds.width)
+        guard metrics != appliedConversationMetrics else { return }
+        appliedConversationMetrics = metrics
+
+        conversationStack.spacing = metrics.senderSpacing
+        for row in messageRows.values {
+            row.apply(metrics: metrics)
+        }
+        conversationStack.setCustomSpacing(
+            metrics.groupedSpacing, after: rowView(.greeting))
+        if usesPreviousSetupConversation {
+            if app == .luna {
+                conversationStack.setCustomSpacing(
+                    metrics.groupedSpacing, after: rowView(.coreOffer))
+            }
+        } else {
+            conversationStack.setCustomSpacing(
+                metrics.groupedSpacing, after: rowView(.pitch))
+        }
+        if revealedRows.contains(.settings), !usesPreviousSetupConversation {
+            conversationStack.setCustomSpacing(
+                metrics.groupedSpacing, after: rowView(.shortcut))
+        }
+        view.setNeedsLayout()
     }
 
     private func configureFirstSetupConversation() {
@@ -1004,14 +1034,44 @@ enum OnboardingMessageDirection {
     case outgoing
 }
 
+/// Geometry for the mock Messages thread. It deliberately describes available
+/// space rather than a device class: iPad Split View, an iPhone in landscape,
+/// and a resizable scene all get the layout their actual pane can support.
+private struct OnboardingMessagesLayoutMetrics: Equatable {
+    let horizontalInset: CGFloat
+    let maximumBubbleWidth: CGFloat
+    let groupedSpacing: CGFloat
+    let senderSpacing: CGFloat
+
+    init(containerWidth: CGFloat) {
+        guard LunaLayout.isWide(containerWidth: containerWidth) else {
+            horizontalInset = OnboardingMessageRow.compactHorizontalInset
+            maximumBubbleWidth = OnboardingMessageBubble.maxWidth
+            groupedSpacing = OnboardingMessageRow.groupedSpacing
+            senderSpacing = OnboardingMessageRow.senderSpacing
+            return
+        }
+
+        horizontalInset = 28
+        // A real Messages detail pane can breathe without turning a single
+        // chat bubble into a line of prose. The proportional cap grows across
+        // a narrow iPad pane, then stops at a comfortable reading width.
+        maximumBubbleWidth = min(containerWidth * 0.62, 560)
+        groupedSpacing = 4
+        senderSpacing = 12
+    }
+}
+
 private final class OnboardingMessageRow: UIView {
     /// iMessage's two vertical rhythms: bubbles from the same sender in a row
     /// almost touch, and a change of sender opens a real gap.
     static let groupedSpacing: CGFloat = 2
     static let senderSpacing: CGFloat = 8
+    static let compactHorizontalInset: CGFloat = 16
 
     let direction: OnboardingMessageDirection
     let bubbleView: OnboardingMessageBubble
+    private var edgeConstraint: NSLayoutConstraint!
 
     init(direction: OnboardingMessageDirection, bubble: OnboardingMessageBubble) {
         self.direction = direction
@@ -1020,14 +1080,13 @@ private final class OnboardingMessageRow: UIView {
         bubble.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bubble)
 
-        let edgeConstraint: NSLayoutConstraint
         switch direction {
         case .incoming:
             edgeConstraint = bubble.leadingAnchor.constraint(
-                equalTo: leadingAnchor, constant: 16)
+                equalTo: leadingAnchor, constant: Self.compactHorizontalInset)
         case .outgoing:
             edgeConstraint = bubble.trailingAnchor.constraint(
-                equalTo: trailingAnchor, constant: -16)
+                equalTo: trailingAnchor, constant: -Self.compactHorizontalInset)
         }
         NSLayoutConstraint.activate([
             edgeConstraint,
@@ -1038,6 +1097,13 @@ private final class OnboardingMessageRow: UIView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    func apply(metrics: OnboardingMessagesLayoutMetrics) {
+        edgeConstraint.constant = direction == .incoming
+            ? metrics.horizontalInset
+            : -metrics.horizontalInset
+        bubbleView.setMaximumWidth(metrics.maximumBubbleWidth)
+    }
 }
 
 /// The rounded iMessage bubble surface, with the classic outward tail curl on
@@ -1049,7 +1115,7 @@ class OnboardingMessageBubble: UIView {
         red: 233 / 255, green: 233 / 255, blue: 235 / 255, alpha: 1)
     /// Larger than the real app's 17pt — the conversation is a demonstration
     /// watched from arm's length, not something being read up close.
-    static let textSize: CGFloat = 19
+    static let textSize: CGFloat = 22
     /// How wide a bubble may grow before its content has to wrap, the way
     /// iMessage caps one short of the screen edge.
     static let maxWidth: CGFloat = 292
@@ -1068,6 +1134,7 @@ class OnboardingMessageBubble: UIView {
     private let tail = CAShapeLayer()
     private let ghostOutline = CAShapeLayer()
     private var showsTail: Bool
+    private var maximumWidthConstraint: NSLayoutConstraint!
 
     init(
         direction: OnboardingMessageDirection,
@@ -1078,6 +1145,8 @@ class OnboardingMessageBubble: UIView {
         self.appearance = appearance
         self.showsTail = showsTail
         super.init(frame: .zero)
+        maximumWidthConstraint = widthAnchor.constraint(
+            lessThanOrEqualToConstant: Self.maxWidth)
         clipsToBounds = false
         layer.cornerRadius = 18
         layer.cornerCurve = .continuous
@@ -1100,7 +1169,7 @@ class OnboardingMessageBubble: UIView {
             ghostOutline.lineDashPattern = [0.01, 6]
             layer.addSublayer(ghostOutline)
         }
-        widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth).isActive = true
+        maximumWidthConstraint.isActive = true
     }
 
     @available(*, unavailable)
@@ -1125,6 +1194,14 @@ class OnboardingMessageBubble: UIView {
         showsTail = shows
         setNeedsLayout()
     }
+
+    func setMaximumWidth(_ width: CGFloat) {
+        guard abs(maximumWidthConstraint.constant - width) > 0.5 else { return }
+        maximumWidthConstraint.constant = width
+        maximumWidthDidChange(width)
+    }
+
+    func maximumWidthDidChange(_ width: CGFloat) {}
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -1258,6 +1335,10 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
     }
 
     var isURLHighlighted: Bool { highlight.isHighlighted }
+
+    override func maximumWidthDidChange(_ width: CGFloat) {
+        label.preferredMaxLayoutWidth = width - Self.textInset * 2
+    }
 
     /// The URL's structural separators, each of which is a place a link may
     /// break across lines.

@@ -385,6 +385,13 @@ uses the existing offline/native demonstrations:
   `.unavailable` is offered no save lesson at all — the util card omits the
   button, and that leg is finished by definition rather than falling back to a
   share-sheet demonstration. Its save is REAL — see below.
+- The Messages replica follows the size of its actual conversation pane. On a
+  phone-shaped pane it retains compact bubbles; at `LunaLayout.wideThreshold`
+  it uses the full pane like Messages on iPad, pins incoming/outgoing bubbles
+  to their respective edges, increases the sender/group spacing, and caps a
+  bubble at the lesser of 62% of the pane or 560pt. Its 22pt message type is
+  intentionally legible at onboarding distance. This is width-driven, so it
+  also behaves correctly in Split View and resizable scenes.
 - external-open recovery overlays remain available if Safari, Shortcuts, or
   Settings rejects a route.
 - Reduce Motion replaces waves and switcher choreography with short fades.

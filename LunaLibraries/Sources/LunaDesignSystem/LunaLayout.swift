@@ -45,12 +45,6 @@ public enum LunaLayout {
     /// `readableContentGuide`, which is the same judgement.
     public static let readableWidth: CGFloat = 680
 
-    /// Width the onboarding replicas (Messages, Safari) are drawn at. They are
-    /// deliberate imitations of a PHONE, so on a wide container they keep phone
-    /// proportions and center rather than growing into something the user has
-    /// never seen.
-    public static let phoneReplicaWidth: CGFloat = 430
-
     /// Whether `width` is wide enough to lay out for the extra room.
     public static func isWide(containerWidth width: CGFloat) -> Bool {
         width >= wideThreshold

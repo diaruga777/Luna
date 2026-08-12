@@ -788,6 +788,45 @@ final class ReaderOnboardingTests: XCTestCase {
             "The bubble keeps iMessage's width cap")
     }
 
+    @MainActor
+    func testMessagesReplicaUsesTheFullConversationPaneOnWideLayouts() throws {
+        let replica = MessagesReplicaViewController(
+            urlString: "https://www.example-publisher.com/technology/archive/"
+                + "2026/08/the-long-slow-decline-of-the-open-web/684213/")
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1_024, height: 768))
+        window.rootViewController = replica
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+
+        replica.view.layoutIfNeeded()
+        replica.revealStagedConversationImmediately()
+        replica.view.layoutIfNeeded()
+
+        let greeting = try XCTUnwrap(replica.view.descendants(of: UIView.self)
+            .first {
+                $0.accessibilityIdentifier ==
+                    OnboardingStrings.Accessibility.messagesGreeting.value()
+            })
+        let answer = try XCTUnwrap(replica.view.descendants(of: UIView.self)
+            .first {
+                $0.accessibilityIdentifier ==
+                    OnboardingStrings.Accessibility.messagesAnswer.value()
+            })
+        let link = try XCTUnwrap(replica.view.descendants(of: UIView.self)
+            .first {
+                $0.accessibilityIdentifier ==
+                    OnboardingStrings.Accessibility.messagesLatestIncoming.value()
+            })
+
+        let greetingFrame = replica.view.convert(greeting.bounds, from: greeting)
+        let answerFrame = replica.view.convert(answer.bounds, from: answer)
+        XCTAssertLessThanOrEqual(greetingFrame.minX, 28)
+        XCTAssertGreaterThanOrEqual(answerFrame.maxX, 996)
+        XCTAssertGreaterThan(
+            link.bounds.width, OnboardingMessageBubble.maxWidth,
+            "Wide panes should let a long iMessage bubble use the available detail view")
+    }
+
     /// The Safari lesson end to end, in the REAL hierarchy — the one place the
     /// overlays can shadow each other. Pressing the intro's Safari action
     /// expands the replica full-bleed over the app's production root (mounted

@@ -93,6 +93,57 @@ background sweep must not burn the one thing the card has left to offer. An
 unavailable engine (`canRescue == false`) shows the same terminal chin, since
 there is genuinely nothing to offer.
 
+**And only a real verdict spends it.** `Engine.perform` returns a
+`URLRescueCoordinator.RescueRunResult`, not a Bool, precisely because three
+different not-recovered endings used to be one: `.notRecovered` (the model looked
+and couldn't) spends the attempt; `.transient` (assets unavailable, another
+request holding the session, no model at all, a quota wall — the model never saw
+the page) and `.surfaceDropped` (it DID recover the content and this app doesn't
+show that kind) spend nothing.
+
+**A guardrail is not a budget.** When a content-safety guardrail or a flat
+refusal rejects the prompt, that is a verdict on the PAGE — the prompt is derived
+from it — so it holds forever, not for a version. `RescueLedgerEntry
+.guardrailedAt` records it, `shouldAutoRescue` refuses first, `requestManualRescue`
+and `rescueAndWait` return immediately, and it deliberately survives
+`resetAttempts(for:)`: an app update changes Luna's extraction code, not Apple's
+safety model. The card shows `.unavailable` rather than `.spent`, which renders
+identically but promises nothing about the next update.
+
+## The third ending: hand it to the browser
+
+A 401/403/429 is the server saying "not you" to a *background fetch*.
+`SaveFailureReason.browserMayRecover` documents the measurement: a real
+`WKWebView` presents a browser's TLS fingerprint and runs the challenge JS, and
+routinely gets a 200 and the full article for a page `URLSession` cannot touch.
+So instead of a dead card, rescue can move the item to the interactive
+archive-unlock tier — `.needsCaptcha`, a live card with a tap-to-unlock
+affordance — via `ReadingListStore.markNeedsCaptcha`, which clears the failure
+sidecar itself.
+
+Two routes reach it:
+
+- **Deterministic**, and it runs FIRST — ahead of the model call *and* the model
+  availability gate. When the recorded reason is browser-recoverable and the
+  handoff hasn't been offered yet (`RescueLedgerEntry.browserHandoffAt`), the
+  engine returns `.needsBrowser` without spending 30 seconds arriving at an
+  answer it already has, and without needing Apple Intelligence at all.
+- **Model-chosen**, the `open_in_browser` directive, for the cases evidence
+  argues for but no status code proves.
+
+The handoff is **once per item**: a second one would just re-park a card the user
+already chose not to unlock, so a repeat failure falls through to the model.
+
+It is also **gated to apps that have the tier**. `.needsCaptcha` is rendered by
+the article deck, which the Downloader and Price Tracker don't compile, so
+parking an item there would hide it in a state their decks have no card for.
+The gate is `LinkImportRunner.articleUnlocker != nil` — the seam the two
+article-handling `KindWiring`s already install for exactly this question, rather
+than a second one that could disagree with it.
+
+Neither route spends the version attempt: the item left `.failed` for somewhere
+the user can still act.
+
 **No Archive.** Filing an empty shell away where the user can't act on it is worse
 than nothing, so the card menus on both roots offer only **Share Link** and
 destructive **Delete**.

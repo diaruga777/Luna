@@ -25,6 +25,13 @@ app targets), top to bottom:
    straight to the system sheet with the **raw URL**: a failed save has no content,
    nothing to export, no media, so there is nothing else to share, and the reader's richer
    share ladder isn't compiled into the Downloader/Price Tracker targets anyway.
+   There IS one other thing, when the save left a trace behind: the button becomes
+   a two-item menu, **Share Link…** plus **Share Diagnostics…**, the latter
+   exporting the whole story of the attempt — every request and status, every
+   classification decision, every bypass strategy — as a `.txt`
+   (`claudedocs/save-diagnostics.md`). It appears only when
+   `SaveDiagnosticsStore.hasDiagnostics(for:)`, so an item that failed before
+   per-save capture shipped keeps the plain button.
 3. **The chin** — a full-width prominent glass capsule, **"Retry with AI"** with
    the Apple Intelligence glyph trailing the words as a sigil rather than leading
    as an icon. `apple.intelligence` arrived in SF Symbols 6.2 (iOS 18.4) and the
@@ -94,8 +101,8 @@ unavailable engine (`canRescue == false`) shows the same terminal chin, since
 there is genuinely nothing to offer.
 
 **No Archive.** Filing an empty shell away where the user can't act on it is worse
-than nothing, so the card menus on both roots offer only **Share Link** and
-destructive **Delete**.
+than nothing, so the card menus on both roots offer only **Share Link**,
+**Share Diagnostics…** when a trace exists, and destructive **Delete**.
 
 ## The rescue hint: there isn't one, anywhere
 
@@ -173,6 +180,19 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   (the same reasoning as `RescueLedgerStore` and the imageRefs / preloads
   sidecars). Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a
   later failure starts from a clean count *and* a fresh AI attempt.
+- **`SaveDiagnosticsStore`** (`saveDiagnostics/<UUID>.log`, App Group) — the
+  second sidecar, and the one with the DETAIL the reason above only summarizes:
+  the complete timestamped trace of every attempt this item has made. Written
+  only on failure (a save that works flushes nothing and deletes what an earlier
+  attempt left), appended to by each retry, exported by the card's share menu,
+  and read back by the URL-rescue engine as failure evidence. Dropped alongside
+  the failure record by `ReadingListStore.clearFailureRecords`. Full detail in
+  `claudedocs/save-diagnostics.md`.
+- One gap that closed with it: the share/action extensions' failure leg called
+  `store.markFailed` WITHOUT `SaveFailureStore.recordFailure`, so an extension
+  failure was the one path with no reason and no count — the card had nothing to
+  explain itself with and the rescue's failure-kind mapping had nothing to read.
+  Both are written now, as everywhere else.
 
 ## Failed saves surface in EVERY app
 

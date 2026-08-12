@@ -1973,6 +1973,14 @@ public final class LiveMediaDownloadManager: NSObject {
         errorKind: LiveMediaDownloadJob.ErrorKind = .download
     ) async {
         var job = job
+        // A `.noMedia` end is the media kind's terminal failure — the one that
+        // has to reach `SaveFailureStore`, because the item itself stays
+        // `.ready` and the reason is the only evidence the rescue can read.
+        if errorKind == .noMedia {
+            MediaSaveFailureRecording.recordNoMedia(
+                sourceURLString: job.sourceURLString,
+                detail: "resolve ladder exhausted after \(job.resolveAttempts) attempt(s)")
+        }
         job.fail(message: message, kind: errorKind)
         store.upsert(job)
         if job.isDownloaderOwned {

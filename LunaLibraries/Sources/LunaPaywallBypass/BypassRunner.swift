@@ -5,6 +5,7 @@
 
 import LunaFetch
 import LunaHTMLClassification
+import LunaModels
 import Foundation
 
 /// Runs a single SILENT `BypassStrategy` (a URLSession request transform) and returns
@@ -36,7 +37,28 @@ public struct BypassRunner: BypassRunning {
         self.extraction = ArticleExtraction(extractor: extractor)
     }
 
+    /// Runs the strategy and records the attempt. "Which strategies were tried,
+    /// and what did each get" is the single most useful thing a failed save's
+    /// trace can say, so every attempt reports through `BypassAttempt` — the
+    /// same value-with-a-`logLine` shape the seller fan-out uses
+    /// (`SellerFanOutAttempt`, `claudedocs/price-comparison.md`).
     public func run(
+        _ strategy: BypassStrategy, url: URL, directHTML: String?
+    ) async -> ExtractedArticle? {
+        let started = Date()
+        let article = await perform(strategy, url: url, directHTML: directHTML)
+        SaveDiagnostics.record(
+            BypassAttempt(
+                strategy: strategy,
+                extractedCharacters: article?.content.bodyTextLength,
+                readable: article.map(ArticleExtraction.isReadableArticle) ?? false,
+                elapsedMilliseconds: Int(Date().timeIntervalSince(started) * 1000)
+            ).logLine,
+            category: "bypass")
+        return article
+    }
+
+    private func perform(
         _ strategy: BypassStrategy, url: URL, directHTML: String?
     ) async -> ExtractedArticle? {
         switch strategy {
@@ -116,5 +138,25 @@ public struct BypassRunner: BypassRunning {
             // WKWebView-only — handled by ArchiveWebReaderViewController, not here.
             return nil
         }
+    }
+}
+
+/// One silent bypass attempt, as a value that knows how to describe itself —
+/// so the trace line and the thing it describes can't drift.
+struct BypassAttempt {
+    let strategy: BypassStrategy
+    /// Body characters the attempt extracted, or nil when it produced nothing
+    /// (inapplicable, fetch failed, or unparseable).
+    let extractedCharacters: Int?
+    /// Whether what it extracted actually cleared the readable-vs-stub gate —
+    /// an attempt can extract 400 characters of paywall pitch and still lose.
+    let readable: Bool
+    let elapsedMilliseconds: Int
+
+    var logLine: String {
+        let outcome = extractedCharacters.map {
+            "extracted \($0)ch, \(readable ? "readable" : "not readable")"
+        } ?? "no result"
+        return "strategy \(strategy): \(outcome) in \(elapsedMilliseconds)ms"
     }
 }

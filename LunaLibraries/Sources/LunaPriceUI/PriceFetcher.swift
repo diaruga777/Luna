@@ -81,20 +81,35 @@ public final class PriceFetcher: PriceFetching {
         }
         if let html = staticMarkup,
            let price = detector.staticPrice(urlString: urlString, html: html) {
+            SaveDiagnostics.record(
+                "price: static markup (\(html.count)ch) → \(price.amount) \(price.currency)",
+                category: "price")
             return price
         }
+        SaveDiagnostics.record(
+            "price: no price in "
+                + (staticMarkup.map { "\($0.count)ch of static markup" } ?? "an unfetchable page")
+                + " — trying the render tier",
+            category: "price")
 
         // 2) Rendered-DOM fallback: run the page's JS, then re-extract statically
         //    from the rendered markup (the price now lives in the DOM / app state).
         guard let url = URL(string: urlString), let rendered = await renderHTML(url) else {
+            SaveDiagnostics.record("price: render tier produced nothing", category: "price")
             return nil
         }
-        return detector.staticPrice(urlString: urlString, html: rendered)
+        let price = detector.staticPrice(urlString: urlString, html: rendered)
+        SaveDiagnostics.record(
+            "price: rendered DOM (\(rendered.count)ch) → "
+                + (price.map { "\($0.amount) \($0.currency)" } ?? "still no price"),
+            category: "price")
+        return price
     }
 
     /// Fetches raw HTML for the static paths, returning nil on any failure.
     private func staticHTML(for urlString: String) async -> String? {
         guard let url = URL(string: urlString) else { return nil }
+        // The fetch itself is already traced at `ArticleFetcher.fetch`.
         return try? await fetcher.fetchHTML(from: url)
     }
 }
@@ -194,6 +209,14 @@ public enum WebViewPriceRenderer {
         // page load is the one that would be slowest to notice in a test.
         guard LiveNetworkPolicy.allows(url, context: "WebViewPriceRenderer.renderedHTML")
         else { return nil }
+        // Logged HERE and not inside `Renderer`: its work happens in WKWebView
+        // navigation callbacks, which the save's task-local recorder does not
+        // reach (`claudedocs/save-diagnostics.md`). This call is still on the
+        // save's own task, so the boundary is where the trace can see it.
+        SaveDiagnostics.record(
+            "price: rendering \(SaveDiagnostics.url(url)) off-screen, "
+                + "\(renderTimeoutSeconds)s ceiling",
+            category: "price")
         return await bounded(renderTimeoutSeconds) {
             await Renderer().render(
                 url: url, userAgent: deviceSafariUserAgent,

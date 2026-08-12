@@ -29,6 +29,19 @@ public enum ArticleResolution: Equatable {
     /// fine and simply had no article and no title in it.
     case unreadable(SaveFailureReason?)
 
+    /// One line for the per-save trace — shapes, never the body.
+    var diagnosticSummary: String {
+        switch self {
+        case let .readable(content, html):
+            return "readable, \(content.bodyTextLength)ch body from \(html.count)ch HTML"
+        case let .paywalled(title):
+            return "paywalled, parking for the archive reader as "
+                + "\"\(SaveDiagnostics.snippet(title, limit: 80))\""
+        case let .unreadable(reason):
+            return "unreadable (\(reason.map { String(describing: $0) } ?? "no detail"))"
+        }
+    }
+
     public static func == (lhs: ArticleResolution, rhs: ArticleResolution) -> Bool {
         switch (lhs, rhs) {
         case let (.readable(lc, lh), .readable(rc, rh)):
@@ -89,6 +102,13 @@ public enum ArticleResolver {
         // can do what the browser could not; the capture stays as the fallback, so
         // consulting it can only improve the result.
         var trustedCapture: ExtractedArticle?
+        SaveDiagnostics.record(
+            "resolve \(SaveDiagnostics.url(url)): direct read "
+                + (direct.map { "\($0.content.bodyTextLength)ch, "
+                    + "\(ArticleExtraction.isReadableArticle($0) ? "readable" : "not readable")" }
+                    ?? "failed (\(directFailure.map { String(describing: $0) } ?? "no detail"))")
+                + (siteRule != nil ? ", site unlock rule applies" : ""),
+            category: "bypass")
         if let direct {
             if ArticleExtraction.isReadableArticle(direct) {
                 return .readable(direct.content, html: direct.sourceHTML)
@@ -117,6 +137,11 @@ public enum ArticleResolver {
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let directHTML = direct?.sourceHTML
         let plan = BypassPlan.make(for: url, directHTML: directHTML, directFailure: directFailure)
+        SaveDiagnostics.record(
+            "resolve: plan — silent [\(plan.silent.map { "\($0)" }.joined(separator: ", "))], "
+                + "web [\(plan.webPreStages.map { "\($0)" }.joined(separator: ", "))], "
+                + "archiveToday \(plan.allowsArchiveToday ? "allowed" : "refused")",
+            category: "bypass")
 
         var attempts: [@Sendable () async -> ExtractedArticle?] = []
         if let rule = siteRule {
@@ -142,9 +167,17 @@ public enum ArticleResolver {
             trustedCapture == nil
                 ? BypassPlan.silentChainDeadlineSeconds
                 : BypassPlan.trustedCaptureSilentDeadlineSeconds)
+        SaveDiagnostics.record(
+            "resolve: running \(attempts.count) silent attempt(s), "
+                + "\(Int(silentDeadline.timeIntervalSinceNow))s budget, floor \(floor)ch",
+            category: "bypass")
         if let winner = await firstQualifying(attempts, deadline: silentDeadline, floor: floor) {
+            SaveDiagnostics.record(
+                "resolve: silent tier won with \(winner.content.bodyTextLength)ch",
+                category: "bypass")
             return .readable(winner.content, html: winner.sourceHTML)
         }
+        SaveDiagnostics.record("resolve: no silent strategy qualified", category: "bypass")
 
         // Nothing beat the capture. Hand back what the user is already looking at rather
         // than parking the item for the browser tier: a live browser capture is real
@@ -164,9 +197,11 @@ public enum ArticleResolver {
         // a gate marker, a hard-paywall host, an archive URL, or a fetch that never
         // came back) or a site rule applies. Handing it to `resolution` is what stops
         // EVERY titled-but-unreadable page from parking for the archive reader.
-        return resolution(
+        let resolved = resolution(
             direct: direct, archived: nil, directFailure: directFailure,
             parksForArchive: plan.allowsArchiveToday)
+        SaveDiagnostics.record("resolve: \(resolved.diagnosticSummary)", category: "bypass")
+        return resolved
     }
 
     /// Runs every silent attempt CONCURRENTLY and returns the first one — in LIST order,

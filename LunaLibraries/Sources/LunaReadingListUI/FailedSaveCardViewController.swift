@@ -75,6 +75,11 @@ public struct FailedSaveCardActions {
     public var rescue: () -> Void
     /// Share the raw URL (a failed save has nothing else to share).
     public var share: (UIView) -> Void
+    /// Share the save's diagnostic trace — every request, decision and strategy
+    /// this save tried — as a .txt. Nil when no trace was flushed for this item,
+    /// and then the share control stays the plain button it always was rather
+    /// than growing a one-item menu.
+    public var shareDiagnostics: ((UIView) -> Void)?
     /// Delete the item. Offered only in the terminal state, where it's the only
     /// thing left to do.
     public var delete: () -> Void
@@ -82,10 +87,12 @@ public struct FailedSaveCardActions {
     public init(
         rescue: @escaping () -> Void,
         share: @escaping (UIView) -> Void,
+        shareDiagnostics: ((UIView) -> Void)? = nil,
         delete: @escaping () -> Void
     ) {
         self.rescue = rescue
         self.share = share
+        self.shareDiagnostics = shareDiagnostics
         self.delete = delete
     }
 }
@@ -264,10 +271,15 @@ public final class FailedSaveCardViewController: CardContentViewController {
 
         configureBarButton(shareButton, symbol: "square.and.arrow.up",
                            label: L10n.string("Common_shareLink"))
-        shareButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.actions.share(self.shareButton)
-        }, for: .touchUpInside)
+        if let menu = shareMenu() {
+            shareButton.menu = menu
+            shareButton.showsMenuAsPrimaryAction = true
+        } else {
+            shareButton.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                self.actions.share(self.shareButton)
+            }, for: .touchUpInside)
+        }
 
         urlLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         urlLabel.textColor = LunaColors.secondaryText
@@ -289,6 +301,29 @@ public final class FailedSaveCardViewController: CardContentViewController {
             row.bottomAnchor.constraint(equalTo: urlBar.bottomAnchor),
             row.leadingAnchor.constraint(equalTo: urlBar.leadingAnchor, constant: 6),
             row.trailingAnchor.constraint(equalTo: urlBar.trailingAnchor, constant: -6),
+        ])
+    }
+
+    /// The share control's menu, or nil when there is only one thing to share
+    /// and a menu would be pure ceremony. Internal so a test can assert which
+    /// verbs the card is offering without driving UIKit's menu presentation.
+    func shareMenu() -> UIMenu? {
+        guard let shareDiagnostics = actions.shareDiagnostics else { return nil }
+        return UIMenu(children: [
+            UIAction(
+                title: L10n.string("Common_shareLinkEllipsis"),
+                image: UIImage(systemName: "link")
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.actions.share(self.shareButton)
+            },
+            UIAction(
+                title: L10n.string("CardDeck_failedSave_shareDiagnostics"),
+                image: UIImage(systemName: "doc.text.magnifyingglass")
+            ) { [weak self] _ in
+                guard let self else { return }
+                shareDiagnostics(self.shareButton)
+            },
         ])
     }
 

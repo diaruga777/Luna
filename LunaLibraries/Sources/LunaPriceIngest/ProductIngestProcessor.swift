@@ -58,7 +58,18 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
                 identifiers: metadata.identifiers,
                 sellers: metadata.sellers)
         }
-        return fallback?(url)
+        // The passive Safari snapshot: the page the user actually looked at,
+        // recorded by the extension. It is the ONLY thing standing between a
+        // bot-walled shop and a price-less save, so a trace has to say whether
+        // it was consulted and whether it answered.
+        let recovered = fallback?(url)
+        SaveDiagnostics.record(
+            "product: static extraction found no price for \(SaveDiagnostics.url(url)) — "
+                + "Safari snapshot fallback "
+                + (fallback == nil
+                    ? "not installed" : (recovered == nil ? "had nothing" : "supplied one")),
+            category: "price")
+        return recovered
     }
 
     /// One observation, filed under every identifier the page declared.

@@ -126,8 +126,17 @@ public struct ArticleFetcher: HTMLFetching {
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               data.count <= Self.maxBytes,
               let text = String(data: data, encoding: .utf8)
-        else { return nil }
-        return Self.newestMemento(fromTimeMap: text)
+        else {
+            SaveDiagnostics.record(
+                "archive.today TimeMap: unreachable/gated/oversized", category: "fetch")
+            return nil
+        }
+        let memento = Self.newestMemento(fromTimeMap: text)
+        SaveDiagnostics.record(
+            "archive.today TimeMap: \(data.count)B → "
+                + (memento.map { "snapshot \(SaveDiagnostics.url($0))" } ?? "no memento"),
+            category: "fetch")
+        return memento
     }
 
     /// Parses an RFC 7089 Memento TimeMap (link-format) and returns the newest
@@ -209,10 +218,19 @@ public struct ArticleFetcher: HTMLFetching {
               let closest = snapshots["closest"] as? [String: Any],
               (closest["available"] as? Bool) == true,
               let snapshotString = closest["url"] as? String
-        else { return nil }
+        else {
+            SaveDiagnostics.record(
+                "wayback availability: no closest snapshot", category: "fetch")
+            return nil
+        }
         // The API returns http://; https avoids an ATS upgrade round-trip.
-        return URL(string: snapshotString.replacingOccurrences(
+        let replay = URL(string: snapshotString.replacingOccurrences(
             of: "http://web.archive.org", with: "https://web.archive.org"))
+        SaveDiagnostics.record(
+            "wayback availability: "
+                + (replay.map { "closest \(SaveDiagnostics.url($0))" } ?? "unparseable"),
+            category: "fetch")
+        return replay
     }
 
     // MARK: - Bypass-strategy fetches (HTMLFetching)
@@ -463,11 +481,18 @@ public struct ArticleFetcher: HTMLFetching {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               data.count <= Self.maxBytes
-        else { return nil }
-        switch end {
-        case .newest: return Self.newestSnapshotTimestamp(fromCDXJSON: data)
-        case .oldest: return Self.oldestSnapshotTimestamp(fromCDXJSON: data)
+        else {
+            SaveDiagnostics.record(
+                "wayback CDX (\(end)): unreachable/oversized", category: "fetch")
+            return nil
         }
+        let timestamp = end == .newest
+            ? Self.newestSnapshotTimestamp(fromCDXJSON: data)
+            : Self.oldestSnapshotTimestamp(fromCDXJSON: data)
+        SaveDiagnostics.record(
+            "wayback CDX (\(end)): \(data.count)B → \(timestamp ?? "no qualifying snapshot")",
+            category: "fetch")
+        return timestamp
     }
 
     /// Parses a Wayback CDX JSON response (an array of rows, the first being the
@@ -522,6 +547,11 @@ public struct ArticleFetcher: HTMLFetching {
         return timestamps
     }
 
+    /// EVERY article read goes through here — six of the seven `HTMLFetching`
+    /// methods and the direct fetch alike — which is why the per-save trace's
+    /// network story is recorded at this one point rather than seven
+    /// (`claudedocs/save-diagnostics.md`). Request identity is logged as HEADER
+    /// NAMES and a UA label, never header values.
     private func fetch(
         url: URL, userAgent: String, referer: String = "https://www.google.com/",
         xForwardedFor: String? = nil, timeout: TimeInterval = 20, session: URLSession = .shared
@@ -535,24 +565,63 @@ public struct ArticleFetcher: HTMLFetching {
         if let xForwardedFor {
             request.setValue(xForwardedFor, forHTTPHeaderField: "X-Forwarded-For")
         }
-        let (data, response) = try await session.data(for: request)
+        let started = Date()
+        let context = "GET \(SaveDiagnostics.url(url)) "
+            + "ua=\(Self.userAgentLabel(userAgent)) referer=\(referer.isEmpty ? "none" : "set")"
+            + (xForwardedFor != nil ? " x-forwarded-for=set" : "")
+
+        func elapsed() -> Int { Int(Date().timeIntervalSince(started) * 1000) }
+        func fail(_ error: FetchError) -> FetchError {
+            SaveDiagnostics.record(
+                "\(context) → \(error) after \(elapsed())ms", category: "fetch")
+            return error
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            SaveDiagnostics.record(
+                "\(context) → transport error "
+                    + "\(SaveDiagnostics.snippet(error.localizedDescription)) after \(elapsed())ms",
+                category: "fetch")
+            throw error
+        }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw FetchError.badResponse(status: (response as? HTTPURLResponse)?.statusCode)
+            throw fail(.badResponse(status: (response as? HTTPURLResponse)?.statusCode))
         }
         if let landing = Self.subscribeRedirectLanding(requested: url, response: http) {
-            throw FetchError.subscribeRedirect(landedOn: landing)
+            throw fail(.subscribeRedirect(landedOn: landing))
         }
         // A server that declares an oversized body (a mis-served large file) is
         // rejected outright. For everything else, bound the page we parse so the
         // memory-limited extension can't be pushed into jetsam by a huge page.
         if http.expectedContentLength > Int64(Self.maxBytes) {
-            throw FetchError.tooLarge
+            throw fail(.tooLarge)
         }
         let bounded = Self.boundedUTF8(data)
         guard let html = String(data: bounded, encoding: .utf8)
             ?? String(data: bounded, encoding: .isoLatin1)
-        else { throw FetchError.notHTML }
+        else { throw fail(.notHTML) }
+        SaveDiagnostics.record(
+            "\(context) → \(http.statusCode), declared "
+                + "\(http.expectedContentLength)B, read \(data.count)B, "
+                + "\(html.count)ch in \(elapsed())ms",
+            category: "fetch")
         return html
+    }
+
+    /// Names a request's identity without quoting it: the recognized crawler, or
+    /// `safari` for Luna's own default, or a clipped tag for anything bespoke.
+    static func userAgentLabel(_ userAgent: String) -> String {
+        let bots = ["Googlebot", "bingbot", "facebookexternalhit", "Twitterbot",
+                    "Applebot", "DuckDuckBot", "Slackbot"]
+        if let bot = bots.first(where: {
+            userAgent.range(of: $0, options: .caseInsensitive) != nil
+        }) { return bot }
+        if userAgent == Self.safariUserAgent { return "safari" }
+        return "custom(\(userAgent.prefix(24)))"
     }
 
     /// The interstitial a request LANDED on when the site redirected it there, or nil

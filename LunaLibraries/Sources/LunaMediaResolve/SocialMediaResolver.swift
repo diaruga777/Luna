@@ -21,23 +21,66 @@ public struct SocialMediaResolver: SocialMediaResolving {
     private let fetch: Fetch
 
     public init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
-        self.fetch = fetch
+        // Every ladder step goes through this one closure — X's fxtwitter call,
+        // Instagram's GraphQL/embed/og cascade, YouTube's player JSON — so
+        // tracing it here is what makes "which step was tried and what came
+        // back" appear in a failed save's trace without touching six parsers.
+        self.fetch = Self.traced(fetch)
+    }
+
+    /// Reports each resolve request's shape (never its body) into the in-flight
+    /// save's trace. A no-op outside a save.
+    private static func traced(_ fetch: @escaping Fetch) -> Fetch {
+        { request in
+            let started = Date()
+            let data = await fetch(request)
+            SaveDiagnostics.record(
+                "resolve \(request.httpMethod ?? "GET") "
+                    + "\(request.url.map(SaveDiagnostics.url) ?? "?") → "
+                    + (data.map { "\($0.count)B" } ?? "nothing")
+                    + " in \(Int(Date().timeIntervalSince(started) * 1000))ms",
+                category: "media")
+            return data
+        }
     }
 
     public func resolveAssets(for url: URL) async -> [MediaAsset] {
-        if let direct = MediaAsset.direct(url: url) { return [direct] }
-        guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return [] }
-        switch recognized.platform {
+        if let direct = MediaAsset.direct(url: url) {
+            SaveDiagnostics.record(
+                "media: \(SaveDiagnostics.url(url)) is a direct \(direct.kind) asset",
+                category: "media")
+            return [direct]
+        }
+        guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else {
+            SaveDiagnostics.record(
+                "media: no platform recognized for \(SaveDiagnostics.url(url))",
+                category: "media")
+            return []
+        }
+        let assets = await resolveAssets(platform: recognized.platform, url: url,
+                                         itemID: recognized.itemID)
+        SaveDiagnostics.record(
+            "media: \(recognized.platform) ladder resolved \(assets.count) asset(s)"
+                + (assets.isEmpty
+                    ? "" : " [\(assets.map { "\($0.kind)" }.joined(separator: ", "))]"),
+            category: "media")
+        return assets
+    }
+
+    private func resolveAssets(
+        platform: ContentPlatform, url: URL, itemID: String?
+    ) async -> [MediaAsset] {
+        switch platform {
         case .x:
-            return await resolveX(id: recognized.itemID)
+            return await resolveX(id: itemID)
         case .tiktok:
             return await resolveTikTok(url: url)
         case .instagram:
-            return await resolveInstagram(url: url, shortcode: recognized.itemID)
+            return await resolveInstagram(url: url, shortcode: itemID)
         case .facebook:
             return await resolveFacebook(url: url)
         case .reddit:
-            return await resolveReddit(url: url, itemID: recognized.itemID)
+            return await resolveReddit(url: url, itemID: itemID)
         case .youtube:
             return await YouTubeMediaResolver(fetch: fetch).resolveAssets(for: url)
         default:

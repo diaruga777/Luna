@@ -61,6 +61,10 @@ enum UtilCardLayout {
 /// history. Its launch mode is deliberately immutable: finishing setup keeps
 /// the onboarding controls in place until the next app launch.
 final class UtilCardContentViewController: CardContentViewController {
+    /// A brief crossfade makes the onboarding copy yield its place instead of
+    /// the weekly recommendation seeming to pop into existence.
+    private static let introToWeeklyFadeDuration: TimeInterval = 0.24
+
     typealias SaveHandler = (
         _ urlString: String,
         _ source: CaptureSource,
@@ -133,6 +137,9 @@ final class UtilCardContentViewController: CardContentViewController {
     /// The first-run copy gets a short moment on its own. It then fades out as
     /// the weekly slot moves into the completed-card position.
     private var weeklyAppearanceDeferred = false
+    /// The three-second headline hold has elapsed. Central Luna still waits
+    /// for the next setup-label cycle boundary before showing the weekly row.
+    private var weeklyAppearanceReady = false
     private var introHeadlineHasYieldedToWeekly = false
     private var weeklyRevealWorkItem: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
@@ -324,22 +331,54 @@ final class UtilCardContentViewController: CardContentViewController {
         } completion: { _ in
             self.scheduleWeeklyAppearance()
         }
+        beginSetupTextCycling()
     }
 
-    /// The headline has landed. Three seconds later it yields to the weekly
-    /// row, which fades into the exact location it uses after onboarding.
+    /// The headline has landed. After its three-second hold, the weekly row
+    /// yields at the next setup-label cycle boundary in central Luna. Other
+    /// apps have no cycling labels, so they reveal immediately at that point.
     private func scheduleWeeklyAppearance() {
         guard weeklyAppearanceDeferred, weeklyRevealWorkItem == nil else { return }
-        let workItem = DispatchWorkItem { [weak self] in self?.revealWeeklyAfterIntro() }
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.weeklyAppearanceReady = true
+            self?.revealWeeklyAtCycleBoundaryIfReady()
+        }
         weeklyRevealWorkItem = workItem
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(3), execute: workItem)
+    }
+
+    /// Starts the central app's label clock as the controls arrive instead of
+    /// holding it behind the Save of the Week. The first tick names Reader,
+    /// matching the weekly row's initial article slot.
+    private func beginSetupTextCycling() {
+        guard app == .luna, weeklyAppearanceDeferred else { return }
+        setupTextCycler?.startCycling()
+    }
+
+    private func revealWeeklyAtCycleBoundaryIfReady() {
+        guard weeklyAppearanceReady else { return }
+        if app == .luna, !UIAccessibility.isReduceMotionEnabled {
+            // `onCycleStart` calls us at the next title transition. The weekly
+            // row must not arrive midway through that slide.
+            return
+        }
+        revealWeeklyAfterIntro()
+    }
+
+    private func setupTextCycleDidStart() {
+        guard weeklyAppearanceReady else { return }
+        revealWeeklyAfterIntro()
     }
 
     private func revealWeeklyAfterIntro() {
         guard weeklyAppearanceDeferred else { return }
         weeklyRevealWorkItem = nil
         weeklyAppearanceDeferred = false
+        weeklyAppearanceReady = false
+        // The just-started label transition is the hand-off point. From here
+        // the weekly row's cycle is the single source of future label changes.
+        setupTextCycler?.stopCycling()
         introHeadlineHasYieldedToWeekly = true
         let hasWeekly = !weeklyHost.isEmpty
         weeklyHost.isHidden = !hasWeekly
@@ -361,9 +400,9 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
         UIView.animate(
-            withDuration: 0.38,
+            withDuration: Self.introToWeeklyFadeDuration,
             delay: 0,
-            options: [.curveEaseOut, .beginFromCurrentState]
+            options: [.curveEaseInOut, .beginFromCurrentState]
         ) {
             headline.alpha = 0
             self.view.layoutIfNeeded()
@@ -645,6 +684,9 @@ final class UtilCardContentViewController: CardContentViewController {
             setupTextCycler = UtilCardSetupTextCycler(
                 safariButton: safariButton,
                 shortcutButton: saveSetupButton)
+            setupTextCycler?.onCycleStart = { [weak self] _ in
+                self?.setupTextCycleDidStart()
+            }
             // The row names which app is due; the labels never count for
             // themselves, so the phrasing and the pick are always the same app's.
             weeklyHost.onCycle = { [weak self] kind in

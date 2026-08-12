@@ -355,6 +355,33 @@ final class UtilCardTests: XCTestCase {
         }
     }
 
+    func testSetupTextCycleBeginsBeforeTheWeeklyRowTakesOver() throws {
+        let card = makeCard(showsOnboarding: true, app: .luna)
+        card.loadViewIfNeeded()
+        let buttons = actionButtons(in: card)
+        let safari = try XCTUnwrap(buttons.first)
+        let shortcut = try XCTUnwrap(buttons.last)
+        var scheduledInterval: TimeInterval?
+        var tick: (() -> Void)?
+        var startedApps: [LunaApp] = []
+        let cycler = UtilCardSetupTextCycler(
+            safariButton: safari,
+            shortcutButton: shortcut,
+            scheduler: { interval, callback in
+                scheduledInterval = interval
+                tick = callback
+                return {}
+            })
+        cycler.onCycleStart = { startedApps.append($0) }
+
+        cycler.startCycling()
+        XCTAssertEqual(scheduledInterval, WeeklyCyclePacer.interval)
+        XCTAssertTrue(startedApps.isEmpty)
+
+        tick?()
+        XCTAssertEqual(startedApps, [.reader])
+    }
+
     /// A cycling label slides sideways, and UIKit lays a configuration button's
     /// title out by assigning its frame — so a layout pass landing mid-slide
     /// used to bake the offset into the label's centre and walk the title toward

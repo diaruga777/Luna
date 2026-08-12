@@ -293,12 +293,15 @@ than waiting to arrive.
 **On that launch, the headline speaks first.** The setup actions, “or”, paste
 row, and storage chooser wait at alpha 0 until the second beat's bloom has
 finished, then fade in together, in place (0.38s ease-out, 0.16s after the
-sweep's completion — the standalone intro card's own beat). The weekly row
-waits separately: three seconds after that control reveal, the headline fades
-away and the weekly row fades into the completed card's `weeklyTopRatio` seat.
-A weekly value arriving during either wait remains hidden until that handoff;
-only then can central Luna start cycling it. Reduce Motion makes each reveal
-instant. Any appearance that does NOT animate the sweep (paged back to,
+sweep's completion — the standalone intro card's own beat). Central Luna starts
+its setup-label cycle as those buttons arrive, rather than waiting behind the
+weekly row. The weekly row waits separately: after the three-second hold, its
+intro text fades out and the row fades in at the next label-cycle boundary, so
+it never appears midway through a title slide. The other apps have no changing
+labels, so their intro text fades out and weekly row fades in as soon as that
+hold ends. That crossfade is a short 0.24s ease-in-out beat in every app. A weekly value arriving during either wait remains hidden until that
+handoff; only then can central Luna's weekly row take over the label cadence.
+Reduce Motion makes each reveal instant. Any appearance that does NOT animate the sweep (paged back to,
 onboarding already complete) shows everything immediately.
 
 **The corona is part of this state too.** While onboarding is unanswered the

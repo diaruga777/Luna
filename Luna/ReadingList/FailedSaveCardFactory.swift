@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaAppConfig
 import LunaDesignSystem
 import LunaFetch
 import LunaModels
@@ -89,14 +90,86 @@ enum FailedSaveCardFactory {
     /// Both legs are supplied because each deck deletes on its own terms: the
     /// Downloader drops the reading-list row, the article deck also releases the
     /// save's companion storage and picks the successor card to land on.
-    static func makeMenu(shareLink: @escaping () -> Void, delete: UIAction) -> UIMenu {
-        UIMenu(children: [
+    ///
+    /// A third verb appears only when the save left a trace behind: "Share
+    /// Diagnostics…" hands over the whole story of the attempt, which is the one
+    /// thing a user CAN do about a failure Luna can't explain
+    /// (`claudedocs/save-diagnostics.md`).
+    static func makeMenu(
+        for item: ReadingListItem, host: UIViewController,
+        shareLink: @escaping () -> Void, delete: UIAction
+    ) -> UIMenu {
+        var children: [UIMenuElement] = [
             UIAction(
                 title: L10n.string("Common_shareLinkEllipsis"),
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in shareLink() },
-            delete,
-        ])
+        ]
+        if SaveDiagnosticsStore.shared.hasDiagnostics(for: item.id) {
+            children.append(UIAction(
+                title: L10n.string("CardDeck_failedSave_shareDiagnostics"),
+                image: UIImage(systemName: "doc.text.magnifyingglass")
+            ) { [weak host] _ in
+                guard let host else { return }
+                shareDiagnostics(for: item, from: host, sourceView: host.view)
+            })
+        }
+        children.append(delete)
+        return UIMenu(children: children)
+    }
+
+    // MARK: - Diagnostics export
+
+    /// Writes the item's trace to a shareable .txt — the same header shape
+    /// `DiagnosticLog.exportFile` uses, plus what this particular save knows
+    /// about itself — and puts it in the system share sheet.
+    ///
+    /// The file is built off the main thread (it can be a couple of hundred KB
+    /// of accumulated retries) and presented back on it, matching
+    /// `ArticleExportService.presentShareSheet`'s shape.
+    static func shareDiagnostics(
+        for item: ReadingListItem, from host: UIViewController, sourceView: UIView
+    ) {
+        let header = diagnosticsHeader(for: item)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fileURL = try? SaveDiagnosticsStore.shared.exportFile(
+                for: item.id, header: header)
+            DispatchQueue.main.async { [weak host, weak sourceView] in
+                guard let host, let fileURL else { return }
+                let activity = UIActivityViewController(
+                    activityItems: [fileURL], applicationActivities: nil)
+                activity.popoverPresentationController?.sourceView = sourceView ?? host.view
+                host.present(activity, animated: true)
+            }
+        }
+    }
+
+    /// Context the trace itself doesn't carry: which build produced it, which
+    /// link it is about, and what the failure sidecar concluded.
+    static func diagnosticsHeader(
+        for item: ReadingListItem, record: SaveFailureRecord? = nil, now: Date = Date()
+    ) -> String {
+        let record = record ?? SaveFailureStore.shared.record(for: item.id)
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        var lines = [
+            "Luna save diagnostics",
+            "App: \(AppConfig.appVersion) (\(LunaApp.current.storageIdentifier))",
+            "OS: iOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
+            "Exported: \(ISO8601DateFormatter().string(from: now))",
+            "Item: \(item.id.uuidString)",
+            "URL: \(item.urlString)",
+        ]
+        if let record {
+            lines.append("Reason: " + (record.reason?.headline ?? "unrecorded"))
+            lines.append("Attempts: \(record.failureCount)")
+            lines.append(
+                "Last failed: \(ISO8601DateFormatter().string(from: record.lastFailureDate))")
+            if let version = record.aiAttemptVersion {
+                lines.append("AI rescue spent under: \(version)")
+            }
+        }
+        return lines.joined(separator: "\n") + "\n"
+            + String(repeating: "-", count: 40) + "\n\n"
     }
 
     /// "Tried 3 times · 2 days ago" — provenance that makes a stubborn failure
@@ -131,6 +204,15 @@ enum FailedSaveCardFactory {
                 SendToFriendSheet.shareLink(
                     urlString: item.urlString, from: host, sourceView: sourceView)
             },
+            // Nil unless this save actually flushed a trace, which is what keeps
+            // the share control a plain button on a failure Luna never got to
+            // watch (an item that failed before per-save capture shipped).
+            shareDiagnostics: SaveDiagnosticsStore.shared.hasDiagnostics(for: item.id)
+                ? { [weak host] sourceView in
+                    guard let host else { return }
+                    shareDiagnostics(for: item, from: host, sourceView: sourceView)
+                }
+                : nil,
             delete: {
                 ReadingListStore.shared.delete(item)
                 onChanged()

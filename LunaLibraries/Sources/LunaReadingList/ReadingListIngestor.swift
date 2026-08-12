@@ -419,9 +419,15 @@ public final class ReadingListIngestor {
             // only the states that an automated pass can actually move forward.
             // The sweep has no UI: blocked non-exempt leftovers are discarded
             // silently, while email/friend-share items remain exempt.
-            for item in self.store.items() where item.state == .pending || item.state == .failed {
+            let items = self.store.items()
+            for item in items where item.state == .pending || item.state == .failed {
                 Task { await self.ingest(item, allowsInteractivePrompt: false) }
             }
+            // The sweep already holds the whole list, which is the one thing a
+            // trace-file prune needs: a `saveDiagnostics/<uuid>.log` whose item
+            // was deleted from another app (or wiped by a reinstall of a
+            // sibling) has nothing left to explain.
+            SaveDiagnosticsStore.shared.prune(keeping: Set(items.map(\.id)))
             self.backfillMissingWebArchives()
             self.backfillMissingThumbnails()
             completion?()

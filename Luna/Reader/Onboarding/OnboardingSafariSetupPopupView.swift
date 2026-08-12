@@ -8,7 +8,7 @@ import LunaModels
 import UIKit
 
 /// The ONE ending every Safari lesson shares now, in all four apps: a minimal
-/// card — "Set up in Safari" and "Skip", nothing else — over a light scrim,
+/// card — "Set up in Safari" and "Skip", nothing else — over a dark scrim,
 /// with whatever lesson raised it still visible (and, after a short freeze,
 /// still looping) underneath.
 ///
@@ -47,7 +47,7 @@ final class OnboardingSafariSetupPopupView: UIView {
     /// (and popup) owned by ONE of those swapped-out replicas is owned by an
     /// object that does not outlive the swap; owned by the controller that
     /// runs the swap, both outlive every one of them.
-    static let scrimAlpha: CGFloat = 0.40
+    static let scrimAlpha: CGFloat = 0.65
     static let cornerRadius: CGFloat = 26
     private static let horizontalInset: CGFloat = 26
     private static let verticalInset: CGFloat = 24
@@ -200,7 +200,7 @@ final class OnboardingSafariSetupPopupView: UIView {
 
     // MARK: - Presentation
 
-    /// - Parameter externalScrim: the host's own full-screen, 40%-black
+    /// - Parameter externalScrim: the host's own full-screen, 65%-black
     ///   scrim (see the type doc above) — faded in on the SAME animation as
     ///   this card, so the two arrive as one visual beat even though the
     ///   scrim is not this view's own subview.
@@ -309,7 +309,7 @@ final class OnboardingSafariSetupPopupView: UIView {
     #endif
 }
 
-/// The popup's full-screen 40%-black scrim. A distinct, named type (rather
+/// The popup's full-screen 65%-black scrim. A distinct, named type (rather
 /// than a bare `UIView`) so anything that needs to find or count it — the
 /// host's own teardown, a test — can do so precisely instead of guessing at a
 /// plain view by its background color. Exactly one is ever mounted, and it is

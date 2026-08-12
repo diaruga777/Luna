@@ -154,9 +154,9 @@ final class OnboardingSellerPillView: UIView {
 }
 
 /// The 70%-black overlay with one circular hole in it, centred on whatever the
-/// lesson is pointing at. The hole opens at the screen's full height — so the
-/// first frame is barely a scrim at all, just darkness in the corners — and
-/// closes to a small ring of air around the target.
+/// lesson is pointing at. The hole opens large enough to contain the entire
+/// screen — so its first frame has no visible scrim at all — and closes to a
+/// small ring of air around the target, bringing darkness in from the edges.
 ///
 /// The hole is an even-odd mask (bounds rect + circle) rather than four dimming
 /// bands: only a mask can put a truly round edge on the light, and animating
@@ -192,8 +192,18 @@ final class OnboardingSpotlightScrimView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// A circle as tall as the screen: the state the lesson opens on.
-    var openRadius: CGFloat { bounds.height / 2 }
+    /// A circle that contains every corner of this view. Its centre is the
+    /// target rather than the screen, so screen height alone can leave a dark
+    /// wedge visible when the pill sits near an edge.
+    var openRadius: CGFloat {
+        let center = CGPoint(x: focusRect.midX, y: focusRect.midY)
+        return [
+            CGPoint(x: bounds.minX, y: bounds.minY),
+            CGPoint(x: bounds.maxX, y: bounds.minY),
+            CGPoint(x: bounds.minX, y: bounds.maxY),
+            CGPoint(x: bounds.maxX, y: bounds.maxY),
+        ].map { hypot($0.x - center.x, $0.y - center.y) }.max() ?? 0
+    }
 
     /// The target's own circumscribed circle plus a little air.
     var collapsedRadius: CGFloat {
@@ -212,7 +222,10 @@ final class OnboardingSpotlightScrimView: UIView {
         CATransaction.commit()
     }
 
-    func collapse(completion: @escaping () -> Void) {
+    func collapse(
+        duration: TimeInterval = OnboardingPriceComparisonTiming.spotlightCollapseDuration,
+        completion: @escaping () -> Void
+    ) {
         layoutIfNeeded()
         let from = hole.path
         isCollapsed = true
@@ -231,13 +244,13 @@ final class OnboardingSpotlightScrimView: UIView {
         let close = CABasicAnimation(keyPath: "path")
         close.fromValue = from
         close.toValue = to
-        close.duration = OnboardingPriceComparisonTiming.spotlightCollapseDuration
+        close.duration = duration
         close.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         hole.add(close, forKey: Self.collapseKey)
         CATransaction.commit()
     }
 
-    /// Reopens the hole to the full screen height for a replay: without this a
+    /// Reopens the hole beyond every screen edge for a replay: without this a
     /// second entry would start under a scrim that has already closed.
     func reopen() {
         hole.removeAnimation(forKey: Self.collapseKey)
@@ -276,7 +289,7 @@ final class OnboardingSpotlightScrimView: UIView {
 /// `OnboardingSafariSetupPopupView`, hosted by the enclosing
 /// `SafariReplicaViewController` rather than by this view — so the trick is
 /// just the first two layers: the pill, and the spotlight that closes on it.
-/// The popup's own 40% scrim stacks on top of this spotlight's 70% once it
+/// The popup's own 65% scrim stacks on top of this spotlight's 70% once it
 /// arrives; both stay visible, deliberately darker where they overlap.
 final class OnboardingPriceComparisonOverlayView: UIView {
     private enum Stage {
@@ -302,6 +315,8 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     private let spotlight = OnboardingSpotlightScrimView()
     private var stage = Stage.idle
     private var generation = 0
+    /// Replays under the setup popup run 30% faster than the first lesson.
+    private var animationSpeedMultiplier: TimeInterval = 1
 
     init(configuration: OnboardingSurfaceConfiguration) {
         super.init(frame: .zero)
@@ -338,8 +353,12 @@ final class OnboardingPriceComparisonOverlayView: UIView {
 
     /// Runs the whole lesson: the lookup, its answer, and the spotlight
     /// closing on it — the setup offer fires the instant that closing lands.
-    func begin(afterEnablingExtension: Bool = false) {
+    func begin(
+        afterEnablingExtension: Bool = false,
+        animationSpeedMultiplier: TimeInterval = 1
+    ) {
         guard stage == .idle else { return }
+        self.animationSpeedMultiplier = animationSpeedMultiplier
         stage = .looking
         generation += 1
         setNeedsLayout()
@@ -381,7 +400,7 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         } else {
             pill.transform = CGAffineTransform(translationX: 0, y: 8)
             UIView.animate(
-                withDuration: OnboardingPriceComparisonTiming.pillRevealDuration,
+                withDuration: duration(OnboardingPriceComparisonTiming.pillRevealDuration),
                 delay: 0,
                 options: [.curveEaseOut, .beginFromCurrentState],
                 animations: reveal)
@@ -406,19 +425,21 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         UIView.animate(
             withDuration: UIAccessibility.isReduceMotionEnabled
                 ? 0
-                : OnboardingPriceComparisonTiming.spotlightFadeDuration,
+                : duration(OnboardingPriceComparisonTiming.spotlightFadeDuration),
             delay: 0,
             options: [.curveEaseOut, .beginFromCurrentState]
         ) {
             self.spotlight.alpha = 1
         } completion: { [weak self] _ in
             guard let self, generation == self.generation else { return }
-            self.spotlight.collapse {}
+            self.spotlight.collapse(
+                duration: self.duration(
+                    OnboardingPriceComparisonTiming.spotlightCollapseDuration)) {}
         }
         after(
-            OnboardingPriceComparisonTiming.spotlightFadeDuration
+            (OnboardingPriceComparisonTiming.spotlightFadeDuration
                 + OnboardingPriceComparisonTiming.spotlightCollapseDuration
-                + OnboardingPriceComparisonTiming.resultRevealDelay
+                + OnboardingPriceComparisonTiming.resultRevealDelay)
         ) { view in
             view.showFoundPrice()
         }
@@ -439,7 +460,7 @@ final class OnboardingPriceComparisonOverlayView: UIView {
             settle()
         } else {
             UIView.animate(
-                withDuration: 0.3,
+                withDuration: duration(0.3),
                 delay: 0,
                 options: [.curveEaseOut, .beginFromCurrentState],
                 animations: settle)
@@ -465,11 +486,15 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     ) {
         let generation = self.generation
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(delay)
+            deadline: .now() + OnboardingAnimationClock.delay(duration(delay))
         ) { [weak self] in
             guard let self, generation == self.generation else { return }
             work(self)
         }
+    }
+
+    private func duration(_ base: TimeInterval) -> TimeInterval {
+        base * animationSpeedMultiplier
     }
 
     #if DEBUG

@@ -17,10 +17,9 @@ enum OnboardingVideoDownloadTiming {
     /// you, and a beat that only registers as a flash states no premise at all.
     static let pageHoldDuration: TimeInterval = 3.2
     static let presentDuration: TimeInterval = 0.45
-    /// The video plays, plainly, before the panel reports its setup offer. It
-    /// has to read as *the post's video, playing* — the scrubber moving, the
-    /// moon visibly further along than it was — which is seconds, not one.
-    static let playbackHoldDuration: TimeInterval = 4.0
+    /// A short beat confirms that the panel is a live player before the shared
+    /// setup flow advances; waiting through most of the clip stalls the lesson.
+    static let playbackHoldDuration: TimeInterval = 0.75
 }
 
 /// A native replica of the panel the Safari extension puts over a video post —
@@ -145,6 +144,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     private var didReportSetupOffer = false
     /// Cancels every pending beat of a run that has been rewound.
     private var generation = 0
+    /// Replays under the setup popup run 30% faster than the first lesson.
+    private var animationSpeedMultiplier: TimeInterval = 1
 
     init(configuration: OnboardingSurfaceConfiguration = .current) {
         super.init(frame: .zero)
@@ -348,8 +349,12 @@ final class OnboardingVideoDownloadOverlayView: UIView {
 
     /// The whole lesson, on its own clock: the post is left alone, then the
     /// panel arrives playing and stays that way for the rest of the lesson.
-    func begin(immediately: Bool = false) {
+    func begin(
+        immediately: Bool = false,
+        animationSpeedMultiplier: TimeInterval = 1
+    ) {
         guard lessonStage == .idle else { return }
+        self.animationSpeedMultiplier = animationSpeedMultiplier
         generation += 1
         setNeedsLayout()
         layoutIfNeeded()
@@ -403,7 +408,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             ? .identity
             : CGAffineTransform(scaleX: 0.94, y: 0.94)
         UIView.animate(
-            withDuration: OnboardingVideoDownloadTiming.presentDuration,
+            withDuration: duration(OnboardingVideoDownloadTiming.presentDuration),
             delay: 0,
             usingSpringWithDamping: 0.9,
             initialSpringVelocity: 0.2,
@@ -414,8 +419,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
             self.panel.transform = .identity
         }
         UIView.animate(
-            withDuration: 0.24,
-            delay: 0.12,
+            withDuration: duration(0.24),
+            delay: duration(0.12),
             options: [.curveEaseOut]
         ) {
             self.controls.alpha = 1
@@ -455,11 +460,15 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     ) {
         let generation = self.generation
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(delay)
+            deadline: .now() + OnboardingAnimationClock.delay(duration(delay))
         ) { [weak self] in
             guard let self, generation == self.generation else { return }
             work(self)
         }
+    }
+
+    private func duration(_ base: TimeInterval) -> TimeInterval {
+        base * animationSpeedMultiplier
     }
 
     private func stopPlayback() {

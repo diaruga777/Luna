@@ -27,6 +27,28 @@ import XCTest
 
 final class ReaderOnboardingTests: XCTestCase {
 
+    func testPriceSpotlightStartsBeyondEveryScreenEdge() {
+        let scrim = OnboardingSpotlightScrimView(frame: CGRect(
+            x: 0, y: 0, width: 393, height: 852))
+        scrim.focusRect = CGRect(x: 240, y: 690, width: 137, height: 38)
+        scrim.layoutIfNeeded()
+
+        let center = CGPoint(
+            x: scrim.focusRect.midX, y: scrim.focusRect.midY)
+        let corners = [
+            CGPoint(x: scrim.bounds.minX, y: scrim.bounds.minY),
+            CGPoint(x: scrim.bounds.maxX, y: scrim.bounds.minY),
+            CGPoint(x: scrim.bounds.minX, y: scrim.bounds.maxY),
+            CGPoint(x: scrim.bounds.maxX, y: scrim.bounds.maxY),
+        ]
+        for corner in corners {
+            XCTAssertGreaterThanOrEqual(
+                scrim.openRadius,
+                hypot(corner.x - center.x, corner.y - center.y),
+                "the open cutout must contain every screen corner")
+        }
+    }
+
     // MARK: - Central sibling lesson selection
 
     func testCentralOnboardingChoosesTheHighestRankedMissingSibling() {
@@ -120,7 +142,7 @@ final class ReaderOnboardingTests: XCTestCase {
     /// Luna's cycle reassigns `safariReplica` to a different sibling on every
     /// swap — an owner that stops being "current" on the very next swap.
     /// Reported symptom: after one or two cross-sibling swaps, the popup card
-    /// stayed but its 40% scrim vanished, leaving the lesson full-bright
+    /// stayed but its 65% scrim vanished, leaving the lesson full-bright
     /// underneath. Walks the cycle across TWO swaps under a live popup and
     /// checks, after each, that exactly one scrim is mounted at its full
     /// alpha alongside the still-live popup — polling the condition rather
@@ -289,17 +311,17 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
-    /// The Downloader's lesson replays its FULL extension-enable beat on a
-    /// rewind, not just its own panel: exercises exactly what
+    /// The Downloader's replay skips the extension-enable sheet and starts
+    /// directly on its player state: exercises exactly what
     /// `cycleSafariInstructionLesson`'s single-lesson fallback runs
-    /// (`resetDemonstration()` then `beginDemonstration()`) directly on the
-    /// video lesson, and confirms the Manage Extensions sheet reappears, its
-    /// toggle flips on, and it dismisses again — independent of (and faster
-    /// to run without) the outer 2.0s freeze timer, which
+    /// (`resetDemonstration()` then `beginDemonstration(showsExtensionSheet:
+    /// false)`) directly on the video lesson, and confirms no second sheet is
+    /// shown — independent of (and faster to run without) the outer freeze,
+    /// which
     /// `testDownloaderSafariLessonLoopsThroughMultiplePassesUnderThePopup`
     /// below covers end to end.
     @MainActor
-    func testVideoLessonReplayFlipsTheToggleAndDismissesTheSheetAgain() throws {
+    func testVideoLessonReplaySkipsTheExtensionsSheet() throws {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .downloader))
         let window = UIWindow(frame: CGRect(
@@ -309,7 +331,10 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        safari.beginDemonstration()
+        safari.beginDemonstration(
+            showsExtensionSheet: false,
+            animationSpeedMultiplier:
+                OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
 
         // Wait for the FIRST pass to reach the playing panel.
         let firstDeadline = Date(timeIntervalSinceNow: 8)
@@ -328,25 +353,18 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.resetDemonstration()
         safari.beginDemonstration()
 
-        // Poll: within a few seconds the sheet should appear, its toggle
-        // should flip on, and it should dismiss again.
-        let deadline = Date(timeIntervalSinceNow: 15)
-        var sawToggleOn = false
-        var sawSheet = false
+        // A replay begins directly at the panel and must never recreate the
+        // Safari instruction sheet.
+        let deadline = Date(timeIntervalSinceNow: 3)
         while Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            if window.descendants(of: OnboardingManageExtensionsSheetView.self)
-                .first != nil {
-                sawSheet = true
-            }
-            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
-                .first, toggle.isOn {
-                sawToggleOn = true
-                break
-            }
         }
-        XCTAssertTrue(sawSheet, "the replay never showed the sheet at all")
-        XCTAssertTrue(sawToggleOn, "the replay never flips the toggle on")
+        XCTAssertTrue(
+            window.descendants(of: OnboardingManageExtensionsSheetView.self).isEmpty,
+            "a replay must not repeat the Manage Extensions sheet")
+        XCTAssertGreaterThan(
+            firstOverlay.backdropBlurWeightForTesting, 0,
+            "the replay should proceed directly to the player")
     }
 
     /// End to end, through `AppOnboardingViewController`'s own orchestration
@@ -384,7 +402,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         // Let the REAL lesson play through to its own natural setup offer —
         // no shortcut. pageHold(3.2) + sheet pass(~1.5) + present(0.45) +
-        // playbackHold(4.0) is the nominal chain.
+        // a short player hold is the nominal chain.
         let firstOfferDeadline = Date(timeIntervalSinceNow: 15)
         while Date() < firstOfferDeadline, !onboarding.hasSafariInstructionsForTesting {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
@@ -393,54 +411,19 @@ final class ReaderOnboardingTests: XCTestCase {
             onboarding.hasSafariInstructionsForTesting,
             "the real lesson never naturally reached its setup offer")
 
-        // The freeze holds `OnboardingDemoLoopTiming.siblingLessonHoldDuration`
-        // (2.0s); shortly after that the loop should reset and replay —
-        // watch for the sheet to reappear and its toggle to flip on again.
-        let replayDeadline = Date(timeIntervalSinceNow: 15)
-        var sawSheetAgain = false
-        var sawToggleOnAgain = false
+        // After the first pass, the loop resets and replays directly at the
+        // player; it never repeats the sheet or toggle demonstration.
+        let replayDeadline = Date(timeIntervalSinceNow: 6)
         while Date() < replayDeadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-            if window.descendants(of: OnboardingManageExtensionsSheetView.self)
-                .first != nil {
-                sawSheetAgain = true
-            }
-            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
-                .first, toggle.isOn {
-                sawToggleOnAgain = true
-                break
-            }
         }
-        XCTAssertTrue(sawSheetAgain, "no replay of the sheet after the freeze")
-        XCTAssertTrue(sawToggleOnAgain, "replay's toggle never flips on")
+        XCTAssertTrue(
+            window.descendants(of: OnboardingManageExtensionsSheetView.self).isEmpty,
+            "the loop must not re-show the sheet after its first pass")
         XCTAssertTrue(
             onboarding.hasSafariInstructionsForTesting,
             "the popup should still be up through the replay")
 
-        // Wait for this sheet to fully clear, then confirm a THIRD pass (the
-        // second replay) also reaches a flipped toggle — the loop has to
-        // survive more than once.
-        let clearDeadline = Date(timeIntervalSinceNow: 5)
-        while Date() < clearDeadline,
-              window.descendants(of: OnboardingManageExtensionsSheetView.self)
-                  .first != nil {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-        }
-
-        let secondReplayDeadline = Date(timeIntervalSinceNow: 20)
-        var sawSecondReplayToggleOn = false
-        while Date() < secondReplayDeadline {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-            if let toggle = window.descendants(of: OnboardingMockSwitchView.self)
-                .first, toggle.isOn {
-                sawSecondReplayToggleOn = true
-                break
-            }
-        }
-        XCTAssertTrue(
-            sawSecondReplayToggleOn,
-            "the SECOND replay never flips its toggle on — a single "
-                + "successful pass is not the same as looping forever")
     }
 
     /// The one end-of-lesson signal the host cycles on: the Downloader's panel
@@ -951,7 +934,7 @@ final class ReaderOnboardingTests: XCTestCase {
     /// the seller pill answers there, the lesson's own 70% spotlight scrim
     /// closes on it, and the shared setup popup — window-hosted, not a card
     /// inside the lesson's own view any more — comes up above BOTH that
-    /// spotlight and its own 40% scrim, stacked and both still visible. Its
+    /// spotlight and its own 65% scrim, stacked and both still visible. Its
     /// buttons have to be hittable through that stack, or the lesson ends on
     /// an ask nobody can reach; and the re-entry contract (a hop to Safari
     /// with nothing to show for it) has to put the buttons live again.

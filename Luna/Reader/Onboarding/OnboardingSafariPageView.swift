@@ -46,6 +46,9 @@ enum OnboardingSafariPageTiming {
 ///
 /// It is native instead of HTML so the wave's glyph-level effects are possible.
 final class OnboardingSafariPageView: UIView {
+    /// The first Safari lesson teaches the switch; replayed lessons run the
+    /// revealed-page animation on the faster cycle timeline.
+    var animationSpeedMultiplier: TimeInterval = 1
     private enum Stage {
         case blocked
         /// Everything heavy is done and committed: the clutter is swapped for
@@ -444,7 +447,8 @@ final class OnboardingSafariPageView: UIView {
     private func frontArrival(atPageY y: CGFloat) -> TimeInterval {
         TimeInterval(
             max(0, waveOrigin - y)
-                / OnboardingSafariPageTiming.cascadeFrontSpeed)
+                / (OnboardingSafariPageTiming.cascadeFrontSpeed
+                    / animationSpeedMultiplier))
     }
 
     /// Shatters every obstruction bottom-to-top. The content beneath stays
@@ -600,7 +604,8 @@ final class OnboardingSafariPageView: UIView {
             }
             return 0.18
         }
-        let pieceDuration = OnboardingSafariPageTiming.shatterDuration * 0.54
+        let pieceDuration = OnboardingSafariPageTiming.shatterDuration
+            * 0.54 * animationSpeedMultiplier
         let lastFinish = (pieces.map(\.delay).max() ?? 0) + pieceDuration
         let commitTime = CACurrentMediaTime()
 
@@ -618,7 +623,8 @@ final class OnboardingSafariPageView: UIView {
 
             let animation = CAAnimationGroup()
             animation.animations = [transformAnimation, opacityAnimation]
-            animation.beginTime = commitTime + OnboardingAnimationClock.delay(piece.delay)
+            animation.beginTime = commitTime + OnboardingAnimationClock.delay(
+                piece.delay * animationSpeedMultiplier)
             animation.duration = pieceDuration
             animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
             // Preserve the first value until each tile's own scheduled start;
@@ -667,7 +673,8 @@ final class OnboardingSafariPageView: UIView {
     ) {
         let generation = sequenceGeneration
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(delay)
+            deadline: .now() + OnboardingAnimationClock.delay(
+                delay * animationSpeedMultiplier)
         ) { [weak self] in
             guard let self, self.sequenceGeneration == generation else { return }
             action(self)

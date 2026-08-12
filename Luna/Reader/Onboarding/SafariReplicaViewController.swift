@@ -85,6 +85,10 @@ final class SafariReplicaViewController:
     private var didReportSetupOffer = false
     private var pageIndex = 0
     private var pageTimer: Timer?
+    /// The first lesson demonstrates Safari's extension switch. Replays run
+    /// the already-enabled result directly, at a shorter timeline beneath the
+    /// persistent setup popup.
+    private var animationSpeedMultiplier: TimeInterval = 1
 
     /// Only this replica's OWN instruction overlay — the shared "Set up in
     /// Safari" / "Skip" popup every lesson ends on now lives one level up, on
@@ -369,24 +373,33 @@ final class SafariReplicaViewController:
     /// Starts only after the incoming card has expanded to the screen. Keeping
     /// the timeline explicit prevents the Action Button cue from playing while
     /// the browser is still changing geometry.
-    func beginDemonstration() {
+    func beginDemonstration(
+        showsExtensionSheet: Bool = true,
+        animationSpeedMultiplier: TimeInterval = 1
+    ) {
         guard !didBeginDemonstration else { return }
         didBeginDemonstration = true
+        self.animationSpeedMultiplier = animationSpeedMultiplier
+        lunaPage?.animationSpeedMultiplier = animationSpeedMultiplier
         if let priceLesson {
-            runPriceComparisonDemonstration(priceLesson)
+            runPriceComparisonDemonstration(
+                priceLesson, showsExtensionSheet: showsExtensionSheet)
             return
         }
         if let videoLesson {
             // First teach the one Safari action the person has to take. The
             // media panel is the proof of what enabling it unlocks, not a
             // detached prelude that appears before the extension is on.
-            runExtensionEnableDemonstration { [weak videoLesson] in
-                videoLesson?.begin(immediately: true)
+            runExtensionEnableDemonstration(showsExtensionSheet: showsExtensionSheet) {
+                [weak self, weak videoLesson] in
+                videoLesson?.begin(
+                    immediately: true,
+                    animationSpeedMultiplier: self?.animationSpeedMultiplier ?? 1)
             }
             return
         }
         if onboardingConfiguration.demoPages[pageIndex] == .lunaPage {
-            runExtensionEnableDemonstration()
+            runExtensionEnableDemonstration(showsExtensionSheet: showsExtensionSheet)
             return
         }
         DispatchQueue.main.asyncAfter(
@@ -409,10 +422,17 @@ final class SafariReplicaViewController:
     /// decision as the Reader. Only after its extension is enabled does the
     /// product lesson demonstrate the extension looking for comparable sellers.
     private func runPriceComparisonDemonstration(
-        _ lesson: OnboardingPriceComparisonOverlayView
+        _ lesson: OnboardingPriceComparisonOverlayView,
+        showsExtensionSheet: Bool
     ) {
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
+        guard showsExtensionSheet else {
+            lesson.begin(
+                afterEnablingExtension: true,
+                animationSpeedMultiplier: animationSpeedMultiplier)
+            return
+        }
         afterEnableDelay(
             OnboardingExtensionEnableTiming.pageHoldDuration,
             generation: generation
@@ -453,10 +473,15 @@ final class SafariReplicaViewController:
     /// spells out those same steps, so the pass is a demonstration of what the
     /// reader is about to read.
     private func runExtensionEnableDemonstration(
+        showsExtensionSheet: Bool = true,
         completion: (() -> Void)? = nil
     ) {
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
+        guard showsExtensionSheet else {
+            completeExtensionEnableDemonstration(completion: completion)
+            return
+        }
         afterEnableDelay(
             OnboardingExtensionEnableTiming.pageHoldDuration,
             generation: generation
@@ -484,29 +509,31 @@ final class SafariReplicaViewController:
                     guard let self,
                           generation == self.enableDemoGeneration
                     else { return }
-                    // The switch flipping on IS the wipe's cue: the heavy
-                    // preparation (tile swap, light rasters) commits first,
-                    // then the sheet starts sliding away and the sweep sets
-                    // out with it — `cleanUpClutter` still holds its
-                    // animations back one run-loop turn, so the short blooms
-                    // at the top of the page keep their shine.
-                    // The browser bar leaves on the same cue, before the
-                    // page's geometry is measured for the wave.
-                    self.setBrowserBarVisible(false, animated: true)
-                    self.lunaPage?.prepareCleanUp()
                     sheet.dismiss { [weak self] in
                         self?.extensionsSheet = nil
-                        completion?()
-                    }
-                    // Only the Reader's explainer has clutter to shatter. The
-                    // Downloader keeps its blocked post intact behind the
-                    // extension's actual video panel — and reports its own end
-                    // from the panel instead.
-                    self.lunaPage?.cleanUpClutter { [weak self] in
-                        self?.lessonDidReachSetupOffer()
+                        self?.completeExtensionEnableDemonstration(
+                            completion: completion)
                     }
                 }
             }
+        }
+    }
+
+    /// The result of Safari's toggle flip. A replay already taught the toggle,
+    /// so it begins here instead of presenting another copy of that sheet.
+    private func completeExtensionEnableDemonstration(
+        completion: (() -> Void)?
+    ) {
+        // The browser bar leaves on the same cue as the original switch flip,
+        // before the page's cleanup geometry is measured.
+        setBrowserBarVisible(false, animated: true)
+        lunaPage?.prepareCleanUp()
+        completion?()
+        // Only the Reader's explainer has clutter to shatter. The Downloader
+        // keeps its blocked post intact behind the video panel and reports its
+        // own end from that panel instead.
+        lunaPage?.cleanUpClutter { [weak self] in
+            self?.lessonDidReachSetupOffer()
         }
     }
 
@@ -516,7 +543,8 @@ final class SafariReplicaViewController:
         _ work: @escaping () -> Void
     ) {
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + OnboardingAnimationClock.delay(delay)
+            deadline: .now() + OnboardingAnimationClock.delay(
+                delay * animationSpeedMultiplier)
         ) { [weak self] in
             guard let self, generation == self.enableDemoGeneration else { return }
             work()

@@ -31,10 +31,12 @@ The hand-over runs off ONE signal. Every lesson ends by asking for the same
 thing, so each reports reaching its own ask —
 `SafariReplicaViewController.onDidReachSetupOffer`, raised once per run from the
 explainer's `cleanUpClutter` completion, the video panel's own arrival (once the
-clip has plainly played), or the product card's arrival — and the host holds
+clip has started), or the product card's arrival. The first lesson alone shows
+Safari's Manage Extensions sheet. The host then holds
 (`OnboardingDemoLoopTiming.siblingLessonHoldDuration`, 2.0s), cross-fades to the
-next replica, rewinds it and begins it. It never has to know which lesson it is
-playing. **The signal is what makes the cycle exist**: it used to hang off
+next replica, rewinds it and begins the post-sheet result directly. Every pass
+after the first runs at 70% of the original timeline. It never has to know which
+lesson it is playing. **The signal is what makes the cycle exist**: it used to hang off
 `onActionButtonWaveFinished`, which no Safari lesson ever fires, so the central
 app played one sibling and stopped.
 
@@ -90,7 +92,7 @@ correct or not — can ever affect whether the scrim stays visible; being a
 named type rather than a bare `UIView` is what lets a test find and count it
 precisely
 (`ReaderOnboardingTests.testCentralSafariLessonKeepsExactlyOneScrimAcrossASwap`).
-Its alpha is 0.40 (`OnboardingSafariSetupPopupView.scrimAlpha`).
+Its alpha is 0.65 (`OnboardingSafariSetupPopupView.scrimAlpha`).
 
 The compass button (`OnboardingSafariSetupActionButton`) reuses
 `GlassStyle.actionButtonConfiguration`'s capsule for the "Set up in Safari"
@@ -434,17 +436,12 @@ pending beats. Its own beats:
 | --- | --- |
 | `pageHoldDuration` (3.2s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
 | `presentDuration` (0.45s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
-| `playbackHoldDuration` (4.0s) | the video plays, plainly, under a full-width "Download in Luna" — the panel then reports its setup offer and STAYS exactly like this; it no longer grows a chin of enable steps |
+| `playbackHoldDuration` (0.75s) | the video starts under a full-width "Download in Luna"; after a brief proof-of-playback beat, the panel reports its setup offer and stays exactly like this |
 
-**The one hold is the lesson; the transition is plumbing.** The lesson used to
-have three subjects in sequence — the wall, the video, the steps — and at the
-brisk timings it opened with, each was overtaken by the next before it
-registered. The panel's own third subject is gone now (that ask lives on the
-shared setup popup, raised by the host off `onDidReachSetupOffer`), so what
-remains is two holds, both still counted in seconds and pinned that way by
-`testEachBeatIsLongEnoughToRead`. The playback hold is counted from the CLIP
-starting rather than from the panel finishing its arrival, because what it is
-holding for is a video the user has plainly watched play.
+The blocked-post hold establishes the premise. The player only needs a short
+proof-of-playback beat before the shared popup flow advances; the panel's former
+third subject lives on the hosted setup page. The playback hold is counted from
+the CLIP starting rather than from the panel finishing its arrival.
 
 **The panel is a replica, not a stylisation.** Every measurement in it is read
 straight off `presentVideoOverlay` in `LunaSafari/Resources/content.js` — the
@@ -546,9 +543,9 @@ climbing front. Three things ride it:
 The explainer argues for the extension in prose, under clutter, and clears it.
 A price tracker can make a better argument — run the extension's actual answer
 on an actual product page — so its lesson opens the browser straight on the
-mock Amayzon page. It first shows Safari's Manage Extensions bottom sheet with
-the **Luna Price Tracker** icon and toggle; once that switch is on and the sheet
-has gone away, it plays what the extension would do there
+mock Amayzon page. Its first pass shows Safari's Manage Extensions bottom sheet
+with the **Luna Price Tracker** icon and toggle; later cycle passes skip the
+already-taught sheet and play what the extension would do there
 (`OnboardingPriceComparisonLesson.swift`, one overlay over the browser holding
 three layers in this z-order, which is the whole trick):
 
@@ -569,8 +566,9 @@ three layers in this z-order, which is the whole trick):
 2. **The scrim dims everything but that pill.** `OnboardingSpotlightScrimView`
    is 70% black with ONE round hole, an even-odd mask (bounds rect + circle) —
    only a mask puts a genuinely round edge on the light, and one path animates
-   into the next. It opens at the screen's full height, so its 0.3s arrival is
-   almost entirely the corners darkening rather than a flash, then closes over
+   into the next. It opens beyond every screen edge, so its first frame has no
+   visible black at all; its 0.3s arrival then brings darkness inward from the
+   edges, before closing over
    0.85s to the pill's circumscribed circle plus 12pt. A mask layer has no view
    to inherit UIKit's animation actions from, so every path assignment is
    wrapped in a disabled-actions transaction or Core Animation's implicit fade

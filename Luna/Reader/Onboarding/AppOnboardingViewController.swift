@@ -27,6 +27,9 @@ enum OnboardingDemoLoopTiming {
     /// than a card hold: what it is holding is the point the lesson just
     /// made.
     static let siblingLessonHoldDuration: TimeInterval = 2.0
+    /// Every pass after the first has already taught the Safari switch, so it
+    /// can show the result more briskly beneath the persistent setup popup.
+    static let repeatedSafariLessonSpeedMultiplier: TimeInterval = 0.7
 }
 
 enum OnboardingDemoSource: CaseIterable, Equatable {
@@ -136,6 +139,9 @@ final class AppOnboardingViewController: UIViewController {
     /// The sibling cycle is running: from the first lesson's start until an
     /// external hop or the end of onboarding stops it.
     private var isCyclingSafariLessons = false
+    /// The first Safari lesson is the only pass that shows Safari's Manage
+    /// Extensions sheet. All following sibling and looped passes skip it.
+    private var hasCompletedFirstSafariLesson = false
     /// The Safari ask is up. It is raised by the pass that completes the first
     /// full cycle and stays for the rest of the lesson, so later passes must not
     /// raise or reconfigure it.
@@ -147,7 +153,7 @@ final class AppOnboardingViewController: UIViewController {
     /// that is underneath the popup, so an object that gets swapped out is the
     /// wrong owner. See `showSafariSetupPopup()`.
     private var safariSetupPopup: OnboardingSafariSetupPopupView?
-    /// The popup's full-screen 40% scrim — mounted directly on the window
+    /// The popup's full-screen 65% scrim — mounted directly on the window
     /// BELOW the popup and never touched again after it fades in, alongside
     /// (never inside) the popup for the same reason
     /// `OnboardingSafariSetupPopupView`'s own doc comment gives.
@@ -806,6 +812,7 @@ final class AppOnboardingViewController: UIViewController {
     private func rewindSafariLessonCycle() {
         let apps = configuration.safariDemonstrationApps
         didRaiseSafariSetupPopover = false
+        hasCompletedFirstSafariLesson = false
         isCyclingSafariLessons = apps.count > 1
         safariCycleIndex = 0
         guard let first = apps.first,
@@ -885,6 +892,8 @@ final class AppOnboardingViewController: UIViewController {
               apps.indices.contains(safariCycleIndex),
               apps[safariCycleIndex] == demonstrationApp
         else { return }
+
+        hasCompletedFirstSafariLesson = true
 
         // The last lesson of the first cycle is where the ask comes up. Every
         // other ending — and every later cycle — is just the next beat.
@@ -1029,7 +1038,8 @@ final class AppOnboardingViewController: UIViewController {
         let generation = demoLoopGeneration
         DispatchQueue.main.asyncAfter(
             deadline: .now() + OnboardingAnimationClock.delay(
-                OnboardingDemoLoopTiming.siblingLessonHoldDuration)
+                safariCycleDuration(
+                    OnboardingDemoLoopTiming.siblingLessonHoldDuration))
         ) { [weak self] in
             guard let self,
                   self.isCyclingSafariLessons,
@@ -1047,7 +1057,10 @@ final class AppOnboardingViewController: UIViewController {
               !isFinishing
         else {
             safariReplica?.resetDemonstration()
-            safariReplica?.beginDemonstration()
+            safariReplica?.beginDemonstration(
+                showsExtensionSheet: false,
+                animationSpeedMultiplier:
+                    OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
             return
         }
         safariCycleIndex = (safariCycleIndex + 1) % apps.count
@@ -1059,7 +1072,9 @@ final class AppOnboardingViewController: UIViewController {
         incoming.view.isHidden = false
         incoming.view.alpha = 0
         view.bringSubviewToFront(incoming.view)
-        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled ? 0.2 : 0.28
+        let duration: TimeInterval = UIAccessibility.isReduceMotionEnabled
+            ? 0.2
+            : safariCycleDuration(0.28)
         UIView.animate(
             withDuration: duration,
             delay: 0,
@@ -1074,8 +1089,17 @@ final class AppOnboardingViewController: UIViewController {
             self.safariReplica = incoming
             self.setNeedsStatusBarAppearanceUpdate()
             incoming.prepareForPresentation()
-            incoming.beginDemonstration()
+            incoming.beginDemonstration(
+                showsExtensionSheet: false,
+                animationSpeedMultiplier:
+                    OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
         }
+    }
+
+    private func safariCycleDuration(_ base: TimeInterval) -> TimeInterval {
+        base * (hasCompletedFirstSafariLesson
+            ? OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier
+            : 1)
     }
 
     /// The Messages demonstration ended on its in-conversation setup pills

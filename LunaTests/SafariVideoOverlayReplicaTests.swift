@@ -177,20 +177,19 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
         XCTAssertLessThan(overlay.backdropBlurWeightForTesting, 1)
     }
 
-    /// Every beat is long enough to be taken in. The lesson has three subjects
-    /// in sequence — the wall, the video, the steps — and each was previously
-    /// overtaken by the next before it registered.
-    func testEachBeatIsLongEnoughToRead() {
+    /// The wall still establishes the premise, while the player only needs a
+    /// short beat before the shared setup flow advances.
+    func testPlayerAdvancesAfterAShortPlaybackBeat() {
         XCTAssertGreaterThanOrEqual(
             OnboardingVideoDownloadTiming.pageHoldDuration, 2.5,
             "the sign-up wall is the lesson's premise and has to be read")
-        XCTAssertGreaterThanOrEqual(
-            OnboardingVideoDownloadTiming.playbackHoldDuration, 3,
-            "the clip has to plainly play before the panel changes under it")
+        XCTAssertLessThanOrEqual(
+            OnboardingVideoDownloadTiming.playbackHoldDuration, 1,
+            "the next onboarding stage should not wait through the video")
         XCTAssertGreaterThan(
             OnboardingVideoDownloadTiming.playbackHoldDuration,
-            OnboardingVideoDownloadTiming.presentDuration * 4,
-            "the hold is what the panel is FOR; its arrival is a transition")
+            OnboardingVideoDownloadTiming.presentDuration,
+            "the player should be visibly underway before advancing")
     }
 
     // MARK: - The stage fits on the shortest phone

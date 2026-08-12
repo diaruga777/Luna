@@ -10,7 +10,12 @@ LunaLibraries/.build/
 DerivedData/
 .build-dd/
 .build-dd*/
+# Ad-hoc `-derivedDataPath` dirs (e.g. .dd-maincheck from a clean-build check).
+.dd-*/
 build/
+
+# Cloudflare Wrangler local state for site/ — cache plus signed-in account.
+.wrangler/
 
 # Xcode and SwiftPM generated state
 **/-Xcc/

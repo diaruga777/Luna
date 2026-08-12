@@ -28,9 +28,16 @@ struct OnboardingDeviceCapabilities: Equatable {
     var operatingSystemMajorVersion: Int
     var modelIdentifier: String
     var isSimulator: Bool
+    /// CoreSimulator exposes its selected device by name rather than through
+    /// `hw.machine`, which is the host architecture. Limit the simulator
+    /// exception to the recording device we support, instead of treating every
+    /// simulator as Action Button-capable.
+    var simulatorDeviceName: String = ""
 
     var hasActionButton: Bool {
-        guard !isSimulator else { return false }
+        if isSimulator {
+            return simulatorDeviceName == "iPhone 17 Pro"
+        }
         let components = modelIdentifier
             .dropFirst("iPhone".count)
             .split(separator: ",", maxSplits: 1)
@@ -61,7 +68,9 @@ struct OnboardingDeviceCapabilities: Equatable {
             operatingSystemMajorVersion:
                 ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
             modelIdentifier: Self.hardwareModelIdentifier(),
-            isSimulator: simulator)
+            isSimulator: simulator,
+            simulatorDeviceName:
+                ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? "")
     }
 
     private static func hardwareModelIdentifier() -> String {

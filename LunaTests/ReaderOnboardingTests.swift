@@ -533,12 +533,14 @@ final class ReaderOnboardingTests: XCTestCase {
         func mode(
             os: Int,
             model: String,
-            simulator: Bool = false
+            simulator: Bool = false,
+            simulatorDeviceName: String = ""
         ) -> OnboardingSaveSetupMode {
             OnboardingDeviceCapabilities(
                 operatingSystemMajorVersion: os,
                 modelIdentifier: model,
-                isSimulator: simulator).saveSetupMode
+                isSimulator: simulator,
+                simulatorDeviceName: simulatorDeviceName).saveSetupMode
         }
 
         XCTAssertEqual(mode(os: 26, model: "iPhone17,1"), .unavailable)
@@ -547,6 +549,13 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertEqual(
             mode(os: 27, model: "iPhone17,1", simulator: true),
             .unavailable)
+        XCTAssertEqual(
+            mode(
+                os: 27,
+                model: "arm64",
+                simulator: true,
+                simulatorDeviceName: "iPhone 17 Pro"),
+            .actionButtonShortcut)
         XCTAssertEqual(mode(os: 27, model: "iPhone16,1"), .actionButtonShortcut)
         XCTAssertEqual(mode(os: 27, model: "iPhone16,2"), .actionButtonShortcut)
         XCTAssertEqual(mode(os: 27, model: "iPhone17,1"), .actionButtonShortcut)

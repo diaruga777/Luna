@@ -66,6 +66,19 @@ is a closure the app shell installs at launch, wrapping
 `RecentURLMatcher.evaluate(urlString:surface: .luna)`. `.luna` deliberately — a
 faceted app must be able to render whichever kind it fetched.
 
+A read that FAILS still writes a row — the host for the title, no artwork —
+but the display records `hasResolvedMetadata: false`, and that is the flag the
+refresher's "I already hold this entry" skip consults. Without it one failed
+read (offline at launch, a timeout, a transient 5xx) parked the row on
+`www.example.com` plus the generic glyph for the entry's whole 30-day life,
+because every later launch saw the same URL and date and moved on; the row that
+prompted this was showing a bare host while the very same link, tapped and
+saved, fetched its title in a second. A display decoded from a file written
+before the flag existed reads as unresolved, so an already-stuck row heals on
+the next launch. The cost of a page that genuinely can't be read is one cheap
+retry per refresh (launch/foreground, debounced to one a minute) until the
+entry ages out.
+
 ## CloudKit
 
 Everything CloudKit-facing hides behind `WeeklyCloudDatabase`, so unit tests

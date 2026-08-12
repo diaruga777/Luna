@@ -96,23 +96,20 @@ public final class WeeklySaveRefresher {
                     store.clear(kind: kind)
                     continue
                 }
-                let existing = store.display(for: kind)?.save
-                if existing?.urlString == save.urlString, existing?.date == save.date {
+                // An entry we already hold is skipped — UNLESS its metadata
+                // never resolved. A row showing the bare host is not a row we
+                // are finished with, and this is the only place that would ever
+                // ask again.
+                let existing = store.display(for: kind)
+                if existing?.save.urlString == save.urlString,
+                   existing?.save.date == save.date,
+                   existing?.hasResolvedMetadata == true {
                     continue
                 }
                 let store = store
                 group.addTask { @MainActor in
-                    let metadata = await Self.metadataFetcher?(save.urlString)
-                    let host = metadata?.host
-                        ?? URL(string: save.urlString)?.host
-                        ?? save.urlString
                     store.setDisplay(
-                        WeeklySaveDisplay(
-                            save: save,
-                            title: metadata?.title ?? host,
-                            subtitleHost: host,
-                            imageData: metadata?.imageData),
-                        for: kind)
+                        await Self.display(for: save), for: kind)
                 }
             }
         }
@@ -132,15 +129,22 @@ public final class WeeklySaveRefresher {
         try await database.saveWeekly(save)
         weeklyCloudLog("promoted \(kind.rawValue): \(urlString)")
         guard kinds.contains(kind) else { return }
-        let metadata = await Self.metadataFetcher?(urlString)
-        let host = metadata?.host ?? URL(string: urlString)?.host ?? urlString
-        store.setDisplay(
-            WeeklySaveDisplay(
-                save: save,
-                title: metadata?.title ?? host,
-                subtitleHost: host,
-                imageData: metadata?.imageData),
-            for: kind)
+        store.setDisplay(await Self.display(for: save), for: kind)
+    }
+
+    /// The one place a `WeeklySaveDisplay` is built from a signed entry — the
+    /// launch/foreground refresh and a self-promotion both land here, so a
+    /// failed metadata read is recorded as unresolved (and retried) whichever
+    /// one wrote it.
+    private static func display(for save: WeeklySave) async -> WeeklySaveDisplay {
+        let metadata = await metadataFetcher?(save.urlString)
+        let host = metadata?.host ?? URL(string: save.urlString)?.host ?? save.urlString
+        return WeeklySaveDisplay(
+            save: save,
+            title: metadata?.title ?? host,
+            subtitleHost: host,
+            imageData: metadata?.imageData,
+            hasResolvedMetadata: metadata != nil)
     }
 
     // MARK: - Proposals

@@ -158,8 +158,9 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
 
     `pageMenu` and `manageExtensions` are light plates carrying a glyph — a
     capsule for Safari's address field, a rounded rect for the menu row it
-    opens. `switch` is the setting's already-on switch, while the app icon is
-    rendered inline in that step's text.
+    opens. `switch` is the setting's already-on switch, `tap` the tapping
+    hand beside the permission button, while the app icon is rendered inline
+    in its step's text.
     """
     if kind == "pageMenu":
         # SF `text.justify.leading`: justified lines with a short leading last one.
@@ -189,6 +190,23 @@ def step_visual(kind: str, icon_href: str, app_name: str) -> str:
     if kind == "switch":
         return '<span class="switch" aria-hidden="true"><span class="knob"></span></span>'
 
+    if kind == "tap":
+        # SF `hand.tap` stand-in: an outline tapping hand — index finger up,
+        # two curled knuckles, a thumb tucked against the palm — with three
+        # motion ticks radiating off the fingertip's upper left.
+        return (
+            '<svg class="tap-glyph" viewBox="0 0 26 26" fill="none" '
+            'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true">'
+            '<path d="M7.2 2 8.1 3.7 M3.6 4.8 5.3 5.9 M2 9.2 3.9 9.5"/>'
+            '<path d="M11 15.5 V5 a1.7 1.7 0 0 1 3.4 0 V11 a1.7 1.7 0 0 1 3.4 0 '
+            "v0.8 a1.7 1.7 0 0 1 3.4 0 v2.7 c0 2.2 -0.6 3.5 -1.5 4.8 "
+            "c-0.5 0.8 -0.8 1.7 -0.8 2.7 h-6.8 c0 -1 -0.3 -1.9 -0.9 -2.7 "
+            "c-0.9 -1.2 -2.2 -2.3 -3 -4 c-0.4 -0.85 0.25 -1.8 1.2 -1.8 "
+            'c0.55 0 1.1 0.25 1.45 0.7 l1.15 1.35 Z"/>'
+            "</svg>"
+        )
+
     return (
         f'<img class="step-icon" src="{icon_href}" alt="{html.escape(app_name)}">'
     )
@@ -217,22 +235,14 @@ def render_page(slug: str, copy: Copy, icon_href: str) -> str:
             "switch",
             copy.string("Onboarding_Safari_appStepTemplate").replace("%@", inline_app),
         ),
-        ("empty", 'Select <span class="system-button">Allow on all websites</span>'),
+        ("tap", '<span class="system-button">Allow on all websites</span>'),
     ]
 
     def render_row(kind: str, text: str) -> str:
-        rendered_text = text if kind in ("switch", "empty") else html.escape(text)
-        # A step with no chrome picture drops the visual column entirely, so
-        # its text starts where the other steps' icons do — which is what lets
-        # the "Allow on all websites" step fit one line on a phone.
-        visual = (
-            ""
-            if kind == "empty"
-            else f'          <span class="visual">{step_visual(kind, icon_href, app_name)}</span>\n'
-        )
+        rendered_text = text if kind in ("switch", "tap") else html.escape(text)
         return (
             '        <li class="step">\n'
-            f"{visual}"
+            f'          <span class="visual">{step_visual(kind, icon_href, app_name)}</span>\n'
             f'          <span class="step-text">{rendered_text}</span>\n'
             '        </li>'
         )
@@ -518,6 +528,13 @@ h1 {
   height: 16px;
   border-radius: 8px;
   background: #fff;
+}
+
+/* The tapping hand is an outline drawn straight on the page background —
+   no plate, since it's a gesture rather than a piece of Safari chrome. */
+.tap-glyph {
+  width: 30px;
+  height: 30px;
 }
 
 .system-button {

@@ -200,6 +200,13 @@ h1 {
   background: #fff;
 }
 
+/* The tapping hand is an outline drawn straight on the page background —
+   no plate, since it's a gesture rather than a piece of Safari chrome. */
+.tap-glyph {
+  width: 30px;
+  height: 30px;
+}
+
 .system-button {
   display: inline-block;
   padding: 0.18em 0.55em 0.2em;

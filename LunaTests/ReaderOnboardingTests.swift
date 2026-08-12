@@ -137,6 +137,122 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
+    /// The first cycle is the pass the user is actually reading, so it plays at
+    /// full length for all three siblings. The regression this guards: the
+    /// brisker timeline was gated on the first LESSON, so the Downloader's and
+    /// the Price Tracker's — never seen before — ran at 0.7x the first time
+    /// they appeared. Only the wrap back to the first sibling, which is what
+    /// closes the cycle, may speed the loop up.
+    @MainActor
+    func testTheFirstSafariCycleRunsAtFullPaceForEverySibling() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .luna,
+                saveSetupMode: .unavailable,
+                demonstrationApp: .reader),
+            onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+        spinRunLoop(0.3)
+
+        for expected in [LunaApp.downloader, .priceTracker] {
+            XCTAssertEqual(
+                onboarding.safariLessonSpeedMultiplierForTesting, 1,
+                accuracy: 0.001,
+                "the lesson before \(expected) must not have sped the loop up")
+            onboarding.finishSafariLessonForTesting()
+            spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+            XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, expected)
+        }
+
+        // The third ending raises the ask; the cycle is still not closed until
+        // the rotation wraps, so its freeze is a full-length one too.
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(0.1)
+        XCTAssertEqual(
+            onboarding.safariLessonSpeedMultiplierForTesting, 1, accuracy: 0.001,
+            "the freeze the ask comes up on belongs to the first cycle")
+
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
+        XCTAssertEqual(
+            onboarding.safariLessonSpeedMultiplierForTesting,
+            OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier,
+            accuracy: 0.001,
+            "every sibling has now been seen once, so the loop speeds up")
+    }
+
+    /// A faceted app's ONE lesson is its whole cycle, so it too plays through
+    /// at full length once before its replays shorten.
+    @MainActor
+    func testAFacetedAppsFirstSafariLessonRunsAtFullPace() throws {
+        let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let onboarding = AppOnboardingViewController(
+            configuration: .configuration(
+                for: .downloader, saveSetupMode: .unavailable),
+            onboardingStore: AppOnboardingStore(
+                app: .downloader, defaults: defaults),
+            completion: AppOnboardingCompletion(
+                makeCompletedRootViewController: { UIViewController() }))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = onboarding
+        window.makeKeyAndVisible()
+        onboarding.view.layoutIfNeeded()
+        UIView.setAnimationsEnabled(false)
+        defer {
+            UIView.setAnimationsEnabled(true)
+            window.isHidden = true
+        }
+
+        let safariButton = try XCTUnwrap(
+            onboarding.view.descendants(of: UIButton.self).first {
+                $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
+            })
+        safariButton.sendActions(for: .touchUpInside)
+        spinRunLoop(0.3)
+        XCTAssertEqual(
+            onboarding.safariLessonSpeedMultiplierForTesting, 1, accuracy: 0.001)
+
+        onboarding.finishSafariLessonForTesting()
+        spinRunLoop(0.1)
+        XCTAssertEqual(
+            onboarding.safariLessonSpeedMultiplierForTesting, 1, accuracy: 0.001,
+            "the ask's own freeze still belongs to the lesson just shown")
+
+        spinRunLoop(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 0.4)
+        XCTAssertEqual(
+            onboarding.safariLessonSpeedMultiplierForTesting,
+            OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier,
+            accuracy: 0.001,
+            "the replay that follows the one lesson is a second cycle")
+    }
+
     /// The regression this guards: the shared popup's scrim used to be owned
     /// by whichever `SafariReplicaViewController` raised it, and central
     /// Luna's cycle reassigns `safariReplica` to a different sibling on every
@@ -311,17 +427,21 @@ final class ReaderOnboardingTests: XCTestCase {
         XCTAssertTrue(onboarding.hasSafariInstructionsForTesting)
     }
 
-    /// The Downloader's replay skips the extension-enable sheet and starts
-    /// directly on its player state: exercises exactly what
+    /// A pass that skips the extension-enable sheet still stands on the blocked
+    /// post before the panel answers it: exercises exactly what
     /// `cycleSafariInstructionLesson`'s single-lesson fallback runs
     /// (`resetDemonstration()` then `beginDemonstration(showsExtensionSheet:
-    /// false)`) directly on the video lesson, and confirms no second sheet is
-    /// shown — independent of (and faster to run without) the outer freeze,
-    /// which
+    /// false)`) directly on the video lesson, and confirms both that no second
+    /// sheet is shown AND that the post is not wiped away in a frame — the
+    /// sheet was the only thing holding it, so a pass without one used to open
+    /// on its own answer. Independent of (and faster to run without) the outer
+    /// freeze, which
     /// `testDownloaderSafariLessonLoopsThroughMultiplePassesUnderThePopup`
     /// below covers end to end.
     @MainActor
-    func testVideoLessonReplaySkipsTheExtensionsSheet() throws {
+    func testVideoLessonReplayHoldsTheBlockedPostAndSkipsTheExtensionsSheet()
+        throws
+    {
         let safari = SafariReplicaViewController(
             configuration: .configuration(for: .downloader))
         let window = UIWindow(frame: CGRect(
@@ -331,40 +451,47 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        safari.beginDemonstration(
-            showsExtensionSheet: false,
-            animationSpeedMultiplier:
-                OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
+        let speed = OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier
+        let hold = OnboardingVideoDownloadTiming.pageHoldDuration * speed
 
-        // Wait for the FIRST pass to reach the playing panel.
-        let firstDeadline = Date(timeIntervalSinceNow: 8)
-        while Date() < firstDeadline {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            if let overlay = window.descendants(of: OnboardingVideoDownloadOverlayView.self).first,
-               overlay.backdropBlurWeightForTesting > 0 { break }
+        /// Runs the loop until the panel is up, or the deadline passes.
+        func waitForPanel(
+            _ overlay: OnboardingVideoDownloadOverlayView, timeout: TimeInterval
+        ) {
+            let deadline = Date(timeIntervalSinceNow: timeout)
+            while Date() < deadline, overlay.backdropBlurWeightForTesting <= 0 {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            }
         }
-        let firstOverlay = try XCTUnwrap(
+
+        safari.beginDemonstration(
+            showsExtensionSheet: false, animationSpeedMultiplier: speed)
+        let overlay = try XCTUnwrap(
             window.descendants(of: OnboardingVideoDownloadOverlayView.self).first)
+        waitForPanel(overlay, timeout: hold + 4)
         XCTAssertGreaterThan(
-            firstOverlay.backdropBlurWeightForTesting, 0,
+            overlay.backdropBlurWeightForTesting, 0,
             "panel never reached the playing state on the first pass")
 
         // Simulate exactly what the loop's fallback does.
         safari.resetDemonstration()
-        safari.beginDemonstration()
+        safari.beginDemonstration(
+            showsExtensionSheet: false, animationSpeedMultiplier: speed)
 
-        // A replay begins directly at the panel and must never recreate the
-        // Safari instruction sheet.
-        let deadline = Date(timeIntervalSinceNow: 3)
-        while Date() < deadline {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-        }
+        // The post is left alone for its own beat first — most of the hold has
+        // to still be ahead of the panel, not a token pause in front of it.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: hold * 0.5))
+        XCTAssertEqual(
+            overlay.backdropBlurWeightForTesting, 0,
+            "the blocked post must hold before the panel answers it")
+
+        waitForPanel(overlay, timeout: hold + 4)
+        XCTAssertGreaterThan(
+            overlay.backdropBlurWeightForTesting, 0,
+            "the replay never reached the player")
         XCTAssertTrue(
             window.descendants(of: OnboardingManageExtensionsSheetView.self).isEmpty,
             "a replay must not repeat the Manage Extensions sheet")
-        XCTAssertGreaterThan(
-            firstOverlay.backdropBlurWeightForTesting, 0,
-            "the replay should proceed directly to the player")
     }
 
     /// End to end, through `AppOnboardingViewController`'s own orchestration
@@ -424,6 +551,46 @@ final class ReaderOnboardingTests: XCTestCase {
             onboarding.hasSafariInstructionsForTesting,
             "the popup should still be up through the replay")
 
+    }
+
+    /// Safari's bar is what makes the facsimile read as a browser, and the
+    /// lesson is about a browser: it used to slide away on the extension's
+    /// toggle flip, so the reader watched the second half of the demonstration
+    /// on a page with no chrome at all. It stays up now, through the wipe and
+    /// past the lesson's own ending.
+    @MainActor
+    func testTheSafariBarStaysUpThroughTheWholeLesson() throws {
+        let safari = SafariReplicaViewController(
+            configuration: .configuration(for: .reader))
+        let window = UIWindow(frame: CGRect(
+            origin: .zero, size: AppLaunchGeometry.referenceSize))
+        window.rootViewController = safari
+        window.makeKeyAndVisible()
+        safari.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        var didReachOffer = false
+        safari.onDidReachSetupOffer = { didReachOffer = true }
+
+        let bar = try XCTUnwrap(window.descendants(of: SafariBottomBar.self).first)
+        XCTAssertEqual(bar.alpha, 1, accuracy: 0.001)
+
+        safari.beginDemonstration(showsExtensionSheet: false)
+        let deadline = Date(timeIntervalSinceNow: 12)
+        while Date() < deadline, !didReachOffer {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertTrue(didReachOffer, "the explainer never finished its wipe")
+
+        XCTAssertEqual(
+            bar.alpha, 1, accuracy: 0.001,
+            "the bar must still be up once the page is clean")
+        XCTAssertEqual(
+            bar.layer.presentation()?.transform.m42 ?? 0, 0, accuracy: 0.001,
+            "the bar must not have slid off its own height")
+        XCTAssertNotNil(
+            safari.highlightedLinkRegion,
+            "the address field is still there to save from")
     }
 
     /// The one end-of-lesson signal the host cycles on: the Downloader's panel

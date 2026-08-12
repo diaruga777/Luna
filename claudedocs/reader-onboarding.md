@@ -34,11 +34,33 @@ explainer's `cleanUpClutter` completion, the video panel's own arrival (once the
 clip has started), or the product card's arrival. The first lesson alone shows
 Safari's Manage Extensions sheet. The host then holds
 (`OnboardingDemoLoopTiming.siblingLessonHoldDuration`, 2.0s), cross-fades to the
-next replica, rewinds it and begins the post-sheet result directly. Every pass
-after the first runs at 70% of the original timeline. It never has to know which
-lesson it is playing. **The signal is what makes the cycle exist**: it used to hang off
+next replica, rewinds it and begins the post-sheet result directly. It never has
+to know which lesson it is playing. **The signal is what makes the cycle exist**: it used to hang off
 `onActionButtonWaveFinished`, which no Safari lesson ever fires, so the central
 app played one sibling and stopped.
+
+**The first CYCLE is full length; only the passes after it are brisk.** The
+70% timeline (`OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier`)
+used to be gated on the first LESSON, which in central Luna meant the
+Downloader's and the Price Tracker's — lessons the user had never seen — played
+short the very first time they appeared. `hasCompletedFirstSafariCycle` gates it
+now, and it flips where a cycle actually closes: the rotation wrapping back to
+the first sibling in `cycleSafariInstructionLesson`, or, for a faceted app whose
+one lesson IS the cycle, that lesson going round again. One
+`safariLessonSpeedMultiplier` feeds both the replicas and the host's own holds
+(`safariCycleDuration`), so there is a single answer to "how fast is the loop
+running" at any moment.
+
+**A pass that skips the sheet still stands on its page first.** The Manage
+Extensions sheet was the only thing holding the browser before the lesson played
+its answer, so every pass after the first — which skips it — used to open and
+immediately wipe/panel/pill. `SafariReplicaViewController.holdOnThePage` puts
+that beat back, for a duration the LESSON names rather than a shared constant:
+the Downloader's blocked post is the premise of its lesson and takes its full
+`OnboardingVideoDownloadTiming.pageHoldDuration` (3.2s) to be read, where a
+product page only has to register as one (0.9s) and the buried explainer takes
+the enable pass's own 0.9s. Like every other beat it is scaled by the current
+speed multiplier.
 
 **Every lesson in every app now ends on the SAME popup**,
 `OnboardingSafariSetupPopupView` (`Luna/Reader/Onboarding/
@@ -407,9 +429,9 @@ as a plausible article once the wave reveals it. The byline, the steps and the
 actions block are gone outright, not just re-worded.
 
 The header still pins at `OnboardingSafariPageView.minimumTopInset`; the body
-copy now just runs from below it down to the current bottom reserve
-(`chromeReserve` while the mock browser bar is up, `clearedChromeReserve` once
-`setReservesBrowserChrome` releases it for the wave). The body is still fitted
+copy now just runs from below it down to `chromeReserve`, the one bottom
+reserve the mock browser bar has needed since the bar stopped leaving mid-lesson
+(see "The wave takes the clutter away" below). The body is still fitted
 rather than fixed: `OnboardingStrings.Safari.mockParagraphs` is a
 `ChunkedDefinition` — several lorem ipsum paragraphs, universal rather than
 per-app since the furniture is now identical in every app — and the page
@@ -533,16 +555,17 @@ climbing front. Three things ride it:
    tiles move. All tile flights are committed in one Core Animation transaction
    before the sweep begins, avoiding a new render-server commit and stutter when
    the front reaches a large popup.
-3. **The browser bar leaves.** `SafariReplicaViewController.setBrowserBarVisible`
-   slides the mock address field out with the Manage Extensions sheet — the lesson
-   has nothing left to point at in it, and a URL field standing under a finished
-   sweep reads as a control the user could tap. The page's bottom reserve is
-   released in the same beat, BEFORE the wave's geometry is measured, so the
-   content settles first and the front never crosses moving ink. The bar (and the
-   reserve) come back with `resetDemonstration` and with any full-screen
-   re-presentation (`prepareForPresentation`), because the Action-Button save
-   demonstration lights that field; `highlightedLinkRegion` is nil while it is
-   away, so a stray replay cannot isolate an empty strip.
+3. **The browser bar stays.** It used to slide out with the Manage Extensions
+   sheet, on the reasoning that a finished sweep leaves nothing in the address
+   field to point at. What that actually removed was the reader's one anchor
+   that this is still a browser, halfway through a lesson about a browser — and
+   under the Downloader's panel, which is laid out to clear a bar, it left a
+   strip of bare page. So `setBrowserBarVisible` and the page's two-valued
+   bottom reserve are both gone: the bar is up from the first frame to the last
+   in every app's lesson, `chromeReserve` never changes, and the wave is
+   measured against a layout that cannot move under it. `highlightedLinkRegion`
+   is therefore always live, which is what the Action-Button save demonstration
+   lights.
 
 ### The price tracker demonstrates instead of explaining
 

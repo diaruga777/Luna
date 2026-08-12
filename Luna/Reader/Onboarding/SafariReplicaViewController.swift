@@ -72,9 +72,6 @@ final class SafariReplicaViewController:
     /// explainer's clutter wipe. Nil in every app whose lesson is not
     /// `.videoDownload`.
     private var videoLesson: OnboardingVideoDownloadOverlayView?
-    /// False from the extension's flip until the lesson stages the browser
-    /// again: the bar has slid away and the page has taken back its strip.
-    private var isBrowserBarVisible = true
     private var instructionOverlay: DemoInstructionOverlay?
     private var extensionsSheet: OnboardingManageExtensionsSheetView?
     private var enableDemoGeneration = 0
@@ -237,44 +234,6 @@ final class SafariReplicaViewController:
         ])
     }
 
-    /// The mock browser bar belongs to the page it floats over. While the page
-    /// is buried, the bar is what makes the facsimile read as Safari; the
-    /// instant the extension has run there is nothing left in it for the lesson
-    /// to point at, and an address field left standing under a finished sweep
-    /// reads as a control the user could tap. So it leaves with the Manage
-    /// Extensions sheet — sliding out on its own height, over the sheet's own
-    /// exit — and the page takes back the strip it was reserving for it.
-    ///
-    /// The page's reserve changes with the FIRST frame of the slide rather than
-    /// over it: the wave's geometry is cut in the same beat (`prepareCleanUp`),
-    /// and content still travelling would put the light off its own ink. The
-    /// jump lands under the clutter's tiles, which still cover the page's whole
-    /// bottom half at that moment.
-    private func setBrowserBarVisible(_ visible: Bool, animated: Bool) {
-        isBrowserBarVisible = visible
-        lunaPage?.setReservesBrowserChrome(visible)
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        let changes = {
-            self.browserBar.alpha = visible ? 1 : 0
-            self.browserBar.transform = visible || reduceMotion
-                ? .identity
-                : CGAffineTransform(
-                    translationX: 0,
-                    y: SafariBottomBar.reservedPageHeight)
-        }
-        guard animated else {
-            changes()
-            return
-        }
-        UIView.animate(
-            withDuration: reduceMotion
-                ? 0.2
-                : OnboardingExtensionEnableTiming.sheetDismissDuration,
-            delay: 0,
-            options: [.curveEaseIn, .beginFromCurrentState],
-            animations: changes)
-    }
-
     private func loadOfflinePage(at index: Int) {
         let pages = onboardingConfiguration.demoPages
         guard !pages.isEmpty else {
@@ -360,9 +319,6 @@ final class SafariReplicaViewController:
         videoLesson?.reset()
         pageTimer?.invalidate()
         pageTimer = nil
-        // A buried page is a page in a browser: the bar is back before this
-        // entry's first frame, and the page reserves its strip again.
-        setBrowserBarVisible(true, animated: false)
         lunaPage?.restoreBuriedPage()
         // Central Luna's rotation can have left the browser on another page.
         if pageIndex != 0 {
@@ -428,9 +384,11 @@ final class SafariReplicaViewController:
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
         guard showsExtensionSheet else {
-            lesson.begin(
-                afterEnablingExtension: true,
-                animationSpeedMultiplier: animationSpeedMultiplier)
+            holdOnThePage(generation: generation) {
+                lesson.begin(
+                    afterEnablingExtension: true,
+                    animationSpeedMultiplier: self.animationSpeedMultiplier)
+            }
             return
         }
         afterEnableDelay(
@@ -479,7 +437,9 @@ final class SafariReplicaViewController:
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
         guard showsExtensionSheet else {
-            completeExtensionEnableDemonstration(completion: completion)
+            holdOnThePage(generation: generation) {
+                self.completeExtensionEnableDemonstration(completion: completion)
+            }
             return
         }
         afterEnableDelay(
@@ -524,9 +484,6 @@ final class SafariReplicaViewController:
     private func completeExtensionEnableDemonstration(
         completion: (() -> Void)?
     ) {
-        // The browser bar leaves on the same cue as the original switch flip,
-        // before the page's cleanup geometry is measured.
-        setBrowserBarVisible(false, animated: true)
         lunaPage?.prepareCleanUp()
         completion?()
         // Only the Reader's explainer has clutter to shatter. The Downloader
@@ -534,6 +491,36 @@ final class SafariReplicaViewController:
         // own end from that panel instead.
         lunaPage?.cleanUpClutter { [weak self] in
             self?.lessonDidReachSetupOffer()
+        }
+    }
+
+    /// The beat a pass that skips the Manage Extensions sheet would otherwise
+    /// not have: the browser standing on its own page, exactly as it loaded,
+    /// before the extension's result plays over it. With the sheet, that beat is
+    /// the sheet's own — it opens over a page the reader has already had time to
+    /// take in. Without it the lesson jumped straight to its answer, which is
+    /// what made the Downloader's blocked post — the whole premise of its
+    /// lesson — a frame nobody could read.
+    ///
+    /// Each lesson names its own hold, because each is standing on a different
+    /// page: a wall of refusal has to be READ, a product page only has to
+    /// register as one. Scaled by `animationSpeedMultiplier` like every other
+    /// beat, so the loop's later passes shorten it along with the rest.
+    private func holdOnThePage(
+        generation: Int, _ work: @escaping () -> Void
+    ) {
+        afterEnableDelay(
+            skippedSheetPageHoldDuration, generation: generation, work)
+    }
+
+    private var skippedSheetPageHoldDuration: TimeInterval {
+        switch onboardingConfiguration.safariLesson {
+        case .videoDownload:
+            return OnboardingVideoDownloadTiming.pageHoldDuration
+        case .priceComparison:
+            return OnboardingPriceComparisonTiming.pageHoldDuration
+        case .extensionExplainer:
+            return OnboardingExtensionEnableTiming.pageHoldDuration
         }
     }
 
@@ -563,10 +550,6 @@ final class SafariReplicaViewController:
 
     override func prepareForPresentation() {
         super.prepareForPresentation()
-        // A source coming back full screen is a browser again: the save
-        // demonstration lights up the address field, so the bar has to be there
-        // for it whatever the extension pass did with it.
-        setBrowserBarVisible(true, animated: false)
         // Keep the preloaded central-app source on luna.app through the initial
         // staged article and save. Its normal multi-page rotation resumes when
         // Safari returns later in the demonstration loop.
@@ -578,10 +561,9 @@ final class SafariReplicaViewController:
     override var isURLHighlighted: Bool { browserBar.isURLHighlighted }
 
     override var highlightedLinkRegion: OnboardingHighlightedLinkRegion? {
-        // No bar, no URL to isolate: a save replay that arrived with the bar
-        // away would light a region nothing is drawn in, so the shared player
-        // is told there is nothing here to save from.
-        guard isViewLoaded, isBrowserBarVisible else { return nil }
+        // The bar is up for the whole of every lesson now, so the only thing
+        // that can be missing is the view itself.
+        guard isViewLoaded else { return nil }
         let browserRegion = browserBar.highlightedURLRegion
         return OnboardingHighlightedLinkRegion(
             frame: view.convert(browserRegion.frame, from: browserBar),

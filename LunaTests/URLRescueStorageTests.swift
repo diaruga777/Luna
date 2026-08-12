@@ -286,6 +286,52 @@ final class URLRescueStorageTests: XCTestCase {
         XCTAssertFalse(evidence.contains("ancient failure"))
     }
 
+    /// The segmentation is only worth anything if it recognizes the shape the
+    /// REAL writers use. Both `ReadingListIngestor` and `ShareSurfaceDriver` open
+    /// a trace with `ingest: begin <url> source=…`, and this parser is maintained
+    /// independently of them — so pin the two together here rather than
+    /// discovering the mismatch as silently-unsegmented evidence on a device.
+    func testTheRealRecordersOpeningLineIsRecognizedAsAnAttemptBoundary() {
+        XCTAssertTrue(RescueFailureEvidence.isAttemptBoundary(
+            "ingest: begin https://example.com/story source=shareSheet"))
+        XCTAssertFalse(RescueFailureEvidence.isAttemptBoundary(
+            "pipeline: classified article"))
+        XCTAssertFalse(RescueFailureEvidence.isAttemptBoundary(
+            "resolve: no silent strategy qualified"))
+    }
+
+    /// A previous rescue's own narration must NOT segment away the ingest record
+    /// it was reasoning about — that record is the most useful thing in the file,
+    /// and a rescue that only sees the last rescue's account of itself is back to
+    /// being blind. The earlier attempt's verdict stays, as evidence.
+    func testAPreviousRescueDoesNotSegmentAwayTheIngestRecord() {
+        let trace = """
+        2026-08-13T10:00:00.000Z [ingest] ingest: begin https://example.com/story source=manual
+        2026-08-13T10:00:01.000Z [fetch] fetch: status=403 refused
+        2026-08-13T10:05:00.000Z [rescue] start host=example.com hint=auto
+        2026-08-13T10:05:30.000Z [rescue] apply outcome=unrescuable host=example.com
+        """
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""
+        XCTAssertTrue(evidence.contains("status=403 refused"))
+        XCTAssertTrue(evidence.contains("outcome=unrescuable"),
+                      "what the last rescue already tried is evidence too")
+    }
+
+    /// …end to end, in the recorder's real line format.
+    func testALiveShapedTraceSegmentsToItsLastPass() {
+        let trace = """
+        2026-08-13T10:00:00.123Z [ingest] ingest: begin https://example.com/story source=shareSheet
+        2026-08-13T10:00:01.000Z [fetch] fetch: status=500 first pass
+        2026-08-13T11:00:00.000Z [ingest] ingest: begin https://example.com/story source=manual
+        2026-08-13T11:00:01.000Z [fetch] fetch: status=403 second pass
+        2026-08-13T11:00:02.000Z [bypass] resolve: no silent strategy qualified
+        """
+        let evidence = RescueFailureEvidence.build(trace: trace, maxCharacters: 4_000) ?? ""
+        XCTAssertTrue(evidence.contains("second pass"))
+        XCTAssertTrue(evidence.contains("no silent strategy qualified"))
+        XCTAssertFalse(evidence.contains("first pass"))
+    }
+
     /// Over budget, the least diagnostic lines go first and the OLDEST survivors
     /// go next — what reaches the model is the newest and most telling.
     func testBudgetKeepsTheNewestSignalBearingLines() {

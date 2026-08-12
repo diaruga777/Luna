@@ -67,7 +67,7 @@ enum RescueFailureEvidence {
     /// older code. When no boundary marker is recognizable the whole trace is
     /// returned — the budget trim below keeps the newest end of it anyway.
     static func lastAttempt(in lines: [Line]) -> [Line] {
-        guard let index = lines.lastIndex(where: { isAttemptBoundary($0.message) })
+        guard let index = lines.lastIndex(where: { isAttemptBoundary($0) })
         else { return lines }
         let slice = Array(lines[index...])
         // A boundary as the very last line segments off nothing worth reading;
@@ -76,15 +76,33 @@ enum RescueFailureEvidence {
     }
 
     /// A boundary is a writer announcing it is starting a pass over the URL.
-    /// Deliberately prefix-matched on a small vocabulary rather than an exact
-    /// string: the recorder that fills this store is written independently, and
-    /// a missed boundary degrades to "keep everything", never to a wrong split.
-    static func isAttemptBoundary(_ message: String) -> Bool {
-        let lower = message.lowercased()
-        return Self.boundaryPrefixes.contains { lower.hasPrefix($0) }
+    ///
+    /// Deliberately prefix-matched on a small VERB vocabulary rather than an
+    /// exact string, and matched both against the whole message and against
+    /// whatever follows a leading `<subsystem>: ` — the shape both real writers
+    /// use today is `ingest: begin <url> source=…` (`ReadingListIngestor` and
+    /// `ShareSurfaceDriver`), and that recorder is maintained independently of
+    /// this parser. A missed boundary degrades to "keep everything", never to a
+    /// wrong split, so the tolerance is free.
+    static func isAttemptBoundary(_ line: Line) -> Bool {
+        // A previous RESCUE is not a fresh pass over the URL — it is part of the
+        // evidence about the pass that preceded it. Its own "start host=…" line
+        // would otherwise segment away the fetch and bypass record that is the
+        // most useful thing in the file, leaving the next rescue reading nothing
+        // but the last rescue's narration of itself.
+        guard line.category != "rescue" else { return false }
+        return isAttemptBoundary(line.message)
     }
 
-    static let boundaryPrefixes = ["begin ", "start ", "attempt ", "saving ", "save begin", "ingest begin", "ingest start"]
+    static func isAttemptBoundary(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        if Self.boundaryVerbs.contains(where: { lower.hasPrefix($0) }) { return true }
+        guard let colon = lower.range(of: ": ") else { return false }
+        let body = lower[colon.upperBound...]
+        return Self.boundaryVerbs.contains { body.hasPrefix($0) }
+    }
+
+    static let boundaryVerbs = ["begin ", "start ", "attempt ", "saving ", "re-ingest ", "retry "]
 
     // MARK: - Compression
 

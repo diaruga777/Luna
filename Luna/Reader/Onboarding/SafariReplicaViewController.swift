@@ -428,9 +428,11 @@ final class SafariReplicaViewController:
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
         guard showsExtensionSheet else {
-            lesson.begin(
-                afterEnablingExtension: true,
-                animationSpeedMultiplier: animationSpeedMultiplier)
+            holdOnThePage(generation: generation) {
+                lesson.begin(
+                    afterEnablingExtension: true,
+                    animationSpeedMultiplier: self.animationSpeedMultiplier)
+            }
             return
         }
         afterEnableDelay(
@@ -479,7 +481,9 @@ final class SafariReplicaViewController:
         enableDemoGeneration += 1
         let generation = enableDemoGeneration
         guard showsExtensionSheet else {
-            completeExtensionEnableDemonstration(completion: completion)
+            holdOnThePage(generation: generation) {
+                self.completeExtensionEnableDemonstration(completion: completion)
+            }
             return
         }
         afterEnableDelay(
@@ -534,6 +538,36 @@ final class SafariReplicaViewController:
         // own end from that panel instead.
         lunaPage?.cleanUpClutter { [weak self] in
             self?.lessonDidReachSetupOffer()
+        }
+    }
+
+    /// The beat a pass that skips the Manage Extensions sheet would otherwise
+    /// not have: the browser standing on its own page, exactly as it loaded,
+    /// before the extension's result plays over it. With the sheet, that beat is
+    /// the sheet's own — it opens over a page the reader has already had time to
+    /// take in. Without it the lesson jumped straight to its answer, which is
+    /// what made the Downloader's blocked post — the whole premise of its
+    /// lesson — a frame nobody could read.
+    ///
+    /// Each lesson names its own hold, because each is standing on a different
+    /// page: a wall of refusal has to be READ, a product page only has to
+    /// register as one. Scaled by `animationSpeedMultiplier` like every other
+    /// beat, so the loop's later passes shorten it along with the rest.
+    private func holdOnThePage(
+        generation: Int, _ work: @escaping () -> Void
+    ) {
+        afterEnableDelay(
+            skippedSheetPageHoldDuration, generation: generation, work)
+    }
+
+    private var skippedSheetPageHoldDuration: TimeInterval {
+        switch onboardingConfiguration.safariLesson {
+        case .videoDownload:
+            return OnboardingVideoDownloadTiming.pageHoldDuration
+        case .priceComparison:
+            return OnboardingPriceComparisonTiming.pageHoldDuration
+        case .extensionExplainer:
+            return OnboardingExtensionEnableTiming.pageHoldDuration
         }
     }
 

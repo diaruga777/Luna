@@ -27,8 +27,11 @@ enum OnboardingDemoLoopTiming {
     /// than a card hold: what it is holding is the point the lesson just
     /// made.
     static let siblingLessonHoldDuration: TimeInterval = 2.0
-    /// Every pass after the first has already taught the Safari switch, so it
-    /// can show the result more briskly beneath the persistent setup popup.
+    /// Every pass after the first FULL cycle has already taught the Safari
+    /// switch — and, in central Luna, has already shown every sibling's lesson
+    /// once — so it can show the result more briskly beneath the persistent
+    /// setup popup. The first cycle is the one the user is actually reading,
+    /// and it plays at full length whatever app it belongs to.
     static let repeatedSafariLessonSpeedMultiplier: TimeInterval = 0.7
 }
 
@@ -139,9 +142,12 @@ final class AppOnboardingViewController: UIViewController {
     /// The sibling cycle is running: from the first lesson's start until an
     /// external hop or the end of onboarding stops it.
     private var isCyclingSafariLessons = false
-    /// The first Safari lesson is the only pass that shows Safari's Manage
-    /// Extensions sheet. All following sibling and looped passes skip it.
-    private var hasCompletedFirstSafariLesson = false
+    /// Every lesson of the first cycle has played: central Luna has shown all
+    /// three siblings once, a faceted app has shown its one. Only from here does
+    /// the loop speed up — the first cycle is the pass the user is reading, so
+    /// it runs at full length even though its later lessons skip the Manage
+    /// Extensions sheet (the first lesson is the only pass that shows it).
+    private var hasCompletedFirstSafariCycle = false
     /// The Safari ask is up. It is raised by the pass that completes the first
     /// full cycle and stays for the rest of the lesson, so later passes must not
     /// raise or reconfigure it.
@@ -211,6 +217,12 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     var hasSafariInstructionsForTesting: Bool { hasSafariInstructions }
+
+    /// The pace the Safari loop is running at right now: 1 for the whole of the
+    /// first cycle, brisker once every sibling has had its full-length turn.
+    var safariLessonSpeedMultiplierForTesting: TimeInterval {
+        safariLessonSpeedMultiplier
+    }
 
     /// The ending each lesson reports for itself, without spending the several
     /// seconds of animation that lead up to it.
@@ -812,7 +824,7 @@ final class AppOnboardingViewController: UIViewController {
     private func rewindSafariLessonCycle() {
         let apps = configuration.safariDemonstrationApps
         didRaiseSafariSetupPopover = false
-        hasCompletedFirstSafariLesson = false
+        hasCompletedFirstSafariCycle = false
         isCyclingSafariLessons = apps.count > 1
         safariCycleIndex = 0
         guard let first = apps.first,
@@ -892,8 +904,6 @@ final class AppOnboardingViewController: UIViewController {
               apps.indices.contains(safariCycleIndex),
               apps[safariCycleIndex] == demonstrationApp
         else { return }
-
-        hasCompletedFirstSafariLesson = true
 
         // The last lesson of the first cycle is where the ask comes up. Every
         // other ending — and every later cycle — is just the next beat.
@@ -1056,14 +1066,22 @@ final class AppOnboardingViewController: UIViewController {
               let outgoing = safariReplica,
               !isFinishing
         else {
+            // One lesson IS this app's whole cycle, so the pass that just ended
+            // closed it: every replay from here runs on the brisker timeline.
+            hasCompletedFirstSafariCycle = true
             safariReplica?.resetDemonstration()
             safariReplica?.beginDemonstration(
                 showsExtensionSheet: false,
-                animationSpeedMultiplier:
-                    OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
+                animationSpeedMultiplier: safariLessonSpeedMultiplier)
             return
         }
         safariCycleIndex = (safariCycleIndex + 1) % apps.count
+        // Wrapping back to the first sibling is what closes a cycle. Until it
+        // does, every sibling's lesson — and every hold between them — plays at
+        // full length, however far down the rank order it sits.
+        if safariCycleIndex == 0 {
+            hasCompletedFirstSafariCycle = true
+        }
         guard let incoming = safariReplicas[apps[safariCycleIndex]] else { return }
 
         incoming.resetDemonstration()
@@ -1091,15 +1109,20 @@ final class AppOnboardingViewController: UIViewController {
             incoming.prepareForPresentation()
             incoming.beginDemonstration(
                 showsExtensionSheet: false,
-                animationSpeedMultiplier:
-                    OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier)
+                animationSpeedMultiplier: self.safariLessonSpeedMultiplier)
         }
     }
 
-    private func safariCycleDuration(_ base: TimeInterval) -> TimeInterval {
-        base * (hasCompletedFirstSafariLesson
+    /// The one place the loop's pace comes from, for the lessons themselves and
+    /// for the host's own holds alike.
+    private var safariLessonSpeedMultiplier: TimeInterval {
+        hasCompletedFirstSafariCycle
             ? OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier
-            : 1)
+            : 1
+    }
+
+    private func safariCycleDuration(_ base: TimeInterval) -> TimeInterval {
+        base * safariLessonSpeedMultiplier
     }
 
     /// The Messages demonstration ended on its in-conversation setup pills

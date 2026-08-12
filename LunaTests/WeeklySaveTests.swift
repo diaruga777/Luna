@@ -138,6 +138,13 @@ final class WeeklySaveTests: XCTestCase {
     private actor MetadataRecorder {
         private(set) var urls: [String] = []
         func record(_ url: String) { urls.append(url) }
+
+        /// Records the attempt and reports whether it was the first, so a test
+        /// can fail one read and satisfy the next.
+        func recordAndIsFirst(_ url: String) -> Bool {
+            urls.append(url)
+            return urls.count == 1
+        }
     }
 
     // MARK: - WeeklyKeyHolderSurfaceTests
@@ -593,6 +600,39 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertEqual(urls.count, 1, "The unchanged entry must not be re-resolved")
     }
 
+    /// The value comparison above must not swallow an entry whose METADATA
+    /// never arrived. One failed read (offline at launch, a timeout) otherwise
+    /// left the row showing the bare host and the generic glyph for the whole
+    /// 30-day life of the entry, because every later launch saw the same
+    /// URL/date and skipped it.
+    func testAFailedMetadataReadIsRetriedUntilItSucceeds() async throws {
+        let key = Curve25519.Signing.PrivateKey()
+        database.saves = [try sign(.article, "https://example.com/a", key: key)]
+        let refresher = makeRefresher(app: .reader, publicKey: key.publicKey)
+        let attempts = MetadataRecorder()
+        WeeklySaveRefresher.metadataFetcher = { url in
+            let isFirst = await attempts.recordAndIsFirst(url)
+            return isFirst ? nil : (title: "The Inner Ring", host: "example.com", imageData: nil)
+        }
+
+        await refresher.refreshWeeklySaves()
+        XCTAssertEqual(
+            store.display(for: .article)?.title, "example.com",
+            "A failed read still shows the row, on the host")
+        XCTAssertEqual(store.display(for: .article)?.hasResolvedMetadata, false)
+
+        await refresher.refreshWeeklySaves(force: true)
+
+        XCTAssertEqual(store.display(for: .article)?.title, "The Inner Ring")
+        XCTAssertEqual(store.display(for: .article)?.hasResolvedMetadata, true)
+        let urls = await attempts.urls
+        XCTAssertEqual(urls.count, 2, "The unresolved entry must be asked again")
+
+        await refresher.refreshWeeklySaves(force: true)
+        let settled = await attempts.urls
+        XCTAssertEqual(settled.count, 2, "…and left alone once it resolves")
+    }
+
     func testAnInvalidSignatureIsTreatedAsAbsence() async throws {
         let key = Curve25519.Signing.PrivateKey()
         let genuine = try sign(.article, "https://example.com/a", key: key)
@@ -867,6 +907,29 @@ final class WeeklySaveTests: XCTestCase {
         let displays = json?["displays"] as? [String: Any]
         XCTAssertNotNil(displays, "displays must decode as a JSON object, not an array of pairs")
         XCTAssertNotNil(displays?["article"])
+    }
+
+    /// A `weeklySaves.json` written before `hasResolvedMetadata` existed says
+    /// nothing about whether its rows ever got their metadata — and the rows
+    /// this flag was added for are exactly the ones already sitting in such a
+    /// file. An absent flag therefore decodes as UNRESOLVED, which is what
+    /// buys a stuck row one more try.
+    func testADisplayWrittenBeforeTheFlagExistedDecodesAsUnresolved() throws {
+        let store = makeStore()
+        store.setDisplay(display(daysOld: 0), for: .article)
+        let fileURL = container.appendingPathComponent("weeklySaves.json")
+
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as! [String: Any]
+        var displays = json["displays"] as! [String: Any]
+        var article = displays["article"] as! [String: Any]
+        XCTAssertNotNil(article.removeValue(forKey: "hasResolvedMetadata"))
+        displays["article"] = article
+        json["displays"] = displays
+        try JSONSerialization.data(withJSONObject: json).write(to: fileURL)
+
+        let reopened = makeStore()
+        XCTAssertEqual(reopened.display(for: .article)?.title, "A Title")
+        XCTAssertEqual(reopened.display(for: .article)?.hasResolvedMetadata, false)
     }
 
     /// A key this build's `WeeklySaveKind` doesn't recognize (already-garbled

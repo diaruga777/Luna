@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import UIKit
 import XCTest
 @testable import Luna
 
@@ -172,5 +173,51 @@ final class RecentURLMatcherTests: XCTestCase {
         XCTAssertTrue(
             RecentURLMatcher.deduplicated(
                 candidates, savedURLStrings: ["https://example.com/story"]).isEmpty)
+    }
+
+    // MARK: - A row's artwork survives being stored
+
+    /// Site marks are routinely dark artwork on transparency. JPEG has no alpha
+    /// to keep, so compressing one that way composites it onto black — and the
+    /// row it is drawn on is black, which reads as "no artwork was fetched"
+    /// rather than as an encoding bug.
+    func testATransparentSiteMarkKeepsItsTransparency() throws {
+        let mark = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+        }
+        let stored = try XCTUnwrap(RecentURLMatcher.compressedData(mark))
+
+        let alphas = try alphaChannel(of: try XCTUnwrap(UIImage(data: stored)))
+        XCTAssertEqual(alphas.min(), 0, "The transparent half must still be transparent")
+        XCTAssertEqual(alphas.max(), 255, "…and the mark itself must still be there")
+    }
+
+    /// The photographs (a product shot, a video still) stay JPEGs — the PNG
+    /// above is for the artwork that needs it, not a switch of the whole path.
+    func testAnOpaquePreviewImageStaysAJPEG() throws {
+        let opaque = UIGraphicsImageRendererFormat.preferred()
+        opaque.opaque = true
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: opaque)
+            .image { context in
+                UIColor.systemBlue.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            }
+        let stored = try XCTUnwrap(RecentURLMatcher.compressedData(photo))
+
+        XCTAssertEqual(Array(stored.prefix(2)), [0xFF, 0xD8], "JPEG start-of-image marker")
+    }
+
+    /// Every alpha byte of `image`, read back out of its bitmap.
+    private func alphaChannel(of image: UIImage) throws -> [UInt8] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let width = cgImage.width, height = cgImage.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
     }
 }

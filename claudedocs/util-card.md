@@ -89,6 +89,11 @@ If the weekly URL is already in the store, the row is shown dimmed with a
 translucent checkmark over its thumbnail — the favicon still reads through it —
 and reconciles on `.readingListChanged`.
 
+A row's thumbnail fills its square for a photograph and FITS, over the subtle
+fill `CarouselSourceBadgeView` uses, for anything markedly non-square: the site
+marks `FaviconFetcher` returns include wordmark logos (700×197 is a real one),
+and filling one crops it to three letters.
+
 Selecting the weekly row or a recent row calls the same full ingest path as any
 other in-app save. `UtilCardSaveTransition` owns the shared handoff: the source
 shell expands to the destination card while thumbnail and

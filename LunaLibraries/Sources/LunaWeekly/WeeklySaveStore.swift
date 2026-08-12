@@ -17,12 +17,41 @@ public struct WeeklySaveDisplay: Codable, Equatable, Sendable {
     /// Already downscaled by whatever fetched it — this file is read on every
     /// launch.
     public var imageData: Data?
+    /// Whether `title`/`imageData` came from a metadata read that actually
+    /// SUCCEEDED, rather than from the host fallback a failed read leaves
+    /// behind.
+    ///
+    /// Load-bearing, because the refresher skips an entry whose signed value it
+    /// already holds: without this, ONE failed read (offline at launch, a
+    /// timeout, a transient 5xx) parked the row on "www.example.com" plus the
+    /// generic glyph for the entry's whole 30-day life, and every later launch
+    /// looked at the matching URL/date and moved on. A `false` here is the
+    /// refresher's cue to try again next launch.
+    public var hasResolvedMetadata: Bool
 
-    public init(save: WeeklySave, title: String, subtitleHost: String, imageData: Data? = nil) {
+    public init(
+        save: WeeklySave, title: String, subtitleHost: String, imageData: Data? = nil,
+        hasResolvedMetadata: Bool = true
+    ) {
         self.save = save
         self.title = title
         self.subtitleHost = subtitleHost
         self.imageData = imageData
+        self.hasResolvedMetadata = hasResolvedMetadata
+    }
+
+    /// Hand-written so a `weeklySaves.json` from a build that predates
+    /// `hasResolvedMetadata` still decodes — as UNRESOLVED, which is what
+    /// re-resolves the rows this flag was added for. (`encode(to:)` stays
+    /// synthesized.)
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        save = try container.decode(WeeklySave.self, forKey: .save)
+        title = try container.decode(String.self, forKey: .title)
+        subtitleHost = try container.decode(String.self, forKey: .subtitleHost)
+        imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
+        hasResolvedMetadata =
+            try container.decodeIfPresent(Bool.self, forKey: .hasResolvedMetadata) ?? false
     }
 }
 

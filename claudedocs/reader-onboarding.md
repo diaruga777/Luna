@@ -777,13 +777,11 @@ whose materials are tinted with Luna's own palette.
 
 **The Action Button press.** `saveDelayAfterLastMessage` is the beat between the
 link landing and the press: short, because the press is the answer to that link.
-The press itself is the press cue plus `LiquidScreenWaveAnimator.playRipple`, and
-because a ripple-only press renders no blackout and no crossfade, the warp is the
-only thing reporting it — which on the white iMessage mock is nearly nothing, since
-the warp's lighting term brightens toward white. So the front is also DRAWN:
-`ActionButtonPressWaveView` strokes the same expanding circle (a bright core
-between two dark rims, so it reads on white and on black), on the warp's own
-`firstWaveDelay`/`firstWaveDuration`, in the window beside the cue.
+The Messages-only ripple is the press cue plus the drawn
+`ActionButtonPressWaveView`: a bright core between two dark rims that expands on
+the shared `firstWaveDelay`/`firstWaveDuration` timeline. It is deliberately a
+single vector overlay rather than a Core Image warp underneath it, so every Luna
+host renders the same legible wave over the white iMessage mock.
 
 The mock puts its content as SIBLINGS above its glass rather than inside a glass
 content view: a glass content view does not rasterize through `layer.render(in:)`,

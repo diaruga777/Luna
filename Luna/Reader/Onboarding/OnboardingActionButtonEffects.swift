@@ -71,6 +71,7 @@ class OnboardingSaveSourceViewController: UIViewController {
     private var actionCue: ActionButtonPressCue?
     private var waveAnimator: LiquidScreenWaveAnimator?
     private var pressWave: ActionButtonPressWaveView?
+    private var rippleOnlyCompletion: DispatchWorkItem?
 
     /// The currently visible URL. Sources may override this when their mock
     /// content changes while the onboarding loop is running.
@@ -124,7 +125,8 @@ class OnboardingSaveSourceViewController: UIViewController {
     /// ripple-only saves leave the screen untouched and stage their own
     /// follow-up.
     final func replayActionButtonSaveEffect() {
-        guard actionCue == nil, waveAnimator == nil,
+        guard actionCue == nil, waveAnimator == nil, pressWave == nil,
+              rippleOnlyCompletion == nil,
               let window = view.window
         else { return }
 
@@ -142,17 +144,16 @@ class OnboardingSaveSourceViewController: UIViewController {
         cue.layout(in: window)
         let origin = cue.waveOrigin
 
-        let hostView = view.superview ?? window
-        let animator = LiquidScreenWaveAnimator(window: window, hostView: hostView)
-        waveAnimator = animator
-
         window.addSubview(cue)
         switch saveEffectStyle {
         case .isolateAndCrossfade:
             guard let sourceLinkRegion = highlightedLinkRegion else { return }
+            let hostView = view.superview ?? window
             let linkRegion = OnboardingHighlightedLinkRegion(
                 frame: hostView.convert(sourceLinkRegion.frame, from: view),
                 cornerRadius: sourceLinkRegion.cornerRadius)
+            let animator = LiquidScreenWaveAnimator(window: window, hostView: hostView)
+            waveAnimator = animator
             animator.play(
                 origin: origin,
                 highlightedLinkRegion: linkRegion,
@@ -166,28 +167,31 @@ class OnboardingSaveSourceViewController: UIViewController {
                     self?.onActionButtonWaveFinished?()
                 })
         case .rippleOnly:
-            // A ripple-only press has no blackout and no crossfade behind it,
-            // so the warp is the ONLY thing reporting the press — and a warp of
-            // a white iMessage screen is nearly nothing to look at. The front
-            // gets a body, drawn in the window (as the cue is) so it rides
-            // above the warp's own raster instead of inside it.
-            // A warp that failed to render finishes early, so a front can still
-            // be in flight from the previous press; it belongs to that one.
+            // Messages is white, so its visible Action Button response is the
+            // drawn front, not the subtle pixel displacement behind it. Keeping
+            // this as one vector effect avoids target-specific Core Image
+            // compositing differences while preserving the exact press timing.
             pressWave?.cancel()
             let wave = ActionButtonPressWaveView(frame: window.bounds)
             pressWave = wave
             window.insertSubview(wave, belowSubview: cue)
-            animator.playRipple(
-                origin: origin,
-                completion: { [weak self, weak cue, weak wave] in
-                    cue?.removeFromSuperview()
-                    wave?.cancel()
-                    self?.actionCue = nil
-                    self?.waveAnimator = nil
-                    self?.pressWave = nil
-                    self?.rippleSaveEffectDidFinish()
-                })
             wave.play(from: origin)
+            let rippleDuration = UIAccessibility.isReduceMotionEnabled
+                ? 0.20
+                : OnboardingActionButtonTiming.firstWaveDelay
+                    + OnboardingActionButtonTiming.firstWaveDuration
+            let completion = DispatchWorkItem { [weak self, weak cue, weak wave] in
+                cue?.removeFromSuperview()
+                wave?.cancel()
+                self?.actionCue = nil
+                self?.pressWave = nil
+                self?.rippleOnlyCompletion = nil
+                self?.rippleSaveEffectDidFinish()
+            }
+            rippleOnlyCompletion = completion
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + OnboardingAnimationClock.delay(rippleDuration),
+                execute: completion)
         }
         cue.play { [weak self, weak cue] in
             cue?.removeFromSuperview()
@@ -207,6 +211,8 @@ class OnboardingSaveSourceViewController: UIViewController {
         actionCue = nil
         pressWave?.cancel()
         pressWave = nil
+        rippleOnlyCompletion?.cancel()
+        rippleOnlyCompletion = nil
         waveAnimator?.cancel()
         waveAnimator = nil
         setURLHighlighted(false)

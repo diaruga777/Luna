@@ -20,13 +20,27 @@ public struct RescueLedgerEntry: Codable, Equatable {
     /// Provenance marker: this item was recovered by the rescue engine.
     public var succeeded: Bool
     public var lastHint: RescueHint?
+    /// When a model guardrail (or a flat refusal) rejected this item's prompt.
+    /// PERMANENT: the prompt is derived from the page, so the same page trips the
+    /// same guardrail every time. Set, the coordinator never re-attempts the item
+    /// — automatically or by tap — and the card stops offering a button that
+    /// cannot work. Deliberately survives `resetAttempts(for:)`: a new app
+    /// version changes Luna's extraction code, not Apple's safety model.
+    public var guardrailedAt: Date?
+    /// When this item was handed to the interactive archive-unlock tier. The
+    /// deterministic `browserMayRecover` fast-path is once-only; a second handoff
+    /// would just re-park a card the user already chose not to unlock.
+    public var browserHandoffAt: Date?
 
     public init(attemptCount: Int = 0, lastAttemptDate: Date? = nil,
-                succeeded: Bool = false, lastHint: RescueHint? = nil) {
+                succeeded: Bool = false, lastHint: RescueHint? = nil,
+                guardrailedAt: Date? = nil, browserHandoffAt: Date? = nil) {
         self.attemptCount = attemptCount
         self.lastAttemptDate = lastAttemptDate
         self.succeeded = succeeded
         self.lastHint = lastHint
+        self.guardrailedAt = guardrailedAt
+        self.browserHandoffAt = browserHandoffAt
     }
 }
 
@@ -60,9 +74,32 @@ public final class RescueLedgerStore {
     public func shouldAutoRescue(_ itemID: UUID) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard let entry = entries[itemID.uuidString] else { return true }
+        guard entry.guardrailedAt == nil else { return false }
         guard entry.attemptCount < Self.maxAutoAttempts else { return false }
         guard let last = entry.lastAttemptDate else { return true }
         return now().timeIntervalSince(last) >= Self.autoRetrySpacing
+    }
+
+    /// Whether this item is permanently out of rescue's reach. Checked by BOTH
+    /// the automatic sweep and the manual tap — a guardrail is not a budget.
+    public func isGuardrailed(_ itemID: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return entries[itemID.uuidString]?.guardrailedAt != nil
+    }
+
+    public func recordGuardrail(_ itemID: UUID) {
+        mutate(itemID) { $0.guardrailedAt = self.now() }
+    }
+
+    /// Whether the interactive browser handoff has already been offered for this
+    /// item — the once-only gate on the deterministic fast-path.
+    public func hasHandedToBrowser(_ itemID: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return entries[itemID.uuidString]?.browserHandoffAt != nil
+    }
+
+    public func recordBrowserHandoff(_ itemID: UUID) {
+        mutate(itemID) { $0.browserHandoffAt = self.now() }
     }
 
     public func recordAttempt(_ itemID: UUID, hint: RescueHint?) {

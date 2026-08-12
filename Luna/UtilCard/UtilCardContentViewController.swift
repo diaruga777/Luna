@@ -222,6 +222,15 @@ final class UtilCardContentViewController: CardContentViewController {
             if !animatesIntro {
                 headline.showFinishedState()
                 didSettleHeadline = true
+                // A reload (e.g. from a save elsewhere in the deck) rebuilds this
+                // controller from scratch, so `introHeadlineHasYieldedToWeekly`
+                // starts back at its default. A live weekly pick already claims
+                // the seat regardless of onboarding, so settle straight into the
+                // yielded state rather than letting the headline reappear above it.
+                if !weeklyHost.isEmpty {
+                    headline.isHidden = true
+                    introHeadlineHasYieldedToWeekly = true
+                }
             }
         }
         view.addSubview(weeklyHost)

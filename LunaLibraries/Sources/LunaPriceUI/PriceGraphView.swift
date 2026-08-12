@@ -201,11 +201,14 @@ public final class PriceGraphView: UIView {
         guard let first = points.first, let last = points.last else { return }
         drawAxisLabel(
             Self.axisDate(first.date),
-            at: CGPoint(x: plot.minX, y: plot.maxY + 8), align: .left)
+            at: CGPoint(x: plotPoint(at: points.startIndex, in: plot).x, y: plot.maxY + 8),
+            align: .center)
         if points.count > 1 {
             drawAxisLabel(
                 Self.axisDate(last.date),
-                at: CGPoint(x: plot.maxX, y: plot.maxY + 8), align: .right)
+                at: CGPoint(x: plotPoint(at: points.index(before: points.endIndex), in: plot).x,
+                           y: plot.maxY + 8),
+                align: .center)
         }
     }
 
@@ -338,12 +341,27 @@ public final class PriceGraphView: UIView {
     // MARK: - Geometry and formatting
 
     private func plotRect(in rect: CGRect) -> CGRect {
-        let maximumLeft = max(18, rect.width - Self.rightInset - Self.minimumPlotWidth)
+        let dateLabelInsets = self.dateLabelInsets
+        let right = max(Self.rightInset, dateLabelInsets.trailing)
+        let maximumLeft = max(18, rect.width - right - Self.minimumPlotWidth)
         let desiredLeft = max(axisLabelWidths(in: rect).max() ?? 0, currencyLabelWidth) + 8
-        let left = min(max(28, ceil(desiredLeft)), maximumLeft)
-        let width = max(rect.width - left - Self.rightInset, 1)
+        let left = min(max(28, ceil(desiredLeft), dateLabelInsets.leading), maximumLeft)
+        let width = max(rect.width - left - right, 1)
         let height = max(rect.height - Self.topInset - Self.bottomInset, 1)
         return CGRect(x: rect.minX + left, y: rect.minY + Self.topInset, width: width, height: height)
+    }
+
+    /// Keeps labels centered on endpoint points without letting their glyphs be
+    /// clipped by the graph's bounds. A single point lives at the plot midpoint,
+    /// so it needs no additional horizontal inset.
+    private var dateLabelInsets: (leading: CGFloat, trailing: CGFloat) {
+        guard points.count > 1, let first = points.first, let last = points.last else {
+            return (0, 0)
+        }
+        return (
+            (Self.axisDate(first.date) as NSString).size(withAttributes: axisLabelAttributes).width / 2,
+            (Self.axisDate(last.date) as NSString).size(withAttributes: axisLabelAttributes).width / 2
+        )
     }
 
     private var priceDomain: (min: Double, max: Double) {
@@ -381,7 +399,7 @@ public final class PriceGraphView: UIView {
             y: yPosition(for: decimalDouble(points[index].price), in: plot))
     }
 
-    private enum LabelAlign { case left, right }
+    private enum LabelAlign { case left, center, right }
 
     private func drawYAxisLabels(
         candidates: [(price: Double, y: CGFloat)],
@@ -434,7 +452,15 @@ public final class PriceGraphView: UIView {
     private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
         let attributes = axisLabelAttributes
         let size = (text as NSString).size(withAttributes: attributes)
-        let x = align == .right ? origin.x - size.width : origin.x
+        let x: CGFloat
+        switch align {
+        case .left:
+            x = origin.x
+        case .center:
+            x = origin.x - size.width / 2
+        case .right:
+            x = origin.x - size.width
+        }
         (text as NSString).draw(
             at: CGPoint(x: x, y: origin.y), withAttributes: attributes)
     }

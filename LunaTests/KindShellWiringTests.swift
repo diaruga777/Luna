@@ -13,11 +13,12 @@ import XCTest
 /// that kind's `…ShellWiring` file, and every app that handles the kind runs the
 /// same code.
 ///
-/// The four `KindWiring+<App>` variants used to carry a copy each, which is how
-/// the central app came to skip the archive pass the Reader ran on the way to
-/// the background: the same question answered in two places, drifting apart.
-/// Two of these tests read SOURCE and one reads the project file, because each
-/// app is a different process — no unit test can load four of them.
+/// Duplicating this per `KindWiring+<App>` variant is exactly how the central
+/// app could skip the archive pass the Reader runs on the way to the
+/// background: the same question, answered in two places, free to drift
+/// apart. Two of these tests read SOURCE and one reads the project file,
+/// because each app is a different process — no unit test can load four of
+/// them.
 final class KindShellWiringTests: XCTestCase {
 
     /// Each app root, and the kind legs its app handles. The per-app split is
@@ -88,9 +89,9 @@ final class KindShellWiringTests: XCTestCase {
         }
     }
 
-    /// Spotlight indexing used to be installed from `AppDelegate`, which every
-    /// app compiles, so the Downloader and Price Tracker indexed articles they
-    /// cannot open. It belongs to the article leg and nowhere else.
+    /// Installing Spotlight indexing from `AppDelegate`, which every app
+    /// compiles, would make the Downloader and Price Tracker index articles
+    /// they cannot open. It belongs to the article leg and nowhere else.
     func testSpotlightIndexingIsInstalledOnlyFromTheArticleLeg() throws {
         var installers: [String] = []
         let base = repositoryRoot.appendingPathComponent("Luna")
@@ -114,11 +115,11 @@ final class KindShellWiringTests: XCTestCase {
 
     // MARK: - What the unified article leg does
 
-    /// A finished read becomes an archive move on the way to the background, so
-    /// the next launch starts settled — the invariant `KindDeckProvider`
-    /// documents ("at launch/background"). The central app used to promote
-    /// pending completions at launch only, so a read finished in one session sat
-    /// on the deck until the session after next.
+    /// A finished read becomes an archive move on the way to the background,
+    /// so the next launch starts settled — the invariant `KindDeckProvider`
+    /// documents ("at launch/background"). Promoting pending completions at
+    /// launch only would leave a read finished in one session sitting on the
+    /// deck until the session after next.
     func testBackgroundingArchivesAFinishedRead() throws {
         let store = SavesStore.shared
         let item = SavedItem(

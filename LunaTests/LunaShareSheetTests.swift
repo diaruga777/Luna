@@ -97,10 +97,10 @@ final class LunaShareSheetTests: XCTestCase {
     }
 
     /// `[BUGFIX]` `ProductCardPresenter.share` and both of `MediaCardPresenter`'s
-    /// share paths used to force-unwrap `host.presentingController.view!` when
-    /// no card view was available. That anchor is now optional, and a nil
-    /// anchor lands here — a centered point over the presenter's own view,
-    /// rather than a crash if the view somehow weren't loaded.
+    /// share paths force-unwrapped `host.presentingController.view!` when no
+    /// card view was available. The anchor is optional now: a nil anchor
+    /// lands here, a centered point over the presenter's own view, rather
+    /// than crashing if the view somehow weren't loaded.
     @MainActor
     func testNilAnchorFallsBackToACenteredPointOverThePresentersOwnView() throws {
         let host = UIViewController()

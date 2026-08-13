@@ -71,9 +71,9 @@ final class IngestPipelineNonContentTests: XCTestCase {
         XCTAssertEqual(outcome, .failed(.notContent))
     }
 
-    /// The narrower form of the same bug: an ordinary page that isn't an index at
-    /// all, is simply unreadable, and carries a title. It used to park purely on
-    /// the strength of that title.
+    /// The narrower form of the same bug: an ordinary page that isn't an index
+    /// at all, is simply unreadable, and carries a title. A title alone must
+    /// not be enough to park it for archive.
     func testUnreadableOrdinaryPageWithATitleFailsInsteadOfParkingForArchive() async {
         let outcome = await run(
             url("https://app.example.com/dashboard"),
@@ -110,9 +110,10 @@ final class IngestPipelineNonContentTests: XCTestCase {
         XCTAssertTrue(fetcher.calls.isEmpty, "A search URL must fail without a round-trip")
     }
 
-    /// A shop-host search URL is claimed by the deterministic `KnownSite` table as
-    /// `.product`, which skips `ProductPageDetector.detect` — so it used to reach
-    /// price extraction, find no price, and fall through to the article path.
+    /// A shop-host search URL is claimed by the deterministic `KnownSite`
+    /// table as `.product`, which skips `ProductPageDetector.detect`. Without
+    /// this guard, it would reach price extraction, find no price, and fall
+    /// through to the article path.
     func testShopSearchURLFailsInsteadOfFallingThroughToTheArticlePath() async {
         let fetcher = MockArticleFetcher()
         let outcome = await run(

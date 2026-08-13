@@ -49,9 +49,10 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         XCTAssertTrue(html.isEmpty)
     }
 
-    /// A generic SPA state shape with `value` beside a nested ISO-currency object
-    /// must complete the product route. Recognition without mandatory-price
-    /// extraction used to fall through to Reader even though Safari showed Track.
+    /// A generic SPA state shape with `value` beside a nested ISO-currency
+    /// object must complete the product route. Price extraction is not
+    /// mandatory for recognition here — treating it as mandatory falls
+    /// through to Reader even though Safari still shows Track.
     func testNestedCurrencyProductStateRoutesToPriceTracker() async throws {
         let url = URL(string:
             "https://shop.example/au/en/products/P123456-000/00?color=31&size=003"
@@ -151,7 +152,8 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
     /// loads the same URL with a 200 and all 57 paragraphs, so this must park for the
     /// browser leg rather than becoming a terminal failed item. This is the reported
     /// piratewires.com defect: the host has no unlock rule (it is on the upstream
-    /// `noFix` list), which used to be the only way to reach `.directUnlock`.
+    /// `noFix` list), and that alone must not be enough to route it to
+    /// `.directUnlock`.
     func testBotMitigatedRulelessHostParksForBrowserRecovery() async {
         let url = URL(string:
             "https://www.piratewires.com/p/inside-the-coke-fueled-rise-and-fall")!

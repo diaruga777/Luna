@@ -71,10 +71,10 @@ final class OnboardingSaveDemoTests: XCTestCase {
 
     // MARK: - The hosted surface
 
-    /// The practice link never reaches the network in ANY surface: the extensions
-    /// recognize it and show the bundled preview instead. Hosted, that same real
-    /// path is what the lesson displays — which is why the stub sheet that used to
-    /// impersonate a reader could be deleted.
+    /// The practice link never reaches the network in ANY surface: the
+    /// extensions recognize it and show the bundled preview instead. Hosted,
+    /// that same real path is what the lesson displays, so no stand-in sheet
+    /// is needed to impersonate a reader.
     @MainActor
     func testHostedPracticeLinkShowsTheRealPreviewAndSavesNothing() throws {
         let url = try XCTUnwrap(URL(string: ShareSetupPractice.lunaURLString))
@@ -224,9 +224,8 @@ final class OnboardingSaveDemoTests: XCTestCase {
         XCTAssertNil(onboardingStore.temporarySaveIdentifier)
     }
 
-    /// The sheet is chrome and nothing else now: it carries no article of its own
-    /// (the hand-drawn reader it used to impersonate is gone), it is inert, and its
-    /// card sits exactly where the old one did.
+    /// The sheet is chrome only: it carries no article of its own, it is
+    /// inert, and its card sits in the sheet's fixed frame.
     @MainActor
     func testTheSaveSheetIsChromeOnlyAndNotTappable() {
         let sheet = OnboardingHostedShareSheetView(
@@ -243,8 +242,9 @@ final class OnboardingSaveDemoTests: XCTestCase {
                 + "real surface")
     }
 
-    /// The hold on a finished screen is the same beat the mock used to spend on a
-    /// fake one, and the video plays long enough to read as playback.
+    /// The hold on a finished screen matches the beat
+    /// `OnboardingShortcutRunTiming.extensionSheetHoldDuration` holds, and
+    /// the video plays long enough to read as playback.
     func testSaveDemoTimingsStayDeliberate() {
         XCTAssertEqual(
             OnboardingSaveDemoTiming.terminalHoldDuration,

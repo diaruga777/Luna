@@ -3,6 +3,7 @@
 //  LunaSocial
 //
 
+import LunaAppConfig
 import LunaStorage
 import Foundation
 
@@ -59,8 +60,7 @@ public final class AppGroupJSONStore<Element: Codable> {
     private static func resolvedURL(filename: String, containerURL: URL?) -> URL {
         let fileManager = FileManager.default
         let container = containerURL
-            ?? fileManager.containerURL(
-                forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
+            ?? AppConfig.sharedContainerURL(fileManager)
             ?? fileManager.temporaryDirectory
         let url = container.appendingPathComponent(filename)
         BackupPolicy.includeInBackups(url)

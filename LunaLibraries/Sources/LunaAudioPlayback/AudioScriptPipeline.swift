@@ -32,12 +32,13 @@ public final class AudioScriptPipeline {
     /// Debounces bursts of `.readingListChanged` (e.g. a multi-item import)
     /// into one sweep.
     private let debounceInterval: TimeInterval
-    private let workQueue = DispatchQueue(label: "com.hsanabria.luna.audioScriptPipeline", qos: .utility)
-
-    private var notificationObserver: NSObjectProtocol?
-    private var foregroundObserver: NSObjectProtocol?
-    private var backgroundObserver: NSObjectProtocol?
-    private var debounceWorkItem: DispatchWorkItem?
+    /// Owns the debounce scheduling + foreground tracking; `runSweep()` (this
+    /// class's own reentrancy-guarded sweep body) and `isForeground` stay here.
+    private lazy var sweepDriver = ReadingListSweepDriver(
+        queueLabel: "com.hsanabria.luna.audioScriptPipeline",
+        debounceInterval: debounceInterval,
+        onForegroundChange: { [weak self] isForeground in self?.isForeground = isForeground },
+        runSweep: { [weak self] in self?.runSweep() })
     private var isSweeping = false
     /// Guards against kicking off a second concurrent refinement pass for the
     /// same item while an earlier one (from `script(for:content:)` or a
@@ -53,9 +54,9 @@ public final class AudioScriptPipeline {
     /// is never called there.
     private var isForeground = true
 
-    /// Testing seam: invoked on `workQueue` at the end of every sweep pass, so
-    /// a test can wait for the sweep to HAVE RUN instead of sleeping on a
-    /// fixed interval and hoping. Nil in production.
+    /// Testing seam: invoked on `sweepDriver`'s queue at the end of every sweep
+    /// pass, so a test can wait for the sweep to HAVE RUN instead of sleeping
+    /// on a fixed interval and hoping. Nil in production.
     var didFinishSweepForTesting: (() -> Void)?
 
     public init(
@@ -69,36 +70,13 @@ public final class AudioScriptPipeline {
         self.debounceInterval = debounceInterval
     }
 
-    deinit {
-        if let notificationObserver { NotificationCenter.default.removeObserver(notificationObserver) }
-        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
-        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
-    }
-
     // MARK: - Installation (main app only)
 
     /// Idempotent. Observes `.readingListChanged` (debounced) plus
     /// foreground/background transitions, and runs an immediate launch
     /// sweep.
     public func install() {
-        guard notificationObserver == nil else { return }
-        notificationObserver = NotificationCenter.default.addObserver(
-            forName: .readingListChanged, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.scheduleSweep(debounced: true)
-        }
-        foregroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.isForeground = true
-            self?.scheduleSweep(debounced: false)
-        }
-        backgroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.isForeground = false
-        }
-        scheduleSweep(debounced: false) // launch sweep
+        sweepDriver.install()
     }
 
     // MARK: - Playback-time lookup (never blocks on the LLM)
@@ -135,13 +113,6 @@ public final class AudioScriptPipeline {
     }
 
     // MARK: - Sweep (opportunistic builder)
-
-    private func scheduleSweep(debounced: Bool) {
-        debounceWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.runSweep() }
-        debounceWorkItem = work
-        workQueue.asyncAfter(deadline: .now() + (debounced ? debounceInterval : 0), execute: work)
-    }
 
     private func runSweep() {
         guard !isSweeping else { return }

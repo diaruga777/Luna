@@ -23,57 +23,6 @@ public enum MediaKindComposition {
     /// handler, which is built from app-shell types and stays in `KindWiring+*`.
     @MainActor
     public static func install() {
-        ShareKindPresenters.media = MediaSharePresenter()
-    }
-}
-
-/// Adapts the protocol-free `ExtensionMediaPresenter` to the kind-neutral
-/// `ShareMediaPresenting` surface protocol. Previously copy-pasted into four
-/// composition roots; `LunaShareSurface` is kind-agnostic, so the kind module
-/// owns its own conformance.
-struct MediaSharePresenter: ShareMediaPresenting {
-    private let presenter = ExtensionMediaPresenter()
-
-    func presentNonTextual(urlString: String, host: ExtensionHost) {
-        presenter.presentNonTextual(
-            urlString: urlString, interactive: host.readerMode != nil,
-            presentModally: { [weak host] in host?.presentModally($0) },
-            completeOnExit: { [weak host] in host?.completeSilently() },
-            autoDownloadThenComplete: { [weak host] in host?.autoDownloadThenComplete(urlString: $0) })
-    }
-
-    func shouldAutoDownload(urlString: String) -> Bool {
-        presenter.shouldAutoDownload(urlString: urlString)
-    }
-
-    func startAutoDownload(urlString: String) async {
-        await presenter.startAutoDownload(urlString: urlString)
-    }
-
-    func preloadDownload(forURLString urlString: String) {
-        MediaPreloadCache.shared.preload(urlString: urlString)
-    }
-
-    /// Everything the media kind may have written for this link: the durable
-    /// library entry (whose own delete removes its files) and the
-    /// already-downloaded marker that would otherwise make the next save skip
-    /// its fetch. The reading-list row itself belongs to the caller — it is
-    /// kind-neutral.
-    func deleteSavedContents(forURLString urlString: String) {
-        MediaPreloadCache.shared.discard(urlString: urlString)
-        if let item = SavedMediaStore.shared.existingDownloadedItem(
-            forURLString: urlString) {
-            SavedMediaStore.shared.delete(item)
-        }
-        AutoDownloadSettings.unmarkDownloaded(urlString)
-    }
-
-    func presentPracticeVideo(videoURL: URL, host: ExtensionHost) -> Bool {
-        presenter.presentPracticeVideo(
-            videoURL: videoURL,
-            interactive: host.readerMode != nil,
-            presentModally: { [weak host] in host?.presentModally($0) },
-            completeOnExit: { [weak host] in host?.completeSilently() })
-        return true
+        ShareKindPresenters.media = ExtensionMediaPresenter()
     }
 }

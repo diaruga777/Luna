@@ -8,18 +8,18 @@ import LunaAudioPlayback
 import LunaHTMLClassification
 import LunaIngest
 import LunaModels
+import LunaShareSurface
 import LunaStorage
 import UIKit
 
 /// The article-kind side of the extension surfaces: the extension-context
-/// article-save extras and the in-sheet/archive readers. Protocol-free — each
-/// extension target's composition root (`ShareEntry+*` / `ActionEntry+*`)
-/// wraps it in a small adapter conforming to `ShareArticlePresenting`
-/// (LunaShareSurface), the same shape as the `IngestKindProcessors` /
-/// `IngestorKindHandlers` wiring. Host side effects arrive as closures so this
-/// module never sees the surface's `ExtensionHost`.
+/// article-save extras and the in-sheet/archive readers. Conforms to
+/// `ShareArticlePresenting` (LunaShareSurface) directly, so
+/// `ArticleKindComposition.install()` registers it as-is; `ExtensionReaderMode`
+/// ↔ `ShareReaderViewController.Mode` share raw values by design, so the two
+/// map onto each other with a rawValue round-trip.
 @MainActor
-public final class ExtensionArticlePresenter {
+public final class ExtensionArticlePresenter: ShareArticlePresenting {
 
     public init() {}
 
@@ -72,65 +72,72 @@ public final class ExtensionArticlePresenter {
     }
 
     /// Presents the in-sheet article reader (action extension) in the host's
-    /// modal chrome; `complete` is the reader's Done.
+    /// modal chrome.
     ///
     /// The reader is PREPARED before it is handed over — content persisted and
     /// image layout settled — so the host's own loading UI stays up until the
     /// finished article is ready to appear. That removes the intermediate screen
     /// the surface used to flash: a second spinner in a slightly different place,
     /// under a Done button that arrived before the article did.
-    public func presentReader(
-        url: URL, mode: ShareReaderViewController.Mode, outcome: Outcome,
-        onModeChange: ((ShareReaderViewController.Mode) -> Void)?,
-        presentModally: @escaping (UIViewController) -> Void,
-        complete: @escaping () -> Void
-    ) {
+    public func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost) {
+        let readerMode = Self.readerMode(mode)
+        let onModeChange: (ShareReaderViewController.Mode) -> Void = {
+            ActionReaderMode.last = Self.extensionMode($0)
+        }
         guard case let .article(content, _) = outcome else {
             // The driver only routes `.article` here; anything else keeps the
             // standalone reader's own outcome handling rather than a blank sheet.
-            presentModally(ShareReaderViewController(
-                url: url, mode: mode, outcome: outcome, onModeChange: onModeChange,
-                onDone: complete))
+            host.presentModally(ShareReaderViewController(
+                url: url, mode: readerMode, outcome: outcome, onModeChange: onModeChange,
+                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
             return
         }
-        Task { @MainActor in
-            presentModally(await ShareReaderViewController.preparedReader(
-                url: url, mode: mode, content: content,
-                onModeChange: onModeChange, onDone: complete))
+        Task { @MainActor [weak host] in
+            guard let host else { return }
+            host.presentModally(await ShareReaderViewController.preparedReader(
+                url: url, mode: readerMode, content: content,
+                onModeChange: onModeChange,
+                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
         }
     }
 
     /// Presents the archive-CAPTCHA reader for a paywalled article whose row
     /// (`itemID`) the driver already marked `.needsCaptcha`. On a successful
-    /// extract, a surface with an in-sheet reader (`readerMode` non-nil) swaps
-    /// in the native reader showing the captured content; the zero-UI share
-    /// extension just confirms the save.
-    public func presentArchive(
-        url: URL, itemID: UUID, readerMode: ShareReaderViewController.Mode?,
-        store: ReadingListStore,
-        onModeChange: ((ShareReaderViewController.Mode) -> Void)?,
-        presentModally: @escaping (UIViewController) -> Void,
-        complete: @escaping () -> Void
-    ) {
+    /// extract, a surface with an in-sheet reader (`host.readerMode` non-nil)
+    /// swaps in the native reader showing the captured content; the zero-UI
+    /// share extension just confirms the save.
+    public func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost) {
+        let readerMode = host.readerMode.map(Self.readerMode)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: itemID)
-        archive.onClose = { complete() }
-        archive.onExtracted = {
+        archive.onClose = { [weak host] in host?.confirmSavedThenComplete() }
+        archive.onExtracted = { [weak host] in
             // The driver (and this presenter) are intentionally short-lived.
-            // Archive extraction finishes later, so everything the swap needs —
-            // the host's present/complete closures, the store — is captured
-            // here rather than reached through a weak driver.
+            // Archive extraction finishes later, so `host` is captured weakly —
+            // the same lifetime rule the rest of this presenter follows.
             if let readerMode,
                let fresh = store.item(withID: itemID),
                let content = store.content(for: fresh) {
-                Task { @MainActor in
-                    presentModally(await ShareReaderViewController.preparedReader(
+                Task { @MainActor [weak host] in
+                    guard let host else { return }
+                    host.presentModally(await ShareReaderViewController.preparedReader(
                         url: url, mode: readerMode, content: content,
-                        onModeChange: onModeChange, onDone: complete))
+                        onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
+                        onDone: { [weak host] in host?.confirmSavedThenComplete() }))
                 }
             } else {
-                complete()
+                host?.confirmSavedThenComplete()
             }
         }
-        presentModally(archive)
+        host.presentModally(archive)
+    }
+
+    /// `ExtensionReaderMode` (surface) ↔ `ShareReaderViewController.Mode`
+    /// (article kind) share raw values by design.
+    private static func readerMode(_ mode: ExtensionReaderMode) -> ShareReaderViewController.Mode {
+        ShareReaderViewController.Mode(rawValue: mode.rawValue) ?? .reader
+    }
+
+    private static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
+        ExtensionReaderMode(rawValue: mode.rawValue) ?? .reader
     }
 }

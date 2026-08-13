@@ -6,6 +6,7 @@
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaShareSurface
 import LunaStorage
 @testable import LunaPriceUI
 import UIKit
@@ -19,6 +20,22 @@ import XCTest
 /// duplicate tracker is left behind.
 @MainActor
 final class ExtensionProductPresenterTests: XCTestCase {
+
+    /// A minimal `ExtensionHost` fake recording what the presenter asked for —
+    /// same shape as `ShareSurfaceDriverTests.FakeExtensionHost`, kept local
+    /// since that one is private to its own file.
+    private final class FakeExtensionHost: ExtensionHost {
+        var readerMode: ExtensionReaderMode?
+        private(set) var presented: [UIViewController] = []
+        private(set) var confirmedSaved = false
+
+        func presentModally(_ viewController: UIViewController) { presented.append(viewController) }
+        func confirmSavedThenComplete() { confirmedSaved = true }
+        func completeSilently() {}
+        func autoDownloadThenComplete(urlString: String) {}
+        func failOrComplete(_ message: String) {}
+        func openURL(_ url: URL) {}
+    }
 
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
@@ -51,17 +68,14 @@ final class ExtensionProductPresenterTests: XCTestCase {
     }
 
     /// `presentModally` is called SYNCHRONOUSLY on both outcomes
-    /// (`presentPriceEditor` never awaits anything itself); `complete` is the
-    /// EDITOR's own Done callback (`editor.onDone = complete`), fired only
-    /// when the user finishes with it — never during this call — except on
-    /// the early failure path (no placeholder item), which calls it directly.
+    /// (`presentPriceEditor` never awaits anything itself); `confirmSavedThenComplete`
+    /// is the EDITOR's own Done callback (`editor.onDone`), fired only when the
+    /// user finishes with it — never during this call — except on the early
+    /// failure path (no placeholder item), which calls it directly.
     private func present(product: ProductInfo, url: URL) -> [UIViewController] {
-        var presented: [UIViewController] = []
-        presenter.presentPriceEditor(
-            product: product, url: url, store: store,
-            presentModally: { presented.append($0) },
-            complete: {})
-        return presented
+        let host = FakeExtensionHost()
+        presenter.presentPriceEditor(product: product, url: url, store: store, host: host)
+        return host.presented
     }
 
     // MARK: - No match: creates a new tracker, as before

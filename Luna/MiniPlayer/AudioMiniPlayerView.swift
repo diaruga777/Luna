@@ -19,6 +19,18 @@ import LunaDesignSystem
 import UIKit
 import LunaModels
 
+/// The mini-player bar's control-tap events, delivered to whatever hosts it
+/// (`MiniPlayerHostViewController`). One method per control, no payload — the
+/// bar carries no state the delegate doesn't already own via `AudioPlaybackCenter`.
+protocol AudioMiniPlayerViewDelegate: AnyObject {
+    func miniPlayerDidTapArticle(_ view: AudioMiniPlayerView)
+    func miniPlayerDidTapSkipBack(_ view: AudioMiniPlayerView)
+    func miniPlayerDidTapPlayPause(_ view: AudioMiniPlayerView)
+    func miniPlayerDidTapSkipForward(_ view: AudioMiniPlayerView)
+    func miniPlayerDidCycleRate(_ view: AudioMiniPlayerView)
+    func miniPlayerDidToggleAutoplay(_ view: AudioMiniPlayerView)
+}
+
 final class AudioMiniPlayerView: UIView {
 
     // MARK: - Modes
@@ -58,12 +70,7 @@ final class AudioMiniPlayerView: UIView {
 
     // MARK: - Control hooks (wired by the host)
 
-    var onTapArticle: (() -> Void)?
-    var onSkipBack: (() -> Void)?
-    var onPlayPause: (() -> Void)?
-    var onSkipForward: (() -> Void)?
-    var onCycleRate: (() -> Void)?
-    var onToggleAutoplay: (() -> Void)?
+    weak var delegate: AudioMiniPlayerViewDelegate?
 
     // MARK: - Subviews
 
@@ -268,14 +275,14 @@ final class AudioMiniPlayerView: UIView {
 
     // MARK: - Actions
 
-    @objc private func skipBackTapped() { onSkipBack?() }
-    @objc private func playPauseTapped() { onPlayPause?() }
-    @objc private func skipForwardTapped() { onSkipForward?() }
-    @objc private func rateTapped() { onCycleRate?() }
-    @objc private func autoplayTapped() { onToggleAutoplay?() }
+    @objc private func skipBackTapped() { delegate?.miniPlayerDidTapSkipBack(self) }
+    @objc private func playPauseTapped() { delegate?.miniPlayerDidTapPlayPause(self) }
+    @objc private func skipForwardTapped() { delegate?.miniPlayerDidTapSkipForward(self) }
+    @objc private func rateTapped() { delegate?.miniPlayerDidCycleRate(self) }
+    @objc private func autoplayTapped() { delegate?.miniPlayerDidToggleAutoplay(self) }
 
     @objc private func barTapped(_ recognizer: UITapGestureRecognizer) {
-        onTapArticle?()
+        delegate?.miniPlayerDidTapArticle(self)
     }
 }
 

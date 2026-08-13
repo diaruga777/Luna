@@ -40,7 +40,7 @@ enum MediaShellWiring {
         // installs the choice (`claudedocs/util-card.md`).
         MediaUtilCardStorageChoice.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
-        URLRescueWiring.mediaResolverFactory = { SocialMediaResolver() }
+        URLRescueWiring.mediaResolver = SocialMediaResolver()
         URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
             await LiveMediaDownloadManager.shared.startWithResolvedAssets(
                 sourceURLString: sourceURLString, title: title, assets: assets)

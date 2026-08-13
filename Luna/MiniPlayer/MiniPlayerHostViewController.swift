@@ -93,23 +93,7 @@ final class MiniPlayerHostViewController: UIViewController {
     }
 
     private func wireControls() {
-        let center = AudioPlaybackCenter.shared
-        miniPlayer.onSkipBack = { center.skipBackwardParagraph() }
-        miniPlayer.onPlayPause = { [weak self] in self?.handlePlayPauseTap() }
-        miniPlayer.onSkipForward = { center.skipForwardParagraph() }
-        // Rate and autoplay changes don't emit observer callbacks — refresh
-        // the display directly after applying them.
-        miniPlayer.onCycleRate = { [weak self] in
-            center.cycleRate()
-            self?.refreshDisplay()
-        }
-        miniPlayer.onToggleAutoplay = { [weak self] in
-            center.isAutoplayEnabled.toggle()
-            self?.refreshDisplay()
-        }
-        miniPlayer.onTapArticle = { [weak self] in
-            self?.navigateToPlayingArticle()
-        }
+        miniPlayer.delegate = self
     }
 
     // MARK: - Bar placement
@@ -320,6 +304,38 @@ final class MiniPlayerHostViewController: UIViewController {
             shareProvider: AppReaderShareProvider.shared,
             fullContentUpFront: false)
         nav.pushViewController(reader, animated: true)
+    }
+}
+
+// MARK: - AudioMiniPlayerViewDelegate
+
+extension MiniPlayerHostViewController: AudioMiniPlayerViewDelegate {
+    func miniPlayerDidTapSkipBack(_ view: AudioMiniPlayerView) {
+        AudioPlaybackCenter.shared.skipBackwardParagraph()
+    }
+
+    func miniPlayerDidTapPlayPause(_ view: AudioMiniPlayerView) {
+        handlePlayPauseTap()
+    }
+
+    func miniPlayerDidTapSkipForward(_ view: AudioMiniPlayerView) {
+        AudioPlaybackCenter.shared.skipForwardParagraph()
+    }
+
+    // Rate and autoplay changes don't emit observer callbacks — refresh the
+    // display directly after applying them.
+    func miniPlayerDidCycleRate(_ view: AudioMiniPlayerView) {
+        AudioPlaybackCenter.shared.cycleRate()
+        refreshDisplay()
+    }
+
+    func miniPlayerDidToggleAutoplay(_ view: AudioMiniPlayerView) {
+        AudioPlaybackCenter.shared.isAutoplayEnabled.toggle()
+        refreshDisplay()
+    }
+
+    func miniPlayerDidTapArticle(_ view: AudioMiniPlayerView) {
+        navigateToPlayingArticle()
     }
 }
 

@@ -661,7 +661,7 @@ public final class URLRescueEngine {
 /// Price Tracker) build the rescue engine without a real resolver, so a media
 /// directive resolves no assets and the rescue stays unrescuable — matching
 /// the surface split. Media apps inject `LunaMediaDownload.SocialMediaResolver`
-/// through `URLRescueWiring.mediaResolverFactory`.
+/// through `URLRescueWiring.mediaResolver`.
 public struct NoMediaResolver: SocialMediaResolving {
     public init() {}
     public func resolveAssets(for url: URL) async -> [MediaAsset] { [] }

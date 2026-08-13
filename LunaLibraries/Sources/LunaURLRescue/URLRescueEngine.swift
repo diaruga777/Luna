@@ -630,15 +630,10 @@ public final class URLRescueEngine {
     private func raceAgainstTimeout<T>(
         seconds: TimeInterval, _ work: @escaping () async -> T
     ) async -> T? {
-        let resumeLock = NSLock()
-        var resumed = false
+        let resumeLatch = OneShotLatch()
         return await withCheckedContinuation { continuation in
             @Sendable func finish(_ value: T?) {
-                resumeLock.lock()
-                let first = !resumed
-                resumed = true
-                resumeLock.unlock()
-                if first { continuation.resume(returning: value) }
+                if resumeLatch.claim() { continuation.resume(returning: value) }
             }
             Task { finish(await work()) }
             Task {

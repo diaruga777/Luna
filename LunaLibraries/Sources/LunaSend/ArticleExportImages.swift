@@ -59,15 +59,10 @@ public enum ArticleExportImages {
     private static func withTimeout<T: Sendable>(
         _ seconds: TimeInterval, _ work: @escaping @Sendable () async -> T
     ) async -> T? {
-        let lock = NSLock()
-        var resumed = false
+        let resumeLatch = OneShotLatch()
         return await withCheckedContinuation { continuation in
             @Sendable func finish(_ value: T?) {
-                lock.lock()
-                let first = !resumed
-                resumed = true
-                lock.unlock()
-                if first { continuation.resume(returning: value) }
+                if resumeLatch.claim() { continuation.resume(returning: value) }
             }
             Task { finish(await work()) }
             Task {

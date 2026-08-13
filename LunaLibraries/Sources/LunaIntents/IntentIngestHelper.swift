@@ -222,15 +222,10 @@ public enum IntentIngestHelper {
         // Race unstructured tasks instead and resume on whichever finishes first;
         // a timed-out save keeps running and persists its item as pending/queued
         // for a later retry, exactly as documented above.
-        let resumeLock = NSLock()
-        var resumed = false
+        let resumeLatch = OneShotLatch()
         return await withCheckedContinuation { continuation in
             @Sendable func finish(_ value: ReadingListIngestor.SavePressResult?) {
-                resumeLock.lock()
-                let first = !resumed
-                resumed = true
-                resumeLock.unlock()
-                if first { continuation.resume(returning: value) }
+                if resumeLatch.claim() { continuation.resume(returning: value) }
             }
             Task {
                 let result = await ReadingListIngestor.shared.handleSavePress(

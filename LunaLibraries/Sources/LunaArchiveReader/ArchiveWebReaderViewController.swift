@@ -1022,7 +1022,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             // the store write + callback return to main.
             Task.detached(priority: .utility) { [weak self] in
                 let content = try? ArticleExtractor().extract(html: html, baseURL: baseURL)
-                await MainActor.run {
+                // Re-captured weakly here rather than read through the detached
+                // task's own capture: reading that one from the main-actor body
+                // is a reference to a captured `var` from concurrent code. Same
+                // weakness, same moment of unwrapping.
+                await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard let content, content.hasReadableBody,
                           let item = self.store.item(withID: itemID) else {

@@ -109,25 +109,8 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
     public func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost) {
         let readerMode = host.readerMode.map(Self.readerMode)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: itemID)
-        archive.onClose = { [weak host] in host?.confirmSavedThenComplete() }
-        archive.onExtracted = { [weak host] in
-            // The driver (and this presenter) are intentionally short-lived.
-            // Archive extraction finishes later, so `host` is captured weakly —
-            // the same lifetime rule the rest of this presenter follows.
-            if let readerMode,
-               let fresh = store.item(withID: itemID),
-               let content = store.content(for: fresh) {
-                Task { @MainActor [weak host] in
-                    guard let host else { return }
-                    host.presentModally(await ShareReaderViewController.preparedReader(
-                        url: url, mode: readerMode, content: content,
-                        onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
-                        onDone: { [weak host] in host?.confirmSavedThenComplete() }))
-                }
-            } else {
-                host?.confirmSavedThenComplete()
-            }
-        }
+        archive.delegate = ExtensionUnlockLegs(
+            host: host, url: url, itemID: itemID, store: store, readerMode: readerMode)
         host.presentModally(archive)
     }
 
@@ -137,7 +120,59 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
         ShareReaderViewController.Mode(rawValue: mode.rawValue) ?? .reader
     }
 
-    private static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
+    fileprivate static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
         ExtensionReaderMode(rawValue: mode.rawValue) ?? .reader
+    }
+}
+
+/// The extension archive unlock's two legs, kept together for the life of the card.
+///
+/// A small coordinator rather than the presenter itself: the driver AND this
+/// presenter are intentionally short-lived, while archive extraction finishes later.
+/// The reader retains this; this holds the host weakly — the same lifetime rule the
+/// rest of the presenter follows, and the same shape the two closures it replaces had.
+///
+/// It declares no Safari escape and takes the protocol's `false`: an extension has no
+/// `UIApplication` to leave Luna with, so both escapes stay hidden.
+@MainActor
+private final class ExtensionUnlockLegs: ArchiveUnlockDelegate {
+    private weak var host: (any ExtensionHost)?
+    private let url: URL
+    private let itemID: UUID
+    private let store: ReadingListStore
+    /// The in-sheet reader to swap in once the article lands, or nil for the zero-UI
+    /// share extension, which just confirms the save.
+    private let readerMode: ShareReaderViewController.Mode?
+
+    init(
+        host: any ExtensionHost, url: URL, itemID: UUID, store: ReadingListStore,
+        readerMode: ShareReaderViewController.Mode?
+    ) {
+        self.host = host
+        self.url = url
+        self.itemID = itemID
+        self.store = store
+        self.readerMode = readerMode
+    }
+
+    func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
+        guard let readerMode,
+              let fresh = store.item(withID: itemID),
+              let content = store.content(for: fresh) else {
+            host?.confirmSavedThenComplete()
+            return
+        }
+        let url = url
+        Task { @MainActor [weak host] in
+            guard let host else { return }
+            host.presentModally(await ShareReaderViewController.preparedReader(
+                url: url, mode: readerMode, content: content,
+                onModeChange: { ActionReaderMode.last = ExtensionArticlePresenter.extensionMode($0) },
+                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
+        }
+    }
+
+    func archiveReaderDidClose(_ reader: ArchiveWebReaderViewController) {
+        host?.confirmSavedThenComplete()
     }
 }

@@ -41,7 +41,9 @@ public final class ShareReaderViewController: UIViewController {
         }
     }
 
-    private let url: URL
+    /// `fileprivate` for the unlock coordinator below, which settles the extracted
+    /// article against the SAME page URL this screen was opened for.
+    fileprivate let url: URL
     private let mode: Mode
     private let onDone: () -> Void
     /// Persists the surface's last-used reader mode (the action extension's own
@@ -300,26 +302,17 @@ public final class ShareReaderViewController: UIViewController {
         // screen hid — put it back before handing the stack over.
         navigationController?.setNavigationBarHidden(false, animated: false)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
-        let onDone = self.onDone
-        archive.onClose = { onDone() }
         // Once the CAPTCHA is solved and the snapshot's article is extracted, swap
         // the web view out for the native reader showing the captured content —
         // the user reads in-app, not the raw archive page.
-        archive.onExtracted = { [weak self] in
-            guard let self,
-                  let fresh = ReadingListStore.shared.item(withID: item.id),
-                  let content = ReadingListStore.shared.content(for: fresh) else { return }
-            Task { @MainActor in
-                let settled = await Self.settledImageLayout(
-                    for: content, item: fresh, url: self.url, store: ReadingListStore.shared)
-                let saved = ReadingListStore.shared.saveContent(settled, for: fresh)
-                self.presentReader(item: saved, content: settled)
-            }
-        }
+        archive.delegate = InSheetUnlockLegs(
+            screen: self, itemID: item.id, onDone: onDone)
         navigationController?.setViewControllers([archive], animated: false)
     }
 
-    private func presentReader(item: ReadingListItem, content: ArticleContent) {
+    /// `fileprivate` for the unlock coordinator below, which is what re-enters this
+    /// screen once the archive CAPTCHA is solved.
+    fileprivate func presentReader(item: ReadingListItem, content: ArticleContent) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
         let reader = Self.makeReader(
@@ -394,5 +387,46 @@ public final class ShareReaderViewController: UIViewController {
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
         ])
+    }
+}
+
+/// The in-sheet archive unlock's two legs, kept together for the life of the card.
+///
+/// A small coordinator rather than the screen itself, and for a reason the closures
+/// it replaces had built in: handing the archive reader the nav stack REMOVES this
+/// screen from it (`setViewControllers([archive])`), so nothing retains the screen
+/// past that moment. So the two legs keep exactly the reach they had — the finish leg
+/// captures the completion strongly, and so still exits the extension after the screen
+/// has gone, while the reader swap-in holds the screen weakly and simply doesn't
+/// happen without it.
+///
+/// It declares no Safari escape and takes the protocol's `false`: an extension has no
+/// `UIApplication` to leave Luna with.
+@MainActor
+private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
+    private weak var screen: ShareReaderViewController?
+    private let itemID: UUID
+    private let onDone: () -> Void
+
+    init(screen: ShareReaderViewController, itemID: UUID, onDone: @escaping () -> Void) {
+        self.screen = screen
+        self.itemID = itemID
+        self.onDone = onDone
+    }
+
+    func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
+        guard let screen,
+              let fresh = ReadingListStore.shared.item(withID: itemID),
+              let content = ReadingListStore.shared.content(for: fresh) else { return }
+        Task { @MainActor in
+            let settled = await ShareReaderViewController.settledImageLayout(
+                for: content, item: fresh, url: screen.url, store: ReadingListStore.shared)
+            let saved = ReadingListStore.shared.saveContent(settled, for: fresh)
+            screen.presentReader(item: saved, content: settled)
+        }
+    }
+
+    func archiveReaderDidClose(_ reader: ArchiveWebReaderViewController) {
+        onDone()
     }
 }

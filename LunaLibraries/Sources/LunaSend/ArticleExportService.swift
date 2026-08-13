@@ -146,9 +146,9 @@ public struct ArticleExportService {
 
     /// Fetches the article's missing images and persists the enriched content,
     /// so the work is done once: the next export, reader open, or Kindle send
-    /// finds the files already recorded. Also registers the new files with
-    /// `ImageReferenceStore` (that's `saveContent`'s job), which is what keeps
-    /// them from being collected as orphans.
+    /// finds the files already recorded. Persisting through `saveContent` is also
+    /// what makes the save OWN the new files, which is what keeps them from being
+    /// collected as orphans.
     public func prepareImages(for item: ReadingListItem) async {
         guard let content = store.content(for: item),
               let prepared = await ArticleExportImages.prepared(

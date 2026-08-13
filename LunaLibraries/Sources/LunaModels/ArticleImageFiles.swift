@@ -10,7 +10,7 @@ import Foundation
 ///
 /// Images are keyed by a stable hash of their SOURCE URL, not by the item id, so
 /// one image is one file no matter how many saves, preloads or readers reference
-/// it (`ImageReferenceStore` refcounts the ownership).
+/// it (the saves database counts the ownership; see `SavedFileOwnership`).
 ///
 /// This lives in LunaModels — the bottom layer, beside `ArticleContent` whose
 /// `imageFileName` it resolves — because the two ends are in different link
@@ -26,6 +26,12 @@ public enum ArticleImageFiles {
     public static let storedExtensions = [
         "gif", "jpg", "png", "jpeg", "webp", "heic", "heif", "avif", "img",
     ]
+
+    /// The downloaded files a piece of content points at — the images it owns
+    /// while it exists. A block with no downloaded file yet contributes nothing.
+    public static func referencedNames(in content: ArticleContent) -> [String] {
+        content.blocks.compactMap { $0.imageFileName }
+    }
 
     /// Stable, filesystem-safe filename stem for an image URL.
     public static func stableBase(forImageURL rawURL: String) -> String {

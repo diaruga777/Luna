@@ -24,6 +24,11 @@ import Foundation
 /// **Dates are REAL** (seconds since the reference date) so a value round-trips
 /// to the same `Date` it was written from — items compare by value and the decks
 /// sort on these. **Prices are TEXT** so a `Decimal` keeps its exact digits.
+///
+/// The last four tables own the FILES beside the database — `files` /
+/// `file_refs` / `file_holders` / `pending_deletes`, with the triggers that keep
+/// them honest. See `SavedFileOwnership` for the writes and
+/// `PendingDeleteReaper` for the unlink.
 enum SavesSchema {
 
     /// Creates the tables and indexes if they are absent, and stamps the schema
@@ -43,6 +48,10 @@ enum SavesSchema {
                 let existing = try userVersion(in: database)
                 try database.execute(tables)
                 try database.execute(indexes)
+                try database.execute(triggers)
+                if existing > 0 && existing < 2 {
+                    try backfillFileOwnership(in: database)
+                }
                 if existing < SavesDatabase.schemaVersion {
                     try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
                 }
@@ -51,6 +60,35 @@ enum SavesSchema {
                 try? database.execute("ROLLBACK")
                 throw error
             }
+        }
+    }
+
+    /// Records the ownership edges for saves written before `files`/`file_refs`
+    /// existed, so deleting one of them still frees its artifacts. Everything a
+    /// save's own columns name is recovered here; a save's downloaded images are
+    /// not (their names live inside the content JSON, not in a column), so those
+    /// files stay until the article's content is written again.
+    private static func backfillFileOwnership(in database: SavesDatabase) throws {
+        // (table, the id column pointing at `saves`, the file-name column, the
+        // directory the name is relative to, the kind recorded). A name holding a
+        // path separator is skipped: `SavedFileOwnership` refuses to record one,
+        // and a stored row must not smuggle past that.
+        let sources: [(String, String, String, String, OwnedFileKind)] = [
+            ("saves", "id", "content_file_name", "Articles", .content),
+            ("saves", "id", "original_archive_file_name", "OriginalArchives", .archive),
+            ("saves", "id", "thumbnail_file_name", "Articles", .thumbnail),
+            ("price_trackers", "save_id", "image_file_name", "Articles", .productImage),
+        ]
+        for (table, idColumn, nameColumn, directory, kind) in sources {
+            let path = "'\(directory)/' || \(nameColumn)"
+            try database.execute("""
+                INSERT OR IGNORE INTO files (relative_path, kind)
+                    SELECT \(path), '\(kind.rawValue)' FROM \(table)
+                    WHERE \(nameColumn) IS NOT NULL AND instr(\(nameColumn), '/') = 0;
+                INSERT OR IGNORE INTO file_refs (file_id, save_id)
+                    SELECT files.id, \(table).\(idColumn) FROM \(table)
+                    JOIN files ON files.relative_path = \(path);
+                """)
         }
     }
 
@@ -165,6 +203,54 @@ enum SavesSchema {
             fx_rate      TEXT,
             PRIMARY KEY (store_id, day)
         ) WITHOUT ROWID;
+
+        -- One row per on-disk artifact the library owns: an article's content
+        -- JSON, its captured archive, an imported document, a thumbnail, a
+        -- product photo, a downloaded article image. The path is relative to the
+        -- App Group container, and it is the file's identity — one image
+        -- downloaded once is one row however many saves show it.
+        CREATE TABLE IF NOT EXISTS files (
+            id            INTEGER PRIMARY KEY,
+            relative_path TEXT    NOT NULL UNIQUE,
+            kind          TEXT
+        );
+
+        -- Which saves hold which files. The reference COUNT is the number of
+        -- edges, so there is no counter to drift, and deleting a save cascades
+        -- here — a delete cannot forget an artifact.
+        CREATE TABLE IF NOT EXISTS file_refs (
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            save_id TEXT    NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            PRIMARY KEY (file_id, save_id)
+        ) WITHOUT ROWID;
+
+        -- The same ownership for a holder that is NOT a save: a preloaded page
+        -- (`PreloadStore`, keyed by the page's URL hash) downloads its images
+        -- into the same shared `Articles/` cache a save reads from, so one table
+        -- has to count both or a save's delete would take a live page's picture
+        -- with it. No foreign key — the holder lives outside this database, and
+        -- `PreloadStore` releases its own keys.
+        CREATE TABLE IF NOT EXISTS file_holders (
+            file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            holder_key TEXT    NOT NULL,
+            PRIMARY KEY (file_id, holder_key)
+        ) WITHOUT ROWID;
+
+        -- Files whose last holder is gone, waiting to be unlinked. A file system
+        -- cannot join a transaction, so the COMMIT records the intent and
+        -- `PendingDeleteReaper` does the unlink afterwards; a process killed in
+        -- between finds the row still here and finishes the job.
+        --
+        -- `enqueued_at` is UNIX seconds, unlike every other date column in this
+        -- file (which are seconds since the reference date): a TRIGGER writes it,
+        -- and SQLite's own clock is the only one a trigger can read. Nothing
+        -- queries it — the reaper attempts every row it finds — so it is a
+        -- diagnostic, which is also why it gets no index.
+        CREATE TABLE IF NOT EXISTS pending_deletes (
+            relative_path TEXT    PRIMARY KEY NOT NULL,
+            enqueued_at   REAL    NOT NULL,
+            attempts      INTEGER NOT NULL DEFAULT 0
+        ) WITHOUT ROWID;
         """
 
     /// One index per query that exists, and no others: an index nothing reads is
@@ -194,5 +280,60 @@ enum SavesSchema {
         -- price_trackers, tracker_rejected_sellers on save_id;
         -- tracker_price_points on store_id), so they are already covered.
         CREATE INDEX IF NOT EXISTS tracker_stores_save ON tracker_stores(save_id);
+
+        -- The FK covering index for file_refs.save_id, which is what a save's
+        -- delete cascade and its ownership reconciliation both scan.
+        -- `file_id` leads the primary key, so the release trigger's "any edges
+        -- left?" check is already covered.
+        CREATE INDEX IF NOT EXISTS file_refs_save ON file_refs(save_id);
+
+        -- The same, for releasing one preloaded page's images.
+        CREATE INDEX IF NOT EXISTS file_holders_key ON file_holders(holder_key);
+        """
+
+    /// The invariant no Swift caller can be trusted with: **a `files` row never
+    /// sits at zero holders.** Four apps and their extensions all write these
+    /// tables, so the check that frees a file lives in the file rather than in
+    /// each of them.
+    ///
+    /// The release trigger fires for a cascade-driven delete too — verified, and
+    /// pinned by `SavedFileOwnershipTests` — so deleting a save is the whole
+    /// operation: `ON DELETE CASCADE` removes its edges, and each removal that
+    /// was some file's last one queues that file for the reaper.
+    private static let triggers = """
+        CREATE TRIGGER IF NOT EXISTS file_refs_release AFTER DELETE ON file_refs
+        WHEN NOT EXISTS (SELECT 1 FROM file_refs WHERE file_id = OLD.file_id)
+         AND NOT EXISTS (SELECT 1 FROM file_holders WHERE file_id = OLD.file_id)
+        BEGIN
+            INSERT OR REPLACE INTO pending_deletes (relative_path, enqueued_at, attempts)
+                SELECT relative_path, strftime('%s', 'now'), 0
+                FROM files WHERE id = OLD.file_id;
+            DELETE FROM files WHERE id = OLD.file_id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS file_holders_release AFTER DELETE ON file_holders
+        WHEN NOT EXISTS (SELECT 1 FROM file_refs WHERE file_id = OLD.file_id)
+         AND NOT EXISTS (SELECT 1 FROM file_holders WHERE file_id = OLD.file_id)
+        BEGIN
+            INSERT OR REPLACE INTO pending_deletes (relative_path, enqueued_at, attempts)
+                SELECT relative_path, strftime('%s', 'now'), 0
+                FROM files WHERE id = OLD.file_id;
+            DELETE FROM files WHERE id = OLD.file_id;
+        END;
+
+        -- A path referenced again before the reaper ran is rescued: re-saving the
+        -- same image re-inserts its `files` row (the path is unique, so it comes
+        -- back as itself) and the edge that follows takes it out of the queue.
+        CREATE TRIGGER IF NOT EXISTS file_refs_rescue AFTER INSERT ON file_refs
+        BEGIN
+            DELETE FROM pending_deletes WHERE relative_path
+                = (SELECT relative_path FROM files WHERE id = NEW.file_id);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS file_holders_rescue AFTER INSERT ON file_holders
+        BEGIN
+            DELETE FROM pending_deletes WHERE relative_path
+                = (SELECT relative_path FROM files WHERE id = NEW.file_id);
+        END;
         """
 }

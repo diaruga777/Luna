@@ -26,7 +26,11 @@ public extension Notification.Name {
 ///
 /// Payload FILES (parsed article JSON, web archives, imported documents,
 /// thumbnails, downloaded images) stay on disk beside the database, named from
-/// the save's id.
+/// the save's id — but WHO OWNS THEM is in the database, as ownership edges
+/// written in the same transaction as the row that made them (see
+/// `SavedFileOwnership`). Deleting a save is therefore just the row delete: the
+/// edges cascade, the schema's triggers queue every file whose last owner is
+/// gone, and `PendingDeleteReaper` unlinks it.
 public final class ReadingListStore {
     public static let shared = ReadingListStore()
 
@@ -42,10 +46,6 @@ public final class ReadingListStore {
     /// only decides which thread performs it.
     private let asyncUpdateQueue = DispatchQueue(label: "com.hsanabria.luna.readingListStore.asyncUpdate")
 
-    /// Refcount for downloaded article images (shared `Articles/img-<hash>` files):
-    /// a saved item owns the images its content references, so deleting the item frees
-    /// them — unless another save or preloaded page still references the same image.
-    private let imageReferences: ImageReferenceStore
     private let preloads: PreloadStore
 
     /// Guards the lazy open of `openedDatabase` only. Everything the connection
@@ -64,7 +64,6 @@ public final class ReadingListStore {
     /// directory so they never touch (or wipe) real user data.
     public init(containerURL: URL? = nil, preloadStore: PreloadStore? = nil) {
         self.overrideContainerURL = containerURL
-        self.imageReferences = ImageReferenceStore(containerURL: containerURL)
         self.preloads = preloadStore ?? .shared
     }
 
@@ -171,13 +170,13 @@ public final class ReadingListStore {
     /// removed (with its files) and nil is returned so the caller stops ingesting it.
     @discardableResult
     public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
-        // The duplicate's row goes inside the transaction; its files are released
-        // after it commits, because `removeFiles` writes two other index files.
-        var removedDuplicate: ReadingListItem?
+        // The duplicate's row goes inside the transaction, which releases its
+        // files; the unlink and its preload subtree follow the commit.
+        var removedDuplicate = false
         let result: ReadingListItem? = write { db -> ReadingListItem? in
             guard var stored = try SavesReader.item(id: itemID, in: db) else { return nil }
             if try SavesReader.urlIsTaken(urlString, excluding: itemID, in: db) {
-                removedDuplicate = stored.item
+                removedDuplicate = true
                 try self.deleteRow(itemID, in: db)
                 return nil
             }
@@ -188,7 +187,7 @@ public final class ReadingListStore {
             }
             return stored.item
         } ?? nil
-        if let removedDuplicate { removeFiles(for: removedDuplicate) }
+        if removedDuplicate { releaseSidecars(for: itemID) }
         return result
     }
 
@@ -515,16 +514,13 @@ public final class ReadingListStore {
     }
 
     public func delete(_ item: ReadingListItem) {
-        // The row goes inside the transaction; its files go after it, because
-        // `removeFiles` releases two refcount indexes that each take a writing
-        // file coordination of their own (see `removeFiles`).
-        var removed: ReadingListItem?
+        // The row is the whole delete: its ownership edges cascade with it, and
+        // every file left with no owner is queued for the reaper (below) inside
+        // the same commit.
         write { db in
-            guard let stored = try SavesReader.item(id: item.id, in: db) else { return }
-            removed = stored.item
             try self.deleteRow(item.id, in: db)
         }
-        if let removed { removeFiles(for: removed) }
+        releaseSidecars(for: item.id)
         SaveDiagnosticsStore.shared.delete(for: item.id)
     }
 
@@ -850,38 +846,48 @@ public final class ReadingListStore {
 
     public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
-        // The images this save owns, applied to the refcount index after the
-        // transaction commits: `ImageReferenceStore.mutate` takes a writing file
-        // coordination of its own, and holding a database write open across it
-        // buys nothing (see `removeFiles`).
-        var ownedImageFiles: [String]?
-        let saved = mutateItem(item.id) { stored -> ReadingListItem in
+        let saved: ReadingListItem = write { db -> ReadingListItem in
+            guard var stored = try SavesReader.item(id: item.id, in: db) else { return item }
+            let previous = stored.item
+            // The images this content references, claimed in the same transaction
+            // as the row: nil while the content write has not succeeded, because a
+            // save that failed to write claims nothing.
+            var ownedImages: [String]?
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
             if let data = try? JSONEncoder().encode(content),
                (try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName),
                                 options: .atomic)) != nil {
                 BackupPolicy.includeInBackups(self.articlesDirectory.appendingPathComponent(fileName))
-                stored.contentFileName = fileName
-                stored.title = content.title
-                // This save now owns the images its content references (so they survive
-                // until the item is deleted, and aren't deleted while it still needs them).
-                ownedImageFiles = ImageReferenceStore.imageFiles(in: content)
+                stored.item.contentFileName = fileName
+                stored.item.title = content.title
+                ownedImages = ArticleImageFiles.referencedNames(in: content)
                 // Real content now exists (possibly after the user solved an archive
                 // CAPTCHA), so this is the terminal ready state regardless of how it got here.
-                stored.state = .ready
-                stored.wordCount = content.blocks.reduce(0) {
+                stored.item.state = .ready
+                stored.item.wordCount = content.blocks.reduce(0) {
                     $0 + $1.text.split(whereSeparator: { $0.isWhitespace }).count
                 }
             } else {
-                stored.state = .failed
+                stored.item.state = .failed
             }
-            return stored
+            if stored.item != previous {
+                try self.writeSave(stored, previous: previous, in: db)
+            }
+            if let ownedImages {
+                // The images are reconciled even when no column changed — the same
+                // content re-saved still has to hold its pictures.
+                try SavedFileOwnership.reconcile(
+                    saveID: item.id, kinds: [.image],
+                    artifacts: ownedImages.compactMap { name in
+                        SavedFileOwnership.imagePath(name).map { (OwnedFileKind.image, $0) }
+                    },
+                    in: db)
+            }
+            return stored.item
         } ?? item
-        if let ownedImageFiles {
-            imageReferences.setReferences(
-                contentKey: ImageReferenceStore.itemKey(item.id), files: ownedImageFiles)
-        }
+        // An image this content dropped may have lost its last owner above.
+        reapPendingDeletes()
         // Keep the failure sidecar in step with the state this write landed on.
         if saved.state == .ready {
             Self.clearFailureRecords(item.id)
@@ -954,6 +960,7 @@ public final class ReadingListStore {
             }
             try self.replaceAll(with: seeded, in: db)
         }
+        reapPendingDeletes()
     }
 
     /// Empties the reading list and removes all article files. DEBUG-only.
@@ -969,6 +976,7 @@ public final class ReadingListStore {
             }
             try self.replaceAll(with: [], in: db)
         }
+        reapPendingDeletes()
     }
 
     /// Rows this connection has written since it opened. Lets a test prove a
@@ -1031,6 +1039,12 @@ public final class ReadingListStore {
         let url = readerSourceHTMLURL(for: itemID)
         try? Data(html.utf8).write(to: url, options: .atomic)
         BackupPolicy.excludeFromBackups(url)
+        // Named from the id rather than from a column, so this file takes its own
+        // ownership edge — that is what makes deleting the save delete it too.
+        guard let path = SavedFileOwnership.readerSourcePath(for: itemID) else { return }
+        writeFileOwnership { db in
+            try SavedFileOwnership.attach(path: path, kind: .readerSource, to: itemID, in: db)
+        }
     }
 
     /// The saved reader-source HTML, when an archive still has to be captured from it.
@@ -1042,8 +1056,17 @@ public final class ReadingListStore {
 
     /// Drops the capture input once the archive exists (or capture is known to be
     /// hopeless), so a transient artifact doesn't accumulate in the App Group.
+    ///
+    /// This one file is unlinked here rather than left to the reaper: its path is
+    /// derived from the id, so the store knows exactly what it is deleting, and the
+    /// caller's next act is often to hand the archive on.
     public func removeReaderSourceHTML(for itemID: UUID) {
         try? fileManager.removeItem(at: readerSourceHTMLURL(for: itemID))
+        guard let path = SavedFileOwnership.readerSourcePath(for: itemID) else { return }
+        writeFileOwnership { db in
+            try SavedFileOwnership.detach(path: path, from: itemID, in: db)
+        }
+        reapPendingDeletes()
     }
 
     /// The saved web archive, when one was successfully captured for a web page.
@@ -1106,6 +1129,63 @@ public final class ReadingListStore {
             record(error, "write")
             return nil
         }
+    }
+
+    /// A transaction that touches only the file-ownership tables. It posts NO
+    /// change notification and leaves the item cache alone: which files a save
+    /// holds is not part of the list any deck shows.
+    private func writeFileOwnership(_ body: (SavesDatabase) throws -> Void) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in try body(db) }
+        } catch {
+            record(error, "file ownership write")
+        }
+    }
+
+    /// Unlinks the files whose last owner is gone.
+    ///
+    /// Called right after every mutation that can release one, at launch, and when
+    /// an app backgrounds. It is idempotent and safe from any process, so an extra
+    /// call costs one query against a table that is almost always empty — see
+    /// `PendingDeleteReaper`.
+    public func reapPendingDeletes() {
+        guard let database = database() else { return }
+        PendingDeleteReaper.reap(
+            in: database, containerURL: containerURL, fileManager: fileManager)
+    }
+
+    /// The artifact kinds a save's own columns decide, reconciled at every row
+    /// write. Images are NOT here: their names live inside the content, so
+    /// `saveContent` is the only writer that knows them.
+    private static let columnDerivedFileKinds: Set<OwnedFileKind> = [
+        .content, .archive, .document, .thumbnail, .productImage,
+    ]
+
+    // MARK: - Files a preloaded page holds
+
+    /// Records that the preloaded page `pageKey` holds exactly `fileNames` of the
+    /// shared downloaded images in `Articles/`.
+    ///
+    /// A preloaded page is not a save — it lives in `PreloadStore`'s own cache — but
+    /// it reads the same image files a save does, so both kinds of holder are
+    /// counted in the one place. A page released while a save still shows the same
+    /// picture leaves the file alone.
+    public func setPreloadedPageImages(pageKey: String, fileNames: [String]) {
+        writeFileOwnership { db in
+            try SavedFileOwnership.reconcileHolder(
+                holderKey: pageKey,
+                paths: fileNames.compactMap { SavedFileOwnership.imagePath($0) }, in: db)
+        }
+        reapPendingDeletes()
+    }
+
+    /// Drops a preloaded page's claim on its images.
+    public func releasePreloadedPage(pageKey: String) {
+        writeFileOwnership { db in
+            try SavedFileOwnership.releaseHolder(holderKey: pageKey, in: db)
+        }
+        reapPendingDeletes()
     }
 
     /// Reads the save `itemID` names, hands it to `body`, and writes it back only
@@ -1176,6 +1256,17 @@ public final class ReadingListStore {
         _ stored: StoredSave, previous: ReadingListItem?, in db: SavesDatabase
     ) throws {
         try db.run(SaveRow.upsertSQL) { try SaveRow.bind(stored.item, seq: stored.seq, to: $0) }
+        // Every artifact this save's own columns name, claimed in the same
+        // transaction as the columns. A file a column stopped pointing at loses
+        // this owner here, which is how a replaced thumbnail is freed. Skipped when
+        // no column that names a file moved — a resume position is written far more
+        // often than a save gains an artifact.
+        let artifactsChanged = previous.map { Self.ownedFilesDiffer($0, stored.item) } ?? true
+        if artifactsChanged {
+            try SavedFileOwnership.reconcile(
+                saveID: stored.item.id, kinds: Self.columnDerivedFileKinds,
+                artifacts: SavedFileOwnership.columnDerivedPaths(of: stored.item), in: db)
+        }
         let sendStatesChanged = previous.map { Self.sendBookkeepingDiffers($0, stored.item) }
             ?? !SaveRow.sendDestinations(of: stored.item).isEmpty
         if sendStatesChanged {
@@ -1202,6 +1293,17 @@ public final class ReadingListStore {
                 try writeTracker(tracker, saveID: stored.item.id, in: db)
             }
         }
+    }
+
+    /// Whether the two versions of a save name different files.
+    private static func ownedFilesDiffer(
+        _ lhs: ReadingListItem, _ rhs: ReadingListItem
+    ) -> Bool {
+        lhs.contentFileName != rhs.contentFileName
+            || lhs.originalArchiveFileName != rhs.originalArchiveFileName
+            || lhs.sanitizedDocumentType != rhs.sanitizedDocumentType
+            || lhs.thumbnailFileName != rhs.thumbnailFileName
+            || lhs.priceTracker?.imageFileName != rhs.priceTracker?.imageFileName
     }
 
     private static func sendBookkeepingDiffers(
@@ -1269,38 +1371,13 @@ public final class ReadingListStore {
 
     // MARK: - Private
 
-    /// Removes an item's on-disk artifacts (content JSON, imported source file,
-    /// thumbnail). The source extension is the SANITIZED document type so a crafted
-    /// `documentType` can't point the delete outside the Articles directory.
-    ///
-    /// Call this OUTSIDE a database transaction: the two refcount releases at the
-    /// end each take an `NSFileCoordinator` writing coordination of their own, on
-    /// their own index file, and holding the database's write lock across that
-    /// buys nothing.
-    private func removeFiles(for item: ReadingListItem) {
-        if let fileName = item.contentFileName {
-            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
-        }
-        if let fileName = item.originalArchiveFileName,
-           fileName == URL(fileURLWithPath: fileName).lastPathComponent {
-            let directory = fileName.hasSuffix(".webarchive") ? originalArchivesDirectory : articlesDirectory
-            try? fileManager.removeItem(at: directory.appendingPathComponent(fileName))
-        }
-        if let ext = item.sanitizedDocumentType {
-            try? fileManager.removeItem(at: articlesDirectory
-                .appendingPathComponent("\(item.id.uuidString)-source.\(ext)"))
-        }
-        if let thumb = item.thumbnailFileName {
-            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(thumb))
-        }
-        // The archive's pending capture input, when this item never got that far.
-        removeReaderSourceHTML(for: item.id)
-        // Release this save's downloaded images (deleted only if no other save/preloaded
-        // page still references the same shared `img-<hash>` file).
-        imageReferences.removeReferences(contentKey: ImageReferenceStore.itemKey(item.id))
-        // Release this save's preload subtree (refcount decrement; only ever deletes
-        // files under Preloads/, never a user save).
-        preloads.releaseTree(rootID: item.id)
+    /// Everything a deleted save owned that the database's own cascade does not
+    /// reach: the reaper's unlink of the files the cascade just released, and the
+    /// preload subtree (its own cache, keyed by URL rather than by save, with its
+    /// own index — only ever deletes files under `Preloads/`).
+    private func releaseSidecars(for itemID: UUID) {
+        reapPendingDeletes()
+        preloads.releaseTree(rootID: itemID)
     }
 }
 

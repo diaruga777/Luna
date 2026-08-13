@@ -50,10 +50,13 @@ public struct PreloadEntry: Codable, Equatable {
     public var loadedSuccessfully: Bool { kind != .unrepresentable }
 }
 
-/// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
-/// isolated** from real saves: it lives in its own `Preloads/` directory and
-/// `preloads.json` index and NEVER touches `saves.sqlite` / `Articles/`, so a
-/// preload bug can only waste cache space, never corrupt the user's library.
+/// The shared, URL-keyed, refcounted cache of preloaded link pages. Its own
+/// content lives in its own `Preloads/` directory under its own `preloads.json`
+/// index, so a preload bug can only waste cache space, never corrupt a save.
+/// The one thing it shares with the library is the downloaded IMAGES, which go in
+/// `Articles/` because a save and a preloaded page routinely point at the same
+/// picture; the saves database counts who holds those (`ownershipStore` below) and
+/// this store touches nothing else in it.
 ///
 /// Duplicate links (within one save's tree or across saves) share a single on-disk
 /// copy; each referencing root save is an "owner". Deleting a save releases its
@@ -81,10 +84,9 @@ public final class PreloadStore {
     /// extension) can leave it slightly stale, which at worst sends one open down the
     /// async path. The cross-process `entry(for:)`/`mutate` paths still read fresh.
     private var cachedIndex: [String: PreloadEntry]?
-    /// Refcount for the images these preloaded pages downloaded into the shared
-    /// `Articles/` cache, so an orphaned page's images are freed too (and never freed
-    /// while another page/save still references them). Same container as this store.
-    private let imageReferences: ImageReferenceStore
+    /// Guards the lazy resolution of `ownershipStore` only.
+    private let ownershipLock = NSLock()
+    private var resolvedOwnershipStore: ReadingListStore?
 
     /// In-memory cache of decoded article content, keyed by URL hash. Lets the inline
     /// link viewer resolve a preloaded page **synchronously on the main thread** (no
@@ -101,7 +103,24 @@ public final class PreloadStore {
 
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
-        self.imageReferences = ImageReferenceStore(containerURL: containerURL)
+    }
+
+    /// The store that counts who holds the shared `Articles/img-…` files. A
+    /// preloaded page and a save can point at the same downloaded image, so the
+    /// saves database counts both (`SavedFileOwnership`) and this cache's own index
+    /// counts only its pages.
+    ///
+    /// Resolved lazily, and to the shared store whenever this store is the shared
+    /// one, so the process ends up with one connection to the database rather than
+    /// two.
+    private func ownershipStore() -> ReadingListStore {
+        guard let overrideContainerURL else { return .shared }
+        ownershipLock.lock()
+        defer { ownershipLock.unlock() }
+        if let resolvedOwnershipStore { return resolvedOwnershipStore }
+        let store = ReadingListStore(containerURL: overrideContainerURL, preloadStore: self)
+        resolvedOwnershipStore = store
+        return store
     }
 
     private var containerURL: URL {
@@ -288,8 +307,8 @@ public final class PreloadStore {
         // Tie this page's downloaded images to the page key so they're freed when (and
         // only when) the page itself is released.
         if kind == .article, let content {
-            imageReferences.setReferences(
-                contentKey: key, files: ImageReferenceStore.imageFiles(in: content))
+            ownershipStore().setPreloadedPageImages(
+                pageKey: key, fileNames: ArticleImageFiles.referencedNames(in: content))
             // Warm the in-memory cache so the very first tap after a preload is a
             // synchronous, spinner-free hit (no disk read on the way to the reader).
             memoryCache.setObject(ContentBox(content), forKey: key as NSString)
@@ -361,25 +380,8 @@ public final class PreloadStore {
         // Release each orphaned page's images (deleted only if no other page/save owns
         // them) and drop its decoded copy from the in-memory cache.
         for key in orphanedKeys {
-            imageReferences.removeReferences(contentKey: key)
+            ownershipStore().releasePreloadedPage(pageKey: key)
             memoryCache.removeObject(forKey: key as NSString)
         }
     }
-
-    /// Registers the images of every already-loaded `.article` entry with `imageStore`
-    /// (one-time migration backfill — see `ImageReferenceStore.backfillIfNeeded`).
-    public func backfillImageOwnership(into imageStore: ImageReferenceStore) {
-        lock.lock()
-        let index = loadIndex()
-        lock.unlock()
-        for (key, entry) in index where entry.kind == .article {
-            guard let file = entry.contentFile,
-                  let data = try? Data(contentsOf: contentURL(fileName: file)),
-                  let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
-            else { continue }
-            imageStore.setReferences(
-                contentKey: key, files: ImageReferenceStore.imageFiles(in: content))
-        }
-    }
-
 }

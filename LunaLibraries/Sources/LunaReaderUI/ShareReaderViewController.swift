@@ -98,10 +98,8 @@ public final class ShareReaderViewController: UIViewController {
     /// frame is final.
     ///
     /// The caller keeps its own loading UI up until this returns, which is the
-    /// point — the action extension used to tear its spinner down, install this
-    /// screen's second spinner (in a different place, under a Done button that
-    /// appeared a beat early), and only then swap in the reader. One prepared
-    /// hand-off replaces all three steps.
+    /// point: one prepared hand-off swaps straight to the finished reader,
+    /// with no second spinner and no Done button that appears a beat early.
     public static func preparedReader(
         url: URL, mode: Mode, content: ArticleContent, store: SavesStore = .shared,
         modePreferenceDelegate: (any ReaderModePreferenceDelegate)?,

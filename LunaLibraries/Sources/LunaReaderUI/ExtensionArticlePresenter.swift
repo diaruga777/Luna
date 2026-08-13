@@ -40,10 +40,11 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
             item: item, content: content, articlesDirectory: store.articlesDirectory)
         // Record the HTML that produced the native reader FIRST, synchronously. The
         // WebKit capture below needs seconds and the extension is killed as soon as
-        // the sheet dismisses, so it usually loses that race — and the app's backfill
-        // used to "repair" the loss with a LIVE capture, i.e. with the publisher's
-        // paywalled page instead of the unlocked document the reader was built from.
-        // With the source on disk the backfill finishes the job from the right one.
+        // the sheet dismisses, so it usually loses that race. Without the source on
+        // disk, the app's backfill could only recapture from a LIVE page — the
+        // publisher's paywalled page, not the unlocked document the reader was built
+        // from. With the source on disk, the backfill finishes the job from the
+        // right document.
         if !html.isEmpty {
             store.saveReaderSourceHTML(html, for: item.id)
             let archiveStore = store
@@ -76,9 +77,8 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
     ///
     /// The reader is PREPARED before it is handed over — content persisted and
     /// image layout settled — so the host's own loading UI stays up until the
-    /// finished article is ready to appear. That removes the intermediate screen
-    /// the surface used to flash: a second spinner in a slightly different place,
-    /// under a Done button that arrived before the article did.
+    /// finished article is ready to appear, with no intermediate spinner and no
+    /// Done button that arrives before the article does.
     public func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost) {
         let readerMode = Self.readerMode(mode)
         let legs = ExtensionReaderLegs(host: host)

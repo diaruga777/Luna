@@ -23,7 +23,7 @@ import Security
 /// `readData` migrates such an item into the shared group when it's the only
 /// copy found.
 public enum CredentialKeychain {
-    private static let logger = Logger(subsystem: "luna", category: "keychain")
+    private static let logger = Logger(subsystem: LunaLogging.subsystem, category: "keychain")
 
     public static let accessibleClass = kSecAttrAccessibleAfterFirstUnlock
 

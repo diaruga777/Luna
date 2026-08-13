@@ -21,7 +21,7 @@ import LunaModels
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
-    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "push")
+    private let logger = Logger(subsystem: LunaLogging.subsystem, category: "push")
     /// Periodic task (~twice daily) that reads new mail: imports recognized Luna
     /// shares (adding new senders to Contacts) and matched newsletters, so
     /// shares arrive even if the app is never opened.

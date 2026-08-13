@@ -7,6 +7,7 @@ import LunaEpub
 import LunaStorage
 import LunaModels
 import LunaMailAccount
+import LunaAppConfig
 import Foundation
 import os
 
@@ -121,7 +122,7 @@ public final class ArticleSendCoordinator {
         }
     }
 
-    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "send")
+    private let logger = Logger(subsystem: LunaLogging.subsystem, category: "send")
     private let store: ReadingListStore
     private let destinations: [ArticleDestination]
     private let retryPolicy: RetryPolicy

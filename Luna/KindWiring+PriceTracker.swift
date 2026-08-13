@@ -9,13 +9,9 @@
 //  — the registries and the static lifecycle API below mirror the link set.
 //
 
-import LunaHTMLClassification
 import LunaIngest
 import LunaModels
-import LunaPriceIngest
 import LunaPriceUI
-import LunaReadingList
-import LunaReadingListUI
 import LunaStorage
 import UIKit
 
@@ -34,31 +30,14 @@ enum KindWiring {
         #endif
 
         ProductKindComposition.install()
-        // A re-save that merges into a tracker which has never been through
-        // a fan-out (still fewer than two stores) kicks a comparison instead
-        // of showing nothing forever — `LunaReadingList` cannot link
-        // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
-        ReadingListIngestor.priceTrackerComparisonKicker = { itemID, url, store in
-            SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
-        }
         // The product kind's CARD half, on the same principle — the one
         // definition the central app installs too (`CardKindPresenter.swift`).
         CardKindPresenters.product = ProductCardPresenter()
-        IngestorKindHandlers.product = ProductKindHandler()
-        // Action Button intents hand a saved product back as its comparison
-        // summary (`claudedocs/price-comparison.md`).
-        ProductIntentHandoff.install()
+        // …and the product kind's half of the app shell, which the central app
+        // installs from the same file (`ProductShellWiring`).
+        ProductShellWiring.install()
         // No price-graph email snapshot: Price Tracker shares a tracker as its
         // product link, never as a Luna email (see `LunaApp.sharesByEmail`).
-
-        // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
-        // Rescue Phase 6 UI).
-        ProductPriceRescue.resolver = { urlString in
-            guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
-            else { return nil }
-            return ProductPriceRescue.ResolvedPrice(
-                amount: info.priceAmount, currency: info.priceCurrency)
-        }
     }
 
     // MARK: - Root UI shape
@@ -90,14 +69,8 @@ enum KindWiring {
     static func openPriceTrackerAddSeller(
         itemID: UUID, navigationController: UINavigationController
     ) {
-        guard ReadingListStore.shared.item(withID: itemID)?.priceTracker != nil,
-              let deck = navigationController.viewControllers.first
-                as? CardCarouselHostViewController else { return }
-        navigationController.dismiss(animated: false)
-        navigationController.popToRootViewController(animated: false)
-        deck.requestCentering(onSlotID: itemID)
-        deck.reload()
-        PriceTrackerAddSellerRoute.request(itemID: itemID)
+        ProductShellWiring.openAddSeller(
+            itemID: itemID, navigationController: navigationController)
     }
 
     /// Price Tracker adds no kind rows — the universal tail is the whole menu.
@@ -107,21 +80,11 @@ enum KindWiring {
 
     static func appDidLaunch() {
         legacyOnboardingDemoSave.cleanup()
-        // A save-time seller fan-out that never finished — a share extension is
-        // torn down the moment the user is done with it — is resumed here, from
-        // the pending marker the tracker carries (`claudedocs/price-comparison.md`).
-        // Product snapshots are NOT swept here: they are read once, on the
-        // save path, when a tracker is created (`claudedocs/price-tracking.md`).
-        Task {
-            await SellerComparison.completePending(store: ReadingListStore.shared)
-        }
+        ProductShellWiring.appDidLaunch()
     }
 
     static func appDidEnterBackground() {
-        // Keeps the Safari extension's history-pill data current even between
-        // refresh cycles (e.g. after the user edits an alert threshold or
-        // archives a tracker, neither of which triggers a refresh).
-        PriceHistoryIndexWriter.regenerate()
+        ProductShellWiring.appDidEnterBackground()
     }
 
     static func sceneDidForeground() {}
@@ -155,9 +118,7 @@ enum KindWiring {
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.
-    static let priceRefreshRunner: (() async -> Int)? = {
-        await PriceRefreshCoordinator.shared.refreshAndNotify().count
-    }
+    static let priceRefreshRunner: (() async -> Int)? = ProductShellWiring.priceRefreshRunner
 
     #if DEBUG
     /// `-openArchive` is an article-app debug tool.
@@ -167,13 +128,4 @@ enum KindWiring {
     /// Luna app (the UI-test/screenshot host).
     static func uiTestRootViewController(named name: String) -> UIViewController? { nil }
     #endif
-}
-
-/// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
-private struct ProductKindHandler: IngestorProductHandling {
-    func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore
-    ) async {
-        await ProductTrackerIngestor.shared.ingest(item, url: url, product: product, store: store)
-    }
 }

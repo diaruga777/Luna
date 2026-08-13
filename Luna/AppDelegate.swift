@@ -146,12 +146,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailAccountStore.shared.account?.address ?? "none"
         }
 
-        // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
-        // reading list so saved articles are semantically discoverable and
-        // Siri can resolve "my article about …"/"from …" without the app
-        // running. Main app only (extensions don't index).
-        if !LunaStage.isActive { ArticleSpotlightIndexWiring.install() }
-
         // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
         // bridge + coordinator (all three apps; main-app only — extensions never
         // link the engine). Must precede ingestAllPending() so the ingestor's
@@ -187,7 +181,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // rather than duplicating.
             BackgroundIngestCompletion.runFromLifecycle()
             // Kind-specific launch resumption: orphaned-media sweep + Live Activity
-            // reattachment (media apps), pending ereader-send retry (article apps).
+            // reattachment (media apps), Spotlight indexing and pending
+            // ereader-send retry (article apps).
             KindWiring.appDidLaunch()
         }
 

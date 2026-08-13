@@ -636,6 +636,8 @@
 		1CE7EDA84A9EF6FD416248DA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				ArticleShellWiring.swift,
+				ArticleSpotlightIndexWiring.swift,
 				AudioPlaybackWiring.swift,
 				AudioScriptPipelineWiring.swift,
 				Info.plist,
@@ -652,6 +654,7 @@
 				PriceTracker/ProductCardContent.swift,
 				PriceTracker/ProductCardPresenter.swift,
 				PriceTracker/ProductIntentHandoff.swift,
+				ProductShellWiring.swift,
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
@@ -674,6 +677,8 @@
 		60BE25B026183D60EA23D207 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				ArticleShellWiring.swift,
+				ArticleSpotlightIndexWiring.swift,
 				AudioPlaybackWiring.swift,
 				AudioScriptPipelineWiring.swift,
 				Downloader/DownloaderOnboardingDemoSave.swift,
@@ -689,6 +694,7 @@
 				"Mail/Intents/LunaShortcuts+Reader.swift",
 				Mail/Intents/MediaIntentHandoff.swift,
 				Mail/Intents/ReadArticleIntent.swift,
+				MediaShellWiring.swift,
 				MiniPlayer/AudioMiniPlayerView.swift,
 				MiniPlayer/MiniPlayerHostViewController.swift,
 				Reader/ArticleCardPresenter.swift,
@@ -760,10 +766,12 @@
 				"Mail/Intents/LunaShortcuts+Luna.swift",
 				"Mail/Intents/LunaShortcuts+PriceTracker.swift",
 				Mail/Intents/MediaIntentHandoff.swift,
+				MediaShellWiring.swift,
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
 				PriceTracker/ProductCardContent.swift,
 				PriceTracker/ProductCardPresenter.swift,
 				PriceTracker/ProductIntentHandoff.swift,
+				ProductShellWiring.swift,
 				"Resources/Luna Downloader.shortcut",
 				"Resources/Luna Price Tracker.shortcut",
 				Resources/Luna.shortcut,

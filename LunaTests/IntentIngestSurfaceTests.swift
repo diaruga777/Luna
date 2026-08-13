@@ -4,16 +4,16 @@
 //
 
 import LunaModels
-import LunaReadingList
+import LunaSaves
 import XCTest
 @testable import LunaIntents
 
 final class IntentIngestSurfaceTests: XCTestCase {
 
     private func item(
-        _ urlString: String, state: ReadingListItem.State
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: urlString)
+        _ urlString: String, state: SavedItem.State
+    ) -> SavedItem {
+        var item = SavedItem(urlString: urlString)
         item.state = state
         return item
     }

@@ -5,7 +5,7 @@
 
 import LunaAudioPlayback
 import LunaReaderUI
-import LunaReadingListUI
+import LunaSavesUI
 import LunaStorage
 import LunaModels
 import Foundation
@@ -22,7 +22,7 @@ import Foundation
 /// This is the injected-composition pattern the app shell already uses
 /// elsewhere (`SendToFriendSheet.accountSetupPresenter`,
 /// `DiagnosticLog.exportIdentityProvider`, `ProductPriceRescue.resolver`):
-/// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
+/// `LunaAudioPlayback` cannot know about `SavesSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {
 
@@ -46,7 +46,7 @@ final class AppAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
     static let shared = AppAudioPlaybackDataSource()
 
     func nextCandidate() -> QueueCandidate? {
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         return AudioQueueRule.nextCandidate(
             items: store.items(),
             now: Date(),
@@ -54,11 +54,11 @@ final class AppAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
             content: { store.content(for: $0) })
     }
 
-    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+    func script(for item: SavedItem, content: ArticleContent) -> AudioScript {
         AudioScriptPipeline.shared.script(for: item, content: content)
     }
 
-    func prefetch(item: ReadingListItem, content: ArticleContent) {
+    func prefetch(item: SavedItem, content: ArticleContent) {
         AudioScriptPipeline.shared.prefetch(item: item, content: content)
     }
 }
@@ -72,7 +72,7 @@ final class AppAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
 enum AudioQueueRule {
 
     /// - Parameters:
-    ///   - items: the full store list, in store order (`ReadingListStore.items()`).
+    ///   - items: the full store list, in store order (`SavesStore.items()`).
     ///   - now: the sectioning clock (items older than the archive age fall
     ///     below the Reading section, exactly as displayed).
     ///   - excludedItemID: the currently playing item (normally already
@@ -81,17 +81,17 @@ enum AudioQueueRule {
     ///     `content(for:)`); called only for items that pass every cheaper
     ///     check first.
     static func nextCandidate(
-        items: [ReadingListItem],
+        items: [SavedItem],
         now: Date,
         excludedItemID: UUID?,
-        content: (ReadingListItem) -> ArticleContent?
+        content: (SavedItem) -> ArticleContent?
     ) -> QueueCandidate? {
-        // Reproduce EXACTLY what the Reader-surface reading list displays:
+        // Reproduce EXACTLY what the Reader-surface saves list displays:
         // the surface filter, then `assignSections`, then the sections'
         // display order (for reader items only Reading, Archive, and Error
         // can be non-empty; Error items never pass the readability check).
         let surfaceItems = items.filter { LunaApp.reader.includes($0) }
-        let buckets = ReadingListSectioning.assignSections(items: surfaceItems, now: now)
+        let buckets = SavesSectioning.assignSections(items: surfaceItems, now: now)
         let ordered = buckets.reading + buckets.archive + buckets.failed
 
         for item in ordered {

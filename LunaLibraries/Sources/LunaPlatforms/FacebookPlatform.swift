@@ -11,8 +11,8 @@ public struct FacebookPlatform: PlatformModule {
     public let platform: ContentPlatform = .facebook
     public let glyphSymbolName = "play.tv.fill"
 
-    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: SavedItem) -> URL? { nil }
+    public func embed(for item: SavedItem) -> PlatformEmbed? { nil }
 
     public var metadataFetcher: PlatformMetadataFetching? { OpenGraphMetadataFetcher() }
 }

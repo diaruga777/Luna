@@ -85,7 +85,7 @@ public final class PlatformEmbedViewController: UIViewController, WKScriptMessag
         _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
     ) {
         guard message.name == "player", message.body as? String == "ended" else { return }
-        ReadingListStore.shared.markReadState(.read, for: itemID)
+        SavesStore.shared.markReadState(.read, for: itemID)
         dismiss(animated: true)
     }
 

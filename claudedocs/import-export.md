@@ -55,7 +55,7 @@ so a file never costs the user the links sitting in it:
    carries a recognizable heading. The reader does NOT require the `##`, the
    `-`, or the exact word: a **short line with no address in it** whose letters
    start with `arch` opens the archive, and one reading `links` / `unread` /
-   `saved` / `inbox` / `reading list` opens the live list, so `**Archive**`,
+   `saved` / `inbox` / `saves list` opens the live list, so `**Archive**`,
    `ARCHIVE:`, `## Archive (128)` and a bare `Archive` all work. A line
    containing anything but letters, digits, spaces and decoration is not a
    heading — that one rule is what stops `archive.example.com` and
@@ -181,14 +181,14 @@ middle blank with the bar stranded at the bottom.
 
 ### The run
 
-`LinkImportRunner` (LunaReadingList, `LinkImportRunnerTests`). Kind-neutral: the
+`LinkImportRunner` (LunaSaves, `LinkImportRunnerTests`). Kind-neutral: the
 media leg is an injected seam, so the module keeps linking no kind package.
 
-**Placement is one write.** `ReadingListStore.insertImported` puts the whole
-batch in a single coordinated `readingList.json` mutation, and has to **stagger
+**Placement is one write.** `SavesStore.insertImported` puts the whole
+batch in ONE transaction, and has to **stagger
 `dateAdded` backward** across it: every deck sorts by `bumpDate ?? dateAdded`
-descending, not by array position, so N links stamped with the same `Date()`
-come out ordered by UUID — the file's order lost. Archived candidates arrive
+descending, not by row order, so N links stamped with the same `Date()`
+come out ordered by UUID — the batch's own order lost. Archived candidates arrive
 already archived, in that same write, so an interrupted batch cannot leave
 archived saves sitting in the deck.
 
@@ -233,7 +233,7 @@ beats leaving two hundred locked saves to be tapped one at a time.
   reports nothing while it runs.
 
 **Three passes, in order.** The ingest runs `defaultConcurrency()` links at a
-time through the ordinary `ReadingListIngestor.ingest`, so an imported link is
+time through the ordinary `SavesIngestor.ingest`, so an imported link is
 classified, gated, fetched and stored exactly like any other save. Then the
 web-unlock pass above, serially. Then the failures are retried with Apple
 Intelligence, ONE at a time — a model call is the one resource on the device that

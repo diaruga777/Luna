@@ -39,7 +39,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
     }
 
     private var tempDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var host: FakeExtensionHost!
     /// Rows this test wrote into the SHARED `SaveFailureStore`, cleaned up in
     /// `tearDown` so the App Group is left as it was found.
@@ -54,7 +54,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareSurfaceDriverSurfaceTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         host = FakeExtensionHost()
         touchedFailureIDs = []
     }
@@ -108,7 +108,7 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertEqual(host.completedSilently, 1)
 
         // The other half of "nothing remains": a document's copied source file.
-        let document = ReadingListItem(
+        let document = SavedItem(
             seed: "doc", urlString: "lunadoc://ABC", title: "Report",
             dateAdded: Date(), state: .pending, documentType: "pdf",
             captureSource: .shareSheet)

@@ -83,7 +83,7 @@ public enum SavePressPolicy {
     ///     `dateAdded` if this is the first repeat press).
     ///   - regime: which double-save regime governs this press.
     public static func decide(
-        existingItem: ReadingListItem?,
+        existingItem: SavedItem?,
         previousPressDate: Date?,
         now: Date,
         regime: SavePressRegime
@@ -139,7 +139,7 @@ public enum SavePressPolicy {
 
     /// Skips destinations already sent within the cooldown.
     private static func eligibleDestinations(
-        _ destinationIDs: [String], for item: ReadingListItem, now: Date
+        _ destinationIDs: [String], for item: SavedItem, now: Date
     ) -> [String] {
         destinationIDs.filter { destinationID in
             let sentRecently = item.sendState(for: destinationID) == .sent

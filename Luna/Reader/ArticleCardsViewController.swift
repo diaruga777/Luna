@@ -5,7 +5,7 @@
 //  The Reader's root screen: a carousel of full-height cards over the reading
 //  list, one article per card, replacing the sectioned table. The generic
 //  carousel machinery lives in LunaDesignSystem/CardCarousel (shared with the
-//  Downloader); this controller adapts reading-list articles into cards:
+//  Downloader); this controller adapts saved articles into cards:
 //
 //  - EVERY card embeds the full live reader, laid out to the card's bounds
 //    (side cards too, so paging never shows a placeholder). The card view IS
@@ -28,8 +28,8 @@ import LunaDesignSystem
 import LunaFetch
 import LunaModels
 import LunaReaderUI
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaSocialUI
 import LunaSocial
 import LunaStorage
@@ -39,7 +39,7 @@ import UIKit
 final class ArticleCardsViewController: CardCarouselHostViewController,
     CardDeckFallbackContentProviding {
 
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
     // Screen-level reader chrome (see mountTopChrome / configureTrailingBottomButton).
     private let readerChromeRow = UIView()
     /// The focused RSVP reader's eye-tracking toggle while this deck has
@@ -60,7 +60,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// inline reader is a screen-level eclipse overlay that keeps its own
     /// self-installed indicator, so the host one steps aside for it.
     private let cardScrollIndicator = HorizonScrollIndicator.makeHosted()
-    private var chromeModes: [ReadingListItem.ReaderMode] = []
+    private var chromeModes: [SavedItem.ReaderMode] = []
     /// An unarchive reload must not let normal pull-availability reconciliation
     /// snap the still-open tray shut before its coordinated dismissal begins.
     private var isAnimatingFromArchiveTray = false
@@ -744,7 +744,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
 
     // MARK: - Opening / immersion
 
-    private func makeReader(for item: ReadingListItem) -> UIViewController? {
+    private func makeReader(for item: SavedItem) -> UIViewController? {
         guard let content = store.content(for: item) else { return nil }
         return ReaderHostFactory.make(
             item: item, content: content,
@@ -775,19 +775,19 @@ extension ArticleCardsViewController: ArticleDeckChromeHosting {
 
     /// Same archive.today CAPTCHA flow as the old list root: on successful
     /// extraction, reopen the now-`.ready` item.
-    func presentUnlockFlow(for item: ReadingListItem, articleURL: URL) {
+    func presentUnlockFlow(for item: SavedItem, articleURL: URL) {
         ArchiveUnlockFlow.present(
             item: item, articleURL: articleURL, store: store, from: self
         ) { [weak self] fresh in
             guard let self else { return }
-            ReadingListIngestor.shared.backfillMissingThumbnails()
+            SavesIngestor.shared.backfillMissingThumbnails()
             self.openExternally(fresh)
         }
     }
 
     /// The fallback for a save with no card here — an archived one, which is
     /// also how the archive tray's own tap opens.
-    func pushReader(for item: ReadingListItem) {
+    func pushReader(for item: SavedItem) {
         guard let reader = makeReader(for: item) else { return }
         navigationController?.pushViewController(reader, animated: true)
     }
@@ -802,11 +802,11 @@ extension ArticleCardsViewController: ArticleDeckChromeHosting {
     /// the reader card for every article. Reached through
     /// `CardDeckFallbackContentProviding` so this class builds no card on its
     /// own account.
-    func fallbackCardContent(for item: ReadingListItem) -> CardContentViewController {
+    func fallbackCardContent(for item: SavedItem) -> CardContentViewController {
         makeReaderCard(for: item)
     }
 
-    func makeReaderCard(for item: ReadingListItem) -> CardContentViewController {
+    func makeReaderCard(for item: SavedItem) -> CardContentViewController {
         let content = ReaderCardContentViewController(
             item: item, senderName: ArticleCardPresenter.senderName(for: item))
         content.setTopContentInset(Self.contentEdgeFade)
@@ -1152,7 +1152,7 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     weak var delegate: ReaderCardContentDelegate?
 
-    private let item: ReadingListItem
+    private let item: SavedItem
     private let statusLabel = UILabel()
     /// The pinned copy shown while card chrome is surfaced and the scrollable
     /// copy that permanently occupies the reader's top content inset. Keeping
@@ -1194,7 +1194,7 @@ final class ReaderCardContentViewController: CardContentViewController,
             && CardKindPresenters.presenter(for: item) === CardKindPresenters.article
     }
 
-    init(item: ReadingListItem, senderName: String?, knownContent: ArticleContent? = nil) {
+    init(item: SavedItem, senderName: String?, knownContent: ArticleContent? = nil) {
         self.item = item
         self.knownContent = knownContent
         let senderSubtitle = senderName.flatMap { name -> String? in
@@ -1391,7 +1391,7 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     private func embedReaderIfPossible() {
         guard reader == nil, item.state == .ready,
-              let content = knownContent ?? ReadingListStore.shared.content(for: item)
+              let content = knownContent ?? SavesStore.shared.content(for: item)
         else { return }
         titleHeader.setTitle(content.title)
         scrollTitleHeader.setTitle(content.title)

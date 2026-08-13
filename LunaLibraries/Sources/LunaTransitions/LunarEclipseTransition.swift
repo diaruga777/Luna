@@ -3,7 +3,7 @@
 //  LunaTransitions
 //
 //  A deliberately local navigation transition for opening a Reader item from a
-//  reading-list row. It uses a rendered copy of the tapped row, so the eclipse has
+//  save row. It uses a rendered copy of the tapped row, so the eclipse has
 //  the source's real silhouette rather than an approximation.
 //
 //  Two other transitions stage the same "solar eclipse" motif for card-shaped
@@ -12,7 +12,7 @@
 //  that file's corona and flare drawing directly. This file shares the
 //  `EclipseCorona` renderer with them but adds a silhouette-shadow layer and its
 //  own radial-light point, because it eclipses an arbitrary snapshot shape — a
-//  reading-list row, not a rounded card — and needs the glow to follow that
+//  save row, not a rounded card — and needs the glow to follow that
 //  outline as well as its bounding rounded rect.
 
 import LunaDesignSystem

@@ -65,7 +65,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
     @discardableResult
     private func startPlayback(
         blockCount: Int = 4, wordsPerBlock: Int = 4, fromWordIndex: Int? = nil
-    ) -> (item: ReadingListItem, content: ArticleContent) {
+    ) -> (item: SavedItem, content: ArticleContent) {
         let item = AudioPlaybackFixtures.item(seed: "playing")
         let content = AudioPlaybackFixtures.content(blockCount: blockCount, wordsPerBlock: wordsPerBlock)
         store.seed(item, content: content)

@@ -8,7 +8,7 @@ import LunaURLClassification
 
 /// Pulls a representative cover/banner image URL out of an article's HTML —
 /// `og:image`, then `twitter:image`, then a `<link rel="image_src">`. Best-effort
-/// and pure; the reading-list row falls back to no thumbnail when nothing matches.
+/// and pure; the save row falls back to no thumbnail when nothing matches.
 public enum LeadImageExtractor {
     public static func imageURL(in html: String, baseURL: URL) -> URL? {
         let patterns = [

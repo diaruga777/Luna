@@ -261,7 +261,7 @@ public final class LiveMediaDownloadManager: NSObject {
         let urlString: String
         let sourceURL: URL
         let ownership: LiveMediaDownloadOwnership
-        let readingItem: ReadingListItem?
+        let readingItem: SavedItem?
     }
 
     /// Either the gate-passed state or the reason the start ended in the gate.
@@ -296,7 +296,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 urlString: urlString, title: title, message: storageError.message)
             return .rejected(.failed(message: storageError.message))
         }
-        let readingItem = ReadingListStore.shared.item(forURLString: urlString)
+        let readingItem = SavesStore.shared.item(forURLString: urlString)
         if ownership == .downloader {
             let savedItem = try? SavedMediaStore.shared.ensureUndownloaded(
                 id: readingItem?.id ?? UUID(),
@@ -417,7 +417,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 message: MediaDownloadError.permissionDenied.message, errorKind: .photosPermission)
             return .notAuthorized
         }
-        let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
+        let readingItem = SavesStore.shared.item(forURLString: sourceURLString)
         if ownership == .downloader {
             guard let pending = try? SavedMediaStore.shared.ensureUndownloaded(
                 id: readingItem?.id ?? UUID(),

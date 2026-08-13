@@ -1,25 +1,25 @@
 //
-//  ReadingListSectioningTests.swift
+//  SavesSectioningTests.swift
 //  LunaTests
 //
 
 import LunaReaderUI
-import LunaReadingListUI
+import LunaSavesUI
 import LunaModels
 import XCTest
 @testable import Luna
 
-final class ReadingListSectioningTests: XCTestCase {
+final class SavesSectioningTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_000_000_000)
 
     /// Builds an article item (renders as reader) with controllable state/age.
     private func article(
         addedDaysAgo: Double = 0,
-        readState: ReadingListItem.ReadState = .unopened,
-        state: ReadingListItem.State = .ready
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://example.com/\(UUID().uuidString)")
+        readState: SavedItem.ReadState = .unopened,
+        state: SavedItem.State = .ready
+    ) -> SavedItem {
+        var item = SavedItem(urlString: "https://example.com/\(UUID().uuidString)")
         item.dateAdded = now.addingTimeInterval(-addedDaysAgo * 86_400)
         item.readState = readState
         item.state = state
@@ -28,8 +28,8 @@ final class ReadingListSectioningTests: XCTestCase {
 
     /// A non-reader item (a platform post) — used wherever the test only needs
     /// "some item that isn't a reader item", not a specific platform's identity.
-    private func platformItem(readState: ReadingListItem.ReadState = .unopened) -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://x.com/x/status/1")
+    private func platformItem(readState: SavedItem.ReadState = .unopened) -> SavedItem {
+        var item = SavedItem(urlString: "https://x.com/x/status/1")
         item.platform = .x
         item.readState = readState
         item.state = .ready
@@ -40,8 +40,8 @@ final class ReadingListSectioningTests: XCTestCase {
     private func priceTracker(
         initial: String = "100", best: String? = nil,
         threshold: Double = 0.10, archived: Bool = false, alertViewed: Bool = false
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://shop.example/\(UUID().uuidString)")
+    ) -> SavedItem {
+        var item = SavedItem(urlString: "https://shop.example/\(UUID().uuidString)")
         guard let initialPrice = Decimal(string: initial) else {
             fatalError("invalid test price literal: \(initial)")
         }
@@ -61,14 +61,14 @@ final class ReadingListSectioningTests: XCTestCase {
     // MARK: - assignSections
 
     func testFreshUnreadArticleGoesToReading() {
-        let buckets = ReadingListSectioning.assignSections(items: [article(addedDaysAgo: 1)], now: now)
+        let buckets = SavesSectioning.assignSections(items: [article(addedDaysAgo: 1)], now: now)
         XCTAssertEqual(buckets.reading.count, 1)
         XCTAssertTrue(buckets.archive.isEmpty)
         XCTAssertTrue(buckets.failed.isEmpty)
     }
 
     func testReadArticleGoesToArchiveEvenWhenFresh() {
-        let buckets = ReadingListSectioning.assignSections(
+        let buckets = SavesSectioning.assignSections(
             items: [article(addedDaysAgo: 0, readState: .read)], now: now)
         XCTAssertEqual(buckets.archive.count, 1)
         XCTAssertTrue(buckets.reading.isEmpty)
@@ -77,7 +77,7 @@ final class ReadingListSectioningTests: XCTestCase {
     func testJustFinishedArticleStaysInReadingUntilLifecycleArchive() {
         var pending = article(addedDaysAgo: 0, readState: .read)
         pending.pendingArchiveAt = now
-        let buckets = ReadingListSectioning.assignSections(items: [pending], now: now)
+        let buckets = SavesSectioning.assignSections(items: [pending], now: now)
         XCTAssertEqual(buckets.reading.map(\.id), [pending.id])
         XCTAssertTrue(buckets.archive.isEmpty)
     }
@@ -85,13 +85,13 @@ final class ReadingListSectioningTests: XCTestCase {
     func testExplicitlyArchivedUnreadArticleGoesToArchiveImmediately() {
         var archived = article(addedDaysAgo: 0, readState: .unopened)
         archived.archivedAt = now
-        let buckets = ReadingListSectioning.assignSections(items: [archived], now: now)
+        let buckets = SavesSectioning.assignSections(items: [archived], now: now)
         XCTAssertEqual(buckets.archive.map(\.id), [archived.id])
         XCTAssertTrue(buckets.reading.isEmpty)
     }
 
     func testUnreadButAgedOutGoesToArchive() {
-        let buckets = ReadingListSectioning.assignSections(
+        let buckets = SavesSectioning.assignSections(
             items: [article(addedDaysAgo: 8)], now: now)
         XCTAssertEqual(buckets.archive.count, 1)
         XCTAssertTrue(buckets.reading.isEmpty)
@@ -99,7 +99,7 @@ final class ReadingListSectioningTests: XCTestCase {
 
     func testExactlySevenDaysOldStaysInReading() {
         // archiveAge is a strict `>` boundary: exactly 7 days is still Reading.
-        let buckets = ReadingListSectioning.assignSections(
+        let buckets = SavesSectioning.assignSections(
             items: [article(addedDaysAgo: 7)], now: now)
         XCTAssertEqual(buckets.reading.count, 1)
         XCTAssertTrue(buckets.archive.isEmpty)
@@ -107,7 +107,7 @@ final class ReadingListSectioningTests: XCTestCase {
 
     func testFailedItemGoesToErrorRegardlessOfAgeOrReadState() {
         let freshFailed = article(addedDaysAgo: 0, readState: .unopened, state: .failed)
-        let buckets = ReadingListSectioning.assignSections(items: [freshFailed], now: now)
+        let buckets = SavesSectioning.assignSections(items: [freshFailed], now: now)
         XCTAssertEqual(buckets.failed.count, 1)
         XCTAssertTrue(buckets.reading.isEmpty)
         XCTAssertTrue(buckets.archive.isEmpty)
@@ -116,7 +116,7 @@ final class ReadingListSectioningTests: XCTestCase {
     func testSectionsPreserveInputOrder() {
         let a = article(addedDaysAgo: 1)
         let b = article(addedDaysAgo: 2)
-        let buckets = ReadingListSectioning.assignSections(items: [a, b], now: now)
+        let buckets = SavesSectioning.assignSections(items: [a, b], now: now)
         XCTAssertEqual(buckets.reading.map(\.id), [a.id, b.id])
     }
 
@@ -125,7 +125,7 @@ final class ReadingListSectioningTests: XCTestCase {
         let archivedByAge = article(addedDaysAgo: 10)
         let archivedByRead = article(addedDaysAgo: 0, readState: .read)
         let failed = article(state: .failed)
-        let buckets = ReadingListSectioning.assignSections(
+        let buckets = SavesSectioning.assignSections(
             items: [reading, archivedByAge, archivedByRead, failed], now: now)
         XCTAssertEqual(buckets.reading.map(\.id), [reading.id])
         XCTAssertEqual(Set(buckets.archive.map(\.id)), [archivedByAge.id, archivedByRead.id])
@@ -135,13 +135,13 @@ final class ReadingListSectioningTests: XCTestCase {
     // MARK: - price-tracking section
 
     func testPriceTrackerGoesToPriceTrackingBucketNotReading() {
-        let buckets = ReadingListSectioning.assignSections(items: [priceTracker()], now: now)
+        let buckets = SavesSectioning.assignSections(items: [priceTracker()], now: now)
         XCTAssertEqual(buckets.priceTracking.count, 1)
         XCTAssertTrue(buckets.reading.isEmpty)
     }
 
     func testArchivedTrackerExcludedFromAllBuckets() {
-        let buckets = ReadingListSectioning.assignSections(
+        let buckets = SavesSectioning.assignSections(
             items: [priceTracker(archived: true)], now: now)
         XCTAssertTrue(buckets.priceTracking.isEmpty)
         XCTAssertTrue(buckets.reading.isEmpty)
@@ -152,10 +152,10 @@ final class ReadingListSectioningTests: XCTestCase {
         // top and excluded from the price-tracking section body.
         let alerting = priceTracker(initial: "100", best: "70")
         let calm = priceTracker(initial: "100", best: "98")
-        let buckets = ReadingListSectioning.assignSections(items: [alerting, calm], now: now)
+        let buckets = SavesSectioning.assignSections(items: [alerting, calm], now: now)
         XCTAssertEqual(buckets.priceTracking.map(\.id), [calm.id])
         XCTAssertEqual(
-            ReadingListSectioning.topUnviewedAlertingPriceTracker(items: [alerting, calm])?.id,
+            SavesSectioning.topUnviewedAlertingPriceTracker(items: [alerting, calm])?.id,
             alerting.id)
     }
 
@@ -163,12 +163,12 @@ final class ReadingListSectioningTests: XCTestCase {
         let small = priceTracker(initial: "100", best: "85")  // 15% off
         let big = priceTracker(initial: "100", best: "50")    // 50% off
         XCTAssertEqual(
-            ReadingListSectioning.topUnviewedAlertingPriceTracker(items: [small, big])?.id, big.id)
+            SavesSectioning.topUnviewedAlertingPriceTracker(items: [small, big])?.id, big.id)
     }
 
     func testNoUnviewedAlertingTrackerWhenNoneCrossThreshold() {
         let calm = priceTracker(initial: "100", best: "95")
-        XCTAssertNil(ReadingListSectioning.topUnviewedAlertingPriceTracker(items: [calm]))
+        XCTAssertNil(SavesSectioning.topUnviewedAlertingPriceTracker(items: [calm]))
     }
 
     func testAtMostOneTrackerFloatsToTop() {
@@ -176,18 +176,18 @@ final class ReadingListSectioningTests: XCTestCase {
         let a = priceTracker(initial: "100", best: "70")  // 30% off
         let b = priceTracker(initial: "100", best: "50")  // 50% off — winner
         let c = priceTracker(initial: "100", best: "80")  // 20% off
-        let pinned = ReadingListSectioning.topUnviewedAlertingPriceTracker(items: [a, b, c])
+        let pinned = SavesSectioning.topUnviewedAlertingPriceTracker(items: [a, b, c])
         XCTAssertEqual(pinned?.id, b.id)
         // The other two remain in the price-tracking section body.
-        let buckets = ReadingListSectioning.assignSections(items: [a, b, c], now: now)
+        let buckets = SavesSectioning.assignSections(items: [a, b, c], now: now)
         XCTAssertEqual(Set(buckets.priceTracking.map(\.id)), [a.id, c.id])
     }
 
     func testViewedAlertDoesNotFloatToTop() {
         // An alerting tracker whose alert has been acknowledged stays in the section.
         let viewed = priceTracker(initial: "100", best: "60", alertViewed: true)
-        XCTAssertNil(ReadingListSectioning.topUnviewedAlertingPriceTracker(items: [viewed]))
-        let buckets = ReadingListSectioning.assignSections(items: [viewed], now: now)
+        XCTAssertNil(SavesSectioning.topUnviewedAlertingPriceTracker(items: [viewed]))
+        let buckets = SavesSectioning.assignSections(items: [viewed], now: now)
         XCTAssertEqual(buckets.priceTracking.map(\.id), [viewed.id])
     }
 
@@ -197,7 +197,7 @@ final class ReadingListSectioningTests: XCTestCase {
         let viewedBig = priceTracker(initial: "100", best: "40", alertViewed: true)  // 60% viewed
         let unviewedSmall = priceTracker(initial: "100", best: "80")                 // 20% unviewed
         XCTAssertEqual(
-            ReadingListSectioning.topUnviewedAlertingPriceTracker(
+            SavesSectioning.topUnviewedAlertingPriceTracker(
                 items: [viewedBig, unviewedSmall])?.id,
             unviewedSmall.id)
     }

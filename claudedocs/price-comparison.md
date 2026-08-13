@@ -771,7 +771,7 @@ decodes the whole store, and there is no fuzzy-name tier.
 ### Re-saves of a seller-less tracker kick a comparison
 
 The carve-out to "the merge path is never compared": inside
-`ProductTrackerMerge.mergeIfPossible` AND `ReadingListIngestor`'s separate
+`ProductTrackerMerge.mergeIfPossible` AND `SavesIngestor`'s separate
 re-save short-circuit (a re-saved URL that is already a store on an existing
 tracker), once the merge/dedup itself is done, if the target tracker has NO
 `pendingComparison` and — read BEFORE this save's own store is added, so an
@@ -785,7 +785,7 @@ ran — the process died first, or the product kind wasn't composed at save
 time. Before this, a repeat save of the same seller-less product looked
 identical to the first: no spinner, no seller row, forever.
 
-`LunaReadingList` cannot link `LunaPriceUI`, so `ReadingListIngestor
+`LunaSaves` cannot link `LunaPriceUI`, so `SavesIngestor
 .priceTrackerComparisonKicker` is a static seam — the same shape as
 `unsupportedSavePresenter`/`rescueTrigger` — installed by the two
 product-handling apps' `KindWiring` (`Luna`, `LunaPriceTracker`).
@@ -824,7 +824,7 @@ retailers again.
 `SellerFanOut.OnResult` fires the moment a verified seller ENTERS the merged
 list — inside the actor that applies the merge rule, which is what makes "as it
 lands" true rather than aspirational. `SellerComparison` attaches and persists
-each one immediately, and `.readingListChanged` carries it to whichever list is
+each one immediately, and `.savesChanged` carries it to whichever list is
 open.
 
 ## The summary document
@@ -971,5 +971,5 @@ All in `LunaTests/`:
 | `PriceTrackingScreenTests` | the waiting row's presence and its removal, in both product surfaces |
 | `ProductTrackerMergeTests` | the shared merge-or-create decision: no-match ⇒ new tracker, a match unions stores/identifiers and seeds snapshot history, and the Fix-8 comparison kick (fires only when never-compared AND under 2 stores, read BEFORE this save's own store is added) |
 | `ExtensionProductPresenterTests` | the same merge decision at the extension presenter's own level — no duplicate tracker, the placeholder is removed, a comparison is kicked end-to-end |
-| `ReadingListIngestorTrackerDedupTests` | the re-save dedup itself, and its own Fix-8 comparison kick (and its refusals: 2+ stores, already pending, no installed kicker) |
+| `SavesIngestorTrackerDedupTests` | the re-save dedup itself, and its own Fix-8 comparison kick (and its refusals: 2+ stores, already pending, no installed kicker) |
 | `DuckDuckGoSearchTests` | both result shapes (a live direct-href capture, a crafted legacy `uddg=` fixture), paid-result exclusion, dedup, and the anomaly/challenge page under either status code |

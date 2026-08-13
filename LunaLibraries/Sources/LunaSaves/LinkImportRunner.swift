@@ -1,6 +1,6 @@
 //
 //  LinkImportRunner.swift
-//  LunaReadingList
+//  LunaSaves
 //
 
 import Foundation
@@ -208,14 +208,14 @@ public final class LinkImportRunner {
 
     // MARK: - State
 
-    private let store: ReadingListStore
+    private let store: SavesStore
     /// The two operations a link goes through, injected rather than reached for.
     ///
     /// Both defaults are the real thing; the seams exist so the ORCHESTRATION —
     /// order, concurrency, scoring, the progress arithmetic, cancellation — is
     /// testable without a network or a language model, which is where this type's
     /// risk actually lives.
-    private let ingest: (ReadingListItem) async -> SurfaceSupport.Decision
+    private let ingest: (SavedItem) async -> SurfaceSupport.Decision
     private let rescue: (UUID) async -> Bool
     private let rescueFraction: (UUID) -> Double?
     private let concurrency: Int
@@ -245,7 +245,7 @@ public final class LinkImportRunner {
     private var cancelled = false
 
     public init(
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         concurrency: Int = LinkImportRunner.defaultConcurrency(),
         clock: @escaping () -> Date = Date.init,
         // `allowsInteractivePrompt: false` does two things here. It suppresses the
@@ -255,8 +255,8 @@ public final class LinkImportRunner {
         // non-interactive, so a failure is left for the debounced background sweep
         // instead of starting an inline rescue that would race phase three's
         // awaited one over the same item.
-        ingest: @escaping (ReadingListItem) async -> SurfaceSupport.Decision = {
-            await ReadingListIngestor.shared.ingest($0, allowsInteractivePrompt: false)
+        ingest: @escaping (SavedItem) async -> SurfaceSupport.Decision = {
+            await SavesIngestor.shared.ingest($0, allowsInteractivePrompt: false)
         },
         rescue: @escaping (UUID) async -> Bool = {
             await URLRescueCoordinator.shared.rescueAndWait(itemID: $0)
@@ -369,7 +369,7 @@ public final class LinkImportRunner {
         // 1. One coordinated write for the whole batch, in the file's order.
         let placements = store.insertImported(
             candidates.map {
-                ReadingListStore.ImportedLink(
+                SavesStore.ImportedLink(
                     urlString: $0.urlString, isArchived: $0.isArchived)
             },
             source: .manual)
@@ -524,7 +524,7 @@ public final class LinkImportRunner {
 
     private struct Unit {
         let slice: Int
-        let item: ReadingListItem
+        let item: SavedItem
         let candidate: Candidate
     }
 
@@ -548,7 +548,7 @@ public final class LinkImportRunner {
         }
     }
 
-    private func ingestOne(_ item: ReadingListItem) async -> ItemFate {
+    private func ingestOne(_ item: SavedItem) async -> ItemFate {
         let slice = sliceIndex(forItem: item)
         beginIngest(slice: slice)
         let decision = await ingest(item)
@@ -573,7 +573,7 @@ public final class LinkImportRunner {
     /// failure: it's a titled save the user unlocks by tapping it — a working item,
     /// not something to retry. It comes back `.locked` when there's an unlocker to
     /// try it with, and `.imported` when there isn't.
-    private func fate(of item: ReadingListItem) -> ItemFate {
+    private func fate(of item: SavedItem) -> ItemFate {
         switch item.state {
         case .ready: return .imported
         case .needsCaptcha: return Self.articleUnlocker == nil ? .imported : .locked
@@ -591,7 +591,7 @@ public final class LinkImportRunner {
     /// downloadable a pointless pause, and with a few hundred of them that adds
     /// up to minutes. If that handler ever becomes fire-and-forget the only
     /// consequence is a coarser bar, not a wrong result.
-    private func awaitDownload(for item: ReadingListItem, slice: Int) async {
+    private func awaitDownload(for item: SavedItem, slice: Int) async {
         guard let media = Self.media,
               media.downloadState(forURLString: item.urlString) != nil else { return }
         let started = clock()
@@ -607,7 +607,7 @@ public final class LinkImportRunner {
 
     // MARK: - Slice bookkeeping
 
-    private func sliceIndex(forItem item: ReadingListItem) -> Int {
+    private func sliceIndex(forItem item: SavedItem) -> Int {
         lock.lock(); defer { lock.unlock() }
         return sliceIndexByItem[item.id] ?? 0
     }

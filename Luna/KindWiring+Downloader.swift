@@ -11,7 +11,7 @@
 
 import LunaMediaDownload
 import LunaModels
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import UIKit
 
@@ -92,8 +92,8 @@ enum KindWiring {
         MediaShellWiring.resumePendingWiFiDownloads()
     }
 
-    static func readingListDidChange() {
-        MediaShellWiring.readingListDidChange()
+    static func savesDidChange() {
+        MediaShellWiring.savesDidChange()
     }
 
     static func wifiBecameAvailable() {

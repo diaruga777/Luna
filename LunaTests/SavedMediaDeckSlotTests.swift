@@ -26,7 +26,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
 
     override func tearDown() {
         SavedMediaDeckFixtures.emptySharedMediaStore()
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 
@@ -100,8 +100,8 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         // Something the deck renders changes, without adding a save: retitle the
         // OTHER failed row so the fingerprint moves and the reload is applied.
         failed[1].title = "Retitled"
-        ReadingListStore.shared.seedForTesting(items: failed, contents: [:])
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavesStore.shared.seedForTesting(items: failed, contents: [:])
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(
             deck.slots[deck.carousel.currentIndex - deck.cardOffset].id, parkedID,
@@ -121,17 +121,17 @@ final class SavedMediaDeckSlotTests: XCTestCase {
     /// after the media rows" is a statement about their dates rather than about
     /// a second index space appended to the first.
     @discardableResult
-    private func seedFailedSaves(count: Int) -> [ReadingListItem] {
+    private func seedFailedSaves(count: Int) -> [SavedItem] {
         let base = Date().addingTimeInterval(-3600)
         let items = (0..<count).map { offset in
-            ReadingListItem(
+            SavedItem(
                 seed: "deck-slot-failed-\(offset)",
                 urlString: "https://broken.example.com/deck-slot-\(offset)",
                 title: nil,
                 dateAdded: base.addingTimeInterval(TimeInterval(-offset * 60)),
                 state: .failed)
         }
-        ReadingListStore.shared.seedForTesting(items: items, contents: [:])
+        SavesStore.shared.seedForTesting(items: items, contents: [:])
         return items
     }
 }

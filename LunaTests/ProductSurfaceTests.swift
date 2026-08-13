@@ -96,7 +96,7 @@ final class ProductSurfaceParityTests: XCTestCase {
     @MainActor
     func testTheCardAndTheExtensionEditorHostTheSameProductSurface() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let item = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
 
@@ -131,7 +131,7 @@ final class ProductSurfaceParityTests: XCTestCase {
     func testEveryLiveProductSurfaceOrdersSellersBeforeGraphBeforeAlert() throws {
         UITestSupport.seedSharedStore(.priceTracking)
         let item = try XCTUnwrap(
-            ReadingListStore.shared.items().first(where: { $0.isPriceTracker }))
+            SavesStore.shared.items().first(where: { $0.isPriceTracker }))
         let card = ProductCardContentViewController(itemID: item.id)
         let window = UITestSupport.host(card)
         card.view.layoutIfNeeded()
@@ -154,7 +154,7 @@ final class ProductSurfaceParityTests: XCTestCase {
     @MainActor
     func testTheAlertRowAndTheGraphLineShowTheSameThreshold() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: {
+        guard let item = SavesStore.shared.items().first(where: {
             $0.priceTracker?.hasAlertThreshold == true
         }), let tracker = item.priceTracker else {
             XCTFail("no price tracker with an alert seeded"); return
@@ -189,7 +189,7 @@ final class ProductSurfaceParityTests: XCTestCase {
             handle.accessibilityValue, slider.accessibilityValue,
             "the line follows the slider live")
         XCTAssertEqual(
-            ReadingListStore.shared.item(withID: item.id)?.priceTracker?.alertThresholdFraction,
+            SavesStore.shared.item(withID: item.id)?.priceTracker?.alertThresholdFraction,
             tracker.alertThresholdFraction,
             "and nothing is persisted until the drag ends")
         _ = window

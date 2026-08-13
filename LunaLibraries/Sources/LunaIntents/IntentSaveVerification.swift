@@ -10,7 +10,7 @@ import Foundation
 ///
 /// An App Intent must never report success while the app holds nothing (or holds
 /// only a failure): the Shortcut exits looking like it worked and the user finds
-/// an empty list. `ReadingListIngestor.SavePressResult` alone can't tell us —
+/// an empty list. `SavesIngestor.SavePressResult` alone can't tell us —
 /// `.saved` is returned for a placeholder whose ingest may later fail — so the
 /// intent re-reads the store afterward and runs the item's state through here.
 public enum IntentSaveVerification {
@@ -33,8 +33,8 @@ public enum IntentSaveVerification {
     ///   in the app and will finish or be retried on the next launch.
     /// - `.needsCaptcha` passes deliberately: a hard-paywalled article is SAVED,
     ///   with its title, behind the interactive "tap to unlock" affordance. That
-    ///   is a successful save, not a failure (see `ReadingListItem.State`).
-    public static func failure(forState state: ReadingListItem.State?) -> Failure? {
+    ///   is a successful save, not a failure (see `SavedItem.State`).
+    public static func failure(forState state: SavedItem.State?) -> Failure? {
         guard let state else { return .nothingSaved }
         switch state {
         case .ready, .pending, .needsCaptcha: return nil

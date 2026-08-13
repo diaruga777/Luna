@@ -26,6 +26,6 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
         // The link comes from a tapped page link, so it is unwrapped here (the
         // app's own path unwraps inside the ingestor).
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
-        ReadingListStore.shared.addIfAbsent(urlString: url.absoluteString, source: .shareSheet)
+        SavesStore.shared.addIfAbsent(urlString: url.absoluteString, source: .shareSheet)
     }
 }

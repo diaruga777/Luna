@@ -103,7 +103,7 @@ public enum ArticleImageFiles {
 /// behind it (`lunamail://`, a file), so those fall back to the image's own
 /// origin — a same-origin request, which is never worse than none.
 public enum ArticleImageReferer {
-    public static func url(for item: ReadingListItem, content: ArticleContent) -> URL? {
+    public static func url(for item: SavedItem, content: ArticleContent) -> URL? {
         if let itemURL = item.url, itemURL.scheme?.hasPrefix("http") == true {
             return itemURL
         }

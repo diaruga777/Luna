@@ -6,7 +6,7 @@
 import Foundation
 import LunaModels
 
-/// Rows ↔ `ReadingListItem`: the only place that knows which column holds which
+/// Rows ↔ `SavedItem`: the only place that knows which column holds which
 /// field.
 ///
 /// Reads are TOLERANT of a value this binary does not recognise, because four
@@ -33,20 +33,20 @@ enum SaveRow {
 
     /// One `saves` row as an item, with its send states and price tracker still
     /// empty — `SavesStore` fills those from the child tables.
-    static func item(from row: SavesStatement) -> ReadingListItem? {
+    static func item(from row: SavesStatement) -> SavedItem? {
         guard let rawID = row.string(0), let id = UUID(uuidString: rawID) else {
             SharedDiagnosticLog.record("skipped a save row with an unreadable id", category: "store")
             return nil
         }
-        var item = ReadingListItem(urlString: row.string(2) ?? "", id: id)
+        var item = SavedItem(urlString: row.string(2) ?? "", id: id)
         item.title = row.string(3)
         item.dateAdded = row.date(4) ?? Date(timeIntervalSinceReferenceDate: 0)
         item.archivedAt = row.date(5)
         item.pendingArchiveAt = row.date(6)
         item.bumpDate = row.date(7)
-        item.state = row.string(8).flatMap(ReadingListItem.State.init(rawValue:)) ?? .pending
-        item.readState = row.string(9).flatMap(ReadingListItem.ReadState.init(rawValue:)) ?? .unopened
-        item.lastReaderMode = row.string(10).flatMap(ReadingListItem.ReaderMode.init(rawValue:))
+        item.state = row.string(8).flatMap(SavedItem.State.init(rawValue:)) ?? .pending
+        item.readState = row.string(9).flatMap(SavedItem.ReadState.init(rawValue:)) ?? .unopened
+        item.lastReaderMode = row.string(10).flatMap(SavedItem.ReaderMode.init(rawValue:))
         item.contentFileName = row.string(11)
         item.originalArchiveFileName = row.string(12)
         item.thumbnailFileName = row.string(13)
@@ -100,7 +100,7 @@ enum SaveRow {
             capture_source = excluded.capture_source
         """
 
-    static func bind(_ item: ReadingListItem, seq: Int64, to row: SavesStatement) throws {
+    static func bind(_ item: SavedItem, seq: Int64, to row: SavesStatement) throws {
         try row.bind(1, uuid: item.id)
         try row.bind(2, seq)
         try row.bind(3, item.urlString)
@@ -143,9 +143,9 @@ enum SaveRow {
     /// Folds one `send_states` row into the five dictionaries the model exposes.
     /// A state raw value this binary does not know leaves `sendStates` alone —
     /// the destination's other bookkeeping still reads.
-    static func applySendState(from row: SavesStatement, to item: inout ReadingListItem) {
+    static func applySendState(from row: SavesStatement, to item: inout SavedItem) {
         guard let destination = row.string(1) else { return }
-        if let state = row.string(2).flatMap(ReadingListItem.SendState.init(rawValue:)) {
+        if let state = row.string(2).flatMap(SavedItem.SendState.init(rawValue:)) {
             item.sendStates[destination] = state
         }
         if let dateSent = row.date(3) { item.datesSent[destination] = dateSent }
@@ -155,7 +155,7 @@ enum SaveRow {
     }
 
     /// Every destination the save has any send bookkeeping for.
-    static func sendDestinations(of item: ReadingListItem) -> [String] {
+    static func sendDestinations(of item: SavedItem) -> [String] {
         var destinations = Set(item.sendStates.keys)
         destinations.formUnion(item.datesSent.keys)
         destinations.formUnion(item.sendFailureCounts.keys)
@@ -165,7 +165,7 @@ enum SaveRow {
     }
 
     static func bindSendState(
-        _ item: ReadingListItem, destination: String, to row: SavesStatement
+        _ item: SavedItem, destination: String, to row: SavesStatement
     ) throws {
         try row.bind(1, uuid: item.id)
         try row.bind(2, destination)

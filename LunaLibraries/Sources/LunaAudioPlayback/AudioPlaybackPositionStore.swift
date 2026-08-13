@@ -7,13 +7,13 @@ import LunaAppConfig
 import Foundation
 
 /// One playback session's resume state, persisted cheaply (App-Group
-/// `UserDefaults`, NOT the reading-list store) roughly every 5s while playing,
+/// `UserDefaults`, NOT the saves store) roughly every 5s while playing,
 /// plus on every pause/seek/finish — so a cold relaunch, or a remote "play"
 /// command arriving while `AudioPlaybackCenter` is idle, can restore without
-/// re-deriving anything from the reading list (see
+/// re-deriving anything from the saves list (see
 /// `claudedocs/audio-playback-plan.md`).
 ///
-/// This is DELIBERATELY separate from `ReadingListItem.lastSpokenWordIndex`
+/// This is DELIBERATELY separate from `SavedItem.lastSpokenWordIndex`
 /// (mirrored into the store far less often — see `AudioPlaybackCenter`) and
 /// from `AudioSettings` (a plain App-Group-singleton enum with no test seam):
 /// position persistence needs an injectable `UserDefaults` suite so its

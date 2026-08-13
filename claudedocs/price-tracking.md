@@ -70,7 +70,7 @@ resolvable (→ article, never a price-less tracker).
   takes `render: ((URL) async -> String?)?`; the render tier runs ONLY when `render !=
   nil`. `IngestPipeline.process` defaults `render` to **nil**, so the share/action
   extensions can never spin up a `WKWebView` (the "spins forever" fix); only the main
-  app (`ReadingListIngestor`) injects `WebViewPriceRenderer.renderedHTML`. Where it does
+  app (`SavesIngestor`) injects `WebViewPriceRenderer.renderedHTML`. Where it does
   run it is hard-bounded (deterministic poll + single deadline).
 - Tests: `ProductMetadataExtractorTests` (amazon buy-box vs list-price fixture, lookalike
   host rejection, target/walmart `__NEXT_DATA__`, generic JSON-LD/OG/bunnings, no-price→nil,
@@ -167,7 +167,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   price, built via `ProductInfo(candidate:price:)`. The price is **required**; a
   `ProductInfo` only exists once a real price is in hand, so a tracker can never be
   created without one.
-- `ReaderKit/PriceTracker.swift` — the model + the friend-share payload:
+- `LunaModels/PriceTracker.swift` — the model + the friend-share payload:
   - `PriceTrackerStore { urlString, lastPrice: Decimal?, currency, lastRefreshed: Date? }`.
   - `PriceTracker` — `productName`, `stores` (private(set), **always ≥1**), `brand?`,
     `productID?`, `imageFileName?`, `initialPrice` (best at creation = alert
@@ -192,10 +192,10 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     **`markAlertViewed(at:)`** (sets `alertAcknowledgedAt`; no-ops when not alerting —
     called when the user opens an alerting tracker). **Migration-safe** `Codable` (all
     fields defaulted; `alertAcknowledgedAt` absent in old payloads → nil → unviewed;
-    empty `stores` repaired; a present threshold clamped 0.01…0.95). **An ABSENT
-    `alertThresholdFraction` key IS the unset state** — the encoder omits a nil
-    optional, so "no alert" round-trips through `readingList.json` with no sentinel
-    number, and a pre-threshold payload reads as unset too. Merging a cheaper store
+    empty `stores` repaired; a present threshold clamped 0.01…0.95) — that decoder
+    still governs the friend-share payload. **A MISSING threshold IS the unset
+    state**: "no alert" is a NULL `alert_threshold_fraction` column rather than a
+    sentinel number, and a row written before the column existed reads as unset too. Merging a cheaper store
     does NOT lower `initialPrice` (the baseline is fixed at creation).
   - `PriceTrackerShare` — portable friend-share form (URLs + best price at share
     time + threshold + brand/productID); `makeTracker()` rebuilds on receipt.
@@ -205,18 +205,15 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   unbranded), highest score, **ties broken by lowest id** (not input order). Stop-words
   stripped.
 - `ReaderKit/PriceRefresher.swift` — **pure-ish** background-refresh logic.
-  `PriceTrackerPersisting` seam (`ReadingListStore` conforms); injects a
+  `PriceTrackerPersisting` seam (`SavesStore` conforms); injects a
   `PriceFetching` + a clock. `refreshAll()` processes trackers **stalest-first**,
   re-fetches each store's price via the same `PriceFetcher` (incl. the WebView
   fallback), updates prices, persists each tracker as it finishes (resumable), and
   returns `PriceRefreshOutcome` per tracker with `newlyAlerting` (crossed threshold
   THIS run = the notification trigger).
-- `ReaderKit/PriceFormatting.swift` — **pure** currency string (`$45.99`, `€23.50`,
+- `LunaModels/PriceFormatting.swift` — **pure** currency string (`$45.99`, `€23.50`,
   `AUD 89.00`) and `thresholdDescription` ("10% off — alert below $90.00").
-- `Luna/ReadingList/PriceTrackingManager.swift` — `PriceTrackingManaging`
-  (`fetchPrice(urlString:) -> ProductPrice?`); live impl wraps `PriceFetcher` so the
-  add-a-store UI resolves a new URL's price with the same strategy.
-- `ReaderKit/PriceTrackingExitContext.swift` — **pure** navigation decision model.
+- `LunaModels/PriceTrackingExitContext.swift` — **pure** navigation decision model.
   `PriceTrackingHost` (`.inApp`/`.extension`) + `PriceTrackingEntry`
   (`.creation` / `.merge(addedStoreURLString:)` / `.existing`) → a
   `PriceTrackingExitContext` exposing `leftButton` (`.back` in-app / `.done` in an
@@ -255,7 +252,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     tracker page, now updated); on `.noPrice` it shows **"Couldn't find a price"**; on
     `.duplicate` it shows "Already tracked" — never a silent no-op. It never touches the
     store (the host does the mandatory price fetch + dedupe + add). Lives in ReaderKit
-    (WebKit, reusable), free of ReadingList deps.
+    (WebKit, reusable), free of LunaSaves deps.
 - `ReaderKit/ProductPageSuggestion.swift` — **pure** unified suggest decision.
   `resolve(url:html:)` returns `ProductMetadata?` = `Classifier.classify == .product`
   AND `ProductMetadataExtractor.extract(render: nil)` over the RENDERED `outerHTML`
@@ -300,7 +297,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     the URL-rescue seam `KindWiring` installs at launch. In share/action
     extensions the + instead opens `<ownScheme>://price-add-seller?item=…`; the
     containing app centers that tracker card and presents this same search overlay.
-  - Reloads on `.readingListChanged` — a fan-out lands its retailers one at a
+  - Reloads on `.savesChanged` — a fan-out lands its retailers one at a
     time from a background task, so the surface has to hear about changes it did
     not make.
 - `LunaPriceUI/ProductTitleSummary.swift` — **pure**, shape-only heuristic for
@@ -326,7 +323,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `UtilCardSaveTransitionAnchor` identifiers the save transition flies into.
 - `LunaPriceUI/PriceTrackingViewController.swift` — the screen HOST: a
   `NavHeaderBar`, a `ReadableColumn`, the way out, and the same surface between
-  them. PUSHED onto the reading-list nav stack in-app, or PRESENTED modally by the
+  them. PUSHED onto the saves nav stack in-app, or PRESENTED modally by the
   action/share extension's `ShareSurfaceDriver` on a `.product` outcome
   (`PriceTrackingHost.extension`, exiting via the injected `onDone`). **The exit
   differs by host**: in-app, a back chevron in the header; in an
@@ -338,7 +335,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   `.merge(itemID:addedStoreURLString:host:)` (save-time, flashes the added
   seller). Each `Mode` maps to a `PriceTrackingExitContext`. Declares
   `Notification.Name.priceTrackerSavedInteractively`.
-- `Luna/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
+- `LunaPriceUI/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 - `LunaLibraries/Sources/LunaStorage/NotificationAuthorizationState.swift` — the
@@ -418,7 +415,7 @@ spend the one-time prompt on a surface that's about to dismiss — the next in-a
 commit asks. The other two ask-moments are the Save of the Week key and connecting a
 sending account; nothing else in Luna requests authorization.
 
-## Deck integration (`ReadingListSectioning` / the card roots)
+## Deck integration (`SavesSectioning` / the card roots)
 
 The sectioned rows below remain for central Luna and test/extension navigation.
 The standalone Price Tracker app uses the card root above.
@@ -448,7 +445,7 @@ The standalone Price Tracker app uses the card root above.
   name, subtitle = current best price (currency-formatted), `↓N%` in red when alerting.
   Tapping a row → `open` → marks the alert viewed if it was floating, then pushes
   `PriceTrackingViewController(itemID:)`.
-- `ReadingListStore`: `savePriceTracker`, `updatePriceTracker`,
+- `SavesStore`: `savePriceTracker`, `updatePriceTracker`,
   `priceTrackersStalestFirst()` + `stalestRefresh(_:)`.
 
 ## Save-time UX
@@ -463,12 +460,12 @@ price (static → embedded JSON → WebView) → if a price is obtained, create 
 tracker; if NO price by any method, fall through to the normal article pipeline (a
 plain article — never a broken tracker, never paywall-bypassed).
 
-- **In-app paste / manual / app-intent**: `ReadingListIngestor.ingest` fetches once,
+- **In-app paste / manual / app-intent**: `SavesIngestor.ingest` fetches once,
   article resolve), then `PriceFetcher.fetchPrice` on a candidate. On a real price →
   `ProductInfo(candidate:price:)` → `ingestProductTracker` (intelligent merge via
   `ProductMatcher`, else new tracker; collects product artwork, falling back to
   the page header image or favicon and repairing an artwork-less merged tracker), then posts
-  `.priceTrackerSavedInteractively`; the reading list presents the editor in
+  `.priceTrackerSavedInteractively`; the saves list presents the editor in
   `.creation` mode (new tracker) or `.merge` mode (matched into an existing tracker;
   the new seller row is flashed), top-of-stack only. No fetchable price → records a
   note and falls through to `ArticleResolver`.
@@ -518,7 +515,7 @@ here is where it sits in THIS pipeline:
 Surfacing the wait: both product surfaces draw one extra row while
 `tracker.pendingComparison` is set — a spinner and "Checking for other sellers…"
 under the seller list — one list, in one controller, in both hosts. It reloads
-on `.readingListChanged`, which every streamed
+on `.savesChanged`, which every streamed
 seller posts, so the row fills in from underneath and disappears with the marker.
 
 Surviving the process: the marker is on the TRACKER, so a share extension torn
@@ -548,8 +545,8 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
   the price is extractable (or a hard timeout) instead of a fixed settle sleep that
   raced JS hydration. Bunnings never needs the WebView at all — its price is static
   in `__NEXT_DATA__` and the static path returns 99 AUD deterministically.
-- **Re-save dedup BEFORE re-detection.** `ReadingListIngestor.ingest` checks
-  `ReadingListStore.priceTracker(containingStoreURL:)` first: if the URL is already a
+- **Re-save dedup BEFORE re-detection.** `SavesIngestor.ingest` checks
+  `SavesStore.priceTracker(containingStoreURL:)` first: if the URL is already a
   store inside an existing tracker (e.g. a previously-merged URL whose placeholder
   item was deleted), it short-circuits to that tracker and drops the duplicate
   instead of re-detecting (which could reach a different outcome) or creating a
@@ -571,7 +568,7 @@ A snapshot is written for **every product page any Luna process sees** and for
 suppresses it. A suggestion mode of "never" silences PILLS; price tracking being
 off means no tracker, not no memory of a price; a per-platform toggle is about
 what Luna offers to do, not about what it noticed. An observation is not a save:
-no reading-list row, nothing scheduled for refresh, and no alert can fire from
+no save row, nothing scheduled for refresh, and no alert can fire from
 one.
 
 The writers, all through `ProductSnapshotStore.record`:
@@ -741,8 +738,8 @@ product seeded from history — or bounced back to Safari immediately after
 
 ### The compact history index (`PriceHistoryIndexWriter`)
 
-The Safari extension can't read `readingList.json` (package-free, and it's both too
-large and the wrong shape to hand-parse in an appex), so a product-handling app
+The Safari extension does not open the saves database (the whole library is the
+wrong shape and size for one page load), so a product-handling app
 maintains a compact mirror, `priceHistoryIndex.json`, next to the snapshots file: per
 non-archived tracker, `{name, brand?, productID?, stores: [{url, host, points:
 [{day, price, currency}]}]}`, capped at the last 365 days per store. Regenerated
@@ -835,7 +832,7 @@ notifies. See `social-sharing.md`.
   stalest-first order, failing fetch (`MockPriceFetcher` yields nil → unchanged),
   archived skip. Driven by `MockPriceFetcher` (prices keyed by URL).
 - `PriceFormattingTests` (3) — currency string, threshold description percent+abs.
-- `ReadingListSectioningTests` — price-tracking bucket, archived exclusion,
+- `SavesSectioningTests` — price-tracking bucket, archived exclusion,
   unviewed-alert float-out + greatest-discount, **at-most-one float**, **viewed alert
   does NOT float** (and yields the top to a smaller-but-unviewed one), filter
   visibility, displayOrder (price-tracking below Reading; `.priceAlert` first). Plus

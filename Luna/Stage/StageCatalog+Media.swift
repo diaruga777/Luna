@@ -20,7 +20,7 @@ enum MediaStageCatalog {
         StageRegistry.register(deckStages + downloadStateStages + screenStages)
     }
 
-    /// One URL, used by both halves of every media fixture: the reading-list
+    /// One URL, used by both halves of every media fixture: the saves list
     /// row and the `SavedMediaStore` row are joined by URL STRING, and a
     /// mismatch renders the generic link card instead of the media one.
     private static let videoURL = "https://youtube.com/watch?v=stage-video"
@@ -52,7 +52,7 @@ enum MediaStageCatalog {
         ]
     }
 
-    /// Seeds both halves: the reading-list rows the deck pages over, and the
+    /// Seeds both halves: the save rows the deck pages over, and the
     /// `SavedMediaStore` rows the media presenter joins to them.
     @MainActor
     private static func seedMediaLibrary() {
@@ -74,7 +74,7 @@ enum MediaStageCatalog {
             named: fileName, in: SavedMediaStore.shared.mediaDirectory) != nil {
             items.insert(
                 SavedMediaItem(
-                    id: ReadingListItem.deterministicUUID(from: "stage-media-image"),
+                    id: SavedItem.deterministicUUID(from: "stage-media-image"),
                     sourceURLString: imageURL, title: "A Saved Photo",
                     dateSaved: StageFixtures.ago(hours: 1), kind: .image,
                     storageState: .localFile(fileName: fileName), thumbnailFileName: nil,
@@ -86,7 +86,7 @@ enum MediaStageCatalog {
 
     private static func undownloadedVideo() -> SavedMediaItem {
         SavedMediaItem(
-            id: ReadingListItem.deterministicUUID(from: "stage-media-video"),
+            id: SavedItem.deterministicUUID(from: "stage-media-video"),
             sourceURLString: videoURL, title: "A Short Film About Rain",
             dateSaved: StageFixtures.ago(days: 1), kind: .video,
             storageState: .undownloaded, thumbnailFileName: nil,

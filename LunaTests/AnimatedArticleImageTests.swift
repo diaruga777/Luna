@@ -41,7 +41,7 @@ final class AnimatedArticleImageTests: XCTestCase {
 
     func testScrollReaderInstallsLiveViewForAnimatedLeadImage() throws {
         let fileName = "animated-lead-\(UUID().uuidString).gif"
-        let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+        let fileURL = SavesStore.shared.articlesDirectory.appendingPathComponent(fileName)
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: fileURL) }
@@ -55,7 +55,7 @@ final class AnimatedArticleImageTests: XCTestCase {
                 imageSize: ArticleContent.BlockImageSize(width: 320, height: 180)),
             .init(kind: .paragraph, text: "A short article body.", links: []),
         ])
-        var item = ReadingListItem(urlString: "https://example.com/article")
+        var item = SavedItem(urlString: "https://example.com/article")
         item.state = .ready
         let reader = ScrollReaderViewController(item: item, content: content)
         reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)

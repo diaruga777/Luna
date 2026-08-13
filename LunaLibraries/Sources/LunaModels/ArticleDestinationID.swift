@@ -3,7 +3,7 @@
 //  Luna
 //
 
-/// Stable destination ids, used as keys in `ReadingListItem.sendStates` and to
+/// Stable destination ids, used as keys in `SavedItem.sendStates` and to
 /// target explicit sends. Lives in LunaModels (not LunaSend) because the pure
 /// `SavePressPolicy` and the universal save path reference the ids without
 /// needing the send machinery itself.

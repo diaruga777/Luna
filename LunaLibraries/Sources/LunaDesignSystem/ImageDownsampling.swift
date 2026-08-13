@@ -7,7 +7,7 @@ import ImageIO
 import UIKit
 
 /// Shared ImageIO-based downsampling decode, used anywhere a thumbnail is read
-/// from disk (e.g. reading-list row art). Decoding is the slow/expensive part of
+/// from disk (e.g. save row art). Decoding is the slow/expensive part of
 /// showing an on-disk image — downsampling to roughly the display size means a
 /// large source file (a full-resolution photo, say) is never held as a full-size
 /// decoded bitmap for a small well.

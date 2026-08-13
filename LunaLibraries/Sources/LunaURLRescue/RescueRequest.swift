@@ -45,7 +45,7 @@ public struct RescueRequest {
     /// Nil ⇒ the engine best-effort refetches before building the digest.
     public let fetchedHTML: String?
 
-    /// The reading-list item this rescue is for, when there is one. It is the
+    /// The saved item this rescue is for, when there is one. It is the
     /// key into the per-save diagnostic trace — read as failure EVIDENCE for the
     /// prompt, and written back with each rescue's own decisions. Nil for the
     /// ad-hoc callers that have no item (the price editor's resolver), which

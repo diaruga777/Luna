@@ -82,7 +82,7 @@ public struct ArticleExtractor {
         // Publisher hero art is commonly declared only in Open Graph metadata,
         // outside the scored article container. Treat it as the lead block so it
         // appears directly under the title instead of being silently limited to
-        // the reading-list thumbnail.
+        // the save thumbnail.
         prependLeadImage(from: document, to: &chosen, baseURL: baseURL)
         // Last, on the blocks that actually survived every trimming pass: a table
         // of contents whose destinations were trimmed away must not keep offering

@@ -12,7 +12,7 @@ import Foundation
 /// The copy itself lives in `ShareSetupPractice` (LunaModels, so the share
 /// extension shows the same words) and is rendered by the replica views alone —
 /// the mock Safari page and the mock action-extension sheet. **It is never
-/// saved.** Onboarding writes nothing to the reading list,
+/// saved.** Onboarding writes nothing to the saves list,
 /// so the deck the user lands on holds exactly what they saved themselves.
 ///
 /// What remains here is the one-time sweep of the item an OLDER build did
@@ -25,7 +25,7 @@ enum BundledLunaArticle {
     /// themselves is never touched.
     static func cleanupLegacyTemporarySave(
         registry: AppOnboardingStore = .shared,
-        in store: ReadingListStore = .shared
+        in store: SavesStore = .shared
     ) {
         defer { registry.clearTemporarySaveIdentifier() }
         guard let identifier = registry.temporarySaveIdentifier,

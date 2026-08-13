@@ -5,7 +5,7 @@
 //  Navigation/layout coverage for the price-tracking editor.
 //
 
-import LunaReadingListUI
+import LunaSavesUI
 @testable import LunaPriceUI
 import LunaShareSurface
 import LunaStorage
@@ -79,13 +79,13 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     func testTheEditorShowsAWaitingRowWhileAComparisonIsPendingAndDropsItAfter() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
+        guard let item = SavesStore.shared.items().first(where: { $0.isPriceTracker }),
               var tracker = item.priceTracker else {
             XCTFail("no price tracker seeded"); return
         }
         let storeCount = tracker.stores.count
         tracker.beginPendingComparison(sourceURLString: tracker.stores[0].urlString)
-        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
+        SavesStore.shared.updatePriceTracker(tracker, for: item.id)
 
         let editor = PriceTrackingViewController(mode: .existing(itemID: item.id))
         let window = UITestSupport.host(UINavigationController(rootViewController: editor))
@@ -100,12 +100,12 @@ final class PriceTrackingScreenTests: XCTestCase {
             "and a spinner says the fan-out is still out")
 
         // The run finishes; the row goes with the marker.
-        guard var finished = ReadingListStore.shared.item(withID: item.id)?.priceTracker else {
+        guard var finished = SavesStore.shared.item(withID: item.id)?.priceTracker else {
             XCTFail("tracker vanished"); return
         }
         finished.completePendingComparison()
-        ReadingListStore.shared.updatePriceTracker(finished, for: item.id)
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavesStore.shared.updatePriceTracker(finished, for: item.id)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         editor.view.layoutIfNeeded()
         XCTAssertNil(
@@ -118,12 +118,12 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     func testTheProductCardShowsTheSameWaitingRow() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
+        guard let item = SavesStore.shared.items().first(where: { $0.isPriceTracker }),
               var tracker = item.priceTracker else {
             XCTFail("no price tracker seeded"); return
         }
         tracker.beginPendingComparison(sourceURLString: tracker.stores[0].urlString)
-        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
+        SavesStore.shared.updatePriceTracker(tracker, for: item.id)
 
         let card = ProductCardContentViewController(itemID: item.id)
         let window = UITestSupport.host(UINavigationController(rootViewController: card))
@@ -133,12 +133,12 @@ final class PriceTrackingScreenTests: XCTestCase {
             card.view.firstDescendant(ofType: UIActivityIndicatorView.self),
             "the card says it is still looking too")
 
-        guard var finished = ReadingListStore.shared.item(withID: item.id)?.priceTracker else {
+        guard var finished = SavesStore.shared.item(withID: item.id)?.priceTracker else {
             XCTFail("tracker vanished"); return
         }
         finished.completePendingComparison()
-        ReadingListStore.shared.updatePriceTracker(finished, for: item.id)
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavesStore.shared.updatePriceTracker(finished, for: item.id)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertNil(
             card.view.firstDescendant(ofType: UIActivityIndicatorView.self),
@@ -182,7 +182,7 @@ final class PriceTrackingScreenTests: XCTestCase {
 
     func testPriceTrackingEditorLayoutHasStoreList() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let tracker = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         let editor = PriceTrackingViewController(itemID: tracker.id)
@@ -199,9 +199,9 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// The price editor uses a custom Back item, which otherwise disables UIKit's
     /// stock interactive-pop recognizer. A left-edge swipe must still return a
     /// tracker opened from a root screen back to that root controller.
-    func testExistingModeEnablesInteractivePopBackToReadingList() {
+    func testExistingModeEnablesInteractivePopBackToSaves() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let tracker = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         let root = UIViewController()   // stands in for whatever pushed the editor
@@ -227,7 +227,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     func testExtensionHostExitsByFloatingGlassButtonInAppByBack() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let tracker = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         // In-app: the header's back control pops the nav stack, and there is no
@@ -246,7 +246,7 @@ final class PriceTrackingScreenTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         XCTAssertTrue(nav.topViewController === root, "in-app Back pops to the pushing root")
-        XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
+        XCTAssertNotNil(SavesStore.shared.item(withID: tracker.id),
                         "Back must not delete the tracker")
 
         // Extension host: the exit is a titleless floating button that hands off to
@@ -270,7 +270,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     func testExtensionExitButtonDoesNotCoverTheSellerList() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let tracker = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
@@ -293,7 +293,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     func testExtensionAddSellerHandsTheExactTrackerBackToTheContainingApp() throws {
         UITestSupport.seedSharedStore(.priceTracking)
         let item = try XCTUnwrap(
-            ReadingListStore.shared.items().first(where: { $0.isPriceTracker }))
+            SavesStore.shared.items().first(where: { $0.isPriceTracker }))
         let handoff = RecordingAddSellerHandoff()
         let editor = PriceTrackingViewController(
             mode: .creation(itemID: item.id, host: .extension),
@@ -320,7 +320,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     @MainActor
     func testOpeningAlertingTrackerMarksAlertViewed() {
         UITestSupport.seedSharedStore(.mixed)
-        guard let alerting = ReadingListStore.shared.items().first(where: {
+        guard let alerting = SavesStore.shared.items().first(where: {
             $0.priceTracker?.hasUnviewedAlert == true
         }) else {
             XCTFail("no unviewed-alerting tracker seeded"); return
@@ -333,7 +333,7 @@ final class PriceTrackingScreenTests: XCTestCase {
         deck.view.layoutIfNeeded()
         ProductCardPresenter().itemDidCenter(alerting, host: deck)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        let refreshed = ReadingListStore.shared.item(withID: alerting.id)?.priceTracker
+        let refreshed = SavesStore.shared.item(withID: alerting.id)?.priceTracker
         XCTAssertEqual(refreshed?.isAlerting, true, "still alerting after viewing")
         XCTAssertEqual(refreshed?.hasUnviewedAlert, false, "alert acknowledged on open")
         _ = window
@@ -373,7 +373,7 @@ final class PriceTrackingScreenTests: XCTestCase {
         setAlert.sendActions(for: .touchUpInside)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
-        let alerted = ReadingListStore.shared.items()
+        let alerted = SavesStore.shared.items()
             .compactMap { $0.priceTracker }
             .filter { $0.hasAlertThreshold }
         XCTAssertEqual(alerted.count, 1, "only the tapped card's tracker gained an alert")
@@ -389,7 +389,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     func testEditorAlertRowShowsCallToActionWhenNoAlertIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
         clearEverySeededThreshold()
-        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let item = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         let editor = PriceTrackingViewController(itemID: item.id)
@@ -405,7 +405,7 @@ final class PriceTrackingScreenTests: XCTestCase {
         setAlert.sendActions(for: .touchUpInside)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
-        let tracker = ReadingListStore.shared.item(withID: item.id)?.priceTracker
+        let tracker = SavesStore.shared.item(withID: item.id)?.priceTracker
         XCTAssertEqual(tracker?.hasAlertThreshold, true)
         XCTAssertTrue(setAlert.isHidden, "the control leaves the unset state once committed")
         _ = window
@@ -415,7 +415,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// is exactly what it was.
     func testEditorAlertRowHasNoCallToActionWhenAlertIsSet() {
         UITestSupport.seedSharedStore(.priceTracking)
-        guard let item = ReadingListStore.shared.items().first(where: {
+        guard let item = SavesStore.shared.items().first(where: {
             $0.priceTracker?.hasAlertThreshold == true
         }) else {
             XCTFail("no price tracker with an alert seeded"); return
@@ -432,7 +432,7 @@ final class PriceTrackingScreenTests: XCTestCase {
     /// Drops every seeded tracker back to "no alert set", the state a product saved
     /// before the notification prompt was answered is created in.
     private func clearEverySeededThreshold() {
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         for item in store.items() {
             guard var tracker = item.priceTracker else { continue }
             tracker.clearAlertThreshold()

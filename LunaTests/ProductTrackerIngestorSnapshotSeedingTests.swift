@@ -17,7 +17,7 @@ final class RecordingComparisonStarter: SellerComparisonStarting {
     /// Every kick, in order.
     private(set) var kicks: [(itemID: UUID, sourceURL: URL)] = []
 
-    func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore) {
+    func startComparison(itemID: UUID, sourceURL: URL, store: SavesStore) {
         kicks.append((itemID, sourceURL))
     }
 }
@@ -26,7 +26,7 @@ final class RecordingComparisonStarter: SellerComparisonStarting {
 struct ForbiddenComparisonStarter: SellerComparisonStarting {
     let reason: String
 
-    func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore) {
+    func startComparison(itemID: UUID, sourceURL: URL, store: SavesStore) {
         XCTFail(reason)
     }
 }
@@ -78,7 +78,7 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
 
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var ingestor: ProductTrackerIngestor!
 
     override func setUp() {
@@ -86,7 +86,7 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ProductTrackerIngestorSnapshotSeedingTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = SilentIndexRegenerator()
         // This suite is about SEEDING, so the fan-out is stubbed out at the

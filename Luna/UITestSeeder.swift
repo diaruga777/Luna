@@ -9,7 +9,7 @@ import UIKit
 
 /// Launch-argument-driven, DEBUG-only seeding for UI tests and the screenshot
 /// harness. When the app is launched with `-uiTestState <name>`, this wipes the
-/// App Group reading-list store and
+/// App Group saves store and
 /// seeds it with the named `UITestState` fixture, then forces deterministic
 /// conditions: animations off, no first-run prompts. Production code paths are
 /// unchanged when the argument is absent — `isActive` is false and every method
@@ -56,7 +56,7 @@ enum UITestSeeder {
     }
 
     #if DEBUG
-    /// When seeded, the reading list uses this as "now" for date-relative sectioning
+    /// When seeded, the saves list uses this as "now" for date-relative sectioning
     /// (Reading vs Archive) instead of the wall clock — so fixed-date fixtures land in
     /// the Reading section and renders are reproducible. nil = use the real clock.
     static var sectioningNow: Date?
@@ -69,7 +69,7 @@ enum UITestSeeder {
 
     /// Seeds an arbitrary store (e.g. a test scratch store) with the state's fixture
     /// and pins the sectioning clock to the fixture base date.
-    static func seed(_ state: UITestState, into store: ReadingListStore) {
+    static func seed(_ state: UITestState, into store: SavesStore) {
         sectioningNow = UITestFixtures.baseDate
         let fixture = state.fixture
         store.seedForTesting(items: fixture.items, contents: fixture.contents)

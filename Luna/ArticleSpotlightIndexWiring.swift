@@ -9,10 +9,10 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Keeps `ArticleEntity`'s Spotlight index in sync with the reading list:
+/// Keeps `ArticleEntity`'s Spotlight index in sync with the saves list:
 /// installed once at launch by `ArticleShellWiring.appDidLaunch()`, it sweeps
-/// on every debounced `.readingListChanged` (the launch sweep waits the same
-/// debounce a burst would — `ReadingListSweepDriver`, shared with
+/// on every debounced `.savesChanged` (the launch sweep waits the same
+/// debounce a burst would — `SavesSweepDriver`, shared with
 /// `AudioScriptPipeline` and `URLRescueCoordinator`), indexing every readable
 /// article and deleting Spotlight entries for ones that are no longer
 /// readable/present.
@@ -30,7 +30,7 @@ enum ArticleSpotlightIndexWiring {
     /// is a `static let` of its own rather than a temporary. Both live for the
     /// process, matching the enum they belong to.
     private static let sweeper = SpotlightIndexSweeper()
-    private static let sweepDriver = ReadingListSweepDriver(
+    private static let sweepDriver = SavesSweepDriver(
         queueLabel: "com.hsanabria.luna.articleSpotlightIndex",
         sweeper: ArticleSpotlightIndexWiring.sweeper)
 
@@ -40,7 +40,7 @@ enum ArticleSpotlightIndexWiring {
 
     fileprivate static func runSweep() {
         guard CSSearchableIndex.isIndexingAvailable() else { return }
-        let entities = indexableEntities(from: ReadingListStore.shared.items())
+        let entities = indexableEntities(from: SavesStore.shared.items())
 
         let searchableItems: [CSSearchableItem] = entities.map { entity in
             let item = CSSearchableItem(
@@ -51,7 +51,7 @@ enum ArticleSpotlightIndexWiring {
             return item
         }
 
-        let defaults = UserDefaults(suiteName: ReadingListStore.appGroupID) ?? .standard
+        let defaults = UserDefaults(suiteName: SavesStore.appGroupID) ?? .standard
         let currentIDs = Set(entities.map { $0.id.uuidString })
         let previousIDs = Set(defaults.stringArray(forKey: lastIndexedIDsKey) ?? [])
         let removedIDs = removedIdentifiers(previousIDs: previousIDs, currentIDs: currentIDs)
@@ -67,10 +67,10 @@ enum ArticleSpotlightIndexWiring {
 
     // MARK: - Pure (ArticleSpotlightIndexWiringTests)
 
-    /// Which reading-list items this sweep indexes, in Spotlight-entity form:
+    /// Which saved items this sweep indexes, in Spotlight-entity form:
     /// readable articles only — never videos, social posts, or price trackers
     /// (`ArticleReadability.isReadableArticle`).
-    static func indexableEntities(from items: [ReadingListItem]) -> [ArticleEntity] {
+    static func indexableEntities(from items: [SavedItem]) -> [ArticleEntity] {
         items.filter(ArticleReadability.isReadableArticle).map(ArticleEntity.init(item:))
     }
 
@@ -84,6 +84,6 @@ enum ArticleSpotlightIndexWiring {
 /// Carries `ArticleSpotlightIndexWiring`'s sweep to the driver — the indexer is
 /// an enum of statics, so the delegate is this one small object. It tracks no
 /// foreground state on purpose: the index is rebuilt regardless of app state.
-private final class SpotlightIndexSweeper: ReadingListSweeping {
-    func runReadingListSweep() { ArticleSpotlightIndexWiring.runSweep() }
+private final class SpotlightIndexSweeper: SavesSweeping {
+    func runSavesSweep() { ArticleSpotlightIndexWiring.runSweep() }
 }

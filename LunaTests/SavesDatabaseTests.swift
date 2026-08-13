@@ -28,8 +28,8 @@ final class SavesDatabaseTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private func makeStore() -> ReadingListStore {
-        ReadingListStore(containerURL: directory)
+    private func makeStore() -> SavesStore {
+        SavesStore(containerURL: directory)
     }
 
     private var databaseURL: URL { directory.appendingPathComponent("saves.sqlite") }
@@ -56,7 +56,7 @@ final class SavesDatabaseTests: XCTestCase {
 
     // MARK: - Two connections, one file
 
-    /// The cross-process case, with two `ReadingListStore` instances standing in
+    /// The cross-process case, with two `SavesStore` instances standing in
     /// for two processes: neither knows about the other, and each sees the other's
     /// committed writes on its next read with no notification in between.
     func testTwoStoreInstancesSeeEachOthersCommittedWrites() {
@@ -163,7 +163,7 @@ final class SavesDatabaseTests: XCTestCase {
     /// Every known enum case round-trips through its column unchanged.
     func testEveryKnownEnumCaseRoundTrips() throws {
         let store = makeStore()
-        for mode in [ReadingListItem.ReaderMode.scroll, .highlight, .rsvp, .original] {
+        for mode in [SavedItem.ReaderMode.scroll, .highlight, .rsvp, .original] {
             let item = store.add(urlString: "https://example.com/mode-\(mode.rawValue)")
             store.setReaderMode(mode, for: item.id)
             XCTAssertEqual(store.item(withID: item.id)?.lastReaderMode, mode)
@@ -331,9 +331,9 @@ final class SavesDatabaseTests: XCTestCase {
 
         let placements = store.insertImported(
             [
-                ReadingListStore.ImportedLink(urlString: "https://example.com/a", isArchived: false),
-                ReadingListStore.ImportedLink(urlString: "https://example.com/b", isArchived: true),
-                ReadingListStore.ImportedLink(urlString: "https://example.com/1", isArchived: false),
+                SavesStore.ImportedLink(urlString: "https://example.com/a", isArchived: false),
+                SavesStore.ImportedLink(urlString: "https://example.com/b", isArchived: true),
+                SavesStore.ImportedLink(urlString: "https://example.com/1", isArchived: false),
             ],
             startingAt: Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertEqual(placements.map(\.wasInserted), [true, true, false])
@@ -352,7 +352,7 @@ final class SavesDatabaseTests: XCTestCase {
     func testAFewHundredSavesReadBackWhole() {
         let store = makeStore()
         let links = (0..<300).map {
-            ReadingListStore.ImportedLink(urlString: "https://example.com/bulk-\($0)", isArchived: false)
+            SavesStore.ImportedLink(urlString: "https://example.com/bulk-\($0)", isArchived: false)
         }
         store.insertImported(links, startingAt: Date(timeIntervalSince1970: 1_700_000_000))
 

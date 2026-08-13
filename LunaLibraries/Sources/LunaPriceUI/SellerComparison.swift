@@ -63,7 +63,7 @@ public enum SellerComparison {
     /// for a run that will never happen.
     @discardableResult
     public static func begin(
-        itemID: UUID, sourceURL: URL, store: ReadingListStore, now: Date = Date()
+        itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date()
     ) -> Bool {
         guard SellerComparisonRunner.installed != nil else { return false }
         guard var tracker = store.item(withID: itemID)?.priceTracker else { return false }
@@ -75,7 +75,7 @@ public enum SellerComparison {
     /// Starts the run in the background: the save is finished, the card is
     /// already on screen, and the sellers land in the list behind it.
     public static func beginAndRunInBackground(
-        itemID: UUID, sourceURL: URL, store: ReadingListStore, now: Date = Date()
+        itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date()
     ) {
         guard begin(itemID: itemID, sourceURL: sourceURL, store: store, now: now) else { return }
         Task.detached(priority: .utility) {
@@ -94,7 +94,7 @@ public enum SellerComparison {
     /// retailers. `SellerComparisonTasks` is that rendezvous.
     @discardableResult
     public static func complete(
-        itemID: UUID, store: ReadingListStore, now: Date = Date()
+        itemID: UUID, store: SavesStore, now: Date = Date()
     ) async -> Int {
         await SellerComparisonTasks.shared.run(itemID: itemID) {
             await runPending(itemID: itemID, store: store, now: now)
@@ -106,7 +106,7 @@ public enum SellerComparison {
     /// runs it finished.
     @discardableResult
     public static func completePending(
-        store: ReadingListStore, now: Date = Date()
+        store: SavesStore, now: Date = Date()
     ) async -> Int {
         guard SellerComparisonRunner.installed != nil else { return 0 }
         let pending = store.items().compactMap { item -> UUID? in
@@ -126,7 +126,7 @@ public enum SellerComparison {
     /// The run itself. Re-reads the tracker between every step, because the
     /// editor is open in front of the user the whole time this is happening.
     private static func runPending(
-        itemID: UUID, store: ReadingListStore, now: Date
+        itemID: UUID, store: SavesStore, now: Date
     ) async -> Int {
         // No runner in this process means nothing RAN, so the marker stays: a
         // later launch of an app that does compose the product kind picks it up.
@@ -171,7 +171,7 @@ public enum SellerComparison {
     /// show.
     @discardableResult
     public static func attach(
-        _ result: ComparableSellerResult, itemID: UUID, store: ReadingListStore,
+        _ result: ComparableSellerResult, itemID: UUID, store: SavesStore,
         at date: Date = Date()
     ) -> Bool {
         guard var tracker = store.item(withID: itemID)?.priceTracker else { return false }

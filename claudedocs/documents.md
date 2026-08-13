@@ -2,7 +2,7 @@
 
 Documents (PDF, **EPUB**, **Word `.docx`**, RTF, **HTML**, TXT, Markdown, and
 any `public.text`) shared to Luna from the system share sheet are parsed into
-reading-list articles with **no web URL**. They can be read in both readers and
+saved articles with **no web URL**. They can be read in both readers and
 sent to Kindle, but cannot be shared to friends or via the system share sheet
 (no URL).
 
@@ -37,19 +37,19 @@ unsupported-save card (`saveDocumentDirectly`, `surface-support.md`).
    **file** is a saved page and imports as one, while an in-memory HTML payload
    is a host rendering a link it is sharing, so it stays on the text leg where
    the link inside wins.
-   `SharedReadingListAppender.appendDocument` copies the file into the App
+   `SavesStore.addImportedDocument` copies the file into the App
    Group at `Articles/<id>-source.<ext>` and appends a pending item with
    `urlString = lunadoc://<id>`, `documentType = ext`, `title = filename`.
-2. **Ingestor** (`ReadingListIngestor.ingestDocument`): on next launch/
+2. **Ingestor** (`SavesIngestor.ingestDocument`): on next launch/
    foreground, parses the source file via `DocumentParser` into
    `ArticleContent`, saves it (state → ready), and fires the Kindle
    becameReady hook (documents are Kindle-eligible).
 
 ## Model
 
-`ReadingListItem.documentType` (`decodeIfPresent`, mirrored in the appender) →
+`SavedItem.documentType` (`decodeIfPresent`, mirrored in the appender) →
 `isDocument` / `canShareToFriends` (false for docs). Identity is the synthetic
-`lunadoc://<uuid>` (`ReadingListItem.documentURLString(id:)`). `store.delete`
+`lunadoc://<uuid>` (`SavedItem.documentURLString(id:)`). `store.delete`
 removes the `-source.<ext>` file too.
 
 ## Parsing (`LunaDocuments`)
@@ -71,7 +71,7 @@ by `EbookDocumentImportTests`.
   to hrefs resolved against the OPF's OWN directory with percent-escapes undone
   and `..` collapsed, and the spine gives the reading order. `linear="no"`
   items (the copyright page a reading system reaches only from a link) are
-  skipped. The whole book becomes ONE item: that is what a reading-list save is,
+  skipped. The whole book becomes ONE item: that is what a save is,
   and it is what makes an imported book work with RSVP, read-aloud, export and
   Kindle unchanged. A chapter that names itself only in its `<title>` gets that
   as a heading, so consecutive chapters do not run together.
@@ -86,7 +86,7 @@ by `EbookDocumentImportTests`.
 Both container formats carry their own title and author (`dc:title` /
 `dc:creator`, `docProps/core.xml` for Word), which beat the shared file's name —
 a book's file name is a distribution artifact. `saveContent` copies that title
-onto the reading-list row.
+onto the save row.
 
 `MarkupBlockExtractor` is the shared markup back end (EPUB chapters + the HTML
 import). It is deliberately NOT the web article extractor: that one's job is to

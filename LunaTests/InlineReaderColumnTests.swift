@@ -25,7 +25,7 @@ final class InlineReaderColumnTests: XCTestCase {
     private static let narrowSize = CGSize(width: 402, height: 874)
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 
@@ -146,7 +146,7 @@ final class InlineReaderColumnTests: XCTestCase {
 
         seed(itemCount: 3)
         withAnimationsDisabled {
-            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+            NotificationCenter.default.post(name: .savesChanged, object: nil)
         }
 
         XCTAssertNil(controller.openInlineColumn)
@@ -196,10 +196,10 @@ final class InlineReaderColumnTests: XCTestCase {
     }
 
     private func seed(itemCount: Int) {
-        var items: [ReadingListItem] = []
+        var items: [SavedItem] = []
         var contents: [UUID: ArticleContent] = [:]
         for index in 0..<itemCount {
-            let item = ReadingListItem(
+            let item = SavedItem(
                 seed: "column-\(index)",
                 urlString: "https://example.com/column-\(index)",
                 title: "Column \(index)",
@@ -209,7 +209,7 @@ final class InlineReaderColumnTests: XCTestCase {
             items.append(item)
             contents[item.id] = UITestFixtures.sampleArticleContent(title: "Column \(index)")
         }
-        ReadingListStore.shared.seedForTesting(items: items, contents: contents)
+        SavesStore.shared.seedForTesting(items: items, contents: contents)
     }
 
     private func openColumn(

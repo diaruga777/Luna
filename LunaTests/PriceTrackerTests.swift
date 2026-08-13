@@ -469,7 +469,7 @@ final class PriceTrackerTests: XCTestCase {
         tracker.upsertStore(PriceTrackerStore(
             urlString: "https://b.example/p", lastPrice: Decimal(9), currency: "USD",
             lastRefreshed: Date(timeIntervalSince1970: 2000)))
-        XCTAssertEqual(ReadingListStore.stalestRefresh(tracker),
+        XCTAssertEqual(SavesStore.stalestRefresh(tracker),
                        Date(timeIntervalSince1970: 2000))
     }
 
@@ -477,7 +477,7 @@ final class PriceTrackerTests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let store = ReadingListStore(containerURL: dir)
+        let store = SavesStore(containerURL: dir)
 
         let fresh = store.add(urlString: "https://fresh.example/p")
         var freshTracker = makeTracker()

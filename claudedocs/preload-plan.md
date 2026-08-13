@@ -9,9 +9,12 @@ deleted when no save references them.
 
 ## Hard safety invariant
 The preload cache is **physically isolated** from real saves: its own directory
-(`Preloads/`) and index (`preloads.json`), never `readingList.json` / `Articles/`.
+(`Preloads/`) and index (`preloads.json`), never the saves database. It shares
+only the downloaded IMAGES in `Articles/`, and those are refcounted per holder in
+the database (`file_holders`), so releasing a page never takes a picture a save
+still shows.
 Preload code never deletes or mutates a user's saved item or its files. The only
-touch-point in `ReadingListStore` is a single call on item delete that asks
+touch-point in `SavesStore` is a single call on item delete that asks
 `PreloadStore` to release that root's subtree — and `PreloadStore` only ever deletes
 files under `Preloads/`. A bug in preloading can waste space or fail to preload; it
 can never corrupt or delete the user's library.
@@ -101,7 +104,7 @@ unavailable it's deferred to the next foreground resume.]
   best-effort; if the content changed materially we keep top.]
 
 ## Deletion
-`ReadingListStore.removeFiles(for:)` → `PreloadStore.releaseTree(rootID: item.id)`.
+`SavesStore.removeFiles(for:)` → `PreloadStore.releaseTree(rootID: item.id)`.
 Only `Preloads/` files are touched.
 
 ## Tests (no live network)

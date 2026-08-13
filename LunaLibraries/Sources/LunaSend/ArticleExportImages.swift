@@ -15,7 +15,7 @@ public protocol ArticleExportImagePreparing {
     /// Returns `content` with the previously-missing images' `imageFileName`s
     /// filled in. Returning `content` unchanged means nothing was fetchable.
     func preparedContent(
-        _ content: ArticleContent, for item: ReadingListItem
+        _ content: ArticleContent, for item: SavedItem
     ) async -> ArticleContent
 }
 
@@ -53,7 +53,7 @@ public enum ArticleExportImages {
     /// is nothing to do — no seam, or every image already local — so the caller
     /// can skip re-persisting identical content.
     static func prepared(
-        _ content: ArticleContent, for item: ReadingListItem, imagesDirectory: URL
+        _ content: ArticleContent, for item: SavedItem, imagesDirectory: URL
     ) async -> ArticleContent? {
         guard let preparer,
               ArticleImageFiles.hasUnresolvedImages(in: content, directory: imagesDirectory)

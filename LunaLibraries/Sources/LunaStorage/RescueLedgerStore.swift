@@ -9,7 +9,7 @@ import LunaModels
 
 /// Per-item rescue bookkeeping — how many automatic attempts an item has had,
 /// when, whether one succeeded (provenance). Kept in a SIDECAR file, never on
-/// `ReadingListItem`: the row every save has is read and rewritten by four
+/// `SavedItem`: the row every save has is read and rewritten by four
 /// independently-updated apps, and bookkeeping only the rescue layer understands
 /// has no business there. A sidecar only that layer touches keeps the hot shared
 /// model untouched (same reasoning as the preloads sidecar).

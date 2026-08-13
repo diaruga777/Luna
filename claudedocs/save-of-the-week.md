@@ -56,7 +56,7 @@ bundled public key reads as absent.
 ## Storage
 
 `WeeklySaveStore` writes `weeklySaves.json` into the App Group beside the
-reading list — the same sidecar pattern as `SaveFailureStore` (NSLock, atomic
+saves list — the same sidecar pattern as `SaveFailureStore` (NSLock, atomic
 write, injectable `containerURL` and clock). It holds a `WeeklySaveDisplay` per
 kind (the signed save plus the title, host and thumbnail resolved when the entry
 arrived) and the set of proposal record names already announced.

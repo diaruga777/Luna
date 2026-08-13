@@ -43,7 +43,7 @@ public enum ProductTrackerMerge {
     /// kick a comparison"). Returns `.newTracker` when nothing matched.
     @discardableResult
     public static func mergeIfPossible(
-        product: ProductInfo, url: URL, excludingItemID: UUID, store: ReadingListStore,
+        product: ProductInfo, url: URL, excludingItemID: UUID, store: SavesStore,
         comparisonStarter: any SellerComparisonStarting,
         snapshotStore: ProductSnapshotStore = .shared
     ) -> Outcome {

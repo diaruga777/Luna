@@ -680,7 +680,7 @@ does not change with who opened it — inside `ShareViewController.practicePrevi
 `SavedNonTextualViewController` with a `practiceVideoURL` — the same screen an
 action extension shows for a saved video, with its file supplied up front
 instead of resolved and transferred. Nothing about a rehearsal touches the
-network, the reading list, Photos or the Downloader's library.
+network, the saves list, Photos or the Downloader's library.
 
 Its one asymmetry is WHERE the clip plays. A real save's video is handed to the
 host through `onMediaFileReady` and played over the sheet; the rehearsal's plays
@@ -790,7 +790,7 @@ marker is also written. The lesson dismisses back to the same production root an
 does not replace the carousel.
 
 The Safari demonstration remains storage-free: its mock pages never enter
-`readingList.json` or any content directory. The SAVE demonstration is no longer
+the saves database or any content directory. The SAVE demonstration is no longer
 storage-free in the trivial sense — it runs the real surface — but it is
 storage-NEUTRAL: both a live weekly entry and the product fallback append a row
 only for the real presenter, mark it temporary, and delete it after each pass

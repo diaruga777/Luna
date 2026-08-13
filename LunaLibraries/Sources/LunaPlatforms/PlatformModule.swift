@@ -41,10 +41,10 @@ public protocol PlatformModule {
     var glyphSymbolName: String { get }
 
     /// Native-app deep link to open the item, or nil (→ embed/Safari).
-    func appDeepLink(for item: ReadingListItem) -> URL?
+    func appDeepLink(for item: SavedItem) -> URL?
 
     /// In-app embed for the item, or nil (→ Safari fallback).
-    func embed(for item: ReadingListItem) -> PlatformEmbed?
+    func embed(for item: SavedItem) -> PlatformEmbed?
 
     /// Optional best-effort metadata fetcher used at ingest. Default: none.
     var metadataFetcher: PlatformMetadataFetching? { get }

@@ -18,10 +18,10 @@ import UIKit
 /// opened/read state.
 public final class ReaderViewController: UIViewController, InlineReaderPresentationCoordinating {
 
-    private let item: ReadingListItem
+    private let item: SavedItem
     private let content: ArticleContent
-    private let store = ReadingListStore.shared
-    private var mode: ReadingListItem.ReaderMode
+    private let store = SavesStore.shared
+    private var mode: SavedItem.ReaderMode
     private var audioOn = false
     private var currentChild: UIViewController?
     /// Reading position carried from the outgoing child to the next on a mode
@@ -69,16 +69,16 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIView()
 
-    private static let baseModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
-    private let availableModes: [ReadingListItem.ReaderMode]
+    private static let baseModes: [SavedItem.ReaderMode] = [.scroll, .rsvp]
+    private let availableModes: [SavedItem.ReaderMode]
     /// When the requested mode was the retired standalone "highlight" (chunking)
     /// view, the FIRST RSVP open lands directly in its Phrases sub-mode (where
     /// that engine now lives). One-shot — later RSVP entries honor the user's
     /// persisted sub-mode choice.
     private var opensRSVPInPhrases: Bool
 
-    public init(item: ReadingListItem, content: ArticleContent,
-         forceMode: ReadingListItem.ReaderMode? = nil,
+    public init(item: SavedItem, content: ArticleContent,
+         forceMode: SavedItem.ReaderMode? = nil,
          shareProvider: ReaderShareProviding? = nil,
          persistsModePreference: Bool = true,
          marksOpenedOnLoad: Bool = true,
@@ -93,12 +93,12 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         self.inlineControlsHeader = inlineControlsHeader
         self.inlineHeaderSubtitle = inlineHeaderSubtitle
         self.modePreferenceDelegate = modePreferenceDelegate
-        self.availableModes = Self.baseModes + (ReadingListStore.shared.hasOriginalSource(for: item) ? [.original] : [])
+        self.availableModes = Self.baseModes + (SavesStore.shared.hasOriginalSource(for: item) ? [.original] : [])
         // First time on this article, fall back to the global last-used mode.
         let requestedMode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
         // The retired "highlight" mode is now RSVP → Phrases.
         self.opensRSVPInPhrases = (requestedMode == .highlight)
-        let resolvedMode: ReadingListItem.ReaderMode = requestedMode == .highlight ? .rsvp : requestedMode
+        let resolvedMode: SavedItem.ReaderMode = requestedMode == .highlight ? .rsvp : requestedMode
         self.mode = self.availableModes.contains(resolvedMode) ? resolvedMode : .scroll
         super.init(nibName: nil, bundle: nil)
     }
@@ -261,7 +261,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     /// hangs off the speed reader's own controls instead — see
     /// `updateFloatingShareAnchor`.
     private static func floatingShareBottomInset(
-        for mode: ReadingListItem.ReaderMode, audioOn: Bool) -> CGFloat {
+        for mode: SavedItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {
         case .scroll:
             // The in-reader read-aloud footer only exists on the LEGACY path

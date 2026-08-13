@@ -57,7 +57,7 @@ public struct WeeklySaveDisplay: Codable, Equatable, Sendable {
 
 /// The single source of truth for "is there a save of the week, and what does
 /// it say". Sidecar JSON in the App Group (`weeklySaves.json`) beside the
-/// reading list, same cheap-lock + atomic-write shape as `SaveFailureStore`.
+/// saves list, same cheap-lock + atomic-write shape as `SaveFailureStore`.
 ///
 /// Expiry is evaluated on READ against the injected clock, so no sweep, no
 /// timer, and no migration: a 31-day-old entry simply stops being returned.

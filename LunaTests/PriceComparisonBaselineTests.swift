@@ -119,17 +119,17 @@ final class PriceComparisonBaselineTests: XCTestCase {
     // MARK: - No notification on the first refresh after seeding
 
     private final class FakeStore: PriceTrackerPersisting {
-        var items: [ReadingListItem]
+        var items: [SavedItem]
         private(set) var bumped: [UUID] = []
-        init(_ items: [ReadingListItem]) { self.items = items }
-        func priceTrackersStalestFirst() -> [ReadingListItem] { items }
-        func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        init(_ items: [SavedItem]) { self.items = items }
+        func priceTrackersStalestFirst() -> [SavedItem] { items }
+        func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem? {
             guard let index = items.firstIndex(where: { $0.id == itemID }) else { return nil }
             items[index].priceTracker = tracker
             return items[index]
         }
         func bump(_ itemID: UUID) { bumped.append(itemID) }
-        func item(withID itemID: UUID) -> ReadingListItem? { items.first { $0.id == itemID } }
+        func item(withID itemID: UUID) -> SavedItem? { items.first { $0.id == itemID } }
     }
 
     /// A price-drop notification comes only from `PriceRefreshOutcome
@@ -142,7 +142,7 @@ final class PriceComparisonBaselineTests: XCTestCase {
         var subject = tracker([store(sourceURL, "100"), store(cheapURL, "50")], threshold: 0.10)
         subject.seedComparisonBaseline()
 
-        var item = ReadingListItem(urlString: sourceURL)
+        var item = SavedItem(urlString: sourceURL)
         item.priceTracker = subject
         let fake = FakeStore([item])
         let fetcher = MockPriceFetcher()

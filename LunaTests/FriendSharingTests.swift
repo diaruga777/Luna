@@ -138,7 +138,7 @@ final class FriendSharingTests: XCTestCase {
     // MARK: - ReaderCardSenderTests
 
     func testIncomingEmailUsesCurrentContactName() {
-        var item = ReadingListItem(urlString: "https://example.com/article")
+        var item = SavedItem(urlString: "https://example.com/article")
         item.captureSource = .email
         item.senderName = "Original Name"
         item.incomingSenderEmail = "sender@example.com"
@@ -151,7 +151,7 @@ final class FriendSharingTests: XCTestCase {
     }
 
     func testIncomingEmailFallsBackToCapturedName() {
-        var item = ReadingListItem(urlString: "lunamail://message")
+        var item = SavedItem(urlString: "lunamail://message")
         item.captureSource = .email
         item.senderName = "Newsletter Name"
         item.incomingSenderEmail = "news@example.com"
@@ -162,7 +162,7 @@ final class FriendSharingTests: XCTestCase {
     }
 
     func testNonEmailItemHasNoSenderLabel() {
-        var item = ReadingListItem(urlString: "https://example.com/article")
+        var item = SavedItem(urlString: "https://example.com/article")
         item.captureSource = .shareSheet
         item.senderName = "Publisher"
 

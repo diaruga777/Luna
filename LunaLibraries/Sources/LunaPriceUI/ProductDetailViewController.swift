@@ -95,7 +95,7 @@ public protocol AddSellerHandoffHandling {
 public final class ProductDetailViewController: UIViewController {
 
     private let itemID: UUID
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
     private let priceFetcher: PriceFetching
     /// Non-nil only in an extension. The add button hands the item back to the
     /// containing app instead of trying to keep a web session alive in an appex.
@@ -205,7 +205,7 @@ public final class ProductDetailViewController: UIViewController {
         // background task, straight into the store — so this has to hear about a
         // change it did not make.
         NotificationCenter.default.addObserver(
-            self, selector: #selector(readingListChanged), name: .readingListChanged, object: nil)
+            self, selector: #selector(savesChanged), name: .savesChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(addSellerDeepLinkReceived(_:)),
             name: .priceTrackerAddSellerRequested, object: nil)
@@ -457,7 +457,7 @@ public final class ProductDetailViewController: UIViewController {
 
     // MARK: - Content
 
-    @objc private func readingListChanged() {
+    @objc private func savesChanged() {
         if Thread.isMainThread { reload() }
         else { DispatchQueue.main.async { [weak self] in self?.reload() } }
     }

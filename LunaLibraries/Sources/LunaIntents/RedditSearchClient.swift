@@ -26,7 +26,7 @@ public struct RedditSearchClient {
         guard let url = components.url else { throw NoResultError() }
         try LiveNetworkPolicy.check(url, context: "RedditSearchClient")
         var request = URLRequest(url: url, timeoutInterval: 12)
-        request.setValue("Luna/1.0 (reading list)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Luna/1.0 (saves list)", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),

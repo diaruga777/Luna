@@ -21,14 +21,14 @@ final class ProductTrackerMergeTests: XCTestCase {
 
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ProductTrackerMergeTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
     }
 
     override func tearDown() {

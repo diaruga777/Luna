@@ -61,7 +61,7 @@ final class AudioMiniPlayerTests: XCTestCase {
     func testStackIndexFindsTopmostContainingReader() {
         let playing = UUID()
         let stack: [ReaderItemContaining?] = [
-            nil,                                    // reading list
+            nil,                                    // saves list
             FakeReader(itemIDs: [playing]),         // older reader for the same item
             FakeReader(itemIDs: [UUID()]),          // unrelated reader
             FakeReader(itemIDs: [playing, UUID()]), // topmost match wins

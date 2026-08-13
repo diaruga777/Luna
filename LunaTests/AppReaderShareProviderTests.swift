@@ -22,15 +22,15 @@ final class AppReaderShareProviderTests: XCTestCase {
     }
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 
     private func seed(
-        urlString: String, state: ReadingListItem.State,
+        urlString: String, state: SavedItem.State,
         contentPlatform: ContentPlatform? = nil, withContent: Bool = true
     ) {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "share-provider",
             urlString: urlString,
             title: "Shareable",
@@ -40,7 +40,7 @@ final class AppReaderShareProviderTests: XCTestCase {
         let contents = withContent
             ? [item.id: UITestFixtures.sampleArticleContent(title: "Shareable")]
             : [:]
-        ReadingListStore.shared.seedForTesting(items: [item], contents: contents)
+        SavesStore.shared.seedForTesting(items: [item], contents: contents)
     }
 
     @MainActor
@@ -68,7 +68,7 @@ final class AppReaderShareProviderTests: XCTestCase {
     /// format would fail — the option must not be offered at all.
     @MainActor
     func testUnreadyArticleOffersNoExport() {
-        for state in [ReadingListItem.State.pending, .failed, .needsCaptcha] {
+        for state in [SavedItem.State.pending, .failed, .needsCaptcha] {
             seed(urlString: "https://example.com/\(state.rawValue)",
                  state: state, withContent: false)
             let titles = menuTitles(for: "https://example.com/\(state.rawValue)")

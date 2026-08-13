@@ -13,7 +13,7 @@ import LunaSocial
 import LunaStorage
 import XCTest
 @testable import Luna
-@testable import LunaReadingList
+@testable import LunaSaves
 
 final class MailTests: XCTestCase {
 

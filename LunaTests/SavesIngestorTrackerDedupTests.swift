@@ -1,5 +1,5 @@
 //
-//  ReadingListIngestorTrackerDedupTests.swift
+//  SavesIngestorTrackerDedupTests.swift
 //  LunaTests
 //
 
@@ -7,7 +7,7 @@ import LunaIngest
 import LunaModels
 import LunaStorage
 import XCTest
-@testable import LunaReadingList
+@testable import LunaSaves
 
 /// The re-save dedup: a URL that is already a store inside an existing price
 /// tracker merges into it instead of creating a second row. Fix 8 adds a
@@ -15,26 +15,26 @@ import XCTest
 /// fan-out and still holds fewer than two stores kicks a comparison, so a
 /// repeat save of (say) an Amazon product actually attempts seller discovery
 /// instead of showing nothing forever.
-final class ReadingListIngestorTrackerDedupTests: XCTestCase {
+final class SavesIngestorTrackerDedupTests: XCTestCase {
 
     private var tempDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var kicked: [(itemID: UUID, url: URL)] = []
 
     override func setUp() {
         super.setUp()
         tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReadingListIngestorTrackerDedupTests-\(UUID().uuidString)")
+            .appendingPathComponent("SavesIngestorTrackerDedupTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         kicked = []
-        ReadingListIngestor.priceTrackerComparisonKicker = RecordingComparisonKicker { [weak self] itemID, url in
+        SavesIngestor.priceTrackerComparisonKicker = RecordingComparisonKicker { [weak self] itemID, url in
             self?.kicked.append((itemID, url))
         }
     }
 
     override func tearDown() {
-        ReadingListIngestor.priceTrackerComparisonKicker = nil
+        SavesIngestor.priceTrackerComparisonKicker = nil
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
@@ -47,13 +47,13 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
             self.record = record
         }
 
-        func kickComparison(itemID: UUID, url: URL, store: ReadingListStore) {
+        func kickComparison(itemID: UUID, url: URL, store: SavesStore) {
             record(itemID, url)
         }
     }
 
-    private func makeIngestor() -> ReadingListIngestor {
-        ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
+    private func makeIngestor() -> SavesIngestor {
+        SavesIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
     }
 
     private func articleResult(url: URL) -> IngestResult {
@@ -66,14 +66,14 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
 
     /// A tracker item and a FRESH pending placeholder for a re-save of the
     /// SAME URL — two distinct rows, which is what a real re-save produces
-    /// (`ReadingListStore.add(urlString:)` is idempotent on an existing URL,
+    /// (`SavesStore.add(urlString:)` is idempotent on an existing URL,
     /// so it cannot be used twice here to simulate this).
     @discardableResult
-    private func seedTrackerAndResave(url: URL, tracker: PriceTracker) -> (trackerItemID: UUID, resaveItem: ReadingListItem) {
-        var trackerItem = ReadingListItem(urlString: url.absoluteString)
+    private func seedTrackerAndResave(url: URL, tracker: PriceTracker) -> (trackerItemID: UUID, resaveItem: SavedItem) {
+        var trackerItem = SavedItem(urlString: url.absoluteString)
         trackerItem.priceTracker = tracker
         trackerItem.state = .ready
-        let resaveItem = ReadingListItem(urlString: url.absoluteString)
+        let resaveItem = SavedItem(urlString: url.absoluteString)
         store.seedForTesting(items: [trackerItem, resaveItem], contents: [:])
         return (trackerItem.id, resaveItem)
     }
@@ -151,7 +151,7 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
     /// nil (no product kind composed in this process) means nothing runs —
     /// the optional call must not crash and must simply do nothing.
     func testNoInstalledKickerIsANoOp() async {
-        ReadingListIngestor.priceTrackerComparisonKicker = nil
+        SavesIngestor.priceTrackerComparisonKicker = nil
         let trackedURL = URL(string: "https://amazon.example/dp/B0ACME1")!
         let (_, resave) = seedTrackerAndResave(
             url: trackedURL,

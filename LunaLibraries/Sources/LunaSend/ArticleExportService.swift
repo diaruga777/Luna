@@ -27,9 +27,9 @@ public struct ArticleExportService {
         case noContent
     }
 
-    private let store: ReadingListStore
+    private let store: SavesStore
 
-    public init(store: ReadingListStore = .shared) {
+    public init(store: SavesStore = .shared) {
         self.store = store
     }
 
@@ -37,7 +37,7 @@ public struct ArticleExportService {
     /// `ExportError.noContent` when the item has no extracted content — the one
     /// gate that keeps still-locked and media items out of every format.
     /// Heavy (zips images, or lays out every PDF page) — call off the main thread.
-    public func write(_ format: ArticleExportFormat, for item: ReadingListItem) throws -> URL {
+    public func write(_ format: ArticleExportFormat, for item: SavedItem) throws -> URL {
         guard let content = store.content(for: item) else { throw ExportError.noContent }
         logImageResolution(for: content, format: format)
         let fileName = ArticleSendCoordinator.fileName(
@@ -116,7 +116,7 @@ public struct ArticleExportService {
     /// opened or an export taken seconds after the save, is nothing.
     @discardableResult
     func writePreparingImages(
-        _ format: ArticleExportFormat, for item: ReadingListItem
+        _ format: ArticleExportFormat, for item: SavedItem
     ) async throws -> URL {
         await prepareImages(for: item)
         return try write(format, for: item)
@@ -127,7 +127,7 @@ public struct ArticleExportService {
     /// action alive for that in-flight save instead of silently returning no
     /// document. Ordinary exports use `writePreparingImages` and fail promptly.
     public func writePreparingImagesWhenAvailable(
-        _ format: ArticleExportFormat, for item: ReadingListItem,
+        _ format: ArticleExportFormat, for item: SavedItem,
         timeout: TimeInterval = 12
     ) async throws -> URL {
         let deadline = Date().addingTimeInterval(max(0, timeout))
@@ -149,7 +149,7 @@ public struct ArticleExportService {
     /// finds the files already recorded. Persisting through `saveContent` is also
     /// what makes the save OWN the new files, which is what keeps them from being
     /// collected as orphans.
-    public func prepareImages(for item: ReadingListItem) async {
+    public func prepareImages(for item: SavedItem) async {
         guard let content = store.content(for: item),
               let prepared = await ArticleExportImages.prepared(
                 content, for: item, imagesDirectory: store.articlesDirectory)
@@ -165,7 +165,7 @@ public struct ArticleExportService {
     /// with the pictures missing is the wrong file, and the wait is nil whenever
     /// they're already local (the common case).
     public func presentShareSheet(
-        _ format: ArticleExportFormat = .epub, for item: ReadingListItem,
+        _ format: ArticleExportFormat = .epub, for item: SavedItem,
         from presenter: UIViewController, sourceView: UIView
     ) {
         Task { @MainActor in
@@ -176,7 +176,7 @@ public struct ArticleExportService {
     }
 
     private func buildAndPresent(
-        _ format: ArticleExportFormat, for item: ReadingListItem,
+        _ format: ArticleExportFormat, for item: SavedItem,
         from presenter: UIViewController, sourceView: UIView
     ) {
         DispatchQueue.global(qos: .userInitiated).async { [weak presenter] in

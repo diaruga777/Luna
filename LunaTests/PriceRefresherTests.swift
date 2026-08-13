@@ -16,21 +16,21 @@ final class PriceRefresherTests: XCTestCase {
 
     /// In-memory persistence that records the order trackers were updated in.
     private final class FakeStore: PriceTrackerPersisting {
-        var items: [ReadingListItem]
+        var items: [SavedItem]
         private(set) var updateOrder: [UUID] = []
         /// Rows whose sort date was stamped, in order — an alert firing must
         /// resurface its product, and only on the transition.
         private(set) var bumped: [UUID] = []
 
-        init(_ items: [ReadingListItem]) { self.items = items }
+        init(_ items: [SavedItem]) { self.items = items }
 
-        func priceTrackersStalestFirst() -> [ReadingListItem] {
+        func priceTrackersStalestFirst() -> [SavedItem] {
             items.filter { $0.priceTracker?.isArchived == false }
-                .sorted { ReadingListStore.stalestRefresh($0.priceTracker)
-                    < ReadingListStore.stalestRefresh($1.priceTracker) }
+                .sorted { SavesStore.stalestRefresh($0.priceTracker)
+                    < SavesStore.stalestRefresh($1.priceTracker) }
         }
 
-        func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem? {
             guard let index = items.firstIndex(where: { $0.id == itemID }) else { return nil }
             items[index].priceTracker = tracker
             updateOrder.append(itemID)
@@ -43,7 +43,7 @@ final class PriceRefresherTests: XCTestCase {
             items[index].bumpDate = Date()
         }
 
-        func item(withID itemID: UUID) -> ReadingListItem? {
+        func item(withID itemID: UUID) -> SavedItem? {
             items.first { $0.id == itemID }
         }
     }
@@ -53,8 +53,8 @@ final class PriceRefresherTests: XCTestCase {
     }
 
     private func trackerItem(url: String, initialPrice: String, threshold: Double,
-                             refreshedAt: Date) -> ReadingListItem {
-        var item = ReadingListItem(urlString: url)
+                             refreshedAt: Date) -> SavedItem {
+        var item = SavedItem(urlString: url)
         var tracker = PriceTracker(
             productName: "Widget", firstStoreURL: url,
             price: Decimal(string: initialPrice)!, currency: "USD",

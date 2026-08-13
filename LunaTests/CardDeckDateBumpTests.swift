@@ -19,7 +19,7 @@ import XCTest
 @MainActor
 final class CardDeckDateBumpTests: XCTestCase {
 
-    private var store: ReadingListStore { .shared }
+    private var store: SavesStore { .shared }
 
     /// The registry is PROCESS-wide and installed once at launch by
     /// `KindWiring+Luna`. Swapping an entry for the duration of a test is fine;
@@ -92,15 +92,15 @@ final class CardDeckDateBumpTests: XCTestCase {
         XCTAssertEqual(
             SavedMediaStore.shared.items().first(where: { $0.id == media.id })?.isArchived,
             false,
-            "the media row's own flag must clear with the reading-list row's")
+            "the media row's own flag must clear with the save row's")
     }
 
     // MARK: - Helpers
 
     /// Backdated well past any plausible test runtime, so "bumped" is
     /// unambiguous rather than a sub-second comparison.
-    private func seed(urlString: String) -> ReadingListItem {
-        var item = ReadingListItem(urlString: urlString)
+    private func seed(urlString: String) -> SavedItem {
+        var item = SavedItem(urlString: urlString)
         item.dateAdded = Date().addingTimeInterval(-40 * 86_400)
         item.state = .ready
         store.seedForTesting(items: [item], contents: [:])
@@ -108,7 +108,7 @@ final class CardDeckDateBumpTests: XCTestCase {
     }
 
     private func assertBumped(
-        _ item: ReadingListItem, _ message: String,
+        _ item: SavedItem, _ message: String,
         file: StaticString = #filePath, line: UInt = #line
     ) {
         guard let fresh = store.item(withID: item.id) else {

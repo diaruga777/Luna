@@ -1,17 +1,17 @@
 //
-//  ReadingListItem.swift
+//  SavedItem.swift
 //  Luna
 //
 
 import Foundation
 
-/// One saved weblink in the reading list.
+/// One saved weblink in the saves list.
 ///
 /// `Equatable` (synthesized — every stored field is a value type, and the enum
 /// fields below get automatic Equatable as enums with no associated values) lets
-/// `ReadingListStore` detect a mutation that changed nothing and skip both the
-/// row write and the `.readingListChanged` notification.
-public struct ReadingListItem: Identifiable, Equatable {
+/// `SavesStore` detect a mutation that changed nothing and skip both the
+/// row write and the `.savesChanged` notification.
+public struct SavedItem: Identifiable, Equatable {
     /// Lifecycle of the item's downloaded content.
     public enum State: String, Codable {
         /// Saved but content not yet downloaded/extracted.
@@ -272,7 +272,7 @@ public struct ReadingListItem: Identifiable, Equatable {
         captureSource: CaptureSource? = nil,
         priceTracker: PriceTracker? = nil
     ) {
-        self.id = ReadingListItem.deterministicUUID(from: seed)
+        self.id = SavedItem.deterministicUUID(from: seed)
         self.urlString = urlString
         self.title = title
         self.dateAdded = dateAdded

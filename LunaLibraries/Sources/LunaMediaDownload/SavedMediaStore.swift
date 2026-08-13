@@ -233,7 +233,7 @@ public final class SavedMediaStore {
     /// In-memory cache of the decoded manifest, valid only while `cacheToken` matches the
     /// file's current (modification date, size). Filled by `loadUnlocked()` on a cache miss
     /// and refreshed by `saveUnlocked()` from the array it just wrote — guarded entirely by
-    /// `lock`, mirroring `ReadingListStore`'s stat-token cache.
+    /// `lock`, mirroring `SavesStore`'s stat-token cache.
     private var cachedItems: [SavedMediaItem]?
     private var cacheToken: FileStatToken?
 
@@ -363,7 +363,7 @@ public final class SavedMediaStore {
     /// NEW one, so the caller's start gate
     /// (`LiveMediaDownloadStartPolicy.downloaderShouldStart`) sees work to do
     /// instead of rejecting the save as `.alreadyDownloaded`. Metadata is filled
-    /// in without replacing the stable identity supplied by the reading-list item.
+    /// in without replacing the stable identity supplied by the saved item.
     @discardableResult
     public func ensureUndownloaded(
         id: UUID,
@@ -566,7 +566,7 @@ public final class SavedMediaStore {
     }
 
     #if DEBUG
-    /// Deterministic seeding, the twin of `ReadingListStore.seedForTesting`.
+    /// Deterministic seeding, the twin of `SavesStore.seedForTesting`.
     /// Replaces the whole manifest with `items`, so a staged (or test) run gets
     /// a media library it fully controls rather than whatever the device had.
     ///
@@ -639,7 +639,7 @@ public final class SavedMediaStore {
     /// to `.undownloaded` and keeps its poster — the archive tray's own rule
     /// (`markArchivedPhotosAssetMissing`). Both are exactly what the card deck's
     /// foreground reconcile does, so the two paths can't drift; the deck's
-    /// reading-list deletion is deliberately NOT mirrored, because the save being
+    /// save deletion is deliberately NOT mirrored, because the save being
     /// processed still owns that row. Returns whether a stale save was discarded.
     ///
     /// A no-op unless the probe CONFIRMS the asset is gone: without full read
@@ -733,8 +733,8 @@ public final class SavedMediaStore {
 
     /// Applies the age-based retention policy. Saved media is app-owned: it is the
     /// Downloader grid's primary content, deleted explicitly from the grid (`delete`)
-    /// or aged out here — NOT tied to reading-list membership. (An earlier version
-    /// also purged any item whose `sourceURLString` wasn't in the reading list; that
+    /// or aged out here — NOT tied to saves membership. (An earlier version
+    /// also purged any item whose `sourceURLString` wasn't in the saves list; that
     /// silently deleted freshly-saved media whenever the app's ingest unwrapped/
     /// normalized a URL, since the stored copy keeps the pre-unwrap source URL.)
     public func purgeExpired(now: Date = Date()) {

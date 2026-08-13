@@ -345,7 +345,7 @@ final class URLRescueStorageTests: XCTestCase {
     }
 
     /// The segmentation is only worth anything if it recognizes the shape the
-    /// REAL writers use. Both `ReadingListIngestor` and `ShareSurfaceDriver` open
+    /// REAL writers use. Both `SavesIngestor` and `ShareSurfaceDriver` open
     /// a trace with `ingest: begin <url> source=…`, and this parser is maintained
     /// independently of them — so pin the two together here rather than
     /// discovering the mismatch as silently-unsegmented evidence on a device.

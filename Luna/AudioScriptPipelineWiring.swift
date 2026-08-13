@@ -11,7 +11,7 @@ import Foundation
 /// `AudioPlaybackWiring` (whose `AppAudioPlaybackDataSource` already routes
 /// `AudioPlaybackCenter.shared`'s script lookups through
 /// `AudioScriptPipeline.shared`) — this call starts the pipeline's own
-/// `.readingListChanged` observers/launch sweep. The Share/Action extensions
+/// `.savesChanged` observers/launch sweep. The Share/Action extensions
 /// never call `install()`, so they never observe changes or run the builder
 /// themselves.
 enum AudioScriptPipelineWiring {

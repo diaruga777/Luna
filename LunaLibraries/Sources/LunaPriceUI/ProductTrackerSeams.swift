@@ -14,7 +14,7 @@ import LunaStorage
 /// is about seeding or merging must be able to hold it still without racing a
 /// real run (`claudedocs/price-comparison.md`).
 public protocol SellerComparisonStarting {
-    func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore)
+    func startComparison(itemID: UUID, sourceURL: URL, store: SavesStore)
 }
 
 /// Production: stamps the pending marker and runs the fan-out in the background
@@ -23,7 +23,7 @@ public protocol SellerComparisonStarting {
 public struct BackgroundSellerComparisonStarter: SellerComparisonStarting {
     public init() {}
 
-    public func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore) {
+    public func startComparison(itemID: UUID, sourceURL: URL, store: SavesStore) {
         SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: sourceURL, store: store)
     }
 }

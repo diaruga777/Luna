@@ -19,5 +19,5 @@ public protocol OutcomePresenter {
     /// Present `outcome` for the already-saved `item`. Must handle ALL cases. Never
     /// leaves a spinner: a `.failed`/timeout outcome shows an error or marks the item
     /// failed, it does not hang.
-    func present(_ outcome: Outcome, for item: ReadingListItem) async
+    func present(_ outcome: Outcome, for item: SavedItem) async
 }

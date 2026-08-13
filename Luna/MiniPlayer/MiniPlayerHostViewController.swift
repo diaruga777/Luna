@@ -201,7 +201,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
         // During the autoplay announcement, show the UPCOMING article.
         if case .announcing(let nextItemID) = center.state {
-            let next = ReadingListStore.shared.item(withID: nextItemID)
+            let next = SavesStore.shared.item(withID: nextItemID)
             miniPlayer.apply(.init(
                 title: next?.title ?? L10n.string("Reader_audio_nextArticleFallbackTitle"),
                 isUpNext: true,
@@ -271,7 +271,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
     /// Opens the playing (or announced) article: pops to an already-open
     /// reader whose trail contains it, else pushes a fresh reader the same way
-    /// the reading list opens one. Resolution logic is pure —
+    /// the saves list opens one. Resolution logic is pure —
     /// `MiniPlayerNavigation` — and unit-tested.
     private func navigateToPlayingArticle() {
         let center = AudioPlaybackCenter.shared
@@ -296,7 +296,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
         // Not on the stack: push a fresh reader via the same path the reading
         // list uses (readable articles only — the queue guarantees content).
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         guard let item = store.item(withID: itemID), item.state == .ready,
               let content = store.content(for: item) else { return }
         let reader = ReaderHostFactory.make(

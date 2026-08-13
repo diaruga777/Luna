@@ -34,13 +34,13 @@ App-Group keychain access group.
   `postPriceDrop`. Legacy pending-request notification routing remains so
   notifications delivered by older builds still open the preserved queue.
   `clearShareNotifications()` removes delivered "share received" notifications
-  once the user reaches the reading list.
+  once the user reaches the saves list.
 - **`LunaMailAccount/LunaShareMarker.swift`** — the machine-readable marker
   stamped on every share email: schema version, url, title, advisory `kind`,
   sender display name. Carried two ways for robustness — an `X-Luna-Share`
   header (base64 JSON) and a hidden `<div>` block in the HTML body as a
   fallback if a provider strips custom headers.
-- **`LunaReadingList/EmailShareCenter.swift`** — `EmailShareCenter.shared.send(item:to:)`
+- **`LunaSaves/EmailShareCenter.swift`** — `EmailShareCenter.shared.send(item:to:)`
   / `.share(urlString:title:to:)`: validates/normalizes recipient addresses,
   renders the item as a full article (`EmailContentRenderer.renderArticle`,
   inline images) or a compact card (`renderCard` — hero image from a price
@@ -48,7 +48,7 @@ App-Group keychain access group.
   MIME with the `X-Luna-Share` header via `EmailMIMEBuilder`, and sends through
   the connected account's `EmailTransport` (`MailTransportFactory.make`).
   Records every recipient as a contact on send.
-- **`LunaReadingList/IncomingMailImporter.swift`** (see `incoming-mail.md` for
+- **`LunaSaves/IncomingMailImporter.swift`** (see `incoming-mail.md` for
   the IMAP/mail-fetch mechanics) — `handleLunaShare` parses the marker off an
   incoming message, ignores blocked senders, automatically adds new recognized
   senders to Contacts (except the connected account's own address), and imports
@@ -85,7 +85,7 @@ Save of the Week key (Diagnostics), connecting a sending account (both the
 app-password and Outlook-OAuth paths), and committing a price alert threshold
 (either price editor); it's idempotent, so those call sites need no state of
 their own. Tapping a "share received" notification just opens the app;
-these are cleared once the user reaches the reading list
+these are cleared once the user reaches the saves list
 (`CardCarouselHostViewController.viewDidAppear` → `NotificationManager.clearShareNotifications()`, so every app's deck root clears them).
 Tapping a "pending request" notification should route to
 `PendingRequestsViewController` (see `AppDelegate`/`SceneDelegate` routing).
@@ -100,7 +100,7 @@ Tapping a "pending request" notification should route to
   main-app only); they queue through the normal share-sheet/URL ingest path.
 - New email imports use capture source `.email`; `.friendShare` remains
   decodable for items written by older builds. Incoming sender fields drive
-  send-by-source rules (see `send-to-kindle.md`) and the reading list's
+  send-by-source rules (see `send-to-kindle.md`) and the saves list's
   "From <name>" attribution.
 
 ## Tests

@@ -22,7 +22,7 @@ public enum NotificationManager {
     /// opens the Pending Requests screen.
     public static let typePendingRequest = "pendingRequest"
     /// An accepted friend's share was imported — tapping it just opens the app;
-    /// these are cleared when the user reaches the reading list.
+    /// these are cleared when the user reaches the saves list.
     private static let typeShareReceived = "shareReceived"
     private static let receivedIdentifierPrefix = "shareReceived-"
 
@@ -83,7 +83,7 @@ public enum NotificationManager {
 
     /// Posts "X shared an article" for an accepted friend's import. A follow-up
     /// notification: tapping it opens the app and it auto-dismisses when the user
-    /// reaches the reading list.
+    /// reaches the saves list.
     public static func postShareReceived(fromName name: String, title: String?) {
         let content = UNMutableNotificationContent()
         content.title = L10n.string("Sharing_notification_shareReceived_headline", name)
@@ -94,7 +94,7 @@ public enum NotificationManager {
     }
 
     /// Removes delivered "share received" notifications (called when the user
-    /// reaches the reading list).
+    /// reaches the saves list).
     public static func clearShareNotifications() {
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { delivered in

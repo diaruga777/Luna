@@ -49,7 +49,7 @@ enum SafariSuggestionSettings {
     static let cookieAutoDeclineKey = "safariCookieAutoDeclineEnabled"
 
     private static var defaults: UserDefaults {
-        UserDefaults(suiteName: ReadingListStore.appGroupID) ?? .standard
+        UserDefaults(suiteName: SavesStore.appGroupID) ?? .standard
     }
 
     static var mode: SafariSuggestionMode {

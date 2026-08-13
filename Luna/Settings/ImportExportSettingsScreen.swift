@@ -5,8 +5,8 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -26,11 +26,11 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
         case importFile
     }
 
-    private let store: ReadingListStore
+    private let store: SavesStore
 
     static func screenTitle() -> String { L10n.string("Settings_importExport_title") }
 
-    init(store: ReadingListStore = .shared) {
+    init(store: SavesStore = .shared) {
         self.store = store
         super.init(style: .insetGrouped)
     }
@@ -205,9 +205,9 @@ enum LinkListExport {
     /// Scoped by `LunaApp.includes` on purpose: the store is shared by all four
     /// apps, and Luna Reader exporting the Downloader's videos would hand back a
     /// file whose own re-import it would then reject.
-    static func document(for items: [ReadingListItem]) -> LinkListDocument {
+    static func document(for items: [SavedItem]) -> LinkListDocument {
         let mine = items.filter { LunaApp.current.includes($0) }
-        let exportable = mine.filter { ReadingListItem.isWebPageURL($0.urlString) }
+        let exportable = mine.filter { SavedItem.isWebPageURL($0.urlString) }
         return LinkListDocument(
             links: exportable.filter { !$0.isArchived }.map(\.urlString),
             archived: exportable.filter(\.isArchived).map(\.urlString),

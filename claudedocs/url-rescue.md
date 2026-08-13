@@ -79,7 +79,7 @@ budgets, FoundationModels). Same tier as `LunaPriceUI`.
 - **`RescueTraceStoring`** — the engine's seam onto `SaveDiagnosticsStore`
   (read evidence, append the rescue's own decisions). A protocol so both the
   populated and the nil case are testable; `NoRescueTraceStore` is the default
-  for callers with no reading-list item.
+  for callers with no saved item.
 - **`URLRescueEngine`** — orchestrates: cached rule → browser fast-path →
   availability → digest+evidence → plan call (one digest-halving retry on
   context overflow) → at most ONE intermediate round (search selection or an
@@ -184,16 +184,16 @@ refutable.
 
 ## Integration + UX
 
-- **`URLRescueCoordinator`** (`LunaReadingList`, `AudioScriptPipeline`-style):
+- **`URLRescueCoordinator`** (`LunaSaves`, `AudioScriptPipeline`-style):
   inline rescue on an interactive foreground `.failed`; a debounced background
   sweep of `.failed` items (batch 3, serialized, ledger-budgeted); manual one-shot
   rescues (bypass toggle + budget); and the extension→app pending-request drain.
   The engine is injected as a closure by the app shell — the module never links
   `LunaURLRescue`.
-- **Trigger** — `ReadingListIngestor.applyResult` is the shared persistence tail
+- **Trigger** — `SavesIngestor.applyResult` is the shared persistence tail
   (surface gate + repoint + presenter) for both a first-pass save and a rescued
-  result; a `.failed` outcome fires `ReadingListIngestor.rescueTrigger`.
-- **Bookkeeping** — sidecars in `LunaStorage`, never new `ReadingListItem` fields
+  result; a `.failed` outcome fires `SavesIngestor.rescueTrigger`.
+- **Bookkeeping** — sidecars in `LunaStorage`, never new `SavedItem` fields
   (a sibling app's re-encode would drop unknown keys): `RescueLedgerStore`
   (`rescueLedger.json`, 2 auto-attempts / 24h + success provenance;
   `resetAttempts(for:)` reopens the budget once per app update) and
@@ -222,7 +222,7 @@ refutable.
   gates are an available engine, an interactive failure, and the 2-attempts/24h
   ledger budget. Every failed item also offers a one-shot rescue, which bypasses
   the budget — that tap IS its own consent.
-- **In-app** — a failed reading-list row tap opens a hint-picker rescue sheet; the
+- **In-app** — a failed save row tap opens a hint-picker rescue sheet; the
   long-press menu gains a "Try with Apple Intelligence" submenu; the row subtitle
   reads "trying harder…" while a rescue is in flight. On the CARD roots the
   rescue button ("Retry with AI") lives on the failed-save error card, sends no

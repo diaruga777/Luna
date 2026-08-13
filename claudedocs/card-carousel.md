@@ -16,7 +16,7 @@ util card's save transition.
 
 **And there is ONE provider**: `KindDeckProvider`
 (`Luna/CardCarouselHost/KindDeckProvider.swift`), the sole `CardDeckProviding`
-implementation for all four apps. It builds the slot list from the reading list
+implementation for all four apps. It builds the slot list from the saves list
 filtered by `LunaApp.current.includes`, and forwards every question about a
 particular save to that save's KIND, resolved once by
 `CardKindPresenters.presenter(for:)`.
@@ -75,12 +75,12 @@ logic.
 The host keeps a flat `[CardDeckSlot]` — `id`, optional `urlString`,
 `fingerprint` — and **takes the util card's offset off exactly once**, so a
 presenter never sees a carousel index at all. A presenter answers questions
-about a `ReadingListItem`, never about a slot.
+about a `SavedItem`, never about a slot.
 
-Slots are keyed by the reading-list row, because that is the one store every
+Slots are keyed by the save row, because that is the one store every
 kind writes. Media is the exception, and not a theoretical one: a media row
 lives under the MEDIA store's id and its `sourceURLString` is whatever the URL
-was when the download STARTED, which is not always what the reading-list row
+was when the download STARTED, which is not always what the save row
 says. A Reddit `/r/…/s/<token>` share link is network-resolved to its permalink
 inside `gateAndPrepare`; the share driver resolves a wrapper URL and then
 deletes the wrapper row. Both leave real, downloaded user media with nothing
@@ -102,7 +102,7 @@ the provider's typed arrays exactly as the carousel was built from them.
 broken by id. There is no per-app ordering strategy and no presenter ordering
 hook. The Reader app does NOT group read articles after unread ones — a
 reader-completed article self-archives on the next launch or background through
-`ReadingListStore.archivePendingFinishedItems()`, so it leaves the deck on its
+`SavesStore.archivePendingFinishedItems()`, so it leaves the deck on its
 own and grouping bought nothing.
 
 The date moves in exactly three ways, and no others:

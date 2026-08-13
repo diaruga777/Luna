@@ -80,7 +80,7 @@ enum RescueFailureEvidence {
     /// Deliberately prefix-matched on a small VERB vocabulary rather than an
     /// exact string, and matched both against the whole message and against
     /// whatever follows a leading `<subsystem>: ` — the shape both real writers
-    /// use today is `ingest: begin <url> source=…` (`ReadingListIngestor` and
+    /// use today is `ingest: begin <url> source=…` (`SavesIngestor` and
     /// `ShareSurfaceDriver`), and that recorder is maintained independently of
     /// this parser. A missed boundary degrades to "keep everything", never to a
     /// wrong split, so the tolerance is free.

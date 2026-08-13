@@ -29,7 +29,7 @@ another model call, so it reaches the same decision.
 
 Intent timing is captured at the very start of `perform()`, before setup,
 Foundation Models, search, or ingest work. Once the URL resolves,
-`ReadingListStore.reserveSaveAttempt` atomically performs URL lookup + initial
+`SavesStore.reserveSaveAttempt` atomically performs URL lookup + initial
 insert/explicit `lastSaveAttemptDate` update in one cross-process coordinated
 disk mutation. Save also records the screenshot digest, resolved URL, and start
 timestamp as one flushed App-Group value before ingest begins. Two overlapping
@@ -48,7 +48,7 @@ minimum gap** and compares absolute distance for reverse-arrival overlaps.
 ## Flow
 
 The Action Button intents pass a non-nil `doubleSaveActionSurface` through
-`IntentIngestHelper` to `ReadingListIngestor.handleSavePress`.
+`IntentIngestHelper` to `SavesIngestor.handleSavePress`.
 `resolvedIntentAction` turns the stored `DoubleSaveAction` into a
 `SavePressPolicy.IntentAction`, and **never returns nil** — an Action Button save
 always stays in the 7 s intent regime rather than falling through to the legacy
@@ -62,7 +62,7 @@ A repeat inside `intentDoublePressWindow` (7 s) then becomes:
   `SavePressResult.exportRequested(item, .document)`.
 
 **The file is not built in the ingestor.** Serialization lives in `LunaSend`, an
-article-kind module that the universal `LunaReadingList` / `LunaIntents` can't
+article-kind module that the universal `LunaSaves` / `LunaIntents` can't
 link, so the press only *asks*: the outcome reaches the intent as
 `IntentIngestHelper.ActionButtonSaveOutcome.exportRequested(item:format:)`, and
 `ActionButtonIntentSupport.exportFile` builds it through the
@@ -137,7 +137,7 @@ until then.
 - `DoubleSaveActionStoreTests` — the `.nothing` default, per-surface
   independence, retired-value migration, and the single document action →
   `ArticleExportFormat.document` mapping.
-- `ReadingListStoreCacheTests` — atomic first-invocation reservation across
+- `SavesStoreCacheTests` — atomic first-invocation reservation across
   concurrent store instances and monotonic timing state.
 - `SavePressPolicyTests` — the older in-app ereader regime.
 - `ArticleDocumentBuilderTests` — DOCX package structure, copied/decodable image

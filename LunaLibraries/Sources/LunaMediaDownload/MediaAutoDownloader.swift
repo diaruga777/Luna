@@ -10,7 +10,7 @@ import Foundation
 
 /// Saves a just-ingested social post's media. Luna and Luna Downloader use the
 /// same supported-platform policy and app-owned media library. Hooked into the ingest funnel
-/// (`ReadingListIngestor.ingestPlatformItem`) so EVERY save method flows through it
+/// (`SavesIngestor.ingestPlatformItem`) so EVERY save method flows through it
 /// — including share-sheet saves, which the main app re-ingests from the pending
 /// queue.
 public enum MediaAutoDownloader {
@@ -132,7 +132,7 @@ public enum MediaAutoDownloader {
 
         let start = await LiveMediaDownloadManager.shared.startReportingResult(
             urlString: url.absoluteString,
-            title: ReadingListStore.shared.item(forURLString: urlString)?.title,
+            title: SavesStore.shared.item(forURLString: urlString)?.title,
             ownership: .downloader)
         switch start {
         case .started: break
@@ -267,7 +267,7 @@ public enum MediaAutoDownloader {
 
     private static func ensureUndownloaded(_ urlString: String) {
         guard isRunningInDownloader,
-              let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
+              let item = SavesStore.shared.item(forURLString: urlString) else { return }
         _ = try? SavedMediaStore.shared.ensureUndownloaded(
             id: item.id,
             sourceURLString: item.urlString,

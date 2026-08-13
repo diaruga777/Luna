@@ -28,8 +28,8 @@ struct OnboardingContentWatch {
     let content: any OnboardingStoredContentProviding
 
     init(
-        changeNotifications: [Notification.Name] = [.readingListChanged],
-        content: any OnboardingStoredContentProviding = ReadingListStoredContent()
+        changeNotifications: [Notification.Name] = [.savesChanged],
+        content: any OnboardingStoredContentProviding = SavesStoredContent()
     ) {
         self.changeNotifications = changeNotifications
         self.content = content
@@ -42,11 +42,11 @@ protocol OnboardingStoredContentProviding {
     func storedIdentifiers() -> Set<UUID>
 }
 
-/// The universal answer: the shared reading list. Apps whose kinds live in a
+/// The universal answer: the shared saves list. Apps whose kinds live in a
 /// second store compose their own.
-struct ReadingListStoredContent: OnboardingStoredContentProviding {
+struct SavesStoredContent: OnboardingStoredContentProviding {
     func storedIdentifiers() -> Set<UUID> {
-        Set(ReadingListStore.shared.items().map(\.id))
+        Set(SavesStore.shared.items().map(\.id))
     }
 }
 

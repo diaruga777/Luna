@@ -17,7 +17,7 @@
 import LunaMediaDownload
 import LunaModels
 import LunaPlatforms
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import UIKit
 
@@ -75,7 +75,7 @@ enum MediaShellWiring {
         purgeExpiredSavedMedia()
     }
 
-    static func readingListDidChange() {
+    static func savesDidChange() {
         purgeExpiredSavedMedia()
     }
 
@@ -200,8 +200,8 @@ private struct MediaImportLeg: LinkImportMediaHandling {
 /// Bridges `IngestorMediaHandling` to LunaPlatforms' `PlatformItemIngestor`.
 private struct MediaKindHandler: IngestorMediaHandling {
     func ingestPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, platformItemID: String?,
-        store: ReadingListStore
+        _ item: SavedItem, platform: ContentPlatform, platformItemID: String?,
+        store: SavesStore
     ) async {
         await PlatformItemIngestor.shared.ingest(
             item, platform: platform, platformItemID: platformItemID, store: store)

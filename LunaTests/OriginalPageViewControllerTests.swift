@@ -258,7 +258,7 @@ final class OriginalPageViewControllerTests: XCTestCase {
             .appendingPathComponent("OriginalPageViewControllerTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = ReadingListStore(containerURL: directory)
+        let store = SavesStore(containerURL: directory)
         let item = store.add(urlString: "https://www.newyorker.com/culture/test")
         let prose = String(repeating: "Readable saved article prose. ", count: 80)
         let saved = store.saveContent(

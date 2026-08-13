@@ -22,7 +22,7 @@ protocol ShareSetupPracticePresenting: AnyObject {
 }
 
 /// The real extension-side counterpart of onboarding's mock preview. Practice
-/// URLs never enter the reading list; both extension points show this bundled
+/// URLs never enter the saves list; both extension points show this bundled
 /// content so the lesson is deterministic and works without a network fetch.
 ///
 /// This is the ARTICLE rehearsal. The InstaTok practice link stands for a video

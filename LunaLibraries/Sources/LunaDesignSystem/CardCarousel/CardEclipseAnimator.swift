@@ -30,7 +30,7 @@
 //  `InlineReaderEclipseTransition` (LunaReaderUI) reuses `makeCorona` and
 //  `EclipseFlareView` from here directly for its own reveal. `LunarEclipseTransition`
 //  (LunaTransitions) draws its own corona and point light instead, because it
-//  eclipses an arbitrary snapshot shape (a reading-list row) rather than a
+//  eclipses an arbitrary snapshot shape (a save row) rather than a
 //  rounded card, so it can't share this file's card-shaped drawing.
 //
 

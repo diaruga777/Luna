@@ -1,6 +1,6 @@
 //
 //  IncomingMailImporter.swift
-//  LunaReadingList
+//  LunaSaves
 //
 
 import LunaMailAccount
@@ -25,7 +25,7 @@ public final class IncomingMailImporter {
 
     public static let shared = IncomingMailImporter()
 
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let friends: FriendsStore
     private let accountStore: EmailAccountStore
     /// Guarded by `runningLock`: `importNewMail` is called concurrently from
@@ -34,7 +34,7 @@ public final class IncomingMailImporter {
     private var isRunning = false
     private let runningLock = NSLock()
 
-    public init(store: ReadingListStore = .shared,
+    public init(store: SavesStore = .shared,
                 friends: FriendsStore = .shared,
                 accountStore: EmailAccountStore = .shared) {
         self.store = store
@@ -122,12 +122,12 @@ public final class IncomingMailImporter {
         return friends.add(email: senderEmail, name: name)
     }
 
-    /// Auto-imports an accepted friend's share into the reading list.
+    /// Auto-imports an accepted friend's share into the saves list.
     private func autoImport(_ marker: LunaShareMarker, from friend: Friend) async {
         guard let item = store.addIfAbsent(urlString: marker.url, source: .email) else { return }
         store.setIncomingSender(
             email: friend.email, displayName: friend.displayName, for: item.id)
-        await ReadingListIngestor.shared.ingest(item)
+        await SavesIngestor.shared.ingest(item)
 
         let wasFirst = friends.markReceivedShare(email: friend.email)
         if wasFirst || friend.notifyOnEveryShare {
@@ -158,7 +158,7 @@ public final class IncomingMailImporter {
 
             store.setIncomingSender(
                 email: contact.email, displayName: contact.displayName, for: item.id)
-            await ReadingListIngestor.shared.ingest(item)
+            await SavesIngestor.shared.ingest(item)
             if store.item(withID: item.id)?.state == .ready { return }
             // Silent resolution failed — drop the stub and fall back to the
             // rendered email content below.
@@ -217,7 +217,7 @@ public final class IncomingMailImporter {
         } else if let url = incoming.urls.first, let item = store.addIfAbsent(
             urlString: url.absoluteString, source: .email) {
             recordSender(message, contact: contact, itemID: item.id)
-            Task { await ReadingListIngestor.shared.ingest(item) }
+            Task { await SavesIngestor.shared.ingest(item) }
         }
     }
 

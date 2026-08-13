@@ -219,7 +219,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private static let tabBottomOverlap: CGFloat = 4
     private static let tabSpacing: CGFloat = -9
     private static let minimumTabWidth: CGFloat = 38
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
+    private static let orderedModes: [SavedItem.ReaderMode] = [.scroll, .rsvp, .original]
 
     private var didDismiss = false
     private var didNotifyDismissal = false
@@ -799,7 +799,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             offersSaveShare: shareProvider != nil)
     }
 
-    public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
+    public func chromeSetMode(_ mode: SavedItem.ReaderMode) {
         topPage?.setMode(mode)
         notifyChromeStateChanged()
         updateScrollIndicatorTarget()
@@ -906,7 +906,7 @@ extension SplitWebOverlayViewController: InlineReaderColumnChromeBarDelegate {
         chromeToggleAudio()
     }
 
-    fileprivate func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: ReadingListItem.ReaderMode) {
+    fileprivate func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: SavedItem.ReaderMode) {
         chromeSetMode(mode)
     }
 
@@ -1037,7 +1037,7 @@ private final class InlineReaderPresentationController: UIPresentationController
 private protocol InlineReaderColumnChromeBarDelegate: AnyObject {
     func chromeBarRequestedClose(_ bar: InlineReaderColumnChromeBar)
     func chromeBarRequestedAudioToggle(_ bar: InlineReaderColumnChromeBar)
-    func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: ReadingListItem.ReaderMode)
+    func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: SavedItem.ReaderMode)
     func chromeBar(_ bar: InlineReaderColumnChromeBar, didRequestShareFrom source: UIView)
 }
 
@@ -1057,7 +1057,7 @@ private final class InlineReaderColumnChromeBar: UIView {
     private let audioButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     private let modeControl = LunaSegmentedControl()
-    private var modes: [ReadingListItem.ReaderMode] = []
+    private var modes: [SavedItem.ReaderMode] = []
     private var didInstallShare = false
 
     private static let controlSide: CGFloat = 34

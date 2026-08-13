@@ -36,7 +36,7 @@ final class HighlightShareTextTests: XCTestCase {
     /// A real web URL (isShareable == true) → the quote in literal double-quotes,
     /// a blank line, then the URL.
     func testShareableItemWrapsQuoteAndAppendsURL() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "share-web",
             urlString: "https://example.com/article",
             title: "Example",
@@ -52,7 +52,7 @@ final class HighlightShareTextTests: XCTestCase {
     /// A non-web / synthetic-scheme item (isShareable == false) → the bare trimmed
     /// quote with no surrounding quotation marks and no URL.
     func testNonShareableItemSharesBareTrimmedQuote() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "share-doc",
             urlString: "lunadoc://imported/report",
             title: "Imported",
@@ -67,7 +67,7 @@ final class HighlightShareTextTests: XCTestCase {
 
     /// An empty urlString is also not shareable → bare quote.
     func testEmptyURLStringSharesBareQuote() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "share-empty",
             urlString: "",
             title: nil,

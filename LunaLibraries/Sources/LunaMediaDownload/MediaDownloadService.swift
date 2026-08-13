@@ -9,7 +9,7 @@ import LunaStorage
 import LunaURLClassification
 
 /// Resolves → downloads → saves a social post's first media item to Photos.
-/// Used by both entry points (the action extension button + the reading list
+/// Used by both entry points (the action extension button + the saves list
 /// long-press menu). Streams the file to disk so a large video never sits in
 /// memory, and reports progress for the action extension's progress bar.
 public struct MediaDownloadService {
@@ -32,7 +32,7 @@ public struct MediaDownloadService {
             throw MediaDownloadError.unsupported
         }
         let pending = try SavedMediaStore.shared.ensureUndownloaded(
-            id: ReadingListStore.shared.item(forURLString: url.absoluteString)?.id ?? UUID(),
+            id: SavesStore.shared.item(forURLString: url.absoluteString)?.id ?? UUID(),
             sourceURLString: url.absoluteString,
             title: title)
         let assets = await resolver.resolveAssets(for: url)

@@ -3,8 +3,8 @@
 //  Luna
 //
 
-import LunaReadingListUI
-import LunaReadingList
+import LunaSavesUI
+import LunaSaves
 import LunaMailTransport
 import LunaMailAccount
 import LunaSend

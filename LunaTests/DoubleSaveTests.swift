@@ -109,16 +109,16 @@ final class DoubleSaveTests: XCTestCase {
     private let intentRegimeKindle = ArticleDestinationID.kindle
 
     private func intentRegimeItem(
-        sendState: ReadingListItem.SendState? = nil, dateSent: Date? = nil
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://example.com/a")
+        sendState: SavedItem.SendState? = nil, dateSent: Date? = nil
+    ) -> SavedItem {
+        var item = SavedItem(urlString: "https://example.com/a")
         if let sendState { item.sendStates[intentRegimeKindle] = sendState }
         if let dateSent { item.datesSent[intentRegimeKindle] = dateSent }
         return item
     }
 
     private func decideIntent(
-        existingItem: ReadingListItem?, previousPressDate: Date?,
+        existingItem: SavedItem?, previousPressDate: Date?,
         action: SavePressPolicy.IntentAction
     ) -> SavePressPolicy.Decision {
         SavePressPolicy.decide(
@@ -328,10 +328,10 @@ final class DoubleSaveTests: XCTestCase {
     private let legacyRegimeSecondDestinationID = "secondEreader"
 
     private func legacyRegimeItem(
-        sendState: ReadingListItem.SendState? = nil, dateSent: Date? = nil,
+        sendState: SavedItem.SendState? = nil, dateSent: Date? = nil,
         destination: String = ArticleDestinationID.kindle
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://example.com/a")
+    ) -> SavedItem {
+        var item = SavedItem(urlString: "https://example.com/a")
         if let sendState { item.sendStates[destination] = sendState }
         if let dateSent { item.datesSent[destination] = dateSent }
         return item

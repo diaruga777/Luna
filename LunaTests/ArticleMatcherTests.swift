@@ -21,10 +21,10 @@ final class ArticleMatcherTests: XCTestCase {
 
     private func article(
         _ seed: String, title: String, urlString: String? = nil,
-        ageDays: Double = 1, readState: ReadingListItem.ReadState = .unopened,
-        state: ReadingListItem.State = .ready, platform: ContentPlatform? = nil
-    ) -> ReadingListItem {
-        ReadingListItem(
+        ageDays: Double = 1, readState: SavedItem.ReadState = .unopened,
+        state: SavedItem.State = .ready, platform: ContentPlatform? = nil
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: urlString ?? "https://example.com/\(seed)", title: title,
             dateAdded: now.addingTimeInterval(-ageDays * 24 * 60 * 60),
             state: state, readState: readState, platform: platform)

@@ -1,8 +1,8 @@
 //
-//  ReadingListStoreCacheTests.swift
+//  SavesStoreCacheTests.swift
 //  LunaTests
 //
-//  ReadingListStore serves items() from an in-memory list validated against
+//  SavesStore serves items() from an in-memory list validated against
 //  `PRAGMA data_version`, and skips the row write + notification when a mutation
 //  doesn't actually change anything.
 //
@@ -11,17 +11,17 @@ import LunaStorage
 import LunaModels
 import XCTest
 
-final class ReadingListStoreCacheTests: XCTestCase {
+final class SavesStoreCacheTests: XCTestCase {
 
     private var scratchDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         scratchDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReadingListStoreCacheTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("SavesStoreCacheTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratchDirectory)
+        store = SavesStore(containerURL: scratchDirectory)
     }
 
     override func tearDown() {
@@ -38,8 +38,8 @@ final class ReadingListStoreCacheTests: XCTestCase {
     /// "must not notify" expectation (`NotificationCenter.default` is process-
     /// global, not scoped per test method).
     @discardableResult
-    private func addAndWaitForNotification(_ urlString: String) -> ReadingListItem {
-        let notified = expectation(forNotification: .readingListChanged, object: nil)
+    private func addAndWaitForNotification(_ urlString: String) -> SavedItem {
+        let notified = expectation(forNotification: .savesChanged, object: nil)
         let item = store.add(urlString: urlString)
         wait(for: [notified], timeout: 2)
         return item
@@ -54,13 +54,13 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertEqual(store.items().map(\.urlString), ["https://example.com/a"])
 
         // Nothing has committed in between, so repeated reads must stay
-        // consistent with each other (ReadingListItem is a value type, so this
+        // consistent with each other (SavedItem is a value type, so this
         // compares by value).
         XCTAssertEqual(store.items(), store.items())
 
         // A second process (the SaveLink intent, an extension) writes the shared
         // database through its own connection.
-        let sibling = ReadingListStore(containerURL: scratchDirectory)
+        let sibling = SavesStore(containerURL: scratchDirectory)
         sibling.add(urlString: "https://example.com/b")
 
         XCTAssertEqual(Set(store.items().map(\.urlString)),
@@ -77,7 +77,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         addAndWaitForNotification("https://example.com/dup")
         let rowsWrittenAfterFirstSave = store.writtenRowCountForTesting
 
-        let mustNotNotify = expectation(forNotification: .readingListChanged, object: nil)
+        let mustNotNotify = expectation(forNotification: .savesChanged, object: nil)
         mustNotNotify.isInverted = true
         // A second add for the SAME url returns the existing item without
         // inserting; markFailed for a missing id is the same no-op on the
@@ -133,9 +133,9 @@ final class ReadingListStoreCacheTests: XCTestCase {
     func testConcurrentSaveAttemptReservationsAddOneItem() {
         let urlString = "https://example.com/concurrent-intent"
         let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-        let stores = (0..<12).map { _ in ReadingListStore(containerURL: scratchDirectory) }
+        let stores = (0..<12).map { _ in SavesStore(containerURL: scratchDirectory) }
         let resultLock = NSLock()
-        var reservations: [ReadingListStore.SaveAttemptReservation] = []
+        var reservations: [SavesStore.SaveAttemptReservation] = []
         let completion = expectation(description: "all reservations finished")
         completion.expectedFulfillmentCount = stores.count
 
@@ -155,7 +155,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertEqual(Set(reservations.map(\.item.id)).count, 1)
         XCTAssertEqual(store.items().filter { $0.urlString == urlString }.count, 1)
 
-        // Drain the async reading-list notifications before the test returns.
+        // Drain the async saves notifications before the test returns.
         let notificationsDrained = expectation(description: "notifications drained")
         DispatchQueue.main.async { notificationsDrained.fulfill() }
         wait(for: [notificationsDrained], timeout: 2)
@@ -163,20 +163,20 @@ final class ReadingListStoreCacheTests: XCTestCase {
 
     func testArchivingRoundTripsAndReleasesRecursivePreloadOwnership() throws {
         let preloadStore = PreloadStore(containerURL: scratchDirectory)
-        store = ReadingListStore(containerURL: scratchDirectory, preloadStore: preloadStore)
+        store = SavesStore(containerURL: scratchDirectory, preloadStore: preloadStore)
         let item = addAndWaitForNotification("https://example.com/root")
         let descendant = try XCTUnwrap(URL(string: "https://example.com/child"))
         preloadStore.record(url: descendant, rootID: item.id, kind: .unrepresentable)
         XCTAssertEqual(preloadStore.entry(for: descendant)?.owners, [item.id.uuidString])
 
-        let archived = expectation(forNotification: .readingListChanged, object: nil)
+        let archived = expectation(forNotification: .savesChanged, object: nil)
         store.setArchived(true, for: item.id, at: Date(timeIntervalSince1970: 123))
         wait(for: [archived], timeout: 2)
 
         XCTAssertEqual(store.item(withID: item.id)?.archivedAt, Date(timeIntervalSince1970: 123))
         XCTAssertNil(preloadStore.entry(for: descendant), "archive drops this root's preload tree")
 
-        let unarchived = expectation(forNotification: .readingListChanged, object: nil)
+        let unarchived = expectation(forNotification: .savesChanged, object: nil)
         store.setArchived(false, for: item.id)
         wait(for: [unarchived], timeout: 2)
         XCTAssertNil(store.item(withID: item.id)?.archivedAt)
@@ -189,7 +189,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         let item = addAndWaitForNotification("https://example.com/finish-later")
         let finishedAt = Date(timeIntervalSince1970: 456)
 
-        let finished = expectation(forNotification: .readingListChanged, object: nil)
+        let finished = expectation(forNotification: .savesChanged, object: nil)
         store.markFinishedReading(item.id, at: finishedAt)
         wait(for: [finished], timeout: 2)
 
@@ -199,7 +199,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertEqual(pending?.pendingArchiveAt, finishedAt)
         XCTAssertNil(pending?.archivedAt, "completion must not remove the foreground card")
 
-        let archived = expectation(forNotification: .readingListChanged, object: nil)
+        let archived = expectation(forNotification: .savesChanged, object: nil)
         store.archivePendingFinishedItems()
         wait(for: [archived], timeout: 2)
 
@@ -208,7 +208,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertEqual(committed?.archivedAt, finishedAt)
 
         // Marking unread from the committed state clears BOTH marks and bumps.
-        let unarchived = expectation(forNotification: .readingListChanged, object: nil)
+        let unarchived = expectation(forNotification: .savesChanged, object: nil)
         let unarchivedAt = Date(timeIntervalSince1970: 789)
         store.markUnread(item.id, at: unarchivedAt)
         wait(for: [unarchived], timeout: 2)

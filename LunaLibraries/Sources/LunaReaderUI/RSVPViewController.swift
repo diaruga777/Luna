@@ -40,12 +40,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// while RSVP plays.
     public weak var playbackObserver: RSVPPlaybackObserving?
 
-    private var item: ReadingListItem
+    private var item: SavedItem
     private var engine: RSVPEngine
     /// Phrase groupings over the same word space, built once (lazily) when the
     /// reader first needs the Phrases sub-mode.
     private var chunks: [TextChunk]
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
 
     /// Words vs Phrases. Persisted in `ReaderSettings.rsvpMode`.
     private var displayMode: RSVPDisplayMode
@@ -345,7 +345,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Smaller, proportional font for the two-line phrase display.
     private let phraseFont: UIFont
 
-    public init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
+    public init(item: SavedItem, content: ArticleContent, audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil,
          initialDisplayMode: RSVPDisplayMode? = nil) {
         self.item = item
@@ -384,7 +384,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// this on a pre-added child, so activation only rebuilds the word engine and
     /// refreshes labels instead of constructing the full controls hierarchy.
     public func configureForReuse(
-        item: ReadingListItem,
+        item: SavedItem,
         content: ArticleContent,
         audioEnabled: Bool = false,
         shareProvider: ReaderShareProviding? = nil,
@@ -414,7 +414,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// position, and — once the view exists — refreshes every control that
     /// depends on it.
     private func applyContent(
-        item: ReadingListItem,
+        item: SavedItem,
         content: ArticleContent,
         audioEnabled: Bool,
         shareProvider: ReaderShareProviding?,

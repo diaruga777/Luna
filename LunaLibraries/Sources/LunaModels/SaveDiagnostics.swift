@@ -16,7 +16,7 @@ import Foundation
 /// keeps `LunaMediaResolve`/`LunaPriceCompare` on their Foundation-only floors.
 /// The storage half — the per-item `saveDiagnostics/<UUID>.log` file — is
 /// `SaveDiagnosticsStore` in LunaStorage, and only the two layers that own
-/// persistence (`ReadingListIngestor`, `ShareSurfaceDriver`) ever touch it.
+/// persistence (`SavesIngestor`, `ShareSurfaceDriver`) ever touch it.
 ///
 /// Instrumentation call sites are UNCONDITIONAL: they call
 /// `SaveDiagnostics.record(…)`, which is a no-op (and does not even build its
@@ -41,7 +41,7 @@ public struct DiscardedSaveDiagnosticsMirror: SaveDiagnosticsMirroring {
 
 public final class SaveDiagnosticsRecorder: @unchecked Sendable {
 
-    /// The reading-list item this trace belongs to — the correlation id.
+    /// The saved item this trace belongs to — the correlation id.
     public let itemID: UUID
 
     /// Where each recorded message is mirrored as it happens. Handed in by the

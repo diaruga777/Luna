@@ -52,7 +52,7 @@ public protocol ProductSearchOverlayDelegate: AnyObject {
 ///   confirmation is presented automatically — debounced per-URL via
 ///   `ProductSuggestionDebouncer` so it never re-fires for the same page.
 ///
-/// The overlay never touches the reading-list store: when the user confirms, it
+/// The overlay never touches the saves store: when the user confirms, it
 /// hands the current URL + its rendered HTML up via `delegate` and AWAITS the
 /// host's `ProductSearchAddOutcome`. On `.added` the overlay dismisses (returning to
 /// the tracker); on `.noPrice`/`.duplicate` it shows a message and stays open.

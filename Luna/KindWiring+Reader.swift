@@ -14,7 +14,7 @@ import LunaIngest
 import LunaMailAccount
 import LunaModels
 import LunaReaderUI
-import LunaReadingList
+import LunaSaves
 import LunaSend
 import LunaStorage
 import UIKit
@@ -109,7 +109,7 @@ enum KindWiring {
         ArticleShellWiring.sceneDidForeground()
     }
 
-    static func readingListDidChange() {}
+    static func savesDidChange() {}
 
     static func wifiBecameAvailable() {
         ArticleShellWiring.resumeIncompletePreloads()

@@ -38,7 +38,7 @@ public final class DiagnosticLog: @unchecked Sendable {
     public init(containerURL: URL? = nil, maxBytes: Int = 1_000_000) {
         let directory = containerURL
             ?? FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
+                forSecurityApplicationGroupIdentifier: SavesStore.appGroupID)
             ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         self.fileURL = directory.appendingPathComponent("clip-diagnostics.log")
         self.maxBytes = maxBytes

@@ -20,14 +20,14 @@ import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
-@testable import LunaReadingList
-@testable import LunaReadingListUI
+@testable import LunaSaves
+@testable import LunaSavesUI
 
 @MainActor
 final class SaveDiagnosticsCaptureTests: XCTestCase {
 
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     /// Everything this test wrote into the shared sidecars, cleaned up in
     /// `tearDown` so the App Group is left as it was found.
     private var touchedIDs: [UUID] = []
@@ -37,7 +37,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SaveDiagnosticsCapture-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
         touchedIDs = []
     }
 
@@ -62,7 +62,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// the reason. A search-results URL is vetoed before any fetch, so the trace
     /// is produced entirely offline.
     func testAFailedSaveFlushesItsTraceWithTheDecisionsThatProducedIt() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
+        let ingestor = SavesIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
         let item = store.add(
             urlString: "https://www.google.com/search?q=luna+reader", source: .manual)
         _ = track(item.id)
@@ -86,7 +86,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// attempt's lines. Both are what make a shared export show whether the
     /// failure is stable.
     func testARetryAppendsASecondAttemptRatherThanRewritingTheFirst() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
+        let ingestor = SavesIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
         let item = store.add(urlString: "https://duckduckgo.com/?q=luna", source: .manual)
         _ = track(item.id)
 
@@ -107,7 +107,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// deleted outright — so the buffer is dropped and any earlier file goes
     /// with it, rather than orphaning a trace nothing can ever export.
     func testASurfaceDroppedSaveLeavesNoTraceBehind() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.foreign)
+        let ingestor = SavesIngestor(store: store, surfaceGate: ScriptedIngestGate.foreign)
         let item = store.add(
             urlString: "https://bsky.app/profile/a.bsky.social/post/1", source: .paste)
         _ = track(item.id)
@@ -121,7 +121,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
 
     // The launch sweep's `SaveDiagnosticsStore.shared.prune(keeping:)` is
     // deliberately NOT exercised here: the production call is against the App
-    // Group singleton, so a test driving it with a scratch reading list would
+    // Group singleton, so a test driving it with a scratch saves list would
     // delete every OTHER trace on the machine — including this suite's own
     // seeded rows and a developer's real ones. The prune's behaviour is
     // asserted against an isolated store in `SaveDiagnosticsStoreTests`.
@@ -205,24 +205,24 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
 }
 
 /// `SaveFailureReason.noMediaFound`'s only writer. It has to reach the SHARED
-/// reading list because that is what the production callers (a background
+/// saves list because that is what the production callers (a background
 /// transfer's delegate callback, the awaited auto-download) can see — so these
 /// seed and remove their own row there.
 final class MediaSaveFailureRecordingTests: XCTestCase {
 
-    private var saved: ReadingListItem?
+    private var saved: SavedItem?
 
     override func tearDown() {
         if let saved {
             SaveDiagnosticsStore.shared.delete(for: saved.id)
             SaveFailureStore.shared.clear(saved.id)
-            ReadingListStore.shared.delete(saved)
+            SavesStore.shared.delete(saved)
         }
         super.tearDown()
     }
 
-    private func seedItem() -> ReadingListItem {
-        let item = ReadingListStore.shared.add(
+    private func seedItem() -> SavedItem {
+        let item = SavesStore.shared.add(
             urlString: "https://www.instagram.com/reel/\(UUID().uuidString)/", source: .manual)
         saved = item
         return item
@@ -314,7 +314,7 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
     func testTheDeckMenuGainsTheVerbOnlyWhenATraceExists() {
         let host = UIViewController()
         let delete = UIAction(title: "Delete") { _ in }
-        let item = ReadingListItem(urlString: "https://example.com/broken")
+        let item = SavedItem(urlString: "https://example.com/broken")
         touchedIDs.append(item.id)
 
         let without = FailedSaveCardFactory.makeMenu(
@@ -333,7 +333,7 @@ final class SaveDiagnosticsShareUITests: XCTestCase {
     /// The header is the context the trace itself can't carry: which link, and
     /// what the failure sidecar concluded about it.
     func testTheExportHeaderNamesTheLinkAndWhatTheSidecarConcluded() {
-        let item = ReadingListItem(urlString: "https://example.com/broken")
+        let item = SavedItem(urlString: "https://example.com/broken")
         let record = SaveFailureRecord(
             reason: .httpStatus(403),
             lastFailureDate: Date(timeIntervalSince1970: 1_700_000_000),

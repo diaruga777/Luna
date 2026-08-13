@@ -8,7 +8,7 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Media-kind ingestion, extracted from `ReadingListIngestor` so only
+/// Media-kind ingestion, extracted from `SavesIngestor` so only
 /// media-handling apps carry the platform-metadata and auto-download machinery.
 /// The app shell installs this behind `IngestorKindHandlers.media` (via a thin
 /// adapter in its `KindWiring` variant).
@@ -22,8 +22,8 @@ public final class PlatformItemIngestor {
     /// Recognized platform items NEVER enter `.failed` — they render from a logo
     /// + deep link even when metadata is unavailable.
     public func ingest(
-        _ item: ReadingListItem, platform: ContentPlatform, platformItemID: String?,
-        store: ReadingListStore
+        _ item: SavedItem, platform: ContentPlatform, platformItemID: String?,
+        store: SavesStore
     ) async {
         let match = PlatformMatch(platform: platform, itemID: platformItemID)
         let module = PlatformRegistry.shared.module(for: match.platform)

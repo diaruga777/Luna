@@ -8,7 +8,7 @@
 //  list these screens through `settingsCategories()`.
 //
 
-import LunaReadingListUI
+import LunaSavesUI
 import LunaReaderUI
 import LunaDesignSystem
 import LunaStorage
@@ -17,7 +17,7 @@ import UIKit
 
 // MARK: - Reader
 
-/// RSVP, typography, highlight, and reading-list link-preload preferences.
+/// RSVP, typography, highlight, and saves link-preload preferences.
 final class ReaderSettingsScreen: NavHeaderTableController {
     private enum Section: Int, CaseIterable { case reader, preload }
     private enum Row: Int, CaseIterable { case speed, rsvpMode, font, textSize, accentColor }

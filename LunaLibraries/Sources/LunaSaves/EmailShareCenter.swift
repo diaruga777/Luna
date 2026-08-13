@@ -1,6 +1,6 @@
 //
 //  EmailShareCenter.swift
-//  LunaReadingList
+//  LunaSaves
 //
 
 import LunaModels
@@ -12,7 +12,7 @@ import UIKit
 
 /// Renders a tracker's price graph as the hero image of a shared-tracker email.
 /// Installed by the composition root of an app that both sends email and holds
-/// trackers — the graph view lives in LunaPriceUI, which LunaReadingList must
+/// trackers — the graph view lives in LunaPriceUI, which LunaSaves must
 /// not depend on.
 public protocol PriceGraphEmailRendering {
     /// JPEG data for the graph, or nil when it cannot be drawn.
@@ -20,7 +20,7 @@ public protocol PriceGraphEmailRendering {
     func jpegData(for tracker: PriceTracker) -> Data?
 }
 
-/// Sends a reading-list item (or a bare URL) to one or more recipients as a
+/// Sends a saved item (or a bare URL) to one or more recipients as a
 /// nicely-formatted Luna email, and records each recipient in the friends list.
 /// The email carries the `X-Luna-Share` marker so a recipient's Luna app can
 /// recognise and import it.
@@ -33,12 +33,12 @@ public final class EmailShareCenter {
     /// store holds no trackers.
     public static var priceGraphSnapshot: (any PriceGraphEmailRendering)?
 
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let accountStore: EmailAccountStore
     private let friends: FriendsStore
     private let recentRecipients: RecentFriendRecipientsStore
 
-    public init(store: ReadingListStore = .shared,
+    public init(store: SavesStore = .shared,
                 accountStore: EmailAccountStore = .shared,
                 friends: FriendsStore = .shared,
                 recentRecipients: RecentFriendRecipientsStore = .shared) {
@@ -55,9 +55,9 @@ public final class EmailShareCenter {
 
         public var errorDescription: String? {
             switch self {
-            case .notConfigured: return L10n.string("ReadingList_emailShare_setupNeededMessage")
-            case .noRecipients: return L10n.string("ReadingList_emailShare_noRecipientsMessage")
-            case .buildFailed: return L10n.string("ReadingList_emailShare_buildFailedMessage")
+            case .notConfigured: return L10n.string("Saves_emailShare_setupNeededMessage")
+            case .noRecipients: return L10n.string("Saves_emailShare_noRecipientsMessage")
+            case .buildFailed: return L10n.string("Saves_emailShare_buildFailedMessage")
             }
         }
     }
@@ -65,9 +65,9 @@ public final class EmailShareCenter {
     /// Whether an email account is connected and does not need recovery.
     public var isConfigured: Bool { accountStore.isReady }
 
-    /// Sends a reading-list item to the given email addresses.
+    /// Sends a saved item to the given email addresses.
     @MainActor
-    public func send(item: ReadingListItem, to emails: [String]) async throws {
+    public func send(item: SavedItem, to emails: [String]) async throws {
         try await deliver(urlString: item.urlString, title: item.title, item: item, to: emails)
     }
 
@@ -81,7 +81,7 @@ public final class EmailShareCenter {
 
     @MainActor
     private func deliver(
-        urlString: String, title: String?, item: ReadingListItem?, to emails: [String]
+        urlString: String, title: String?, item: SavedItem?, to emails: [String]
     ) async throws {
         let recipients = Friend.normalizedValid(emails)
         guard !recipients.isEmpty else { throw ShareError.noRecipients }
@@ -112,7 +112,7 @@ public final class EmailShareCenter {
 
     @MainActor
     private func buildBody(
-        item: ReadingListItem?, urlString: String, title: String?, marker: LunaShareMarker
+        item: SavedItem?, urlString: String, title: String?, marker: LunaShareMarker
     ) -> (body: RenderedEmailBody, images: [InlineImage]) {
         // Article / document: render the full text with inline images.
         if let item, item.priceTracker == nil, item.platform == nil,
@@ -144,7 +144,7 @@ public final class EmailShareCenter {
         return (rendered, [heroImage].compactMap { $0 })
     }
 
-    private func kindString(for item: ReadingListItem?) -> String {
+    private func kindString(for item: SavedItem?) -> String {
         guard let item else { return "link" }
         if item.priceTracker != nil { return "product" }
         if let platform = item.platform { return platform.rawValue }
@@ -155,7 +155,7 @@ public final class EmailShareCenter {
     private func priceSummary(for tracker: PriceTracker) -> String {
         let price = PriceFormatting.string(
             amount: tracker.currentBestPrice, currency: tracker.displayCurrency)
-        return L10n.string("ReadingList_emailShare_bestPriceLine", price)
+        return L10n.string("Saves_emailShare_bestPriceLine", price)
     }
 
     /// Loads a local image file (in the Articles directory) as an inline image.

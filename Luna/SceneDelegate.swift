@@ -9,9 +9,9 @@
 //
 
 import LunaModels
-import LunaReadingListUI
+import LunaSavesUI
 import LunaSocialUI
-import LunaReadingList
+import LunaSaves
 import LunaDesignSystem
 import LunaStorage
 import LunaURLClassification
@@ -49,7 +49,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         return KindWiring.mainNavigationController(of: root)
     }
 
-    /// Pushes the Pending Requests screen onto the reading-list nav once the main
+    /// Pushes the Pending Requests screen onto the saves nav once the main
     /// UI exists. Pending contact requests arrive by email, so only the apps that
     /// do email have this screen to route to.
     private func applyPendingNotificationRoute() {
@@ -193,7 +193,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard case let .center(itemID) = KindWiring.mediaDeepLinkAction(forURLString: urlString)
         else { return }
         if LunaDeepLink.mediaShareRequested(from: url),
-           let item = ReadingListStore.shared.item(withID: itemID),
+           let item = SavesStore.shared.item(withID: itemID),
            let exporter = KindWiring.mediaShareFileExporter {
             shareDownloadedMedia(item, using: exporter, in: nav)
         } else {
@@ -207,7 +207,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// moved to Photos or vanished — in which case this degrades to the plain
     /// open the link would otherwise have done.
     private func shareDownloadedMedia(
-        _ item: ReadingListItem, using exporter: any MediaShareFileExporting,
+        _ item: SavedItem, using exporter: any MediaShareFileExporting,
         in nav: UINavigationController
     ) {
         let deck = nav.viewControllers.first
@@ -254,7 +254,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             ? nil
             : capturedHTML
         Task { @MainActor in
-            let result = await ReadingListIngestor.shared.handleSavePress(
+            let result = await SavesIngestor.shared.handleSavePress(
                 urlString: urlString, prefetchedHTML: prefetchedHTML,
                 // The Safari extension only captures the article body AFTER unlocking it
                 // on-screen, so trust it past the (now-stale) publisher paywall signal.
@@ -269,7 +269,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                  // arise here — but the item is the one to open either way.
                  .exportRequested(let item, _):
                 itemID = item.id
-            case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
+            case .ignored: itemID = SavesStore.shared.item(forURLString: urlString)?.id
             case .unsupportedKind:
                 // Foreign-kind save — discarded; the ingest gate has already
                 // shown the unsupported-kind error. Nothing to open, and never
@@ -277,12 +277,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
             }
             nav.popToRootViewController(animated: false)
-            guard let itemID, let item = ReadingListStore.shared.item(withID: itemID)
+            guard let itemID, let item = SavesStore.shared.item(withID: itemID)
             else { return }
             if item.state == .failed { outcome = .failedOrUnsupported }
             let kind: SafariReturnPolicy.Kind = item.isPriceTracker
                 ? .product
-                : (ReadingListSectioning.rendersAsReader(item) ? .article : .media)
+                : (SavesSectioning.rendersAsReader(item) ? .article : .media)
             if SafariReturnPolicy.shouldReturn(outcome: outcome, kind: kind, flagged: returnsToSource),
                let originalURL = URL(string: articleURL) {
                 // The page the user was ON — never `URLUnwrapper`'s resolved
@@ -316,8 +316,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // re-import or re-purge anything into it.
         guard !LunaStage.isActive else { return }
         // Items may have been added by the intent while we were backgrounded.
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
-        ReadingListIngestor.shared.ingestAllPending()
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
+        SavesIngestor.shared.ingestAllPending()
         if LunaApp.current.sharesByEmail {
             Task { await IncomingMailImporter.shared.importNewMail() }
         }

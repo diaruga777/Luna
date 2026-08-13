@@ -1,7 +1,7 @@
 # Luna — three weblink apps over one shared store (experiment)
 
 Luna is a family of **three standalone iOS apps** (UIKit, deployment target iOS 26)
-that share one App Group, one on-disk store (`readingList.json`), and one codebase:
+that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
 
 - **Luna Reader** (`com.hsanabria.luna.reader`, Xcode target `Luna`) — articles,
   paywalled articles, documents. Scrolling reader (inline split-web frames) + RSVP speed
@@ -22,10 +22,13 @@ identifiers. Entitlements reference `$(APP_GROUP_ID)` / `$(ICLOUD_CONTAINER_ID)`
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
 extension, SaveLink App Intent, Safari extension) is classified by the shared
 `LunaIngest.IngestPipeline` into a `ContentKind` and written to the one shared
-`readingList.json`. Each app shows only its category: `ReadingListViewController(surface:)`
-takes an `AppSurface` (in `LunaReadingListUI`) chosen at launch from the bundle-id suffix
-via `AppSurfaceConfig.current`. Items of other categories are stored but surface only in
-their own app. Feature docs live in `claudedocs/` — keep them current when changing features.
+saves database, `saves.sqlite` in the App Group container. Each app shows only its
+category: the card deck asks `LunaApp.includes` (in `LunaSavesUI`), resolved at launch
+from the bundle-id suffix. Items of other categories are stored but surface only in
+their own app. The store is SQLite — typed columns, real child tables under `ON DELETE
+CASCADE`, file ownership as edges with a trigger-queued reaper, WAL and one connection
+per process. See `claudedocs/saves.md`. Feature docs live in `claudedocs/` — keep them
+current when changing features.
 
 **Targets.** Three app targets (`Luna`/Reader, `LunaDownloader`, `LunaPriceTracker`) each
 share the `Luna/` app-shell sources via the same synchronized group and link the same SwiftPM
@@ -48,7 +51,7 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 > `scripts/make_action_icons.swift` validates the asset type, dimensions, and alpha without
 > generating or overwriting the PNGs.
 >
-> **Known follow-up (deferred):** all three apps still link the full `LunaReadingList` (fat
+> **Known follow-up (deferred):** all three apps still link the full `LunaSaves` (fat
 > shared binary) rather than only their surface's modules — correctness comes from the surface
 > filter + provider gating, not a slimmed dependency graph.
 
@@ -71,7 +74,7 @@ Almost all code lives in the local SwiftPM package `LunaLibraries/` (layered: co
 orchestration/intents; `LunaAppConfig` at the bottom is the App-Group/iCloud id source of
 truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared app shell
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
-(ReadingListViewController/Search), composition wiring (AppReaderProviders/
+(the card deck), composition wiring (AppReaderProviders/
 OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Intents/*` — business
 logic is in the `LunaIntents` library) — and is shared by ALL
 THREE app targets (each picks its surface from its bundle id). The Share/Action extensions

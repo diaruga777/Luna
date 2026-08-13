@@ -17,7 +17,7 @@ public protocol NowPlayingArtworkProviding {
 }
 
 /// The production answer: the shared store's Articles directory, where
-/// `ReadingListStore.setThumbnail` writes.
+/// `SavesStore.setThumbnail` writes.
 public struct StoredThumbnailArtwork: NowPlayingArtworkProviding {
     public init() {}
 
@@ -75,10 +75,10 @@ public protocol RemoteCommandBinding: AnyObject {
 /// Where a currently-playing item's `thumbnailFileName` lives on disk — the
 /// one join both the Now Playing artwork lookup (here) and the mini-player's
 /// thumbnail image view (`MiniPlayerHostViewController`) need, over the same
-/// `ReadingListStore.shared.articlesDirectory` (where `setThumbnail` writes).
+/// `SavesStore.shared.articlesDirectory` (where `setThumbnail` writes).
 public enum ArticleThumbnailLocator {
     public static func fileURL(fileName: String) -> URL {
-        ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+        SavesStore.shared.articlesDirectory.appendingPathComponent(fileName)
     }
 }
 
@@ -103,7 +103,7 @@ public final class NowPlayingCoordinator {
     private let commandBinding: RemoteCommandBinding
     /// Resolves an item's `thumbnailFileName` to a decodable file URL —
     /// injectable for tests; defaults to the shared store's Articles
-    /// directory (where `ReadingListStore.setThumbnail` writes).
+    /// directory (where `SavesStore.setThumbnail` writes).
     private let artwork: any NowPlayingArtworkProviding
 
     private weak var center: AudioPlaybackCenter?

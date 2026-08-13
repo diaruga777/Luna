@@ -131,7 +131,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
 
     func testImageInsidePrefixIsRenderedForInitialSnapshot() throws {
         let fileName = "prefix-\(UUID().uuidString).png"
-        let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+        let fileURL = SavesStore.shared.articlesDirectory.appendingPathComponent(fileName)
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: fileURL) }
@@ -185,7 +185,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     /// restored (seamless swap) and the word map covers the whole article.
     func testScrollReaderProgressiveSwapPreservesOffsetAndRebuildsMap() {
         let article = longArticle()
-        var item = ReadingListItem(urlString: "https://example.com/p")
+        var item = SavedItem(urlString: "https://example.com/p")
         item.state = .ready
         item.title = "Progressive Fixture"
         let reader = ScrollReaderViewController(item: item, content: article)
@@ -225,7 +225,7 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
     }
 
     func testCardWidthTransitionBuildsIndividualGlyphMovesAndRestoresLiveText() throws {
-        var item = ReadingListItem(urlString: "https://example.com/reflow")
+        var item = SavedItem(urlString: "https://example.com/reflow")
         item.state = .ready
         let content = ArticleContent(
             title: "Reflow",

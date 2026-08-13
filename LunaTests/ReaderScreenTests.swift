@@ -35,8 +35,8 @@ private final class StubReaderShareProvider: ReaderShareProviding {
 final class ReaderScreenTests: XCTestCase {
 
     private let content = UITestFixtures.sampleArticleContent(title: "Reader Fixture Article")
-    private var item: ReadingListItem {
-        ReadingListItem(seed: "reader-fixture", urlString: "https://example.com/reader",
+    private var item: SavedItem {
+        SavedItem(seed: "reader-fixture", urlString: "https://example.com/reader",
                         title: "Reader Fixture Article", dateAdded: UITestFixtures.baseDate,
                         state: .ready, wordCount: 480)
     }
@@ -322,8 +322,8 @@ final class ReaderScreenTests: XCTestCase {
     }
 
     func testReaderHostMarksScrollCompletionReadAndPendingArchive() {
-        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/scroll-finish-\(UUID().uuidString)")
-        defer { ReadingListStore.shared.delete(storeItem) }
+        let storeItem = SavesStore.shared.add(urlString: "https://example.com/scroll-finish-\(UUID().uuidString)")
+        defer { SavesStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
             item: storeItem, content: longScrollArticleContent(), forceMode: .scroll,
             persistsModePreference: false, marksOpenedOnLoad: false,
@@ -347,7 +347,7 @@ final class ReaderScreenTests: XCTestCase {
             textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
         scroll.scrollViewDidScroll(textView)
 
-        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
         XCTAssertNotNil(fresh?.pendingArchiveAt)
@@ -355,8 +355,8 @@ final class ReaderScreenTests: XCTestCase {
     }
 
     func testReaderHostKeepsScrollCompletionWhenUserScrollsBack() {
-        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/scroll-unfinish-\(UUID().uuidString)")
-        defer { ReadingListStore.shared.delete(storeItem) }
+        let storeItem = SavesStore.shared.add(urlString: "https://example.com/scroll-unfinish-\(UUID().uuidString)")
+        defer { SavesStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
             item: storeItem, content: longScrollArticleContent(), forceMode: .scroll,
             persistsModePreference: false, marksOpenedOnLoad: true,
@@ -382,7 +382,7 @@ final class ReaderScreenTests: XCTestCase {
         textView.contentOffset.y = 0
         scroll.scrollViewDidScroll(textView)
 
-        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
         XCTAssertNotNil(fresh?.pendingArchiveAt)
@@ -390,10 +390,10 @@ final class ReaderScreenTests: XCTestCase {
     }
 
     func testReaderHostDoesNotUnmarkScrollArticleThatWasReadOnEntry() {
-        let added = ReadingListStore.shared.add(urlString: "https://example.com/scroll-read-entry-\(UUID().uuidString)")
-        ReadingListStore.shared.markFinishedReading(added.id)
-        let storeItem = ReadingListStore.shared.item(withID: added.id)!
-        defer { ReadingListStore.shared.delete(storeItem) }
+        let added = SavesStore.shared.add(urlString: "https://example.com/scroll-read-entry-\(UUID().uuidString)")
+        SavesStore.shared.markFinishedReading(added.id)
+        let storeItem = SavesStore.shared.item(withID: added.id)!
+        defer { SavesStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
             item: storeItem, content: longScrollArticleContent(), forceMode: .scroll,
             persistsModePreference: false, marksOpenedOnLoad: true,
@@ -419,14 +419,14 @@ final class ReaderScreenTests: XCTestCase {
         textView.contentOffset.y = 0
         scroll.scrollViewDidScroll(textView)
 
-        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
     }
 
     func testReaderHostMarksRSVPCompletionReadAndPendingArchive() {
-        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-finish-\(UUID().uuidString)")
-        defer { ReadingListStore.shared.delete(storeItem) }
+        let storeItem = SavesStore.shared.add(urlString: "https://example.com/rsvp-finish-\(UUID().uuidString)")
+        defer { SavesStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
             item: storeItem, content: shortArticleContent(), forceMode: .rsvp,
             persistsModePreference: false, marksOpenedOnLoad: false,
@@ -443,7 +443,7 @@ final class ReaderScreenTests: XCTestCase {
         skipForward.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
 
-        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
         XCTAssertNotNil(fresh?.pendingArchiveAt)
@@ -451,8 +451,8 @@ final class ReaderScreenTests: XCTestCase {
     }
 
     func testReaderHostKeepsRSVPCompletionWhenUserPagesBack() {
-        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-unfinish-\(UUID().uuidString)")
-        defer { ReadingListStore.shared.delete(storeItem) }
+        let storeItem = SavesStore.shared.add(urlString: "https://example.com/rsvp-unfinish-\(UUID().uuidString)")
+        defer { SavesStore.shared.delete(storeItem) }
         let reader = ReaderViewController(
             item: storeItem, content: shortArticleContent(), forceMode: .rsvp,
             persistsModePreference: false, marksOpenedOnLoad: true,
@@ -473,9 +473,9 @@ final class ReaderScreenTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // Skipping saves progress via the fire-and-forget saveReaderExitPosition
         // (WS-F1); flush before reading back so this isn't racing the store queue.
-        ReadingListStore.shared.flushPendingUpdates()
+        SavesStore.shared.flushPendingUpdates()
 
-        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        let fresh = SavesStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
         XCTAssertNotNil(fresh?.pendingArchiveAt)
@@ -490,8 +490,8 @@ final class ReaderScreenTests: XCTestCase {
         // `add` inserts a real item into the shared store (needed so the reader's
         // save calls have a matching row to mutate) without disturbing any other
         // items already there; it's removed again below.
-        let scrubItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-scrub-\(UUID().uuidString)")
-        defer { ReadingListStore.shared.delete(scrubItem) }
+        let scrubItem = SavesStore.shared.add(urlString: "https://example.com/rsvp-scrub-\(UUID().uuidString)")
+        defer { SavesStore.shared.delete(scrubItem) }
 
         let reader = RSVPViewController(item: scrubItem, content: content)
         reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -502,20 +502,20 @@ final class ReaderScreenTests: XCTestCase {
             XCTFail("RSVP reader should contain its scrubber")
             return
         }
-        let initialWordIndex = ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex
+        let initialWordIndex = SavesStore.shared.item(withID: scrubItem.id)?.lastWordIndex
 
         slider.value = 5
         slider.sendActions(for: .valueChanged)
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
+        XCTAssertEqual(SavesStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
                        "A continuous scrub tick must not persist to the store")
 
         slider.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         // saveReaderExitPosition is a fire-and-forget async write (WS-F1); flush
         // it before reading back so this assertion isn't racing the store queue.
-        ReadingListStore.shared.flushPendingUpdates()
-        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
+        SavesStore.shared.flushPendingUpdates()
+        XCTAssertEqual(SavesStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
                        "Ending the scrub gesture should persist the new word index")
     }
 
@@ -759,7 +759,7 @@ final class ReaderScreenTests: XCTestCase {
         return nil
     }
 
-    private func makeReader(forceMode: ReadingListItem.ReaderMode) -> ReaderViewController {
+    private func makeReader(forceMode: SavedItem.ReaderMode) -> ReaderViewController {
         ReaderViewController(
             item: item, content: content, forceMode: forceMode,
             persistsModePreference: false, marksOpenedOnLoad: false)

@@ -132,8 +132,8 @@ wasted — the files land on disk and the next export resolves them for free.
 user-facing export calls (share sheet, the double save's App Intent return, and
 `ArticleSendCoordinator`'s Kindle EPUB — an auto-send fires exactly when an
 article becomes ready). It persists the enriched content via `saveContent`,
-which also registers the new files with `ImageReferenceStore` so they aren't
-collected as orphans. The plain synchronous `write` remains for callers with
+which also claims the new files' ownership edges in the same transaction so they
+aren't collected as orphans. The plain synchronous `write` remains for callers with
 nothing to fetch.
 
 ### Per-format image handling
@@ -157,7 +157,7 @@ nothing to fetch.
 
 Both go through `AppReaderShareProvider` (`Luna/Social/AppReaderProviders.swift`):
 
-- Reading-list row long-press / reader share button → **"Export as…"**, a
+- save row long-press / reader share button → **"Export as…"**, a
   submenu of the four formats. Shown for ready articles/documents, not videos.
 - A no-url text article (email/document) has no link to share, so its share
   button skips the option list and presents the format picker directly

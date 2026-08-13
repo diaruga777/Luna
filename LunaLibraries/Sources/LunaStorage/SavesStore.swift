@@ -1,5 +1,5 @@
 //
-//  ReadingListStore.swift
+//  SavesStore.swift
 //  Luna
 //
 
@@ -8,11 +8,14 @@ import LunaModels
 import Foundation
 
 public extension Notification.Name {
-    /// Posted whenever the reading list changes (add/update/delete).
-    static let readingListChanged = Notification.Name("readingListChanged")
+    /// Posted whenever the saves list changes (add/update/delete).
+    ///
+    /// `"readingListChanged"` is the fixed wire name every observer registers
+    /// under; `savesChanged` is the Swift symbol that names it.
+    static let savesChanged = Notification.Name("readingListChanged")
 }
 
-/// Persists the reading list in `saves.sqlite` in the shared App Group container
+/// Persists the saves list in `saves.sqlite` in the shared App Group container
 /// so every Luna process — the four apps, their share/action/Safari extensions,
 /// the App Intents, the mail-fetch background task — sees the same data.
 ///
@@ -31,8 +34,8 @@ public extension Notification.Name {
 /// `SavedFileOwnership`). Deleting a save is therefore just the row delete: the
 /// edges cascade, the schema's triggers queue every file whose last owner is
 /// gone, and `PendingDeleteReaper` unlinks it.
-public final class ReadingListStore {
-    public static let shared = ReadingListStore()
+public final class SavesStore {
+    public static let shared = SavesStore()
 
     public static let appGroupID = AppConfig.appGroupID
 
@@ -44,7 +47,7 @@ public final class ReadingListStore {
     /// each other. The database's own serial queue still serializes the actual
     /// read-modify-write against synchronous callers on other threads; this queue
     /// only decides which thread performs it.
-    private let asyncUpdateQueue = DispatchQueue(label: "com.hsanabria.luna.readingListStore.asyncUpdate")
+    private let asyncUpdateQueue = DispatchQueue(label: "com.hsanabria.luna.savesStore.asyncUpdate")
 
     private let preloads: PreloadStore
 
@@ -57,7 +60,7 @@ public final class ReadingListStore {
 
     /// The whole list as last read, valid while `cachedDataVersion` still matches
     /// the file's. Only ever read or written from inside a database transaction.
-    private var cachedItems: [ReadingListItem]?
+    private var cachedItems: [SavedItem]?
     private var cachedDataVersion: Int64?
 
     /// The shared store uses the App Group container; tests pass a scratch
@@ -135,7 +138,7 @@ public final class ReadingListStore {
 
     /// All items in saved order — newest first (new items prepend), reorderable
     /// by the user.
-    public func items() -> [ReadingListItem] {
+    public func items() -> [SavedItem] {
         guard let database = database() else { return [] }
         do {
             return try database.perform { db in
@@ -155,12 +158,12 @@ public final class ReadingListStore {
     }
 
     /// The existing item for a URL, if it's already in the list.
-    public func item(forURLString urlString: String) -> ReadingListItem? {
+    public func item(forURLString urlString: String) -> SavedItem? {
         items().first { $0.urlString == urlString }
     }
 
     /// A fresh copy of an item by ID (callers' copies go stale across mutations).
-    public func item(withID itemID: UUID) -> ReadingListItem? {
+    public func item(withID itemID: UUID) -> SavedItem? {
         items().first { $0.id == itemID }
     }
 
@@ -169,11 +172,11 @@ public final class ReadingListStore {
     /// If another item already holds that URL, the wrapper is a duplicate — it's
     /// removed (with its files) and nil is returned so the caller stops ingesting it.
     @discardableResult
-    public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
+    public func updateURL(_ urlString: String, for itemID: UUID) -> SavedItem? {
         // The duplicate's row goes inside the transaction, which releases its
         // files; the unlink and its preload subtree follow the commit.
         var removedDuplicate = false
-        let result: ReadingListItem? = write { db -> ReadingListItem? in
+        let result: SavedItem? = write { db -> SavedItem? in
             guard var stored = try SavesReader.item(id: itemID, in: db) else { return nil }
             if try SavesReader.urlIsTaken(urlString, excluding: itemID, in: db) {
                 removedDuplicate = true
@@ -192,10 +195,10 @@ public final class ReadingListStore {
     }
 
     @discardableResult
-    public func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
-        var item = ReadingListItem(urlString: urlString)
+    public func add(urlString: String, source: CaptureSource = .manual) -> SavedItem {
+        var item = SavedItem(urlString: urlString)
         item.captureSource = source
-        let inserted: ReadingListItem? = write { db in
+        let inserted: SavedItem? = write { db in
             if let existing = try SavesReader.item(forURLString: urlString, in: db) {
                 return existing.item
             }
@@ -216,11 +219,11 @@ public final class ReadingListStore {
     /// "not saved" before either inserted the item. `at` is captured when the
     /// intent starts, not after extraction/ingest finishes.
     public struct SaveAttemptReservation {
-        public let item: ReadingListItem
+        public let item: SavedItem
         public let wasAdded: Bool
         public let previousPressDate: Date?
 
-        public init(item: ReadingListItem, wasAdded: Bool, previousPressDate: Date?) {
+        public init(item: SavedItem, wasAdded: Bool, previousPressDate: Date?) {
             self.item = item
             self.wasAdded = wasAdded
             self.previousPressDate = previousPressDate
@@ -230,7 +233,7 @@ public final class ReadingListStore {
     public func reserveSaveAttempt(
         urlString: String, source: CaptureSource = .manual, at date: Date
     ) -> SaveAttemptReservation {
-        var fresh = ReadingListItem(urlString: urlString)
+        var fresh = SavedItem(urlString: urlString)
         fresh.dateAdded = date
         // Persist the exact policy timestamp too; dateAdded remains a fallback,
         // not the only durable record for a first save attempt.
@@ -279,10 +282,10 @@ public final class ReadingListStore {
     /// ingestor's separate tracker-merge guard is an orthogonal condition — same
     /// URL inside a different item's price tracker.)
     @discardableResult
-    public func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
-        var item = ReadingListItem(urlString: urlString)
+    public func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> SavedItem? {
+        var item = SavedItem(urlString: urlString)
         item.captureSource = source
-        return write { db -> ReadingListItem? in
+        return write { db -> SavedItem? in
             guard try SavesReader.item(forURLString: urlString, in: db) == nil else { return nil }
             try self.insertAtFront([item], in: db)
             return item
@@ -300,7 +303,7 @@ public final class ReadingListStore {
     @discardableResult
     public func addImportedDocument(
         sourceURL: URL, source: CaptureSource = .shareSheet
-    ) -> ReadingListItem? {
+    ) -> SavedItem? {
         let id = UUID()
         // Restrict the extension to alphanumerics so it can't smuggle path
         // separators into the `<id>-source.<ext>` filename.
@@ -318,11 +321,11 @@ public final class ReadingListStore {
         }
         BackupPolicy.includeInBackups(destination)
 
-        var item = ReadingListItem(urlString: "lunadoc://\(id.uuidString)", id: id)
+        var item = SavedItem(urlString: "lunadoc://\(id.uuidString)", id: id)
         item.title = name.isEmpty ? L10n.string("Common_document") : name
         item.documentType = fileExtension
         item.captureSource = source
-        return write { db -> ReadingListItem in
+        return write { db -> SavedItem in
             try self.insertAtFront([item], in: db)
             return item
         }
@@ -342,14 +345,14 @@ public final class ReadingListStore {
     }
 
     /// What `insertImported` did with one requested link.
-    /// Not `Sendable`: it carries a `ReadingListItem`, which isn't.
+    /// Not `Sendable`: it carries a `SavedItem`, which isn't.
     public struct ImportedLinkPlacement: Equatable {
         /// The stored item: the one just inserted, or the save this URL already had.
-        public let item: ReadingListItem
+        public let item: SavedItem
         /// False when the URL was already in the list, so nothing was inserted.
         public let wasInserted: Bool
 
-        public init(item: ReadingListItem, wasInserted: Bool) {
+        public init(item: SavedItem, wasInserted: Bool) {
             self.item = item
             self.wasInserted = wasInserted
         }
@@ -393,7 +396,7 @@ public final class ReadingListStore {
                 try SavesReader.allItems(in: db).map { ($0.urlString, $0) },
                 uniquingKeysWith: { first, _ in first })
             var placements: [ImportedLinkPlacement] = []
-            var inserted: [ReadingListItem] = []
+            var inserted: [SavedItem] = []
             placements.reserveCapacity(links.count)
 
             for link in links {
@@ -402,7 +405,7 @@ public final class ReadingListStore {
                         ImportedLinkPlacement(item: existing, wasInserted: false))
                     continue
                 }
-                var item = ReadingListItem(urlString: link.urlString)
+                var item = SavedItem(urlString: link.urlString)
                 item.captureSource = source
                 item.dateAdded = date.addingTimeInterval(-Double(inserted.count) * spacing)
                 item.lastSaveAttemptDate = .distantPast
@@ -513,7 +516,7 @@ public final class ReadingListStore {
         }
     }
 
-    public func delete(_ item: ReadingListItem) {
+    public func delete(_ item: SavedItem) {
         // The row is the whole delete: its ownership edges cascade with it, and
         // every file left with no owner is queued for the reaper (below) inside
         // the same commit.
@@ -545,7 +548,7 @@ public final class ReadingListStore {
     }
 
     /// Remembers which reader the user last used for an article.
-    public func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
+    public func setReaderMode(_ mode: SavedItem.ReaderMode, for itemID: UUID) {
         updateItem(itemID) { item in
             guard item.lastReaderMode != mode else { return false }
             item.lastReaderMode = mode
@@ -556,7 +559,7 @@ public final class ReadingListStore {
     /// Updates a destination's delivery status; `.sent` also stamps the
     /// destination's `datesSent` (the once-per-day resend guard).
     public func setSendState(
-        _ sendState: ReadingListItem.SendState, for itemID: UUID, destination: String
+        _ sendState: SavedItem.SendState, for itemID: UUID, destination: String
     ) {
         updateItem(itemID) { item in
             item.sendStates[destination] = sendState
@@ -647,8 +650,8 @@ public final class ReadingListStore {
     public func savePlatformMetadata(
         platform: ContentPlatform, platformItemID: String?, title: String?,
         thumbnailFileName: String?, for itemID: UUID
-    ) -> ReadingListItem? {
-        let result = mutateItem(itemID) { item -> ReadingListItem in
+    ) -> SavedItem? {
+        let result = mutateItem(itemID) { item -> SavedItem in
             item.platform = platform
             item.platformItemID = platformItemID
             if let title, !title.isEmpty { item.title = title }
@@ -663,9 +666,9 @@ public final class ReadingListStore {
     }
 
     /// Raises the item's read state; never downgrades (read stays read).
-    public func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
+    public func markReadState(_ newState: SavedItem.ReadState, for itemID: UUID) {
         updateItem(itemID) { item in
-            let order: [ReadingListItem.ReadState] = [.unopened, .opened, .read]
+            let order: [SavedItem.ReadState] = [.unopened, .opened, .read]
             guard let current = order.firstIndex(of: item.readState),
                   let proposed = order.firstIndex(of: newState),
                   proposed > current
@@ -748,8 +751,8 @@ public final class ReadingListStore {
     /// Attaches a price-tracker payload to an item and marks it ready (a tracker
     /// has no article content to download). Returns the refreshed item.
     @discardableResult
-    public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        let result = mutateItem(itemID) { item -> ReadingListItem in
+    public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem? {
+        let result = mutateItem(itemID) { item -> SavedItem in
             item.priceTracker = tracker
             item.title = tracker.productName
             item.state = .ready
@@ -775,8 +778,8 @@ public final class ReadingListStore {
     /// Replaces the price-tracker payload of an existing tracker (add/remove store,
     /// change threshold, archive). Returns the refreshed item.
     @discardableResult
-    public func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        mutateItem(itemID) { item -> ReadingListItem? in
+    public func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem? {
+        mutateItem(itemID) { item -> SavedItem? in
             guard item.priceTracker != nil else { return nil }
             item.priceTracker = tracker
             item.title = tracker.productName
@@ -813,7 +816,7 @@ public final class ReadingListStore {
     /// All non-archived price trackers, ordered stalest-first (oldest minimum
     /// `lastRefreshed` across their stores) so a killed background refresh makes
     /// progress on the longest-unrefreshed trackers each run.
-    public func priceTrackersStalestFirst() -> [ReadingListItem] {
+    public func priceTrackersStalestFirst() -> [SavedItem] {
         items()
             .filter { ($0.priceTracker?.isArchived == false) }
             .sorted { lhs, rhs in
@@ -831,7 +834,7 @@ public final class ReadingListStore {
     // MARK: - Bump / undo
 
     /// Stamps a new bump date on an item and moves it to the top of the list (the
-    /// row's own "Bump to Top" action re-sorts it up in the reading list).
+    /// row's own "Bump to Top" action re-sorts it up in the saves list).
     public func bump(_ itemID: UUID) {
         write { db in
             guard var stored = try SavesReader.item(id: itemID, in: db) else { return }
@@ -844,9 +847,9 @@ public final class ReadingListStore {
 
     // MARK: - Article content
 
-    public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
+    public func saveContent(_ content: ArticleContent, for item: SavedItem) -> SavedItem {
         let fileName = "\(item.id.uuidString).json"
-        let saved: ReadingListItem = write { db -> ReadingListItem in
+        let saved: SavedItem = write { db -> SavedItem in
             guard var stored = try SavesReader.item(id: item.id, in: db) else { return item }
             let previous = stored.item
             // The images this content references, claimed in the same transaction
@@ -926,7 +929,7 @@ public final class ReadingListStore {
     }
 
     #if DEBUG
-    /// Deterministic test/UI-test seeding: replaces the entire reading list with
+    /// Deterministic test/UI-test seeding: replaces the entire saves list with
     /// `items` and writes each provided `ArticleContent` to its item's content file
     /// (keyed by item id). Wipes any existing Articles content files first so the
     /// container is a clean, reproducible fixture. DEBUG-only — never compiled into
@@ -935,7 +938,7 @@ public final class ReadingListStore {
     /// Used by both the in-app `UITestSeeder` (launch-argument seeding for the
     /// screenshot harness) and unit tests that render real view controllers against
     /// a fixed fixture set.
-    public func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
+    public func seedForTesting(items: [SavedItem], contents: [UUID: ArticleContent]) {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
         write { db in
@@ -963,7 +966,7 @@ public final class ReadingListStore {
         reapPendingDeletes()
     }
 
-    /// Empties the reading list and removes all article files. DEBUG-only.
+    /// Empties the saves list and removes all article files. DEBUG-only.
     public func wipeForTesting() {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
@@ -986,7 +989,7 @@ public final class ReadingListStore {
     }
     #endif
 
-    public func content(for item: ReadingListItem) -> ArticleContent? {
+    public func content(for item: SavedItem) -> ArticleContent? {
         guard let fileName = item.contentFileName else { return nil }
         guard let data = try? Data(contentsOf: articlesDirectory.appendingPathComponent(fileName))
         else { return nil }
@@ -996,7 +999,7 @@ public final class ReadingListStore {
     /// Saves an immutable WebKit web archive. The archive is written before its
     /// file name is committed to the list, so the Original mode can never point at
     /// a half-written artifact.
-    public func saveWebArchive(_ data: Data, for item: ReadingListItem) {
+    public func saveWebArchive(_ data: Data, for item: SavedItem) {
         let fileName = "\(item.id.uuidString).webarchive"
         let url = originalArchivesDirectory.appendingPathComponent(fileName)
         do {
@@ -1070,7 +1073,7 @@ public final class ReadingListStore {
     }
 
     /// The saved web archive, when one was successfully captured for a web page.
-    public func webArchiveURL(for item: ReadingListItem) -> URL? {
+    public func webArchiveURL(for item: SavedItem) -> URL? {
         guard let fileName = item.originalArchiveFileName,
               fileName.hasSuffix(".webarchive"),
               fileName == URL(fileURLWithPath: fileName).lastPathComponent
@@ -1081,7 +1084,7 @@ public final class ReadingListStore {
 
     /// An imported document is already its own original artifact. Mail imports have
     /// neither a web archive nor a source file, so they intentionally return nil.
-    public func originalDocumentURL(for item: ReadingListItem) -> URL? {
+    public func originalDocumentURL(for item: SavedItem) -> URL? {
         guard let ext = item.sanitizedDocumentType else { return nil }
         let url = articlesDirectory.appendingPathComponent("\(item.id.uuidString)-source.\(ext)")
         return fileManager.fileExists(atPath: url.path) ? url : nil
@@ -1089,13 +1092,13 @@ public final class ReadingListStore {
 
     /// Whether the reader should offer the Original/archive view mode for this save.
     ///
-    /// Keyed off the save's *source* (`ReadingListItem.canHaveOriginalArchive`), NOT
+    /// Keyed off the save's *source* (`SavedItem.canHaveOriginalArchive`), NOT
     /// off whether the archive file is on disk yet: every web page and imported
     /// document owns an original artifact and gets the mode (a web page whose
     /// `.webarchive` capture is missing gets a styled, offline snapshot of its saved
     /// article content in `OriginalPageViewController`), while email-text imports —
     /// the only saves with no original artifact — never get it.
-    public func hasOriginalSource(for item: ReadingListItem) -> Bool {
+    public func hasOriginalSource(for item: SavedItem) -> Bool {
         item.canHaveOriginalArchive
     }
 
@@ -1103,7 +1106,7 @@ public final class ReadingListStore {
 
     /// One write transaction. Returns nil when the database is unavailable or the
     /// transaction failed — every caller then behaves as it did when a write
-    /// couldn't land. Posts `.readingListChanged` once, after the commit, if
+    /// couldn't land. Posts `.savesChanged` once, after the commit, if
     /// anything was written.
     @discardableResult
     private func write<T>(_ body: (SavesDatabase) throws -> T) -> T? {
@@ -1196,7 +1199,7 @@ public final class ReadingListStore {
     /// when `body` says it changed something. A missing id is a no-op, which is
     /// what every targeted setter wants.
     @discardableResult
-    private func updateItem(_ itemID: UUID, _ body: (inout ReadingListItem) -> Bool) -> Bool {
+    private func updateItem(_ itemID: UUID, _ body: (inout SavedItem) -> Bool) -> Bool {
         write { db in
             guard var stored = try SavesReader.item(id: itemID, in: db) else { return false }
             let previous = stored.item
@@ -1210,7 +1213,7 @@ public final class ReadingListStore {
     /// result is handed back, and the row is written when the item actually
     /// changed by value (so a setter that lands on the values already stored
     /// neither writes nor notifies).
-    private func mutateItem<T>(_ itemID: UUID, _ body: (inout ReadingListItem) -> T) -> T? {
+    private func mutateItem<T>(_ itemID: UUID, _ body: (inout SavedItem) -> T) -> T? {
         write { db in
             guard var stored = try SavesReader.item(id: itemID, in: db) else { return nil }
             let previous = stored.item
@@ -1229,7 +1232,7 @@ public final class ReadingListStore {
     /// expectation must stay on the synchronous primitives.
     /// A queued write targeting an item deleted before it runs is already a safe
     /// no-op (`updateItem`'s own missing-row guard).
-    private func asyncUpdate(_ itemID: UUID, _ body: @escaping (inout ReadingListItem) -> Bool) {
+    private func asyncUpdate(_ itemID: UUID, _ body: @escaping (inout SavedItem) -> Bool) {
         asyncUpdateQueue.async { [weak self] in
             self?.updateItem(itemID, body)
         }
@@ -1244,7 +1247,7 @@ public final class ReadingListStore {
 
     private func postChanged() {
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+            NotificationCenter.default.post(name: .savesChanged, object: nil)
         }
     }
 
@@ -1257,7 +1260,7 @@ public final class ReadingListStore {
     /// differ, which is what keeps an ordinary field update — a resume position,
     /// a read state — down to the one row it touches.
     private func writeSave(
-        _ stored: StoredSave, previous: ReadingListItem?, in db: SavesDatabase
+        _ stored: StoredSave, previous: SavedItem?, in db: SavesDatabase
     ) throws {
         try db.run(SaveRow.upsertSQL) { try SaveRow.bind(stored.item, seq: stored.seq, to: $0) }
         // Every artifact this save's own columns name, claimed in the same
@@ -1301,7 +1304,7 @@ public final class ReadingListStore {
 
     /// Whether the two versions of a save name different files.
     private static func ownedFilesDiffer(
-        _ lhs: ReadingListItem, _ rhs: ReadingListItem
+        _ lhs: SavedItem, _ rhs: SavedItem
     ) -> Bool {
         lhs.contentFileName != rhs.contentFileName
             || lhs.originalArchiveFileName != rhs.originalArchiveFileName
@@ -1311,7 +1314,7 @@ public final class ReadingListStore {
     }
 
     private static func sendBookkeepingDiffers(
-        _ lhs: ReadingListItem, _ rhs: ReadingListItem
+        _ lhs: SavedItem, _ rhs: SavedItem
     ) -> Bool {
         lhs.sendStates != rhs.sendStates
             || lhs.datesSent != rhs.datesSent
@@ -1350,7 +1353,7 @@ public final class ReadingListStore {
 
     /// Inserts new saves at the FRONT of the list, keeping their own order
     /// (`items[0]` ends up first). Nothing already stored is touched.
-    private func insertAtFront(_ items: [ReadingListItem], in db: SavesDatabase) throws {
+    private func insertAtFront(_ items: [SavedItem], in db: SavesDatabase) throws {
         guard !items.isEmpty else { return }
         let base = try SavesReader.maxSeq(in: db)
         for (offset, item) in items.enumerated() {
@@ -1361,7 +1364,7 @@ public final class ReadingListStore {
 
     /// Replaces the whole list with `items`, in the order given. The child rows
     /// go with the saves through `ON DELETE CASCADE`.
-    private func replaceAll(with items: [ReadingListItem], in db: SavesDatabase) throws {
+    private func replaceAll(with items: [SavedItem], in db: SavesDatabase) throws {
         try db.execute("DELETE FROM saves")
         for (offset, item) in items.enumerated() {
             let seq = Int64(items.count - offset)
@@ -1388,6 +1391,6 @@ public final class ReadingListStore {
 /// A save as stored: the item plus the list-position column, which is the list's
 /// own order rather than anything the model carries.
 struct StoredSave {
-    var item: ReadingListItem
+    var item: SavedItem
     var seq: Int64
 }

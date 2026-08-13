@@ -63,8 +63,8 @@ final class SourceBadgeTests: XCTestCase {
         captureSource: CaptureSource? = nil,
         senderName: String? = nil,
         documentType: String? = nil
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: "badge-\(url)", urlString: url, title: "T", dateAdded: Date(timeIntervalSince1970: 0),
             documentType: documentType, senderName: senderName, captureSource: captureSource)
     }

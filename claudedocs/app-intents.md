@@ -44,7 +44,7 @@ The transient return value has exactly three properties:
 
 `CaptureIntentMetadata` currently records schema version, phase (`screenshot`,
 `save`, `download`, or `comparison`), CurrentApp, resolved URL, the atomically
-decided double-save flag, a `ReadingListIngestor.PreparedSavePress`, and (when
+decided double-save flag, a `SavesIngestor.PreparedSavePress`, and (when
 resolved) the direct `MediaAsset` plus expected byte count. Decode failure is
 deliberately treated as no metadata; Save then runs from the top. The string is a
 transport checkpoint, not Shortcut-facing API.
@@ -135,7 +135,7 @@ check, and validates storage. It never starts a media transfer. If it finishes:
 - already-local media → `.done` with `Media`;
 - downloadable media → `.download` with a prepared media checkpoint.
 
-If the deadline wins, the work task is cancelled, `ReadingListIngestor` refuses
+If the deadline wins, the work task is cancelled, `SavesIngestor` refuses
 to persist the cancelled result, and the pending placeholder + frozen decision
 are returned as `.download` Metadata. Save waits for cancellation cleanup and
 resumes that same prepared state; it does not reserve another press. Non-trivial
@@ -234,7 +234,7 @@ that run. See double-save.md.
    snapshot timestamp is refreshed. `ScreenshotDigest.similarityThreshold`
    still needs on-device tuning against status-bar clock/Dynamic Island noise.
    Every intent captures its attempt timestamp at the start of `perform()`. Once
-   a URL resolves, `ReadingListStore.reserveSaveAttempt` atomically inserts it and
+   a URL resolves, `SavesStore.reserveSaveAttempt` atomically inserts it and
    its explicit `lastSaveAttemptDate`, or updates the existing marker, before
    ingest. Save's screenshot slot is also committed as one App-Group value at
    URL resolution, before ingest/fetch. At the end, the intent recommits both
@@ -448,7 +448,7 @@ of `supportedModes: IntentModes` + `continueInForeground()`, but remains
 functional (introduced 16.4, present in both SDKs); one code path beats mixing
 the two mechanisms on the same intent type. Used for: the double-save
 "ask every time" friend prompt —
-`ReadingListIngestor` records the pending prompt, the intent foregrounds, and
+`SavesIngestor` records the pending prompt, the intent foregrounds, and
 `SceneDelegate.applyPendingFriendPrompt()` presents `SendToFriendSheet`.
 
 ## Action Button setup

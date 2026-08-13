@@ -47,9 +47,9 @@ public enum ReaderSettings {
     /// don't yet have a per-article preference. The retired standalone
     /// "highlight" (chunking) mode now lives as the RSVP "Phrases" sub-mode, so a
     /// persisted `highlight` resolves to `rsvp` (the reader opens it in Phrases).
-    public static var lastReaderMode: ReadingListItem.ReaderMode {
+    public static var lastReaderMode: SavedItem.ReaderMode {
         get {
-            let stored = ReadingListItem.ReaderMode(
+            let stored = SavedItem.ReaderMode(
                 rawValue: defaults.string(forKey: lastReaderModeKey) ?? "") ?? .scroll
             return stored == .highlight ? .rsvp : stored
         }
@@ -139,7 +139,7 @@ public enum ReaderSettings {
         set { defaults.set(newValue, forKey: wpmKey) }
     }
 
-    /// Resume positions for links previewed without first saving them. Saved reading-list
+    /// Resume positions for links previewed without first saving them. Saved saves list
     /// items continue to use their normal `lastWordIndex`; this URL-keyed fallback gives
     /// transient link previews the same exit/resume behavior.
     public static func linkPreviewWordIndex(for canonicalURLString: String) -> Int {

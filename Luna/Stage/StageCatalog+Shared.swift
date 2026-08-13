@@ -7,7 +7,7 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReadingListUI
+import LunaSavesUI
 import LunaShareSurface
 import LunaURLClassification
 import LunaStorage
@@ -237,7 +237,7 @@ enum SharedStageCatalog {
     /// never surfaces (`LunaApp.includes`), so seeding all of them and letting
     /// the app filter is both simpler and a live check of that filter.
     private static func seedEveryKind() {
-        var items: [ReadingListItem] = []
+        var items: [SavedItem] = []
         var contents: [UUID: ArticleContent] = [:]
 
         let ready = StageFixtures.article(
@@ -460,7 +460,7 @@ enum SharedStageCatalog {
     private static func failedSaveCard(
         _ rescueState: FailedSaveCardModel.RescueState = .idle
     ) -> UIViewController {
-        let itemID = ReadingListItem.deterministicUUID(from: "stage-failed")
+        let itemID = SavedItem.deterministicUUID(from: "stage-failed")
         let model = FailedSaveCardModel(
             itemID: itemID, url: URL(string: "https://example.com/broken"),
             urlText: "example.com/broken", rescueState: rescueState)

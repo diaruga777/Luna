@@ -90,7 +90,7 @@ public struct Friend: Codable, Equatable {
 }
 
 /// Persists the friends list as JSON in the App Group container (shared by all
-/// three apps), mirroring the `ReadingListStore` pattern: fresh disk reads,
+/// three apps), mirroring the `SavesStore` pattern: fresh disk reads,
 /// cross-process coordinated mutations, change notification.
 public final class FriendsStore {
 

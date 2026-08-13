@@ -21,7 +21,7 @@ import LunaDesignSystem
 import LunaFetch
 import LunaModels
 import LunaReaderUI
-import LunaReadingListUI
+import LunaSavesUI
 import LunaSocial
 import LunaStorage
 import UIKit
@@ -44,9 +44,9 @@ protocol ArticleDeckChromeHosting: AnyObject {
     /// Bring this save's card to the center; false when it has none here.
     func centerCard(forItemID id: UUID) -> Bool
     /// The archive.today CAPTCHA flow for a locked save.
-    func presentUnlockFlow(for item: ReadingListItem, articleURL: URL)
+    func presentUnlockFlow(for item: SavedItem, articleURL: URL)
     /// Push a fullscreen reader — the fallback for a save with no card here.
-    func pushReader(for item: ReadingListItem)
+    func pushReader(for item: SavedItem)
     /// Toggle the reading immersion the card's own tap drives.
     func toggleImmersion(for card: ReaderCardContentViewController)
 }
@@ -54,7 +54,7 @@ protocol ArticleDeckChromeHosting: AnyObject {
 @MainActor
 final class ArticleCardPresenter: CardKindPresenting {
 
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
 
     private func chrome(_ host: CardPresenterHost) -> ArticleDeckChromeHosting? {
         host.presentingController as? ArticleDeckChromeHosting
@@ -65,7 +65,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// The article half of a card's identity. The deck-generic components (id,
     /// title, state, thumbnail) stay with the deck; this is what only an article
     /// knows — who sent it, which changes when a contact is renamed.
-    func fingerprint(for item: ReadingListItem) -> String {
+    func fingerprint(for item: SavedItem) -> String {
         Self.senderName(for: item) ?? ""
     }
 
@@ -76,7 +76,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// What an article does state: scrolled text dissolves at both edges rather
     /// than hitting a hard clip, and a horizontal swipe pages the deck because a
     /// reader has no timeline of its own to scrub.
-    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
+    func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
         style.contentEdgeFadeHeight = Self.contentEdgeFade
         style.pagesOnInCardSwipes = true
@@ -88,7 +88,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// inset, so the resting first line starts fully legible.
     static let contentEdgeFade: CGFloat = 28
 
-    func title(for item: ReadingListItem) -> String? {
+    func title(for item: SavedItem) -> String? {
         item.title ?? item.url?.host ?? item.urlString
     }
 
@@ -97,7 +97,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// a warm strip shows favicons at once — which is why the completion may
     /// fire twice.
     func loadSourceBadge(
-        for item: ReadingListItem, completion: @escaping (CarouselSourceBadge?) -> Void
+        for item: SavedItem, completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
         completion(ArticleSourceBadge.fallback(for: item))
         guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
@@ -110,7 +110,7 @@ final class ArticleCardPresenter: CardKindPresenting {
 
     /// EVERY mounted card is a full live reader, side peeks included, so paging
     /// never shows a placeholder — the card view IS the fullscreen reader view.
-    func cardContent(for item: ReadingListItem, host: CardPresenterHost)
+    func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
         let content = ReaderCardContentViewController(
@@ -124,7 +124,7 @@ final class ArticleCardPresenter: CardKindPresenting {
 
     // MARK: - Lifecycle
 
-    func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost) {
+    func itemDidCenter(_ item: SavedItem, host: CardPresenterHost) {
         store.markReadState(.opened, for: item.id)
     }
 
@@ -135,7 +135,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// deck-level fallback left for it to fall through to.
     @discardableResult
     func itemWasTapped(
-        _ item: ReadingListItem, cardContent: CardContentViewController?,
+        _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
     ) -> Bool {
         guard let chrome = chrome(host) else { return false }
@@ -161,7 +161,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// hand-off should simply have landed. The push survives only as the
     /// fallback for a save with no card here — an archived one.
     @discardableResult
-    func openExternally(_ item: ReadingListItem, host: CardPresenterHost) -> Bool {
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
         guard let chrome = chrome(host) else { return false }
         let centered = chrome.centerCard(forItemID: item.id)
         // A locked save still needs its unlock flow, but centre first so the
@@ -182,7 +182,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// An archived article: its favicon, its title, and the date it was SAVED
     /// (not the date it was archived — the tray footer has always shown the
     /// original save).
-    func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
+    func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {
         ArchiveTrayItem(
@@ -229,7 +229,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// Incoming-email cards follow the contact's CURRENT name, falling back to
     /// the name captured from the original From header for legacy/unknown
     /// senders.
-    static func senderName(for item: ReadingListItem) -> String? {
+    static func senderName(for item: SavedItem) -> String? {
         resolvedSenderName(for: item) { email in
             FriendsStore.shared.friend(withEmail: email)?.displayName
         }
@@ -239,7 +239,7 @@ final class ArticleCardPresenter: CardKindPresenting {
     /// that takes the contact lookup as an argument, so it is testable without a
     /// main-actor hop or a live FriendsStore.
     nonisolated static func resolvedSenderName(
-        for item: ReadingListItem,
+        for item: SavedItem,
         contactNameForEmail: (String) -> String?
     ) -> String? {
         guard item.effectiveCaptureSource == .email else { return nil }

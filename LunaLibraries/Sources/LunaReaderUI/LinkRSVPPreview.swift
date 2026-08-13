@@ -98,7 +98,7 @@ private enum LinkPreviewAction: CaseIterable {
 }
 
 private struct LinkPreviewArticle {
-    let item: ReadingListItem
+    let item: SavedItem
     let content: ArticleContent
     let resumeIndex: Int
     let isSaved: Bool
@@ -107,7 +107,7 @@ private struct LinkPreviewArticle {
 private enum LinkPreviewLoader {
     static func load(url: URL) async -> LinkPreviewArticle? {
         let canonical = PreloadStore.canonicalString(for: url)
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         if let saved = store.items().first(where: {
             guard let candidate = $0.url else { return false }
             return PreloadStore.canonicalString(for: candidate) == canonical
@@ -126,7 +126,7 @@ private enum LinkPreviewLoader {
             content = extracted
         }
 
-        var transient = ReadingListItem(urlString: canonical)
+        var transient = SavedItem(urlString: canonical)
         transient.title = content.title
         let resume = ReaderSettings.linkPreviewWordIndex(for: canonical)
         transient.lastWordIndex = resume
@@ -773,7 +773,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private func persistPosition() {
         let token = engine.tokenIndex(forFrameIndex: index) ?? index
         if article.isSaved {
-            ReadingListStore.shared.saveReaderExitPosition(
+            SavesStore.shared.saveReaderExitPosition(
                 scrollOffset: .clear, lastWordIndex: token, for: article.item.id)
         } else {
             ReaderSettings.setLinkPreviewWordIndex(token, for: PreloadStore.canonicalString(for: url))

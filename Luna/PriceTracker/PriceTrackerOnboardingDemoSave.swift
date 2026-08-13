@@ -25,13 +25,13 @@ enum PriceTrackerOnboardingDemoSave {
         let registry = AppOnboardingStore.shared
         defer { registry.clearTemporarySaveIdentifier() }
         guard let identifier = registry.temporarySaveIdentifier,
-              let item = ReadingListStore.shared.item(withID: identifier)
+              let item = SavesStore.shared.item(withID: identifier)
         else { return }
         if let imageFileName = item.priceTracker?.imageFileName {
             try? FileManager.default.removeItem(
-                at: ReadingListStore.shared.articlesDirectory
+                at: SavesStore.shared.articlesDirectory
                     .appendingPathComponent(imageFileName))
         }
-        ReadingListStore.shared.delete(item)
+        SavesStore.shared.delete(item)
     }
 }

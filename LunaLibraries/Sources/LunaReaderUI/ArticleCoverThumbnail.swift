@@ -9,7 +9,7 @@ import LunaHTMLClassification
 import LunaModels
 import Foundation
 
-/// The ONE place reading-list cover thumbnails are produced, so every save entry
+/// The ONE place save cover thumbnails are produced, so every save entry
 /// point (in-app, App Intent, action/share extension) ends up with an identical
 /// row thumbnail for the same article.
 ///
@@ -49,7 +49,7 @@ public enum ArticleCoverThumbnail {
     ///    (no network — reuse the bytes the reader already cached).
     /// 2. The live page's `og:image` (one short fetch), for items whose images
     ///    were never downloaded (the extension persists content without downloading).
-    public static func backfillThumbnail(for item: ReadingListItem, store: ReadingListStore) async {
+    public static func backfillThumbnail(for item: SavedItem, store: SavesStore) async {
         // Already has a thumbnail, or isn't a plain web article — nothing to do.
         guard item.thumbnailFileName == nil,
               item.state == .ready || item.state == .needsCaptcha,
@@ -80,7 +80,7 @@ public enum ArticleCoverThumbnail {
     /// The bytes of the article's FIRST already-downloaded `.image` block, or nil if
     /// no image block has been downloaded yet. Read straight from the Articles dir.
     private static func leadImageData(
-        from content: ArticleContent, store: ReadingListStore
+        from content: ArticleContent, store: SavesStore
     ) -> Data? {
         // Resolve any on-disk-but-unlinked images first (extension saves persist
         // image blocks with only a URL), so a freshly cached file is found.

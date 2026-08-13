@@ -121,7 +121,7 @@ protocol CardDeckProviding: AnyObject {
 
     // MARK: - Store observation
 
-    /// Change notifications BESIDES `.readingListChanged`, which every deck
+    /// Change notifications BESIDES `.savesChanged`, which every deck
     /// watches, that must reload this deck (a media store write, a friends-list
     /// edit that renames a card's sender).
     var deckChangeNotificationNames: [Notification.Name] { get }
@@ -188,14 +188,14 @@ protocol CardDeckProviding: AnyObject {
 
     /// The kind that owns a save, as THIS deck resolves it. Normally the
     /// registry's answer, but a stand-in for an unbacked row (see
-    /// `CardKindPresenting.unbackedItems`) has no reading-list row to resolve
+    /// `CardKindPresenting.unbackedItems`) has no save row to resolve
     /// from and goes back to the presenter that supplied it.
     func deckPresenter(forItemID id: UUID) -> CardKindPresenting?
 
     /// The save behind a slot. The host keeps only `CardDeckSlot`s — id, URL,
     /// fingerprint — so chrome that needs the whole row (the Reader's share
     /// pill asking what the centered card IS) asks the provider for it.
-    func deckItem(forSlot slot: Int) -> ReadingListItem?
+    func deckItem(forSlot slot: Int) -> SavedItem?
 
     // MARK: - The trailing bottom circle
 
@@ -239,7 +239,7 @@ extension CardDeckProviding {
     func deckSlotWasTapped(_ slot: Int) {}
     func deckArchiveTrayItems() -> [ArchiveTrayItem] { [] }
     func deckPresenter(forItemID id: UUID) -> CardKindPresenting? { nil }
-    func deckItem(forSlot slot: Int) -> ReadingListItem? { nil }
+    func deckItem(forSlot slot: Int) -> SavedItem? { nil }
     var deckShareButton: CardDeckShareButton? { nil }
     func deckCanShare(slot: Int?) -> Bool { slot != nil }
     func deckShareMenu(slot: Int, sourceView: UIView) -> UIMenu? { nil }

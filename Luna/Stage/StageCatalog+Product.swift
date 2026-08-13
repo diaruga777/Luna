@@ -137,7 +137,7 @@ enum ProductStageCatalog {
                 },
                 make: {
                     editor(mode: .creation(
-                        itemID: ReadingListItem.deterministicUUID(from: "stage-kettle"),
+                        itemID: SavedItem.deterministicUUID(from: "stage-kettle"),
                         host: .inApp))
                 }),
             StageDescriptor(
@@ -159,7 +159,7 @@ enum ProductStageCatalog {
                 },
                 make: {
                     editor(mode: .creation(
-                        itemID: ReadingListItem.deterministicUUID(from: "stage-longtitle"),
+                        itemID: SavedItem.deterministicUUID(from: "stage-longtitle"),
                         host: .extension))
                 }),
             StageDescriptor(
@@ -183,7 +183,7 @@ enum ProductStageCatalog {
                 },
                 make: {
                     editor(mode: .merge(
-                        itemID: ReadingListItem.deterministicUUID(from: "stage-gadget"),
+                        itemID: SavedItem.deterministicUUID(from: "stage-gadget"),
                         addedStoreURLString: "https://otherstore.example.com/gadget",
                         host: .inApp))
                 }),
@@ -194,7 +194,7 @@ enum ProductStageCatalog {
     /// six real retailers, one of them cheapest. Real hosts because the seller
     /// rows name a retailer from the bundled directory and fetch its favicon —
     /// `store.example.com` exercises neither.
-    private static func comparedTracker() -> ReadingListItem {
+    private static func comparedTracker() -> SavedItem {
         let sellers: [(String, Decimal)] = [
             ("https://www.jbhifi.com.au/products/kettle", 129.99),
             ("https://www.amazon.com.au/dp/B003FGWPPS", 124.50),
@@ -218,7 +218,7 @@ enum ProductStageCatalog {
                 urlString: url, lastPrice: price, currency: "AUD",
                 lastRefreshed: StageFixtures.ago(hours: 5)))
         }
-        return ReadingListItem(
+        return SavedItem(
             seed: "stage-compared", urlString: sellers[0].0,
             title: tracker.productName, dateAdded: StageFixtures.ago(days: 6),
             state: .ready, captureSource: .manual, priceTracker: tracker)
@@ -226,7 +226,7 @@ enum ProductStageCatalog {
 
     @MainActor
     private static func editor(seed: String) -> UIViewController {
-        editor(mode: .existing(itemID: ReadingListItem.deterministicUUID(from: seed)))
+        editor(mode: .existing(itemID: SavedItem.deterministicUUID(from: seed)))
     }
 
     @MainActor

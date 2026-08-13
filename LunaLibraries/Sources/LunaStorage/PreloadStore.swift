@@ -86,7 +86,7 @@ public final class PreloadStore {
     private var cachedIndex: [String: PreloadEntry]?
     /// Guards the lazy resolution of `ownershipStore` only.
     private let ownershipLock = NSLock()
-    private var resolvedOwnershipStore: ReadingListStore?
+    private var resolvedOwnershipStore: SavesStore?
 
     /// In-memory cache of decoded article content, keyed by URL hash. Lets the inline
     /// link viewer resolve a preloaded page **synchronously on the main thread** (no
@@ -113,19 +113,19 @@ public final class PreloadStore {
     /// Resolved lazily, and to the shared store whenever this store is the shared
     /// one, so the process ends up with one connection to the database rather than
     /// two.
-    private func ownershipStore() -> ReadingListStore {
+    private func ownershipStore() -> SavesStore {
         guard let overrideContainerURL else { return .shared }
         ownershipLock.lock()
         defer { ownershipLock.unlock() }
         if let resolvedOwnershipStore { return resolvedOwnershipStore }
-        let store = ReadingListStore(containerURL: overrideContainerURL, preloadStore: self)
+        let store = SavesStore(containerURL: overrideContainerURL, preloadStore: self)
         resolvedOwnershipStore = store
         return store
     }
 
     private var containerURL: URL {
         if let overrideContainerURL { return overrideContainerURL }
-        // The one container resolution, shared with `ReadingListStore`: the
+        // The one container resolution, shared with `SavesStore`: the
         // preload cache sits beside the list it feeds, and a staged run points
         // both at the same scratch directory.
         return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory

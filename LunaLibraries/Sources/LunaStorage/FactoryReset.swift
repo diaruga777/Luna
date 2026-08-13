@@ -23,7 +23,7 @@ import UserNotifications
 /// **The other Luna apps are wiped too, and that is intended.** The App Group
 /// container and the shared keychain group are one thing shared by four apps;
 /// "start over from scratch" cannot mean leaving the sibling's copy of the
-/// reading list in place. What is NOT reachable: another app's or extension's
+/// saves list in place. What is NOT reachable: another app's or extension's
 /// *private* container (iOS gives each `.appex` its own, and nothing in Luna
 /// keeps state there — extensions write to the App Group precisely so they can
 /// be read back) and the Safari web extension's `browser.storage`, which lives

@@ -711,7 +711,7 @@ simply downloading. The launch therefore does exactly four things and nothing
 else:
 
 1. **Persist the save.** `PendingResolvedMediaDownloads.drain` reserves the
-   reading-list row synchronously — the same `reserveSaveAttempt` that is the
+   save row synchronously — the same `reserveSaveAttempt` that is the
    sync half of an ordinary save press — before anything that can fail or take
    time. It is what survives if the user never comes back, and it gives the
    download job the row's identity instead of leaving a `SavedMediaStore` record
@@ -784,14 +784,14 @@ together (`PendingIngestCompletions.owe`, LunaStorage, App-Group backed, 3-day
 lifetime) before anything that can fail or take time — that is the recoverable
 state — and completing from the record simply settles it in the same breath.
 Otherwise, once the bounce has happened the drain posts `requestRun()`, and
-`BackgroundIngestCompletion` (LunaReadingList — this is why the debt lives one
-tier down in LunaStorage: the media module cannot name `ReadingListIngestor`)
+`BackgroundIngestCompletion` (LunaSaves — this is why the debt lives one
+tier down in LunaStorage: the media module cannot name `SavesIngestor`)
 runs the ordinary non-interactive ingest per owed row, each under its own
 `BackgroundExecutionLease`, ended as soon as that row reaches a verdict. That
 pass finds the transfer already running rather than starting a second one.
 
 **When the granted window expires mid-ingest**, the lease's `onExpiration`
-cancels the ingest at the one safe point (`ReadingListIngestor.ingest` checks
+cancels the ingest at the one safe point (`SavesIngestor.ingest` checks
 `Task.isCancelled` after the pipeline, before it persists anything): nothing is
 written, the row stays `.pending`, and the debt stays queued with its attempt
 count bumped. It resumes with no user action at the next wake — the background
@@ -923,7 +923,7 @@ BELOW the page's current price, same currency only, ties broken by earliest date
 shows a second, **non-interactive** (`pointer-events: none`) pill, `Was $79.99 on
 1/12/25`, stacked above Track when unsaved, alone when already tracked, absent
 entirely when tracked with no cheaper history. Observations are NEVER saves: no
-reading-list row, no scheduled refresh, no alert — they exist to seed a tracker's
+save row, no scheduled refresh, no alert — they exist to seed a tracker's
 history at the moment it is CREATED (`claudedocs/price-tracking.md`) and to answer
 this query. There is no background sweep folding them into existing trackers; the
 read happens once, on the save path.
@@ -1013,7 +1013,7 @@ is already on the page. One lookup per page, its flag set before any DOM work.
 ### Bounce back to Safari after a media save
 
 Only a Downloader media pill carries `&ret=safari` on its deep link. Once
-`ReadingListIngestor.handleSavePress` returns and the download has started, the Live
+`SavesIngestor.handleSavePress` returns and the download has started, the Live
 Activity is up, and `SceneDelegate` decides via the pure
 `SafariReturnPolicy.shouldReturn` (LunaURLClassification) whether to reopen the original https page —
 `UIApplication.shared.open`, never a private `x-safari-https://`-style scheme, and

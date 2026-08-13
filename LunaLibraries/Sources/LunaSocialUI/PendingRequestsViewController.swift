@@ -4,7 +4,7 @@
 //
 
 import LunaSocial
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import LunaDesignSystem
 import UIKit
@@ -76,10 +76,10 @@ public final class PendingRequestsViewController: NavHeaderTableController {
     }
 
     private func importAndRemove(_ request: PendingRequest) {
-        if let item = ReadingListStore.shared.addIfAbsent(urlString: request.urlString, source: .email) {
-            ReadingListStore.shared.setIncomingSender(
+        if let item = SavesStore.shared.addIfAbsent(urlString: request.urlString, source: .email) {
+            SavesStore.shared.setIncomingSender(
                 email: request.senderEmail, displayName: request.displaySender, for: item.id)
-            Task { await ReadingListIngestor.shared.ingest(item) }
+            Task { await SavesIngestor.shared.ingest(item) }
         }
         PendingRequestsStore.shared.remove(id: request.id)
         reload()

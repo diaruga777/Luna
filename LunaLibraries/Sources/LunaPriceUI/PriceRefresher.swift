@@ -13,19 +13,19 @@ import Foundation
 /// against an in-memory fake instead of the App Group store.
 public protocol PriceTrackerPersisting: AnyObject {
     /// Non-archived trackers, stalest-first (oldest minimum `lastRefreshed`).
-    func priceTrackersStalestFirst() -> [ReadingListItem]
+    func priceTrackersStalestFirst() -> [SavedItem]
     /// Persists an updated tracker payload for an item.
-    func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem?
+    func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem?
     /// Stamps the row's sort date to now. Every deck orders on
     /// `bumpDate ?? dateAdded`, so this is what resurfaces a product whose alert
     /// has just fired.
     func bump(_ itemID: UUID)
     /// Single-item lookup, for `PriceRefresher.refreshTracker(itemID:)` — a
     /// just-seeded tracker doesn't wait for the stalest-first cycle to be found.
-    func item(withID itemID: UUID) -> ReadingListItem?
+    func item(withID itemID: UUID) -> SavedItem?
 }
 
-extension ReadingListStore: PriceTrackerPersisting {}
+extension SavesStore: PriceTrackerPersisting {}
 
 /// Outcome of refreshing one tracker.
 public struct PriceRefreshOutcome: Equatable {

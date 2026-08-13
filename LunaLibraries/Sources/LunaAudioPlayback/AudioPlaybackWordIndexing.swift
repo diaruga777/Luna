@@ -7,7 +7,7 @@ import Foundation
 
 /// Pure helpers mapping between the "global word index" domain
 /// `AudioPlaybackCenter` uses for resume/seek and
-/// `ReadingListItem.lastSpokenWordIndex` (0-based, counting
+/// `SavedItem.lastSpokenWordIndex` (0-based, counting
 /// whitespace-delimited words across an `AudioScript`'s `spokenBlocks` in
 /// order — the exact rule `AudioScript.totalWordCount` uses) and the
 /// per-block character-range domain `SpeechRenderer`'s `WordMarker`s live in.

@@ -12,7 +12,7 @@ import LunaSocial
 import LunaStorage
 import UIKit
 
-/// Product-kind ingestion, extracted from `ReadingListIngestor` so only
+/// Product-kind ingestion, extracted from `SavesIngestor` so only
 /// product-handling apps carry the tracker-matching and price machinery. The
 /// app shell installs this behind `IngestorKindHandlers.product` (via a thin
 /// adapter in its `KindWiring` variant).
@@ -39,7 +39,7 @@ public final class ProductTrackerIngestor {
     /// name+brand), the new URL is MERGED into that tracker; otherwise a new
     /// tracker is created on this item.
     public func ingest(
-        _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore
+        _ item: SavedItem, url: URL, product: ProductInfo, store: SavesStore
     ) async {
         // The merge decision (and its snapshot seeding + identifier union) is
         // shared with the extension's immediate-editor path — see
@@ -139,7 +139,7 @@ public final class ProductTrackerIngestor {
         }
     }
 
-    private func writeArtwork(_ data: Data, for itemID: UUID, store: ReadingListStore) -> String? {
+    private func writeArtwork(_ data: Data, for itemID: UUID, store: SavesStore) -> String? {
         let fileName = "\(itemID.uuidString)-product.jpg"
         let destination = store.articlesDirectory.appendingPathComponent(fileName)
         do {
@@ -154,7 +154,7 @@ public final class ProductTrackerIngestor {
 
 /// Renders a tracker's price history graph to a JPEG for inline email embedding —
 /// the product-handling apps' `KindWiring` installs this behind
-/// `EmailShareCenter.priceGraphSnapshot` (LunaReadingList must not depend on
+/// `EmailShareCenter.priceGraphSnapshot` (LunaSaves must not depend on
 /// LunaPriceUI's graph view).
 public enum PriceGraphEmailSnapshot {
     @MainActor

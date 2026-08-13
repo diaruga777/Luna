@@ -20,14 +20,14 @@
 //  This file is compiled into ALL FOUR targets, so it may not name a kind
 //  module's symbols. Everything kind-shaped arrives through the presenter
 //  protocol; the one exception is the FAILED save, which carries no kind at all
-//  (`ReadingListSectioning.isFailedSave`) and is therefore the deck's own card in
+//  (`SavesSectioning.isFailedSave`) and is therefore the deck's own card in
 //  every app.
 //
 
 import LunaDesignSystem
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaSocialUI
 import LunaStorage
 import UIKit
@@ -38,7 +38,7 @@ import UIKit
 /// generic link card only the central app and Reader have.
 @MainActor
 protocol CardDeckFallbackContentProviding: AnyObject {
-    func fallbackCardContent(for item: ReadingListItem) -> CardContentViewController
+    func fallbackCardContent(for item: SavedItem) -> CardContentViewController
 }
 
 struct CardDeckConfiguration {
@@ -69,16 +69,16 @@ final class KindDeckProvider: CardDeckProviding {
 
     private let configuration: CardDeckConfiguration
     private unowned let host: CardCarouselHostViewController
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
 
-    private var items: [ReadingListItem] = []
-    private var archivedItems: [ReadingListItem] = []
+    private var items: [SavedItem] = []
+    private var archivedItems: [SavedItem] = []
     /// What `deckPreparedSnapshot` computed, waiting for the host to say the
     /// reload is going ahead.
-    private var preparedItems: [ReadingListItem] = []
-    private var preparedArchivedItems: [ReadingListItem] = []
+    private var preparedItems: [SavedItem] = []
+    private var preparedArchivedItems: [SavedItem] = []
     /// The presenter that CONTRIBUTED a slot, for the stand-in items that have
-    /// no reading-list row for the registry to resolve them from (see
+    /// no save row for the registry to resolve them from (see
     /// `CardKindPresenting.unbackedItems`).
     private var unbackedOwners: [UUID: CardKindPresenting] = [:]
     private var preparedUnbackedOwners: [UUID: CardKindPresenting] = [:]
@@ -91,7 +91,7 @@ final class KindDeckProvider: CardDeckProviding {
     /// The kind that owns a save. A stand-in for an unbacked row goes straight
     /// back to the presenter that supplied it; everything else is the registry's
     /// single resolution point. Nil means the save has no kind — a failed one.
-    private func presenter(for item: ReadingListItem) -> CardKindPresenting? {
+    private func presenter(for item: SavedItem) -> CardKindPresenting? {
         unbackedOwners[item.id] ?? CardKindPresenters.presenter(for: item)
     }
 
@@ -104,11 +104,11 @@ final class KindDeckProvider: CardDeckProviding {
         return CardKindPresenters.presenter(for: item)
     }
 
-    private func item(atSlot slot: Int) -> ReadingListItem? {
+    private func item(atSlot slot: Int) -> SavedItem? {
         items.indices.contains(slot) ? items[slot] : nil
     }
 
-    func deckItem(forSlot slot: Int) -> ReadingListItem? { item(atSlot: slot) }
+    func deckItem(forSlot slot: Int) -> SavedItem? { item(atSlot: slot) }
 
     // MARK: - Store observation
 
@@ -145,7 +145,7 @@ final class KindDeckProvider: CardDeckProviding {
 
         var owners: [UUID: CardKindPresenting] = [:]
         var candidates = store.items().filter { LunaApp.current.includes($0) }
-        // Media Luna holds that the reading list has no row for. Real user
+        // Media Luna holds that the saves list has no row for. Real user
         // downloads, not an edge case — see `CardKindPresenting.unbackedItems`.
         for presenter in CardKindPresenters.installed {
             for standIn in presenter.unbackedItems() {
@@ -194,9 +194,9 @@ final class KindDeckProvider: CardDeckProviding {
 
     /// Archived-ness is the KIND's answer, because the flag can live in the
     /// kind's own store (a media row's, a tracker's) rather than on the
-    /// reading-list row. A failed save has only the row.
+    /// save row. A failed save has only the row.
     private func isArchived(
-        _ item: ReadingListItem, owners: [UUID: CardKindPresenting]
+        _ item: SavedItem, owners: [UUID: CardKindPresenting]
     ) -> Bool {
         guard let presenter = owners[item.id] ?? CardKindPresenters.presenter(for: item)
         else { return item.isArchived }
@@ -212,14 +212,14 @@ final class KindDeckProvider: CardDeckProviding {
     /// have shuffled a just-watched video behind everything else — so the two
     /// decks ordered differently and the same save moved when you switched apps.
     /// Finished reads leave the deck on their own anyway, via
-    /// `ReadingListStore.archivePendingFinishedItems()` at launch/background, so
+    /// `SavesStore.archivePendingFinishedItems()` at launch/background, so
     /// the grouping was buying an ordering divergence for something already
     /// handled.
     ///
     /// The sort date is `bumpDate ?? dateAdded`, and exactly three things set a
     /// bump: unarchiving any save, a price alert firing, and the existing
     /// article completion path. Nothing else has one.
-    nonisolated static func ordered(_ items: [ReadingListItem]) -> [ReadingListItem] {
+    nonisolated static func ordered(_ items: [SavedItem]) -> [SavedItem] {
         items.sorted { lhs, rhs in
             let lhsDate = lhs.bumpDate ?? lhs.dateAdded
             let rhsDate = rhs.bumpDate ?? rhs.dateAdded
@@ -232,7 +232,7 @@ final class KindDeckProvider: CardDeckProviding {
     /// reloads with equal fingerprints are the same deck, and the second is
     /// abandoned rather than tearing down live card content to rebuild it.
     private static func fingerprint(
-        _ item: ReadingListItem, prefix: String, presenter: CardKindPresenting?
+        _ item: SavedItem, prefix: String, presenter: CardKindPresenting?
     ) -> String {
         guard let presenter else {
             // A failed save's card changes when a rescue starts or stops.
@@ -391,7 +391,7 @@ final class KindDeckProvider: CardDeckProviding {
     /// ONE archive per kind, writing every store that kind owns. The three decks
     /// used to write three different flags, so a save archived in one app stayed
     /// live in another.
-    private func archive(_ item: ReadingListItem) {
+    private func archive(_ item: SavedItem) {
         // The successor is resolved BEFORE the write, so a deck that animates
         // the swap knows where it is going. Persist inside the choreography:
         // the manual reload consumes the new truth in the same event turn and
@@ -416,8 +416,8 @@ final class KindDeckProvider: CardDeckProviding {
 
     /// Deleting a card deletes the save WHOLE: the kind's companion storage — a
     /// downloaded file, its Photos asset, the auto-download bookkeeping — goes
-    /// with the reading-list row rather than on after it.
-    private func delete(_ item: ReadingListItem) {
+    /// with the save row rather than on after it.
+    private func delete(_ item: SavedItem) {
         if let index = items.firstIndex(where: { $0.id == item.id }),
            host.carouselIndex(forSlot: index) == host.carousel.currentIndex {
             let successor = items.indices.contains(index + 1)

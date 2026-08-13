@@ -5,7 +5,7 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReadingList
+import LunaSaves
 import LunaSocial
 import LunaStorage
 import UIKit
@@ -715,7 +715,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     private func observeStoreChanges() {
         let center = NotificationCenter.default
         center.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
+            self, selector: #selector(reload), name: .savesChanged, object: nil)
         for name in deckProvider?.deckChangeNotificationNames ?? [] {
             center.addObserver(self, selector: #selector(reload), name: name, object: nil)
         }
@@ -876,10 +876,10 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     ) {
         beginUtilCardSaveTransition(for: urlString, from: sourceView)
         Task { @MainActor [weak self] in
-            let result = await ReadingListIngestor.shared.handleSavePress(
+            let result = await SavesIngestor.shared.handleSavePress(
                 urlString: urlString, source: source)
             guard let self else { return }
-            let item: ReadingListItem?
+            let item: SavedItem?
             switch result {
             case .saved(let value), .sentToEreaders(let value),
                  .sentToFriends(let value), .friendPromptRequested(let value),
@@ -888,7 +888,7 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
                  .exportRequested(let value, _):
                 item = value
             case .ignored:
-                item = ReadingListStore.shared.item(forURLString: urlString)
+                item = SavesStore.shared.item(forURLString: urlString)
             case .unsupportedKind:
                 item = nil
             }
@@ -1437,13 +1437,13 @@ extension CardCarouselHostViewController: CardPresenterHost {
 
     func reloadDeck() { reload() }
 
-    /// Slots are keyed by the reading-list row, so an item id IS a slot id; the
+    /// Slots are keyed by the save row, so an item id IS a slot id; the
     /// presenter-facing name is the item one because a presenter never sees a
     /// slot.
     func requestCentering(onItemID id: UUID) { requestCentering(onSlotID: id) }
 
     /// The save on the centered card, or nil on the util card.
-    var centeredItem: ReadingListItem? {
+    var centeredItem: SavedItem? {
         guard let slot = slotIndex(forCarouselIndex: carousel.currentIndex) else { return nil }
         return deckProvider?.deckItem(forSlot: slot)
     }
@@ -1455,7 +1455,7 @@ extension CardCarouselHostViewController: CardPresenterHost {
 
     /// The kind that owns a save, asked of the PROVIDER rather than the registry
     /// so a stand-in for an unbacked row reaches the presenter that supplied it.
-    func presenter(forItem item: ReadingListItem) -> CardKindPresenting? {
+    func presenter(forItem item: SavedItem) -> CardKindPresenting? {
         deckProvider?.deckPresenter(forItemID: item.id)
             ?? CardKindPresenters.presenter(for: item)
     }
@@ -1465,7 +1465,7 @@ extension CardCarouselHostViewController: CardPresenterHost {
     /// button can produce no file. WHERE it goes is the kind's answer
     /// (`CardKindPresenting.openExternally`), so every app's root offers the
     /// leg: article decks reach the reader, media decks Photos or the player.
-    func openExternally(_ item: ReadingListItem) {
+    func openExternally(_ item: SavedItem) {
         guard let presenter = presenter(forItem: item) else { return }
         presenter.openExternally(item, host: self)
     }
@@ -1473,13 +1473,13 @@ extension CardCarouselHostViewController: CardPresenterHost {
     /// Unarchive, with this deck's choreography around the kind's store write.
     /// One implementation for all three kinds: the tray rows used to each carry
     /// their own, and only the article one bumped the row's date.
-    func unarchive(_ item: ReadingListItem, from sourceView: UIView?) {
+    func unarchive(_ item: SavedItem, from sourceView: UIView?) {
         performUnarchive(ofItemID: item.id, from: sourceView) { [weak self] in
             guard let self else { return }
             if let presenter = self.presenter(forItem: item) {
                 presenter.setArchived(false, for: item)
             } else {
-                ReadingListStore.shared.setArchived(false, for: item.id)
+                SavesStore.shared.setArchived(false, for: item.id)
             }
         }
     }
@@ -1488,9 +1488,9 @@ extension CardCarouselHostViewController: CardPresenterHost {
     /// the archive tray's delete released only the row, so an archived media
     /// save deleted from the tray left its file, its Photos asset and its
     /// auto-download bookkeeping behind.
-    func deleteSave(_ item: ReadingListItem) {
+    func deleteSave(_ item: SavedItem) {
         presenter(forItem: item)?.deleteCompanionStorage(for: item, host: self)
-        ReadingListStore.shared.delete(item)
+        SavesStore.shared.delete(item)
         reload()
     }
 

@@ -16,8 +16,8 @@ import WebKit
 /// offline saved-document viewer even when archive capture failed or a legacy
 /// archive is unsafe or unreadable.
 public final class OriginalPageViewController: UIViewController, WKNavigationDelegate {
-    private var item: ReadingListItem?
-    private var store: ReadingListStore
+    private var item: SavedItem?
+    private var store: SavesStore
     private let webView: WKWebView
     private enum LoadedDocument: Equatable {
         case archive
@@ -37,7 +37,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     /// offset through its per-layer descriptor instead.
     private let persistsScrollOffset: Bool
 
-    public init(item: ReadingListItem, store: ReadingListStore,
+    public init(item: SavedItem, store: SavesStore,
                 savedScrollOffset: Double? = nil, persistsScrollOffset: Bool = false) {
         self.item = item
         self.store = store
@@ -51,8 +51,8 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     /// Creates an empty, laid-out original/archive reader shell. RabbitHole uses this
     /// to keep WebKit construction off the link-tap path, then supplies the item when
     /// Original mode is actually selected.
-    public convenience init(store: ReadingListStore = .shared) {
-        self.init(item: ReadingListItem(urlString: "about:blank"), store: store)
+    public convenience init(store: SavesStore = .shared) {
+        self.init(item: SavedItem(urlString: "about:blank"), store: store)
         self.item = nil
     }
 
@@ -89,7 +89,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         }
     }
 
-    public func configure(item: ReadingListItem, store: ReadingListStore = .shared,
+    public func configure(item: SavedItem, store: SavesStore = .shared,
                           savedScrollOffset: Double? = nil) {
         self.item = item
         self.store = store
@@ -178,7 +178,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         performLoad(savedItem: savedItem)
     }
 
-    private func performLoad(savedItem: ReadingListItem) {
+    private func performLoad(savedItem: SavedItem) {
         let content = store.content(for: savedItem)
         if let archiveURL = store.webArchiveURL(for: savedItem),
            let data = try? Data(contentsOf: archiveURL),
@@ -252,7 +252,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
 
     private func loadArticleSnapshot(
         _ content: ArticleContent,
-        for item: ReadingListItem
+        for item: SavedItem
     ) {
         loadedDocument = .articleSnapshot
         didValidateCurrentArchive = true

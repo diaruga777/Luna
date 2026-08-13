@@ -241,7 +241,7 @@ final class StageRegistryTests: XCTestCase {
     ///
     /// Runs against a throwaway container, which is also a live check that the
     /// redirect works: if it did not, this test would wipe the device's real
-    /// reading list.
+    /// saves list.
     @MainActor
     func testEveryStageSeedsAndBuildsItsScreen() throws {
         StageContainer.activate(identifier: "registry-tests")

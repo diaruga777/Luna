@@ -45,7 +45,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
 
     private let articleURL: URL
     private let itemID: UUID?
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let mode: Mode
     private let webView: WKWebView
     private let progress = HorizonSpinnerView()
@@ -176,7 +176,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private static let mayBeStuckMessage = L10n.string("Reader_archiveUnlock_stuckMessage")
 
     public init(
-        articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
+        articleURL: URL, itemID: UUID?, store: SavesStore = .shared,
         mode: Mode = .interactive
     ) {
         self.articleURL = articleURL
@@ -1084,7 +1084,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// unlocked snapshot) is the one moment the full publisher layout is in hand.
     /// Best-effort: a failure or a too-small archive leaves the safe local snapshot
     /// in place rather than saving a stub.
-    private func captureUnlockedWebArchive(for item: ReadingListItem) {
+    private func captureUnlockedWebArchive(for item: SavedItem) {
         webView.createWebArchiveData { [weak self] result in
             guard let self,
                   let rawData = try? result.get(),

@@ -30,8 +30,8 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
     private var tracker = ReliabilityGazeTracker()
     private var window: UIWindow?
     private let content = UITestFixtures.sampleArticleContent(title: "Gaze Reliability Fixture")
-    private var item: ReadingListItem {
-        ReadingListItem(seed: "gaze-reliability", urlString: "https://example.com/gaze",
+    private var item: SavedItem {
+        SavedItem(seed: "gaze-reliability", urlString: "https://example.com/gaze",
                         title: "Gaze Reliability Fixture", dateAdded: UITestFixtures.baseDate,
                         state: .ready, wordCount: 480)
     }

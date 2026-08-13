@@ -15,10 +15,10 @@ import Foundation
 /// sits outside LunaReaderUI's dependency tier — so it is installed by the app
 /// shell rather than reached directly.
 public protocol ArticleReadinessObserving {
-    func articleBecameReady(_ item: ReadingListItem)
+    func articleBecameReady(_ item: SavedItem)
 }
 
-/// Article-kind ingestion persistence, extracted from `ReadingListIngestor` so
+/// Article-kind ingestion persistence, extracted from `SavesIngestor` so
 /// only article-handling apps carry the reader/archive/document machinery. The
 /// app shell installs this behind `IngestorKindHandlers.article` (via a thin
 /// adapter in its `KindWiring` variant); the readiness observer is injected
@@ -40,8 +40,8 @@ public final class ArticleIngestHandler {
     /// Persists a readable article: downloads its images + cover art, saves the
     /// content, and flips ready.
     public func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem,
-        url: URL, store: ReadingListStore
+        _ content: ArticleContent, html: String, for item: SavedItem,
+        url: URL, store: SavesStore
     ) async {
         let contentWithCachedImages = ArticleImageDownloader.resolveLocalImages(content, store: store)
         let initialContent = await ArticleImageDownloader.downloadInitialLayoutImages(
@@ -68,8 +68,8 @@ public final class ArticleIngestHandler {
     /// This keeps ingestion latency tied to text extraction instead of remote media
     /// and WebKit archive capture.
     private func finishArticleArtifacts(
-        _ content: ArticleContent, html: String, for item: ReadingListItem,
-        url: URL, store: ReadingListStore
+        _ content: ArticleContent, html: String, for item: SavedItem,
+        url: URL, store: SavesStore
     ) async {
         async let downloadedContent = ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
@@ -96,7 +96,7 @@ public final class ArticleIngestHandler {
     /// Document ingestion: parse the imported file (stored at
     /// `Articles/<id>-source.<type>`) into article content. Documents are
     /// Kindle-eligible, so the becameReady hook runs as for web articles.
-    public func ingestDocument(_ item: ReadingListItem, store: ReadingListStore) async {
+    public func ingestDocument(_ item: SavedItem, store: SavesStore) async {
         guard let type = item.sanitizedDocumentType else {
             store.markFailed(item.id)
             return
@@ -134,7 +134,7 @@ public final class ArticleIngestHandler {
     /// share extension leaves it exactly so this pass can finish its work from the
     /// right document); only a save with no recorded source falls back to a live
     /// navigation.
-    public func backfillMissingWebArchives(store: ReadingListStore) {
+    public func backfillMissingWebArchives(store: SavesStore) {
         Task { @MainActor in
             guard !isBackfillingArchives else { return }
             isBackfillingArchives = true
@@ -168,7 +168,7 @@ public final class ArticleIngestHandler {
     /// With no archive, the reader falls back to a styled snapshot of the saved
     /// content, which IS the version the user read.
     private func captureWebArchiveIfPossible(
-        for item: ReadingListItem, url: URL, html: String?, store: ReadingListStore
+        for item: SavedItem, url: URL, html: String?, store: SavesStore
     ) async {
         guard url.scheme?.hasPrefix("http") ?? false else { return }   // never for lunamail://, lunadoc://
         // Record the capture input before the (up-to-20s) capture, so a process that
@@ -207,7 +207,7 @@ public final class ArticleIngestHandler {
     /// otherwise the page's `og:image` is fetched once. Idempotent — items that
     /// already have a thumbnail are skipped — so it also backfills any historical
     /// rows saved before thumbnails existed.
-    public func backfillMissingThumbnails(store: ReadingListStore) {
+    public func backfillMissingThumbnails(store: SavesStore) {
         Task { @MainActor in
             guard !isBackfillingThumbnails else { return }
             isBackfillingThumbnails = true

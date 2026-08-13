@@ -3,9 +3,9 @@
 //  Luna
 //
 
-import LunaReadingListUI
+import LunaSavesUI
 import LunaSocialUI
-import LunaReadingList
+import LunaSaves
 import LunaDesignSystem
 import LunaStorage
 import LunaModels
@@ -72,7 +72,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
     private let emailStatus: any EmailAccountStatusProviding
 
     private let categories: [SettingsCategory] =
-        // Kind rows first (Reader/Audio/Reading List/Email for article apps,
+        // Kind rows first (Reader/Audio/Email/Kindle for article apps,
         // Auto-Download for media apps), then the universal tail. Contacts is
         // email sharing's address book, so it appears only where email exists.
         KindWiring.settingsCategories()
@@ -466,7 +466,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Stores the choice, then — for Kindle without a configured destination —
     /// offers the setup it needs. The choice is kept either way: it becomes
     /// live the moment Kindle is set up, and a repeat press does nothing until
-    /// then (`ReadingListIngestor.resolvedIntentAction`).
+    /// then (`SavesIngestor.resolvedIntentAction`).
     private func apply(_ action: DoubleSaveAction) {
         guard let surface = doubleSaveSurface else { return }
         DoubleSaveActionStore.shared.setAction(action, forSurface: surface)

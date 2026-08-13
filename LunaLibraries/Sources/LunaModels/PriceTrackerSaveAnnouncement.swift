@@ -7,13 +7,13 @@ import Foundation
 
 public extension Notification.Name {
     /// Posted when an interactive save (paste/manual/app intent) created or merged
-    /// a price tracker, so the foreground reading list can present its editor with
+    /// a price tracker, so the foreground saves list can present its editor with
     /// a "Read instead" → save-as-article fallback. `userInfo`: `itemID: UUID`,
     /// `isMerge: Bool`, `highlightedURL: String?`.
     ///
     /// Lives in LunaModels so both posters can see it without re-coupling: the
     /// product ingest handler (LunaPriceUI) posts it for created/merged trackers,
-    /// and `ReadingListIngestor`'s re-save dedup (LunaReadingList) posts it when a
+    /// and `SavesIngestor`'s re-save dedup (LunaSaves) posts it when a
     /// re-saved URL merges into an existing tracker.
     static let priceTrackerSavedInteractively =
         Notification.Name("priceTrackerSavedInteractively")

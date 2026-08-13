@@ -11,7 +11,7 @@ import Foundation
 /// the extension's single-item confirmation screen and the Downloader app's
 /// saved-media carousel. Callers differ in whether they save a defensive temp
 /// copy first, in `shouldMoveFile`, and in the surrounding step order (e.g.
-/// where the reading-list/auto-download bookkeeping falls relative to the
+/// where the saves list/auto-download bookkeeping falls relative to the
 /// Photos call) — those stay at the call site; only the byte-identical
 /// PhotoKit + store calls live here.
 public enum SavedMediaPhotosSync {

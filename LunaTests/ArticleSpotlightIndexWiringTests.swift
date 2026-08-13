@@ -15,10 +15,10 @@ import XCTest
 final class ArticleSpotlightIndexWiringTests: XCTestCase {
 
     private func item(
-        seed: String, state: ReadingListItem.State = .ready,
+        seed: String, state: SavedItem.State = .ready,
         platform: ContentPlatform? = nil, priceTracker: PriceTracker? = nil
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: "Article \(seed)",
             dateAdded: Date(timeIntervalSince1970: 1_700_000_000), state: state,
             platform: platform, priceTracker: priceTracker)

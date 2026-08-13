@@ -52,7 +52,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     private var articleProbe: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var articleContent: ArticleContent?
-    private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
+    private(set) var readerMode: SavedItem.ReaderMode = .scroll
     public private(set) var isAudioOn = false
     private weak var readerChild: UIViewController?
     private var readerTopConstraint: NSLayoutConstraint?
@@ -205,7 +205,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     }
 
     /// Switches the embedded reader to `mode` (no-op unless this page is an article).
-    public func setMode(_ mode: ReadingListItem.ReaderMode) {
+    public func setMode(_ mode: SavedItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
         embedReader(mode: mode)
     }
@@ -300,7 +300,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         delegate?.pageDidChangeContentScrollView(self)
     }
 
-    private func embedReader(mode: ReadingListItem.ReaderMode) {
+    private func embedReader(mode: SavedItem.ReaderMode) {
         guard let content = articleContent else { return }
         // Original/Web mode: show the live page in a web view instead of the reader.
         if mode == .original {
@@ -313,7 +313,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         }
         removeLiveWebView()          // switching back from Original to a reader mode
         removeReaderChild()
-        var transient = ReadingListItem(urlString: url.absoluteString)
+        var transient = SavedItem(urlString: url.absoluteString)
         transient.state = .ready
 
         let child: UIViewController

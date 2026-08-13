@@ -3,7 +3,7 @@
 //  Luna
 //
 
-import LunaReadingList
+import LunaSaves
 import LunaIngest
 import LunaSocial
 import LunaSocialUI
@@ -46,7 +46,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// threshold. Processing-class (needs network) like the mail fetch.
     private static let priceRefreshTaskID = "com.hsanabria.luna.priceRefresh"
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
-    private var readingListObserver: NSObjectProtocol?
+    private var savesObserver: NSObjectProtocol?
     private var wifiAvailableObserver: NSObjectProtocol?
     /// Price trackers surface only in product-handling apps (Price Tracker and
     /// the central Luna app), so only those install a refresh runner — and only
@@ -109,10 +109,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
-        // LunaReadingList can't present UI, so the app shell installs the
+        // LunaSaves can't present UI, so the app shell installs the
         // presenter (same cross-tier protocol witness as
         // `ProductPriceRescue.resolver` above).
-        ReadingListIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
+        SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
 
         // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
         // the ingest pipeline, so the shell hands it the one metadata read the
@@ -146,7 +146,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         if !LunaStage.isActive {
             DispatchQueue.global(qos: .utility).async {
                 _ = NetworkReachability.shared
-                ReadingListStore.shared.reapPendingDeletes()
+                SavesStore.shared.reapPendingDeletes()
             }
         }
 
@@ -163,7 +163,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // where a cold hand-off launch drains its queue and asks for exactly
             // this.
             BackgroundIngestCompletion.install()
-            ReadingListIngestor.shared.ingestAllPending()
+            SavesIngestor.shared.ingestAllPending()
             // Settle (or finish) anything a previous hand-off left owed — the
             // sweep above may be doing the same rows, which the runner waits out
             // rather than duplicating.
@@ -205,17 +205,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 self?.handlePriceRefresh(task as? BGProcessingTask)
             }
         }
-        readingListObserver = NotificationCenter.default.addObserver(
-            forName: .readingListChanged, object: nil, queue: .main
+        savesObserver = NotificationCenter.default.addObserver(
+            forName: .savesChanged, object: nil, queue: .main
         ) { [weak self] _ in
             // Deliberately bundles two unrelated follow-ups on one notification: neither
-            // has its own natural trigger, and "the reading list just changed" is a
+            // has its own natural trigger, and "the saves list just changed" is a
             // good-enough proxy for both "some activity happened, take out the trash"
             // (purge expired saved media) and "prices may be worth checking again soon"
             // (reschedule the price refresh) — not a sign this observer needs splitting.
             //
-            KindWiring.readingListDidChange()
-            self?.schedulePriceRefresh(reason: "reading list changed")
+            KindWiring.savesDidChange()
+            self?.schedulePriceRefresh(reason: "saves list changed")
         }
         // Resume whatever a Wi-Fi-only network policy deferred, the instant
         // Wi-Fi reconnects — the app-launch/foreground and background-refresh
@@ -279,7 +279,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         WeeklyProposalBackgroundCheck.schedule(reason: "entered background")
         // A file released by an extension while this app was in the foreground has
         // nobody else to unlink it.
-        ReadingListStore.shared.reapPendingDeletes()
+        SavesStore.shared.reapPendingDeletes()
     }
 
     func application(
@@ -333,17 +333,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     private func schedulePriceRefresh(reason: String) {
-        // Reached from the reading-list observer and background handlers too, so
+        // Reached from the saves observer and background handlers too, so
         // guard here rather than at every call site (see schedulesPriceRefresh).
         guard schedulesPriceRefresh else { return }
-        let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
+        let trackers = SavesStore.shared.priceTrackersStalestFirst()
         let activeTrackers = trackers.count
         guard activeTrackers > 0 else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
             return
         }
         // IDEMPOTENT scheduling. We are called on many events (launch, foreground,
-        // EVERY reading-list change, after a run); the old code cancelled and
+        // EVERY saves list change, after a run); the old code cancelled and
         // resubmitted the request each time. Repeatedly cancelling+resubmitting a
         // BGTask churns it so iOS never lets it mature/run — the "never fires" bug.
         // So if a request is ALREADY pending, leave it untouched; only submit when
@@ -357,7 +357,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             }
             let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
             let oldestRefresh = trackers
-                .map { ReadingListStore.stalestRefresh($0.priceTracker) }
+                .map { SavesStore.stalestRefresh($0.priceTracker) }
                 .min() ?? .distantPast
             let dueDate = oldestRefresh.addingTimeInterval(Self.priceRefreshInterval)
             request.earliestBeginDate = max(Date(), dueDate)
@@ -382,9 +382,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// leaving the displayed price stale until the OS grants another launch.
     private func refreshOverduePriceTrackersOnLaunch() {
         guard let runner = KindWiring.priceRefreshRunner else { return }
-        let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
+        let trackers = SavesStore.shared.priceTrackersStalestFirst()
         guard let oldest = trackers
-            .map({ ReadingListStore.stalestRefresh($0.priceTracker) })
+            .map({ SavesStore.stalestRefresh($0.priceTracker) })
             .min(),
               oldest.addingTimeInterval(Self.priceRefreshInterval) <= Date()
         else { return }

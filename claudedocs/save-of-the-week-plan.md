@@ -342,12 +342,12 @@ The Archive/Delete tail is triplicated; add the new item in all three builders:
 - `Luna/Downloader/SavedMediaCardsViewController.swift:1086–1139`.
 
 One shared factory (new file `Luna/UtilCard/WeeklyPromotionMenu.swift`, shell):
-`WeeklyPromotionMenu.action(for item: ReadingListItem, presenter:
+`WeeklyPromotionMenu.action(for item: SavedItem, presenter:
 UIViewController) -> UIAction?`:
 - nil for failed saves and for items whose kind doesn't map to a
   `WeeklySaveKind` (map from the item's own kind: article-ish → `.article`,
   social/video → `.media`, product → `.product` — reuse the
-  `ReadingListSectioning`/item-kind helpers the decks already use).
+  `SavesSectioning`/item-kind helpers the decks already use).
 - Key-holder (`WeeklyPromotionKeyStore.isKeyHolder`): title "Promote to
   {Save|Read|Download|Deal} of the Week" (app-appropriate noun), symbol e.g.
   `crown` / `star.circle`. Runs: confirmation alert → sign `WeeklySave(kind:,

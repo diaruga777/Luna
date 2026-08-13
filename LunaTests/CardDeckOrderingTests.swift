@@ -21,7 +21,7 @@ import XCTest
 ///
 /// The read/unread grouping is GONE, deliberately, and this file no longer
 /// tests it. Finished reads leave the deck on their own through
-/// `ReadingListStore.archivePendingFinishedItems()` at launch/background, which
+/// `SavesStore.archivePendingFinishedItems()` at launch/background, which
 /// is what the grouping was standing in for.
 final class CardDeckOrderingTests: XCTestCase {
 
@@ -83,9 +83,9 @@ final class CardDeckOrderingTests: XCTestCase {
         _ seed: String,
         daysAgo: TimeInterval = 0,
         at date: Date? = nil,
-        readState: ReadingListItem.ReadState = .unopened
-    ) -> ReadingListItem {
-        ReadingListItem(
+        readState: SavedItem.ReadState = .unopened
+    ) -> SavedItem {
+        SavedItem(
             seed: seed,
             urlString: "https://example.com/\(seed)",
             title: seed,

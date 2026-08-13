@@ -5,7 +5,7 @@
 
 import LunaIngest
 import LunaModels
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -19,7 +19,7 @@ final class LinkImportSheetTests: XCTestCase {
 
     private var window: UIWindow?
     private var tempDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
@@ -28,7 +28,7 @@ final class LinkImportSheetTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(
             at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
     }
 
     override func tearDown() {

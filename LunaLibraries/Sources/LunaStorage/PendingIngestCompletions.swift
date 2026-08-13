@@ -6,7 +6,7 @@
 import Foundation
 import LunaAppConfig
 
-/// One reserved reading-list row that still owes its metadata pass.
+/// One reserved save row that still owes its metadata pass.
 public struct PendingIngestCompletion: Codable, Equatable, Sendable {
     public let itemID: UUID
     public let urlString: String
@@ -27,7 +27,7 @@ public struct PendingIngestCompletion: Codable, Equatable, Sendable {
 extension Notification.Name {
     /// "There is owed ingest work and now is a good moment to run it." Posted by
     /// `PendingIngestCompletions.requestRun()`; the app observes it through
-    /// `BackgroundIngestCompletion.install()` (LunaReadingList — the tier that
+    /// `BackgroundIngestCompletion.install()` (LunaSaves — the tier that
     /// can actually name the ingestor). A process with no observer, an
     /// extension for instance, simply owes the work to the next app launch.
     public static let pendingIngestCompletionsRequested =

@@ -120,8 +120,8 @@ final class KindShellWiringTests: XCTestCase {
     /// pending completions at launch only, so a read finished in one session sat
     /// on the deck until the session after next.
     func testBackgroundingArchivesAFinishedRead() throws {
-        let store = ReadingListStore.shared
-        let item = ReadingListItem(
+        let store = SavesStore.shared
+        let item = SavedItem(
             seed: "shell-wiring-finished",
             urlString: "https://example.com/shell-wiring-finished",
             title: "Finished Read",
@@ -146,7 +146,7 @@ final class KindShellWiringTests: XCTestCase {
     }
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 

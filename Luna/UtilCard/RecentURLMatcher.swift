@@ -8,8 +8,8 @@ import LunaFetch
 import LunaHTMLClassification
 import LunaIngest
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -159,7 +159,7 @@ final class RecentURLMatcher {
     }
 
     private func publish(history: [String], cache: [String: CacheEntry]) {
-        let savedURLs = Set(ReadingListStore.shared.items().map(\.urlString))
+        let savedURLs = Set(SavesStore.shared.items().map(\.urlString))
         let candidates = history
             .compactMap { key -> RecentURLPreview? in
                 guard let preview = cache[key]?.match?.preview else { return nil }
@@ -175,7 +175,7 @@ final class RecentURLMatcher {
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
-    /// Applies the reading-list half of recent-row publication, and collapses the
+    /// Applies the saves half of recent-row publication, and collapses the
     /// candidates against EACH OTHER. Keeping this a pure operation makes the
     /// save/delete symmetry explicit: a committed save removes its cached Safari
     /// preview, and deleting that save reveals the same preview again without

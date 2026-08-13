@@ -19,7 +19,7 @@ final class SellerComparisonTests: XCTestCase {
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
     private var snapshotStore: ProductSnapshotStore!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var ingestor: ProductTrackerIngestor!
 
     override func setUp() {
@@ -27,7 +27,7 @@ final class SellerComparisonTests: XCTestCase {
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SellerComparisonTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
         ingestor.indexRegenerator = SilentIndexRegenerator()
         snapshotStore = .temporary(directory: &snapshotDirectory)
@@ -593,7 +593,7 @@ final class SellerComparisonTests: XCTestCase {
     /// `ProductIntentHandoff` each do inline, without detaching a background task.
     @discardableResult
     private func runAndAttach(
-        itemID: UUID, sourceURL: URL, store: ReadingListStore, now: Date = Date()
+        itemID: UUID, sourceURL: URL, store: SavesStore, now: Date = Date()
     ) async -> Int {
         if store.item(withID: itemID)?.priceTracker?.pendingComparison == nil {
             guard SellerComparison.begin(itemID: itemID, sourceURL: sourceURL, store: store, now: now)

@@ -4,7 +4,7 @@
 //
 
 import LunaModels
-import LunaReadingListUI
+import LunaSavesUI
 import LunaWeekly
 import UIKit
 
@@ -27,7 +27,7 @@ enum WeeklyPromotionMenu {
     /// promote for a key-holder. Empty when this item can never be a Save of
     /// the Week.
     static func actions(
-        for item: ReadingListItem,
+        for item: SavedItem,
         presenter: UIViewController,
         refresher: WeeklySaveRefresher? = nil,
         isKeyHolder: Bool = WeeklyPromotionKeyStore.isKeyHolder,
@@ -40,7 +40,7 @@ enum WeeklyPromotionMenu {
             isKeyHolder: isKeyHolder, app: app)
     }
 
-    /// The same verbs for a surface whose saves aren't `ReadingListItem`s (the
+    /// The same verbs for a surface whose saves aren't `SavedItem`s (the
     /// Downloader deck keeps its own `SavedMediaItem` — a type this shared
     /// shell file must not import, since it compiles into all four apps).
     static func actions(
@@ -80,8 +80,8 @@ enum WeeklyPromotionMenu {
 
     /// A save's kind, in weekly terms. A failed save has no content to stand
     /// behind, so it is never a candidate.
-    static func weeklyKind(for item: ReadingListItem) -> WeeklySaveKind? {
-        guard !ReadingListSectioning.isFailedSave(item), item.state != .failed
+    static func weeklyKind(for item: SavedItem) -> WeeklySaveKind? {
+        guard !SavesSectioning.isFailedSave(item), item.state != .failed
         else { return nil }
         if item.isPriceTracker { return .product }
         if item.isPlatformItem { return .media }

@@ -6,11 +6,11 @@
 import XCTest
 import LunaModels
 import LunaStorage
-@testable import LunaReadingList
+@testable import LunaSaves
 
 final class URLRescueCoordinatorTests: XCTestCase {
     private var tempDir: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var ledger: RescueLedgerStore!
     private var pending: PendingRescueRequestStore!
     private var savedEngine: (any URLRescueEngineBridging)?
@@ -19,7 +19,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         super.setUp()
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDir)
+        store = SavesStore(containerURL: tempDir)
         ledger = RescueLedgerStore(containerURL: tempDir)
         pending = PendingRescueRequestStore(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
         savedEngine = URLRescueCoordinator.engine
@@ -50,7 +50,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         var isRescueAvailable: Bool { available }
 
         func performRescue(
-            for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+            for item: SavedItem, hint: RescueHint?, interactive: Bool
         ) async -> URLRescueCoordinator.RescueRunResult {
             performedIDs.append(item.id)
             performedHints.append(hint)
@@ -64,7 +64,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         URLRescueCoordinator(store: store, ledger: ledger, pending: pending)
     }
 
-    private func failedItem() -> ReadingListItem {
+    private func failedItem() -> SavedItem {
         let item = store.add(urlString: "https://example.com/\(UUID().uuidString)")
         store.markFailed(item.id)
         return store.item(withID: item.id)!
@@ -189,7 +189,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.rescueProgress(id), 1.0)
     }
 
-    /// The card listens for this rather than `.readingListChanged`, which would
+    /// The card listens for this rather than `.savesChanged`, which would
     /// make every deck reload several times per rescue.
     func testProgressPostsItsOwnNotificationCarryingTheItemID() {
         let coordinator = makeCoordinator()

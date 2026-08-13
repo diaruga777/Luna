@@ -16,7 +16,7 @@ import UIKit
 ///    system delivered the file (`LiveMediaDownloadManager`);
 ///  - the metadata half of a save whose row a fast surface only had time to
 ///    RESERVE — Safari's Download hand-off bounces back to the page before the
-///    ingest could run (`BackgroundIngestCompletion` in LunaReadingList).
+///    ingest could run (`BackgroundIngestCompletion` in LunaSaves).
 ///
 /// Two things it must never do, both learned the hard way:
 ///

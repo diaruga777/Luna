@@ -80,12 +80,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // background for one finished in this one. Skipped legs keep their
         // button. See `claudedocs/util-card.md`.
         AppOnboardingStore.shared.retireCompletedSetupButtons()
-        UtilCardContentViewController.setupJourneyLauncher = { presenter, source in
-            AppOnboardingViewController.presentSetupReplay(
-                source,
-                from: presenter,
-                makeCompletedRootViewController: KindWiring.makeRootViewController)
-        }
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()

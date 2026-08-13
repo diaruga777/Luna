@@ -72,7 +72,6 @@ final class UtilCardContentViewController: CardContentViewController {
         _ completion: @escaping (Bool) -> Void
     ) -> Void
 
-    static var setupJourneyLauncher: ((UIViewController, OnboardingDemoSource) -> Void)?
     /// Pushes the one email sign-in surface (Settings → Email, whose Sharing
     /// Account section IS the form until an account exists). Installed by the
     /// `KindWiring` variants of the two apps that do email — the screen itself
@@ -927,11 +926,19 @@ final class UtilCardContentViewController: CardContentViewController {
     }
 
     @objc private func safariTapped() {
-        Self.setupJourneyLauncher?(self, .safari)
+        presentSetupReplay(.safari)
     }
 
     @objc private func saveSetupTapped() {
-        Self.setupJourneyLauncher?(self, .messages)
+        presentSetupReplay(.messages)
+    }
+
+    /// Replays one setup lesson over the deck, returning to this app's own root
+    /// when it finishes. Every app compiles both ends, so the card names them.
+    private func presentSetupReplay(_ source: OnboardingDemoSource) {
+        AppOnboardingViewController.presentSetupReplay(
+            source, from: self,
+            makeCompletedRootViewController: KindWiring.makeRootViewController)
     }
 
     @objc private func emailSetupTapped() {

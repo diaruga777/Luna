@@ -204,14 +204,21 @@ private struct ArticleIntentExporter: IntentArticleExporting {
     }
 }
 
+/// A newly-ready article reaches the send pipeline, so Kindle/ereader auto-sends
+/// keep firing. LunaSend is outside LunaReaderUI's tier, hence the bridge here.
+private struct SendCoordinatorReadiness: ArticleReadinessObserving {
+    func articleBecameReady(_ item: ReadingListItem) {
+        ArticleSendCoordinator.shared.articleBecameReady(item)
+    }
+}
+
 /// Bridges `IngestorArticleHandling` to the article-kind modules: persistence
 /// in LunaReaderUI (`ArticleIngestHandler`, `PreloadCoordinator`) and sends in
 /// LunaSend (`ArticleSendCoordinator`) — the composition root is the one place
 /// allowed to see both tiers at once.
 private struct ArticleKindHandler: IngestorArticleHandling {
-    private let handler = ArticleIngestHandler(articleBecameReady: {
-        ArticleSendCoordinator.shared.articleBecameReady($0)
-    })
+    private let handler = ArticleIngestHandler(
+        readinessObserver: SendCoordinatorReadiness())
 
     func persistArticle(
         _ content: ArticleContent, html: String, for item: ReadingListItem,

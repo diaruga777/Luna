@@ -625,7 +625,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             host: self,
             sourceView: textView,
             resolveURL: { [weak self] point in self?.previewableLinkURL(at: point) },
-            sourcePlaybackChanged: { [weak self] active in self?.setLinkPreviewAudioSuspended(active) })
+            delegate: self)
     }
 
     /// Installs the features that depend on the full article already being
@@ -1876,6 +1876,15 @@ extension ScrollReaderViewController: AudioPlaybackObserver {
     public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didUpdateItem info: AudioPlaybackItemInfo?) {
         guard isViewLoaded, info?.itemID != item.id else { return }
         removeHighlight()
+    }
+}
+
+/// A link preview owns read-aloud while it is up.
+extension ScrollReaderViewController: LinkRSVPPreviewInteractionDelegate {
+    func linkPreviewInteraction(
+        _ interaction: LinkRSVPPreviewInteraction, sourcePlaybackIsSuspended: Bool
+    ) {
+        setLinkPreviewAudioSuspended(sourcePlaybackIsSuspended)
     }
 }
 

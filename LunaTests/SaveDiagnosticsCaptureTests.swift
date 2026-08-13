@@ -153,11 +153,11 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
         _ = track(item.id)
         let driver = ShareSurfaceDriver(
             host: host, store: store,
-            process: { input in
+            ingest: StubShareIngest { input in
                 SaveDiagnostics.record("a leg inside the pipeline", category: "fetch")
                 return IngestResult(url: input.url, outcome: .failed(.httpStatus(403)))
             },
-            surfaceDecision: { _ in .supported })
+            surfaceGate: AlwaysSupportedSurfaceGate())
 
         await driver.ingestAndPresent(originalURL: URL(string: "https://example.com/broken")!)
 
@@ -184,10 +184,10 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
         SaveDiagnosticsStore.shared.appendLine("last week's failure", for: item.id)
         let driver = ShareSurfaceDriver(
             host: host, store: store,
-            process: { input in
+            ingest: StubShareIngest { input in
                 IngestResult(url: input.url, outcome: .document(type: "pdf"))
             },
-            surfaceDecision: { _ in .supported })
+            surfaceGate: AlwaysSupportedSurfaceGate())
 
         await driver.ingestAndPresent(originalURL: URL(string: "https://example.com/doc.pdf")!)
 

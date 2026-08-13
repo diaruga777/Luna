@@ -29,18 +29,44 @@ import UIKit
 /// shaped identically to a main-app save. Presentation policy is narrow: the action extension shows its
 /// reader/saved UI, while the share extension only presents media, price, and
 /// archive-bypass UI.
+/// The ingest pipeline, as a share surface calls it. Production runs the ONE
+/// shared `IngestPipeline`; a test substitutes fixtures with a mock fetcher and
+/// no render tier (extension-safe).
+public protocol ShareIngestProcessing {
+    func process(_ input: IngestInput) async -> IngestResult
+}
+
+/// The production leg: the shared pipeline, post-resolution.
+public struct SharedIngestPipelineProcessor: ShareIngestProcessing {
+    public init() {}
+
+    public func process(_ input: IngestInput) async -> IngestResult {
+        await IngestPipeline.processResolved(input)
+    }
+}
+
+/// The per-app content gate over a classified outcome (`SurfaceSupport`): a
+/// single-content app's extension drops foreign kinds.
+public protocol ShareSurfaceGating {
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision
+}
+
+/// The production gate: the app this extension is actually running in.
+public struct CurrentProcessSurfaceGate: ShareSurfaceGating {
+    public init() {}
+
+    public func decision(for outcome: Outcome) -> SurfaceSupport.Decision {
+        SurfaceSupport.evaluateForCurrentProcess(owner: outcome.owningApp)
+    }
+}
+
 @MainActor
 public final class ShareSurfaceDriver {
 
     private weak var host: ExtensionHost?
     private let store: ReadingListStore
-    /// Injectable so tests can drive the pipeline with a mock fetcher / fixtures and
-    /// a nil render tier (extension-safe). Production uses the live defaults.
-    private let process: (IngestInput) async -> IngestResult
-    /// The per-app content gate over the classified outcome (`SurfaceSupport`):
-    /// a single-content app's extension drops foreign kinds. Injectable so
-    /// tests can pin the running app without touching `Bundle.main`.
-    private let surfaceDecision: (Outcome) -> SurfaceSupport.Decision
+    private let ingest: ShareIngestProcessing
+    private let surfaceGate: ShareSurfaceGating
     /// The app the extension is running in, for the error copy + deep links.
     private let currentApp: LunaApp
     /// This request's diagnostic trace, created in `ingestAndPresent` and read
@@ -52,18 +78,14 @@ public final class ShareSurfaceDriver {
     public init(
         host: ExtensionHost,
         store: ReadingListStore = .shared,
-        process: @escaping (IngestInput) async -> IngestResult = {
-            await IngestPipeline.processResolved($0)
-        },
-        surfaceDecision: @escaping (Outcome) -> SurfaceSupport.Decision = {
-            SurfaceSupport.evaluateForCurrentProcess(owner: $0.owningApp)
-        },
+        ingest: ShareIngestProcessing = SharedIngestPipelineProcessor(),
+        surfaceGate: ShareSurfaceGating = CurrentProcessSurfaceGate(),
         currentApp: LunaApp = .current
     ) {
         self.host = host
         self.store = store
-        self.process = process
-        self.surfaceDecision = surfaceDecision
+        self.ingest = ingest
+        self.surfaceGate = surfaceGate
         self.currentApp = currentApp
     }
 
@@ -91,7 +113,7 @@ public final class ShareSurfaceDriver {
                 + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
             category: "ingest")
         let result = await SaveDiagnostics.$recorder.withValue(recorder) {
-            await process(IngestInput(
+            await ingest.process(IngestInput(
                 url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
         }
 
@@ -124,7 +146,7 @@ public final class ShareSurfaceDriver {
     public func present(_ outcome: Outcome, url: URL, blockedItemID: UUID? = nil) {
         guard let host else { return }
 
-        if case let .unsupported(owner) = surfaceDecision(outcome) {
+        if case let .unsupported(owner) = surfaceGate.decision(for: outcome) {
             discardDiagnostics(url: url)
             discardUnsupportedSave(url: url, itemID: blockedItemID)
             presentUnsupportedError(owner: owner)

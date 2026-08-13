@@ -22,6 +22,39 @@ import XCTest
 /// `NSExtensionContext` harness. Locks in the bug-3 (price UI in the extension) and
 /// bug-4 (a non-downloadable platform post via the share extension persists its
 /// classification, not just a bare URL) unifications.
+/// Stands in for the shared ingest pipeline: `body` replaces the real
+/// fetch/classify legs, so a test can hand the driver any `IngestResult` (and
+/// record diagnostics from inside the pipeline the way a real leg does).
+struct StubShareIngest: ShareIngestProcessing {
+    let body: (IngestInput) async -> IngestResult
+
+    func process(_ input: IngestInput) async -> IngestResult { await body(input) }
+}
+
+/// The gate for a test that is not exercising the per-app content gate at all.
+struct AlwaysSupportedSurfaceGate: ShareSurfaceGating {
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision { .supported }
+}
+
+/// One decision, whatever the outcome — for asserting what the driver does on
+/// the far side of the gate.
+struct FixedDecisionSurfaceGate: ShareSurfaceGating {
+    let fixed: SurfaceSupport.Decision
+
+    init(_ fixed: SurfaceSupport.Decision) { self.fixed = fixed }
+
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision { fixed }
+}
+
+/// The real per-app gate, pinned to a named app instead of `Bundle.main`.
+struct PinnedAppSurfaceGate: ShareSurfaceGating {
+    let currentApp: LunaApp
+
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision {
+        SurfaceSupport.evaluate(owner: outcome.owningApp, current: currentApp)
+    }
+}
+
 @MainActor
 final class ShareSurfaceDriverTests: XCTestCase {
 
@@ -97,7 +130,8 @@ final class ShareSurfaceDriverTests: XCTestCase {
     /// (see `ShareSurfaceDriverSurfaceTests` for that).
     private func makeDriver(isActionExtension: Bool) -> (ShareSurfaceDriver, FakeExtensionHost) {
         let host = FakeExtensionHost(isActionExtension: isActionExtension)
-        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let driver = ShareSurfaceDriver(
+            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
         return (driver, host)
     }
 

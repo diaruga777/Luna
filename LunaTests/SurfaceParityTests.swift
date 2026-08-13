@@ -262,7 +262,8 @@ final class SurfaceParityTests: XCTestCase {
         if let existing = store.item(forURLString: finalURLString) { store.delete(existing) }
         _ = store.add(urlString: finalURLString)
         let host = FakeExtensionHost(isActionExtension: isAction)
-        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let driver = ShareSurfaceDriver(
+            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
         driver.present(outcome, url: url(finalURLString))
         // An article's reader is prepared before it is handed to the host, so
         // yield the main actor until the surface has done something conclusive.

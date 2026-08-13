@@ -67,14 +67,12 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
 
     /// A driver whose gate input (the running app) is pinned — no `Bundle.main` reads.
     private func makeDriver(current: LunaApp) -> ShareSurfaceDriver {
-        // `process` keeps its default — these tests drive `present` directly,
-        // so the pipeline closure is never invoked.
+        // `ingest` keeps its default — these tests drive `present` directly, so
+        // the pipeline is never reached.
         ShareSurfaceDriver(
             host: host,
             store: store,
-            surfaceDecision: { outcome in
-                SurfaceSupport.evaluate(owner: outcome.owningApp, current: current)
-            },
+            surfaceGate: PinnedAppSurfaceGate(currentApp: current),
             currentApp: current)
     }
 
@@ -135,14 +133,12 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         let driver = ShareSurfaceDriver(
             host: host,
             store: store,
-            process: { _ in
+            ingest: StubShareIngest { _ in
                 IngestResult(
                     url: canonicalURL,
                     outcome: .social(.bluesky, itemID: "123"))
             },
-            surfaceDecision: { _ in
-                .unsupported(owner: .downloader)
-            },
+            surfaceGate: FixedDecisionSurfaceGate(.unsupported(owner: .downloader)),
             currentApp: .reader)
 
         await driver.ingestAndPresent(originalURL: wrapperURL)
@@ -191,7 +187,8 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         let item = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
         touchedFailureIDs.append(item.id)
         let central = ShareSurfaceDriver(
-            host: host, store: store, surfaceDecision: { _ in .supported }, currentApp: .luna)
+            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate(),
+            currentApp: .luna)
 
         central.present(.unsupported(owner: .downloader), url: socialURL)
 

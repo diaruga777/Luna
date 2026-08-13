@@ -21,7 +21,7 @@ import LunaAppConfig
 /// reads it back as failure evidence for the model.
 ///
 /// Like the reason/count sidecar (`SaveFailureStore`), this deliberately never
-/// touches `readingList.json`. Writes are SYNCHRONOUS for the same reason
+/// touches the saves database. Writes are SYNCHRONOUS for the same reason
 /// `SharedDiagnosticLog`'s are: an extension can be jetsammed the instant after
 /// a save fails, and the flush must land before that.
 public final class SaveDiagnosticsStore: @unchecked Sendable {

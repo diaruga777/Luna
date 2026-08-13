@@ -35,7 +35,11 @@ final class FactoryResetTests: XCTestCase {
     }
 
     func testEveryChildGoesIncludingWholeSubtreesAndDotfiles() throws {
-        try write("readingList.json")
+        try write("saves.sqlite")
+        // WAL's siblings live beside the database and are as much of the saved
+        // list as the file they belong to.
+        try write("saves.sqlite-wal")
+        try write("saves.sqlite-shm")
         try write("Articles/abc-source.epub")
         try write("Articles/images/lead.jpg")
         try write(".hidden-marker")
@@ -47,8 +51,10 @@ final class FactoryResetTests: XCTestCase {
             at: root, includingPropertiesForKeys: nil)
         XCTAssertEqual(survivors, [], "the sweep leaves nothing behind")
         XCTAssertTrue(report.failures.isEmpty)
-        // Three CHILDREN — the nested files go with `Articles`, not as entries.
-        XCTAssertEqual(Set(report.removedPaths), ["readingList.json", "Articles", ".hidden-marker"])
+        // CHILDREN only — the nested files go with `Articles`, not as entries.
+        XCTAssertEqual(
+            Set(report.removedPaths),
+            ["saves.sqlite", "saves.sqlite-wal", "saves.sqlite-shm", "Articles", ".hidden-marker"])
         // The directory itself stays: nothing recreates `Documents` at launch.
         var isDirectory: ObjCBool = false
         XCTAssertTrue(
@@ -57,7 +63,7 @@ final class FactoryResetTests: XCTestCase {
     }
 
     func testContainerManagerBookkeepingIsLeftAlone() throws {
-        try write("readingList.json")
+        try write("saves.sqlite")
         try write("SystemData/keep-me")
         try write(".com.apple.mobile_container_manager.metadata.plist")
 
@@ -70,7 +76,7 @@ final class FactoryResetTests: XCTestCase {
             survivors,
             ["SystemData", ".com.apple.mobile_container_manager.metadata.plist"],
             "the container manager's own entries are not the app's to delete")
-        XCTAssertEqual(report.removedPaths, ["readingList.json"])
+        XCTAssertEqual(report.removedPaths, ["saves.sqlite"])
         XCTAssertTrue(
             report.failures.isEmpty,
             "skipping them is not a failure — a failure list full of expected ones says nothing")

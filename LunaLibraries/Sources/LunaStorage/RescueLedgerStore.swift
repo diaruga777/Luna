@@ -9,11 +9,10 @@ import LunaModels
 
 /// Per-item rescue bookkeeping — how many automatic attempts an item has had,
 /// when, whether one succeeded (provenance). Kept in a SIDECAR file, never on
-/// `ReadingListItem`: an older sibling app decoding/re-encoding the shared
-/// `readingList.json` would silently drop unknown keys, wiping the bookkeeping
-/// and causing re-LLM churn. A sidecar only the rescue layer touches avoids that
-/// and keeps the hot shared model untouched (same reasoning as the imageRefs /
-/// preloads sidecars).
+/// `ReadingListItem`: the row every save has is read and rewritten by four
+/// independently-updated apps, and bookkeeping only the rescue layer understands
+/// has no business there. A sidecar only that layer touches keeps the hot shared
+/// model untouched (same reasoning as the imageRefs / preloads sidecars).
 public struct RescueLedgerEntry: Codable, Equatable {
     public var attemptCount: Int
     public var lastAttemptDate: Date?

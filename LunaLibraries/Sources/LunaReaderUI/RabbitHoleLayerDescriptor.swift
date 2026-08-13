@@ -10,8 +10,8 @@ import Foundation
 
 /// One layer of a persisted RabbitHole breadcrumb trail. The root layer (index 0) is
 /// the save itself; deeper layers are links the user dove into. Stored separately from
-/// `ReadingListItem` (see `RabbitHoleStackStore`) so the conservative cross-process
-/// reading-list JSON is never touched by this experiment.
+/// `ReadingListItem` (see `RabbitHoleStackStore`) so the cross-process saves
+/// database is never touched by this experiment.
 public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     /// The page this layer shows, parsed ONCE (at construction/decode) rather
     /// than re-parsed on every access — nil is the blank shell created before

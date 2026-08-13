@@ -113,7 +113,7 @@ public final class ReadingListIngestor {
         return inFlight.contains(id)
     }
 
-    /// Runs `ingestAllPending()`'s enumeration (a full `readingList.json` decode)
+    /// Runs `ingestAllPending()`'s enumeration (a full list read)
     /// and backfill scans off the caller's thread — it's called synchronously
     /// from launch, foreground, and pull-to-refresh, none of which should block
     /// on it.

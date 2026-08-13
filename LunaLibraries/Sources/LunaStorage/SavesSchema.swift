@@ -29,12 +29,19 @@ enum SavesSchema {
     /// Creates the tables and indexes if they are absent, and stamps the schema
     /// revision. Idempotent: every process runs it at open, and the first one to
     /// reach a brand-new file is the one that builds it.
+    ///
+    /// A file already stamped NEWER than this binary is left at its own version —
+    /// a sibling app that has been updated first owns that stamp, and every table
+    /// this binary needs is there (they only ever gain columns).
     static func create(in database: SavesDatabase) throws {
         try database.execute("BEGIN IMMEDIATE")
         do {
+            let existing = try userVersion(in: database)
             try database.execute(tables)
             try database.execute(indexes)
-            try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
+            if existing < SavesDatabase.schemaVersion {
+                try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
+            }
             try database.execute("COMMIT")
         } catch {
             try? database.execute("ROLLBACK")

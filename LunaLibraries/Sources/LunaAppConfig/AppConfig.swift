@@ -39,7 +39,7 @@ public enum AppConfig {
     public static let provisionedAppGroupID: String =
         string(forInfoKey: appGroupInfoKey) ?? defaultAppGroupID
 
-    /// The shared App Group **directory** — `readingList.json`, `Articles/`,
+    /// The shared App Group **directory** — `saves.sqlite`, `Articles/`,
     /// saved media, the weekly mirror, every file-backed shared store.
     ///
     /// THE one resolution point, so staged mode can redirect the whole

@@ -218,12 +218,6 @@ class OnboardingSaveSourceViewController: UIViewController {
         setURLHighlighted(false)
         saveEffectWasCancelled()
     }
-
-    #if DEBUG
-    var hasActiveActionButtonSaveEffectForTesting: Bool {
-        actionCue != nil || waveAnimator != nil
-    }
-    #endif
 }
 
 /// The solid-black edge deformation iOS shows when the physical Action Button

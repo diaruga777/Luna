@@ -204,11 +204,6 @@ final class AppOnboardingViewController: UIViewController {
         savedRootViewController
     }
 
-    /// The handoff a successful paste runs, without the ingest in front of it.
-    func completeOnboardingWithRealSaveForTesting(animated: Bool) {
-        completeOnboardingWithRealSave(animated: animated)
-    }
-
     /// Which sibling's lesson the Safari journey is showing.
     var safariDemonstrationAppForTesting: LunaApp? {
         let apps = configuration.safariDemonstrationApps
@@ -236,11 +231,6 @@ final class AppOnboardingViewController: UIViewController {
     func restoreSharedSafariSetupPopupForTesting() {
         restoreSharedSafariSetupPopupIfNeeded()
     }
-
-    /// The shared popup's scrim, directly — nil whenever no popup is up. Tests
-    /// use this (rather than hunting the window for a `SafariSetupScrimView`)
-    /// to confirm ownership stays put across a cross-sibling swap.
-    var safariSetupScrimForTesting: UIView? { safariSetupScrim }
 
     /// Enters the Safari lesson the way the util card's button does, for the
     /// staged screen that reviews the whole journey (`claudedocs/staging.md`).

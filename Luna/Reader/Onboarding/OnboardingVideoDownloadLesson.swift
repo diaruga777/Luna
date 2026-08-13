@@ -535,7 +535,6 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     var stageFrameForTesting: CGRect { convert(stage.bounds, from: stage) }
     var downloadFrameForTesting: CGRect { convert(download.bounds, from: download) }
     var downloadColourForTesting: UIColor? { download.backgroundColor }
-    var downloadAlphaForTesting: CGFloat { download.alpha }
     var panelColourForTesting: UIColor? { panelBody.backgroundColor }
     var closeFrameForTesting: CGRect { close.frame }
     var panelCornerRadiusForTesting: CGFloat { panelBody.layer.cornerRadius }

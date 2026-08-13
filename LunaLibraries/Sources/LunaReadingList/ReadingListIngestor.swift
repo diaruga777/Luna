@@ -349,15 +349,9 @@ public final class ReadingListIngestor {
         await handler.ingestDocument(item, store: store)
     }
 
-    /// Ingests a recognized video outcome via the registered media handler.
-    fileprivate func handleVideo(
-        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
-    ) async {
-        await ingestPlatformItem(item, platform: platform, itemID: itemID)
-    }
-
-    /// Ingests a recognized social platform outcome (best-effort metadata).
-    fileprivate func handlePlatform(
+    /// Ingests a recognized video or social-platform outcome via the
+    /// registered media handler.
+    fileprivate func handleMediaPlatform(
         _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
     ) async {
         await ingestPlatformItem(item, platform: platform, itemID: itemID)
@@ -752,10 +746,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.persistArticle(content, html: html, for: item, url: url)
         case let .product(product, _):
             await ingestor.ingestProductTracker(item, url: url, product: product)
-        case let .video(platform, itemID):
-            await ingestor.handleVideo(platform, itemID: itemID, for: item)
-        case let .social(platform, itemID):
-            await ingestor.handlePlatform(platform, itemID: itemID, for: item)
+        case let .video(platform, itemID), let .social(platform, itemID):
+            await ingestor.handleMediaPlatform(platform, itemID: itemID, for: item)
         case let .document(type):
             await ingestor.handleDocument(type: type, for: item)
         case let .needsArchive(title):

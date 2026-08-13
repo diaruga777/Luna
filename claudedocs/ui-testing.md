@@ -29,11 +29,11 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 
 | File | Role |
 |---|---|
-| `ReaderKit/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
-| `ReaderKit/ReadingListItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
-| `ReaderKit/ReadingListStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
+| `Luna/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
+| `LunaModels/SavedItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
+| `LunaStorage/SavesStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
 | `Luna/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>`. Exposes `isUITestLaunch`. |
-| `ReaderKit/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args; usable from ReaderKit, which can't import the app target). |
+| `Luna/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args). |
 | `Luna/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` before showing the app's real root. |
 
 ### Named states (`UITestState`)
@@ -51,7 +51,7 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 ### In-app seeding (screenshot agent)
 
 Launch the app with `-uiTestState mixed`. The seeder wipes + seeds
-`ReadingListStore.shared`, disables animations, **pins the reading-list sectioning
+`SavesStore.shared`, disables animations, **pins the saves sectioning
 clock** to `UITestFixtures.baseDate` (`UITestSeeder.sectioningNow`) so fixed-date
 fixtures land in the **Reading** section instead of Archive, **resets persisted list
 prefs** (selected filter → All, default collapsed set), and `SceneDelegate` forces
@@ -66,7 +66,7 @@ release. Verified live: `simctl launch com.hsanabria.luna -uiTestState mixed`.
 
 ### Suppressing simulator debug hooks in captures
 
-The simulator-only debug tap targets (reading-list row ellipsis, reader "Split
+The simulator-only debug tap targets (save row ellipsis, reader "Split
 High/Low") overlay real content. They are gated on
 `!UITestLaunch.isActive`, so they vanish for any `-uiTestState` launch (the
 screenshot agent) but remain for interactive
@@ -76,13 +76,13 @@ directly, so reference images are unaffected).
 ### Test seeding
 
 ```swift
-UITestSupport.seedSharedStore(.mixed)       // seeds ReadingListStore.shared
+UITestSupport.seedSharedStore(.mixed)       // seeds SavesStore.shared
 // ... build a VC that reads .shared ...
 UITestSupport.wipeSharedStore()             // in tearDown
 ```
 
 `UITestSeeder.seedSharedStore(_:)` and `UITestSeeder.seed(_:into:)` are the same
-seam the app uses. Read items back from `ReadingListStore.shared.items()` when you
+seam the app uses. Read items back from `SavesStore.shared.items()` when you
 need the on-disk `contentFileName` (the in-memory fixture copies don't carry it).
 
 ## Snapshot testing (`LunaTests/SnapshotTesting.swift`)
@@ -111,7 +111,6 @@ the reference for inspection.
 
 | Test file | Snapshot | Navigation / layout |
 |---|---|---|
-| `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends buttons; table layout |
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
 | `PriceTrackingScreenTests` | — | price-editor layout/store list |
 | `SocialAndSeederTests` | — | friends-screen layout; seeder contract (every state ↔ fixture, mixed covers all types, deterministic ids, wipe) |
@@ -129,7 +128,7 @@ simulator can't drive). The real `ShareViewController` is a thin `ExtensionHost`
 ### Not snapshotted (flagged, with reason)
 
 - **Friends screen** — renders a per-device keychain-identity QR code (not
-  pixel-stable). Covered by a layout-sanity assertion + the reading-list "friends
+  pixel-stable). Covered by a layout-sanity assertion + the saves list "friends
   button" navigation test instead.
 - **`SplitWebOverlayViewController`** — a transition overlay needing a live cut
   position + rendered top/bottom halves from the host scroll reader + a WKWebView
@@ -144,8 +143,8 @@ simulator can't drive). The real `ShareViewController` is a thin `ExtensionHost`
 
 ## Adding a new state
 
-1. Add a `case` to `UITestState` (ReaderKit/UITestFixtures.swift) and return its
-   `Fixture` from `UITestFixtures.fixture(for:)` using `ReadingListItem(seed:…)` +
+1. Add a `case` to `UITestState` (`Luna/UITestFixtures.swift`) and return its
+   `Fixture` from `UITestFixtures.fixture(for:)` using `SavedItem(seed:…)` +
    `sampleArticleContent` (stable dates via `UITestFixtures.ago(days:…)`).
 2. Reference it in a test via `UITestSupport.seedSharedStore(.newState)`.
 3. The screenshot agent gets it for free via `-uiTestState newState`.

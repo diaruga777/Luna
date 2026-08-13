@@ -6,7 +6,7 @@ Target stages: **1 Unwrap** → **2 Classify** → **3 Process** (per-kind) → 
 
 ## Stage 1 — Foundation (DONE; additive)
 
-Stage 1 builds the determination foundation as NEW pure `ReaderKit` files with comprehensive tests. It is **additive**: the live pipeline (`ReadingListIngestor` / `ArticleResolver` / `ShareViewController` / `ArticleIngestDecider`) is unchanged and still drives every save. Stages 3–4 repoint callers to these types and delete the old gating tangle. Everything below is pure (no UIKit/network), so the main app and every extension share one implementation.
+Stage 1 builds the determination foundation as NEW pure `ReaderKit` files with comprehensive tests. It is **additive**: the live pipeline (`SavesIngestor` / `ArticleResolver` / `ShareViewController` / `ArticleIngestDecider`) is unchanged and still drives every save. Stages 3–4 repoint callers to these types and delete the old gating tangle. Everything below is pure (no UIKit/network), so the main app and every extension share one implementation.
 
 ### `ReaderKit/ContentKind.swift`
 
@@ -74,7 +74,7 @@ Registry `handlers = [.facebook, .googleNews, .appleNews, .shorteners(redirectSh
 
 Stage 2 builds the per-kind **processing** components (each a pure core + bounded I/O,
 independently tested), migrates `ArticleResolver` to consume them, and deletes the
-duplicated/dead code. Surfaces (`ReadingListIngestor`/`ShareViewController`/
+duplicated/dead code. Surfaces (`SavesIngestor`/`ShareViewController`/
 `ArticleIngestDecider`) keep their external decision shape; Stage 3 rewires them onto
 the classifier. Suite 816 → 840, all green; Release (generic/iOS) compiles.
 
@@ -150,7 +150,7 @@ The ONE shared entry: `IngestPipeline.process(_ input: IngestInput, timeout:…,
 
 ### `ReaderKit/OutcomePresenter.swift`
 
-`protocol OutcomePresenter { func present(_ outcome: Outcome, for item: ReadingListItem) async }`
+`protocol OutcomePresenter { func present(_ outcome: Outcome, for item: SavedItem) async }`
 — a thin per-surface presenter whose body is an EXHAUSTIVE switch over `Outcome` (no
 `default`, compiler-checked). Every case shows real UI; `.failed`/timeout shows an error,
 NEVER an infinite spinner.
@@ -159,7 +159,7 @@ NEVER an infinite spinner.
 
 Every surface builds an `IngestInput`, calls `IngestPipeline.process`, and presents via its
 `OutcomePresenter`:
-- **main app** `ReadingListIngestor.ingest` → `IngestorOutcomePresenter` (the headless
+- **main app** `SavesIngestor.ingest` → `IngestorOutcomePresenter` (the headless
   store-writing presenter shared by paste/manual/appIntent/friendShare; the foreground list
   opens a saved item via `open(_:presenter:)` on tap). Unwrap is done ONCE up front to
   repoint the store, then the pipeline runs (idempotent re-unwrap). The paste happy-path
@@ -283,7 +283,7 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
   (which lacks the host-specific Target `current_retail` / Walmart `currentPrice` price
   shapes the per-host `ProductPriceRule` knows). The heuristic detector still confirms
   products on `.undetermined`/article-classified pages.
-- **Dedup authority.** `ReadingListStore.addIfAbsent` is the single URL-existence dedup
+- **Dedup authority.** `SavesStore.addIfAbsent` is the single URL-existence dedup
   ("drop a duplicate incoming item without re-attributing"); `SocialMessageCenter`'s
   friend-share cases route through it instead of repeating `item(forURLString:) == nil`.
   The ingestor's separate guard (`priceTracker(containingStoreURL:)`) is an ORTHOGONAL
@@ -330,7 +330,7 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
   extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps MOVED
   from `Luna/` into the shared libraries (today `LunaPriceUI`, whose
   `ProductDetailViewController` is the surface both hosts show); the one main-app-only call ("Read instead" →
-  `ReadingListIngestor.saveAsArticle`) became an injected closure, a static
+  `SavesIngestor.saveAsArticle`) became an injected closure, a static
   `PriceTrackingViewController.defaultSaveAsArticle` the app installed at launch.
   (Historical: the "Read instead" button and that seam have since been removed —
   see `claudedocs/price-tracking.md`.)
@@ -362,7 +362,7 @@ resolves no assets), an optional LLM fallback re-runs the URL — see
 `claudedocs/url-rescue.md`. Key contract for this pipeline: the rescue engine
 (`LunaURLRescue`) re-enters `IngestPipeline.processResolved` **at most once, via an
 injected raw-pipeline closure**, so a rescue can never trigger a second rescue.
-`ReadingListIngestor.rescueTrigger` fires on a genuine `.failed` outcome;
+`SavesIngestor.rescueTrigger` fires on a genuine `.failed` outcome;
 `applyResult(...)` is the shared persistence tail both a first pass and a rescued
 result flow through, so rescued items obey the same per-app surface gate (`claudedocs/surface-support.md`).
 

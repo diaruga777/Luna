@@ -6,8 +6,8 @@ real web view, and offers the one thing that might still work.
 
 ## What the card shows
 
-`FailedSaveCardViewController` (`LunaReadingListUI`), assembled by
-`FailedSaveCardFactory` (`Luna/ReadingList/`, universal — compiled into all four
+`FailedSaveCardViewController` (`LunaSavesUI`), assembled by
+`FailedSaveCardFactory` (`Luna/Saves/`, universal — compiled into all four
 app targets), top to bottom:
 
 1. **The page itself**, in a `WKWebView` inset 8pt from the card's edges (almost
@@ -76,8 +76,8 @@ evenly spaced — the model call dominates a 90-second budget — and
 next stage's fraction) so a 22-second model call creeps instead of freezing. The
 card watches `.rescueProgressChanged` filtered on its own item id, plus a 0.3s
 ticker to render the interpolation; that notification is separate from
-`.readingListChanged` because progress fires many times per rescue and
-`.readingListChanged` reloads every deck and list.
+`.savesChanged` because progress fires many times per rescue and
+`.savesChanged` reloads every deck and list.
 
 On completion the card either becomes an ordinary card (the item advanced) or
 returns to the error state — and that state is **terminal**: the AI button is
@@ -90,7 +90,7 @@ user-initiated rescue finishes without recovering the item. While that equals th
 running version the card is terminal; after an update it doesn't match, so the
 item is eligible again, and `URLRescueCoordinator.reopenStaleVersionAttempts()`
 clears its ledger budget at install so the launch sweep retries it automatically.
-`ReadingListIngestor.ingestAllPending` already re-runs ordinary ingestion for
+`SavesIngestor.ingestAllPending` already re-runs ordinary ingestion for
 every `.failed` item on launch, so an update gets **both** paths with no extra
 scheduling. Storing the version rather than a bool is what makes that automatic —
 no migration, no "clear all" pass to remember to run.
@@ -125,7 +125,7 @@ A 401/403/429 is the server saying "not you" to a *background fetch*.
 routinely gets a 200 and the full article for a page `URLSession` cannot touch.
 So instead of a dead card, rescue can move the item to the interactive
 archive-unlock tier — `.needsCaptcha`, a live card with a tap-to-unlock
-affordance — via `ReadingListStore.markNeedsCaptcha`, which clears the failure
+affordance — via `SavesStore.markNeedsCaptcha`, which clears the failure
 sidecar itself.
 
 Two routes reach it:
@@ -208,7 +208,7 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   for**, via `isWorthRescuing`: every other failure means "we couldn't GET the
   article", which a model reading the page can sometimes fix, whereas a search
   page has no article to find and a rescue would spend the version's single
-  attempt proving it. Both the trigger (`ReadingListIngestor`) and the card's
+  attempt proving it. Both the trigger (`SavesIngestor`) and the card's
   chin (`FailedSaveCardFactory`'s `canRescue`) consult it, so the card shows the
   terminal apology instead of an offer it can't keep.
   `subscribeRedirect` is the site answering an article request
@@ -226,10 +226,10 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   reason.
 - **`SaveFailureStore`** (`saveFailures.json`, App Group) — reason, failure count,
   last failure date, the recovered title/site name, and the AI-attempt version. A
-  **sidecar**, never new `ReadingListItem` fields: an older sibling app decoding
-  and re-encoding the shared `readingList.json` would silently drop unknown keys
-  (the same reasoning as `RescueLedgerStore` and the imageRefs / preloads
-  sidecars). Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a
+  **sidecar**, never new `SavedItem` fields: a new field on the shared save is a
+  schema change four independently-updated apps have to agree on, where a
+  sidecar is one writer's own file (the same reasoning as `RescueLedgerStore`
+  and the preloads sidecar). Cleared whenever an item reaches `.ready` or `.needsCaptcha`, so a
   later failure starts from a clean count *and* a fresh AI attempt.
 - **`SaveDiagnosticsStore`** (`saveDiagnostics/<UUID>.log`, App Group) — the
   second sidecar, and the one with the DETAIL the reason above only summarizes:
@@ -237,7 +237,7 @@ policy, the list rows, and the prompt's diagnostic line, so the plumbing stands:
   only on failure (a save that works flushes nothing and deletes what an earlier
   attempt left), appended to by each retry, exported by the card's share menu,
   and read back by the URL-rescue engine as failure evidence. Dropped alongside
-  the failure record by `ReadingListStore.clearFailureRecords`. Full detail in
+  the failure record by `SavesStore.clearFailureRecords`. Full detail in
   `claudedocs/save-diagnostics.md`.
 - One gap that closed with it: the share/action extensions' failure leg called
   `store.markFailed` WITHOUT `SaveFailureStore.recordFailure`, so an extension
@@ -252,7 +252,7 @@ surface gate never drops it. It was nonetheless only *visible* in the Reader,
 because `rendersAsReader` is true for anything with no platform and no tracker.
 So a Downloader link that failed was stored and invisible.
 
-`ReadingListSectioning.ListFilter.includes` short-circuits on `isFailedSave(_:)`
+`SavesSectioning.ListFilter.includes` short-circuits on `isFailedSave(_:)`
 and every filter shows it. The app the user saved the link in is where they expect
 to see it break, and any app can offer the rescue that gives it a kind — after
 which it classifies and settles into its own app. On the Downloader root, failed

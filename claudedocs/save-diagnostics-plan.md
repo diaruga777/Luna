@@ -29,12 +29,12 @@ for the store itself are part of this plan (none exist yet).
   fan-out: `SellerFanOutAttempt.logLine` / `SellerFanOutOutcome.logSummary`
   (`LunaPriceCompare/SellerFanOut.swift:196,235,280`) — structured record on a
   value type, formatting on the value, one `onAttempt` sink.
-- Failure recording: `ReadingListStore.markFailed` (state only) +
+- Failure recording: `SavesStore.markFailed` (state only) +
   `SaveFailureStore` sidecar (`saveFailures.json`: reason, count, dates,
   resolvedTitle, aiAttemptVersion). Failed card =
-  `FailedSaveCardViewController` (LunaReadingListUI) with injected
+  `FailedSaveCardViewController` (LunaSavesUI) with injected
   `FailedSaveCardActions { rescue, share, delete }`, assembled by
-  `Luna/ReadingList/FailedSaveCardFactory.swift` (universal, all four apps).
+  `Luna/Saves/FailedSaveCardFactory.swift` (universal, all four apps).
   The URL-bar share button exists and currently shares the raw URL via
   `SendToFriendSheet.shareLink` (`FailedSaveCardFactory.swift:131`).
 
@@ -51,7 +51,7 @@ LunaModels must NOT import LunaStorage):
 public final class SaveDiagnosticsRecorder: @unchecked Sendable {
     public let itemID: UUID
     /// Mirrors each line to the general diagnostics stream; installed by the
-    /// layer that owns storage (ReadingListIngestor / ShareSurfaceDriver).
+    /// layer that owns storage (SavesIngestor / ShareSurfaceDriver).
     public init(itemID: UUID, mirror: @escaping @Sendable (String, String) -> Void)
     /// Timestamps, buffers, and mirrors "[save <first8>] <message>".
     public func record(_ message: String, category: String)
@@ -82,7 +82,7 @@ Rules:
 
 ### 2. Binding points (who creates/flushes the recorder)
 
-- **`ReadingListIngestor.ingest`** (`LunaReadingList/ReadingListIngestor.swift:96-118`):
+- **`SavesIngestor.ingest`** (`LunaSaves/SavesIngestor.swift:96-118`):
   create a recorder for the placeholder item's UUID, bind with
   `SaveDiagnostics.$recorder.withValue(...)` around the pipeline call. Mirror
   closure: `DiagnosticLog.shared.record` in-app. After `applyResult`: outcome
@@ -156,14 +156,14 @@ Do not add heavier edges.
 
 ### 4. Share button on the failed card
 
-- `FailedSaveCardViewController` (LunaReadingListUI): the URL-bar share button
+- `FailedSaveCardViewController` (LunaSavesUI): the URL-bar share button
   gains a `UIMenu` — "Share Link…" (existing behavior) + "Share Diagnostics…",
   the latter present only when `SaveDiagnosticsStore.hasDiagnostics(for:)`.
   Extend `FailedSaveCardActions` with `shareDiagnostics: ((UIView) -> Void)?`
   (nil ⇒ menu omits the item) or pass a menu-builder — pick whichever reads
   best against the existing injected-closure style.
 - `FailedSaveCardFactory.makeMenu(shareLink:delete:)`
-  (`Luna/ReadingList/FailedSaveCardFactory.swift:92`) — the long-press deck
+  (`Luna/Saves/FailedSaveCardFactory.swift:92`) — the long-press deck
   menu gains the same "Share Diagnostics…" item.
 - Export path: header (mirror `DiagnosticLog.header()` — app version, OS,
   exported-at) + save metadata (URL, `SaveFailureReason.headline`,
@@ -184,7 +184,7 @@ Do not add heavier edges.
 - Delete the trace file wherever the item stops being failed or exists:
   the card/deck delete actions (`FailedSaveCardFactory.makeActions`,
   `KindDeckProvider` delete), success paths that call
-  `SaveFailureStore.clear` (`ReadingListStore.swift:799,822`), and the rescue
+  `SaveFailureStore.clear` (`SavesStore.swift:799,822`), and the rescue
   sweep's `SaveFailureStore.prune` call site gets a paired
   `SaveDiagnosticsStore.prune(keeping:)`.
 

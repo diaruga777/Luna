@@ -59,7 +59,7 @@ builds its root controller.
 `LunaLibraries/Sources/LunaDesignSystem/StarfieldView.swift` puts an extremely faint
 scatter of stars behind the card decks — installed by the one shared
 `CardCarouselHostViewController` every app roots on, and again by its Reader
-subclass `ArticleCardsViewController` — and the reading list (as
+subclass `ArticleCardsViewController` — and the saves list (as
 `tableView.backgroundView`).
 
 Quiet, but not invisible: the brightest star sits at ~20% alpha and most are under 8%, so
@@ -71,7 +71,7 @@ The card decks hand their starfield to the carousel as `chromeBackdrop`, so it c
 carousel chrome: it fades out with the scrub strip and side cards when a reader takes over
 the screen, and fades back in with them, inside the same 0.32s ease-in-out animation block
 (`applyImmersionLayout`) so the timing matches for free. The reference is weak — the host
-still owns the view. The reading list has no immersion and keeps its stars up.
+still owns the view. The saves list has no immersion and keeps its stars up.
 
 The sky is *fixed*: 170 positions come from one deterministic seeded table in normalised
 coordinates, so every screen and every app shows the same constellations and a rotation or
@@ -202,7 +202,7 @@ along a curved horizon, with an optional activity pulse while progress is in fli
 SwiftUI/WidgetKit renderer. Both honor Reduce Motion.
 
 The effect is used by Downloader progress surfaces including the Live Activity, action
-extension saved-media screen, reading-list status pill, and Downloader App Clip.
+extension saved-media screen, save status pill, and Downloader App Clip.
 Download surfaces show the traveling activity pulse. Playback uses of the UIKit bar
 (the audio mini-player and video scrub overlay) disable it, leaving only determinate
 progress and its head point.

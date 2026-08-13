@@ -87,7 +87,7 @@ even while running inside central Luna.
 
 If the weekly URL is already in the store, the row is shown dimmed with a
 translucent checkmark over its thumbnail — the favicon still reads through it —
-and reconciles on `.readingListChanged`.
+and reconciles on `.savesChanged`.
 
 A row's thumbnail fills its square for a photograph and FITS, over the subtle
 fill `CarouselSourceBadgeView` uses, for anything markedly non-square: the site
@@ -202,7 +202,7 @@ absent lesson is not a gap: Safari simply takes the bottom slot.
 
 **Email is earned by three saves, or by two days with the first one** —
 whichever comes first (`UtilCardSetupOffer.emailIsEarned`, counting saves from
-any surface). It arrives live: `.readingListChanged`, a foreground, and
+any surface). It arrives live: `.savesChanged`, a foreground, and
 `EmailAccountStore.accountChanged` all reflow the block, so the third save brings
 the button in and connecting an account takes it away. Tapping it runs
 `UtilCardContentViewController.emailSetupLauncher` — installed by the `KindWiring`
@@ -298,7 +298,7 @@ paste field.
 The “or” is shown only while BOTH of these hold: the setup legs are not both
 finished/skipped, and the deck holds no save of its own (the host passes
 `hasSaves`). It leaves as soon as either becomes untrue — including live, on
-`AppOnboardingStore.didChange` and `.readingListChanged`.
+`AppOnboardingStore.didChange` and `.savesChanged`.
 
 The two lesson buttons launch the existing native Safari and Messages lessons
 with `AppOnboardingViewController.presentSetupReplay`. Completing or skipping a
@@ -363,7 +363,7 @@ ordering, and unsaved filtering are exactly the former recent-URL behavior:
   URLs in the shared App Group; revisiting a URL promotes its sole copy to front;
 - evaluation runs the real ingest pipeline for the current surface;
 - positive and negative verdicts are version-stamped and cached;
-- saved URLs disappear on `.readingListChanged`, while deleting that save can
+- saved URLs disappear on `.savesChanged`, while deleting that save can
   reveal the cached recent again;
 - if Safari is not configured and has produced no usable history, no recent rows
   appear.

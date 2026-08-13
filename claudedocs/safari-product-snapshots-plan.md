@@ -39,7 +39,7 @@ if implementation diverges.
 - Deep-link path: `SceneDelegate.route` (:134-154) → `LunaDeepLink.articleURL(from:)`
   (LunaURLClassification/LunaDeepLink.swift:65 — extracts the `url` query item by name, so
   EXTRA query params parse harmlessly) → `openReader(articleURL:)` (:158-200) →
-  `ReadingListIngestor.shared.handleSavePress` (source defaults `.manual`) → kind dispatch in
+  `SavesIngestor.shared.handleSavePress` (source defaults `.manual`) → kind dispatch in
   `IngestorOutcomePresenter.present`. Media leg: `PlatformItemIngestor` (LunaPlatforms:53-60) →
   in Downloader/central, `LiveMediaDownloadManager.shared.start(...)` which requests the Live
   Activity (`LiveMediaDownloadManager+ActivityKit.swift:64`). Product leg:
@@ -67,7 +67,7 @@ if implementation diverges.
 page as a product (the same condition that would offer the Track pill, but independent of the
 pill suggestion mode — snapshots are passive, local-only data), it persists a snapshot:
 `{name, price, currency, canonicalURL, host, identifiers, brand, date}`. Snapshots are NOT
-saves: no reading-list row, no background refresh, no alerts. They exist only to (a) seed a
+saves: no save row, no background refresh, no alerts. They exist only to (a) seed a
 tracker's history/seller list when the user later saves that product, and (b) power the
 Feature-3 history pill.
 
@@ -265,7 +265,7 @@ STRICTLY LOWER than the current page price **in the same currency**, show a seco
 
 ### 3a. The app-written history index
 
-The handler can't read `readingList.json` (package-free, and the payload is huge). Instead the
+The handler does not open the saves database (the whole library is the wrong shape for one page load). Instead the
 APP maintains a compact `priceHistoryIndex.json` next to the snapshots file: per tracked
 product: `{name, brand?, productID?, stores: [{url, host, points: [{day, price, currency}]}]}`.
 - Writer in LunaPriceUI (`PriceHistoryIndexWriter`), regenerated (atomic, whole-file) after:

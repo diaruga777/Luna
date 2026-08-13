@@ -2,7 +2,7 @@
 
 Luna is a family of **four standalone iOS apps** (UIKit, deployment target iOS 18;
 FoundationModels/new-API code is gated behind `@available(iOS 26, *)`)
-that share one App Group, one on-disk store (`readingList.json`), and one codebase:
+that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
 
 - **Luna** (`com.hsanabria.luna`, Xcode target `Luna`) — the central, PAID app:
   the only app whose every surface (app, share/action/safari extensions, App
@@ -41,12 +41,23 @@ the Info.plist key `LunaAppGroupID` read by the `LunaAppConfig` library (`AppCon
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
 extension, App Intents, Safari extension) is classified by the shared
 `LunaIngest.IngestPipeline` into a `ContentKind` and written to the one shared
-`readingList.json`. Each app shows only its category: every app's root is a CARD
+saves database, `saves.sqlite` in the App Group container. Each app shows only its
+category: every app's root is a CARD
 DECK, and `LunaApp.current` — derived from the bundle-id suffix — decides both what
-it shows (`LunaApp.includes`, in `LunaReadingListUI`) and what it accepts
+it shows (`LunaApp.includes`, in `LunaSavesUI`) and what it accepts
 (`SurfaceSupport`, the ingest gate). Items of other categories are stored but
 surface only in their own app. There is no sectioned table list: it was deleted
-once every app rooted on a deck. Feature docs live in `claudedocs/` — keep them current when changing features.
+once every app rooted on a deck. **The store is SQLite on the system
+`libsqlite3`, genuinely relational and never a JSON payload column**: one
+`saves` row per save with typed columns, real child tables under `ON DELETE
+CASCADE` for the send bookkeeping and the price tracker's stores and price
+points, and the on-disk artifacts' ownership as edges (`files`/`file_refs`/
+`file_holders`) whose triggers queue a released path in `pending_deletes` for
+`PendingDeleteReaper` to unlink. WAL, `busy_timeout`, `foreign_keys = ON`, one
+connection per process behind a serial queue; enum columns carry NO CHECK
+constraint, because four independently-updated apps share the one file and an
+unknown raw value must map to a safe default in Swift rather than fail a write.
+See `claudedocs/saves.md`. Feature docs live in `claudedocs/` — keep them current when changing features.
 
 **Targets.** Four app targets (`Luna`/central, `LunaReader`, `LunaDownloader`,
 `LunaPriceTracker`) each share the `Luna/` app-shell sources via the same synchronized
@@ -332,7 +343,7 @@ comes from the one `KindWiring+*.swift` variant each target compiles). `KindWiri
 also each app's static composition API: AppDelegate/SceneDelegate call
 `KindWiring.makeRootViewController()/mainNavigationController(of:)/settingsCategories()`
 plus fixed lifecycle points (`appDidLaunch/appDidEnterBackground/sceneDidForeground/
-readingListDidChange/wifiBecameAvailable/retryPendingArticleSends/
+savesDidChange/wifiBecameAvailable/retryPendingArticleSends/
 resumeUnfinishedMediaDownloads/attachBackgroundURLSessionHandler/priceRefreshRunner`), so
 the universal shell never names a foreign kind's symbols. The Action Button intents' media handoff goes through
 `ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), and URL
@@ -358,7 +369,7 @@ the app links too. `AppConfig.appGroupID` reads the App Group id from the extens
 Info.plist, the same `LunaAppGroupID` key every other target reads (`Bundle.main` always
 resolves to the calling process's own bundle). Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
-`AudioPlaybackCenter.dataSource`, `ReadingListIngestor.unsupportedSavePresenter`,
+`AudioPlaybackCenter.dataSource`, `SavesIngestor.unsupportedSavePresenter`,
 `DiagnosticLog.exportIdentityProvider`,
 `ProductPriceRescue.resolver`). Component-boundary communication
 inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
@@ -368,8 +379,8 @@ inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
 
 **Per-app SwiftPM link groups.** Every app links the universal set — Models / Storage /
 DesignSystem / Transitions / Fetch / Ingest / URLClassification / HTMLClassification /
-PriceMetadata / Mail / MailAccount / MailTransport / Social / SocialUI / ReadingList /
-ReadingListUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own kind group(s):
+PriceMetadata / MailAccount / MailTransport / Social / SocialUI / Saves /
+SavesUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own kind group(s):
 
 | App target | Kind group(s) linked on top of the universal set |
 | --- | --- |
@@ -544,7 +555,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   is harmless — the warnings don't fail the build — but this keeps output clean.
   Re-verified 2026-07-28 by diffing the 90 flagged pairs against `Package.swift`:
   6 looked undeclared, and all 6 turn out to have **no direct `import`** in the
-  flagged target's sources at all (`LunaReadingList`→`SwiftSoup`,
+  flagged target's sources at all (`LunaSaves`→`SwiftSoup`,
   `LunaPriceIngest`→`LunaFetch`, …) — the scanner reports modules it loads
   transitively, so there is nothing to declare and adding the edges would be noise.
 - **A build that fails with "cannot find type `LunaApp` in scope" in files you did

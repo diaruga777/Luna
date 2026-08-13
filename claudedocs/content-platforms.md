@@ -14,7 +14,7 @@ owns each platform module's presentation and optional metadata fetcher.
 
 Music and podcast items are no longer a Luna content type. Spotify, Apple Music,
 and Apple Podcasts URLs are not classified as platform media and cannot create
-URL-less saved items through App Intents or the reading list. The Safari
+URL-less saved items through App Intents or the saves list. The Safari
 extension's `content.js` recognizes exactly these six platforms too (generated
 from `PlatformRecognizer` — see `safari-extension.md`'s "Shared platform-host
 list"); it no longer shows a "Download in Luna" pill on Spotify/Apple
@@ -23,7 +23,7 @@ Music/Apple Podcasts pages, since the app has no way to act on them.
 ## Ingestion and rendering
 
 `IngestPipeline` routes recognized social/video URLs directly to their typed
-outcomes, so they never enter article extraction. `ReadingListIngestor` persists
+outcomes, so they never enter article extraction. `SavesIngestor` persists
 the platform, item identifier, available title, and thumbnail, then marks
 the item ready. Platform items do not become failed articles when metadata is
 unavailable.
@@ -35,7 +35,7 @@ to `.video(.web, itemID: nil)` before any HTML fetch. The synthetic platform
 keeps the existing Downloader-owned outcome/persistence path while the media
 download layer uses the source URL itself as the already-resolved `MediaAsset`.
 
-The reading list renders cached art when present, otherwise the platform logo.
+The saves list renders cached art when present, otherwise the platform logo.
 Tapping uses the module's native-app link first, then an embed, then the in-app
 browser.
 

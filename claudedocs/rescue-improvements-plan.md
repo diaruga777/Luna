@@ -107,8 +107,8 @@ umbrella-struct style, extend the `.anyOf` list) and the validator/applier:
   structural.)
 - **`open_in_browser`** — a terminal directive that converts the failure into
   the interactive archive-unlock tier instead of a dead card:
-  `ReadingListStore.markNeedsCaptcha(_:title:)` (which already clears the
-  failure sidecar — `ReadingListStore.swift:809-822`). The model chooses it
+  `SavesStore.markNeedsCaptcha(_:title:)` (which already clears the
+  failure sidecar — `SavesStore.swift:809-822`). The model chooses it
   when evidence shows a bot-wall/paywall (401/403/429, subscribeRedirect) and
   no automated route worked. ALSO add the deterministic fast-path: when
   `SaveFailureReason.browserMayRecover` (`SaveFailureReason.swift:182`) and
@@ -184,10 +184,10 @@ nothing):
 
 - Everything must work on-device (iOS 26 FoundationModels, 4096-token window);
   PCC-only code stays behind `#if compiler(>=6.4)`.
-- `LunaURLRescue` remains main-app-only; the coordinator (`LunaReadingList`)
+- `LunaURLRescue` remains main-app-only; the coordinator (`LunaSaves`)
   still never links it — new capabilities reach it through the injected
   `Engine` struct or `URLRescueWiring`.
-- Sidecars only; never new `ReadingListItem` fields.
+- Sidecars only; never new `SavedItem` fields.
 - Prompt-injection defense stays: page-derived content (digest, evidence,
   search results) goes in the PROMPT, never the instructions, always fenced
   and labeled untrusted.

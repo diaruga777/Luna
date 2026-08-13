@@ -49,7 +49,7 @@ it's installed.
 Every surface that can draw shows the SAME screen,
 `UnsupportedSaveCardViewController` (**LunaDesignSystem** — below both the app
 shell and LunaShareSurface, so all three hosts present one type): the in-app
-interactive save (`ReadingListIngestor.unsupportedSavePresenter`, installed by
+interactive save (`SavesIngestor.unsupportedSavePresenter`, installed by
 AppDelegate, presented full screen), the share extension, and the action
 extension. Never a "Saved" checkmark — nothing was saved — and its only action
 is its own glass Done pill (it hides a host's navigation bar so the app's bare
@@ -231,12 +231,12 @@ enforces both by reading source:
 - **Only an app root writes the registry.** Reading it is how the deck works;
   a second write is how a surface gets a different card for the same save.
 
-A presenter answers questions about a `ReadingListItem`, never about a slot
+A presenter answers questions about a `SavedItem`, never about a slot
 index — slot arithmetic, the util-card offset, the fingerprint diff and the
 centering ladder stay in the host, which is the only thing that ever needed
 them. The one place that model bends is `unbackedItems()`: media rows are keyed
 by the MEDIA store's id and their `sourceURLString` is whatever the URL was when
-the download started, which is not always what the reading-list row says (a
+the download started, which is not always what the save row says (a
 Reddit `/r/…/s/` share link is network-resolved to its permalink inside
 `gateAndPrepare`; the share driver resolves a wrapper URL and then deletes the
 wrapper row). Those are real, downloaded user saves with nothing pointing at
@@ -283,7 +283,7 @@ preload or delete.
 ## Regression coverage
 
 `SurfaceSupportTests` (decision matrix + `Outcome.owningApp`), `LunaAppTests`
-(bundle-id derivation), `ReadingListIngestorSurfaceTests` (dropped-save
+(bundle-id derivation), `SavesIngestorSurfaceTests` (dropped-save
 invariants incl. email/friend-share), `ShareSurfaceDriverSurfaceTests`
 (extension drop UI + wrapper-dedup edge), `IntentIngestSurfaceTests` (intent
 error mapping + save verification), `IntentURLPrecheckTests` (per-app kind

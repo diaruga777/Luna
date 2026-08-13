@@ -1,7 +1,7 @@
-# Incoming Email → Reading List
+# Incoming Email → Saves
 
 Turns emails from allowed senders (or matching subject filters) into
-reading-list items. Reuses the send-to-Kindle Gmail account + app password.
+saved items. Reuses the send-to-Kindle Gmail account + app password.
 Runs on launch/foreground AND on a background schedule (so newsletters reach
 Kindle even if the app is never opened).
 
@@ -126,6 +126,6 @@ two background tasks above, and immediately when the toggle is turned on.
   **app password** (2-Step Verification) is required — the same one used for
   SMTP send. Plain account passwords don't work over IMAP.
 - Dedupe is by highest processed UID per UIDVALIDITY (robust; `\Seen` is only a
-  courtesy). The same URL from two emails dedupes at the reading-list layer.
+  courtesy). The same URL from two emails dedupes at the saves layer.
 - Live IMAP round-trip can only be verified on a real device with a real Gmail
   app password.

@@ -122,8 +122,8 @@ root with the store already seeded.
 Two redirects, both in `LunaAppConfig` at the bottom of the stack, because that
 is where every shared store already resolves from:
 
-- `AppConfig.sharedContainerURL()` — the App Group DIRECTORY (`readingList.json`,
-  `Articles/`, saved media, the weekly mirror). Eight files used to call
+- `AppConfig.sharedContainerURL()` — the App Group DIRECTORY (`saves.sqlite` and
+  its `-wal`/`-shm` siblings, `Articles/`, saved media, the weekly mirror). Eight files used to call
   `containerURL(forSecurityApplicationGroupIdentifier:)` themselves; they all go
   through this now.
 - `AppConfig.appGroupID` — the defaults SUITE NAME. Two dozen stores build a
@@ -136,9 +136,10 @@ redirects that too. It is the one call site; anything else reading standard
 defaults is per-device configuration a stage has no business rewriting.
 
 > **A store that resolves the container ITSELF is invisible until a stage
-> exercises it.** `SharedReadingListAppender` — what every share/action surface
-> appends through — was still asking the file manager directly, so a staged save
-> landed in the REAL App Group while `ReadingListStore` read the scratch one. The
+> exercises it.** The appender every share/action surface used to append
+> through — since folded into `SavesStore`'s own insert path — was asking the file
+> manager directly, so a staged save
+> landed in the REAL App Group while the store read the scratch one. The
 > row appeared to vanish between the append and the lookup one line later: the
 > onboarding lesson's product rehearsal fell back to a bare "Saved" confirmation
 > instead of opening the price editor, with nothing in the log to say why. If a
@@ -164,7 +165,7 @@ out from under itself, all in `AppDelegate`/`SceneDelegate`:
 
 | Skipped | Why |
 |---|---|
-| `ReadingListIngestor.ingestAllPending()` | Would resolve the save a stage froze mid-fetch |
+| `SavesIngestor.ingestAllPending()` | Would resolve the save a stage froze mid-fetch |
 | `KindWiring.appDidLaunch()` | Its media purge deletes the media a stage just seeded |
 | The weekly pull, mail import, price refresh, proposal check | Network; each would overwrite seeded state |
 | Spotlight indexing, image-reference backfill | Write to state a stage owns |
@@ -180,7 +181,7 @@ deck stage as a black screen. Determinism lives in the harness instead, which
 waits for two identical frames.
 
 Staged runs do count as a capture for `CaptureLaunch.isActive`, so the
-simulator-only debug tap targets ("Sim Dive", the reading-list row ellipsis) do
+simulator-only debug tap targets ("Sim Dive", the save row ellipsis) do
 not overlay the content. That list of launch arguments lives in exactly one
 place (`LunaAppConfig.CaptureLaunch`) — it used to be hand-copied into the app
 shell and both reader view controllers, and adding `-LunaStage` to the app's
@@ -278,7 +279,7 @@ their own; and the settings tree.
 
 ## Why `#if DEBUG`
 
-The catalogs call `ReadingListStore.seedForTesting`, `ReadingListItem(seed:)`,
+The catalogs call `SavesStore.seedForTesting`, `SavedItem(seed:)`,
 `SavedMediaStore.seedForTesting` and the other DEBUG-only fixture seams. A
 release build cannot compile them, so there is nothing to disable and no flag to
 get wrong: in a shipped binary `LunaStage.isActive` is a constant `false` and

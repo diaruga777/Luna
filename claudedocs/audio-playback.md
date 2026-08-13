@@ -45,7 +45,7 @@ crashes when nothing is wired:
   `AppAudioPlaybackDataSource` (installed by `Luna/AudioPlaybackWiring.swift`)
   resolves this to `AudioQueueRule.nextCandidate`: the top-most
   `readState == .unopened`, readable-article item in the current
-  Reader-surface list order (reproduces `ReadingListSectioning`'s exact
+  Reader-surface list order (reproduces `SavesSectioning`'s exact
   display order), excluding the currently-playing item. `.opened` items are
   never auto-queued (product decision). A nil `dataSource` means the autoplay
   chain finds no next candidate.
@@ -135,13 +135,13 @@ whole-block-only contract, or reader word-highlighting breaks.
 - **`AudioScriptStore`** — persists the finished `AudioScriptCacheEnvelope
   { script, refined, llmPermanentlyFailed }` as `<contentFileName-stem
   >.audioScript.json`, sibling to the item's content file in
-  `ReadingListStore.articlesDirectory`. Excluded from backups
+  `SavesStore.articlesDirectory`. Excluded from backups
   (`BackupPolicy.excludeFromBackups`) — purely a rebuildable derived cache. A
   `builderVersion` mismatch or missing/corrupt file both mean "rebuild",
   never "stale script."
 - **`AudioScriptPipeline`** — orchestrates cache lookup, heuristic build, and
   opportunistic LLM refinement. `install()` (MAIN APP ONLY, via
-  `Luna/AudioScriptPipelineWiring.swift`) observes `.readingListChanged`
+  `Luna/AudioScriptPipelineWiring.swift`) observes `.savesChanged`
   (debounced 1.5s) plus foreground/background transitions, and sweeps at
   launch: for every `.ready` readable article lacking a current-version
   cached script, builds the heuristic script synchronously (fast) and kicks
@@ -151,7 +151,7 @@ whole-block-only contract, or reader word-highlighting breaks.
   synchronously as a last-resort fallback (the sweep is what normally keeps
   scripts ready ahead of time) and never blocks on the LLM. The Share/Action
   extensions never call `install()` — they never observe
-  `.readingListChanged` or run the builder (extension memory limits +
+  `.savesChanged` or run the builder (extension memory limits +
   FoundationModels constraints); their scripts get built the next time the
   main app foregrounds.
 
@@ -164,7 +164,7 @@ Phase 6 made that legacy path speak the TRIMMED script and gave the main app
 a way to pick up where an extension left off.
 
 - **What runs where.** The extension never calls `AudioScriptPipeline.
-  install()` (no `.readingListChanged` sweep, no foreground/background
+  install()` (no `.savesChanged` sweep, no foreground/background
   tracking) — that stays main-app-only. Two small, extension-safe types in
   `LunaAudioPlayback` cover the extension's two touch points instead:
   - **`ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded`** — called
@@ -294,7 +294,7 @@ a way to pick up where an extension left off.
   script resolution), Now Playing registration, and
   `ReaderAudioLauncher.center`, at launch.
 - `Luna/AudioScriptPipelineWiring.swift` — starts the trimming pipeline's
-  `.readingListChanged` observers/launch sweep, at launch (after
+  `.savesChanged` observers/launch sweep, at launch (after
   `AudioPlaybackWiring.install()`).
 - `Luna/MiniPlayer/MiniPlayerHostViewController.swift`,
   `Luna/MiniPlayer/AudioMiniPlayerView.swift`.
@@ -357,9 +357,9 @@ a way to pick up where an extension left off.
   26, folding into the same "heuristics only" path as Apple-Intelligence-off
   or rate-limited).
 - **Autoplay queue rule must mirror the displayed list exactly.**
-  `AudioQueueRule.nextCandidate` reproduces `ReadingListSectioning`'s surface
+  `AudioQueueRule.nextCandidate` reproduces `SavesSectioning`'s surface
   filter + `assignSections` + section order by hand (in `Luna/`, not the
-  library, since `LunaAudioPlayback` can't depend on `ReadingListSectioning`)
+  library, since `LunaAudioPlayback` can't depend on `SavesSectioning`)
   — if sectioning/ordering logic changes, this must be updated in lockstep or
   autoplay will queue an item the user doesn't see next.
 - **Now Playing target ownership is adversarial with the legacy path** until
@@ -395,7 +395,7 @@ a way to pick up where an extension left off.
 - Announcements: same voice as narration, always 1.0× rate (pin time-pitch to
   1.0 for announcement segments).
 - Trimming timing: build audio scripts opportunistically at save time (main
-  app, `.readingListChanged` observer + launch/foreground sweep), NOT lazily
+  app, `.savesChanged` observer + launch/foreground sweep), NOT lazily
   at first playback — trimming often targets the very start of an article
   (byline/metadata), so a playback-time build would delay audio start.
 - Trimming risk model: start/end trimming is less error-prone than
@@ -414,7 +414,7 @@ matching/ranking/selection logic they call into is plain, store-free,
 unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
 
 - **`ArticleEntity`** (`Luna/Intents/ArticleEntity.swift`) — wraps a
-  `ReadingListItem` restricted to `ArticleReadability.isReadableArticle`
+  `SavedItem` restricted to `ArticleReadability.isReadableArticle`
   (`state == .ready && contentPlatform == nil && !isPriceTracker` — the same
   rule `AudioQueueRule.nextCandidate` uses for autoplay; never videos, social
   posts, or price trackers). Visible representation is title +
@@ -427,8 +427,8 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
   `EntityStringQuery.entities(matching:)` (the "find" workhorse), and
   `suggestedEntities()` (recent unread articles, ~10). All matching lives in
   `LunaIntents.ArticleMatcher`; the query type only bridges it to
-  `ReadingListStore`.
-- **`LunaIntents.ArticleMatcher`** — pure functions over `[ReadingListItem]`,
+  `SavesStore`.
+- **`LunaIntents.ArticleMatcher`** — pure functions over `[SavedItem]`,
   never loading `ArticleContent` (title/host/url only, so it's cheap over a
   large list):
   - `search(query:in:now:calendar:limit:)` — the string-query workhorse.
@@ -455,7 +455,7 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
   kept anyway (harmless, matches every other intent's convention). Optional
   `article: ArticleEntity?` parameter: provided → play it (re-validated as
   still readable); nil → `ArticleMatcher.latestUnread`. Loads the item's
-  `ArticleContent` from `ReadingListStore` and calls the SAME
+  `ArticleContent` from `SavesStore` and calls the SAME
   `AudioPlaybackCenter.shared.play(item:content:)` the in-app mini-player
   uses — `ArticleShellWiring.install()` runs `AudioPlaybackWiring.install()`
   from `AppDelegate.didFinishLaunching`, before any intent could plausibly
@@ -470,7 +470,7 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
 - **`ArticleSpotlightIndexWiring`** (`Luna/ArticleSpotlightIndexWiring.swift`,
   installed by `ArticleShellWiring.appDidLaunch()`, so only the two apps that
   handle articles compile it at all) — sweeps on launch and on debounced (1.5s)
-  `.readingListChanged`: builds a `CSSearchableItem` per readable article from
+  `.savesChanged`: builds a `CSSearchableItem` per readable article from
   `ArticleEntity.attributeSet`, calls `associateAppEntity` (so Spotlight's
   semantic index can resolve back to the entity/intent), indexes them via
   `CSSearchableIndex.default()`, and deletes entries for ids that dropped out

@@ -26,7 +26,7 @@ instrumenting already depends on LunaModels and none of them depends on
 LunaStorage. Putting the recording seam at the bottom is what lets
 `LunaMediaResolve` and `LunaPriceCompare` stay on their Foundation-only floors —
 no new dependency edge was added anywhere for this feature. Only the two layers
-that already own persistence (`ReadingListIngestor`, `ShareSurfaceDriver`) touch
+that already own persistence (`SavesIngestor`, `ShareSurfaceDriver`) touch
 the store.
 
 ## Call sites: unconditional, and free when nobody is listening
@@ -66,7 +66,7 @@ Categories in use: `ingest`, `fetch`, `bypass`, `media`, `price`.
 
 ## Who binds, who flushes
 
-- **`ReadingListIngestor.ingest`** creates the recorder for the placeholder
+- **`SavesIngestor.ingest`** creates the recorder for the placeholder
   item's UUID and binds it around BOTH the pipeline call and `applyResult`
   (the media leg only discovers a dead link while its handler runs). Mirror:
   `DiagnosticLog.shared.record`.
@@ -142,10 +142,10 @@ header + trace to a `.txt` for a `UIActivityViewController`.
 
 ## Lifecycle
 
-- `ReadingListStore.clearFailureRecords` drops the sidecar record AND the trace
+- `SavesStore.clearFailureRecords` drops the sidecar record AND the trace
   together, at all four points where an item stops being failed.
-- `ReadingListStore.delete` drops the trace with the item.
-- `ReadingListIngestor.ingestAllPending` prunes trace files whose item is gone —
+- `SavesStore.delete` drops the trace with the item.
+- `SavesIngestor.ingestAllPending` prunes trace files whose item is gone —
   it already holds the whole list, which is the one thing a prune needs.
 - The file itself is capped at 256 KB and trimmed from the FRONT (the inverse of
   `DiagnosticLog`, which keeps its tail for a different reason): retries append

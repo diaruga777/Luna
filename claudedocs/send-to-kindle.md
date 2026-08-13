@@ -12,13 +12,13 @@ Today there is exactly one destination:
 
 No UI taps needed once configured: an incoming article either goes out
 automatically per its capture source (below), or the user sends it explicitly
-from the reading list's long-press menu.
+from the saves list's long-press menu.
 
 ## Destinations
 
 `ArticleDestination` (`LunaLibraries/Sources/LunaSend/ArticleSendCoordinator.swift`)
 abstracts a destination's `id`/`displayName`, `isConfigured`,
-`sendMode(for: ReadingListItem)` (source-aware auto-send), `appIntentsSendMode`
+`sendMode(for: SavedItem)` (source-aware auto-send), `appIntentsSendMode`
 (the mode governing App-Intents/in-app saves, consulted for double-save-press
 detection), and `send(epubData:fileName:title:)`. The coordinator itself is
 destination-agnostic and holds an `[ArticleDestination]`.
@@ -43,28 +43,27 @@ credential.
 
 ## Auto-send by capture source
 
-Each item records where it came from: `ReadingListItem.captureSource`
+Each item records where it came from: `SavedItem.captureSource`
 (`CaptureSource` in `LunaModels`; nil legacy items → `.manual` via
 `effectiveCaptureSource`). Cases and where they're actually set today:
 
-- **`.email`** — `IncomingMailImporter` (`LunaLibraries/Sources/LunaReadingList/`),
+- **`.email`** — `IncomingMailImporter` (`LunaLibraries/Sources/LunaSaves/`),
   for every mail-sourced save: matched newsletters, Luna-prefixed shares
   without a recoverable marker, **and accepted friend shares** (`autoImport`
   tags these `.email` too — see the friend-share caveat below).
 - **`.appIntent`** — `IntentIngestHelper.handleSavePressWithTimeout`
   (`LunaIntents`), for saves made through the Action Button / Shortcuts.
-- **`.shareSheet`** — the share extension's `SharedReadingListAppender` writes
-  `"captureSource":"shareSheet"` as a raw string (the extension doesn't link
-  `LunaModels`).
+- **`.shareSheet`** — the share extension inserts through the same
+  `SavesStore`, which stamps `capture_source` on the row.
 - **`.paste`** — pasteboard-URL saves from the permanent util card
   (`ArticleCardsViewController`, `SavedMediaCardsViewController`, and
   `PriceTrackerCardsViewController`).
 - **`.manual`** — the default: typed URL, reader save button, deep links.
 - **`.friendShare`** — declared in `CaptureSource` and handled by
-  `SourceSendSettings`/`SurfaceSupport`/`ReadingListIngestor`, but **no
+  `SourceSendSettings`/`SurfaceSupport`/`SavesIngestor`, but **no
   production code path currently assigns it**: the one place a friend share
   is actually imported (`IncomingMailImporter.autoImport`) tags the item
-  `.email`, and `ReadingListItem.sharedByUsername` (the field the friend-share
+  `.email`, and `SavedItem.sharedByUsername` (the field the friend-share
   branch below keys its per-friend overrides on) is likewise never set outside
   test fixtures. In practice, then, a friend-shared article's auto-send
   behavior today is governed by the plain **email** toggle, not the
@@ -96,7 +95,7 @@ controls.
 ## Gating (save-press state machine)
 
 Every save funnels through
-`ReadingListIngestor.handleSavePress(urlString:source:...)`, which asks the
+`SavesIngestor.handleSavePress(urlString:source:...)`, which asks the
 pure `SavePressPolicy.decide(...)` what a press on this URL means:
 
 1. **URL not in the list** → `.saveNew`: save (tagged with `source`) and
@@ -115,7 +114,7 @@ an `intentAction` (only the Action Button's Save App Intent does, via
   (`SavePressPolicy.resendCooldown`). `ArticleSendCoordinator.doubleSaveDestinationIDs()`
   supplies the eligible, configured destination ids.
 - **Action Button (Save App Intent), 7 s window** —
-  `ReadingListIngestor.resolvedIntentAction` resolves to `.sendToKindle` when
+  `SavesIngestor.resolvedIntentAction` resolves to `.sendToKindle` when
   Kindle is configured, and nil otherwise. `SavePressPolicy` turns the former
   into `.sendToEreaders`; there is no contact action or user-facing double-save
   setting.
@@ -148,11 +147,11 @@ generation, delivery, and per-destination per-item state:
   *before* the network call, so a mid-send process death is retried rather
   than silently lost.
 - Soft failures stay `.queued`, with `sendFailureCounts`, `sendNextAttemptDates`,
-  and `sendLastErrors` persisted on the reading-list row. Backoff starts at
+  and `sendLastErrors` persisted on the save row. Backoff starts at
   15 minutes and doubles up to 12 hours (`RetryPolicy`); after 5 soft
   failures, or immediately for a hard failure (not-configured, auth, or a
   malformed message), the row becomes `.failed` and stops retrying.
-- Terminal failures set `pendingSendFailureNotices`; the reading list consumes
+- Terminal failures set `pendingSendFailureNotices`; the saves list consumes
   that flag and shows a one-shot bottom pill immediately if foregrounded, or
   on the next launch/foreground presentation if the failure happened in a
   background wakeup.
@@ -182,12 +181,12 @@ generation, delivery, and per-destination per-item state:
 
 ## Model & store
 
-`ReadingListItem` carries `sendStates: [String: SendState]` and
+`SavedItem` carries `sendStates: [String: SendState]` and
 `datesSent: [String: Date]`, both keyed by destination id
 (`sendState(for:)`/`dateSent(for:)` helpers; `SendState` is `.queued`/`.sent`/
 `.failed`). A `Codable` migration folds the legacy single `sendState`/`dateSent`
 (from when Kindle was the only possible destination) under `"kindle"`.
-`ReadingListStore.setSendState(_:for:destination:)` stamps
+`SavesStore.setSendState(_:for:destination:)` stamps
 `datesSent[destination]` when transitioning to `.sent`.
 
 ## UI

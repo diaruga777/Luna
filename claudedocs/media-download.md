@@ -43,7 +43,7 @@ Re-download completion preserves `archivedAt`, updates `dateSaved` to the downlo
 date, and therefore uses the ordinary local-retention clock without unarchiving.
 
 `SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
-the reading-list UUID as its stable identity. Existing manifests with the old required
+the saves list UUID as its stable identity. Existing manifests with the old required
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
 file disappears, store recovery changes the row back to `.undownloaded`.
 
@@ -52,7 +52,7 @@ funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
 before creating the job, then awaits preflight until the named background task is
 registered before returning the foreground to Safari. A completed transfer can
 therefore never arrive without a manifest row to receive it, and suspension cannot
-catch the handoff in the persist-before-task gap. The reading-list row it reserved
+catch the handoff in the persist-before-task gap. The save row it reserved
 is finished the same way it would be in any other save — just later and in the
 background, after the bounce: see "The save the hand-off did not have time to
 finish" below.
@@ -136,7 +136,7 @@ same as the carousel's: an active row is **deleted** (the incoming save then mak
 a new one, via the very `ensureUndownloaded` above) and an archived row instead
 becomes `.undownloaded` with its poster retained. The legacy `AutoDownloadSettings`
 dedup marker — the other "already downloaded" gate — is cleared with it. The one
-thing the save path does NOT mirror is the carousel's reading-list deletion: the
+thing the save path does NOT mirror is the carousel's save deletion: the
 save being processed right now owns that row, so it stays.
 
 The verdict comes from `PhotosBackingProbing`; the real `PhotoKitBackingProbe`
@@ -146,7 +146,7 @@ guessing. Local-file rows never consult PhotoKit at all.
 
 Deleting a Photos-backed item from the card's long-press menu first
 deletes the referenced `PHAsset` through `PHPhotoLibrary`, then removes the Downloader and
-reading-list records. If Photos access is denied, or limited access cannot resolve the
+saves list records. If Photos access is denied, or limited access cannot resolve the
 asset, the Luna records are retained until the user grants sufficient access. A Photos
 asset that was already deleted is treated as an idempotent successful deletion.
 
@@ -168,7 +168,7 @@ Photos references remain governed by the user's Photos library.
   The archive tray shows thumbnail-only square cells. Available local/PhotoKit media opens
   fullscreen; unavailable media re-downloads on tap; long-press offers Unarchive,
   Share, and Delete. Delete uses the same full cleanup as an active card: it removes
-  the saved-media record and files, shared reading-list save, auto-download marker,
+  the saved-media record and files, shared save, auto-download marker,
   and any referenced Photos asset.
   A PAUSED video or audio card shows its playback controls — the position bar
   under the card and a glass speed pill (0.25×–2×) at the card's bottom-left,
@@ -224,7 +224,7 @@ Photos references remain governed by the user's Photos library.
   Because the stack is bottom-anchored, an absent Share circle is not a gap.
   Leaving completes SILENTLY — the host's "Saved" checkmark card used to animate in over a
   screen the user had just dismissed, re-stating the header it replaced. **Delete** removes a
-  Photos asset first when one backs the item, then removes the Downloader and reading-list
+  Photos asset first when one backs the item, then removes the Downloader and saves list
   records; a Photos permission failure retains the Luna records. The separate
   `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new
   link starts downloading automatically. Once ready, Downloader persists through the same
@@ -284,14 +284,14 @@ Photos references remain governed by the user's Photos library.
   missing transfer; pasting the same interrupted URL performs the same repair immediately. New
   jobs register their background task before notifying UI, so a termination cannot leave a
   durable forever-resolving job in the old persist-before-task window.
-- **Legacy reading-list long press** — manual Save to Photos remains available in the
+- **Legacy saves list long press** — manual Save to Photos remains available in the
   combined/debug list and uses the same confirmed local-to-Photos transition for
   Downloader rows.
 - **Downloader App Clip** — downloads to a temporary file and presents the system share
   sheet. It does not become part of the durable three-state store or request Photos
   directly.
 
-The carousel observes both `.savedMediaChanged` and `.readingListChanged`.
+The carousel observes both `.savedMediaChanged` and `.savesChanged`.
 `SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
 in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
@@ -414,20 +414,20 @@ deck until somebody opens the app.
   or a URL no platform rule recognizes) stays owed, and the app finishes it
   itself, in the background, once the user is already back on the page.
 - After the bounce the drain posts `requestRun()`; `BackgroundIngestCompletion`
-  (LunaReadingList — the tier that can name `ReadingListIngestor`, which the media
+  (LunaSaves — the tier that can name `SavesIngestor`, which the media
   module cannot) runs the ordinary non-interactive ingest for each owed row under
   its own `BackgroundExecutionLease`, ended the moment that row reaches a verdict.
   The ingest's media leg attaches to the transfer already running rather than
   starting a second one.
 - **If iOS reclaims the window mid-ingest**, the lease's `onExpiration` cancels the
-  ingest task at the one point that is safe: `ReadingListIngestor.ingest` checks
+  ingest task at the one point that is safe: `SavesIngestor.ingest` checks
   `Task.isCancelled` after the pipeline and before it persists, so a cancelled pass
   writes nothing and the row stays exactly `.pending` — never half-written. The debt
   stays queued with its attempt count bumped, and the next resume finishes it: the
   background `URLSession` running this very download wakes the process when it
   completes (`AppDelegate.handleEventsForBackgroundURLSession` works the queue on a
   fresh lease, without delaying the session handler), and launch works it too.
-- `ReadingListIngestor.ingestAllPending` is unchanged and remains the safety net for
+- `SavesIngestor.ingestAllPending` is unchanged and remains the safety net for
   a process that was killed outright — it is simply no longer what the normal path
   depends on.
 

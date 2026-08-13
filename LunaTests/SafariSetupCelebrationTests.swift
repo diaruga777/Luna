@@ -5,6 +5,7 @@
 
 import LunaModels
 import LunaStorage
+import LunaURLClassification
 import XCTest
 
 /// The one-shot in-page confirmation the Safari extension shows the first time it
@@ -127,6 +128,78 @@ final class SafariSetupCelebrationTests: XCTestCase {
             XCTAssertFalse(
                 store.shouldCelebrateSafariSetup(for: app, now: now),
                 "\(app) celebrated on another app's half of the evidence")
+        }
+    }
+
+    // MARK: - The extension's half
+
+    /// The extension's own first run, which is half the evidence. Its stamp is
+    /// written once and never moved: an extension first-runs exactly once, and a
+    /// later run that re-stamped it would make "first ran recently" true forever.
+    func testTheExtensionRunStampsTheFirstMomentOnlyAndCompletesSetup() {
+        store.recordSafariExtensionRun(for: .reader, at: now.addingTimeInterval(-90))
+        XCTAssertEqual(
+            store.safariExtensionFirstRunDate(for: .reader), now.addingTimeInterval(-90))
+        XCTAssertTrue(store.safariRunApplies(to: .reader))
+
+        store.recordSafariExtensionRun(for: .reader, at: now)
+        XCTAssertEqual(
+            store.safariExtensionFirstRunDate(for: .reader), now.addingTimeInterval(-90))
+    }
+
+    /// Reader/Downloader/Price Tracker share completion evidence; bare central
+    /// Luna is deliberately independent, and its own run covers the siblings.
+    func testTheExtensionRunFilesCompletionUnderTheRightFacet() {
+        store.recordSafariExtensionRun(for: .reader, at: now)
+        XCTAssertTrue(store.safariRunApplies(to: .downloader))
+        XCTAssertFalse(store.safariRunApplies(to: .luna))
+
+        store.recordSafariExtensionRun(for: .luna, at: now)
+        XCTAssertTrue(store.safariRunApplies(to: .luna))
+    }
+
+    /// Both halves recorded through the store, and the one-shot latch the
+    /// extension writes when the overlay actually renders.
+    func testTheExtensionsOwnWritesEarnAndThenSpendTheConfirmation() {
+        store.recordSafariSetupTap(for: .reader, at: now.addingTimeInterval(-90))
+        store.recordSafariExtensionRun(for: .reader, at: now.addingTimeInterval(-30))
+        XCTAssertTrue(store.shouldCelebrateSafariSetup(for: .reader, now: now))
+
+        store.recordSafariCelebrationShown(for: .reader)
+
+        XCTAssertTrue(store.safariCelebrationWasShown(for: .reader))
+        XCTAssertFalse(store.shouldCelebrateSafariSetup(for: .reader, now: now))
+    }
+
+    /// The extension names the app from the tap the app itself stamped, and has
+    /// nothing to offer before one exists.
+    func testTheTapAppNameIsReadBackPerAppAndAbsentUntilStamped() {
+        XCTAssertNil(store.safariSetupTapAppName(for: .reader))
+        store.recordSafariSetupTap(for: .reader, at: now)
+        XCTAssertEqual(store.safariSetupTapAppName(for: .reader), LunaApp.reader.displayName)
+        XCTAssertNil(store.safariSetupTapAppName(for: .downloader))
+    }
+
+    /// An extension resolves BOTH halves of its identity from its own bundle id
+    /// — `<host app>.safari` — the surface its App-Group keys are built from and
+    /// the scheme its page buttons deep-link into. The keys only ever meet the
+    /// app's if that resolution agrees with the app's own.
+    func testAnExtensionBundleIdResolvesToItsHostAppsSurfaceAndScheme() {
+        let cases: [(identifier: String, app: LunaApp, scheme: String)] = [
+            ("com.hsanabria.luna.safari", .luna, LunaDeepLink.lunaScheme),
+            ("com.hsanabria.luna.reader.safari", .reader, LunaDeepLink.readerScheme),
+            ("com.hsanabria.luna.downloader.safari", .downloader, LunaDeepLink.downloaderScheme),
+            ("com.hsanabria.luna.pricetracker.safari", .priceTracker,
+             LunaDeepLink.priceTrackerScheme),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                LunaApp.detect(bundleIdentifier: testCase.identifier), testCase.app,
+                "\(testCase.identifier) resolved to the wrong surface")
+            XCTAssertEqual(
+                LunaDeepLink.appScheme(forBundleIdentifier: testCase.identifier),
+                testCase.scheme,
+                "\(testCase.identifier) would deep-link into another app")
         }
     }
 

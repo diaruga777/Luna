@@ -39,6 +39,20 @@ final class SafariURLStoreFreshnessTests: XCTestCase {
         }
     }
 
+    /// The write side, which the Safari extensions' native handler owns: the URL
+    /// the app later reads, and the instant its freshness is measured from.
+    func testRecordingAPageMakesItTheLastURLAtThatMoment() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        SafariURLStore.record("https://example.com/story", at: now)
+        XCTAssertEqual(SafariURLStore.lastURL, "https://example.com/story")
+        XCTAssertEqual(SafariURLStore.lastDate, now)
+        XCTAssertTrue(SafariURLStore.isFresh(now: now))
+
+        SafariURLStore.record("https://example.com/next", at: now.addingTimeInterval(30))
+        XCTAssertEqual(SafariURLStore.lastURL, "https://example.com/next")
+        XCTAssertEqual(SafariURLStore.lastDate, now.addingTimeInterval(30))
+    }
+
     func testAbsentIsNotFresh() {
         write(url: nil, date: nil)
         XCTAssertFalse(SafariURLStore.isFresh())

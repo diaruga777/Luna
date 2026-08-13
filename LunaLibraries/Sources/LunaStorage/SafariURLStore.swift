@@ -6,8 +6,10 @@
 import LunaAppConfig
 import Foundation
 
-/// Reads the last Safari URL recorded by the LunaSafari web extension's native
-/// handler (see LunaSafari/SharedSafariURL.swift, which writes these keys).
+/// The last Safari URL the LunaSafari web extension's native handler saw.
+///
+/// The extension writes it (`record`) and the app reads it — one store, two
+/// processes, because every Safari appex links this module.
 public enum SafariURLStore {
     public static let appGroupID = AppConfig.appGroupID
     public static let urlKey = "lastSafariURL"
@@ -37,6 +39,14 @@ public enum SafariURLStore {
         guard let interval = resolvedDefaults?.object(forKey: dateKey) as? Double
         else { return nil }
         return Date(timeIntervalSince1970: interval)
+    }
+
+    /// Records the page Safari is showing, with the moment it was seen. Called
+    /// by the extension's native handler for every message that carries a URL.
+    public static func record(_ urlString: String, at date: Date = Date()) {
+        let defaults = resolvedDefaults
+        defaults?.set(urlString, forKey: urlKey)
+        defaults?.set(date.timeIntervalSince1970, forKey: dateKey)
     }
 
     /// True iff `lastURL` is present (non-empty) and `lastDate` is within

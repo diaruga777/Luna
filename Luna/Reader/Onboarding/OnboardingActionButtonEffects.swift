@@ -59,14 +59,37 @@ enum OnboardingSaveEffectStyle {
     case rippleOnly
 }
 
+/// What a mock save source needs from the onboarding host around it: the
+/// destination the save's wave crossfades into, and the news that the wave has
+/// finished. Both have defaults, so a source mounted without a host (a stage, a
+/// test) simply plays its own beats.
+@MainActor
+protocol OnboardingSaveSourceDelegate: AnyObject {
+    /// A snapshot of the screen the save lands on, or nil when there is none to
+    /// cross into.
+    func onboardingSaveSourceDestinationSnapshot(
+        _ source: OnboardingSaveSourceViewController) -> UIImage?
+    func onboardingSaveSourceDidFinishActionButtonWave(
+        _ source: OnboardingSaveSourceViewController)
+}
+
+extension OnboardingSaveSourceDelegate {
+    func onboardingSaveSourceDestinationSnapshot(
+        _ source: OnboardingSaveSourceViewController) -> UIImage? { nil }
+
+    func onboardingSaveSourceDidFinishActionButtonWave(
+        _ source: OnboardingSaveSourceViewController) {}
+}
+
 /// A full-screen mock source that can demonstrate saving its visible URL with
 /// the physical Action Button. Safari and Messages both inherit this player so
 /// their press cue, URL highlight, wave timing, and destination transition can
 /// never drift apart.
 @MainActor
 class OnboardingSaveSourceViewController: UIViewController {
-    var onActionButtonWaveFinished: (() -> Void)?
-    var makeActionButtonDestinationSnapshot: (() -> UIImage?)?
+    /// The onboarding host, which supplies the screen the wave crossfades into
+    /// and hears when the wave has finished.
+    weak var saveSourceDelegate: (any OnboardingSaveSourceDelegate)?
 
     private var actionCue: ActionButtonPressCue?
     private var waveAnimator: LiquidScreenWaveAnimator?
@@ -158,13 +181,17 @@ class OnboardingSaveSourceViewController: UIViewController {
                 origin: origin,
                 highlightedLinkRegion: linkRegion,
                 destinationSnapshot: { [weak self] in
-                    self?.makeActionButtonDestinationSnapshot?()
+                    guard let self else { return nil }
+                    return saveSourceDelegate?
+                        .onboardingSaveSourceDestinationSnapshot(self)
                 },
                 completion: { [weak self, weak cue] in
                     cue?.removeFromSuperview()
-                    self?.actionCue = nil
-                    self?.waveAnimator = nil
-                    self?.onActionButtonWaveFinished?()
+                    guard let self else { return }
+                    actionCue = nil
+                    waveAnimator = nil
+                    saveSourceDelegate?
+                        .onboardingSaveSourceDidFinishActionButtonWave(self)
                 })
         case .rippleOnly:
             // Messages is white, so its visible Action Button response is the

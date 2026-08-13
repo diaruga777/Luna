@@ -63,10 +63,7 @@ enum ArticleShellWiring {
         // the account/Kindle setup screens. Both are article-only, so both are
         // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
         // which arms double save in exactly the apps that link LunaSend.
-        ActionButtonIntentSupport.articleExporter = { item, format in
-            try? await ArticleExportService().writePreparingImagesWhenAvailable(
-                format, for: item)
-        }
+        ActionButtonIntentSupport.articleExport = ArticleIntentExporter()
         // Exports fetch the article images that haven't landed yet rather than
         // shipping a file with none. The downloader is LunaReaderUI's and the
         // exporters are LunaSend's, so the composition root joins them.
@@ -77,22 +74,13 @@ enum ArticleShellWiring {
             return await ArticleImageDownloader.download(
                 content, itemID: item.id, store: .shared, refererURL: referer)
         }
-        DoubleSaveSettingsSupport.kindleSetupLauncher = { presenter in
-            guard EmailAccountStore.shared.isConfigured else {
-                EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-                return
-            }
-            presenter.navigationController?.pushViewController(
-                KindleSettingsScreen(), animated: true)
-        }
+        DoubleSaveSettingsSupport.kindleSetupLauncher = KindleSetupPresenter()
 
         // A bulk import's pass over the saves that came back hard-paywalled:
         // the same web unlock a tap would run, off-screen and giving up on any
         // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
         // no article save to unlock anywhere else.
-        LinkImportRunner.articleUnlocker = { itemID, urlString in
-            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
-        }
+        LinkImportRunner.articleUnlocker = ImportArticleUnlocker()
 
         // Voice status and installation live on the Audio settings page.
         VoiceFirstRunPrompt.openVoiceSettings = { presenter in
@@ -113,9 +101,7 @@ enum ArticleShellWiring {
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
         // The util card's email nudge goes to the same one place.
-        UtilCardContentViewController.emailSetupLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
+        UtilCardContentViewController.emailSetupLauncher = EmailSetupPresenter()
     }
 
     // MARK: - Lifecycle
@@ -163,6 +149,46 @@ enum ArticleShellWiring {
         return UINavigationController(rootViewController: reader)
     }
     #endif
+}
+
+/// Whichever setup a repeat press is still missing: the sign-in form first, the
+/// Kindle address screen once an account is connected.
+@MainActor
+private struct KindleSetupPresenter: KindleSetupPresenting {
+    func presentKindleSetup(from presenter: UIViewController) {
+        guard EmailAccountStore.shared.isConfigured else {
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+            return
+        }
+        presenter.navigationController?.pushViewController(
+            KindleSettingsScreen(), animated: true)
+    }
+}
+
+/// The one email sign-in surface, for the util card's nudge.
+@MainActor
+private struct EmailSetupPresenter: EmailSetupPresenting {
+    func presentEmailSetup(from presenter: UIViewController) {
+        EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+    }
+}
+
+/// A bulk import's off-screen web unlock, the same one a tap would run.
+private struct ImportArticleUnlocker: LinkImportArticleUnlocking {
+    func unlockArticle(itemID: UUID, urlString: String) async -> Bool {
+        await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
+    }
+}
+
+/// The double save's "View immediately" file: LunaSend's exporter, which fetches
+/// any article images that haven't landed yet before writing.
+private struct ArticleIntentExporter: IntentArticleExporting {
+    func exportedFileURL(
+        for item: ReadingListItem, format: ArticleExportFormat
+    ) async -> URL? {
+        try? await ArticleExportService().writePreparingImagesWhenAvailable(
+            format, for: item)
+    }
 }
 
 /// Bridges `IngestorArticleHandling` to the article-kind modules: persistence

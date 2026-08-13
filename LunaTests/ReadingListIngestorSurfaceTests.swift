@@ -37,7 +37,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         presentedOwners = []
         touchedFailureIDs = []
-        ReadingListIngestor.unsupportedSavePresenter = { [weak self] owner in
+        ReadingListIngestor.unsupportedSavePresenter = RecordingUnsupportedSavePresenter { [weak self] owner in
             self?.presentedOwners.append(owner)
         }
     }
@@ -172,6 +172,20 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
         XCTAssertNil(saved)
         XCTAssertNil(store.item(forURLString: "https://example.com/article"))
         XCTAssertEqual(presentedOwners, [.reader])
+    }
+
+    /// A stand-in presenter recording which sibling app each drop named.
+    private struct RecordingUnsupportedSavePresenter: UnsupportedSavePresenting {
+        let record: @MainActor (LunaApp) -> Void
+
+        init(_ record: @escaping @MainActor (LunaApp) -> Void) {
+            self.record = record
+        }
+
+        @MainActor
+        func presentUnsupportedSave(owner: LunaApp) {
+            record(owner)
+        }
     }
 
     // MARK: - An unsupported outcome that gets past the gate

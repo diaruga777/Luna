@@ -8,6 +8,40 @@ import LunaFetch
 import LunaStorage
 import UIKit
 
+/// Where a row's preview comes from: the page read, the cover-image download, and
+/// whether there is a network to do either over.
+protocol LinkImportPreviewNetworking {
+    func fetchPreview(for url: URL) async throws -> LinkPreview
+    func fetchImageData(from url: URL) async throws -> Data
+    var isOnline: Bool { get }
+}
+
+/// The shipped answers: the shared preview fetcher, a plain download, and the
+/// reachability monitor.
+struct LiveLinkImportPreviewNetwork: LinkImportPreviewNetworking {
+    func fetchPreview(for url: URL) async throws -> LinkPreview {
+        try await LinkPreviewFetcher().fetchPreview(for: url)
+    }
+
+    func fetchImageData(from url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return data
+    }
+
+    var isOnline: Bool { NetworkReachability.shared.isOnline }
+}
+
+/// The sheet showing the rows a loader answers for.
+@MainActor
+protocol LinkImportPreviewLoaderDelegate: AnyObject {
+    /// One URL's state changed, so the sheet can refresh just that row instead of
+    /// reloading the table under the user's thumb. Always on a LATER turn than the
+    /// change itself — see `notifyChange`.
+    func previewLoaderDidChangeRow(forURLString urlString: String)
+}
+
 /// Fetches titles and thumbnails for the links in the import review list, in a
 /// ROLLING WINDOW around what the user can see.
 ///
@@ -46,11 +80,8 @@ final class LinkImportPreviewLoader {
         case unavailable
     }
 
-    /// Called on the main actor whenever one URL's state changes, so the sheet can
-    /// refresh just that row instead of reloading the table under the user's thumb.
-    ///
-    /// Always on a LATER turn than the change itself — see `notifyChange`.
-    var onChange: ((String) -> Void)?
+    /// The sheet showing these rows. Weak — it owns this loader.
+    weak var delegate: (any LinkImportPreviewLoaderDelegate)?
 
     /// How many page reads are in flight at once. Three is enough to keep a
     /// scrolling window filled and small enough that it can't starve the import
@@ -65,27 +96,14 @@ final class LinkImportPreviewLoader {
 
     // MARK: - Seams
 
-    private let fetchPreview: (URL) async throws -> LinkPreview
-    private let fetchImageData: (URL) async throws -> Data
-    private let isOnline: () -> Bool
+    private let network: any LinkImportPreviewNetworking
 
     init(
         maximumConcurrent: Int = 3,
-        fetchPreview: @escaping (URL) async throws -> LinkPreview = { url in
-            try await LinkPreviewFetcher().fetchPreview(for: url)
-        },
-        fetchImageData: @escaping (URL) async throws -> Data = { url in
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 15
-            let (data, _) = try await URLSession.shared.data(for: request)
-            return data
-        },
-        isOnline: @escaping () -> Bool = { NetworkReachability.shared.isOnline }
+        network: any LinkImportPreviewNetworking = LiveLinkImportPreviewNetwork()
     ) {
         self.maximumConcurrent = max(1, maximumConcurrent)
-        self.fetchPreview = fetchPreview
-        self.fetchImageData = fetchImageData
-        self.isOnline = isOnline
+        self.network = network
     }
 
     // MARK: - State
@@ -125,8 +143,10 @@ final class LinkImportPreviewLoader {
     /// at worst reentrant. A hop costs nothing here: the row is already on screen
     /// showing its URL, and one turn later it shows its spinner.
     private func notifyChange(_ urlString: String) {
-        guard onChange != nil else { return }
-        Task { @MainActor [weak self] in self?.onChange?(urlString) }
+        guard delegate != nil else { return }
+        Task { @MainActor [weak self] in
+            self?.delegate?.previewLoaderDidChangeRow(forURLString: urlString)
+        }
     }
 
     /// These rows are on screen (or about to be). Anything not answered yet joins
@@ -140,7 +160,7 @@ final class LinkImportPreviewLoader {
             // Offline is answered here rather than by starting a fetch that will
             // fail: no spinner appears at all, so a row on a plane reads as
             // "this is all there is", not "still loading".
-            guard isOnline() else {
+            guard network.isOnline else {
                 failed.insert(urlString)
                 notifyChange(urlString)
                 continue
@@ -189,7 +209,7 @@ final class LinkImportPreviewLoader {
     private func load(_ urlString: String, url: URL) async {
         var preview: LinkPreview?
         do {
-            preview = try await fetchPreview(url)
+            preview = try await network.fetchPreview(for: url)
         } catch {
             preview = nil
         }
@@ -215,7 +235,7 @@ final class LinkImportPreviewLoader {
     }
 
     private func thumbnail(from url: URL) async -> UIImage? {
-        guard let data = try? await fetchImageData(url),
+        guard let data = try? await network.fetchImageData(from: url),
               data.count <= Self.maximumImageBytes
         else { return nil }
         let scale = UIScreen.main.scale

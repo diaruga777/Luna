@@ -15,8 +15,17 @@ import XCTest
 final class ProductComparisonIntentTests: XCTestCase {
 
     override func tearDown() {
-        ActionButtonIntentSupport.productComparisonDocument = nil
+        ActionButtonIntentSupport.productComparison = nil
         super.tearDown()
+    }
+
+    /// A stand-in product leg answering with a fixed document URL.
+    private struct FakeProductComparison: IntentProductComparisonProviding {
+        let documentURL: URL?
+
+        func comparisonDocumentURL(forURLString urlString: String) async -> URL? {
+            documentURL
+        }
     }
 
     // MARK: - The checkpoint
@@ -61,7 +70,7 @@ final class ProductComparisonIntentTests: XCTestCase {
     /// looking for a comparison there — `handlesProductComparison` is the one
     /// question they ask before spending any of the deadline on it.
     func testWithNoSeamInstalledTheIntentsProduceNoComparison() async {
-        ActionButtonIntentSupport.productComparisonDocument = nil
+        ActionButtonIntentSupport.productComparison = nil
         XCTAssertFalse(ActionButtonIntentSupport.handlesProductComparison)
         let file = await ActionButtonIntentSupport.comparisonFile(for: "https://shop.example/p/1")
         XCTAssertNil(file)
@@ -72,7 +81,7 @@ final class ProductComparisonIntentTests: XCTestCase {
             .appendingPathComponent("\(UUID().uuidString).html")
         try Data("<html></html>".utf8).write(to: fileURL)
         defer { try? FileManager.default.removeItem(at: fileURL) }
-        ActionButtonIntentSupport.productComparisonDocument = { _ in fileURL }
+        ActionButtonIntentSupport.productComparison = FakeProductComparison(documentURL: fileURL)
 
         XCTAssertTrue(ActionButtonIntentSupport.handlesProductComparison)
         let produced = await ActionButtonIntentSupport.comparisonFile(
@@ -84,7 +93,7 @@ final class ProductComparisonIntentTests: XCTestCase {
     /// A non-product save is the ordinary case: the seam is installed (this IS a
     /// product app) and simply has no tracker for the URL.
     func testANonProductSaveGetsNoComparisonEvenWithTheSeamInstalled() async {
-        ActionButtonIntentSupport.productComparisonDocument = { _ in nil }
+        ActionButtonIntentSupport.productComparison = FakeProductComparison(documentURL: nil)
         let file = await ActionButtonIntentSupport.comparisonFile(for: "https://news.example/a")
         XCTAssertNil(file)
     }

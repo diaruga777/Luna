@@ -5,8 +5,8 @@
 //  The media-kind body of the bulk import's download watcher — compiled only
 //  into media-handling app targets (Downloader + the central Luna app; excluded
 //  from the others via the synchronized group's membership exceptions). Their
-//  `KindWiring` variants install it into `LinkImportRunner.mediaDownloadProgress`;
-//  in article/product-only apps the seam stays nil, which is correct there — a
+//  `KindWiring` variants install it as part of `LinkImportRunner.media`;
+//  in article/product-only apps that leg stays nil, which is correct there — a
 //  media link can't pass those apps' content gate, so no transfer ever exists to
 //  watch. See `claudedocs/import-export.md`.
 //

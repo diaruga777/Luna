@@ -20,8 +20,7 @@ final class LinkImportRunnerTests: XCTestCase {
         super.setUp()
         // Process-wide seams: the app this suite hosts on installs the real ones at
         // launch, so every test starts from none.
-        LinkImportRunner.mediaDownloadProgress = nil
-        LinkImportRunner.mediaStoragePreflight = nil
+        LinkImportRunner.media = nil
         LinkImportRunner.articleUnlocker = nil
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -31,8 +30,7 @@ final class LinkImportRunnerTests: XCTestCase {
     }
 
     override func tearDown() {
-        LinkImportRunner.mediaDownloadProgress = nil
-        LinkImportRunner.mediaStoragePreflight = nil
+        LinkImportRunner.media = nil
         LinkImportRunner.articleUnlocker = nil
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
@@ -166,7 +164,7 @@ final class LinkImportRunnerTests: XCTestCase {
 
     func testEveryPaywalledSaveGetsOneUnlockAttempt() async {
         let attempted = Attempts()
-        LinkImportRunner.articleUnlocker = { _, urlString in
+        LinkImportRunner.articleUnlocker = FakeArticleUnlocker { _, urlString in
             await attempted.record(urlString)
             return true
         }
@@ -189,7 +187,7 @@ final class LinkImportRunnerTests: XCTestCase {
 
     func testAPaywalledSaveTheUnlockCouldNotOpenIsStillImportedNotAFailure() async {
         // It is titled and it opens; the user solves the CAPTCHA when they choose.
-        LinkImportRunner.articleUnlocker = { _, _ in false }
+        LinkImportRunner.articleUnlocker = FakeArticleUnlocker { _, _ in false }
         let summary = await makeRunner(
             outcomes: ["https://example.com/locked": .needsCaptcha]
         ).run(candidates(["https://example.com/locked"]))
@@ -204,7 +202,7 @@ final class LinkImportRunnerTests: XCTestCase {
         // Each attempt is a whole WKWebView, and two of them racing archive.today
         // is the fastest way to be rate-limited.
         let concurrent = PeakConcurrency()
-        LinkImportRunner.articleUnlocker = { _, _ in
+        LinkImportRunner.articleUnlocker = FakeArticleUnlocker { _, _ in
             await concurrent.begin()
             await Task.yield()
             await concurrent.end()
@@ -240,7 +238,7 @@ final class LinkImportRunnerTests: XCTestCase {
                 "https://example.com/a": .needsCaptcha,
                 "https://example.com/b": .needsCaptcha,
             ], concurrency: 1)
-        LinkImportRunner.articleUnlocker = { [weak runner] _, urlString in
+        LinkImportRunner.articleUnlocker = FakeArticleUnlocker { [weak runner] _, urlString in
             await attempted.record(urlString)
             runner?.cancel()   // Stopped during the first unlock.
             return true
@@ -255,6 +253,19 @@ final class LinkImportRunnerTests: XCTestCase {
         // article nothing.
         XCTAssertEqual(summary.imported, 2)
         XCTAssertEqual(store.items().count, 2)
+    }
+
+    /// A stand-in unlock leg running whatever the test wrote.
+    private struct FakeArticleUnlocker: LinkImportArticleUnlocking {
+        let unlock: @Sendable (UUID, String) async -> Bool
+
+        init(_ unlock: @escaping @Sendable (UUID, String) async -> Bool) {
+            self.unlock = unlock
+        }
+
+        func unlockArticle(itemID: UUID, urlString: String) async -> Bool {
+            await unlock(itemID, urlString)
+        }
     }
 
     /// Records which URLs the unlock seam was asked about.

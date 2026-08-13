@@ -28,7 +28,7 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         kicked = []
-        ReadingListIngestor.priceTrackerComparisonKicker = { [weak self] itemID, url, _ in
+        ReadingListIngestor.priceTrackerComparisonKicker = RecordingComparisonKicker { [weak self] itemID, url in
             self?.kicked.append((itemID, url))
         }
     }
@@ -37,6 +37,19 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
         ReadingListIngestor.priceTrackerComparisonKicker = nil
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
+    }
+
+    /// A stand-in kicker recording the (item, URL) pairs it was handed.
+    private struct RecordingComparisonKicker: PriceTrackerComparisonKicking {
+        let record: (UUID, URL) -> Void
+
+        init(_ record: @escaping (UUID, URL) -> Void) {
+            self.record = record
+        }
+
+        func kickComparison(itemID: UUID, url: URL, store: ReadingListStore) {
+            record(itemID, url)
+        }
     }
 
     private func makeIngestor() -> ReadingListIngestor {

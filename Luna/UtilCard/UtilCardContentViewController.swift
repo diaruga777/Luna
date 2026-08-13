@@ -56,6 +56,75 @@ enum UtilCardLayout {
     static let bottomPadding: CGFloat = 20
 }
 
+/// Pushes the one email sign-in surface (Settings → Email, whose Sharing
+/// Account section IS the form until an account exists). Installed by the
+/// article shell of the two apps that do email.
+@MainActor
+protocol EmailSetupPresenting {
+    func presentEmailSetup(from presenter: UIViewController)
+}
+
+/// What the util card reads about the app around it. Every answer but
+/// `utilCardHasSaves` has a live default over the shared stores, so a deck
+/// conforms by answering the one question that is its own; a stage or a test
+/// overrides whichever it needs to pin.
+@MainActor
+protocol UtilCardDataSource: AnyObject {
+    /// Whether the deck holds any save of its own. The “or” belongs to a card
+    /// that is the only thing in the app.
+    var utilCardHasSaves: Bool { get }
+    /// Every URL in the shared store, so a weekly row can read as answered.
+    var utilCardSavedURLStrings: Set<String> { get }
+    /// When every save was made — half of the email nudge's earning rule.
+    var utilCardSavedDates: [Date] { get }
+    /// Whether an email account is already connected — the other half.
+    var utilCardIsEmailConnected: Bool { get }
+    /// The Safari-history rows the completed card offers.
+    var utilCardRecentMatches: [RecentURLPreview] { get }
+}
+
+extension UtilCardDataSource {
+    var utilCardSavedURLStrings: Set<String> {
+        Set(ReadingListStore.shared.items().map(\.urlString))
+    }
+
+    var utilCardSavedDates: [Date] {
+        ReadingListStore.shared.items().map(\.dateAdded)
+    }
+
+    var utilCardIsEmailConnected: Bool {
+        EmailAccountStore.shared.isConfigured
+    }
+
+    var utilCardRecentMatches: [RecentURLPreview] {
+        RecentURLMatcher.shared.matches
+    }
+}
+
+/// What the util card asks the app around it to do: save a URL the user handed
+/// it, and open Luna's own page in system Settings.
+@MainActor
+protocol UtilCardDelegate: AnyObject {
+    /// Saves `urlString`. `sourceView` anchors anything the save presents; the
+    /// completion reports whether the card should read as saved or as failed.
+    func utilCardSave(
+        urlString: String,
+        source: CaptureSource,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void)
+
+    /// The only way back to a Photos permission the user has already refused,
+    /// since iOS will not prompt twice.
+    func utilCardOpenSystemSettings()
+}
+
+extension UtilCardDelegate {
+    func utilCardOpenSystemSettings() {
+        guard let settings = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settings)
+    }
+}
+
 /// The permanent first card in every Luna deck. It is the first-launch
 /// onboarding surface and, on later launches, a compact home for Safari
 /// history. Its launch mode is deliberately immutable: finishing setup keeps
@@ -65,18 +134,16 @@ final class UtilCardContentViewController: CardContentViewController {
     /// the weekly recommendation seeming to pop into existence.
     private static let introToWeeklyFadeDuration: TimeInterval = 0.24
 
-    typealias SaveHandler = (
-        _ urlString: String,
-        _ source: CaptureSource,
-        _ sourceView: UIView,
-        _ completion: @escaping (Bool) -> Void
-    ) -> Void
-
     /// Pushes the one email sign-in surface (Settings → Email, whose Sharing
     /// Account section IS the form until an account exists). Installed by the
-    /// `KindWiring` variants of the two apps that do email — the screen itself
-    /// isn't compiled into the other two.
-    static var emailSetupLauncher: ((UIViewController) -> Void)?
+    /// article shell of the two apps that do email — the screen itself isn't
+    /// compiled into the other two.
+    static var emailSetupLauncher: (any EmailSetupPresenting)?
+
+    /// The deck around the card: it answers what the card shows and performs
+    /// what the card asks for. Weak — the conformer owns this controller.
+    weak var dataSource: (any UtilCardDataSource)?
+    weak var delegate: (any UtilCardDelegate)?
 
     private let showsOnboarding: Bool
     /// Whether the headline's two-beat sweep belongs to THIS appearance. It is
@@ -84,30 +151,15 @@ final class UtilCardContentViewController: CardContentViewController {
     /// instead of saying it again.
     private let animatesIntro: Bool
     private let configuration: OnboardingSurfaceConfiguration
-    private let saveHandler: SaveHandler
     private let onboardingStore: AppOnboardingStore
-    /// Whether the deck holds any save of its own. The “or” belongs to a card
-    /// that is the only thing in the app.
-    private let hasSaves: () -> Bool
-    private let savedURLStrings: () -> Set<String>
     /// The app this card belongs to: it decides the weekly row's noun and
     /// whether email is a capability here at all (`LunaApp.sharesByEmail`).
     private let app: LunaApp
     private let now: () -> Date
-    /// When every save in the shared store was made, and whether an email
-    /// account is already connected — the two facts behind the email nudge.
-    private let savedDates: () -> [Date]
-    private let isEmailConnected: () -> Bool
-    /// The Safari-history rows the completed card offers. Injected so the block's
-    /// geometry is assertable without a real history trail behind it.
-    private let recentMatches: @MainActor () -> [RecentURLPreview]
     /// Where finished downloads go, in the two apps that download them. Nil
     /// everywhere else: Reader and Price Tracker do not link the media module,
     /// so nothing installs one (`DownloadStorageChoice`).
     private let storageChoice: (any DownloadStorageChoosing)?
-    /// Opens Luna's own page in system Settings — the only way back to a Photos
-    /// permission the user has already refused, since iOS will not prompt twice.
-    private let openSystemSettings: () -> Void
 
     private let headline: OnboardingIntroHeadlineView?
     private let weeklyHost: WeeklySaveRowHost
@@ -155,43 +207,18 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyStore: WeeklySaveStore = .shared,
         app: LunaApp = .current,
         now: @escaping () -> Date = Date.init,
-        hasSaves: @escaping () -> Bool = { !ReadingListStore.shared.items().isEmpty },
-        savedURLStrings: @escaping () -> Set<String> = {
-            Set(ReadingListStore.shared.items().map(\.urlString))
-        },
-        savedDates: @escaping () -> [Date] = {
-            ReadingListStore.shared.items().map(\.dateAdded)
-        },
-        isEmailConnected: @escaping () -> Bool = {
-            EmailAccountStore.shared.isConfigured
-        },
-        recentMatches: @escaping @MainActor () -> [RecentURLPreview] = {
-            RecentURLMatcher.shared.matches
-        },
         // No default: `DownloadStorageChoice.installed` is main-actor state and
         // a default argument is evaluated outside the actor. The deck passes it;
         // a test that says nothing gets no row, which is the quiet case.
-        storageChoice: (any DownloadStorageChoosing)? = nil,
-        openSystemSettings: @escaping () -> Void = {
-            guard let settings = URL(string: UIApplication.openSettingsURLString) else { return }
-            UIApplication.shared.open(settings)
-        },
-        saveHandler: @escaping SaveHandler
+        storageChoice: (any DownloadStorageChoosing)? = nil
     ) {
         self.showsOnboarding = showsOnboarding
         self.animatesIntro = showsOnboarding && animatesIntro
         self.configuration = configuration
         self.onboardingStore = onboardingStore
-        self.hasSaves = hasSaves
-        self.savedURLStrings = savedURLStrings
         self.app = app
         self.now = now
-        self.savedDates = savedDates
-        self.isEmailConnected = isEmailConnected
-        self.recentMatches = recentMatches
         self.storageChoice = storageChoice
-        self.openSystemSettings = openSystemSettings
-        self.saveHandler = saveHandler
         weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
         headline = showsOnboarding
             ? OnboardingIntroHeadlineView(copy: configuration.introCopy)
@@ -244,7 +271,7 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         weeklyHost.onPresenceChange = { [weak self] in self?.view.setNeedsLayout() }
         weeklyHost.isSaved = { [weak self] urlString in
-            self?.savedURLStrings().contains(urlString) ?? false
+            self?.dataSource?.utilCardSavedURLStrings.contains(urlString) ?? false
         }
         weeklyAppearanceDeferred = animatesIntro
         weeklyHost.setCycleVisible(!weeklyAppearanceDeferred)
@@ -688,14 +715,17 @@ final class UtilCardContentViewController: CardContentViewController {
             return
         }
         pasteRow.setState(.loading)
-        saveHandler(url.absoluteString, .paste, pasteRow) { [weak self] succeeded in
+        delegate?.utilCardSave(
+            urlString: url.absoluteString, source: .paste, sourceView: pasteRow
+        ) { [weak self] succeeded in
             self?.pasteRow.setState(
                 succeeded ? .success : .failure(L10n.string("Onboarding_Util_unableToSaveURL")))
         }
     }
 
     private func save(_ urlString: String, source: CaptureSource, sourceView: UIView) {
-        saveHandler(urlString, source, sourceView) { _ in }
+        delegate?.utilCardSave(
+            urlString: urlString, source: source, sourceView: sourceView) { _ in }
     }
 
     // MARK: - Save of the week
@@ -764,7 +794,7 @@ final class UtilCardContentViewController: CardContentViewController {
         guard showsOnboarding else { return }
         let setupOutstanding = !(onboardingStore.hasFinishedSafariSetup
             && onboardingStore.hasFinishedSaveSetup)
-        let shouldShow = setupOutstanding && !hasSaves()
+        let shouldShow = setupOutstanding && !(dataSource?.utilCardHasSaves ?? false)
         guard orLabel.isHidden == shouldShow else { return }
         orLabel.isHidden = !shouldShow
         view.setNeedsLayout()
@@ -843,9 +873,10 @@ final class UtilCardContentViewController: CardContentViewController {
     /// Email is offered only where it is a capability, only while no account is
     /// connected, and only once Luna has earned the ask.
     private var offersEmailSetup: Bool {
-        guard app.sharesByEmail, !isEmailConnected() else { return false }
+        guard app.sharesByEmail,
+              let dataSource, !dataSource.utilCardIsEmailConnected else { return false }
         return UtilCardSetupOffer.emailIsEarned(
-            saveDates: savedDates(), now: now())
+            saveDates: dataSource.utilCardSavedDates, now: now())
     }
 
     private func button(for offer: UtilCardSetupButton) -> UIButton {
@@ -942,7 +973,7 @@ final class UtilCardContentViewController: CardContentViewController {
     }
 
     @objc private func emailSetupTapped() {
-        Self.emailSetupLauncher?(self)
+        Self.emailSetupLauncher?.presentEmailSetup(from: self)
     }
 
     // MARK: - Where downloads are stored
@@ -989,7 +1020,9 @@ final class UtilCardContentViewController: CardContentViewController {
     /// Directs the user to this app's own page in system Settings — the only
     /// place a denied Photos permission can now be granted.
     private func presentPhotosPermissionAlert() {
-        PhotosPermissionAlert.present(from: self, openSettings: openSystemSettings)
+        PhotosPermissionAlert.present(from: self) { [weak self] in
+            self?.delegate?.utilCardOpenSystemSettings()
+        }
     }
 
     /// Applies a tap on the storage line. "In Luna" is immediate; "in Photos"
@@ -1018,7 +1051,7 @@ final class UtilCardContentViewController: CardContentViewController {
                     // Settings is the only place this can now be granted.
                     storageChooser?.setSelection(.luna)
                     storageChooser?.setPermissionError(storageChoice.needsPhotosPermissionInThisApp)
-                    openSystemSettings()
+                    delegate?.utilCardOpenSystemSettings()
                 }
             }
         }
@@ -1026,7 +1059,7 @@ final class UtilCardContentViewController: CardContentViewController {
 
     private func rebuildRecentRows() {
         for row in recentRows { row.removeFromSuperview() }
-        recentRows = recentMatches().map { preview in
+        recentRows = (dataSource?.utilCardRecentMatches ?? []).map { preview in
             let row = UtilURLRow(style: .recent)
             row.configure(preview)
             row.onTap = { [weak self, weak row] in

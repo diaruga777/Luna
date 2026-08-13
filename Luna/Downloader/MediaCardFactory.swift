@@ -28,7 +28,7 @@ import UIKit
 /// source URL (created on the spot if the media was saved without one).
 enum MediaCardRescue {
     static func starter(forSourceURLString sourceURLString: String) -> (() -> Void)? {
-        guard URLRescueCoordinator.engine?.isAvailable() == true else { return nil }
+        guard URLRescueCoordinator.engine?.isRescueAvailable == true else { return nil }
         return {
             let store = ReadingListStore.shared
             let itemID = store.item(forURLString: sourceURLString)?.id

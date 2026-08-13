@@ -6,7 +6,7 @@
 //  compiled only into media-handling app targets (Downloader + the central
 //  Luna app; excluded from the others via the synchronized group's membership
 //  exceptions). Their `KindWiring` variants call `install()`, which fills
-//  `ActionButtonIntentSupport.mediaHandoff`; in article/product-only apps the
+//  `ActionButtonIntentSupport.media`; in article/product-only apps the
 //  seam stays nil and the intents return no media, matching the gate that only
 //  media apps hand off.
 //
@@ -55,11 +55,24 @@ enum MediaIntentHandoff {
     }
 
     static func install() {
-        ActionButtonIntentSupport.mediaPreparation = { urlString in
-            try await prepareMediaIfNeeded(for: urlString)
+        ActionButtonIntentSupport.media = MediaLeg()
+    }
+
+    /// The installed media leg: the two intent entry points over the bodies
+    /// below.
+    private struct MediaLeg: IntentMediaHandling {
+        func prepareMedia(
+            forURLString urlString: String
+        ) async throws -> ActionButtonIntentSupport.MediaPreparation {
+            try await MediaIntentHandoff.prepareMediaIfNeeded(for: urlString)
         }
-        ActionButtonIntentSupport.mediaHandoff = { urlString, checkpoint, foreground in
-            try await downloadMediaIfNeeded(
+
+        func downloadMedia(
+            forURLString urlString: String,
+            checkpoint: IntentMediaCheckpoint?,
+            foreground: () async -> Void
+        ) async throws -> IntentFile? {
+            try await MediaIntentHandoff.downloadMediaIfNeeded(
                 for: urlString, checkpoint: checkpoint, foreground: foreground)
         }
     }

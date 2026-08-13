@@ -308,6 +308,50 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 }
 
+/// The media-kind leg of the two Action Button intents, installed by
+/// `MediaIntentHandoff.install()` (media apps only — Downloader + the central
+/// Luna app). Left uninstalled in article/product-only apps ⇒ the intents
+/// return no media, matching the gate that only media-handling apps hand off.
+protocol IntentMediaHandling {
+    /// Resolves redirects/assets, validates storage, and obtains the expected
+    /// byte count without starting a transfer.
+    func prepareMedia(
+        forURLString urlString: String
+    ) async throws -> ActionButtonIntentSupport.MediaPreparation
+
+    /// Performs the transfer (or hands back an already-downloaded file).
+    /// `foreground` is invoked only when a first read/write Photos
+    /// authorization prompt needs a visible host.
+    func downloadMedia(
+        forURLString urlString: String,
+        checkpoint: IntentMediaCheckpoint?,
+        foreground: () async -> Void
+    ) async throws -> IntentFile?
+}
+
+/// The product-kind comparison summary, installed by
+/// `ProductIntentHandoff.install()` (product apps only — Price Tracker + the
+/// central Luna app). Left uninstalled elsewhere, so an article/media-only
+/// app's intents never look for one.
+protocol IntentProductComparisonProviding {
+    /// Given a just-saved URL, the self-contained HTML document for the tracker
+    /// that URL belongs to, refreshing any seller whose price is over a day old
+    /// first — and nil when the URL is not a tracked product, or is a tracker
+    /// with a single store (one price is not a comparison).
+    func comparisonDocumentURL(forURLString urlString: String) async -> URL?
+}
+
+/// Article-document export for a "View immediately" double save. Installed by
+/// the article shell of the two apps that link LunaSend (Luna + Reader); left
+/// uninstalled elsewhere, matching `doubleSaveSurface`.
+protocol IntentArticleExporting {
+    /// The written temp file's URL, or nil when the article has no content to
+    /// export.
+    func exportedFileURL(
+        for item: ReadingListItem, format: ArticleExportFormat
+    ) async -> URL?
+}
+
 /// Shared plumbing for the two Action Button intents (Provide Context + Save).
 enum ActionButtonIntentSupport {
 
@@ -321,13 +365,8 @@ enum ActionButtonIntentSupport {
         case download(IntentMediaCheckpoint?)
     }
 
-    /// Media-kind download handoff, installed by `MediaIntentHandoff.install()`
-    /// (media apps only — Downloader + the central Luna app). Nil in
-    /// article/product-only apps ⇒ the intents return no media, matching the
-    /// gate that only media-handling apps hand off.
-    static var mediaPreparation: ((String) async throws -> MediaPreparation)?
-    static var mediaHandoff:
-        ((String, IntentMediaCheckpoint?, () async -> Void) async throws -> IntentFile?)?
+    /// The media leg, or nil in an app that handles no media.
+    static var media: (any IntentMediaHandling)?
 
     /// Set for the duration of an awaited media handoff so the transfer's real
     /// `(received, expected)` byte counts reach the running intent's progress
@@ -343,8 +382,9 @@ enum ActionButtonIntentSupport {
         checkpoint: IntentMediaCheckpoint? = nil,
         foreground: () async -> Void
     ) async throws -> IntentFile? {
-        guard let mediaHandoff else { return nil }
-        return try await mediaHandoff(urlString, checkpoint, foreground)
+        guard let media else { return nil }
+        return try await media.downloadMedia(
+            forURLString: urlString, checkpoint: checkpoint, foreground: foreground)
     }
 
     /// Resolves redirects/assets, validates storage, and obtains the expected
@@ -353,40 +393,30 @@ enum ActionButtonIntentSupport {
     static func prepareMediaIfNeeded(
         for urlString: String
     ) async throws -> MediaPreparation {
-        guard let mediaPreparation else { return .none }
-        return try await mediaPreparation(urlString)
+        guard let media else { return .none }
+        return try await media.prepareMedia(forURLString: urlString)
     }
 
-    /// The product-kind comparison summary, installed by
-    /// `ProductIntentHandoff.install()` (product apps only — Price Tracker + the
-    /// central Luna app). Nil elsewhere, so an article/media-only app's intents
-    /// never look for one.
-    ///
-    /// Given a just-saved URL it answers with the self-contained HTML document
-    /// for the tracker that URL belongs to, refreshing any seller whose price is
-    /// over a day old first — and nil when the URL is not a tracked product, or
-    /// is a tracker with a single store (one price is not a comparison).
-    static var productComparisonDocument: ((String) async -> URL?)?
+    /// The product comparison leg, or nil in an app that tracks no prices.
+    static var productComparison: (any IntentProductComparisonProviding)?
 
     /// Whether this app can produce a comparison document at all. Read BEFORE
     /// spending any deadline on one.
-    static var handlesProductComparison: Bool { productComparisonDocument != nil }
+    static var handlesProductComparison: Bool { productComparison != nil }
 
     /// The comparison document as returnable intent media. Nil is the ordinary
     /// answer for every non-product save.
     static func comparisonFile(for urlString: String) async -> IntentFile? {
-        guard let fileURL = await productComparisonDocument?(urlString) else { return nil }
+        guard let fileURL = await productComparison?
+            .comparisonDocumentURL(forURLString: urlString) else { return nil }
         return IntentFile(
             fileURL: fileURL,
             filename: fileURL.lastPathComponent,
             type: UTType(filenameExtension: fileURL.pathExtension) ?? .html)
     }
 
-    /// Article-document export for a "View immediately" double save. Installed
-    /// by the two `KindWiring` variants that
-    /// link LunaSend (Luna + Reader); nil elsewhere, matching
-    /// `doubleSaveSurface`. Returns the temp file's URL.
-    static var articleExporter: ((ReadingListItem, ArticleExportFormat) async -> URL?)?
+    /// The article-export leg, or nil in an app that builds no article files.
+    static var articleExport: (any IntentArticleExporting)?
 
     /// Builds the double save's article file and wraps it as the intent's
     /// returned media. Nil when the seam isn't installed or the article has no
@@ -395,7 +425,8 @@ enum ActionButtonIntentSupport {
     static func exportFile(
         for item: ReadingListItem, format: ArticleExportFormat
     ) async -> IntentFile? {
-        guard let fileURL = await articleExporter?(item, format) else { return nil }
+        guard let fileURL = await articleExport?
+            .exportedFileURL(for: item, format: format) else { return nil }
         return IntentFile(
             fileURL: fileURL,
             filename: fileURL.lastPathComponent,

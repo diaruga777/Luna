@@ -23,6 +23,11 @@ import UIKit
 /// beside it are the ones that are per-target.
 enum SharedStageCatalog {
 
+    /// Delegates a staged surface needs kept alive: a replica or a card holds
+    /// its delegate weakly, and a stage has no host to own one.
+    @MainActor
+    private static var stageRetained: [AnyObject] = []
+
     @MainActor
     static func install() {
         StageRegistry.register(
@@ -117,22 +122,9 @@ enum SharedStageCatalog {
                     // `showSafariSetupPopup()`. This stage reviews the bare
                     // replica with no such host, so it mounts an equivalent
                     // pair directly instead.
-                    safari.onDidReachSetupOffer = { [weak safari] in
-                        guard let safari,
-                              let host = safari.view.window ?? safari.view
-                        else { return }
-                        let scrim = SafariSetupScrimView(frame: host.bounds)
-                        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                        scrim.backgroundColor = UIColor.black.withAlphaComponent(
-                            OnboardingSafariSetupPopupView.scrimAlpha)
-                        scrim.isUserInteractionEnabled = false
-                        host.addSubview(scrim)
-                        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
-                        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                        host.addSubview(popup)
-                        popup.layoutIfNeeded()
-                        popup.present(fadingInAlongside: scrim)
-                    }
+                    let popupRaiser = StageSafariSetupPopupRaiser()
+                    safari.delegate = popupRaiser
+                    SharedStageCatalog.stageRetained.append(popupRaiser)
                     // The real entry starts the sequence once the incoming card
                     // has finished expanding; here, once the browser has been
                     // laid out at its full size.
@@ -380,14 +372,13 @@ enum SharedStageCatalog {
             onboardingStore: onboarding,
             weeklyStore: weekly,
             now: { StageFixtures.now },
-            hasSaves: { !saveDates.isEmpty },
-            savedURLStrings: { [] },
-            savedDates: { saveDates },
-            isEmailConnected: { emailConnected },
-            recentMatches: { recents },
-            storageChoice: storageChoice,
-            saveHandler: { _, _, _, completion in completion(true) })
-        return StageCardHostViewController(card: card)
+            storageChoice: storageChoice)
+        let environment = StageUtilCardEnvironment(
+            hasSaves: !saveDates.isEmpty, savedDates: saveDates,
+            isEmailConnected: emailConnected, recentMatches: recents)
+        card.dataSource = environment
+        card.delegate = environment
+        return StageCardHostViewController(card: card, retaining: environment)
     }
 
     private static func recentPreviews() -> [RecentURLPreview] {
@@ -578,15 +569,69 @@ enum SharedStageCatalog {
     }
 }
 
+/// A staged Safari lesson has no onboarding host, so this stands in for the one
+/// thing that host does at the lesson's end: raising the shared setup popup, and
+/// its scrim, over the replica.
+@MainActor
+final class StageSafariSetupPopupRaiser: SafariReplicaDelegate {
+    func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController) {
+        let host: UIView = replica.view.window ?? replica.view
+        let scrim = SafariSetupScrimView(frame: host.bounds)
+        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(
+            OnboardingSafariSetupPopupView.scrimAlpha)
+        scrim.isUserInteractionEnabled = false
+        host.addSubview(scrim)
+        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
+        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(popup)
+        popup.layoutIfNeeded()
+        popup.present(fadingInAlongside: scrim)
+    }
+}
+
+/// The staged util card's environment: fixed values in place of the shared
+/// stores, and a save that always reports success.
+@MainActor
+final class StageUtilCardEnvironment: UtilCardDataSource, UtilCardDelegate {
+    let utilCardHasSaves: Bool
+    let utilCardSavedURLStrings: Set<String> = []
+    let utilCardSavedDates: [Date]
+    let utilCardIsEmailConnected: Bool
+    let utilCardRecentMatches: [RecentURLPreview]
+
+    init(
+        hasSaves: Bool, savedDates: [Date], isEmailConnected: Bool,
+        recentMatches: [RecentURLPreview]
+    ) {
+        utilCardHasSaves = hasSaves
+        utilCardSavedDates = savedDates
+        utilCardIsEmailConnected = isEmailConnected
+        utilCardRecentMatches = recentMatches
+    }
+
+    func utilCardSave(
+        urlString: String, source: CaptureSource, sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        completion(true)
+    }
+
+    func utilCardOpenSystemSettings() {}
+}
+
 /// Hosts one card in the deck's exact frame — `CardDeckGeometry.cardFrame` is
 /// pure arithmetic over the screen, so a staged card lands where the deck would
 /// have put it, in the same surface chrome (`claudedocs/card-carousel.md`).
 final class StageCardHostViewController: UIViewController {
     private let card: UIViewController
     private let surface = CardSurfaceView()
+    /// A staged card's environment, which the card itself only holds weakly.
+    private let retained: AnyObject?
 
-    init(card: UIViewController) {
+    init(card: UIViewController, retaining retained: AnyObject? = nil) {
         self.card = card
+        self.retained = retained
         super.init(nibName: nil, bundle: nil)
     }
 

@@ -32,14 +32,25 @@ import UserNotifications
 /// The caller is expected to TERMINATE the process straight afterwards. Every
 /// store in the app is a long-lived singleton holding a decoded cache, and a
 /// cache that outlives its file will write it back.
+/// Teardown one kind owns, run as part of the wipe.
+public protocol FactoryResetErasing {
+    func erase() async
+}
+
 public enum FactoryReset {
 
     /// Teardown a kind module owns and this one cannot name. The media apps
-    /// install an "end every Live Activity" eraser here: an activity outlives
-    /// the process that started it, so a wiped download would otherwise keep a
-    /// lock-screen card describing itself. Installed by the composition roots
+    /// register an "end every Live Activity" eraser: an activity outlives the
+    /// process that started it, so a wiped download would otherwise keep a
+    /// lock-screen card describing itself. Registered by the composition roots
     /// (`KindWiring+*`), like every other cross-tier seam.
-    public static var additionalErasers: [() async -> Void] = []
+    private static var additionalErasers: [any FactoryResetErasing] = []
+
+    /// Adds a kind's teardown to the sweep. Call at launch, from the composition
+    /// root of an app that links the kind.
+    public static func register(eraser: any FactoryResetErasing) {
+        additionalErasers.append(eraser)
+    }
 
     /// What the sweep did, for the diagnostic line. Deliberately paths and
     /// counts rather than a bool: a wipe that quietly failed on one directory
@@ -60,7 +71,7 @@ public enum FactoryReset {
     public static func eraseEverything() async -> Report {
         var report = Report()
 
-        for erase in additionalErasers { await erase() }
+        for eraser in additionalErasers { await eraser.erase() }
 
         await eraseNotifications()
         eraseSpotlightIndex()

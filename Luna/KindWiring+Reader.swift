@@ -129,7 +129,7 @@ enum KindWiring {
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
     /// …and so nothing here can produce a downloaded file to share either.
-    static let mediaShareFileExporter: MediaShareFileExporting? = nil
+    static let mediaShareFileExporter: (any MediaShareFileExporting)? = nil
 
     /// Reader's Safari extension resolves no video (the native handler gates on
     /// `hostHandlesMedia`), so nothing can ever queue a download for it.

@@ -550,18 +550,18 @@ final class ReaderOnboardingTests: XCTestCase {
         safari.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        var didReachOffer = false
-        safari.onDidReachSetupOffer = { didReachOffer = true }
+        let offerWatch = SetupOfferWatch()
+        safari.delegate = offerWatch
 
         let bar = try XCTUnwrap(window.descendants(of: SafariBottomBar.self).first)
         XCTAssertEqual(bar.alpha, 1, accuracy: 0.001)
 
         safari.beginDemonstration(showsExtensionSheet: false)
         let deadline = Date(timeIntervalSinceNow: 12)
-        while Date() < deadline, !didReachOffer {
+        while Date() < deadline, offerWatch.reports == 0 {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         }
-        XCTAssertTrue(didReachOffer, "the explainer never finished its wipe")
+        XCTAssertEqual(offerWatch.reports, 1, "the explainer never finished its wipe")
 
         XCTAssertEqual(
             bar.alpha, 1, accuracy: 0.001,
@@ -585,15 +585,30 @@ final class ReaderOnboardingTests: XCTestCase {
                 for: .downloader, saveSetupMode: .unavailable))
         overlay.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         overlay.layoutIfNeeded()
-        var reported = 0
-        overlay.onDidReachSetupOffer = { reported += 1 }
+        let offerWatch = SetupOfferWatch()
+        overlay.setupOfferDelegate = offerWatch
 
         overlay.enterPlayerStateForTesting()
         overlay.reportSetupOffer()
         // A second call is the same run's already-made offer, not a new one.
         overlay.reportSetupOffer()
 
-        XCTAssertEqual(reported, 1)
+        XCTAssertEqual(offerWatch.reports, 1)
+    }
+
+    /// Counts the one end-of-lesson signal, for both the replica's delegate and
+    /// a lesson overlay's.
+    @MainActor
+    private final class SetupOfferWatch: SafariReplicaDelegate,
+        OnboardingLessonSetupOfferDelegate
+    {
+        private(set) var reports = 0
+
+        func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController) {
+            reports += 1
+        }
+
+        func lessonDidReachSetupOffer() { reports += 1 }
     }
 
     private func spinRunLoop(_ duration: TimeInterval) {

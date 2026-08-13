@@ -12,6 +12,39 @@ import LunaModels
 import LunaSocial
 import Foundation
 
+/// The app's own diagnostics stream, which a save's trace is mirrored into as it
+/// happens.
+private struct AppDiagnosticsMirror: SaveDiagnosticsMirroring {
+    func mirror(message: String, category: String) {
+        DiagnosticLog.shared.record(message, category: category)
+    }
+}
+
+/// Presents the unsupported-kind error for a dropped INTERACTIVE in-app save.
+/// Installed by the app shell at launch (AppDelegate) — LunaReadingList can't
+/// know how the app presents modals.
+public protocol UnsupportedSavePresenting {
+    @MainActor
+    func presentUnsupportedSave(owner: LunaApp)
+}
+
+/// Hands a `.failed` first pass to `URLRescueCoordinator`. Installed by the app
+/// shell (`URLRescueWiring`); uninstalled in extensions / tests (rescue is
+/// main-app-only), where a failure just stays failed.
+public protocol IngestRescueTriggering {
+    /// `interactive` marks a foreground, user-initiated save.
+    func itemFailedIngest(
+        itemID: UUID, url: URL, source: CaptureSource, interactive: Bool)
+}
+
+/// Starts an alternative-seller fan-out for a re-saved product URL. Installed by
+/// a product-handling app's `KindWiring` (`LunaReadingList` cannot link
+/// `LunaPriceUI`); uninstalled in a process that hasn't composed the product
+/// kind, where nothing runs anyway.
+public protocol PriceTrackerComparisonKicking {
+    func kickComparison(itemID: UUID, url: URL, store: ReadingListStore)
+}
+
 /// Downloads and extracts content for reading-list items: the immediate step
 /// after a link is saved, plus a retry pass for anything still pending.
 public final class ReadingListIngestor {
@@ -24,31 +57,22 @@ public final class ReadingListIngestor {
     /// `Bundle.main`; the production default reads the running process's app.
     private let surfaceDecision: (Outcome) -> SurfaceSupport.Decision
 
-    /// Presents the unsupported-kind error for a dropped INTERACTIVE in-app
-    /// save (`.paste`/`.manual` sources only — App Intents get a dialog from
-    /// the intent layer, background sweeps have no UI). Installed by the app
-    /// shell at launch (AppDelegate), same injected-closure pattern as
-    /// `ProductPriceRescue.resolver` — LunaReadingList
-    /// can't know how the app presents modals.
-    public static var unsupportedSavePresenter: (@MainActor (_ owner: LunaApp) -> Void)?
+    /// The unsupported-kind error for a dropped INTERACTIVE in-app save
+    /// (`.paste`/`.manual` sources only — App Intents get a dialog from the
+    /// intent layer, background sweeps have no UI).
+    public static var unsupportedSavePresenter: (any UnsupportedSavePresenting)?
 
-    /// Installed by the app shell (`URLRescueWiring`) so a `.failed` first pass can
-    /// hand the item to `URLRescueCoordinator`. nil in extensions / tests (rescue
-    /// is main-app-only), where a failure just stays failed. Params: the item id,
-    /// the resolved URL, the capture source, and whether this was an interactive
-    /// (foreground, user-initiated) save.
-    public static var rescueTrigger: ((UUID, URL, CaptureSource, _ interactive: Bool) -> Void)?
+    /// Where a `.failed` first pass goes for a rescue attempt.
+    public static var rescueTrigger: (any IngestRescueTriggering)?
 
-    /// Installed by a product-handling app's `KindWiring` (`SellerComparison
-    /// .beginAndRunInBackground`, via a thin adapter — `LunaReadingList` cannot
-    /// link `LunaPriceUI`). Called from the re-save dedup below when a
-    /// re-saved URL merges into a tracker that has never been through a
-    /// fan-out and still has fewer than two stores, so a repeat save of an
-    /// Amazon-style product actually attempts seller discovery instead of
+    /// The seller fan-out for a re-save (`SellerComparison
+    /// .beginAndRunInBackground`, via a thin adapter). Called from the re-save
+    /// dedup below when a re-saved URL merges into a tracker that has never been
+    /// through a fan-out and still has fewer than two stores, so a repeat save
+    /// of an Amazon-style product actually attempts seller discovery instead of
     /// showing nothing (`claudedocs/price-comparison.md`'s "re-saves of a
-    /// seller-less tracker kick a comparison"). nil in a process that hasn't
-    /// composed the product kind, where nothing runs anyway.
-    public static var priceTrackerComparisonKicker: ((UUID, URL, ReadingListStore) -> Void)?
+    /// seller-less tracker kick a comparison").
+    public static var priceTrackerComparisonKicker: (any PriceTrackerComparisonKicking)?
 
     public init(
         store: ReadingListStore = .shared,
@@ -114,9 +138,8 @@ public final class ReadingListIngestor {
         // diagnostics stream. Bound as a task-local, so the fetcher, the bypass
         // runner, the classifier and the resolvers record without threading an
         // argument through six modules (`claudedocs/save-diagnostics.md`).
-        let recorder = SaveDiagnosticsRecorder(itemID: item.id) { message, category in
-            DiagnosticLog.shared.record(message, category: category)
-        }
+        let recorder = SaveDiagnosticsRecorder(
+            itemID: item.id, mirror: AppDiagnosticsMirror())
         recorder.record(
             "ingest: begin \(SaveDiagnostics.url(url)) source=\(item.effectiveCaptureSource.rawValue)"
                 + (forceArticle ? " forceArticle" : "")
@@ -164,7 +187,9 @@ public final class ReadingListIngestor {
         if case let .failed(reason) = result.outcome,
            reason?.isWorthRescuing ?? true {
             let interactive = allowsInteractivePrompt && isInteractivePromptSource(item.effectiveCaptureSource)
-            Self.rescueTrigger?(item.id, result.url, item.effectiveCaptureSource, interactive)
+            Self.rescueTrigger?.itemFailedIngest(
+                itemID: item.id, url: result.url,
+                source: item.effectiveCaptureSource, interactive: interactive)
         }
         return decision
     }
@@ -223,7 +248,8 @@ public final class ReadingListIngestor {
             // this is the repeat-save case that used to leave an Amazon-style
             // product with no seller row and no spinner, forever.
             if existingTracker.pendingComparison == nil, existingTracker.stores.count < 2 {
-                Self.priceTrackerComparisonKicker?(existingTrackerItemID, resolvedURL, store)
+                Self.priceTrackerComparisonKicker?.kickComparison(
+                    itemID: existingTrackerItemID, url: resolvedURL, store: store)
             }
             return decision
         }
@@ -310,7 +336,7 @@ public final class ReadingListIngestor {
         SharedDiagnosticLog.record(logMessage, category: "ingest")
         guard allowsInteractivePrompt, isInteractivePromptSource(source) else { return }
         await MainActor.run {
-            Self.unsupportedSavePresenter?(owner)
+            Self.unsupportedSavePresenter?.presentUnsupportedSave(owner: owner)
         }
     }
 

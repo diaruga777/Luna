@@ -100,12 +100,12 @@ final class WeeklySaveTests: XCTestCase {
             at: container, withIntermediateDirectories: true)
         store = WeeklySaveStore(containerURL: container, now: { self.clock })
 
-        // WeeklySaveRefresherTests: the shell's metadata closure is
-        // `@Sendable` and called off the main actor, so the recording has to
-        // be actor-isolated.
+        // WeeklySaveRefresherTests: the shell's metadata fetcher is `Sendable`
+        // and called off the main actor, so the recording has to be
+        // actor-isolated.
         database = FakeWeeklyCloudDatabase()
         let recorder = MetadataRecorder()
-        WeeklySaveRefresher.metadataFetcher = { url in
+        WeeklySaveRefresher.metadataFetcher = FakeMetadataFetcher { url in
             await recorder.record(url)
             return (title: "Fetched \(url)", host: "example.com", imageData: nil)
         }
@@ -610,7 +610,7 @@ final class WeeklySaveTests: XCTestCase {
         database.saves = [try sign(.article, "https://example.com/a", key: key)]
         let refresher = makeRefresher(app: .reader, publicKey: key.publicKey)
         let attempts = MetadataRecorder()
-        WeeklySaveRefresher.metadataFetcher = { url in
+        WeeklySaveRefresher.metadataFetcher = FakeMetadataFetcher { url in
             let isFirst = await attempts.recordAndIsFirst(url)
             return isFirst ? nil : (title: "The Inner Ring", host: "example.com", imageData: nil)
         }
@@ -785,6 +785,44 @@ final class WeeklySaveTests: XCTestCase {
         try WeeklySigning.sign(kind: kind, urlString: url, date: clock, privateKey: key)
     }
 
+    /// A stand-in metadata fetcher running whatever the test wrote.
+    private struct FakeMetadataFetcher: WeeklyMetadataFetching {
+        let fetch: @Sendable (String) async -> (title: String, host: String, imageData: Data?)?
+
+        init(_ fetch: @escaping @Sendable (String) async -> (title: String, host: String, imageData: Data?)?) {
+            self.fetch = fetch
+        }
+
+        func fetchMetadata(
+            forURLString urlString: String
+        ) async -> (title: String, host: String, imageData: Data?)? {
+            await fetch(urlString)
+        }
+    }
+
+    /// Verifies against the public half of whichever pair the test minted; no
+    /// key at all means nothing verifies.
+    private struct FakeSignatureVerifier: WeeklySignatureVerifying {
+        let publicKey: Curve25519.Signing.PublicKey?
+
+        func isSignatureValid(_ save: WeeklySave) -> Bool {
+            guard let publicKey else { return false }
+            return WeeklySigning.verify(save, publicKey: publicKey)
+        }
+    }
+
+    private struct FakeKeyHolder: WeeklyKeyHolding {
+        let isKeyHolder: Bool
+    }
+
+    private struct FakeProposalNotifier: WeeklyProposalNotifying {
+        let notify: (Int, String?) -> Void
+
+        func notifyProposals(count: Int, host: String?) {
+            notify(count, host)
+        }
+    }
+
     /// The shipped verifier uses the bundled public key, whose private half is
     /// not in this repository — so a refresher under test is handed the public
     /// key of whichever pair the test minted.
@@ -799,12 +837,9 @@ final class WeeklySaveTests: XCTestCase {
             store: store,
             app: app,
             now: { self.clock },
-            verify: { save in
-                guard let publicKey else { return false }
-                return WeeklySigning.verify(save, publicKey: publicKey)
-            },
-            isKeyHolder: { isKeyHolder },
-            notifyProposals: notify)
+            verifier: FakeSignatureVerifier(publicKey: publicKey),
+            keyHolder: FakeKeyHolder(isKeyHolder: isKeyHolder),
+            proposalNotifier: FakeProposalNotifier(notify: notify))
     }
 
     // MARK: - WeeklySaveStoreTests

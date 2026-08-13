@@ -111,7 +111,7 @@ enum KindWiring {
         MediaShellWiring.deepLinkAction(forURLString: urlString)
     }
 
-    static let mediaShareFileExporter: MediaShareFileExporting? =
+    static let mediaShareFileExporter: (any MediaShareFileExporting)? =
         MediaShellWiring.shareFileExporter
 
     /// Downloader handles no products — no runner ⇒ AppDelegate never registers

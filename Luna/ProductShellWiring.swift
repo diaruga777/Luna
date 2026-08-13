@@ -30,9 +30,7 @@ enum ProductShellWiring {
         // a fan-out (still fewer than two stores) kicks a comparison instead
         // of showing nothing forever — `LunaReadingList` cannot link
         // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
-        ReadingListIngestor.priceTrackerComparisonKicker = { itemID, url, store in
-            SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
-        }
+        ReadingListIngestor.priceTrackerComparisonKicker = ResaveComparisonKicker()
         // Action Button intents hand a saved product back as its comparison
         // summary (`claudedocs/price-comparison.md`).
         ProductIntentHandoff.install()
@@ -89,6 +87,14 @@ enum ProductShellWiring {
 }
 
 /// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
+/// The re-save bridge: `LunaReadingList` cannot link `LunaPriceUI`, so the
+/// composition root carries the fan-out call.
+private struct ResaveComparisonKicker: PriceTrackerComparisonKicking {
+    func kickComparison(itemID: UUID, url: URL, store: ReadingListStore) {
+        SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
+    }
+}
+
 private struct ProductKindHandler: IngestorProductHandling {
     func ingestProductTracker(
         _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore

@@ -28,11 +28,7 @@ enum MediaShellWiring {
         // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
         // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()
-        PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
-            await PlatformItemIngestor.shared.pasteboardPreviewArtData(
-                platform: platform, itemID: itemID, urlString: urlString)
-                .flatMap { UIImage(data: $0) }
-        }
+        PasteboardSuggester.platformPreviewArt = PlatformPreviewArt()
         // Action Button intents hand recognized posts to the media downloader.
         MediaIntentHandoff.install()
         // The util card's inline "Store downloads …" line. Only an app that
@@ -41,31 +37,13 @@ enum MediaShellWiring {
         MediaUtilCardStorageChoice.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
         URLRescueWiring.mediaResolver = SocialMediaResolver()
-        URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
-            await LiveMediaDownloadManager.shared.startWithResolvedAssets(
-                sourceURLString: sourceURLString, title: title, assets: assets)
-        }
+        URLRescueWiring.mediaRescueStarter = ResolvedAssetRescueStarter()
         // The factory reset's media leg: a Live Activity outlives the process
         // that started it, so the wipe has to end them itself.
-        FactoryReset.additionalErasers.append {
-            await LiveMediaDownloadManager.shared.endAllActivities()
-        }
-        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
-        // A bulk import runs its own progress bar; the per-transfer Live
-        // Activity alerts (banner + sound + haptic) would buzz twice per link
-        // over the top of it.
-        // Photos access asked for at the START of an import, not when the first
-        // transfer wants it (`claudedocs/import-export.md`).
-        LinkImportRunner.mediaStoragePreflight = { urlStrings in
-            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
-        }
-        LinkImportRunner.mediaAlertSuspension = { suspended in
-            if suspended {
-                LiveMediaDownloadManager.suspendActivityAlerts()
-            } else {
-                LiveMediaDownloadManager.resumeActivityAlerts()
-            }
-        }
+        FactoryReset.register(eraser: LiveActivityEraser())
+        // A bulk import runs its own progress bar, and asks for Photos access at
+        // the START of the run (`claudedocs/import-export.md`).
+        LinkImportRunner.media = MediaImportLeg()
     }
 
     // MARK: - Lifecycle
@@ -144,19 +122,79 @@ enum MediaShellWiring {
         }
     }
 
-    /// The finished activity's Share button (`&share=1`): a downloaded local
-    /// file becomes a concrete shareable copy with a human-readable name —
-    /// exactly the export the card's own share menu and the App Intent handoff
-    /// use. Anything else has no file to hand over and the route falls back to
-    /// the plain open.
-    static let shareFileExporter: MediaShareFileExporting? = MediaShareFileExporting(
-        export: { itemID in
-            guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
-                  case .localFile = item.storageState
-            else { return nil }
-            return await MediaAutoDownloader.exportFile(from: item)?.fileURL
-        },
-        discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+    /// The finished activity's Share button (`&share=1`). Anything with no file
+    /// to hand over falls the route back to the plain open.
+    static let shareFileExporter: (any MediaShareFileExporting)? = DownloadedFileExporter()
+}
+
+/// A recent URL's preview art, from the platform's own metadata fetcher.
+private struct PlatformPreviewArt: PlatformPreviewArtProviding {
+    func previewArt(
+        platform: ContentPlatform, itemID: String?, urlString: String
+    ) async -> UIImage? {
+        await PlatformItemIngestor.shared.pasteboardPreviewArtData(
+            platform: platform, itemID: itemID, urlString: urlString)
+            .flatMap { UIImage(data: $0) }
+    }
+}
+
+/// The finished activity's Share button (`&share=1`): a downloaded local file
+/// becomes a concrete shareable copy with a human-readable name — exactly the
+/// export the card's own share menu and the App Intent handoff use.
+private struct DownloadedFileExporter: MediaShareFileExporting {
+    func exportedFileURL(forItemID itemID: UUID) async -> URL? {
+        guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
+              case .localFile = item.storageState
+        else { return nil }
+        return await MediaAutoDownloader.exportFile(from: item)?.fileURL
+    }
+
+    func discardExportedFile(at fileURL: URL) {
+        MediaDownloadStorage.discardIntentExport(at: fileURL)
+    }
+}
+
+/// URL Rescue's media leg: the engine already resolved the assets, so this
+/// downloads them without re-running platform resolution.
+private struct ResolvedAssetRescueStarter: MediaRescueStarting {
+    func startMediaRescue(
+        sourceURLString: String, title: String?, assets: [MediaAsset]
+    ) async -> Bool {
+        await LiveMediaDownloadManager.shared.startWithResolvedAssets(
+            sourceURLString: sourceURLString, title: title, assets: assets)
+    }
+}
+
+/// The factory reset's media leg: a Live Activity outlives the process that
+/// started it, so a wiped download would otherwise keep a lock-screen card
+/// describing itself.
+private struct LiveActivityEraser: FactoryResetErasing {
+    func erase() async {
+        await LiveMediaDownloadManager.shared.endAllActivities()
+    }
+}
+
+/// The bulk import's media leg: the transfer watcher, the Live Activity alert
+/// suspension that keeps an import from buzzing twice per link, and the one
+/// Photos prompt asked for before the run starts.
+private struct MediaImportLeg: LinkImportMediaHandling {
+    func downloadState(
+        forURLString urlString: String
+    ) -> LinkImportRunner.MediaDownloadState? {
+        MediaImportProgress.observe(urlString: urlString)
+    }
+
+    func setAlertsSuspended(_ suspended: Bool) {
+        if suspended {
+            LiveMediaDownloadManager.suspendActivityAlerts()
+        } else {
+            LiveMediaDownloadManager.resumeActivityAlerts()
+        }
+    }
+
+    func preflightStorage(forURLStrings urlStrings: [String]) async {
+        await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+    }
 }
 
 /// Bridges `IngestorMediaHandling` to LunaPlatforms' `PlatformItemIngestor`.

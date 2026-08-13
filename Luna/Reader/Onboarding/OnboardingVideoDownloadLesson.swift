@@ -40,7 +40,7 @@ enum OnboardingVideoDownloadTiming {
 /// The panel STAYS in this one player state for the whole lesson now — it used
 /// to grow a chin of enable steps once the clip had played; that copy moved to
 /// the hosted setup web page, and the panel's own job shrank to just playing
-/// the clip and reporting `onDidReachSetupOffer` once it plainly has. The page
+/// the clip and reporting to its `setupOfferDelegate` once it plainly has. The page
 /// underneath needs no explainer of its own either way — which is why the
 /// Downloader's Safari demonstration opens on InstaTok rather than on
 /// `luna.app` (`OnboardingSafariLesson`). It is the media sibling of
@@ -60,7 +60,8 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     /// the clip is plainly playing. Central Luna, which plays this lesson as
     /// one of three, uses it to hand over to the next sibling; a faceted app
     /// uses it to raise the shared setup popup directly.
-    var onDidReachSetupOffer: (() -> Void)?
+    /// The replica hosting this lesson.
+    weak var setupOfferDelegate: (any OnboardingLessonSetupOfferDelegate)?
 
     private enum Metrics {
         /// `padding: "12px"` on the backdrop, `calc(100vw - 24px)` on the panel.
@@ -440,7 +441,7 @@ final class OnboardingVideoDownloadOverlayView: UIView {
     func reportSetupOffer() {
         guard lessonStage == .player, !didReportSetupOffer else { return }
         didReportSetupOffer = true
-        onDidReachSetupOffer?()
+        setupOfferDelegate?.lessonDidReachSetupOffer()
     }
 
     /// Held while the lesson is off screen. The panel keeps its last frame, so

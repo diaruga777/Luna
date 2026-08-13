@@ -21,6 +21,9 @@ final class UtilCardTests: XCTestCase {
     /// ONE store instance for the whole test: the card holds a reference to it,
     /// so seeding through a second instance would never reach the card.
     private var weekly: WeeklySaveStore!
+    /// The cards' environments. A card holds its data source and delegate
+    /// weakly, so the test owns them for the length of the test.
+    private var environments: [FakeUtilCardEnvironment] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -40,6 +43,7 @@ final class UtilCardTests: XCTestCase {
         defaults = nil
         suiteName = nil
         weekly = nil
+        environments = []
         try? FileManager.default.removeItem(at: container)
         container = nil
         UIView.setAnimationsEnabled(true)
@@ -630,8 +634,8 @@ final class UtilCardTests: XCTestCase {
     func testTheEmailButtonLaunchesTheSignInFlow() throws {
         let previous = UtilCardContentViewController.emailSetupLauncher
         defer { UtilCardContentViewController.emailSetupLauncher = previous }
-        var launchedFrom: UIViewController?
-        UtilCardContentViewController.emailSetupLauncher = { launchedFrom = $0 }
+        let launcher = FakeEmailSetupPresenter()
+        UtilCardContentViewController.emailSetupLauncher = launcher
 
         let store = makeStore()
         store.markSafariSetupHandled()
@@ -650,7 +654,7 @@ final class UtilCardTests: XCTestCase {
             email.accessibilityLabel, OnboardingStrings.Intro.emailAction.value())
         email.sendActions(for: .touchUpInside)
 
-        XCTAssertTrue(launchedFrom === card)
+        XCTAssertTrue(launcher.presenter === card)
     }
 
     /// The email nudge arrives live: the third save reflows the card without a
@@ -668,12 +672,13 @@ final class UtilCardTests: XCTestCase {
             onboardingStore: store,
             weeklyStore: weekly,
             app: .reader,
-            now: { self.clock },
-            hasSaves: { !saves.isEmpty },
-            savedURLStrings: { [] },
-            savedDates: { saves },
-            isEmailConnected: { false },
-            saveHandler: { _, _, _, completion in completion(true) })
+            now: { self.clock })
+        // The nudge is read live, so this environment answers from `saves`
+        // rather than from a value copied at construction.
+        let environment = FakeUtilCardEnvironment(savedDates: { saves })
+        environments.append(environment)
+        card.dataSource = environment
+        card.delegate = environment
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
         card.view.layoutIfNeeded()
@@ -732,21 +737,16 @@ final class UtilCardTests: XCTestCase {
 
     func testTappingTheWeeklyRowHandsItsStoredURLToTheDeck() throws {
         seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
-        var savedURL: String?
-        var savedSource: CaptureSource?
-        let card = makeCard(showsOnboarding: true, saveHandler: { url, source, _, completion in
-            savedURL = url
-            savedSource = source
-            completion(true)
-        })
+        let environment = FakeUtilCardEnvironment()
+        let card = makeCard(showsOnboarding: true, environment: environment)
         card.loadViewIfNeeded()
 
         let row = try XCTUnwrap(
             card.view.descendant(identifier: "utilCard.saveOfTheWeek") as? UIControl)
         row.sendActions(for: .touchUpInside)
 
-        XCTAssertEqual(savedURL, "https://example.com/weekly")
-        XCTAssertEqual(savedSource, .manual)
+        XCTAssertEqual(environment.savedURL, "https://example.com/weekly")
+        XCTAssertEqual(environment.savedSource, .manual)
     }
 
     /// The flag is a band across the row's top, not a sticker on the artwork —
@@ -1088,20 +1088,20 @@ final class UtilCardTests: XCTestCase {
     /// iOS shows its Photos prompt once. The second attempt cannot ask, so the
     /// card opens Luna's own page in Settings instead of failing silently.
     func testASecondPhotosAttemptOpensLunasOwnSettingsPage() throws {
-        var openedSettings = 0
+        let environment = FakeUtilCardEnvironment()
         let choice = FakeDownloadStorageChoice(
             usesPhotos: false, photosOutcome: .refusedBefore)
         let card = makeCard(
             showsOnboarding: false,
             storageChoice: choice,
-            openSystemSettings: { openedSettings += 1 })
+            environment: environment)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 700)
         card.view.layoutIfNeeded()
 
         try tapOption("photos", in: card)
 
-        XCTAssertEqual(openedSettings, 1)
+        XCTAssertEqual(environment.openedSystemSettings, 1)
         XCTAssertEqual(try XCTUnwrap(storageChooser(in: card)).selection, .luna)
     }
 
@@ -1403,10 +1403,9 @@ final class UtilCardTests: XCTestCase {
         saveSetupMode: OnboardingSaveSetupMode = .actionButtonShortcut,
         recents: [RecentURLPreview] = [],
         storageChoice: (any DownloadStorageChoosing)? = nil,
-        openSystemSettings: @escaping () -> Void = {},
-        saveHandler: UtilCardContentViewController.SaveHandler? = nil
+        environment: FakeUtilCardEnvironment? = nil
     ) -> UtilCardContentViewController {
-        UtilCardContentViewController(
+        let card = UtilCardContentViewController(
             showsOnboarding: showsOnboarding,
             animatesIntro: animatesIntro,
             configuration: .configuration(
@@ -1416,14 +1415,66 @@ final class UtilCardTests: XCTestCase {
             weeklyStore: weekly,
             app: app,
             now: { self.clock },
-            hasSaves: { hasSaves },
-            savedURLStrings: { savedURLStrings },
-            savedDates: { savedDates },
-            isEmailConnected: { emailConnected },
-            recentMatches: { recents },
-            storageChoice: storageChoice,
-            openSystemSettings: openSystemSettings,
-            saveHandler: saveHandler ?? { _, _, _, completion in completion(true) })
+            storageChoice: storageChoice)
+        let resolved = environment ?? FakeUtilCardEnvironment()
+        resolved.hasSaves = hasSaves
+        resolved.savedURLStrings = savedURLStrings
+        resolved.savedDates = { savedDates }
+        resolved.isEmailConnected = emailConnected
+        resolved.recentMatches = recents
+        environments.append(resolved)
+        card.dataSource = resolved
+        card.delegate = resolved
+        return card
+    }
+}
+
+/// The deck around a card under test: fixed answers, and a record of what the
+/// card asked for.
+@MainActor
+final class FakeUtilCardEnvironment: UtilCardDataSource, UtilCardDelegate {
+    var hasSaves = false
+    var savedURLStrings: Set<String> = []
+    /// A closure rather than a value: one test grows its save list while the card
+    /// is on screen and expects the next read to see it.
+    var savedDates: () -> [Date] = { [] }
+    var isEmailConnected = false
+    var recentMatches: [RecentURLPreview] = []
+    /// What the card handed over, and what to answer its completion with.
+    private(set) var savedURL: String?
+    private(set) var savedSource: CaptureSource?
+    private(set) var openedSystemSettings = 0
+    var saveSucceeds = true
+
+    init(savedDates: @escaping () -> [Date] = { [] }) {
+        self.savedDates = savedDates
+    }
+
+    var utilCardHasSaves: Bool { hasSaves }
+    var utilCardSavedURLStrings: Set<String> { savedURLStrings }
+    var utilCardSavedDates: [Date] { savedDates() }
+    var utilCardIsEmailConnected: Bool { isEmailConnected }
+    var utilCardRecentMatches: [RecentURLPreview] { recentMatches }
+
+    func utilCardSave(
+        urlString: String, source: CaptureSource, sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        savedURL = urlString
+        savedSource = source
+        completion(saveSucceeds)
+    }
+
+    func utilCardOpenSystemSettings() { openedSystemSettings += 1 }
+}
+
+/// Records which controller asked for the email sign-in surface.
+@MainActor
+final class FakeEmailSetupPresenter: EmailSetupPresenting {
+    private(set) var presenter: UIViewController?
+
+    func presentEmailSetup(from presenter: UIViewController) {
+        self.presenter = presenter
     }
 }
 

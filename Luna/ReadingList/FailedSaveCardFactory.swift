@@ -76,7 +76,7 @@ enum FailedSaveCardFactory {
         // A `.notContent` failure has no article for the model to find, so the
         // card shows the terminal apology rather than offering an attempt it
         // would only spend proving that.
-        let canRescue = URLRescueCoordinator.engine?.isAvailable() == true
+        let canRescue = URLRescueCoordinator.engine?.isRescueAvailable == true
             && (SaveFailureStore.shared.record(for: item.id)?.reason?.isWorthRescuing ?? true)
         return canRescue ? .idle : .unavailable
     }

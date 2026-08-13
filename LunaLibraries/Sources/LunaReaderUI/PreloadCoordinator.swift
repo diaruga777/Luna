@@ -93,11 +93,7 @@ public final class PreloadCoordinator {
         }
         let task = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
-            defer {
-                self.lock.lock()
-                self.resumeTask = nil
-                self.lock.unlock()
-            }
+            defer { self.lock.withLock { self.resumeTask = nil } }
             for item in self.readingListStore.items()
             where item.state == .ready && item.contentFileName != nil {
                 guard !Task.isCancelled, await Self.isApplicationActive

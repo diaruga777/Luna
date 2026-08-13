@@ -378,12 +378,12 @@ public final class LinkImportRunner {
             work.append(Unit(slice: work.count, item: placement.item, candidate: candidate))
         }
 
-        lock.lock()
-        slices = Array(repeating: 0, count: work.count)
-        sliceIndexByItem = Dictionary(
-            work.map { ($0.item.id, $0.slice) }, uniquingKeysWith: { first, _ in first })
-        phase = work.isEmpty ? .done : .fetching
-        lock.unlock()
+        lock.withLock {
+            slices = Array(repeating: 0, count: work.count)
+            sliceIndexByItem = Dictionary(
+                work.map { ($0.item.id, $0.slice) }, uniquingKeysWith: { first, _ in first })
+            phase = work.isEmpty ? .done : .fetching
+        }
         guard !work.isEmpty else { return summary }
 
         // 2. Ingest, `concurrency` at a time, in order.

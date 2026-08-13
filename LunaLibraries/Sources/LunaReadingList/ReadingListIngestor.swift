@@ -99,16 +99,13 @@ public final class ReadingListIngestor {
                        allowsInteractivePrompt: Bool = true) async -> SurfaceSupport.Decision {
         guard item.state != .ready, let initialURL = item.url else { return .supported }
 
-        lock.lock()
-        let alreadyRunning = inFlight.contains(item.id)
-        if !alreadyRunning { inFlight.insert(item.id) }
-        lock.unlock()
-        guard !alreadyRunning else { return .supported }
-        defer {
-            lock.lock()
-            inFlight.remove(item.id)
-            lock.unlock()
+        let alreadyRunning = lock.withLock {
+            let running = inFlight.contains(item.id)
+            if !running { inFlight.insert(item.id) }
+            return running
         }
+        guard !alreadyRunning else { return .supported }
+        defer { lock.withLock { inFlight.remove(item.id) } }
 
         let url = initialURL
 

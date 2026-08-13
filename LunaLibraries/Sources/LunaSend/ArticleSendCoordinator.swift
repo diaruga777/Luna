@@ -267,16 +267,13 @@ public final class ArticleSendCoordinator {
 
     private func deliver(itemID: UUID, built: BuiltEPUB, to destination: ArticleDestination) async {
         let key = "\(itemID.uuidString)|\(destination.id)"
-        lock.lock()
-        let alreadySending = inFlight.contains(key)
-        if !alreadySending { inFlight.insert(key) }
-        lock.unlock()
-        guard !alreadySending else { return }
-        defer {
-            lock.lock()
-            inFlight.remove(key)
-            lock.unlock()
+        let alreadySending = lock.withLock {
+            let sending = inFlight.contains(key)
+            if !sending { inFlight.insert(key) }
+            return sending
         }
+        guard !alreadySending else { return }
+        defer { lock.withLock { inFlight.remove(key) } }
 
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
         store.markSendAttemptStarted(for: itemID, destination: destination.id)

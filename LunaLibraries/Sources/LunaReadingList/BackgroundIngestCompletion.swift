@@ -123,9 +123,7 @@ public enum BackgroundIngestCompletion {
             for owed in queue {
                 await finish(owed, store: store, completions: completions, ingestor: ingestor)
             }
-            lock.lock()
-            isRunning = false
-            lock.unlock()
+            lock.withLock { isRunning = false }
             completion?()
         }
     }
@@ -204,9 +202,7 @@ private final class CancellableIngest: @unchecked Sendable {
     }
 
     func value() async {
-        lock.lock()
-        let task = self.task
-        lock.unlock()
+        let task = lock.withLock { self.task }
         await task?.value
     }
 }

@@ -50,16 +50,13 @@ public final class IncomingMailImporter {
     public func importNewMail() async {
         guard isConfigured else { return }
         guard let transport = MailTransportFactory.make(store: accountStore) else { return }
-        runningLock.lock()
-        let alreadyRunning = isRunning
-        if !alreadyRunning { isRunning = true }
-        runningLock.unlock()
-        guard !alreadyRunning else { return }
-        defer {
-            runningLock.lock()
-            isRunning = false
-            runningLock.unlock()
+        let alreadyRunning = runningLock.withLock {
+            let wasRunning = isRunning
+            if !wasRunning { isRunning = true }
+            return wasRunning
         }
+        guard !alreadyRunning else { return }
+        defer { runningLock.withLock { isRunning = false } }
 
         do {
             let result = try await transport.fetchShares(

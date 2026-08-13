@@ -3,10 +3,12 @@
 //  LunaSafari
 //
 
+import LunaAppConfig
 import LunaMediaResolve
 import LunaModels
 import LunaPriceCompare
 import LunaStorage
+import LunaURLClassification
 import SafariServices
 
 /// Receives native messages from the extension's JavaScript: persists the active
@@ -22,7 +24,7 @@ import SafariServices
 /// `claudedocs/safari-extension.md`.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
-    private static let appGroupID = SafariAppGroup.id
+    private static let appGroupID = AppConfig.appGroupID
     private static let suggestionModeKey = "safariSuggestionMode"
     /// The in-page player's off switch, written by the two media apps' Settings
     /// (`SafariSuggestionSettings.videoPlayerKey`, pinned by
@@ -53,9 +55,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let downloadReturnHandoffLifetime: TimeInterval = 60
 
     func beginRequest(with context: NSExtensionContext) {
-        let (surface, scheme) = SharedSurfaceScheme.currentSurfaceAndScheme
-        SharedSafariURL.recordExtensionRun(
-            isCentral: Self.isCentralLunaHost, surface: surface)
+        let surface = Self.host.storageIdentifier
+        let scheme = Self.hostScheme
+        LunaSetupStatusStore.shared.recordSafariExtensionRun(for: Self.host)
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         var payload: [String: Any] = ["ok": true]
@@ -96,9 +98,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // Rides the context the content script already asks for, so deciding
             // whether to congratulate the user costs no extra round trip. The
             // script suppresses its pill for the confirmation's lifetime.
-            payload["celebrateSetup"] = SharedSafariURL.shouldCelebrateSetup(surface: surface)
-            payload["appName"] = SharedSafariURL.setupTapAppName(surface: surface)
-                ?? Self.hostDisplayName
+            payload["celebrateSetup"] = LunaSetupStatusStore.shared
+                .shouldCelebrateSafariSetup(for: Self.host)
+            payload["appName"] = LunaSetupStatusStore.shared
+                .safariSetupTapAppName(for: Self.host) ?? Self.hostDisplayName
         case "annoyanceSettings":
             // The document_start annoyance script's one gate, asked through
             // background.js before it touches a cookie dialog. It is a SEPARATE
@@ -118,7 +121,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "setupCelebrationShown":
             // Written when the overlay renders, not when the decision is made: a
             // context request whose page never showed one must stay eligible.
-            SharedSafariURL.recordCelebrationShown(surface: surface)
+            LunaSetupStatusStore.shared.recordSafariCelebrationShown(for: Self.host)
         case "bypassEnabled":
             // On-device unlocking is article handling, so only article-capable
             // hosts (Reader and the central Luna app) enable the Referer
@@ -131,7 +134,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // would re-lock outside Safari).
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
                let html = message?["html"] as? String {
-                SharedSafariURL.recordUnlockedContent(urlString, html: html)
+                SafariContentStore.record(urlString, html: html)
             }
         case "resolveMedia":
             // The in-page player's one round trip: resolve this post to a direct
@@ -175,7 +178,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
-                SharedSafariURL.record(urlString)
+                SafariURLStore.record(urlString)
+                SafariRecentHistoryStore.shared.record(urlString)
             }
         }
 
@@ -310,6 +314,19 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             ?? ""
         return name.isEmpty ? "Luna" : name
     }
+
+    /// This extension's containing app. An extension's bundle id is its host
+    /// app's plus `.safari`, which `LunaApp` resolves the same way it does from
+    /// inside any other Luna extension — and its `storageIdentifier` is the
+    /// surface name the App-Group setup keys are built from, so the two halves
+    /// of the Safari hand-off meet by construction.
+    private static let host = LunaApp.detect(bundleIdentifier: Bundle.main.bundleIdentifier)
+
+    /// The URL scheme this extension's page buttons deep-link into. Always its
+    /// OWN containing app's — an extension may only ever hand content to the app
+    /// it is embedded in.
+    private static let hostScheme = LunaDeepLink.appScheme(
+        forBundleIdentifier: Bundle.main.bundleIdentifier) ?? LunaDeepLink.lunaScheme
 
     /// Per-kind capability of this extension's containing app, from the bundle
     /// id suffix. The central Luna app's extension has the bare

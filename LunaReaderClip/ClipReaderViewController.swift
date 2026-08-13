@@ -59,7 +59,8 @@ final class ClipReaderViewController: UIViewController {
     }
 
     func handleLaunchURL(_ launchURL: URL) {
-        guard let sourceURL = LunaAppClipInvocationURL.sourceURL(from: launchURL) else {
+        guard let sourceURL = LunaAppClipInvocationURL.sourceURL(from: launchURL, for: .reader)
+        else {
             update(.failed(L10n.string("AppClip_reader_missingURLMessage")))
             return
         }

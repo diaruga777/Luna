@@ -45,6 +45,29 @@ final class UtilCardStorageTests: XCTestCase {
         XCTAssertEqual(history.last, "https://example.com/18")
     }
 
+    /// The write side, which every Safari extension's native handler owns.
+    func testRecordingAVisitPutsItFirstAndKeepsTwenty() {
+        let store = SafariRecentHistoryStore(defaults: defaults)
+        for index in 0..<24 { store.record("https://example.com/\(index)") }
+
+        let history = store.URLs
+
+        XCTAssertEqual(history.count, 20)
+        XCTAssertEqual(history.first, "https://example.com/23")
+        XCTAssertEqual(history.last, "https://example.com/4")
+    }
+
+    /// A revisit is promoted rather than added, so it can never cost a slot.
+    func testRecordingAVisitedPagePromotesItInsteadOfRepeatingIt() {
+        let store = SafariRecentHistoryStore(defaults: defaults)
+        store.record("https://example.com/first")
+        store.record("https://example.com/second")
+        store.record("https://example.com/first")
+
+        XCTAssertEqual(
+            store.URLs, ["https://example.com/first", "https://example.com/second"])
+    }
+
     func testShortcutInstallAndIntentMarkersArePerApp() {
         let status = LunaSetupStatusStore(defaults: defaults)
 

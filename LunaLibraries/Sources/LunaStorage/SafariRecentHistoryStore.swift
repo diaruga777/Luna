@@ -7,9 +7,6 @@ import LunaAppConfig
 import Foundation
 
 /// The raw, cross-app Safari trail written by every Luna Safari extension.
-///
-/// The Safari extension target cannot link LunaStorage, so its matching writer
-/// duplicates only `historyKey` and the array format in `SharedSafariURL`.
 public final class SafariRecentHistoryStore {
     public static let shared = SafariRecentHistoryStore()
     public static let historyKey = "safariRecentURLHistory.v1"
@@ -21,6 +18,19 @@ public final class SafariRecentHistoryStore {
         self.defaults = defaults
             ?? UserDefaults(suiteName: AppConfig.appGroupID)
             ?? .standard
+    }
+
+    /// Records a visit, newest first. Canonicalized BEFORE it is persisted: a
+    /// revisit removes every earlier copy of that URL and promotes the survivor
+    /// to the front, so a repeat can never cost one of the `limit` slots, and
+    /// Safari's raw URL string is never rewritten.
+    public func record(_ urlString: String) {
+        var seen: Set<String> = [urlString]
+        let remaining = (defaults.stringArray(forKey: Self.historyKey) ?? []).filter {
+            !$0.isEmpty && seen.insert($0).inserted
+        }
+        defaults.set(
+            Array(([urlString] + remaining).prefix(Self.limit)), forKey: Self.historyKey)
     }
 
     /// Newest first. Values are deliberately raw URL strings: classification

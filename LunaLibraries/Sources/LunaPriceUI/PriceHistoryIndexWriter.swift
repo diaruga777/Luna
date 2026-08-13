@@ -3,54 +3,10 @@
 //  LunaPriceUI
 //
 
-import LunaAppConfig
 import LunaModels
 import LunaPriceCompare
 import LunaStorage
 import Foundation
-
-/// One tracked product's compact history, as written to the shared App Group
-/// `priceHistoryIndex.json` — the app-maintained counterpart to
-/// `ProductSnapshot` the Safari extension can't get any other way (the
-/// extension is package-free and `readingList.json` is both too large and not
-/// a format worth hand-parsing in an appex).
-public struct PriceHistoryIndexEntry: Codable, Equatable {
-    public struct Point: Codable, Equatable {
-        public var day: String
-        public var price: String
-        public var currency: String
-
-        public init(day: String, price: String, currency: String) {
-            self.day = day
-            self.price = price
-            self.currency = currency
-        }
-    }
-
-    public struct StorePoints: Codable, Equatable {
-        public var url: String
-        public var host: String
-        public var points: [Point]
-
-        public init(url: String, host: String, points: [Point]) {
-            self.url = url
-            self.host = host
-            self.points = points
-        }
-    }
-
-    public var name: String
-    public var brand: String?
-    public var productID: String?
-    public var stores: [StorePoints]
-
-    public init(name: String, brand: String?, productID: String?, stores: [StorePoints]) {
-        self.name = name
-        self.brand = brand
-        self.productID = productID
-        self.stores = stores
-    }
-}
 
 /// Regenerates the compact price-history index every product-handling app's
 /// Safari extension queries to answer the "Was $X on <date>" history pill and
@@ -61,19 +17,7 @@ public struct PriceHistoryIndexEntry: Codable, Equatable {
 /// link `LunaPriceUI`, so only those two ever write it — correct, since only
 /// they can have trackers to index.
 public enum PriceHistoryIndexWriter {
-    /// Mirrors `LunaSafari/SharedProductMatching.swift`'s constants exactly —
-    /// that file is still a hand-copy of the tracked-index reader, so
-    /// `SharedProductMatchingParityTests` pins the two together.
-    public static let relativeDirectory = "Library/ProductSnapshots"
-    public static let fileName = "priceHistoryIndex.json"
     public static let maxPointsAgeDays = 365
-
-    public static func fileURL() -> URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)?
-            .appendingPathComponent(relativeDirectory, isDirectory: true)
-            .appendingPathComponent(fileName)
-    }
 
     /// Builds the index entries from the given trackers (pure — testable
     /// without touching the App Group container).
@@ -111,16 +55,10 @@ public enum PriceHistoryIndexWriter {
     }
 
     public static func write(_ entries: [PriceHistoryIndexEntry]) {
-        guard let fileURL = fileURL() else { return }
+        guard let fileURL = PriceHistoryIndex.fileURL() else { return }
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
-    }
-
-    /// Test/tooling seam — reads the file back.
-    public static func load() -> [PriceHistoryIndexEntry] {
-        guard let fileURL = fileURL(), let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder().decode([PriceHistoryIndexEntry].self, from: data)) ?? []
     }
 }

@@ -177,9 +177,9 @@ failure instead).
 
 That evidence — like the tracked URL itself — is **read opportunistically across
 all four apps**. Every app's Safari extension writes the one shared
-`lastSafariURL` in the one App Group (`SharedSafariURL.record`, from
-`background.js`'s kind-agnostic active-tab report), and `SafariURLStore` reads it
-from that same group, so the Downloader's extension supplies the Reader's Action
+`lastSafariURL` in the one App Group (`SafariURLStore.record`, from
+`background.js`'s kind-agnostic active-tab report), and the app reads it back
+from that same store, so the Downloader's extension supplies the Reader's Action
 Button and vice versa. `anySafariExtensionHasRun` matches by ORing both
 completion markers rather than asking `safariRunApplies(to:)`, whose per-app
 answer is deliberately narrower: an in-page pill can only deep-link into its OWN

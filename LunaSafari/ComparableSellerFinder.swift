@@ -15,8 +15,8 @@ import LunaURLClassification
 /// Two legs, in this order, and the order is the whole point:
 ///
 /// 1. **What Luna already knows.** The app-written price-history index and the
-///    passive snapshot file are already in the App Group container, already
-///    matched against this page by `SharedProductMatching`'s tiers. A price
+///    passive snapshot file are already in the App Group container, and
+///    `ProductPageMatching`'s tiers say which of them are this page. A price
 ///    another retailer was seen at in the last 24h is a real answer, and it
 ///    costs no network at all.
 /// 2. **A constrained fan-out**, only when leg 1 has nothing. `SellerFanOut`
@@ -107,8 +107,8 @@ enum ComparableSellerFinder {
         matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
         var points: [ComparablePricePoint] = []
-        for entry in SharedProductMatching.loadIndex()
-        where SharedProductMatching.matches(page: page, indexEntry: entry) {
+        for entry in PriceHistoryIndex.load()
+        where ProductPageMatching.matches(page: page, indexEntry: entry) {
             for store in entry.stores {
                 for point in store.points {
                     guard let amount = Decimal(string: point.price),
@@ -132,7 +132,7 @@ enum ComparableSellerFinder {
     ) -> [ComparablePricePoint] {
         ProductSnapshotStore.shared
             .snapshots(forKeys: page.indexKeys)
-            .filter { $0.url != page.url && SharedProductMatching.matches(page: page, snapshot: $0) }
+            .filter { $0.url != page.url && ProductPageMatching.matches(page: page, snapshot: $0) }
             .compactMap { snapshot in
                 guard let amount = Decimal(string: snapshot.price) else { return nil }
                 let captured = instant(snapshot.capturedAt)

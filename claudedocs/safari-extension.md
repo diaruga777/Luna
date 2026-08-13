@@ -19,8 +19,7 @@ background.js (tabs.onActivated / tabs.onUpdated)
 - `LunaSafari/Resources/annoyances.css` + `annoyances.js` — declarative, all-frame
   `document_start` suppression for cookie consent and intrusive popovers; intentionally
   leaves ordinary inline/display ads intact.
-- `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes via `SharedSafariURL`.
-- `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — see "Where the work runs" for when a hand-copy is acceptable and when it isn't).
+- `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes through the linked `SafariURLStore` / `SafariRecentHistoryStore` / `SafariContentStore` / `LunaSetupStatusStore`.
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root — that suits Safari (manifest.json must be at the bundle root on iOS) but it is Xcode's synchronized-group resource copy doing it, indiscriminately, to nested folders too. **`_locales/en/messages.json` must NOT be left flattened**: `browser.i18n.getMessage` reads only `_locales/<locale>/messages.json`, and a root-level copy makes every key resolve to `""` — which is what once rendered the in-page pill as a text-less indigo stub (its width is its label plus padding) and dropped the extension's own name. `scripts/update_safari_extension_branding.sh` (an `alwaysOutOfDate` build phase on all four Safari targets) re-copies the `_locales` tree from `$SRCROOT`, deletes the flattened stray, and only then rewrites `extensionName` per host app. `content.js` additionally carries an inline English default for every string it renders, so an empty lookup degrades to correct copy instead of an empty pill; `SafariPillLabelTests` covers both halves — the fallbacks (and their parity with `messages.json`) and the built appex's directory layout.
 
@@ -29,15 +28,14 @@ Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product 
 **Extraction runs in shared Swift, in every process. It is never re-implemented
 for Safari.**
 
-The four Safari appex targets used to link no package at all, and the
-`LunaSafari/Shared*.swift` files hand-copy the app's App-Group key formats
-because of it. That pattern is fine for what it covers — a handful of string
-constants and a 24h window, each pinned by a parity test — and it is **not** the
-model for anything with logic in it. The extension now links the package, so:
+The four Safari appex targets used to link no package at all, and a set of
+`LunaSafari/Shared*.swift` files hand-copied the app's App-Group key formats
+because of it. They are gone: the extension links the Foundation-only floor and
+writes through the same stores the app reads. What each product buys it:
 
 | linked product | what it buys the appex |
 | --- | --- |
-| `LunaAppConfig` | the App Group id (`SafariAppGroup` reads the Info.plist key) |
+| `LunaAppConfig` | the App Group id (`AppConfig` reads the Info.plist key) |
 | `LunaModels` | `ProductIdentifiers` / `ProductIdentityMatching`, the shared identity primitives |
 | `LunaStorage` | the App Group containers the app also writes |
 | `LunaURLClassification` | URL shape rules + `WebFetchConstants` (the Safari UA and byte cap) |
@@ -117,11 +115,12 @@ the user to an app they never left.
 | `setup.safari.celebrationShown.<app>` | extension | as soon as the overlay is COMMITTED to, before its DOM is built |
 
 The rule — all three of: tap within 24h, first run within 24h, never shown — is
-stated by `LunaSetupStatusStore.shouldCelebrateSafariSetup` and mirrored by
-`SharedSafariURL.shouldCelebrateSetup`, because `LunaSafari` links no package.
-`SafariSetupCelebrationTests` owns the rule, the overlay, AND the parity between
-the two copies (key formats, the window, and that `SharedSurfaceScheme`'s surface
-strings really are `LunaApp.storageIdentifier`s — the keys only meet if they are).
+`LunaSetupStatusStore.shouldCelebrateSafariSetup`, which the extension asks
+directly; its own two writes are `recordSafariExtensionRun` and
+`recordSafariCelebrationShown` on that same store.
+`SafariSetupCelebrationTests` owns the rule, the overlay, and both halves of the
+hand-off (including that an appex bundle id resolves to its host app's surface
+and scheme — the keys only meet if it does).
 `resetAllRunEvidence` clears all four, including the extension's two: an extension
 first-runs exactly once, so a reset that left `firstRunAt` behind could never show
 the confirmation again.
@@ -912,10 +911,12 @@ app-written compact index of tracked products — `PriceHistoryIndexWriter`,
 LunaPriceUI, regenerated after every save/refresh/background) and (b) the
 observations the store's index says share one of this page's identifiers, using the
 SAME precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family →
-mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier).
-`LunaSafari/SharedProductMatching.swift` is still a hand-written copy of the
-tracked-INDEX half of that logic, pinned by `SharedProductMatchingParityTests`; the
-snapshot half is no longer copied at all. The reply is
+mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier),
+through `LunaPriceCompare.ProductPageMatching`, which is also where
+`PriceHistoryIndexEntry` and the index's location live. `LunaSafari
+/SharedProductMatching.swift` is now only the reduction to a pill's one line;
+`SharedProductMatchingParityTests` runs one fixture matrix through both matchers.
+The reply is
 `{hasHistory, isTracked, amount, currency, day}`: `isTracked` skips the Track pill
 entirely (`renderProductPills`); `hasHistory` — the lowest matched price strictly
 BELOW the page's current price, same currency only, ties broken by earliest date —
@@ -958,8 +959,8 @@ Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`
 runs two legs in order:
 
 1. **What is already stored.** The app-written `priceHistoryIndex.json` and the
-   passive snapshot file, matched to this page by `SharedProductMatching`'s existing
-   tiers. Costs no network, and after one visit to a rival's page it is usually enough.
+   passive snapshot file, matched to this page by `ProductPageMatching`'s tiers.
+   Costs no network, and after one visit to a rival's page it is usually enough.
 2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with
    `.constrained` (6 candidate retailers, 3 results, no web-search layer, **no
    name-only matches**), fetched with a bare ephemeral `URLSession` carrying

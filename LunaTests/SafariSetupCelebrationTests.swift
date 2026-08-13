@@ -5,18 +5,18 @@
 
 import LunaModels
 import LunaStorage
+import LunaURLClassification
 import XCTest
 
 /// The one-shot in-page confirmation the Safari extension shows the first time it
 /// ever runs after the app sent the user off to set it up.
 ///
 /// Three things are guarded here, because the feature is split across three
-/// processes that share only `UserDefaults` keys:
-///  1. the RULE (all three conditions, the 24h window, the one-shot latch) as the
-///     app-side `LunaSetupStatusStore` states it;
-///  2. PARITY between that statement and the extension's copy — `LunaSafari`
-///     links no package, so `SharedSafariURL` hand-rolls the same key formats and
-///     window, and a rename on one side would silently stop the two from meeting;
+/// processes:
+///  1. the RULE (all three conditions, the 24h window, the one-shot latch) as
+///     `LunaSetupStatusStore` states it;
+///  2. both halves of the hand-off through that one store — the app's setup tap
+///     and the extension's own first run, each keyed to the app it belongs to;
 ///  3. the OVERLAY `content.js` renders, which replaces the pill for five seconds.
 final class SafariSetupCelebrationTests: XCTestCase {
 
@@ -130,6 +130,78 @@ final class SafariSetupCelebrationTests: XCTestCase {
         }
     }
 
+    // MARK: - The extension's half
+
+    /// The extension's own first run, which is half the evidence. Its stamp is
+    /// written once and never moved: an extension first-runs exactly once, and a
+    /// later run that re-stamped it would make "first ran recently" true forever.
+    func testTheExtensionRunStampsTheFirstMomentOnlyAndCompletesSetup() {
+        store.recordSafariExtensionRun(for: .reader, at: now.addingTimeInterval(-90))
+        XCTAssertEqual(
+            store.safariExtensionFirstRunDate(for: .reader), now.addingTimeInterval(-90))
+        XCTAssertTrue(store.safariRunApplies(to: .reader))
+
+        store.recordSafariExtensionRun(for: .reader, at: now)
+        XCTAssertEqual(
+            store.safariExtensionFirstRunDate(for: .reader), now.addingTimeInterval(-90))
+    }
+
+    /// Reader/Downloader/Price Tracker share completion evidence; bare central
+    /// Luna is deliberately independent, and its own run covers the siblings.
+    func testTheExtensionRunFilesCompletionUnderTheRightFacet() {
+        store.recordSafariExtensionRun(for: .reader, at: now)
+        XCTAssertTrue(store.safariRunApplies(to: .downloader))
+        XCTAssertFalse(store.safariRunApplies(to: .luna))
+
+        store.recordSafariExtensionRun(for: .luna, at: now)
+        XCTAssertTrue(store.safariRunApplies(to: .luna))
+    }
+
+    /// Both halves recorded through the store, and the one-shot latch the
+    /// extension writes when the overlay actually renders.
+    func testTheExtensionsOwnWritesEarnAndThenSpendTheConfirmation() {
+        store.recordSafariSetupTap(for: .reader, at: now.addingTimeInterval(-90))
+        store.recordSafariExtensionRun(for: .reader, at: now.addingTimeInterval(-30))
+        XCTAssertTrue(store.shouldCelebrateSafariSetup(for: .reader, now: now))
+
+        store.recordSafariCelebrationShown(for: .reader)
+
+        XCTAssertTrue(store.safariCelebrationWasShown(for: .reader))
+        XCTAssertFalse(store.shouldCelebrateSafariSetup(for: .reader, now: now))
+    }
+
+    /// The extension names the app from the tap the app itself stamped, and has
+    /// nothing to offer before one exists.
+    func testTheTapAppNameIsReadBackPerAppAndAbsentUntilStamped() {
+        XCTAssertNil(store.safariSetupTapAppName(for: .reader))
+        store.recordSafariSetupTap(for: .reader, at: now)
+        XCTAssertEqual(store.safariSetupTapAppName(for: .reader), LunaApp.reader.displayName)
+        XCTAssertNil(store.safariSetupTapAppName(for: .downloader))
+    }
+
+    /// An extension resolves BOTH halves of its identity from its own bundle id
+    /// — `<host app>.safari` — the surface its App-Group keys are built from and
+    /// the scheme its page buttons deep-link into. The keys only ever meet the
+    /// app's if that resolution agrees with the app's own.
+    func testAnExtensionBundleIdResolvesToItsHostAppsSurfaceAndScheme() {
+        let cases: [(identifier: String, app: LunaApp, scheme: String)] = [
+            ("com.hsanabria.luna.safari", .luna, LunaDeepLink.lunaScheme),
+            ("com.hsanabria.luna.reader.safari", .reader, LunaDeepLink.readerScheme),
+            ("com.hsanabria.luna.downloader.safari", .downloader, LunaDeepLink.downloaderScheme),
+            ("com.hsanabria.luna.pricetracker.safari", .priceTracker,
+             LunaDeepLink.priceTrackerScheme),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                LunaApp.detect(bundleIdentifier: testCase.identifier), testCase.app,
+                "\(testCase.identifier) resolved to the wrong surface")
+            XCTAssertEqual(
+                LunaDeepLink.appScheme(forBundleIdentifier: testCase.identifier),
+                testCase.scheme,
+                "\(testCase.identifier) would deep-link into another app")
+        }
+    }
+
     func testTheTapRecordsTheAppsOwnNameToInviteThemBackWith() {
         store.recordSafariSetupTap(for: .priceTracker, at: now)
         XCTAssertEqual(
@@ -160,57 +232,13 @@ final class SafariSetupCelebrationTests: XCTestCase {
         XCTAssertTrue(store.shouldCelebrateSafariSetup(for: .reader, now: now))
     }
 
-    // MARK: - Parity with the extension's copy
+    // MARK: - Across the process boundary
 
     private static func source(_ relativePath: String) -> String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
         return (try? String(
             contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
-    }
-
-    /// Every key format, as the literal prefix both sides interpolate the app's
-    /// storage identifier onto.
-    private func keyPrefixes() -> [String] {
-        [
-            LunaSetupStatusStore.safariSetupTapKey(for: .reader),
-            LunaSetupStatusStore.safariSetupTapAppNameKey(for: .reader),
-            LunaSetupStatusStore.safariFirstRunKey(for: .reader),
-            LunaSetupStatusStore.safariCelebrationShownKey(for: .reader),
-        ].map { String($0.dropLast(LunaApp.reader.storageIdentifier.count)) }
-    }
-
-    func testTheExtensionUsesTheSameAppGroupKeys() {
-        let extensionSource = Self.source("LunaSafari/SharedSafariURL.swift")
-        XCTAssertFalse(extensionSource.isEmpty, "LunaSafari/SharedSafariURL.swift not found")
-        for prefix in keyPrefixes() {
-            XCTAssertTrue(
-                extensionSource.contains("\"\(prefix)\\("),
-                "SharedSafariURL has no key built from \"\(prefix)\" -- the app writes a key "
-                    + "the extension never reads")
-        }
-    }
-
-    func testTheExtensionUsesTheSameWindow() {
-        XCTAssertEqual(LunaSetupStatusStore.safariCelebrationWindow, 24 * 60 * 60)
-        XCTAssertTrue(
-            Self.source("LunaSafari/SharedSafariURL.swift").contains("24 * 60 * 60"),
-            "SharedSafariURL.celebrationWindow has drifted from "
-                + "LunaSetupStatusStore.safariCelebrationWindow")
-    }
-
-    /// The extension keys on `SharedSurfaceScheme`'s surface string while the app
-    /// keys on `LunaApp.storageIdentifier`. They are the same four words, and the
-    /// whole hand-off silently stops working if they ever aren't.
-    func testTheExtensionsSurfaceNamesAreTheAppsStorageIdentifiers() {
-        let surfaceSource = Self.source("LunaSafari/SharedSurfaceScheme.swift")
-        XCTAssertFalse(surfaceSource.isEmpty, "LunaSafari/SharedSurfaceScheme.swift not found")
-        for app in LunaApp.allCases {
-            XCTAssertTrue(
-                surfaceSource.contains("\"\(app.storageIdentifier)\""),
-                "SharedSurfaceScheme names no surface \"\(app.storageIdentifier)\" -- its keys "
-                    + "cannot meet \(app)'s")
-        }
     }
 
     /// The handler answers the decision on the context request the content script

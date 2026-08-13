@@ -1927,7 +1927,7 @@
 
     // Extracts once, sends ONE `productSnapshot` message (recorded passively
     // AND answered against tracked/snapshot history in the same round trip --
-    // see SharedProductSnapshots/SharedProductMatching), then asks for
+    // see SharedProductMatching.historyAnswer), then asks for
     // alternative sellers before rendering. Falls back to the plain Track pill
     // when there's no browser host, no extraction, or the round trip fails.
     function handleProductPage(context) {
@@ -1958,7 +1958,7 @@
     // The app's onboarding stamps the moment it sent the user to Safari; the native
     // handler stamps this extension's own first run and answers `celebrateSetup`
     // when both are within 24h and it has never confirmed before (the decision
-    // lives in Swift — see SharedSafariURL.shouldCelebrateSetup). Here we only
+    // lives in Swift — see LunaSetupStatusStore.shouldCelebrateSafariSetup). Here we only
     // render it, tell the native side it was seen, and hand the page back after
     // twenty seconds so it can read as a genuine completion state before a
     // pill can still appear if this page earns one. A document refresh tears

@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaMediaDownload
 import UIKit
 import LunaModels
+import LunaURLClassification
 
 @MainActor
 final class ClipDownloadViewController: UIViewController {
@@ -48,7 +49,8 @@ final class ClipDownloadViewController: UIViewController {
     }
 
     func handleLaunchURL(_ launchURL: URL) {
-        guard let sourceURL = ClipLaunchURL.sourceURL(from: launchURL) else {
+        guard let sourceURL = LunaAppClipInvocationURL.sourceURL(from: launchURL, for: .downloader)
+        else {
             update(.failed(L10n.string("AppClip_downloader_missingURLMessage")))
             return
         }

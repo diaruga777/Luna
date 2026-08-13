@@ -39,10 +39,8 @@ public final class LunaSetupStatusStore {
 
     /// The four keys behind the in-page "You're all set up" confirmation. Two are
     /// written by the app (the setup tap), two by the extension's native handler
-    /// (its own first run, and that it has shown the confirmation) — the extension
-    /// links no framework, so `LunaSafari/SharedSafariURL.swift` carries a copy of
-    /// every one of these formats and of the window above. They are an App-Group
-    /// contract: `SafariSetupCelebrationTests` fails on drift between the two.
+    /// (its own first run, and that it has shown the confirmation) — both
+    /// processes through this one store.
     ///
     /// All four are keyed per app rather than shared, unlike the completion
     /// markers above: an extension may only ever hand off to its OWN containing
@@ -84,6 +82,21 @@ public final class LunaSetupStatusStore {
 
     func safariHasRun(isCentral: Bool) -> Bool {
         defaults.bool(forKey: isCentral ? Self.centralSafariKey : Self.sharedSafariKey)
+    }
+
+    /// Records that this app's Safari extension has actually executed — written
+    /// by the extension's native handler on every message it receives.
+    ///
+    /// Reader/Downloader/Price Tracker share completion evidence; bare central
+    /// Luna is deliberately independent. The per-app first-run stamp is written
+    /// only if absent: every later run must leave the original moment alone, or
+    /// "first ran recently" would be true forever.
+    public func recordSafariExtensionRun(for app: LunaApp, at date: Date = Date()) {
+        defaults.set(true, forKey: app == .luna ? Self.centralSafariKey : Self.sharedSafariKey)
+        if defaults.object(forKey: Self.safariFirstRunKey(for: app)) == nil {
+            defaults.set(date.timeIntervalSince1970, forKey: Self.safariFirstRunKey(for: app))
+        }
+        Self.postChange()
     }
 
     /// Whether this app's Safari completion applies on its own first screen.
@@ -184,9 +197,17 @@ public final class LunaSetupStatusStore {
         Self.date(defaults.object(forKey: Self.safariSetupTapKey(for: app)))
     }
 
+    /// The name of the app to invite the user back to, stamped by that app itself
+    /// with its setup tap. Read by the extension, which names it in the
+    /// confirmation's button rather than deriving it from a bundle id.
+    public func safariSetupTapAppName(for app: LunaApp) -> String? {
+        let name = defaults.string(forKey: Self.safariSetupTapAppNameKey(for: app)) ?? ""
+        return name.isEmpty ? nil : name
+    }
+
     /// Stamped by the extension's native handler the first time it ever runs for
-    /// this app. Read-only here: the app never writes it, so it can't manufacture
-    /// evidence that the extension works.
+    /// this app (`recordSafariExtensionRun`), and only there — no app-side path
+    /// writes it, so an app cannot manufacture evidence that its extension works.
     public func safariExtensionFirstRunDate(for app: LunaApp) -> Date? {
         Self.date(defaults.object(forKey: Self.safariFirstRunKey(for: app)))
     }
@@ -195,13 +216,23 @@ public final class LunaSetupStatusStore {
         defaults.bool(forKey: Self.safariCelebrationShownKey(for: app))
     }
 
+    /// One-shot: the confirmation has now been seen, so it never takes over a
+    /// page again. Written by the extension when the overlay actually renders,
+    /// not when it is decided — a context request whose page never showed one
+    /// must stay eligible.
+    public func recordSafariCelebrationShown(for app: LunaApp) {
+        defaults.set(true, forKey: Self.safariCelebrationShownKey(for: app))
+        Self.postSafariCelebrationPresented()
+    }
+
     /// Whether the extension should take the page over with the confirmation
     /// rather than offer its usual pill: the user tapped this app's setup button
     /// recently, this app's extension first ran recently, and the confirmation has
     /// not been shown before. A stamp in the future doesn't qualify — a backwards
     /// clock suppresses the confirmation rather than replaying it forever.
     ///
-    /// `SharedSafariURL.shouldCelebrateSetup` is the extension's copy of this.
+    /// Asked by the extension's native handler on the context request the content
+    /// script already makes.
     public func shouldCelebrateSafariSetup(for app: LunaApp, now: Date = Date()) -> Bool {
         guard !safariCelebrationWasShown(for: app),
               let tap = safariSetupTapDate(for: app),
@@ -302,6 +333,16 @@ public final class LunaSetupStatusStore {
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(darwinNotificationName as CFString),
+            nil, nil, true)
+    }
+
+    /// Darwin only: the observer is an app whose setup guide is in PiP, and the
+    /// poster is an extension in another process, so there is nothing in this one
+    /// to notify.
+    private static func postSafariCelebrationPresented() {
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(safariCelebrationDarwinNotificationName as CFString),
             nil, nil, true)
     }
 }

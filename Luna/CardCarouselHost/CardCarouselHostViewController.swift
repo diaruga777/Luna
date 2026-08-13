@@ -1046,10 +1046,10 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     }
 
     /// Chrome clearance every deck reserves above the card area, on top of the
-    /// safe area. One value, shared — it is `CardDeckGeometry.topClearance`, and
-    /// the reason it is not a per-deck override any more is that the card frame
-    /// has to be a function of the SCREEN: the launch splash draws the card
-    /// before it knows which app it is launching.
+    /// safe area. One value, shared: `CardDeckGeometry.topClearance`. It
+    /// cannot be a per-deck override, because the card frame has to be a
+    /// function of the SCREEN — the launch splash draws the card before it
+    /// knows which app it is launching.
     static var carouselTopClearance: CGFloat { CardDeckGeometry.topClearance }
 
     override func viewWillAppear(_ animated: Bool) {

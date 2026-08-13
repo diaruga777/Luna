@@ -58,11 +58,6 @@ enum ArticleShellWiring {
         // seams are set before anything could call into the center.
         AudioScriptPipelineWiring.install()
 
-        // The Read Article intent plays through the same center.
-        ReadArticleIntent.playArticle = { item, content in
-            AudioPlaybackCenter.shared.play(item: item, content: content)
-        }
-
         // The Action Button double save (claudedocs/double-save.md): its
         // "View immediately" returns an article document, and Kindle needs
         // the account/Kindle setup screens. Both are article-only, so both are

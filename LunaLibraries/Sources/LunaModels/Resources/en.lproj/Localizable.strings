@@ -754,7 +754,6 @@
 "Intents_readArticle_description_Luna" = "Starts reading a saved article out loud in the background.";
 "Intents_readArticle_noArticlesError_Luna" = "You don't have any unread articles to read.";
 "Intents_readArticle_contentMissingError_Luna" = "That article isn't ready to read yet.";
-"Intents_readArticle_notSupportedError_Luna" = "Reading articles aloud isn't available in this app.";
 
 /* ===== App Intents metadata — SaveIntent.swift ===== */
 "Intents_save_description_Luna" = "Provide the current app, optional screenshot, and optional Metadata from Provide Context. Luna saves urls it finds, resuming in-progress downloads when possible, or reading the screenshot using Apple Intelligence for extractable url information.";

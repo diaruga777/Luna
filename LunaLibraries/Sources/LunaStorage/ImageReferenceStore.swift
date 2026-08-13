@@ -3,6 +3,7 @@
 //  LunaStorage
 //
 
+import LunaAppConfig
 import LunaModels
 import Foundation
 
@@ -33,9 +34,10 @@ public final class ImageReferenceStore {
 
     private var containerURL: URL {
         if let overrideContainerURL { return overrideContainerURL }
-        return fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
-            ?? fileManager.temporaryDirectory
+        // The one container resolution, shared with `ReadingListStore`: the
+        // refcount index has to name the same `Articles/` directory the images
+        // are written to, in a staged run as well as a real one.
+        return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory
     }
 
     /// Images live alongside parsed article JSON in `Articles/` (shared, URL-hash-keyed).

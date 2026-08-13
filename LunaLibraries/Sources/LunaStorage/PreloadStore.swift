@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import LunaAppConfig
 import LunaModels
 import CryptoKit
 import Foundation
@@ -105,9 +106,10 @@ public final class PreloadStore {
 
     private var containerURL: URL {
         if let overrideContainerURL { return overrideContainerURL }
-        return fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
-            ?? fileManager.temporaryDirectory
+        // The one container resolution, shared with `ReadingListStore`: the
+        // preload cache sits beside the list it feeds, and a staged run points
+        // both at the same scratch directory.
+        return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory
     }
 
     private var preloadsDirectory: URL {

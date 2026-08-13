@@ -37,7 +37,7 @@ public enum ReaderSettings {
     public static func migrateFromStandardIfNeeded() {
         guard !defaults.bool(forKey: migratedKey) else { return }
         let standard = UserDefaults.standard
-        for key in [wpmKey, fontScaleKey, serifKey, lastReaderModeKey] {
+        for key in [wpmKey, fontScaleKey, serifKey, fontKey, lastReaderModeKey] {
             if let value = standard.object(forKey: key) { defaults.set(value, forKey: key) }
         }
         defaults.set(true, forKey: migratedKey)
@@ -116,22 +116,22 @@ public enum ReaderSettings {
         fontScale * systemTypeScale
     }
 
-    /// Legacy serif (New York) vs sans toggle — superseded by `font`, kept
-    /// only so `font` can honor a choice made before the typeface list existed.
+    /// Legacy serif (New York) vs sans toggle — superseded by `font`, kept for
+    /// compatibility with older clients and persisted settings.
     public static var useSerifFont: Bool {
         get { (defaults.object(forKey: serifKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: serifKey) }
     }
 
-    /// The reader typeface. Readers who set the old serif toggle keep their
-    /// look until they pick from the new list.
+    /// The reader typeface. Lexend is the default; unknown values from removed
+    /// font choices also resolve to Lexend.
     public static var font: ReaderFont {
         get {
             if let stored = defaults.string(forKey: fontKey),
                let font = ReaderFont(rawValue: stored) {
                 return font
             }
-            return useSerifFont ? .newYork : .system
+            return .lexend
         }
         set { defaults.set(newValue.rawValue, forKey: fontKey) }
     }

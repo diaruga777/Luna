@@ -158,9 +158,9 @@
  * family and highlight-accent pickers. ===================== */
 "Settings_readerFont_system_Luna" = "System";
 "Settings_readerFont_newYork_Luna" = "New York";
-"Settings_readerFont_charter_Luna" = "Charter";
-"Settings_readerFont_stixTwo_Luna" = "STIX Two";
-"Settings_readerFont_stixTwoText_Luna" = "STIX Two Text";
+"Settings_readerFont_lexend_Luna" = "Lexend";
+"Settings_readerFont_literata_Luna" = "Literata";
+"Settings_readerFont_notoSans_Luna" = "Noto Sans";
 "Settings_readerAccent_red_Luna" = "Red";
 "Settings_readerAccent_orange_Luna" = "Orange";
 "Settings_readerAccent_yellow_Luna" = "Yellow";

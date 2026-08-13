@@ -984,7 +984,7 @@ A **second, real-Safari path** for paywalled articles (the LunaSafari "Read in L
 
 ## Reader appearance (Settings)
 
-`ReaderSettings`: fontScale (S/M/L/XL segmented) and font (`ReaderFont` — System/New York/Charter/STIX Two, all iOS-resident, the named families openly licensed; legacy `useSerifFont` maps to New York/System until the user picks). The renderer reads font settings at render time and multiplies fontScale by the CLAMPED system Dynamic Type scale (`ReaderSettings.systemTypeScale`, 0.85…1.6, so accessibility sizes are honored without breaking the card column). Reading time and progress remain visible in article rows but are no longer user settings. The Reader settings page also owns link preload depth and Wi-Fi-only controls.
+`ReaderSettings`: fontScale (S/M/L/XL segmented) and font (`ReaderFont` — bundled Lexend, Literata, and Noto Sans, plus the iOS System/New York faces; Lexend is the default). Bundled font files and their SIL Open Font License text live in `LunaDesignSystem` resources. The legacy `useSerifFont` value is retained for compatibility but no longer controls the default. The renderer reads font settings at render time and multiplies fontScale by the CLAMPED system Dynamic Type scale (`ReaderSettings.systemTypeScale`, 0.85…1.6, so accessibility sizes are honored without breaking the card column). Reading time and progress remain visible in article rows but are no longer user settings. The Reader settings page also owns link preload depth and Wi-Fi-only controls.
 
 ## Read-aloud (Luna/Reader/SpeechController.swift)
 

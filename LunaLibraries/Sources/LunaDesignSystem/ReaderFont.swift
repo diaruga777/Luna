@@ -4,27 +4,28 @@
 //
 
 import UIKit
+import CoreText
 import LunaModels
 
-/// Preset reader typefaces. Every option ships with iOS — nothing is bundled
-/// or downloaded — and the named families are openly licensed designs picked
-/// for long-form readability: Charter (Bitstream's free license; the classic
-/// reading-app serif) and STIX Two Text (SIL Open Font License, designed for
-/// sustained text setting). User-selectable in Settings.
+/// Preset reader typefaces. System and New York are provided by iOS; the
+/// remaining families are bundled with LunaDesignSystem under the SIL Open
+/// Font License. User-selectable in Settings.
 public enum ReaderFont: String, CaseIterable {
+    case lexend
+    case literata
+    case notoSans
     /// San Francisco, the system sans.
     case system
     /// New York, the system serif design.
     case newYork
-    case charter
-    case stixTwo
 
     public var displayName: String {
         switch self {
+        case .lexend: return L10n.string("Settings_readerFont_lexend")
+        case .literata: return L10n.string("Settings_readerFont_literata")
+        case .notoSans: return L10n.string("Settings_readerFont_notoSans")
         case .system: return L10n.string("Settings_readerFont_system")
         case .newYork: return L10n.string("Settings_readerFont_newYork")
-        case .charter: return L10n.string("Settings_readerFont_charter")
-        case .stixTwo: return L10n.string("Settings_readerFont_stixTwo")
         }
     }
 
@@ -32,9 +33,10 @@ public enum ReaderFont: String, CaseIterable {
     /// which resolve through `UIFont.systemFont` instead of a family lookup.
     private var familyName: String? {
         switch self {
+        case .lexend: return "Lexend"
+        case .literata: return "Literata"
+        case .notoSans: return "Noto Sans"
         case .system, .newYork: return nil
-        case .charter: return L10n.string("Settings_readerFont_charter")
-        case .stixTwo: return L10n.string("Settings_readerFont_stixTwoText")
         }
     }
 
@@ -47,11 +49,12 @@ public enum ReaderFont: String, CaseIterable {
     }
 
     private func resolved(size: CGFloat, weight: UIFont.Weight, italic: Bool) -> UIFont {
+        Self.registerBundledFonts
         if let familyName, !UIFont.fontNames(forFamilyName: familyName).isEmpty {
             // Request the face through descriptor matching rather than
             // hard-coded PostScript names, so each family's own weight/italic
-            // lineup (Charter's Roman/Bold, STIX Two's optical weights) is
-            // resolved by CoreText and never drifts out of sync with the OS.
+            // lineup is resolved by CoreText and never drifts out of sync with
+            // the bundled variable font.
             var symbolic: UIFontDescriptor.SymbolicTraits = []
             if italic { symbolic.insert(.traitItalic) }
             if weight.rawValue >= UIFont.Weight.semibold.rawValue { symbolic.insert(.traitBold) }
@@ -63,8 +66,8 @@ public enum ReaderFont: String, CaseIterable {
             ])
             return UIFont(descriptor: descriptor, size: size)
         }
-        // The system designs — also the fallback should a named family ever be
-        // missing, in which case the nearest system look (serif) stands in.
+        // The system designs — also the fallback should a bundled family ever
+        // be missing, in which case the nearest system look stands in.
         var descriptor = UIFont.systemFont(ofSize: size, weight: weight).fontDescriptor
         if self != .system, let serif = descriptor.withDesign(.serif) {
             descriptor = serif
@@ -74,4 +77,21 @@ public enum ReaderFont: String, CaseIterable {
         }
         return UIFont(descriptor: descriptor, size: size)
     }
+
+    private static let registerBundledFonts: Void = {
+        let resources = [
+            (name: "Lexend", ext: "ttf"),
+            (name: "Literata", ext: "ttf"),
+            (name: "Literata-Italic", ext: "ttf"),
+            (name: "NotoSans", ext: "ttf"),
+            (name: "NotoSans-Italic", ext: "ttf"),
+        ]
+        for resource in resources {
+            guard let url = Bundle.module.url(
+                forResource: resource.name,
+                withExtension: resource.ext
+            ) else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }()
 }

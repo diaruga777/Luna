@@ -495,9 +495,10 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         processSellerCandidate(url)
     }
 
-    /// A Google result detail is not a navigation: its HTML describes Google, not
-    /// the seller. Process the first merchant URL independently through the shared
-    /// pipeline, then present exactly the same confirmation as a + tap.
+    /// Google's result-detail popover changes the DOM without a navigation, so
+    /// its HTML still describes Google, not the seller. Process the first
+    /// merchant URL independently through the shared pipeline, then present
+    /// exactly the same confirmation as a + tap.
     private func processSellerCandidate(_ url: URL) {
         Task { [weak self] in
             guard let self else { return }

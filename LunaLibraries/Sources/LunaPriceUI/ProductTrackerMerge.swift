@@ -14,11 +14,10 @@ import LunaStorage
 /// path (`ProductTrackerIngestor.ingest`) and the extension's immediate-editor
 /// path (`ExtensionProductPresenter.presentPriceEditor`).
 ///
-/// Before this existed, only the in-app path consulted `ProductMatcher
-/// .bestMatch` or seeded history from passive Safari snapshots — a share-sheet
-/// save of a product already being tracked created a second, unrelated
-/// tracker instead of merging into the first, even when both pages declared
-/// the SAME GTIN. `mergeIfPossible` is what both callers now ask first.
+/// `mergeIfPossible` is what both callers ask first, so a share-sheet save of
+/// a product already being tracked merges into the existing tracker — via
+/// `ProductMatcher.bestMatch` and the passive-snapshot history seed — instead
+/// of creating a second, unrelated tracker for the same GTIN.
 public enum ProductTrackerMerge {
 
     public enum Outcome: Equatable {
@@ -55,14 +54,13 @@ public enum ProductTrackerMerge {
               var matched = store.item(withID: matchID)?.priceTracker
         else { return .newTracker }
 
-        // Fix 8: read BEFORE this save's own store is added below. A tracker
-        // that has never been through a fan-out and still has fewer than two
-        // stores has effectively never been compared — the rule that "the
-        // merge path is never compared" (claudedocs/price-comparison.md) was
-        // written for a tracker that HAD already been through one, not for
-        // one a prior save merely created and left alone. Reading the count
-        // AFTER this save's own new store would make every ordinary merge
-        // look "already at 2 stores" and never fire at all.
+        // Fix 8 (claudedocs/price-comparison.md): read this count BEFORE this
+        // save's own store is added below. A tracker with no fan-out yet and
+        // fewer than two stores has never really been compared, even though
+        // "the merge path is never compared" was written for a tracker that
+        // HAD been through one. Reading the count after this save's new store
+        // is added would make every ordinary merge look already at 2 stores,
+        // and the comparison would never fire.
         let neverCompared = matched.pendingComparison == nil && matched.stores.count < 2
 
         let stores = product.trackerStores(fallbackURL: url)

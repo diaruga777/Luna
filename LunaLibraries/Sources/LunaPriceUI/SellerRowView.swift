@@ -11,18 +11,14 @@ import UIKit
 /// One seller in a tracked product's list: the site's icon, its NAME, and its
 /// price — in that order, on one 44pt line.
 ///
-/// Everything that used to be on the row's second line is gone. It read
-/// "amazon.com.au / $116.33 · Refreshed Jan 15 at 11:00 PM", which is a URL the
-/// user did not type, a price, and a timestamp for a number that changes daily —
-/// two lines to say "Amazon Australia, $116.33". The refresh time survives as
-/// the row's accessibility value, and the history it belongs to is the graph
-/// directly above.
+/// The refresh time lives in the row's accessibility value rather than a
+/// second visible line, and its history is the graph directly above.
 ///
-/// The icon is the real favicon, fetched through the shared `SiteIconCache` (the
-/// same cache the Reader's scrub chips use). Until it lands — and forever, for a
-/// host that serves none — the row shows a lettered badge rather than a generic
-/// compass, which is what the card drew for every seller alike: a `safari` glyph
-/// is not a seller's mark, it is the absence of one, repeated.
+/// The icon is the real favicon, fetched through the shared `SiteIconCache`
+/// (the same cache the Reader's scrub chips use). Until it lands — and
+/// forever, for a host that serves none — the row shows a lettered badge
+/// rather than a generic compass, so each row still marks a distinct seller
+/// instead of repeating the same glyph on every row.
 public final class SellerRowView: UIControl {
 
     /// One row's height. The list's viewport is sized in multiples of this, so

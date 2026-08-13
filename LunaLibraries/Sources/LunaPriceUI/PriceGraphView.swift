@@ -75,10 +75,9 @@ public final class PriceGraphView: UIView {
     /// Moves the alert line WITHOUT rebuilding the series.
     ///
     /// The alert row's slider and this line are two views of one number, so each
-    /// drives the other while it is being dragged. Going through `setData` would
-    /// work and would also drop the tapped-point callout and re-lay everything
-    /// out sixty times a second, which is what "the graph flickered while you
-    /// moved the slider" was.
+    /// drives the other while it is being dragged. Going through `setData`
+    /// instead would drop the tapped-point callout and re-lay everything out
+    /// sixty times a second, flickering the graph while the slider moves.
     public func setThresholdPrice(_ price: Decimal) {
         thresholdPrice = price
         thresholdMarker.isHidden = false

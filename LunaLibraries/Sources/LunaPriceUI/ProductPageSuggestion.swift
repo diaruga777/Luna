@@ -16,18 +16,17 @@ public struct ProductPageSuggestion: Equatable {
     public let metadata: ProductMetadata
 }
 
-/// The UNIFIED "should this live page be suggested as a seller?" decision.
+/// The one "should this live page be suggested as a seller?" decision.
 ///
-/// This deliberately calls `IngestPipeline` rather than reproducing its classifier
-/// and metadata-extractor branches. The search overlay is therefore subject to the
-/// same URL unwrapping, classification, product eligibility, and price rules as
-/// every other capture surface.
+/// This calls `IngestPipeline` directly, so the search overlay applies the same
+/// URL unwrapping, classification, product eligibility, and price rules as every
+/// other capture surface.
 ///
-/// A rendered `outerHTML` is supplied as `prefetchedHTML`, which avoids refetching
-/// a page that is already open and lets JS-hydrated product data take the same path.
-/// Google Shopping merchant links intentionally omit it: that HTML belongs to
-/// Google, so the pipeline fetches and evaluates the selected seller's own page.
-/// There is no special-case product detection in this type.
+/// A rendered `outerHTML` is supplied as `prefetchedHTML`, which avoids
+/// refetching a page that is already open and lets JS-hydrated product data
+/// take the same path. Google Shopping merchant links omit it, because that
+/// HTML belongs to Google — the pipeline fetches and evaluates the selected
+/// seller's own page instead.
 public extension ProductPageSuggestion {
 
     /// Processes `url` through the shared URL pipeline and returns a suggestion only

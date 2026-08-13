@@ -11,12 +11,12 @@ import LunaPriceCompare
 /// product card and in the extension editor, and the comparison document the
 /// Action Button intents hand back.
 ///
-/// The bundled seller directory already knows the answer — it is how the fan-out
-/// labels a retailer it searched — but a tracker persists URLs, not seller ids,
-/// so the name has to be recovered from the host. Directory first ("JB Hi-Fi",
+/// The bundled seller directory holds the answer the fan-out already used to
+/// label a searched retailer. A tracker persists URLs, not seller ids, so this
+/// type recovers the name from the host: the directory first ("JB Hi-Fi",
 /// "Best Buy"), then the registrable domain with its public suffix dropped and
-/// its first letter raised ("binglee.com.au" → "Binglee"). A row reading
-/// "binglee.com.au" was never the seller's name; it was Luna showing its work.
+/// its first letter raised ("binglee.com.au" → "Binglee"), so a seller row
+/// never shows a bare domain.
 public enum SellerNaming {
 
     /// The display name for the seller hosting `urlString`.

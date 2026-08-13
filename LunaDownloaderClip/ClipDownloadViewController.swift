@@ -33,8 +33,8 @@ final class ClipDownloadViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.string("AppClip_downloader_navigationTitle")
-        // Same appearance the host app pins: the clip pushes LunaReaderUI /
-        // LunaMediaDownload screens that are light-on-dark in both appearances.
+        // Pins the same appearance the host app uses. A clip does not
+        // inherit any trait from a host, so each screen must set it itself.
         AppearanceSettings.apply(to: self)
         view.backgroundColor = LunaColors.background
         configureLayout()
@@ -127,8 +127,8 @@ final class ClipDownloadViewController: UIViewController {
                 greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(
                 lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
-            // A clip opens full screen; a Download button thirteen inches wide is
-            // not a button.
+            // A clip opens full screen. This cap keeps the Download button
+            // from stretching to iPad width.
             stack.widthAnchor.constraint(
                 lessThanOrEqualToConstant: LunaLayout.readableWidth),
             stack.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),

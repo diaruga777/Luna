@@ -14,9 +14,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // The clip reads articles, so it installs the article kind pack — the
-        // same one call every other article surface makes, so the clip can never
-        // drift from them (see `ArticleKindComposition`).
+        // The clip reads articles, so it installs the article kind pack. This
+        // is the same call every article surface makes, so the clip cannot
+        // drift out of sync with them. See `ArticleKindComposition`.
         ArticleKindComposition.install()
         return true
     }

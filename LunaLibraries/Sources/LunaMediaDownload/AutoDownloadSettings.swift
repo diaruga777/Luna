@@ -28,7 +28,7 @@ public enum AutoDownloadSettings {
     /// `MediaStorageSettings`), which is mutually exclusive with local retention.
     /// The setter is module-internal: `MediaStorageSettings.option` is the only
     /// mutator, so it can never fall out of sync with the retention pref it pairs
-    /// with (see the deleted `.never` re-normalizations this used to need).
+    /// with.
     public internal(set) static var autoSaveDownloadsToPhotos: Bool {
         get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? false }
         set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }

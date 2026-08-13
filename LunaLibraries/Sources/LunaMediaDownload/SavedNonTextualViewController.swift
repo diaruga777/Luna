@@ -131,8 +131,9 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// The one column both stacks are laid out in: the view's margins, capped at
     /// the readable width so a wide iPad sheet doesn't stretch the media.
     private let contentColumn = UILayoutGuide()
-    /// Distance from the safe area to the bottom control stack — the same inset
-    /// the floating exit button used to keep.
+    /// Distance from the safe area to the bottom control stack — matches
+    /// `ExtensionExitButton`'s own inset so the margin reads the same as every
+    /// other Luna extension surface.
     private static let bottomInset = ExtensionExitButton.edgeInset
     /// The Photos button is inset one further standard margin on each side, so it
     /// reads as the media's own action rather than another full-width control.

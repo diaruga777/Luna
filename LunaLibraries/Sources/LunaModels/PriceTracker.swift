@@ -365,6 +365,42 @@ public struct PriceTracker: Codable, Equatable {
         self.rejectedSellerHosts = []
     }
 
+    /// Rebuilds a tracker from stored columns, field for field.
+    ///
+    /// Nothing is re-derived: the baseline an alert was set against is a stored
+    /// fact, and recomputing it from today's store prices would silently retune
+    /// every alert on a reload. The two invariants the initializers do enforce
+    /// still apply — a tracker always has at least one store, and a threshold is
+    /// clamped to the model's 1%…95% range — so a malformed row is repaired the
+    /// same way a malformed value would be anywhere else.
+    public static func stored(
+        productName: String,
+        stores: [PriceTrackerStore],
+        brand: String?,
+        productID: String?,
+        identifiers: ProductIdentifiers,
+        imageFileName: String?,
+        initialPrice: Decimal,
+        initialCurrency: String,
+        alertThresholdFraction: Double?,
+        isArchived: Bool,
+        alertAcknowledgedAt: Date?,
+        pendingComparison: PendingSellerComparison?,
+        rejectedSellerHosts: [String]
+    ) -> PriceTracker {
+        var tracker = PriceTracker(
+            productName: productName, stores: stores, brand: brand, productID: productID,
+            identifiers: identifiers, imageFileName: imageFileName,
+            alertThresholdFraction: alertThresholdFraction)
+        tracker.initialPrice = initialPrice
+        tracker.initialCurrency = initialCurrency
+        tracker.isArchived = isArchived
+        tracker.alertAcknowledgedAt = alertAcknowledgedAt
+        tracker.pendingComparison = pendingComparison
+        tracker.rejectedSellerHosts = rejectedSellerHosts.map { $0.lowercased() }
+        return tracker
+    }
+
     /// Marks the current alert as viewed (the user opened the alerting tracker), so
     /// the row stops floating to the top of the list and rejoins the price-tracking
     /// section. No-op when not alerting (nothing to acknowledge).

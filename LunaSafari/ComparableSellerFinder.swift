@@ -107,8 +107,8 @@ enum ComparableSellerFinder {
         matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
         var points: [ComparablePricePoint] = []
-        for entry in SharedProductMatching.loadIndex()
-        where SharedProductMatching.matches(page: page, indexEntry: entry) {
+        for entry in PriceHistoryIndex.load()
+        where ProductPageMatching.matches(page: page, indexEntry: entry) {
             for store in entry.stores {
                 for point in store.points {
                     guard let amount = Decimal(string: point.price),
@@ -132,7 +132,7 @@ enum ComparableSellerFinder {
     ) -> [ComparablePricePoint] {
         ProductSnapshotStore.shared
             .snapshots(forKeys: page.indexKeys)
-            .filter { $0.url != page.url && SharedProductMatching.matches(page: page, snapshot: $0) }
+            .filter { $0.url != page.url && ProductPageMatching.matches(page: page, snapshot: $0) }
             .compactMap { snapshot in
                 guard let amount = Decimal(string: snapshot.price) else { return nil }
                 let captured = instant(snapshot.capturedAt)

@@ -63,8 +63,8 @@ enum SharedProductMatching {
     /// The full answer for a page's extracted snapshot payload (the same shape
     /// `extractProductSnapshot()` sends as `productSnapshot`).
     static func historyAnswer(forPageSnapshot page: ProductSnapshot) -> HistoryAnswer {
-        let index = loadIndex()
-        let trackedMatch = index.first { matches(page: page, indexEntry: $0) }
+        let index = PriceHistoryIndex.load()
+        let trackedMatch = index.first { ProductPageMatching.matches(page: page, indexEntry: $0) }
 
         var points: [(price: Decimal, currency: String, day: String)] = []
         if let trackedMatch {
@@ -81,7 +81,8 @@ enum SharedProductMatching {
         let otherSnapshots = ProductSnapshotStore.shared
             .snapshots(forKeys: page.indexKeys)
             .filter { $0.url != page.url }
-        for snapshot in otherSnapshots where matches(page: page, snapshot: snapshot) {
+        for snapshot in otherSnapshots
+        where ProductPageMatching.matches(page: page, snapshot: snapshot) {
             if let amount = Decimal(string: snapshot.price) {
                 points.append((amount, snapshot.currency, snapshot.day))
             }

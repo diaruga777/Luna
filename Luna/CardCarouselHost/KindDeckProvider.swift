@@ -271,9 +271,8 @@ final class KindDeckProvider: CardDeckProviding {
     }
 
     /// Two kinds of broken wear the soft red rim: a failed SAVE, and a media item
-    /// whose DOWNLOAD failed. The second is the kind's own answer, which is why
-    /// it now shows in every app that draws media rather than only in the
-    /// Downloader.
+    /// whose DOWNLOAD failed. The second is the kind's own answer, so it shows in
+    /// every app that draws media, not only the Downloader.
     func deckEdgeGlowColor(forSlot slot: Int) -> UIColor? {
         guard let item = item(atSlot: slot) else { return nil }
         guard let presenter = presenter(for: item) else { return LunaColors.errorAccent }

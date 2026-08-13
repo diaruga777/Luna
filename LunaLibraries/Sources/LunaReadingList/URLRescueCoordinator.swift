@@ -6,15 +6,13 @@
 import Foundation
 import LunaModels
 import LunaStorage
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// Drives URL rescue for the main app: an inline attempt when a foreground save
 /// fails, a debounced background sweep of `.failed` items, one-shot manual
-/// rescues, and the extension→app pending-request hand-off. Modeled on
-/// `AudioScriptPipeline` (debounced `.readingListChanged` + foreground tracking +
-/// an NSLock'd in-flight set).
+/// rescues, and the extension→app pending-request hand-off. The debounced
+/// `.readingListChanged` sweep + foreground tracking is `ReadingListSweepDriver`
+/// (shared with `AudioScriptPipeline`); this class keeps its own NSLock'd
+/// in-flight set.
 ///
 /// The rescue ENGINE lives in `LunaURLRescue`, which this module must not link
 /// (it's main-app-only). The app shell (`URLRescueWiring`) injects it as `engine`
@@ -72,10 +70,20 @@ public final class URLRescueCoordinator {
     private let stats: RescueStatsStore
     private let debounceInterval: TimeInterval
     private let now: () -> Date
-    private let workQueue = DispatchQueue(label: "com.hsanabria.luna.urlRescueCoordinator", qos: .utility)
+    /// Owns the debounce scheduling + foreground tracking; `runSweep()` (this
+    /// class's own reentrancy-guarded sweep body) and `isForeground` stay here.
+    /// A foreground transition also drains queued extension→app hand-offs,
+    /// exactly as it did before the scheduling moved into the shared driver.
+    private lazy var sweepDriver = ReadingListSweepDriver(
+        queueLabel: "com.hsanabria.luna.urlRescueCoordinator",
+        debounceInterval: debounceInterval,
+        onForegroundChange: { [weak self] isForeground in
+            self?.isForeground = isForeground
+            if isForeground { self?.drainPendingRequests() }
+        },
+        runSweep: { [weak self] in self?.runSweep() })
 
     private var installed = false
-    private var debounceWorkItem: DispatchWorkItem?
     private var isSweeping = false
     private var isForeground = true
     private let inFlightLock = NSLock()
@@ -84,10 +92,6 @@ public final class URLRescueCoordinator {
     /// was reported. Process-local and never persisted: the eclipse bar on a
     /// failed card reads it, and it dies with the attempt.
     private var stages: [UUID: (stage: RescueStage, at: Date)] = [:]
-
-    private var notificationObserver: NSObjectProtocol?
-    private var foregroundObserver: NSObjectProtocol?
-    private var backgroundObserver: NSObjectProtocol?
 
     /// Max items rescued per sweep pass (serialized, so this bounds concurrent LLM use).
     public static let sweepBatchLimit = 3
@@ -110,12 +114,6 @@ public final class URLRescueCoordinator {
         self.now = now
     }
 
-    deinit {
-        [notificationObserver, foregroundObserver, backgroundObserver]
-            .compactMap { $0 }
-            .forEach { NotificationCenter.default.removeObserver($0) }
-    }
-
     // MARK: - Install
 
     /// Idempotent. Observes `.readingListChanged` (debounced) + foreground/
@@ -124,24 +122,9 @@ public final class URLRescueCoordinator {
     public func install() {
         guard !installed else { return }
         installed = true
-        #if canImport(UIKit)
-        notificationObserver = NotificationCenter.default.addObserver(
-            forName: .readingListChanged, object: nil, queue: .main
-        ) { [weak self] _ in self?.scheduleSweep(debounced: true) }
-        foregroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.isForeground = true
-            self?.drainPendingRequests()
-            self?.scheduleSweep(debounced: false)
-        }
-        backgroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.isForeground = false }
-        #endif
+        sweepDriver.install()
         reopenStaleVersionAttempts()
         drainPendingRequests()
-        scheduleSweep(debounced: false)
     }
 
     /// One free retry per shipped version. A failed save whose Apple Intelligence
@@ -293,13 +276,6 @@ public final class URLRescueCoordinator {
     }
 
     // MARK: - Sweep
-
-    private func scheduleSweep(debounced: Bool) {
-        debounceWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.runSweep() }
-        debounceWorkItem = work
-        workQueue.asyncAfter(deadline: .now() + (debounced ? debounceInterval : 0), execute: work)
-    }
 
     private func runSweep() {
         guard let engine = Self.engine, engine.isAvailable() else { return }

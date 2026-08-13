@@ -67,12 +67,10 @@ public struct FetchedMessage: Equatable {
     }
 }
 
-/// Opaque dedupe cursor persisted between fetches. The two provider-specific
-/// halves used to be one struct's two independently-settable fields (plus an
-/// optional wrapper standing in for "no cursor yet") — a shape that could hold
-/// an IMAP uid AND a Graph token at once, or neither, with nothing enforcing
-/// which combination a given provider actually produces. `.fresh` is the zero
-/// value that used to be a nil `MailCursor?` at the `fetchShares` boundary.
+/// Opaque dedupe cursor persisted between fetches. The enum holds exactly one
+/// provider's cursor shape at a time — an IMAP uid+uidValidity pair, a Graph
+/// token, or `.fresh` for "no cursor yet" — so a caller can never mix an IMAP
+/// value with a Graph token or lose the "not fetched" state to a stray nil.
 public enum MailCursor: Codable, Equatable {
     case fresh
     /// IMAP's uid+uidValidity high-water mark (the cursor resets when validity

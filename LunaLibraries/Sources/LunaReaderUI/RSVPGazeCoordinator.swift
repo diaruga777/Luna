@@ -27,7 +27,7 @@ protocol RSVPGazeCoordinatorDelegate: AnyObject {
 /// started/stopped, read-aloud turned on, the view appeared — and asks it one
 /// question back: is the reader looking away right now (so a play press can be
 /// recognised as an override). See `claudedocs/eye-tracking.md`.
-final class RSVPGazeCoordinator {
+final class RSVPGazeCoordinator: GazeTrackingDelegate {
 
     weak var delegate: RSVPGazeCoordinatorDelegate?
 
@@ -82,7 +82,7 @@ final class RSVPGazeCoordinator {
         self.tracker = tracker ?? ARFaceGazeTracker()
         self.now = now
         self.state = EyeTrackingState(userEnabled: ReaderSettings.eyeTrackingEnabled)
-        self.tracker.onSample = { [weak self] sample in self?.handle(sample) }
+        self.tracker.delegate = self
     }
 
     deinit { tracker.stop() }
@@ -198,7 +198,7 @@ final class RSVPGazeCoordinator {
 
     // MARK: - Gaze
 
-    private func handle(_ sample: GazeSample) {
+    func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample) {
         guard state.isWatching, let view = referenceView, let delegate else { return }
         let focus = delegate.gazeCoordinatorFocalPoint(self)
         // A missing face is an explicit lack of signal, not evidence that the

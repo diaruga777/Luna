@@ -14,10 +14,15 @@ import XCTest
 @testable import LunaReaderUI
 
 private final class ReliabilityGazeTracker: GazeTracking {
-    var onSample: ((GazeSample) -> Void)?
+    weak var delegate: GazeTrackingDelegate?
     var isRunning = false
     func start() { isRunning = true }
     func stop() { isRunning = false }
+
+    /// Reports a sample the way a live camera frame does.
+    func produce(_ sample: GazeSample) {
+        delegate?.gazeTracker(self, didProduce: sample)
+    }
 }
 
 final class RSVPEyeTrackingReliabilityTests: XCTestCase {
@@ -78,13 +83,13 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
         try playButton(in: reader).sendActions(for: .touchUpInside)
         XCTAssertTrue(reader.isPlaying)
 
-        tracker.onSample?(.faceLost)
+        tracker.produce(.faceLost)
         XCTAssertTrue(reader.isPlaying, "a dark room or dropped AR session must not interrupt reading")
         XCTAssertEqual(eye.trackingState, .unavailable)
         XCTAssertEqual(eye.tintColor, LunaColors.errorAccent)
         XCTAssertEqual(eye.accessibilityValue, L10n.string("Reader_rsvp_eyeTracking_unavailableAccessibilityValue"))
 
-        tracker.onSample?(.point(reader.focalGazePoint))
+        tracker.produce(.point(reader.focalGazePoint))
         XCTAssertEqual(eye.trackingState, .active,
                        "a usable gaze point should restore the blue active state immediately")
         XCTAssertEqual(eye.tintColor, GlassStyle.readingAccent)
@@ -97,7 +102,7 @@ final class RSVPEyeTrackingReliabilityTests: XCTestCase {
 
         // A stale/away sample before first play is not proof that gaze paused
         // the reader. The old heuristic incorrectly treated this as an override.
-        tracker.onSample?(.offScreen)
+        tracker.produce(.offScreen)
         try playButton(in: reader).sendActions(for: .touchUpInside)
 
         XCTAssertTrue(reader.isPlaying)

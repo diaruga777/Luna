@@ -18,10 +18,15 @@ import XCTest
 /// Stands in for `ARFaceGazeTracker` — face tracking is never available on the
 /// simulator, and the tests need to say exactly where the reader is looking.
 private final class StubGazeTracker: GazeTracking {
-    var onSample: ((GazeSample) -> Void)?
+    weak var delegate: GazeTrackingDelegate?
     var isRunning = false
     func start() { isRunning = true }
     func stop() { isRunning = false }
+
+    /// Reports a sample the way a live camera frame does.
+    func produce(_ sample: GazeSample) {
+        delegate?.gazeTracker(self, didProduce: sample)
+    }
 }
 
 final class RSVPEyeTrackingTests: XCTestCase {
@@ -103,7 +108,7 @@ final class RSVPEyeTrackingTests: XCTestCase {
         let step: TimeInterval = 0.03
         let deadline = clock + timeout
         while clock < deadline {
-            tracker.onSample?(sample)
+            tracker.produce(sample)
             if until() { return true }
             clock += step
             RunLoop.current.run(until: Date())

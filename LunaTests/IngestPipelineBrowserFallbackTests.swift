@@ -12,6 +12,16 @@ import LunaPaywallBypass
 import XCTest
 @testable import Luna
 
+/// A snapshot fallback that answers `product` for exactly one page.
+private struct StubProductInfoFallback: ProductInfoFallbackProviding {
+    let url: URL
+    let product: ProductInfo
+
+    func productInfo(forPageURL url: URL) -> ProductInfo? {
+        url == self.url ? product : nil
+    }
+}
+
 final class IngestPipelineBrowserFallbackTests: XCTestCase {
 
     /// Amazon often refuses the app/extension URLSession even though Safari's
@@ -25,9 +35,8 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
             imageURL: URL(string: "https://m.media-amazon.com/images/I/acme.jpg"),
             brand: "Acme", productID: "B0ACME1234",
             identifiers: ProductIdentifiers(sku: "B0ACME1234", brand: "Acme"))
-        let processor = ProductIngestProcessor(fallback: { candidateURL in
-            candidateURL == url ? expected : nil
-        })
+        let processor = ProductIngestProcessor(
+            fallback: StubProductInfoFallback(url: url, product: expected))
 
         let outcome = await IngestPipeline.process(
             IngestInput(url: url, source: .manual), timeout: 1,

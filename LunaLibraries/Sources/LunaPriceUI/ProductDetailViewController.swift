@@ -31,7 +31,25 @@ public enum ProductPriceRescue {
     /// The main app's "Ask Apple Intelligence to find the price" behavior for a
     /// no-price page, installed once at launch (nil in extensions → the offer is
     /// not made and behavior is unchanged).
-    public static var resolver: ((String) async -> ResolvedPrice?)?
+    public static var resolver: (any ProductPriceResolving)?
+}
+
+/// Resolves a price for a page that declares none. The one conformer is the
+/// app's URL-rescue leg; an extension installs nothing, and the offer is not
+/// made at all.
+public protocol ProductPriceResolving {
+    func resolvePrice(forURLString urlString: String) async -> ProductPriceRescue.ResolvedPrice?
+}
+
+/// Hands an item back to the containing app because an appex cannot keep a web
+/// session alive for the add-seller flow. Only the extension installs one; in the
+/// app the button opens the seller menu in place.
+///
+/// Main-actor because the handoff opens a URL through the extension host, which
+/// is what the closure this replaced inherited from the presenter it was built in.
+@MainActor
+public protocol AddSellerHandoffHandling {
+    func openContainingApp(forAddingSellerTo itemID: UUID)
 }
 
 /// **The** product surface: the product, its price history, its alert, and the
@@ -81,7 +99,7 @@ public final class ProductDetailViewController: UIViewController {
     private let priceFetcher: PriceFetching
     /// Non-nil only in an extension. The add button hands the item back to the
     /// containing app instead of trying to keep a web session alive in an appex.
-    private let openContainingAppForAddSeller: ((UUID) -> Void)?
+    private let addSellerHandoff: (any AddSellerHandoffHandling)?
     /// A just-merged seller URL to flash, or nil.
     private let highlightedURLString: String?
 
@@ -122,12 +140,12 @@ public final class ProductDetailViewController: UIViewController {
         itemID: UUID,
         priceFetcher: PriceFetching = PriceFetcher(),
         highlightedURLString: String? = nil,
-        openContainingAppForAddSeller: ((UUID) -> Void)? = nil
+        addSellerHandoff: (any AddSellerHandoffHandling)? = nil
     ) {
         self.itemID = itemID
         self.priceFetcher = priceFetcher
         self.highlightedURLString = highlightedURLString
-        self.openContainingAppForAddSeller = openContainingAppForAddSeller
+        self.addSellerHandoff = addSellerHandoff
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -306,13 +324,7 @@ public final class ProductDetailViewController: UIViewController {
     }
 
     private func configureAlertRow() {
-        alertRow.onChanged = { [weak self] fraction in
-            guard let self, let tracker = self.tracker, tracker.initialPrice > 0 else { return }
-            self.graphView.setThresholdPrice(tracker.initialPrice * (1 - Decimal(fraction)))
-        }
-        alertRow.onCommitted = { [weak self] fraction in
-            self?.commitThreshold(fraction: fraction)
-        }
+        alertRow.delegate = self
     }
 
     private func makeSellersHeading() -> UIView {
@@ -329,7 +341,7 @@ public final class ProductDetailViewController: UIViewController {
         addSellerButton.configuration = configuration
         addSellerButton.accessibilityLabel = L10n.string(
             "PriceTracker_tracking_addSellerButtonLabel")
-        if openContainingAppForAddSeller != nil {
+        if addSellerHandoff != nil {
             addSellerButton.showsMenuAsPrimaryAction = false
             addSellerButton.addTarget(
                 self, action: #selector(openContainingAppForSellerSearch), for: .touchUpInside)
@@ -399,7 +411,7 @@ public final class ProductDetailViewController: UIViewController {
     }
 
     @objc private func openContainingAppForSellerSearch() {
-        openContainingAppForAddSeller?(itemID)
+        addSellerHandoff?.openContainingApp(forAddingSellerTo: itemID)
     }
 
     @objc private func addSellerDeepLinkReceived(_ notification: Notification) {
@@ -706,7 +718,7 @@ public final class ProductDetailViewController: UIViewController {
     private func askIntelligenceForPrice(urlString: String) {
         guard let resolver = ProductPriceRescue.resolver else { return }
         Task { @MainActor [weak self] in
-            let resolved = await resolver(urlString)
+            let resolved = await resolver.resolvePrice(forURLString: urlString)
             guard let self, var current = self.tracker else { return }
             guard let resolved else {
                 self.presentPriceMessage(
@@ -809,5 +821,18 @@ extension ProductDetailViewController: ProductSearchOverlayDelegate {
         completion: @escaping (ProductSearchAddOutcome) -> Void
     ) {
         addSeller(urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html, report: completion)
+    }
+}
+
+extension ProductDetailViewController: AlertThresholdRowDelegate {
+    /// The graph's threshold line tracks the slider live, so the number and the
+    /// line are never two different answers mid-drag.
+    public func alertThresholdRow(_ row: AlertThresholdRow, didChangeFraction fraction: Double) {
+        guard let tracker, tracker.initialPrice > 0 else { return }
+        graphView.setThresholdPrice(tracker.initialPrice * (1 - Decimal(fraction)))
+    }
+
+    public func alertThresholdRow(_ row: AlertThresholdRow, didCommitFraction fraction: Double) {
+        commitThreshold(fraction: fraction)
     }
 }

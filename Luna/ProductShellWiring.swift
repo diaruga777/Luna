@@ -38,12 +38,7 @@ enum ProductShellWiring {
         ProductIntentHandoff.install()
         // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
         // Rescue Phase 6 UI).
-        ProductPriceRescue.resolver = { urlString in
-            guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
-            else { return nil }
-            return ProductPriceRescue.ResolvedPrice(
-                amount: info.priceAmount, currency: info.priceCurrency)
-        }
+        ProductPriceRescue.resolver = URLRescuePriceResolver()
     }
 
     // MARK: - Lifecycle
@@ -85,6 +80,18 @@ enum ProductShellWiring {
         deck.requestCentering(onSlotID: itemID)
         deck.reload()
         PriceTrackerAddSellerRoute.request(itemID: itemID)
+    }
+}
+
+/// The price editors' "Ask Apple Intelligence to find the price" leg: URL
+/// Rescue's product resolution, mapped onto the price the editor needs. Only the
+/// app installs one, so an extension never makes the offer.
+private struct URLRescuePriceResolver: ProductPriceResolving {
+    func resolvePrice(forURLString urlString: String) async -> ProductPriceRescue.ResolvedPrice? {
+        guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
+        else { return nil }
+        return ProductPriceRescue.ResolvedPrice(
+            amount: info.priceAmount, currency: info.priceCurrency)
     }
 }
 

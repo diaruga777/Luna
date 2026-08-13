@@ -26,8 +26,15 @@ import UIKit
 /// between the two, so setting an alert never moves the layout underneath.
 ///
 /// Presentation-only: it updates its own readout live and reports the fraction
-/// through `onChanged` (continuously, so the host can move the graph's line with
-/// it) and `onCommitted` (once, when the host should persist).
+/// to its delegate — continuously while the slider moves, so the host can move
+/// the graph's line with it, and once on commit, when the host should persist.
+public protocol AlertThresholdRowDelegate: AnyObject {
+    /// The slider moved. Fired continuously.
+    func alertThresholdRow(_ row: AlertThresholdRow, didChangeFraction fraction: Double)
+    /// The drag ended, or Set was tapped: the final fraction, to persist.
+    func alertThresholdRow(_ row: AlertThresholdRow, didCommitFraction fraction: Double)
+}
+
 public final class AlertThresholdRow: UIView {
 
     /// The row's fixed height. Fixed because both hosts lay the row out between
@@ -35,10 +42,9 @@ public final class AlertThresholdRow: UIView {
     /// would resize the graph above it.
     public static let height: CGFloat = 46
 
-    /// Fired continuously while the slider moves.
-    public var onChanged: ((Double) -> Void)?
-    /// Fired once the drag ends (or Set is tapped), with the final fraction.
-    public var onCommitted: ((Double) -> Void)?
+    /// The host that moves the graph line and persists the threshold. Weak: the
+    /// host owns this row.
+    public weak var delegate: (any AlertThresholdRowDelegate)?
 
     private let accent = LunaSurfacePalette.baseColor(for: .priceTracker)
     private let iconView = UIImageView()
@@ -181,7 +187,7 @@ public final class AlertThresholdRow: UIView {
             applyState()
         }
         updateReadout()
-        onChanged?(Double(slider.value))
+        delegate?.alertThresholdRow(self, didChangeFraction: Double(slider.value))
     }
 
     @objc private func sliderCommitted() {
@@ -189,7 +195,7 @@ public final class AlertThresholdRow: UIView {
             isUnset = false
             applyState()
         }
-        onCommitted?(Double(slider.value))
+        delegate?.alertThresholdRow(self, didCommitFraction: Double(slider.value))
     }
 
     /// The unset state's button: commits the parked default as-is, so one tap
@@ -197,6 +203,6 @@ public final class AlertThresholdRow: UIView {
     @objc private func setAlertTapped() {
         isUnset = false
         applyState()
-        onCommitted?(Double(slider.value))
+        delegate?.alertThresholdRow(self, didCommitFraction: Double(slider.value))
     }
 }

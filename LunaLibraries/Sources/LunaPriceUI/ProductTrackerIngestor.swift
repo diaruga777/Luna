@@ -22,26 +22,15 @@ public final class ProductTrackerIngestor {
     /// Test seam: which snapshot store history-seeding reads. Production reads
     /// the shared App Group one.
     var snapshotStore: ProductSnapshotStore = .shared
-    /// Test seam: the immediate post-seed refresh. Production drives the real
-    /// single-tracker `PriceRefreshCoordinator` (which also regenerates the
-    /// history index on completion).
-    var refreshRunner: (UUID) async -> PriceRefreshOutcome? = {
-        await PriceRefreshCoordinator.shared.refreshTracker(itemID: $0)
-    }
+    /// Test seam: the immediate post-seed refresh.
+    var refresher: any SingleTrackerRefreshing = CoordinatorTrackerRefresher()
     /// Test seam: the history-index regeneration `finishSeeding` fires right
-    /// after persisting. Production regenerates the real index.
-    var indexRegenerator: () -> Void = { PriceHistoryIndexWriter.regenerate() }
-    /// Test seam: STARTING the save-time alternative-seller fan-out. Production
-    /// stamps the pending marker and runs the fan-out in the background — and
-    /// does nothing at all when the product kind isn't composed in this process.
-    var comparisonStarter: (UUID, URL, ReadingListStore) -> Void = {
-        SellerComparison.beginAndRunInBackground(itemID: $0, sourceURL: $1, store: $2)
-    }
-    /// Test seam for the complete product-artwork pass. Production first tries
-    /// the declared product image, then a page header image, then the favicon.
-    var artworkLoader: (URL?, URL) async -> Data? = { primaryURL, pageURL in
-        await ProductTrackerArtwork.fetch(primaryURL: primaryURL, pageURL: pageURL)
-    }
+    /// after persisting.
+    var indexRegenerator: any PriceHistoryIndexRegenerating = PriceHistoryIndexRegenerator()
+    /// Test seam: STARTING the save-time alternative-seller fan-out.
+    var comparisonStarter: any SellerComparisonStarting = BackgroundSellerComparisonStarter()
+    /// Test seam for the complete product-artwork pass.
+    var artworkLoader: any ProductArtworkLoading = ProductTrackerArtworkLoader()
 
     public init() {}
 
@@ -66,7 +55,8 @@ public final class ProductTrackerIngestor {
             // gets the same product → header → favicon attempt.
             if var tracker = store.item(withID: matchID)?.priceTracker,
                tracker.imageFileName == nil,
-               let data = await artworkLoader(product.imageURL, url) {
+               let data = await artworkLoader.artworkData(
+                primaryURL: product.imageURL, pageURL: url) {
                 tracker.imageFileName = writeArtwork(data, for: matchID, store: store)
                 store.updatePriceTracker(tracker, for: matchID)
             }
@@ -92,7 +82,8 @@ public final class ProductTrackerIngestor {
             identifiers: product.identifiers.merging(ProductIdentifiers(brand: product.brand)),
             alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction(
                 notificationsEverRequested: notificationsRequested))
-        if let data = await artworkLoader(product.imageURL, url) {
+        if let data = await artworkLoader.artworkData(
+            primaryURL: product.imageURL, pageURL: url) {
             tracker.imageFileName = writeArtwork(data, for: item.id, store: store)
         }
         // BLOCKING, and part of creating the save rather than a job that runs
@@ -111,7 +102,7 @@ public final class ProductTrackerIngestor {
         // appears now with the one seller they were looking at, carries a
         // "checking for other sellers" row while the run is out, and grows as
         // the sellers land.
-        comparisonStarter(item.id, url, store)
+        comparisonStarter.startComparison(itemID: item.id, sourceURL: url, store: store)
 
         PriceTrackerSaveAnnouncement.post(
             itemID: item.id, source: item.effectiveCaptureSource,
@@ -126,7 +117,7 @@ public final class ProductTrackerIngestor {
     /// wrapped in a background task: Feature 2's bounce-back may background the
     /// app immediately after this call returns.
     private func finishSeeding(itemID: UUID) {
-        indexRegenerator()
+        indexRegenerator.regenerate()
         var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(
             withName: "ProductSnapshotSeedRefresh"
@@ -143,7 +134,7 @@ public final class ProductTrackerIngestor {
             // Regenerates the index again on completion (`refreshTracker`
             // does this itself in production) — a live price is exactly the
             // kind of change the history pill's data should reflect right away.
-            _ = await refreshRunner(itemID)
+            _ = await refresher.refresh(itemID: itemID)
             await MainActor.run { UIApplication.shared.endBackgroundTask(taskID) }
         }
     }

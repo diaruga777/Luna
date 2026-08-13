@@ -10,6 +10,66 @@ import LunaStorage
 @testable import LunaPriceUI
 import XCTest
 
+/// Test doubles for the product-save seams, shared by every product suite in
+/// the bundle: a fan-out start that records instead of running, a refresh that
+/// answers a fixture, and the two no-op halves of `finishSeeding`.
+final class RecordingComparisonStarter: SellerComparisonStarting {
+    /// Every kick, in order.
+    private(set) var kicks: [(itemID: UUID, sourceURL: URL)] = []
+
+    func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore) {
+        kicks.append((itemID, sourceURL))
+    }
+}
+
+/// A start that must never happen — the assertion IS the double.
+struct ForbiddenComparisonStarter: SellerComparisonStarting {
+    let reason: String
+
+    func startComparison(itemID: UUID, sourceURL: URL, store: ReadingListStore) {
+        XCTFail(reason)
+    }
+}
+
+/// A refresh that records the tracker it was asked for and answers `outcome`.
+final class StubTrackerRefresher: SingleTrackerRefreshing {
+    var outcome: PriceRefreshOutcome?
+    private(set) var refreshedItemIDs: [UUID] = []
+    /// Called on each refresh, so a test can fulfill an expectation from inside
+    /// the fire-and-forget Task that drives it.
+    var onRefresh: (() -> Void)?
+
+    init(outcome: PriceRefreshOutcome? = nil) { self.outcome = outcome }
+
+    func refresh(itemID: UUID) async -> PriceRefreshOutcome? {
+        refreshedItemIDs.append(itemID)
+        onRefresh?()
+        return outcome
+    }
+}
+
+/// The index regeneration a test does not want to run against the real file.
+struct SilentIndexRegenerator: PriceHistoryIndexRegenerating {
+    func regenerate() {}
+}
+
+/// Artwork that answers `data` for any page (nil ⇒ no image at all) and records
+/// what it was asked for.
+final class StubArtworkLoader: ProductArtworkLoading, @unchecked Sendable {
+    private let data: Data?
+    private(set) var requestedPrimaryURLs: [URL?] = []
+    /// Called on each load, so a test can await the fire-and-forget backfill.
+    var onLoad: (() -> Void)?
+
+    init(data: Data?) { self.data = data }
+
+    func artworkData(primaryURL: URL?, pageURL: URL) async -> Data? {
+        requestedPrimaryURLs.append(primaryURL)
+        onLoad?()
+        return data
+    }
+}
+
 /// `ProductTrackerIngestor`'s Feature 1 seeding: matched snapshots become a
 /// new store per new host, merge into an existing same-host store, day-bucket
 /// with lowest-wins, never touch `initialPrice`, and kick a single-tracker
@@ -28,14 +88,14 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
-        ingestor.indexRegenerator = {}
+        ingestor.indexRegenerator = SilentIndexRegenerator()
         // This suite is about SEEDING, so the fan-out is stubbed out at the
         // ingestor's own seam rather than left to whatever a previously-run
         // class left in `SellerComparisonRunner.installed`. With it live, a
         // merge kicks a comparison that completes empty and re-bases
         // `initialPrice` onto the store median — a real behaviour, asserted by
         // `SellerComparisonTests`, and pure noise here.
-        ingestor.comparisonStarter = { _, _, _ in }
+        ingestor.comparisonStarter = RecordingComparisonStarter()
         // Never the real App Group store: a test must not read (or write) the
         // observations a developer's own browsing left behind.
         ingestor.snapshotStore = .temporary(directory: &snapshotDirectory)
@@ -71,16 +131,13 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
     }
 
     /// Awaits the fire-and-forget post-seed refresh Task by fulfilling an
-    /// expectation from inside the injected `refreshRunner`.
+    /// expectation from inside the installed refresher.
     private func expectRefresh(returning outcome: PriceRefreshOutcome? = nil) -> (XCTestExpectation, () -> Void) {
-        let expectation = expectation(description: "refreshRunner invoked")
-        var capturedItemID: UUID?
-        ingestor.refreshRunner = { itemID in
-            capturedItemID = itemID
-            expectation.fulfill()
-            return outcome
-        }
-        return (expectation, { XCTAssertNotNil(capturedItemID) })
+        let expectation = expectation(description: "the tracker refresh ran")
+        let refresher = StubTrackerRefresher(outcome: outcome)
+        refresher.onRefresh = { expectation.fulfill() }
+        ingestor.refresher = refresher
+        return (expectation, { XCTAssertFalse(refresher.refreshedItemIDs.isEmpty) })
     }
 
     // MARK: - New tracker

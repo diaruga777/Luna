@@ -33,6 +33,22 @@ public protocol PriceFetching {
     func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice?
 }
 
+/// Renders a page in a WKWebView and hands back the rendered `outerHTML`. A
+/// seam because the render is the one part of a price fetch a test cannot
+/// afford: the live conformer is `WebViewPriceHTMLRenderer`.
+public protocol PriceHTMLRendering {
+    func renderedHTML(for url: URL) async -> String?
+}
+
+/// Production: the real off-screen WebView.
+public struct WebViewPriceHTMLRenderer: PriceHTMLRendering {
+    public init() {}
+
+    public func renderedHTML(for url: URL) async -> String? {
+        await WebViewPriceRenderer.renderedHTML(for: url)
+    }
+}
+
 /// Live `PriceFetching`: static extraction first (via the pure
 /// `ProductPageDetector`), then a WKWebView render fallback for JS-loaded prices.
 public final class PriceFetcher: PriceFetching {
@@ -40,7 +56,7 @@ public final class PriceFetcher: PriceFetching {
     private let detector: ProductPageDetector
     /// Renders a URL in a WKWebView and returns the rendered `outerHTML`. Injected
     /// so save-time / refresh can run the real WebView while tests stay headless.
-    private let renderHTML: (URL) async -> String?
+    private let renderer: any PriceHTMLRendering
     /// Hard ceiling on the WHOLE price fetch (static fetch + WebView render). Even
     /// with each stage individually bounded, this is the absolute backstop so a save
     /// can NEVER hang waiting on a price — on timeout it returns nil and the caller
@@ -50,12 +66,12 @@ public final class PriceFetcher: PriceFetching {
     public init(
         fetcher: HTMLFetching = ArticleFetcher(),
         detector: ProductPageDetector = ProductPageDetector(),
-        renderHTML: ((URL) async -> String?)? = nil,
+        renderer: any PriceHTMLRendering = WebViewPriceHTMLRenderer(),
         overallTimeoutSeconds: UInt64 = 30
     ) {
         self.fetcher = fetcher
         self.detector = detector
-        self.renderHTML = renderHTML ?? { url in await WebViewPriceRenderer.renderedHTML(for: url) }
+        self.renderer = renderer
         self.overallTimeoutSeconds = overallTimeoutSeconds
     }
 
@@ -94,7 +110,9 @@ public final class PriceFetcher: PriceFetching {
 
         // 2) Rendered-DOM fallback: run the page's JS, then re-extract statically
         //    from the rendered markup (the price now lives in the DOM / app state).
-        guard let url = URL(string: urlString), let rendered = await renderHTML(url) else {
+        guard let url = URL(string: urlString),
+              let rendered = await renderer.renderedHTML(for: url)
+        else {
             SaveDiagnostics.record("price: render tier produced nothing", category: "price")
             return nil
         }

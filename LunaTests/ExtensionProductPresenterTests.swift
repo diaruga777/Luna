@@ -51,7 +51,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
         store = ReadingListStore(containerURL: tempDirectory)
         presenter = ExtensionProductPresenter()
         presenter.snapshotStore = .temporary(directory: &snapshotDirectory)
-        presenter.artworkLoader = { _, _ in nil }
+        presenter.artworkLoader = StubArtworkLoader(data: nil)
     }
 
     override func tearDown() {
@@ -93,11 +93,9 @@ final class ExtensionProductPresenterTests: XCTestCase {
         let url = URL(string: "https://www.amazon.com.au/acme/dp/B0ACME1234")!
         let imageURL = URL(string: "https://m.media-amazon.com/images/I/acme.jpg")!
         let loaded = expectation(description: "artwork loader")
-        presenter.artworkLoader = { primaryURL, _ in
-            XCTAssertEqual(primaryURL, imageURL)
-            loaded.fulfill()
-            return Data("amazon-artwork".utf8)
-        }
+        let loader = StubArtworkLoader(data: Data("amazon-artwork".utf8))
+        loader.onLoad = { loaded.fulfill() }
+        presenter.artworkLoader = loader
         _ = store.add(urlString: url.absoluteString)
         _ = present(
             product: ProductInfo(
@@ -107,6 +105,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
             url: url)
 
         await fulfillment(of: [loaded], timeout: 2)
+        XCTAssertEqual(loader.requestedPrimaryURLs, [imageURL])
         for _ in 0..<50 {
             if store.item(forURLString: url.absoluteString)?.priceTracker?.imageFileName != nil {
                 break
@@ -153,10 +152,9 @@ final class ExtensionProductPresenterTests: XCTestCase {
     /// presenter, not just through `ProductTrackerMerge` directly.
     func testAMergeKicksAComparisonWhenTheTargetHasNeverBeenCompared() {
         let landed = expectation(description: "comparison ran")
-        SellerComparisonRunner.installed = { _, _ in
-            landed.fulfill()
-            return SellerFanOutOutcome(results: [], attemptedSellerIDs: [], stopReason: .exhausted)
-        }
+        let runner = StubSellerFanOutRunner()
+        runner.onRun = { landed.fulfill() }
+        SellerComparisonRunner.installed = runner
 
         let existingURL = URL(string: "https://jbhifi.example/p/1")!
         let existingItem = store.add(urlString: existingURL.absoluteString)

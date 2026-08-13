@@ -29,7 +29,7 @@ final class SellerComparisonTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
-        ingestor.indexRegenerator = {}
+        ingestor.indexRegenerator = SilentIndexRegenerator()
         snapshotStore = .temporary(directory: &snapshotDirectory)
         ingestor.snapshotStore = snapshotStore
         SellerComparisonRunner.snapshotStore = snapshotStore
@@ -265,15 +265,12 @@ final class SellerComparisonTests: XCTestCase {
         // `@Sendable`, so the counts have to live somewhere that can be shared
         // across the boundary rather than mutated through the capture.
         let countsSeenDuringTheRun = CountsBox()
-        SellerComparisonRunner.installed = { [store] _, onResult in
-            for found in results {
-                await onResult?(found)
-                countsSeenDuringTheRun.append(
-                    store?.item(withID: item.id)?.priceTracker?.stores.count ?? 0)
-            }
-            return SellerFanOutOutcome(
-                results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
+        let runner = StubSellerFanOutRunner(results: results)
+        runner.afterEachResult = { [store] in
+            countsSeenDuringTheRun.append(
+                store?.item(withID: item.id)?.priceTracker?.stores.count ?? 0)
         }
+        SellerComparisonRunner.installed = runner
         _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
         XCTAssertEqual(countsSeenDuringTheRun.values, [2, 3], "persisted as each one landed")
@@ -375,15 +372,16 @@ final class SellerComparisonTests: XCTestCase {
     /// and returns, and the card the announcement centers is already on screen.
     func testANewTrackerStartsAComparisonWithoutWaitingForIt() async {
         let item = store.add(urlString: "https://source.example/p/1")
-        var started: [String] = []
-        ingestor.comparisonStarter = { _, url, _ in started.append(url.absoluteString) }
-        ingestor.refreshRunner = { _ in nil }
+        let starter = RecordingComparisonStarter()
+        ingestor.comparisonStarter = starter
+        ingestor.refresher = StubTrackerRefresher()
 
         await ingestor.ingest(
             item, url: URL(string: "https://source.example/p/1")!,
             product: product(), store: store)
 
-        XCTAssertEqual(started, ["https://source.example/p/1"])
+        XCTAssertEqual(
+            starter.kicks.map(\.sourceURL.absoluteString), ["https://source.example/p/1"])
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 1)
     }
 
@@ -401,15 +399,15 @@ final class SellerComparisonTests: XCTestCase {
             PriceTrackerStore(urlString: "https://other.example/p/1", lastPrice: 90, currency: "USD"))
         store.savePriceTracker(tracker, for: existing.id)
         let incoming = store.add(urlString: "https://source.example/p/1?ref=x")
-        var ran = false
-        ingestor.comparisonStarter = { _, _, _ in ran = true }
-        ingestor.refreshRunner = { _ in nil }
+        let starter = RecordingComparisonStarter()
+        ingestor.comparisonStarter = starter
+        ingestor.refresher = StubTrackerRefresher()
 
         await ingestor.ingest(
             incoming, url: URL(string: "https://source.example/p/1?ref=x")!,
             product: product(), store: store)
 
-        XCTAssertFalse(ran)
+        XCTAssertTrue(starter.kicks.isEmpty)
     }
 
     /// Fix 8's carve-out: a merge into a tracker that has NEVER been through
@@ -425,15 +423,15 @@ final class SellerComparisonTests: XCTestCase {
                 price: 100, currency: "USD", brand: "Acme", productID: "0012345678905"),
             for: existing.id)
         let incoming = store.add(urlString: "https://source.example/p/1?ref=x")
-        var kickedItemID: UUID?
-        ingestor.comparisonStarter = { itemID, _, _ in kickedItemID = itemID }
-        ingestor.refreshRunner = { _ in nil }
+        let starter = RecordingComparisonStarter()
+        ingestor.comparisonStarter = starter
+        ingestor.refresher = StubTrackerRefresher()
 
         await ingestor.ingest(
             incoming, url: URL(string: "https://source.example/p/1?ref=x")!,
             product: product(), store: store)
 
-        XCTAssertEqual(kickedItemID, existing.id)
+        XCTAssertEqual(starter.kicks.map(\.itemID), [existing.id])
     }
 
     /// No runner installed (an app that doesn't compose the product kind, or a
@@ -560,28 +558,17 @@ final class SellerComparisonTests: XCTestCase {
         subject.beginPendingComparison(sourceURLString: "https://source.example/p/1")
         store.savePriceTracker(subject, for: item.id)
 
-        let runs = Counter()
-        SellerComparisonRunner.installed = { _, onResult in
-            await runs.increment()
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            let found = self.result(domain: "a.example", price: "80")
-            await onResult?(found)
-            return SellerFanOutOutcome(
-                results: [found], attemptedSellerIDs: [], stopReason: .reachedTarget)
-        }
+        let runner = StubSellerFanOutRunner(
+            results: [result(domain: "a.example", price: "80")],
+            delayNanoseconds: 120_000_000)
+        SellerComparisonRunner.installed = runner
 
         async let first = SellerComparison.complete(itemID: item.id, store: store)
         async let second = SellerComparison.complete(itemID: item.id, store: store)
         _ = await (first, second)
 
-        let count = await runs.value
-        XCTAssertEqual(count, 1, "one fan-out, two callers")
+        XCTAssertEqual(runner.runCount, 1, "one fan-out, two callers")
         XCTAssertEqual(store.item(withID: item.id)?.priceTracker?.stores.count, 2)
-    }
-
-    private actor Counter {
-        private(set) var value = 0
-        func increment() { value += 1 }
     }
 
     // MARK: - Helpers
@@ -589,16 +576,15 @@ final class SellerComparisonTests: XCTestCase {
     /// A stub fan-out that streams `results` and then returns them.
     /// `beforeReturning` runs after the last one has landed and before the run
     /// settles the baseline — the window in which the user can touch the alert.
+    @discardableResult
     private func installRunner(
         results: [ComparableSellerResult],
         beforeReturning: (@Sendable () -> Void)? = nil
-    ) {
-        SellerComparisonRunner.installed = { _, onResult in
-            for found in results { await onResult?(found) }
-            beforeReturning?()
-            return SellerFanOutOutcome(
-                results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
-        }
+    ) -> StubSellerFanOutRunner {
+        let runner = StubSellerFanOutRunner(results: results)
+        runner.beforeReturning = beforeReturning
+        SellerComparisonRunner.installed = runner
+        return runner
     }
 
     /// The whole save-time leg, START TO FINISH, for a tracker already persisted
@@ -614,5 +600,48 @@ final class SellerComparisonTests: XCTestCase {
             else { return 0 }
         }
         return await SellerComparison.complete(itemID: itemID, store: store, now: now)
+    }
+}
+
+/// The fan-out every product suite installs instead of the live one: it streams
+/// `results` (after an optional delay, so two callers can overlap on one run),
+/// then answers with them. Shared across the product suites, which is why it is
+/// not private.
+final class StubSellerFanOutRunner: SellerFanOutRunning, @unchecked Sendable {
+    private let results: [ComparableSellerResult]
+    private let delayNanoseconds: UInt64?
+    private let lock = NSLock()
+    private var runs = 0
+
+    /// Called as the run starts — before anything has landed.
+    var onRun: (@Sendable () -> Void)?
+    /// Called after each streamed result has been attached and persisted, which
+    /// is where "the list fills as they land" is observable.
+    var afterEachResult: (@Sendable () -> Void)?
+    /// Called once every result has landed, before the run returns.
+    var beforeReturning: (@Sendable () -> Void)?
+
+    init(results: [ComparableSellerResult] = [], delayNanoseconds: UInt64? = nil) {
+        self.results = results
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    /// How many runs were started. Two callers of one pending comparison must
+    /// produce exactly one.
+    var runCount: Int { lock.withLock { runs } }
+
+    func run(
+        _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult?
+    ) async -> SellerFanOutOutcome? {
+        lock.withLock { runs += 1 }
+        onRun?()
+        if let delayNanoseconds { try? await Task.sleep(nanoseconds: delayNanoseconds) }
+        for found in results {
+            await onResult?(found)
+            afterEachResult?()
+        }
+        beforeReturning?()
+        return SellerFanOutOutcome(
+            results: results, attemptedSellerIDs: [], stopReason: .reachedTarget)
     }
 }

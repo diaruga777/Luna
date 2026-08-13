@@ -10,6 +10,32 @@ import LunaModels
 import LunaPriceCompare
 import LunaStorage
 
+/// One fan-out run, whoever runs it. `onResult` is called as each verified
+/// seller lands, which is what lets the store list fill in front of the user
+/// instead of all at once at the end.
+///
+/// It is a contract rather than a call because every surface asks
+/// `SellerComparisonRunner.installed`, and a process that did not compose the
+/// product kind installs nothing — "no comparison ran" and "no other seller
+/// sells this" are different answers and must stay so.
+public protocol SellerFanOutRunning: Sendable {
+    func run(
+        _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult?
+    ) async -> SellerFanOutOutcome?
+}
+
+/// The live run: the full profile against `PipelineSellerNetworking`, bounded by
+/// an outer hard cap and logged per candidate.
+public struct LiveSellerFanOutRunner: SellerFanOutRunning {
+    public init() {}
+
+    public func run(
+        _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult?
+    ) async -> SellerFanOutOutcome? {
+        await SellerComparisonRunner.liveRun(request, onResult: onResult)
+    }
+}
+
 /// The alternative-seller fan-out as the APP surfaces run it: the lean engine
 /// (`LunaPriceCompare`) wired to real networking and to the whole shared ingest
 /// pipeline.
@@ -26,19 +52,15 @@ import LunaStorage
 /// (the same shape as `ActionButtonIntentSupport`'s media seams).
 public enum SellerComparisonRunner {
 
-    /// One fan-out run. Nil where the product kind is not composed. `onResult`
-    /// is called as each verified seller lands, which is what lets the store
-    /// list fill in front of the user instead of all at once at the end.
-    public typealias Run =
-        @Sendable (SellerFanOutRequest, SellerFanOut.OnResult?) async -> SellerFanOutOutcome?
-
     /// The installed runner. Written ONLY by `ProductKindComposition.install()`
-    /// in production; tests substitute a stub.
-    public static var installed: Run?
+    /// in production; tests substitute a stub. Nil where the product kind is not
+    /// composed, and that nil is load-bearing — `SellerComparison` refuses to
+    /// stamp a pending marker for a run that can never happen.
+    public static var installed: (any SellerFanOutRunning)?
 
     /// Installs the live fan-out. Idempotent.
     public static func install() {
-        installed = { request, onResult in await liveRun(request, onResult: onResult) }
+        installed = LiveSellerFanOutRunner()
     }
 
     /// Where fan-out results are recorded as product snapshots. Test seam; nil
@@ -61,12 +83,14 @@ public enum SellerComparisonRunner {
     ) async -> SellerFanOutOutcome? {
         guard let installed else { return nil }
         let store = snapshotStore
-        guard store != nil || onResult != nil else { return await installed(request, nil) }
+        guard store != nil || onResult != nil else {
+            return await installed.run(request, onResult: nil)
+        }
         let recording: SellerFanOut.OnResult = { result in
             store?.record(payload: result.snapshotPayload)
             await onResult?(result)
         }
-        return await installed(request, recording)
+        return await installed.run(request, onResult: recording)
     }
 
     // MARK: - The live wiring
@@ -81,7 +105,7 @@ public enum SellerComparisonRunner {
     /// surface open indefinitely.
     public static let hardCapGrace: TimeInterval = 5
 
-    private static func liveRun(
+    static func liveRun(
         _ request: SellerFanOutRequest, onResult: SellerFanOut.OnResult?
     ) async -> SellerFanOutOutcome? {
         // Refuse the WHOLE run up front in a test process rather than letting a

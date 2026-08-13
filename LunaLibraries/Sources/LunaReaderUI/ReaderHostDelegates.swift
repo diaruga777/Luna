@@ -1,5 +1,5 @@
 //
-//  ReaderLinkActivationDelegate.swift
+//  ReaderHostDelegates.swift
 //  LunaReaderUI
 //
 

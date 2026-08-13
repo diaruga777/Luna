@@ -549,7 +549,7 @@ open class ShareViewController: UIViewController {
                 return
             }
             let preview = Self.practicePreview(for: url, app: app)
-            preview.onDone = { [weak self] in self?.completeSilently() }
+            preview.completionDelegate = self
             self.presentModally(preview)
         }
         return true
@@ -957,6 +957,14 @@ extension ShareViewController: ExtensionLoadingExitDelegate {
         _ screen: ExtensionLoadingViewController
     ) {
         complete()
+    }
+}
+
+extension ShareViewController: ShareSetupPracticeDelegate {
+    /// A rehearsal saved nothing, so its Done completes without the saved-checkmark
+    /// chrome — the same answer the closure it replaces gave.
+    func shareSetupPracticeDidFinish(_ practice: UIViewController) {
+        completeSilently()
     }
 }
 

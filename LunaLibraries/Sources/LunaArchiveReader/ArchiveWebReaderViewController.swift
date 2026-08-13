@@ -38,8 +38,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         /// Nobody is: the controller is off-screen, driven by the bulk import
         /// (`claudedocs/import-export.md`). There is no one to solve a CAPTCHA and
         /// nowhere to put a message, so anything that would ask the user for
-        /// something ends the attempt through `onGaveUp` instead. The save stays
-        /// exactly as it was, for whenever they open it themselves.
+        /// something ends the attempt through the delegate's give-up leg instead.
+        /// The save stays exactly as it was, for whenever they open it themselves.
         case unattended
     }
 
@@ -52,8 +52,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It
     /// comes off for a CAPTCHA — the one moment the user must see and touch the
-    /// page — and, at the end, only for a controller that is staying up
-    /// (`onExtracted` nil). The web view stays un-hidden and full-size beneath it
+    /// page — and, at the end, only for a controller that is staying up (no delegate
+    /// to take it away). The web view stays un-hidden and full-size beneath it
     /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
     /// what keeps the automated flow running while it's visually concealed. When the
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
@@ -71,7 +71,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private var didExtract = false
     /// Set synchronously the moment we decide to extract, so the several
     /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
-    /// kick off a parallel extraction → double `saveContent` / double `onExtracted`.
+    /// kick off a parallel extraction → double `saveContent` / double unlock report.
     private var isExtracting = false
     /// Number of `429` challenge responses seen; once it loops past `loopThreshold`
     /// we stop letting the user re-solve a CAPTCHA that can't pass and show guidance.
@@ -144,26 +144,21 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// `/newest/`.
     private var resolvedSnapshotURL: URL?
 
-    /// Called when the user dismisses (Done). The main app dismisses the modal;
-    /// extensions use this to complete their extension request. Defaults to
-    /// dismissing the presentation when nil.
-    public var onClose: (() -> Void)?
-    /// Called once the article has been extracted and saved (the CAPTCHA was
-    /// solved and a real snapshot loaded). Setting it means this controller is
-    /// about to be TAKEN AWAY by whoever set it — the app dismisses the modal and
-    /// opens the item's own reader, the extensions swap it out of their nav stack
-    /// — which is also what decides whether the cover comes off at the end of the
-    /// unlock (see `extractAndSave`). Left nil only where the controller is a root
-    /// with nowhere to go: there the unlocked page is uncovered and stays up.
-    public var onExtracted: (() -> Void)?
-    /// Escape hatch for when archive.today keeps CAPTCHA-looping in the embedded
-    /// web view: opens the same archive URL in real Safari (which may already hold
-    /// a valid `cf_clearance`). Main-app-only — set by the presenter; left nil in
-    /// extensions (no `UIApplication` there), where the button is hidden.
-    public var onOpenInBrowser: ((URL) -> Void)?
-    /// `.unattended` only: the attempt has stopped and no article was saved. Called
-    /// at most once, and never alongside `onExtracted`.
-    public var onGaveUp: (() -> Void)?
+    /// Who takes the outcome — see `ArchiveUnlockDelegate`, whose presence and whose
+    /// `offersSystemBrowserEscape` between them decide the cover's ending and the two
+    /// Safari escapes. Held STRONGLY, and deliberately: the conformer is a small
+    /// coordinator the presenting flow makes for this one unlock, not the reader's
+    /// owner, and it has to outlive the flow that built it. Each coordinator holds
+    /// its own host weakly, so nothing cycles.
+    public var delegate: (any ArchiveUnlockDelegate)?
+    /// True when a delegate is going to take this controller away the moment the
+    /// unlock lands, which is what decides whether the cover comes off. Only the
+    /// `-openArchive` debug root has nowhere to go.
+    private var presenterTakesOverOnUnlock: Bool { delegate != nil }
+    /// Whether the two Safari escapes are on offer at all.
+    private var offersSystemBrowserEscape: Bool {
+        delegate?.offersSystemBrowserEscape ?? false
+    }
     /// Set once either outcome has been reported, so the poll timer's in-flight
     /// probes can't report a second one.
     private var didReportOutcome = false
@@ -279,7 +274,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
         setExitButton(symbol: "xmark")
-        if onOpenInBrowser != nil {
+        if offersSystemBrowserEscape {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 image: UIImage(systemName: "safari"),
                 primaryAction: UIAction { [weak self] _ in self?.openInBrowser() })
@@ -309,7 +304,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         if !webPreStageURLs.isEmpty {
             // Walk the WKWebView pre-stage list (directUnlock, trailing-dot) before the
             // archive.today flow; a readable extraction from any of them finishes via
-            // the normal `onExtracted` path. For `.directUnlock`, first install the
+            // the normal unlock-report path. For `.directUnlock`, first install the
             // paywall-vendor content-blocker so the meter scripts can't run.
             isAttemptingDirectBypass = true
             if usesDirectUnlock {
@@ -450,7 +445,14 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             image: UIImage(systemName: symbol),
             primaryAction: UIAction { [weak self] _ in
                 guard let self else { return }
-                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
+                // No delegate (the debug root) leaves nobody to claim the exit, so
+                // the reader dismisses its own presentation — the same thing the
+                // delegate's default `archiveReaderDidClose` does.
+                guard let delegate = self.delegate else {
+                    self.dismiss(animated: true)
+                    return
+                }
+                delegate.archiveReaderDidClose(self)
             })
         item.accessibilityLabel = symbol == "checkmark"
             ? L10n.string("Common_done") : L10n.string("Common_close")
@@ -500,7 +502,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// web view can't pass the CAPTCHA). Uses the currently-loaded URL when present.
     private func openInBrowser() {
         guard let url = webView.url ?? Self.archiveURL(for: articleURL) else { return }
-        onOpenInBrowser?(url)
+        delegate?.archiveReader(self, openInSystemBrowser: url)
     }
 
     // MARK: - WKNavigationDelegate
@@ -879,7 +881,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             }
             guard probed == .contentRoot else { return }
             self.isExtracting = true
-            self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
+            self.extractAndSave()   // readable → save + report; not readable → resets, retries
         }
     }
 
@@ -1041,16 +1043,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     self.pollTimer?.invalidate()
                     // There IS something to affirm now: the article is saved.
                     self.setExitButton(symbol: "checkmark")
-                    // Only for a controller that is STAYING. An `onExtracted` handler
-                    // means the opposite: the very next thing that happens is whoever
-                    // set it taking this controller away — the app dismisses the modal
-                    // and opens the item's own reader, the extensions swap it out of
+                    // Only for a controller that is STAYING. A delegate means the
+                    // opposite: the very next thing that happens is whoever set it
+                    // taking this controller away — the app dismisses the modal and
+                    // opens the item's own reader, the extensions swap it out of
                     // their nav stack — and uncovering first plays the raw
                     // archive/publisher page under the whole of that animation.
                     // Whatever the cover is showing when the unlock lands (its own
                     // spinner, or the page the user just solved a CAPTCHA on) is simply
                     // what leaves with it.
-                    if self.onExtracted == nil {
+                    if !self.presenterTakesOverOnUnlock {
                         self.loadingOverlay.isHidden = true
                     } else {
                         // The cover is staying up through the dismissal, so it is
@@ -1067,7 +1069,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     self.captureUnlockedWebArchive(for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
-                    self.onExtracted?()
+                    self.delegate?.archiveReaderDidUnlockArticle(self)
                 }
             }
         }
@@ -1105,7 +1107,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
 
     /// Ends an unattended attempt: stop polling, stop loading, and report once.
     /// Nothing is written and nothing is shown — the item keeps the state the
-    /// silent tier left it in. `reason` is diagnostics-only — `onGaveUp`'s sole
+    /// silent tier left it in. `reason` is diagnostics-only — the give-up leg's sole
     /// subscriber only cares THAT the attempt ended, never why.
     private func giveUp(_ reason: String) {
         guard mode == .unattended, !didReportOutcome else { return }
@@ -1117,7 +1119,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         SharedDiagnosticLog.record(
             "archive: unattended attempt gave up (\(reason)) for \(articleURL.absoluteString)",
             category: "archive")
-        onGaveUp?()
+        delegate?.archiveReaderDidGiveUp(self)
     }
 
     /// archive.today is rate-limiting the network — solving the CAPTCHA won't pass.
@@ -1139,7 +1141,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         articleLoadingStatus?.stop()
         overlayLabel.setTextImmediately(Self.mayBeStuckMessage)
         overlayLabel.textColor = LunaColors.secondaryText
-        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        overlaySafariButton.isHidden = !offersSystemBrowserEscape
         overlaySpinner.startAnimating()
     }
 
@@ -1170,7 +1172,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         articleLoadingStatus?.stop()
         overlayLabel.setTextImmediately(message)
         overlayLabel.textColor = LunaColors.primaryText
-        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        overlaySafariButton.isHidden = !offersSystemBrowserEscape
         loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
     }
 }

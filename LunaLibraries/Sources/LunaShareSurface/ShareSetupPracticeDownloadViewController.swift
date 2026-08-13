@@ -36,7 +36,7 @@ import UIKit
 @MainActor
 final class ShareSetupPracticeDownloadViewController: UIViewController,
     ShareSetupPracticePresenting, HostedShareBeatReplaying {
-    var onDone: (() -> Void)?
+    weak var completionDelegate: (any ShareSetupPracticeDelegate)?
 
     private let app: LunaApp
     private let videoURL: URL
@@ -108,7 +108,11 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
             title: L10n.string("Common_done"), symbol: "checkmark",
             tint: LunaSurfacePalette.baseColor)
         doneButton.addAction(
-            UIAction { [weak self] _ in self?.onDone?() }, for: .touchUpInside)
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.completionDelegate?.shareSetupPracticeDidFinish(self)
+            },
+            for: .touchUpInside)
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(doneButton)
 

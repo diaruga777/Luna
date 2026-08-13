@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaShareSurface
 import LunaStorage
 import UIKit
 
@@ -71,10 +72,11 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private var exitContext: PriceTrackingExitContext { mode.exitContext }
 
-    /// Invoked when the editor is dismissed via the extension's exit button, so the
-    /// host can complete its request. nil in-app (the back chevron just pops). Set
-    /// by the extension host after construction.
-    public var onDone: (() -> Void)?
+    /// Told when the extension's exit button dismisses the editor, so the host can
+    /// complete its request — see `PriceEditorScreenDelegate`. Weak, and it IS the
+    /// host: the host presents this editor, so it already owns it. Nil in-app, where
+    /// the back chevron just pops. Set by the extension host after construction.
+    public weak var completionDelegate: (any PriceEditorScreenDelegate)?
 
     public convenience init(itemID: UUID, priceFetcher: PriceFetching = PriceFetcher()) {
         self.init(mode: .existing(itemID: itemID), priceFetcher: priceFetcher)
@@ -213,13 +215,13 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
     /// Leaves the screen whichever way it was shown: pop when pushed onto a nav stack
-    /// (in-app), else hand off to the extension host's `onDone` (which completes the
-    /// extension request), else dismiss the modal presentation. Always exits.
+    /// (in-app), else hand off to the extension host (which completes the extension
+    /// request), else dismiss the modal presentation. Always exits.
     private func dismissOrPop() {
         if let navigationController, navigationController.viewControllers.first !== self {
             navigationController.popViewController(animated: true)
-        } else if let onDone {
-            onDone()
+        } else if let completionDelegate {
+            completionDelegate.priceEditorDidFinish(self)
         } else {
             dismiss(animated: true)
         }

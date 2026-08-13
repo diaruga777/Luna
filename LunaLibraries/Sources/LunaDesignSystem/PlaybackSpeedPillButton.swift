@@ -13,11 +13,17 @@
 import LunaModels
 import UIKit
 
+/// Who hears the pill's picks. Weak, since the conformer is the view that holds the
+/// pill: the card carousel adds it as a subview and keeps it for its whole life.
+public protocol PlaybackSpeedPillDelegate: AnyObject {
+    /// The user picked `speed`. Never fired for a re-pick of the current one — the
+    /// menu reports only changes.
+    func playbackSpeedPill(_ pill: PlaybackSpeedPillButton, didSelect speed: Double)
+}
+
 public final class PlaybackSpeedPillButton: UIButton {
 
-    /// Called with the speed the user picked (never for a re-pick of the
-    /// current one — the menu reports only changes).
-    public var onSelectSpeed: ((Double) -> Void)?
+    public weak var delegate: (any PlaybackSpeedPillDelegate)?
 
     /// The speed shown on the pill and checked in its menu.
     public var speed: Double = PlaybackSpeed.normal {
@@ -73,7 +79,7 @@ public final class PlaybackSpeedPillButton: UIButton {
     private func select(_ option: Double) {
         guard !PlaybackSpeed.matches(option, speed) else { return }
         speed = option
-        onSelectSpeed?(option)
+        delegate?.playbackSpeedPill(self, didSelect: option)
     }
 
     #if DEBUG

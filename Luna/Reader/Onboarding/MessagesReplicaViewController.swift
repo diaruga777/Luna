@@ -162,25 +162,8 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         configureConversation(above: composer)
         configureHeader()
         urlBubble.setURL(currentURLString)
-        shortcutPill.onActivate = { [weak self] in
-            guard let self else { return }
-            if self.usesPreviousSetupConversation {
-                self.reveal(.skip)
-            }
-            self.delegate?.messagesReplicaDidRequestShortcutInstall(self)
-        }
-        settingsPill.onActivate = { [weak self] in
-            guard let self else { return }
-            delegate?.messagesReplicaDidRequestActionButtonSettings(self)
-        }
-        coreAppPill.onActivate = { [weak self] in
-            guard let self else { return }
-            delegate?.messagesReplicaDidRequestLunaAppStore(self)
-        }
-        skipPill.onActivate = { [weak self] in
-            guard let self else { return }
-            self.skipPill.isUserInteractionEnabled = false
-            self.delegate?.messagesReplicaDidSkipSetup(self)
+        for pill in [shortcutPill, settingsPill, coreAppPill, skipPill] {
+            pill.delegate = self
         }
     }
 
@@ -1051,6 +1034,28 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     }
 }
 
+// MARK: - Pill activation
+
+extension MessagesReplicaViewController: OnboardingMessagePillDelegate {
+    /// The four chips share one leg, told apart by which one was tapped — they are
+    /// this screen's own subviews, so identity is the whole question.
+    func onboardingMessagePillDidActivate(_ pill: OnboardingMessagePillButton) {
+        if pill === shortcutPill {
+            if usesPreviousSetupConversation {
+                reveal(.skip)
+            }
+            delegate?.messagesReplicaDidRequestShortcutInstall(self)
+        } else if pill === settingsPill {
+            delegate?.messagesReplicaDidRequestActionButtonSettings(self)
+        } else if pill === coreAppPill {
+            delegate?.messagesReplicaDidRequestLunaAppStore(self)
+        } else if pill === skipPill {
+            skipPill.isUserInteractionEnabled = false
+            delegate?.messagesReplicaDidSkipSetup(self)
+        }
+    }
+}
+
 // MARK: - Bubbles
 
 enum OnboardingMessageDirection {
@@ -1531,6 +1536,13 @@ private final class OnboardingMessageStandalonePillBubble: OnboardingMessageBubb
     }
 }
 
+/// Who hears a chip being tapped. One conformer — the conversation that built all
+/// four chips — so the sender is how it tells them apart.
+@MainActor
+protocol OnboardingMessagePillDelegate: AnyObject {
+    func onboardingMessagePillDidActivate(_ pill: OnboardingMessagePillButton)
+}
+
 /// The tappable in-bubble chip: app, shortcut, Settings, share, or skip. Every
 /// setup destination breathes an eclipse corona until tapped; the skip-out
 /// never asks for the tap, so it does not.
@@ -1542,7 +1554,8 @@ final class OnboardingMessagePillButton: UIControl {
         case skip
     }
 
-    var onActivate: (() -> Void)?
+    /// The conversation that owns this pill. Weak: the pill is one of its subviews.
+    weak var delegate: (any OnboardingMessagePillDelegate)?
     private(set) var wasActivated = false
     /// The colour the pill's corona burns. (A drop shadow in this colour used
     /// to be the whole effect.)
@@ -1785,6 +1798,6 @@ final class OnboardingMessagePillButton: UIControl {
     @objc private func activated() {
         wasActivated = true
         stopAttentionPulse()
-        onActivate?()
+        delegate?.onboardingMessagePillDidActivate(self)
     }
 }

@@ -1731,11 +1731,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return best
     }
 
+    /// Where this reader was when the split covered it, restored when the split
+    /// closes. One value rather than one per overlay because only one nested reader
+    /// can be open over a given reader at a time: `InlineReaderOpener` refuses a
+    /// second modal from the same host, and an already-open column takes the link
+    /// itself instead of making another overlay.
+    private var offsetBeforeSplit: CGFloat?
+
     /// Opens the tapped link as a full-size nested reader. The source point is the
     /// resolved glyph center, so the black-circle phase begins at the link itself.
     private func openSplit(for url: URL, tappedRange: NSRange) {
         let sourcePoint = linkActivationPoint(forCharacterRange: tappedRange)
-        let readerOffset = textView.contentOffset.y
+        offsetBeforeSplit = textView.contentOffset.y
         InlineReaderOpener.open(
             url: url,
             from: self,
@@ -1744,7 +1751,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             sourcePointInWindow: view.convert(sourcePoint, to: nil),
             outerURL: item.url ?? url,
             outerTitle: content.title,
-            onDismiss: { [weak self] in self?.restoreScroll(to: readerOffset) })
+            dismissalDelegate: self)
     }
 
     // MARK: - Simulator-only split hooks
@@ -1801,6 +1808,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.layoutManager.ensureLayout(for: textView.textContainer)
         textView.layoutIfNeeded()
         textView.contentOffset.y = clampedContentOffsetY(offset)
+    }
+}
+
+extension ScrollReaderViewController: InlineReaderDismissalDelegate {
+    /// The nested reader is gone: put this reader back where the split found it.
+    public func inlineReaderDidFinishDismissing(_ overlay: SplitWebOverlayViewController) {
+        guard let offsetBeforeSplit else { return }
+        restoreScroll(to: offsetBeforeSplit)
+        self.offsetBeforeSplit = nil
     }
 }
 

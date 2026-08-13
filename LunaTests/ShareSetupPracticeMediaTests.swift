@@ -178,7 +178,7 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
         let controller = SavedNonTextualViewController(
             articleURLString: ShareSetupPractice.instaTokURLString,
             practiceVideoURL: try XCTUnwrap(ShareSetupPractice.bundledVideoURL),
-            onDone: {})
+            delegate: nil)
         controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 760)
         controller.view.layoutIfNeeded()
         return controller
@@ -195,7 +195,7 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
     func testTheSameLinkWithoutABundledClipShowsNoPlayer() {
         HostedShareSession.current = nil
         let controller = SavedNonTextualViewController(
-            articleURLString: ShareSetupPractice.instaTokURLString, onDone: {})
+            articleURLString: ShareSetupPractice.instaTokURLString, delegate: nil)
         controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 760)
         controller.view.layoutIfNeeded()
 

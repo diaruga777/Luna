@@ -103,7 +103,7 @@ public enum InlineReaderOpener {
         sourcePointInWindow: CGPoint,
         outerURL: URL,
         outerTitle: String?,
-        onDismiss: (() -> Void)? = nil
+        dismissalDelegate: (any InlineReaderDismissalDelegate)? = nil
     ) -> SplitWebOverlayViewController? {
         // A column already open beside the outer reader takes the link: nested
         // layers stack on the second card, they never open a third.
@@ -128,7 +128,7 @@ public enum InlineReaderOpener {
                 : (coordinator?.inlineReaderShowsOuterContentBelow ?? false),
             placement: placement)
         overlay.presentationCoordinator = coordinator
-        overlay.onDismiss = onDismiss
+        overlay.dismissalDelegate = dismissalDelegate
         switch placement {
         case .overlay:
             host.present(overlay, animated: true)
@@ -156,6 +156,23 @@ extension UIViewController {
     }
 }
 
+/// Cleanup local to the reader that OPENED a nested reader, as against the outer
+/// chrome's own bookkeeping (`InlineReaderPresentationCoordinating
+/// .inlineReaderDidDismiss`). The two conformer sets are deliberately different: the
+/// coordinator is the deck or the outer `ReaderViewController`, while this is whichever
+/// reader the link was tapped in — today the scroll reader, restoring the offset it
+/// held before the split covered it.
+///
+/// Weak, because the opener owns the overlay either way: it presents the modal itself,
+/// and for a column it hands the overlay to a coordinator it is a descendant of.
+///
+/// Un-isolated, like `InlineReaderPresentationCoordinating` and
+/// `ReaderCompletionDelegate` beside it — every caller is already on the main actor.
+public protocol InlineReaderDismissalDelegate: AnyObject {
+    /// Dismissal has completed. Fires exactly once per overlay.
+    func inlineReaderDidFinishDismissing(_ overlay: SplitWebOverlayViewController)
+}
+
 /// A reader nested inside the outer reader's fixed chrome.
 ///
 /// Link activation grows a black circle from the link while a second, reader-sized
@@ -171,10 +188,9 @@ public final class SplitWebOverlayViewController: UIViewController,
     /// against — set by whichever reader creates the overlay (typically via
     /// `inlineReaderPresentationCoordinator`, the shared ancestor-walk below).
     public weak var presentationCoordinator: InlineReaderPresentationCoordinating?
-    /// One-shot hook run when dismissal completes, for cleanup local to the overlay's
-    /// creator rather than the outer chrome (e.g. `ScrollReaderViewController`
-    /// restoring the scroll offset it had before the split opened). Fires exactly once.
-    public var onDismiss: (() -> Void)?
+    /// Cleanup local to the reader that OPENED this overlay, as opposed to the outer
+    /// chrome's own bookkeeping above — see `InlineReaderDismissalDelegate`.
+    public weak var dismissalDelegate: (any InlineReaderDismissalDelegate)?
 
     private let url: URL
     private let initialSourcePoint: CGPoint
@@ -331,7 +347,11 @@ public final class SplitWebOverlayViewController: UIViewController,
                 self?.animateNewestTabBehindReader()
             },
             completion: { [weak self] in
-                self?.onDismiss?()
+                guard let self else {
+                    completion()
+                    return
+                }
+                self.dismissalDelegate?.inlineReaderDidFinishDismissing(self)
                 completion()
             })
     }
@@ -339,7 +359,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     fileprivate func presentationDidDismiss() {
         guard !didNotifyDismissal else { return }
         didNotifyDismissal = true
-        onDismiss?()
+        dismissalDelegate?.inlineReaderDidFinishDismissing(self)
         presentationCoordinator?.inlineReaderDidDismiss(self)
         // Async WebKit/title work may finish after UIKit has removed the
         // presentation. It must never reclaim the shared outer chrome target.

@@ -7,11 +7,20 @@
 
 import LunaReadingListUI
 @testable import LunaPriceUI
+import LunaShareSurface
 import LunaStorage
 import LunaModels
 import UIKit
 import XCTest
 @testable import Luna
+
+/// Stands in for the extension host the editor hands its exit to.
+@MainActor
+private final class RecordingPriceEditorHost: PriceEditorScreenDelegate {
+    var finishCount = 0
+
+    func priceEditorDidFinish(_ editor: UIViewController) { finishCount += 1 }
+}
 
 final class PriceTrackingScreenTests: XCTestCase {
 
@@ -241,17 +250,17 @@ final class PriceTrackingScreenTests: XCTestCase {
                         "Back must not delete the tracker")
 
         // Extension host: the exit is a titleless floating button that hands off to
-        // the `onDone` completion.
+        // the host's completion leg.
         let extEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
-        var didCallOnDone = false
-        extEditor.onDone = { didCallOnDone = true }
+        let extHost = RecordingPriceEditorHost()
+        extEditor.completionDelegate = extHost
         let extWindow = UITestSupport.host(extEditor)
         guard let exit = Self.findExitButton(in: extEditor.view) else {
             XCTFail("extension-hosted editor should install an ExtensionExitButton"); return
         }
         XCTAssertNil(exit.currentTitle, "the extension exit is a glyph, not a 'Done' text button")
         exit.sendActions(for: .touchUpInside)
-        XCTAssertTrue(didCallOnDone, "the extension exit invokes the onDone completion")
+        XCTAssertEqual(extHost.finishCount, 1, "the extension exit invokes the host's exit leg")
         _ = window
         _ = extWindow
     }

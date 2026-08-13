@@ -14,7 +14,7 @@ import XCTest
 final class LinkImportRunnerTests: XCTestCase {
 
     private var tempDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
@@ -26,7 +26,7 @@ final class LinkImportRunnerTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(
             at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
     }
 
     override func tearDown() {
@@ -48,11 +48,11 @@ final class LinkImportRunnerTests: XCTestCase {
     /// A runner whose ingest sets each item's state from `outcomes`, keyed by URL.
     /// Anything unlisted is left `.ready`.
     private func makeRunner(
-        outcomes: [String: ReadingListItem.State] = [:],
+        outcomes: [String: SavedItem.State] = [:],
         unsupported: Set<String> = [],
         concurrency: Int = 4,
         rescueSucceeds: @escaping (String) -> Bool = { _ in false },
-        onIngest: (@Sendable (ReadingListItem) -> Void)? = nil
+        onIngest: (@Sendable (SavedItem) -> Void)? = nil
     ) -> LinkImportRunner {
         let store = store!
         return LinkImportRunner(
@@ -86,7 +86,7 @@ final class LinkImportRunnerTests: XCTestCase {
 
     /// The store has no bare "set ready" — readiness always accompanies real
     /// content — so a stub reaches it the way an article ingest does.
-    private static func markReady(_ item: ReadingListItem, in store: ReadingListStore) {
+    private static func markReady(_ item: SavedItem, in store: SavesStore) {
         _ = store.saveContent(
             ArticleContent(
                 title: "Imported",

@@ -410,9 +410,9 @@ final class EmailAccountTests: XCTestCase {
             .appendingPathComponent("capture-source-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = ReadingListStore(containerURL: directory)
+        let store = SavesStore(containerURL: directory)
 
-        var item = ReadingListItem(urlString: "https://example.com/no-source")
+        var item = SavedItem(urlString: "https://example.com/no-source")
         item.captureSource = nil
         store.seedForTesting(items: [item], contents: [:])
 
@@ -426,7 +426,7 @@ final class EmailAccountTests: XCTestCase {
             .appendingPathComponent("capture-source-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = ReadingListStore(containerURL: directory)
+        let store = SavesStore(containerURL: directory)
 
         let saved = store.add(urlString: "https://example.com", source: .friendShare)
 

@@ -12,7 +12,7 @@ import LunaAppConfig
 /// lines in the same `ISO8601 [category] message` format as the shared
 /// `clip-diagnostics.log`.
 ///
-/// One file per reading-list item, `<AppGroup>/saveDiagnostics/<UUID>.log`.
+/// One file per saved item, `<AppGroup>/saveDiagnostics/<UUID>.log`.
 /// A file exists only for items whose save FAILED: the ingest layer buffers a
 /// save's lines in memory (`SaveDiagnosticsRecorder`, LunaModels) and flushes
 /// them here only when the outcome is `.failed`; later attempts — launch-sweep

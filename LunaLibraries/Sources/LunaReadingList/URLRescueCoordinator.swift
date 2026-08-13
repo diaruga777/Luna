@@ -16,21 +16,21 @@ public protocol URLRescueEngineBridging {
     /// Runs a rescue for `item` with `hint`; `interactive` picks the budget. The
     /// conformer itself applies the outcome and persists.
     func performRescue(
-        for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+        for item: SavedItem, hint: RescueHint?, interactive: Bool
     ) async -> URLRescueCoordinator.RescueRunResult
 }
 
 /// Drives URL rescue for the main app: an inline attempt when a foreground save
 /// fails, a debounced background sweep of `.failed` items, one-shot manual
 /// rescues, and the extension→app pending-request hand-off. The debounced
-/// `.readingListChanged` sweep + foreground tracking is `ReadingListSweepDriver`
+/// `.savesChanged` sweep + foreground tracking is `SavesSweepDriver`
 /// (shared with `AudioScriptPipeline`); this class keeps its own NSLock'd
 /// in-flight set.
 ///
 /// The rescue ENGINE lives in `LunaURLRescue`, which this module must not link
 /// (it's main-app-only). The app shell (`URLRescueWiring`) injects it as `engine`
 /// and does the actual work — this coordinator only decides WHEN, tracks
-/// bookkeeping, and posts `.readingListChanged` so rows refresh.
+/// bookkeeping, and posts `.savesChanged` so rows refresh.
 public final class URLRescueCoordinator {
     public static let shared = URLRescueCoordinator()
 
@@ -62,7 +62,7 @@ public final class URLRescueCoordinator {
     /// (extensions, tests, or the engine unavailable).
     public static var engine: (any URLRescueEngineBridging)?
 
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let ledger: RescueLedgerStore
     private let pending: PendingRescueRequestStore
     private let failures: SaveFailureStore
@@ -73,7 +73,7 @@ public final class URLRescueCoordinator {
     /// class's own reentrancy-guarded sweep body) and `isForeground` stay here.
     /// A foreground transition also drains queued extension→app hand-offs,
     /// exactly as it did before the scheduling moved into the shared driver.
-    private lazy var sweepDriver = ReadingListSweepDriver(
+    private lazy var sweepDriver = SavesSweepDriver(
         queueLabel: "com.hsanabria.luna.urlRescueCoordinator",
         debounceInterval: debounceInterval,
         sweeper: self)
@@ -92,7 +92,7 @@ public final class URLRescueCoordinator {
     public static let sweepBatchLimit = 3
 
     public init(
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         ledger: RescueLedgerStore = .shared,
         pending: PendingRescueRequestStore = .shared,
         failures: SaveFailureStore = .shared,
@@ -111,7 +111,7 @@ public final class URLRescueCoordinator {
 
     // MARK: - Install
 
-    /// Idempotent. Observes `.readingListChanged` (debounced) + foreground/
+    /// Idempotent. Observes `.savesChanged` (debounced) + foreground/
     /// background, runs a launch sweep, and drains pending hand-offs. Only the
     /// main app calls this (extensions never do).
     public func install() {
@@ -125,7 +125,7 @@ public final class URLRescueCoordinator {
     /// One free retry per shipped version. A failed save whose Apple Intelligence
     /// attempt was spent under an EARLIER version has its ledger budget cleared
     /// here, so this launch's sweep tries it again — and because
-    /// `ReadingListIngestor.ingestAllPending` already re-runs ordinary ingestion
+    /// `SavesIngestor.ingestAllPending` already re-runs ordinary ingestion
     /// for every `.failed` item on launch, the item gets both paths without any
     /// extra scheduling.
     ///
@@ -140,7 +140,7 @@ public final class URLRescueCoordinator {
         return stale
     }
 
-    // MARK: - Inline trigger (from ReadingListIngestor)
+    // MARK: - Inline trigger (from SavesIngestor)
 
     /// Called when a first-pass ingest ended `.failed`. Re-reads the item and, if
     /// still `.failed` and eligible, runs an INLINE rescue (interactive) or leaves
@@ -207,7 +207,7 @@ public final class URLRescueCoordinator {
     /// Called by the app shell's engine bridge as the rescue crosses each stage.
     /// Cheap and lock-scoped: it stores the stage and posts
     /// `.rescueProgressChanged` for the one card that cares, NOT
-    /// `.readingListChanged` (which would reload every deck several times per
+    /// `.savesChanged` (which would reload every deck several times per
     /// rescue).
     public func reportProgress(_ itemID: UUID, stage: RescueStage) {
         inFlightLock.lock()
@@ -278,7 +278,7 @@ public final class URLRescueCoordinator {
         isSweeping = true
         defer { isSweeping = false }
 
-        let ingestor = ReadingListIngestor.shared
+        let ingestor = SavesIngestor.shared
         var launched = 0
         for item in store.items() {
             guard launched < Self.sweepBatchLimit else { break }
@@ -319,11 +319,11 @@ public final class URLRescueCoordinator {
         guard beginInFlight(itemID) else { return .notRecovered }
         defer {
             endInFlight(itemID)
-            postReadingListChanged()
+            postSavesChanged()
         }
 
         if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
-        postReadingListChanged() // flip row to "trying harder…"
+        postSavesChanged() // flip row to "trying harder…"
 
         let result = await engine.performRescue(for: item, hint: hint, interactive: interactive)
         switch result {
@@ -350,14 +350,14 @@ public final class URLRescueCoordinator {
         return result
     }
 
-    /// `.readingListChanged` is a UI-refresh notification, and its list/deck
+    /// `.savesChanged` is a UI-refresh notification, and its list/deck
     /// observers are selector-based — so they run on whatever thread posted, and
     /// then touch UIKit. `runRescue` runs on a task executor, not the main actor,
-    /// so hop first (the same thing `ReadingListStore.postChanged` does for every
+    /// so hop first (the same thing `SavesStore.postChanged` does for every
     /// store mutation; these two posts were the only ones that didn't).
-    private func postReadingListChanged() {
+    private func postSavesChanged() {
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+            NotificationCenter.default.post(name: .savesChanged, object: nil)
         }
     }
 
@@ -377,13 +377,13 @@ public final class URLRescueCoordinator {
     }
 }
 
-/// The sweep body and the foreground tracking `ReadingListSweepDriver` drives.
+/// The sweep body and the foreground tracking `SavesSweepDriver` drives.
 /// Only the scheduling lives in the driver; the reentrancy guard is this class's
 /// own, and a foreground transition also drains queued extension→app hand-offs.
-extension URLRescueCoordinator: ReadingListSweepForegroundTracking {
-    public func runReadingListSweep() { runSweep() }
+extension URLRescueCoordinator: SavesSweepForegroundTracking {
+    public func runSavesSweep() { runSweep() }
 
-    public func readingListSweepForegroundChanged(to isForeground: Bool) {
+    public func savesSweepForegroundChanged(to isForeground: Bool) {
         self.isForeground = isForeground
         if isForeground { drainPendingRequests() }
     }

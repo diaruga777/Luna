@@ -15,7 +15,7 @@ import UIKit
 /// coordinator the surface makes, not the reader's owner. Nil in the main app, where
 /// the reader writes the shared settings itself.
 public protocol ReaderModePreferenceDelegate: AnyObject {
-    func reader(_ reader: UIViewController, didSelectMode mode: ReadingListItem.ReaderMode)
+    func reader(_ reader: UIViewController, didSelectMode mode: SavedItem.ReaderMode)
 }
 
 /// How an extension's in-sheet reader exits. Both the loading screen's floating

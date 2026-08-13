@@ -59,7 +59,7 @@ final class ReadableColumnTests: XCTestCase {
                 url: "https://www.amazon.com.au/Panasonic-spare-blade-shaver-ES9600/dp/B003FGWPPS",
                 price: 116.33, daysAgo: 0, alertThresholdFraction: nil),
         ])
-        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+        guard let tracker = SavesStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
         let editor = PriceTrackingViewController(

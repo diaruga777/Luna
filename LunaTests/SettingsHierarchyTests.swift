@@ -28,7 +28,7 @@ final class SettingsHierarchyTests: XCTestCase {
         super.tearDown()
     }
 
-    func testReaderIncludesPreloadControlsWithoutReadingListDisplayToggles() {
+    func testReaderIncludesPreloadControlsWithoutSavesRowDisplayToggles() {
         let screen = ReaderSettingsScreen()
         window = UITestSupport.host(screen)
 
@@ -108,7 +108,7 @@ final class SettingsHierarchyTests: XCTestCase {
         }
         XCTAssertTrue(titles.contains("Email"))
         XCTAssertTrue(titles.contains("Kindle"))
-        XCTAssertFalse(titles.contains("Reading List"))
+        XCTAssertFalse(titles.contains("Saves"))
         XCTAssertFalse(titles.contains("Diagnostics"))
 
         let kindleRow = try! XCTUnwrap(titles.firstIndex(of: "Kindle"))
@@ -164,17 +164,17 @@ final class SettingsHierarchyTests: XCTestCase {
     /// same App Group key as a bare literal, so a cell wired to the wrong property
     /// would look perfect and change nothing in Safari.
     func testCookiePopupsToggleReadsAndWritesTheSharedSetting() {
-        let restore = UserDefaults(suiteName: ReadingListStore.appGroupID)?
+        let restore = UserDefaults(suiteName: SavesStore.appGroupID)?
             .object(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
         defer {
-            let defaults = UserDefaults(suiteName: ReadingListStore.appGroupID)
+            let defaults = UserDefaults(suiteName: SavesStore.appGroupID)
             if let restore {
                 defaults?.set(restore, forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
             } else {
                 defaults?.removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
             }
         }
-        UserDefaults(suiteName: ReadingListStore.appGroupID)?
+        UserDefaults(suiteName: SavesStore.appGroupID)?
             .removeObject(forKey: SafariSuggestionSettings.cookieAutoDeclineKey)
 
         let screen = ShortcutSettingsScreen(showsShortcutSetup: false)

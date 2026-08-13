@@ -24,7 +24,7 @@ public enum HostedShareInput {
 /// actual progress rather than a fixed hold.
 @MainActor
 public protocol HostedShareSessionDelegate: AnyObject {
-    /// The reading-list row the hosted flow created, reported so the host can
+    /// The save row the hosted flow created, reported so the host can
     /// mark it as its temporary save and take it back out afterwards.
     func hostedShareSessionDidAppendRow(_ itemID: UUID)
 

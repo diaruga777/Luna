@@ -69,8 +69,8 @@ public extension Notification.Name {
     /// Posted (on the main queue) whenever a rescue's stage advances. The item's
     /// `UUID` travels in `userInfo[RescueProgressKey.itemID]`.
     ///
-    /// Separate from `.readingListChanged` on purpose: progress fires many times
-    /// per rescue, and `.readingListChanged` makes every deck and list reload
+    /// Separate from `.savesChanged` on purpose: progress fires many times
+    /// per rescue, and `.savesChanged` makes every deck and list reload
     /// itself. This one only nudges the single card that's watching.
     static let rescueProgressChanged = Notification.Name("rescueProgressChanged")
 }

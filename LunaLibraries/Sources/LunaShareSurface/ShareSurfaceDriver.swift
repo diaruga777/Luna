@@ -73,7 +73,7 @@ public struct CurrentProcessSurfaceGate: ShareSurfaceGating {
 public final class ShareSurfaceDriver {
 
     private weak var host: ExtensionHost?
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let ingest: ShareIngestProcessing
     private let surfaceGate: ShareSurfaceGating
     /// The app the extension is running in, for the error copy + deep links.
@@ -86,7 +86,7 @@ public final class ShareSurfaceDriver {
 
     public init(
         host: ExtensionHost,
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         ingest: ShareIngestProcessing = SharedIngestPipelineProcessor(),
         surfaceGate: ShareSurfaceGating = CurrentProcessSurfaceGate(),
         currentApp: LunaApp = .current
@@ -269,7 +269,7 @@ public final class ShareSurfaceDriver {
 
     /// Writes this request's buffered trace into the item's sidecar under an
     /// attempt separator, so the failed card in the main app can share it. The
-    /// same shape `ReadingListIngestor.flushDiagnostics` writes — an item that
+    /// same shape `SavesIngestor.flushDiagnostics` writes — an item that
     /// failed in the extension and again on the app's launch sweep ends up with
     /// both attempts in one file.
     private func flushDiagnostics(itemID: UUID, reason: SaveFailureReason?) {
@@ -380,7 +380,7 @@ public final class ShareSurfaceDriver {
     }
 
     // The product-kind store write lives in the kind-neutral
-    // `ReadingListStore.savePriceTracker(_:forURLString:)` (LunaStorage) +
+    // `SavesStore.savePriceTracker(_:forURLString:)` (LunaStorage) +
     // `ProductInfo.makeTracker(fallbackURL:)` (LunaHTMLClassification), shared
     // by `ExtensionProductPresenter` (the editor flow) and
     // `ShareReaderViewController` (which reaches the same write when it runs

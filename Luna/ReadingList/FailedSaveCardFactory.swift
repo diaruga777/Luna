@@ -27,7 +27,7 @@ enum FailedSaveCardFactory {
     /// - Parameter onChanged: called after an action that mutates the store
     ///   (delete, rescue start), so the host can reload its carousel.
     static func makeCard(
-        for item: ReadingListItem,
+        for item: SavedItem,
         host: UIViewController,
         surface: LunaApp = LunaApp.current,
         onChanged: @escaping () -> Void
@@ -46,7 +46,7 @@ enum FailedSaveCardFactory {
     /// The rendered model — also used on its own by the hosts' in-place updates
     /// (a rescue starting, advancing, or finishing).
     static func makeModel(
-        for item: ReadingListItem, surface: LunaApp = LunaApp.current
+        for item: SavedItem, surface: LunaApp = LunaApp.current
     ) -> FailedSaveCardModel {
         FailedSaveCardModel(
             itemID: item.id,
@@ -57,7 +57,7 @@ enum FailedSaveCardFactory {
 
     /// A running rescue takes precedence over the terminal states — there is
     /// nothing useful to show alongside a bar that's already moving.
-    private static func rescueState(for item: ReadingListItem) -> FailedSaveCardModel.RescueState {
+    private static func rescueState(for item: SavedItem) -> FailedSaveCardModel.RescueState {
         if URLRescueCoordinator.shared.isRescuing(item.id) {
             return .running(progress: URLRescueCoordinator.shared.rescueProgress(item.id) ?? 0)
         }
@@ -85,7 +85,7 @@ enum FailedSaveCardFactory {
     /// headline (it shows the live page), but the carousel chrome above it and the
     /// scrub preview both still need words, and they must agree — so both come
     /// through here.
-    static func displayTitle(for item: ReadingListItem) -> String {
+    static func displayTitle(for item: SavedItem) -> String {
         let record = SaveFailureStore.shared.record(for: item.id)
         return FailedSaveNaming.displayTitle(
             url: item.url, itemTitle: item.title, resolvedTitle: record?.resolvedTitle)
@@ -97,7 +97,7 @@ enum FailedSaveCardFactory {
     /// (`claudedocs/failed-saves.md`) — the same two the card's own chin offers.
     ///
     /// Both legs are supplied because each deck deletes on its own terms: the
-    /// Downloader drops the reading-list row, the article deck also releases the
+    /// Downloader drops the save row, the article deck also releases the
     /// save's companion storage and picks the successor card to land on.
     ///
     /// A third verb appears only when the save left a trace behind: "Share
@@ -105,7 +105,7 @@ enum FailedSaveCardFactory {
     /// thing a user CAN do about a failure Luna can't explain
     /// (`claudedocs/save-diagnostics.md`).
     static func makeMenu(
-        for item: ReadingListItem, host: UIViewController,
+        for item: SavedItem, host: UIViewController,
         shareLink: @escaping () -> Void, delete: UIAction
     ) -> UIMenu {
         var children: [UIMenuElement] = [
@@ -137,7 +137,7 @@ enum FailedSaveCardFactory {
     /// of accumulated retries) and presented back on it, matching
     /// `ArticleExportService.presentShareSheet`'s shape.
     static func shareDiagnostics(
-        for item: ReadingListItem, from host: UIViewController, sourceView: UIView
+        for item: SavedItem, from host: UIViewController, sourceView: UIView
     ) {
         let header = diagnosticsHeader(for: item)
         DispatchQueue.global(qos: .userInitiated).async { [weak host, weak sourceView] in
@@ -154,7 +154,7 @@ enum FailedSaveCardFactory {
     /// Context the trace itself doesn't carry: which build produced it, which
     /// link it is about, and what the failure sidecar concluded.
     static func diagnosticsHeader(
-        for item: ReadingListItem, record: SaveFailureRecord? = nil, now: Date = Date()
+        for item: SavedItem, record: SaveFailureRecord? = nil, now: Date = Date()
     ) -> String {
         let record = record ?? SaveFailureStore.shared.record(for: item.id)
         let os = ProcessInfo.processInfo.operatingSystemVersion
@@ -194,7 +194,7 @@ enum FailedSaveCardFactory {
     // MARK: - Actions
 
     private static func makeActions(
-        for item: ReadingListItem, host: UIViewController, onChanged: @escaping () -> Void
+        for item: SavedItem, host: UIViewController, onChanged: @escaping () -> Void
     ) -> FailedSaveCardActions {
         FailedSaveCardActions(
             rescue: {
@@ -221,7 +221,7 @@ enum FailedSaveCardFactory {
                 }
                 : nil,
             delete: {
-                ReadingListStore.shared.delete(item)
+                SavesStore.shared.delete(item)
                 onChanged()
             })
     }
@@ -233,7 +233,7 @@ enum FailedSaveCardFactory {
     /// Feeds the deck's card TITLE (`FailedSaveNaming.displayTitle`), not the card
     /// body — the card body is the live page.
     private static func resolveNaming(
-        for item: ReadingListItem, completion: @escaping () -> Void
+        for item: SavedItem, completion: @escaping () -> Void
     ) {
         guard let url = item.url else { return }
         let record = SaveFailureStore.shared.record(for: item.id)

@@ -17,14 +17,14 @@ import XCTest
 @MainActor
 final class ArticleCoverThumbnailTests: XCTestCase {
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArticleCoverThumbnail-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
     }
 
     override func tearDown() {

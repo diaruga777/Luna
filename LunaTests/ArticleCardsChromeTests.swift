@@ -16,12 +16,12 @@ import XCTest
 final class ArticleCardsChromeTests: XCTestCase {
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 
     func testModeSwitcherReplacesMiniCarouselOnlyDuringImmersion() throws {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "bottom-mode-switcher",
             urlString: "https://example.com/bottom-mode-switcher",
             title: "Bottom Mode Switcher",
@@ -29,7 +29,7 @@ final class ArticleCardsChromeTests: XCTestCase {
             state: .ready,
             wordCount: 480)
         let content = UITestFixtures.sampleArticleContent(title: "Bottom Mode Switcher")
-        ReadingListStore.shared.seedForTesting(
+        SavesStore.shared.seedForTesting(
             items: [item], contents: [item.id: content])
 
         let controller = ArticleCardsViewController()
@@ -186,7 +186,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
 
         veil.alpha = 1
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
         XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
     }
 
@@ -436,7 +436,7 @@ final class ArticleCardsChromeTests: XCTestCase {
 
     func testNonAdjacentScrubberTapStagesTitleWithItsFinalInset() throws {
         let items = (0..<4).map { index in
-            ReadingListItem(
+            SavedItem(
                 seed: "staged-title-\(index)",
                 urlString: "https://example.com/staged-title-\(index)",
                 title: "Staged Article \(index)",
@@ -447,7 +447,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         let contents = Dictionary(uniqueKeysWithValues: items.map { item in
             (item.id, UITestFixtures.sampleArticleContent(title: item.title ?? "Staged Article"))
         })
-        ReadingListStore.shared.seedForTesting(items: items, contents: contents)
+        SavesStore.shared.seedForTesting(items: items, contents: contents)
 
         let controller = ArticleCardsViewController()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
@@ -522,7 +522,7 @@ final class ArticleCardsChromeTests: XCTestCase {
     @MainActor
     func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
         let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
-        let item = try XCTUnwrap(ReadingListStore.shared.items().first)
+        let item = try XCTUnwrap(SavesStore.shared.items().first)
         // The menu comes from the ONE provider now, not from a per-deck shim —
         // which is the point: this is the same code path the Downloader and
         // Price Tracker roots take for their own cards.
@@ -540,19 +540,19 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         delete.performWithSender(nil, target: nil)
 
-        XCTAssertNil(ReadingListStore.shared.item(withID: item.id))
-        XCTAssertNil(ReadingListStore.shared.content(for: item))
+        XCTAssertNil(SavesStore.shared.item(withID: item.id))
+        XCTAssertNil(SavesStore.shared.content(for: item))
     }
 
     func testReaderArchiveTrayOffersDeleteAndDeletesCompleteSave() throws {
-        var item = ReadingListItem(
+        var item = SavedItem(
             seed: "reader-archive-delete",
             urlString: "https://example.com/reader-archive-delete",
             title: "Archived Reader Save", dateAdded: Date(), state: .ready,
             wordCount: 480)
         item.archivedAt = Date()
         let content = UITestFixtures.sampleArticleContent(title: "Archived Reader Save")
-        ReadingListStore.shared.seedForTesting(
+        SavesStore.shared.seedForTesting(
             items: [item], contents: [item.id: content])
         let controller = ArticleCardsViewController()
         controller.loadViewIfNeeded()
@@ -565,8 +565,8 @@ final class ArticleCardsChromeTests: XCTestCase {
 
         delete.performWithSender(nil, target: nil)
 
-        XCTAssertNil(ReadingListStore.shared.item(withID: item.id))
-        XCTAssertNil(ReadingListStore.shared.content(for: item))
+        XCTAssertNil(SavesStore.shared.item(withID: item.id))
+        XCTAssertNil(SavesStore.shared.content(for: item))
     }
 
     private func makeArticleController(
@@ -575,7 +575,7 @@ final class ArticleCardsChromeTests: XCTestCase {
         senderName: String? = nil,
         size: CGSize = CGSize(width: 402, height: 874)
     ) -> ArticleCardsViewController {
-        var item = ReadingListItem(
+        var item = SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: title,
             dateAdded: Date(), state: .ready, wordCount: 480)
         if let senderName {
@@ -584,7 +584,7 @@ final class ArticleCardsChromeTests: XCTestCase {
             item.incomingSenderEmail = "sender@example.com"
         }
         let content = UITestFixtures.sampleArticleContent(title: title)
-        ReadingListStore.shared.seedForTesting(items: [item], contents: [item.id: content])
+        SavesStore.shared.seedForTesting(items: [item], contents: [item.id: content])
         let controller = ArticleCardsViewController()
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(origin: .zero, size: size)

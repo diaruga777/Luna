@@ -317,7 +317,7 @@ final class WeeklySaveTests: XCTestCase {
     /// A failed save has nothing behind it to recommend, so no verb at all
     /// appears — for a key-holder or anyone else.
     func testAFailedSaveIsNeverACandidate() {
-        var failed = ReadingListItem(
+        var failed = SavedItem(
             seed: "weekly-failed", urlString: "https://example.com/failed",
             title: nil, dateAdded: Date(), state: .failed)
         failed.platform = nil
@@ -344,8 +344,8 @@ final class WeeklySaveTests: XCTestCase {
 
     // MARK: WeeklyPromotionMenuTests helpers
 
-    private func readySave() -> ReadingListItem {
-        ReadingListItem(
+    private func readySave() -> SavedItem {
+        SavedItem(
             seed: "weekly-menu", urlString: "https://example.com/weekly-menu",
             title: "A Save", dateAdded: Date(), state: .ready, wordCount: 400)
     }

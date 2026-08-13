@@ -30,7 +30,7 @@ private final class MockDestination: ArticleDestination {
 
     var isConfigured: Bool { configured }
 
-    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+    func sendMode(for item: SavedItem) -> ArticleSendMode {
         modeForSource?(item.effectiveCaptureSource) ?? mode
     }
 
@@ -47,7 +47,7 @@ private final class MockDestination: ArticleDestination {
 
 final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObserving {
 
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var scratchDirectory: URL!
     private var kindle: MockDestination!
     /// A second mock destination, standing in for whatever the real second
@@ -73,7 +73,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         scratchDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SendCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratchDirectory)
+        store = SavesStore(containerURL: scratchDirectory)
         kindle = MockDestination(id: ArticleDestinationID.kindle)
         second = MockDestination(id: "secondEreader")
         currentDate = Date(timeIntervalSinceReferenceDate: 1_000)
@@ -110,7 +110,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
 
     private func makeReadyItem(
         _ url: String = "https://example.com/article", source: CaptureSource = .manual
-    ) -> ReadingListItem {
+    ) -> SavedItem {
         let item = store.add(urlString: url, source: source)
         let content = ArticleContent(
             title: "An Article",
@@ -118,7 +118,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         return store.saveContent(content, for: item)
     }
 
-    private func sendState(_ item: ReadingListItem, _ destinationID: String) -> ReadingListItem.SendState? {
+    private func sendState(_ item: SavedItem, _ destinationID: String) -> SavedItem.SendState? {
         store.item(withID: item.id)?.sendState(for: destinationID)
     }
 

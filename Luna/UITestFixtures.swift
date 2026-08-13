@@ -8,9 +8,9 @@ import LunaAppConfig
 import LunaModels
 import Foundation
 
-/// Named, deterministic reading-list fixtures shared by the in-app UI-test seeding
+/// Named, deterministic saves fixtures shared by the in-app UI-test seeding
 /// harness (`UITestSeeder`) and the snapshot / navigation tests. Each state is a
-/// fixed set of `ReadingListItem`s plus their `ArticleContent`, built off a stable
+/// fixed set of `SavedItem`s plus their `ArticleContent`, built off a stable
 /// base date and stable (seed-derived) item ids, so the same state renders
 /// identically every run.
 ///
@@ -49,10 +49,10 @@ enum UITestLaunch {
 /// Builders for the deterministic fixtures. Pure — no UIKit, no disk, no network —
 /// so it lives in ReaderKit and is reusable from the app and any test target.
 enum UITestFixtures {
-    /// A complete reading-list fixture: the items in saved order plus the extracted
+    /// A complete saves fixture: the items in saved order plus the extracted
     /// content for any item that renders in the text reader.
     struct Fixture {
-        var items: [ReadingListItem]
+        var items: [SavedItem]
         var contents: [UUID: ArticleContent]
     }
 
@@ -104,7 +104,7 @@ enum UITestFixtures {
             blocks.append(.init(kind: .paragraph, text: body, links: []))
         }
 
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "toc-article", urlString: "https://example.com/long-entry",
             title: "A Long Entry With Chapter Marks", dateAdded: ago(hours: 2),
             state: .ready, readState: .unopened, wordCount: 620,
@@ -147,16 +147,16 @@ enum UITestFixtures {
     // MARK: - Mixed (one of every save type)
 
     static func mixedFixture() -> Fixture {
-        var items: [ReadingListItem] = []
+        var items: [SavedItem] = []
         var contents: [UUID: ArticleContent] = [:]
 
         func article(
             seed: String, url: String, title: String,
-            state: ReadingListItem.State = .ready,
-            readState: ReadingListItem.ReadState = .unopened,
+            state: SavedItem.State = .ready,
+            readState: SavedItem.ReadState = .unopened,
             daysAgo: Int, sharedBy: String? = nil, withContent: Bool = true
-        ) -> ReadingListItem {
-            let item = ReadingListItem(
+        ) -> SavedItem {
+            let item = SavedItem(
                 seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo),
                 state: state, readState: readState,
                 wordCount: withContent ? 480 : nil,
@@ -172,8 +172,8 @@ enum UITestFixtures {
         func platform(
             seed: String, url: String, title: String, daysAgo: Int,
             platform: ContentPlatform
-        ) -> ReadingListItem {
-            ReadingListItem(
+        ) -> SavedItem {
+            SavedItem(
                 seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo),
                 state: .ready, readState: .unopened,
                 platform: platform, platformItemID: seed,
@@ -195,7 +195,7 @@ enum UITestFixtures {
                              title: "Shared By A Contact", daysAgo: 2, sharedBy: "alex"))
 
         // Document
-        let doc = ReadingListItem(
+        let doc = SavedItem(
             seed: "doc-pdf", urlString: "lunadoc://report.pdf",
             title: "Quarterly Report.pdf", dateAdded: ago(days: 4),
             state: .ready, wordCount: 1200, documentType: "pdf", captureSource: .shareSheet)
@@ -216,7 +216,7 @@ enum UITestFixtures {
         items.append(platform(seed: "fb", url: "https://facebook.com/post/1",
                              title: "A Facebook post", daysAgo: 1, platform: .facebook))
         // Price trackers — normal + alerting
-        items.append(ReadingListItem(
+        items.append(SavedItem(
             seed: "pt-normal", urlString: "https://store.example.com/widget",
             title: "Tracked Widget", dateAdded: ago(days: 2),
             state: .ready, captureSource: .manual,
@@ -230,7 +230,7 @@ enum UITestFixtures {
             price: 200, currency: "USD", brand: "Acme", productID: "GADGET-1", now: ago(days: 3))
         alertingTracker.setPrice(150, currency: "USD",
                                  urlString: "https://store.example.com/gadget", at: ago(hours: 6))
-        items.append(ReadingListItem(
+        items.append(SavedItem(
             seed: "pt-alerting", urlString: "https://store.example.com/gadget",
             title: "Discounted Gadget", dateAdded: ago(days: 3),
             state: .ready, captureSource: .manual, priceTracker: alertingTracker))
@@ -241,10 +241,10 @@ enum UITestFixtures {
     // MARK: - Price tracking populated
 
     static func priceTrackingFixture() -> Fixture {
-        var items: [ReadingListItem] = []
+        var items: [SavedItem] = []
 
         func tracker(seed: String, name: String, url: String, base: Decimal,
-                     current: Decimal?, daysAgo: Int) -> ReadingListItem {
+                     current: Decimal?, daysAgo: Int) -> SavedItem {
             var pt = PriceTracker(productName: name, firstStoreURL: url, price: base,
                                   currency: "USD", brand: "Acme", productID: seed,
                                   now: ago(days: daysAgo))
@@ -261,7 +261,7 @@ enum UITestFixtures {
                     current, currency: "USD", urlString: url, at: ago(days: 1))
                 pt.setPrice(current, currency: "USD", urlString: url, at: ago(hours: 4))
             }
-            return ReadingListItem(
+            return SavedItem(
                 seed: seed, urlString: url, title: name, dateAdded: ago(days: daysAgo),
                 state: .ready, captureSource: .manual, priceTracker: pt)
         }

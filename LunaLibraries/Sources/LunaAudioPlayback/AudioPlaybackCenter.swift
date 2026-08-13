@@ -123,7 +123,7 @@ public extension AudioPlaybackObserver {
 /// and the Share/Action extensions, which never install a conformer.
 public protocol AudioPlaybackCenterDataSource: AnyObject {
     /// The next autoplay queue candidate — the top-most unopened, readable
-    /// Reader-surface article in the reading list's own displayed order — or
+    /// Reader-surface article in the saves list's own displayed order — or
     /// `nil` when the queue is empty.
     func nextCandidate() -> QueueCandidate?
 
@@ -131,13 +131,13 @@ public protocol AudioPlaybackCenterDataSource: AnyObject {
     /// synchronous heuristic build on miss. NEVER blocks on the LLM
     /// refinement pass; an upgrade landing later only updates the cache for
     /// the NEXT play of this item, never swaps mid-playback.
-    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript
+    func script(for item: SavedItem, content: ArticleContent) -> AudioScript
 
     /// Called once the autoplay chain resolves the NEXT queue candidate
     /// (before its transition chime/announcement even starts), so the app
     /// shell can ask the script pipeline to verify/prefetch that item's
     /// script ahead of when playback actually reaches it.
-    func prefetch(item: ReadingListItem, content: ArticleContent)
+    func prefetch(item: SavedItem, content: ArticleContent)
 }
 
 /// The app-wide singleton and single owner of read-aloud playback: offline
@@ -230,7 +230,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     // MARK: - Dependencies (seams)
 
-    private let store: ReadingListPlaybackStore
+    private let store: SavesPlaybackStore
     private let renderer: SpeechRendering
     private let positionStore: AudioPlaybackPositionStore
     private let sessionCoordinator: AudioSessionControlling
@@ -247,7 +247,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
 
     // MARK: - Session/render pipeline state (reset per `beginPlayback`)
 
-    private var currentItem: ReadingListItem?
+    private var currentItem: SavedItem?
     private var currentScript: AudioScript?
     private var blockStartWordIndices: [Int] = []
     /// Index into `currentScript.spokenBlocks` of the NEXT block to render.
@@ -307,7 +307,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     // MARK: - Init
 
     public init(
-        store: ReadingListPlaybackStore = ReadingListStore.shared,
+        store: SavesPlaybackStore = SavesStore.shared,
         renderer: SpeechRendering = SpeechRenderer(),
         positionStore: AudioPlaybackPositionStore = AudioPlaybackPositionStore(),
         sessionCoordinator: AudioSessionControlling = AudioSessionCoordinator(),
@@ -350,7 +350,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     /// Starts (or restarts) playback of `item`. `fromWordIndex`, when nil,
     /// resumes from the persisted position store IF it names this same item;
     /// otherwise (or when explicitly `0`) starts from the top.
-    public func play(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int? = nil) {
+    public func play(item: SavedItem, content: ArticleContent, fromWordIndex: Int? = nil) {
         beginPlayback(item: item, content: content, fromWordIndex: fromWordIndex)
     }
 
@@ -527,7 +527,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         lastKnownWordIndex = sessionStartWordsSkipped
     }
 
-    private func beginPlayback(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int?) {
+    private func beginPlayback(item: SavedItem, content: ArticleContent, fromWordIndex: Int?) {
         // Cache hit, or a fast synchronous heuristic build on miss (see
         // `AudioPlaybackCenterDataSource.script(for:content:)`'s doc
         // comment) — never the LLM refinement pass, which only ever updates
@@ -566,7 +566,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         pumpRenderingIfNeeded()
     }
 
-    private static func artistLine(content: ArticleContent, item: ReadingListItem) -> String? {
+    private static func artistLine(content: ArticleContent, item: SavedItem) -> String? {
         if let author = content.author, !author.isEmpty { return author }
         if let host = URL(string: item.urlString)?.host {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
@@ -575,9 +575,9 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     }
 
     /// The item's own title, falling back to its extracted content's title —
-    /// `ReadingListItem.title` can be nil (e.g. a share-sheet save before
+    /// `SavedItem.title` can be nil (e.g. a share-sheet save before
     /// extraction filled it in).
-    private static func displayTitle(item: ReadingListItem, content: ArticleContent) -> String {
+    private static func displayTitle(item: SavedItem, content: ArticleContent) -> String {
         item.title ?? content.title
     }
 
@@ -835,7 +835,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     }
 
     /// Cheap, frequent (~5s tick, plus every pause/seek/finish): App-Group
-    /// defaults only, never the reading-list store.
+    /// defaults only, never the saves store.
     private func persistPositionToAppGroup() {
         guard let item = currentItem else { return }
         let snapshot = currentSnapshot

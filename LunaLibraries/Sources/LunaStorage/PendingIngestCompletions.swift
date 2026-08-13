@@ -6,7 +6,7 @@
 import Foundation
 import LunaAppConfig
 
-/// One reserved reading-list row that still owes its metadata pass.
+/// One reserved save row that still owes its metadata pass.
 public struct PendingIngestCompletion: Codable, Equatable, Sendable {
     public let itemID: UUID
     public let urlString: String

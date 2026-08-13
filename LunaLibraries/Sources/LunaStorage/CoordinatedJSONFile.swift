@@ -195,7 +195,7 @@ public final class CoordinatedJSONFile<Value: Codable> {
 
 extension JSONEncoder {
     /// ISO-8601 dates — the on-disk date format of the sidecar files beside the
-    /// reading list (`saveFailures.json`, `rescueLedger.json`).
+    /// saves list (`saveFailures.json`, `rescueLedger.json`).
     static var sidecarISO8601: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

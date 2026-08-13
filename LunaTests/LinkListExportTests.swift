@@ -14,8 +14,8 @@ final class LinkListExportTests: XCTestCase {
 
     private func item(
         _ urlString: String, archived: Bool = false, title: String? = nil
-    ) -> ReadingListItem {
-        var item = ReadingListItem(urlString: urlString)
+    ) -> SavedItem {
+        var item = SavedItem(urlString: urlString)
         item.title = title
         if archived { item.archivedAt = Date() }
         return item

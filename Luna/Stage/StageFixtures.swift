@@ -15,7 +15,7 @@ import UIKit
 ///
 /// Everything here builds on the fixtures the snapshot tests already use —
 /// `UITestFixtures.baseDate` / `ago(days:hours:)` for stable dates,
-/// `ReadingListItem(seed:)` for stable ids, `sampleArticleContent` for body
+/// `SavedItem(seed:)` for stable ids, `sampleArticleContent` for body
 /// text — so a staged screen and its snapshot test are looking at the same
 /// article. What is new here is the per-STATE fixtures (a locked save on its
 /// own, a tracker mid-drop, a download frozen at 45%) that a screenshot pass
@@ -36,19 +36,19 @@ enum StageFixtures {
         UITestFixtures.ago(days: days, hours: hours)
     }
 
-    // MARK: - Reading list
+    // MARK: - Saves
 
-    /// Replaces the reading list with `items` and pins the sectioning clock, so
+    /// Replaces the saves list with `items` and pins the sectioning clock, so
     /// fixed-date fixtures land in Reading rather than Archive.
-    static func seed(_ items: [ReadingListItem], contents: [UUID: ArticleContent] = [:]) {
+    static func seed(_ items: [SavedItem], contents: [UUID: ArticleContent] = [:]) {
         UITestSeeder.sectioningNow = now
-        ReadingListStore.shared.seedForTesting(items: items, contents: contents)
+        SavesStore.shared.seedForTesting(items: items, contents: contents)
     }
 
-    /// Empties the reading list (and its article files).
+    /// Empties the saves list (and its article files).
     static func seedEmpty() {
         UITestSeeder.sectioningNow = now
-        ReadingListStore.shared.wipeForTesting()
+        SavesStore.shared.wipeForTesting()
     }
 
     /// A ready article with body text. The deck centres on the NEWEST save, so
@@ -58,12 +58,12 @@ enum StageFixtures {
     /// race to anything written as `daysAgo: 1`.
     static func article(
         seed: String, url: String, title: String, daysAgo: Int = 0, hoursAgo: Int = 0,
-        state: ReadingListItem.State = .ready,
-        readState: ReadingListItem.ReadState = .unopened,
+        state: SavedItem.State = .ready,
+        readState: SavedItem.ReadState = .unopened,
         readingProgress: Double? = nil,
         sharedBy: String? = nil
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo, hours: hoursAgo),
             state: state, readState: readState, wordCount: 480,
             readingProgress: readingProgress, sharedByUsername: sharedBy,
@@ -74,23 +74,23 @@ enum StageFixtures {
     /// other than a reader card — pending (spinner), needsCaptcha (locked),
     /// failed (the error card).
     static func contentlessArticle(
-        seed: String, url: String, title: String?, state: ReadingListItem.State,
+        seed: String, url: String, title: String?, state: SavedItem.State,
         daysAgo: Int = 0, hoursAgo: Int = 0
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: url, title: title,
             dateAdded: ago(days: daysAgo, hours: hoursAgo),
             state: state, captureSource: .manual)
     }
 
-    /// A recognized platform post — the reading-list half of a media save. The
+    /// A recognized platform post — the saves half of a media save. The
     /// media half lives in `SavedMediaStore` and is joined by URL string, so
     /// the two must agree (`MediaCardPresenter.media(for:)`).
     static func platformPost(
         seed: String, url: String, title: String, platform: ContentPlatform,
         daysAgo: Int = 0, hoursAgo: Int = 0
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: url, title: title,
             dateAdded: ago(days: daysAgo, hours: hoursAgo),
             state: .ready, platform: platform, platformItemID: seed,
@@ -107,7 +107,7 @@ enum StageFixtures {
     /// A tracker whose price has not moved: graph flat, no alert.
     static func steadyTracker(
         seed: String, name: String, url: String, price: Decimal, daysAgo: Int
-    ) -> ReadingListItem {
+    ) -> SavedItem {
         var tracker = PriceTracker(
             productName: name, firstStoreURL: url, price: price, currency: "USD",
             brand: "Acme", productID: seed, now: ago(days: daysAgo))
@@ -128,7 +128,7 @@ enum StageFixtures {
     static func alertingTracker(
         seed: String, name: String, url: String, from: Decimal, to current: Decimal,
         daysAgo: Int
-    ) -> ReadingListItem {
+    ) -> SavedItem {
         var tracker = PriceTracker(
             productName: name, firstStoreURL: url, price: from, currency: "USD",
             brand: "Acme", productID: seed, now: ago(days: daysAgo))
@@ -145,7 +145,7 @@ enum StageFixtures {
     static func pendingTracker(
         seed: String, name: String, url: String, price: Decimal, daysAgo: Int,
         alertThresholdFraction: Double? = PriceTracker.defaultAlertThresholdFraction
-    ) -> ReadingListItem {
+    ) -> SavedItem {
         let tracker = PriceTracker(
             productName: name, firstStoreURL: url, price: price, currency: "USD",
             brand: "Acme", productID: seed,
@@ -155,8 +155,8 @@ enum StageFixtures {
 
     private static func trackerItem(
         seed: String, name: String, url: String, daysAgo: Int, tracker: PriceTracker
-    ) -> ReadingListItem {
-        ReadingListItem(
+    ) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: url, title: name, dateAdded: ago(days: daysAgo),
             state: .ready, captureSource: .manual, priceTracker: tracker)
     }

@@ -12,14 +12,14 @@ import LunaStorage
 /// A media save is the odd one out: the pipeline classifies the post
 /// successfully (`.video` / `.social`), the row is stored, and only the download
 /// that follows discovers there is nothing playable behind the link. So the
-/// reading-list item never enters `.failed` — by design, since a recognized
+/// saved item never enters `.failed` — by design, since a recognized
 /// platform item still renders from a logo and a deep link — and the failure
 /// reason had, until now, no writer at all. `URLRescueWiring.failureKind` reads
 /// exactly this reason to choose `RescueRequest.FailureKind.mediaNoAssets`, a
 /// branch that could therefore never be taken.
 enum MediaSaveFailureRecording {
 
-    /// Files "no downloadable asset" against whichever reading-list item owns
+    /// Files "no downloadable asset" against whichever saved item owns
     /// `sourceURLString`, and puts the same sentence in the save's trace.
     ///
     /// Two very different callers reach this. Inside a save's task tree (the
@@ -31,7 +31,7 @@ enum MediaSaveFailureRecording {
     /// directly — `SaveDiagnostics.formatLine` exists for exactly that.
     static func recordNoMedia(sourceURLString: String, detail: String) {
         let message = "media: no downloadable asset — \(detail)"
-        guard let item = ReadingListStore.shared.item(forURLString: sourceURLString) else {
+        guard let item = SavesStore.shared.item(forURLString: sourceURLString) else {
             SaveDiagnostics.record(message, category: "media")
             return
         }

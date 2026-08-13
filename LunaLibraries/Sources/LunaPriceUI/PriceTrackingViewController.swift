@@ -21,7 +21,7 @@ import UIKit
 /// The exit is decided by an explicit `PriceTrackingExitContext` (host + entry),
 /// so the right control lands in the right context regardless of the view
 /// hierarchy (see `LunaModels/PriceTrackingExitContext.swift`): in-app, a back
-/// chevron in the screen's own header pops to the reading list; in an extension
+/// chevron in the screen's own header pops to the saves list; in an extension
 /// there is nothing to pop to, so the header carries only the title and the exit
 /// is the floating glass `ExtensionExitButton` every other Luna extension surface
 /// shows — the content steps up to leave it its corner.
@@ -164,7 +164,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     /// Installing a custom left button (the explicit Back/Done decision above)
     /// suppresses UIKit's interactive-pop recognizer by default. Restore it for the
-    /// in-app pushed editor so the root reading list remains reachable by the normal
+    /// in-app pushed editor so the root saves list remains reachable by the normal
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -207,7 +207,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     // MARK: - Exit
 
-    /// The in-app header's back chevron: pops back to the reading list. The tracker
+    /// The in-app header's back chevron: pops back to the saves list. The tracker
     /// is already saved and every edit persists as it's made, so this just leaves
     /// the screen. (The extension's exit button calls `dismissOrPop` directly.)
     @objc public func leftButtonTapped() {

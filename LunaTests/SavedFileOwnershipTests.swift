@@ -37,8 +37,8 @@ final class SavedFileOwnershipTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func makeStore() -> ReadingListStore {
-        ReadingListStore(containerURL: directory)
+    private func makeStore() -> SavesStore {
+        SavesStore(containerURL: directory)
     }
 
     private var articlesDirectory: URL {

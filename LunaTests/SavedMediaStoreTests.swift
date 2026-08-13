@@ -102,7 +102,7 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(first.platformItemID, "abc123")
 
         // A share-link's resolved permalink for the SAME post, under a fresh id
-        // (as if the reading list never recognized it as the same item) — must
+        // (as if the saves list never recognized it as the same item) — must
         // merge into the existing row instead of creating a second one.
         let second = try store.ensureUndownloaded(
             id: UUID(), sourceURLString: "https://redd.it/abc123", title: nil)

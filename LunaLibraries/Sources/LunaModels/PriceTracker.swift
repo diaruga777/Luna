@@ -112,7 +112,7 @@ public struct PriceTrackerStore: Codable, Equatable, Identifiable {
     }
 }
 
-/// A price-tracking payload attached to a `ReadingListItem`. Represents a product
+/// A price-tracking payload attached to a `SavedItem`. Represents a product
 /// the user wants to watch across one or more store URLs.
 ///
 /// Invariants enforced by construction:
@@ -156,7 +156,7 @@ public struct PriceTracker: Codable, Equatable {
     public var isArchived: Bool
     /// When the user last viewed this tracker's alert (opened the tracker while it
     /// was alerting). Nil means the current alert, if any, is still UNVIEWED — which
-    /// is what floats the row to the very top of the reading list. Set the moment
+    /// is what floats the row to the very top of the saves list. Set the moment
     /// the user opens an alerting tracker; cleared on a fresh drop (see
     /// `markAlertViewed`).
     public var alertAcknowledgedAt: Date?
@@ -293,7 +293,7 @@ public struct PriceTracker: Codable, Equatable {
 
     /// Whether this tracker has an alert the user hasn't seen yet: it's alerting AND
     /// the user hasn't acknowledged the current alert. This is the condition that
-    /// floats the row to the very TOP of the whole reading list (badged red). Once
+    /// floats the row to the very TOP of the whole saves list (badged red). Once
     /// the user opens the alerting tracker (`markAlertViewed`), this becomes false and
     /// the row rejoins the price-tracking section below Reading.
     public var hasUnviewedAlert: Bool {

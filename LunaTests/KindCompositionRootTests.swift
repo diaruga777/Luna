@@ -222,7 +222,7 @@ final class KindCompositionRootTests: XCTestCase {
     /// `CardKindPresenters.presenter(for:)`; a deck that re-derives it is exactly
     /// how a kind gains a second, divergent code path.
     ///
-    /// `ReadingListSectioning.isFailedSave` is deliberately allowed: a failed
+    /// `SavesSectioning.isFailedSave` is deliberately allowed: a failed
     /// save carries NO kind, so its card is the deck's own and belongs to every
     /// app.
     func testTheDeckNeverBranchesOnKind() throws {

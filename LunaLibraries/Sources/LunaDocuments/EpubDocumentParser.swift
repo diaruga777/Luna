@@ -10,7 +10,7 @@ import SwiftSoup
 /// Reads an EPUB into one `ArticleContent` — the import side of the format Luna
 /// already exports (`EpubBuilder`) and emails to Kindle.
 ///
-/// The whole book becomes ONE reading-list item rather than one per chapter.
+/// The whole book becomes ONE saved item rather than one per chapter.
 /// That is what the reader is: a saved thing you read top to bottom, with the
 /// chapters as headings inside it, and it is what makes an imported book work
 /// with everything an article already gets — RSVP, read-aloud, export, Kindle.

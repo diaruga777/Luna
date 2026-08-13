@@ -323,7 +323,7 @@ public final class LunaSetupStatusStore {
     /// posters are `recordShortcutRun` callers — the three App Intents, whose
     /// `perform()` runs on the Swift-concurrency cooperative pool. Posting inline
     /// drove `UIView.animate` off the main thread and aborted in Auto Layout's
-    /// thread assertion. Same hop `ReadingListStore.postChanged` and the Darwin
+    /// thread assertion. Same hop `SavesStore.postChanged` and the Darwin
     /// observer below already make. The Darwin post needs no hop: it is
     /// thread-safe, and the receiving side hops before it republishes.
     private static func postChange() {

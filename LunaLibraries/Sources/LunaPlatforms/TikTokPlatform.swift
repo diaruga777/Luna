@@ -35,8 +35,8 @@ public struct TikTokPlatform: PlatformModule {
     public let platform: ContentPlatform = .tiktok
     public let glyphSymbolName = "music.note"
 
-    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: SavedItem) -> URL? { nil }
+    public func embed(for item: SavedItem) -> PlatformEmbed? { nil }
 
     public var metadataFetcher: PlatformMetadataFetching? { TikTokMetadataFetcher() }
 }

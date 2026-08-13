@@ -109,7 +109,7 @@ enum KindWiring {
         ArticleShellWiring.sceneDidForeground()
     }
 
-    static func readingListDidChange() {}
+    static func savesDidChange() {}
 
     static func wifiBecameAvailable() {
         ArticleShellWiring.resumeIncompletePreloads()

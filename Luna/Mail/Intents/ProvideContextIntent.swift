@@ -348,7 +348,7 @@ protocol IntentArticleExporting {
     /// The written temp file's URL, or nil when the article has no content to
     /// export.
     func exportedFileURL(
-        for item: ReadingListItem, format: ArticleExportFormat
+        for item: SavedItem, format: ArticleExportFormat
     ) async -> URL?
 }
 
@@ -423,7 +423,7 @@ enum ActionButtonIntentSupport {
     /// content to export — a double save must never fail the save that
     /// preceded it.
     static func exportFile(
-        for item: ReadingListItem, format: ArticleExportFormat
+        for item: SavedItem, format: ArticleExportFormat
     ) async -> IntentFile? {
         guard let fileURL = await articleExport?
             .exportedFileURL(for: item, format: format) else { return nil }

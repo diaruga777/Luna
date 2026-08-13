@@ -92,8 +92,8 @@ enum KindWiring {
         MediaShellWiring.resumePendingWiFiDownloads()
     }
 
-    static func readingListDidChange() {
-        MediaShellWiring.readingListDidChange()
+    static func savesDidChange() {
+        MediaShellWiring.savesDidChange()
     }
 
     static func wifiBecameAvailable() {

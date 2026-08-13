@@ -11,46 +11,46 @@ import LunaStorage
 /// plus its already-loaded `ArticleContent`, bundled together so
 /// `AudioPlaybackCenter` never has to re-hit the store to start playing it.
 /// Built by the app shell's `AudioPlaybackCenterDataSource.nextCandidate()`
-/// conformer, which reuses the exact ordering `ReadingListSectioning`/
+/// conformer, which reuses the exact ordering `SavesSectioning`/
 /// `ReadingListViewController` display for the Reader surface — see
 /// `claudedocs/audio-playback-plan.md`.
 public struct QueueCandidate {
-    public var item: ReadingListItem
+    public var item: SavedItem
     public var content: ArticleContent
 
-    public init(item: ReadingListItem, content: ArticleContent) {
+    public init(item: SavedItem, content: ArticleContent) {
         self.item = item
         self.content = content
     }
 }
 
-/// The narrow slice of `LunaStorage.ReadingListStore` that `AudioPlaybackCenter`
+/// The narrow slice of `LunaStorage.SavesStore` that `AudioPlaybackCenter`
 /// needs, kept as a protocol so tests can substitute an in-memory fake instead
-/// of a real App-Group-backed store. `ReadingListStore` conforms below purely
+/// of a real App-Group-backed store. `SavesStore` conforms below purely
 /// structurally (no code change needed there).
-public protocol ReadingListPlaybackStore: AnyObject {
-    func item(withID itemID: UUID) -> ReadingListItem?
-    func content(for item: ReadingListItem) -> ArticleContent?
-    func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID)
+public protocol SavesPlaybackStore: AnyObject {
+    func item(withID itemID: UUID) -> SavedItem?
+    func content(for item: SavedItem) -> ArticleContent?
+    func markReadState(_ newState: SavedItem.ReadState, for itemID: UUID)
     func markFinishedReading(_ itemID: UUID)
     func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID)
 }
 
-extension ReadingListStore: ReadingListPlaybackStore {}
+extension SavesStore: SavesPlaybackStore {}
 
-/// The narrow slice of `LunaStorage.ReadingListStore` `AudioScriptPipeline`
+/// The narrow slice of `LunaStorage.SavesStore` `AudioScriptPipeline`
 /// needs to sweep the whole list for readable articles lacking a
 /// current-version cached script, and to derive `AudioScriptStore`'s cache
-/// directory. Kept separate from `ReadingListPlaybackStore` (which is about
+/// directory. Kept separate from `SavesPlaybackStore` (which is about
 /// ONE item at playback time) since the pipeline's job is enumerating ALL
 /// items.
-public protocol ReadingListScriptSource: AnyObject {
-    func items() -> [ReadingListItem]
-    func content(for item: ReadingListItem) -> ArticleContent?
+public protocol SavesScriptSource: AnyObject {
+    func items() -> [SavedItem]
+    func content(for item: SavedItem) -> ArticleContent?
     var articlesDirectory: URL { get }
 }
 
-extension ReadingListStore: ReadingListScriptSource {}
+extension SavesStore: SavesScriptSource {}
 
 /// The slice of `SpeechRenderer` `AudioPlaybackCenter` drives, kept as a
 /// protocol so tests can substitute a fake that returns canned

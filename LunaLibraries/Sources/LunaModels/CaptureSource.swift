@@ -5,9 +5,9 @@
 
 import Foundation
 
-/// Where a reading-list item was captured from. Drives per-source auto-send
+/// Where a saved item was captured from. Drives per-source auto-send
 /// configuration — each ereader destination can auto-send some sources and not
-/// others. Stored on `ReadingListItem`; absent on legacy items, which are
+/// others. Stored on `SavedItem`; absent on legacy items, which are
 /// treated as `.manual`.
 public enum CaptureSource: String, Codable, CaseIterable {
     /// Imported from an allowed email sender.

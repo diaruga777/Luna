@@ -129,7 +129,7 @@ final class AllKindsShareMenuTests: XCTestCase {
         _ = try SavedMediaStore.shared.ensureUndownloaded(
             id: UUID(), sourceURLString: url, title: "Clip",
             kind: .video, dateSaved: Date())
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "allkinds-share", urlString: url, title: "Clip",
             dateAdded: Date(), state: .ready, platform: .x)
 
@@ -143,7 +143,7 @@ final class AllKindsShareMenuTests: XCTestCase {
 
     @MainActor
     func testNonPlatformSaveOffersNoMenu() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "allkinds-share-article",
             urlString: "https://example.com/article", title: "Article",
             dateAdded: Date(), state: .ready)
@@ -157,7 +157,7 @@ final class AllKindsShareMenuTests: XCTestCase {
     /// rather than hiding.
     @MainActor
     func testPlatformSaveWithoutAMediaRowSharesItsLinkAlone() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "allkinds-share-link-only",
             urlString: "https://x.com/luna/status/272727", title: "Post",
             dateAdded: Date(), state: .ready, platform: .x)

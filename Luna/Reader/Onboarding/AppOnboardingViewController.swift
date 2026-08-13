@@ -1577,13 +1577,13 @@ final class AppOnboardingViewController: UIViewController {
             guard let self else { return }
             switch result.outcome {
             case .article(let content, _):
-                let saved = await ReadingListIngestor.shared.saveNewWithContent(
+                let saved = await SavesIngestor.shared.saveNewWithContent(
                     urlString: result.url.absoluteString,
                     content: content,
                     source: .paste)
                 await MainActor.run {
                     guard let saved,
-                          let current = ReadingListStore.shared.item(
+                          let current = SavesStore.shared.item(
                             withID: saved.id),
                           current.state == .ready
                     else {

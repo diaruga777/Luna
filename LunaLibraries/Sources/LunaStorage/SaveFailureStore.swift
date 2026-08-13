@@ -11,7 +11,7 @@ import LunaModels
 /// failed, when, how many times, and the best title/site name Luna could
 /// recover for a page it could never actually read.
 ///
-/// Kept in a SIDECAR file, never on `ReadingListItem` — failure detail belongs to
+/// Kept in a SIDECAR file, never on `SavedItem` — failure detail belongs to
 /// the layer that produced it rather than to the row four apps share (the same
 /// reasoning as `RescueLedgerStore` and the preloads sidecar).
 public struct SaveFailureRecord: Codable, Equatable, Sendable {
@@ -55,7 +55,7 @@ public struct SaveFailureRecord: Codable, Equatable, Sendable {
 }
 
 /// App-Group-backed failure detail, written to `saveFailures.json` beside the
-/// reading list. Every read and every mutation goes through the file: the share
+/// saves list. Every read and every mutation goes through the file: the share
 /// and action extensions record failures while the app is suspended, so a
 /// mutation applied to a snapshot from launch would drop whatever they wrote
 /// (see `CoordinatedJSONFile`).

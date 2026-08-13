@@ -24,13 +24,13 @@ import Photos
 import UIKit
 
 /// The "Try Apple Intelligence" leg of an undownloaded card: offered only when
-/// a model is installed, and always against the reading-list item that owns the
+/// a model is installed, and always against the saved item that owns the
 /// source URL (created on the spot if the media was saved without one).
 enum MediaCardRescue {
     static func starter(forSourceURLString sourceURLString: String) -> (() -> Void)? {
         guard URLRescueCoordinator.engine?.isRescueAvailable == true else { return nil }
         return {
-            let store = ReadingListStore.shared
+            let store = SavesStore.shared
             let itemID = store.item(forURLString: sourceURLString)?.id
                 ?? store.addIfAbsent(urlString: sourceURLString, source: .manual)?.id
             if let itemID {
@@ -419,8 +419,8 @@ enum MediaItemActions {
     /// as already fetched. The whole save goes when the card does.
     ///
     /// - Parameters:
-    ///   - deletesReadingListItem: true for a deck whose card IS the media row
-    ///     (the Downloader's), false where the reading-list entry is the card and
+    ///   - deletesSavedItem: true for a deck whose card IS the media row
+    ///     (the Downloader's), false where the save entry is the card and
     ///     its own deck deletes it.
     ///   - onPhotosDeletionFailure: the Downloader tells the user its Photos
     ///     deletion needs permission; the all-kinds deck lets it pass, having
@@ -428,7 +428,7 @@ enum MediaItemActions {
     static func release(
         _ item: SavedMediaItem,
         saver: PhotoLibrarySaver,
-        deletesReadingListItem: Bool,
+        deletesSavedItem: Bool,
         onPhotosDeletionFailure: (@MainActor () -> Void)? = nil
     ) {
         Task { @MainActor in
@@ -438,9 +438,9 @@ enum MediaItemActions {
                         localIdentifier, saver: saver)
                 }
                 AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
-                if deletesReadingListItem,
-                   let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-                    ReadingListStore.shared.delete(saved)
+                if deletesSavedItem,
+                   let saved = SavesStore.shared.item(forURLString: item.sourceURLString) {
+                    SavesStore.shared.delete(saved)
                 }
                 SavedMediaStore.shared.delete(item)
             } catch {

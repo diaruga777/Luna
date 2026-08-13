@@ -33,7 +33,7 @@ public protocol RabbitHoleLayerDelegate: AnyObject {
     /// Fired once the page is confirmed article-like (host reveals the mode switcher).
     func layerDidBecomeArticle(_ layer: RabbitHoleLayerViewController)
     /// Fired when the reader mode changes (host updates the descriptor).
-    func layer(_ layer: RabbitHoleLayerViewController, didChangeMode mode: ReadingListItem.ReaderMode)
+    func layer(_ layer: RabbitHoleLayerViewController, didChangeMode mode: SavedItem.ReaderMode)
     /// The header back button (focused layer only): pop one layer, or exit the reader
     /// at the root. The host decides which.
     func layerRequestedBack(_ layer: RabbitHoleLayerViewController)
@@ -68,9 +68,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private enum ProbeDecision { case reader(ArticleContent); case web }
     private var pendingDecision: ProbeDecision?
     private var didDecide = false
-    public private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
+    public private(set) var readerMode: SavedItem.ReaderMode = .scroll
     private var audioOn = false
-    /// The `ReadingListItem.id` handed to the CURRENTLY embedded reader child —
+    /// The `SavedItem.id` handed to the CURRENTLY embedded reader child —
     /// the identity the app-wide audio center plays under when this layer's
     /// audio toggle starts read-aloud. Captured per embed so toggling audio OFF
     /// can pause exactly that playback, and so the host can tell whether the
@@ -101,11 +101,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// Reading modes offered for this layer. `.original` (loading the frozen archive
     /// or its local article snapshot) is only shown when this layer actually points at
     /// a web page — saves with no real http(s) URL (e.g. mail imports) never get it. This
-    /// matches `ReadingListItem.canHaveOriginalArchive` for this reader's web-only domain
+    /// matches `SavedItem.canHaveOriginalArchive` for this reader's web-only domain
     /// (every layer is a dived-into http(s) link), sharing the same web-page URL test.
-    private var orderedModes: [ReadingListItem.ReaderMode] {
-        var modes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
-        if ReadingListItem.isWebPageURL(descriptor.urlString) {
+    private var orderedModes: [SavedItem.ReaderMode] {
+        var modes: [SavedItem.ReaderMode] = [.scroll, .rsvp]
+        if SavedItem.isWebPageURL(descriptor.urlString) {
             modes.append(.original)
         }
         return modes
@@ -131,7 +131,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     // MARK: - External-chrome accessors (host-rendered header pills)
 
     /// The reading modes this layer offers (mirrors the in-card mode switcher).
-    public var availableModes: [ReadingListItem.ReaderMode] { orderedModes }
+    public var availableModes: [SavedItem.ReaderMode] { orderedModes }
     /// Whether this layer's embedded reader currently renders with read-aloud on.
     public var isAudioOn: Bool { audioOn }
     /// Whether a share provider exists (without one the save/share slot is empty).
@@ -166,8 +166,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
 
     private static let emptyContent = ArticleContent(title: "", blocks: [])
-    private static var emptyItem: ReadingListItem {
-        var item = ReadingListItem(urlString: "about:blank")
+    private static var emptyItem: SavedItem {
+        var item = SavedItem(urlString: "about:blank")
         item.state = .ready
         return item
     }
@@ -497,11 +497,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.setNeedsLayout()
     }
 
-    /// Whether this layer's URL is already in the reading list (always true for the
+    /// Whether this layer's URL is already in the saves list (always true for the
     /// root, which IS a saved item). Drives Save-vs-Share in the trailing header slot.
     private var isAlreadySaved: Bool {
         guard let urlString = descriptor.url?.absoluteString else { return false }
-        return ReadingListStore.shared.item(forURLString: urlString) != nil
+        return SavesStore.shared.item(forURLString: urlString) != nil
     }
 
     /// Show Share when the article is already saved, Save when it isn't. No-op when
@@ -558,7 +558,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     // MARK: - Mode switching
 
-    public func setMode(_ mode: ReadingListItem.ReaderMode) {
+    public func setMode(_ mode: SavedItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
         // Capture the OUTGOING mode's reading position into the descriptor now (the
         // crossfade embeds synchronously, before any persist runs) so the incoming
@@ -695,7 +695,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.setNeedsLayout()
     }
 
-    private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false) {
+    private func embedReader(mode: SavedItem.ReaderMode, forceReembed: Bool = false) {
         guard let content = articleContent, let url = descriptor.url else { return }
         if mode == .original {
             // `readerMode` is restored from the descriptor before the first
@@ -736,8 +736,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.setNeedsLayout()
     }
 
-    /// The `ReadingListItem` handed to the embedded scroll/RSVP reader. When this
-    /// layer's page IS a saved reading-list item (always true for the root layer,
+    /// The `SavedItem` handed to the embedded scroll/RSVP reader. When this
+    /// layer's page IS a saved saved item (always true for the root layer,
     /// and for any dived-into link the user happens to have saved), the REAL store
     /// item is used so read-aloud plays under its durable identity — mark-read,
     /// the autoplay queue's exclusion, spoken-position resume, and the
@@ -746,11 +746,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// identity stays stable across re-embeds (mode/audio toggles) within the
     /// layer instead of regenerating per embed. Either way the per-session
     /// scroll offset comes from the descriptor.
-    private func readerItem(for url: URL) -> ReadingListItem {
-        var item = ReadingListStore.shared.item(forURLString: url.absoluteString)
-            ?? ReadingListItem(
+    private func readerItem(for url: URL) -> SavedItem {
+        var item = SavesStore.shared.item(forURLString: url.absoluteString)
+            ?? SavedItem(
                 urlString: url.absoluteString,
-                id: ReadingListItem.deterministicUUID(from: "rabbithole:\(url.absoluteString)"))
+                id: SavedItem.deterministicUUID(from: "rabbithole:\(url.absoluteString)"))
         item.state = .ready
         item.title = descriptor.title ?? item.title
         // Feed the shared scroll/RSVP reading position from the descriptor: the word
@@ -768,7 +768,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// isn't in the store).
     private func markEmbeddedItemRead() {
         guard let id = embeddedReaderItemID else { return }
-        ReadingListStore.shared.markFinishedReading(id)
+        SavesStore.shared.markFinishedReading(id)
     }
 
     private func showChild(_ child: UIViewController) {

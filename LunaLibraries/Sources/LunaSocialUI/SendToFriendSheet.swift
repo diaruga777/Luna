@@ -17,7 +17,7 @@ public protocol AccountSetupPresenting {
     func presentAccountSetup(from presenter: UIViewController)
 }
 
-/// The shared "share this" entry point used by the reading list and the reader:
+/// The shared "share this" entry point used by the saves list and the reader:
 /// pick recipients and send a Luna email, or fall back to the system share sheet
 /// with the plain URL.
 public enum SendToFriendSheet {
@@ -27,11 +27,11 @@ public enum SendToFriendSheet {
     /// of the apps that send email at all — the others never reach this path.
     public static var accountSetupPresenter: (any AccountSetupPresenting)?
 
-    /// Presents the recipient picker for a reading-list item (preferred — sends
+    /// Presents the recipient picker for a saved item (preferred — sends
     /// the item's rich content), or a bare URL when no item is available.
     public static func present(
         from presenter: UIViewController,
-        item: ReadingListItem? = nil,
+        item: SavedItem? = nil,
         urlString: String,
         title: String?
     ) {
@@ -75,7 +75,7 @@ public enum SendToFriendSheet {
 
     private static func presentFriendPicker(
         from presenter: UIViewController,
-        item: ReadingListItem?,
+        item: SavedItem?,
         urlString: String,
         title: String?
     ) {
@@ -90,7 +90,7 @@ public enum SendToFriendSheet {
     private static func presentRecentRecipients(
         _ recipients: [RecentFriendRecipientsStore.Recipient],
         from presenter: UIViewController,
-        item: ReadingListItem?,
+        item: SavedItem?,
         urlString: String,
         title: String?
     ) {
@@ -126,7 +126,7 @@ public enum SendToFriendSheet {
     // MARK: - Delivery
 
     private static func deliver(
-        item: ReadingListItem?, urlString: String, title: String?,
+        item: SavedItem?, urlString: String, title: String?,
         to emails: [String], from presenter: UIViewController
     ) {
         Task { @MainActor in

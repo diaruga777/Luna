@@ -2,7 +2,7 @@
 //  ArticleSourceBadge.swift
 //  Luna
 //
-//  Maps a reading-list item to the instant fallback badge for its mini-card
+//  Maps a saved item to the instant fallback badge for its mini-card
 //  scrub chip — before (or instead of) a fetched favicon: email imports get
 //  the sender's initials (or a mail glyph when the sender is unknown),
 //  documents a document glyph, and web saves a globe until their site icon
@@ -14,7 +14,7 @@ import LunaModels
 
 enum ArticleSourceBadge {
 
-    static func fallback(for item: ReadingListItem) -> CarouselSourceBadge {
+    static func fallback(for item: SavedItem) -> CarouselSourceBadge {
         if item.effectiveCaptureSource == .email || item.url?.scheme == "lunamail" {
             if let sender = item.senderName,
                !CarouselSourceBadge.initials(fromName: sender).isEmpty {
@@ -29,7 +29,7 @@ enum ArticleSourceBadge {
     }
 
     /// Whether the item's site icon is worth fetching (a real web URL).
-    static func wantsFavicon(_ item: ReadingListItem) -> Bool {
-        ReadingListItem.isWebPageURL(item.urlString)
+    static func wantsFavicon(_ item: SavedItem) -> Bool {
+        SavedItem.isWebPageURL(item.urlString)
     }
 }

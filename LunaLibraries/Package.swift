@@ -159,8 +159,8 @@ let package = Package(
         // AVAudioEngine playback graph, plus (Phase 2) the app-wide playback center,
         // Now Playing/remote-command integration, session policy, and App-Group
         // settings/position persistence — see claudedocs/audio-playback-plan.md.
-        // LunaAppConfig (App-Group id) and LunaStorage (ReadingListStore access,
-        // behind the ReadingListPlaybackStore seam) are Phase 2 additions; UI wiring
+        // LunaAppConfig (App-Group id) and LunaStorage (SavesStore access,
+        // behind the SavesPlaybackStore seam) are Phase 2 additions; UI wiring
         // (mini-player, settings screen) is still later phases.
         .target(name: "LunaAudioPlayback", dependencies: ["LunaModels", "LunaAppConfig", "LunaStorage", "LunaDesignSystem"], resources: [
             .copy("Resources/ChimeTransition.caf"),

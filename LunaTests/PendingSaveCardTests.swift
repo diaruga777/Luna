@@ -21,20 +21,20 @@ final class PendingSaveCardTests: XCTestCase {
         super.setUp()
         installedArticlePresenter = CardKindPresenters.article
         CardKindPresenters.article = ArticleCardPresenter()
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
     }
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         CardKindPresenters.article = installedArticlePresenter
         super.tearDown()
     }
 
     func testPendingSaveUsesOnlyTheLoadingCardAndSuppressesMetadata() throws {
-        var item = ReadingListItem(urlString: "https://example.com/new-save")
+        var item = SavedItem(urlString: "https://example.com/new-save")
         // Proves even stale/upstream placeholder text cannot leak into the UI.
         item.title = "Untitled"
-        ReadingListStore.shared.seedForTesting(items: [item], contents: [:])
+        SavesStore.shared.seedForTesting(items: [item], contents: [:])
 
         let deck = ArticleCardsViewController()
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))

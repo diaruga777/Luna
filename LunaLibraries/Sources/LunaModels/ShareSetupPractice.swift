@@ -7,7 +7,7 @@ import Foundation
 
 /// The deterministic link and preview used by the share-sheet onboarding
 /// lesson. These URLs deliberately never reach the network: the extensions
-/// recognize them before appending a reading-list row, show this bundled
+/// recognize them before appending a save row, show this bundled
 /// preview, and record setup evidence in the shared App Group.
 public enum ShareSetupPractice {
     public static let lunaURLString = "https://luna.app/about"

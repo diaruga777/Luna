@@ -143,7 +143,7 @@ public final class InMemoryRescueRuleStore: RescueRuleStoring {
 }
 
 /// The App-Group-backed store. Persists `url-rescue-rules.json` next to the
-/// reading list. Main app is the only writer (this module never links into
+/// saves list. Main app is the only writer (this module never links into
 /// extensions), so a simple lock + atomic write suffices.
 public final class RescueRuleStore: RescueRuleStoring {
     public static let shared = RescueRuleStore()

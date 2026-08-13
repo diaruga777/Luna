@@ -38,9 +38,9 @@ public struct AudioScriptCacheEnvelope: Codable, Equatable {
 
 /// Persists a finished `AudioScript` as a sibling JSON file of the item's
 /// content file, in the same App-Group `Articles` directory
-/// `LunaStorage.ReadingListStore` already uses — so it survives exactly as
+/// `LunaStorage.SavesStore` already uses — so it survives exactly as
 /// long as the article's content does, and is cleaned up the same way
-/// (`ReadingListStore.delete` removes the content file; a stale sibling
+/// (`SavesStore.delete` removes the content file; a stale sibling
 /// script would just fail to load next time it's looked up by a name nothing
 /// references any more). A version mismatch (`AudioScript.builderVersion !=
 /// currentBuilderVersion`) or a missing/corrupt file both mean "rebuild" —
@@ -54,7 +54,7 @@ public final class AudioScriptStore {
     private let articlesDirectory: URL
     private let fileManager = FileManager.default
 
-    /// - Parameter articlesDirectory: `ReadingListStore.articlesDirectory` in
+    /// - Parameter articlesDirectory: `SavesStore.articlesDirectory` in
     ///   production; tests pass a scratch directory.
     public init(articlesDirectory: URL) {
         self.articlesDirectory = articlesDirectory

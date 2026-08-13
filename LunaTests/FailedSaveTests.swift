@@ -306,8 +306,8 @@ final class SaveFailureStoreTests: XCTestCase {
 
 final class FailedSaveSurfacingTests: XCTestCase {
 
-    private func failedItem() -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://example.com/broken")
+    private func failedItem() -> SavedItem {
+        var item = SavedItem(urlString: "https://example.com/broken")
         item.state = .failed
         return item
     }
@@ -328,7 +328,7 @@ final class FailedSaveSurfacingTests: XCTestCase {
         var item = failedItem()
         item.platform = .youtube
         XCTAssertFalse(
-            ReadingListSectioning.isFailedSave(item),
+            SavesSectioning.isFailedSave(item),
             "a platform item that failed a later step is not a kind-less failed save")
         XCTAssertFalse(LunaApp.reader.includes(item))
     }
@@ -336,7 +336,7 @@ final class FailedSaveSurfacingTests: XCTestCase {
     func testAReadyItemIsUnaffected() {
         var item = failedItem()
         item.state = .ready
-        XCTAssertFalse(ReadingListSectioning.isFailedSave(item))
+        XCTAssertFalse(SavesSectioning.isFailedSave(item))
         XCTAssertTrue(LunaApp.reader.includes(item))
         XCTAssertFalse(LunaApp.downloader.includes(item))
     }
@@ -407,7 +407,7 @@ final class FailedSaveCardFactoryTests: XCTestCase {
     /// Writes to the shared ledger (the factory reads the singleton), so it uses
     /// a fresh id and never clears anything another test could be watching.
     func testAGuardrailedCardGoesTerminalRatherThanOfferingARetry() {
-        var item = ReadingListItem(urlString: "https://example.com/guardrailed-\(UUID().uuidString)")
+        var item = SavedItem(urlString: "https://example.com/guardrailed-\(UUID().uuidString)")
         item.state = .failed
         RescueLedgerStore.shared.recordGuardrail(item.id)
         let model = FailedSaveCardFactory.makeModel(for: item)
@@ -421,8 +421,8 @@ final class FailedSaveCardFactoryTests: XCTestCase {
         return url
     }
 
-    private func failedItem() -> ReadingListItem {
-        var item = ReadingListItem(urlString: "https://example.com/broken")
+    private func failedItem() -> SavedItem {
+        var item = SavedItem(urlString: "https://example.com/broken")
         item.state = .failed
         return item
     }

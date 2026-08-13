@@ -26,7 +26,7 @@ public protocol ReaderShareProviding: AnyObject {
     func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView)
     /// Saves an arbitrary link (e.g. a link long-pressed inside the reader) to
-    /// the reading list.
+    /// the saves list.
     func saveLink(urlString: String)
 }
 

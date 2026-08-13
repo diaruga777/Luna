@@ -53,7 +53,7 @@ struct ArticleEntity: AppEntity, IndexedEntity {
         return formatter
     }()
 
-    init(item: ReadingListItem) {
+    init(item: SavedItem) {
         self.id = item.id
         self.title = item.title ?? item.urlString
         self.savedDate = item.bumpDate ?? item.dateAdded
@@ -69,7 +69,7 @@ struct ArticleEntityQuery: EntityQuery, EntityStringQuery {
     init() {}
 
     func entities(for identifiers: [UUID]) async throws -> [ArticleEntity] {
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         return identifiers
             .compactMap { store.item(withID: $0) }
             .filter(ArticleReadability.isReadableArticle)
@@ -77,12 +77,12 @@ struct ArticleEntityQuery: EntityQuery, EntityStringQuery {
     }
 
     func entities(matching string: String) async throws -> [ArticleEntity] {
-        ArticleMatcher.search(query: string, in: ReadingListStore.shared.items())
+        ArticleMatcher.search(query: string, in: SavesStore.shared.items())
             .map(ArticleEntity.init(item:))
     }
 
     func suggestedEntities() async throws -> [ArticleEntity] {
-        ArticleMatcher.suggested(in: ReadingListStore.shared.items())
+        ArticleMatcher.suggested(in: SavesStore.shared.items())
             .map(ArticleEntity.init(item:))
     }
 }

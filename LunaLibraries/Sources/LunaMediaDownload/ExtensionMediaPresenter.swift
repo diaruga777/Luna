@@ -40,7 +40,7 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
 
     /// The deterministic onboarding post is still shown by the production
     /// saved-media controller. Only its downloaded file is supplied up front;
-    /// no network request, reading-list write, Photos write, or background
+    /// no network request, saves write, Photos write, or background
     /// transfer is involved in a rehearsal.
     public func presentPracticeVideo(videoURL: URL, host: ExtensionHost) -> Bool {
         let interactive = host.readerMode != nil
@@ -72,7 +72,7 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
     /// Everything the media kind may have written for this link: the durable
     /// library entry (whose own delete removes its files) and the
     /// already-downloaded marker that would otherwise make the next save skip
-    /// its fetch. The reading-list row itself belongs to the caller — it is
+    /// its fetch. The save row itself belongs to the caller — it is
     /// kind-neutral.
     public func deleteSavedContents(forURLString urlString: String) {
         MediaPreloadCache.shared.discard(urlString: urlString)

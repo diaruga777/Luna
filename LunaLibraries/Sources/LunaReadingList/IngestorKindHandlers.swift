@@ -8,7 +8,7 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Article-kind ingestion/persistence behavior behind `ReadingListIngestor` —
+/// Article-kind ingestion/persistence behavior behind `SavesIngestor` —
 /// everything the ingestor needs that would otherwise drag article-only modules
 /// (LunaReaderUI, LunaArchiveReader, LunaDocuments, LunaSend) into every app.
 /// The heavy lifting lives in `LunaReaderUI.ArticleIngestHandler`; the send
@@ -18,27 +18,27 @@ public protocol IngestorArticleHandling {
     /// Persists a readable article: downloads its images + cover art, saves the
     /// content, and flips ready (then finishes non-critical artifacts async).
     func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem,
-        url: URL, store: ReadingListStore) async
+        _ content: ArticleContent, html: String, for item: SavedItem,
+        url: URL, store: SavesStore) async
     /// Document ingestion: parse the imported file (stored at
     /// `Articles/<id>-source.<type>`) into article content.
-    func ingestDocument(_ item: ReadingListItem, store: ReadingListStore) async
+    func ingestDocument(_ item: SavedItem, store: SavesStore) async
     /// Repairs every ready web page that lacks a `.webarchive` (see
-    /// `ReadingListIngestor.backfillMissingWebArchives`).
-    func backfillMissingWebArchives(store: ReadingListStore)
+    /// `SavesIngestor.backfillMissingWebArchives`).
+    func backfillMissingWebArchives(store: SavesStore)
     /// Repairs ready and locked web articles that have no row thumbnail (see
-    /// `ReadingListIngestor.backfillMissingThumbnails`).
-    func backfillMissingThumbnails(store: ReadingListStore)
+    /// `SavesIngestor.backfillMissingThumbnails`).
+    func backfillMissingThumbnails(store: SavesStore)
     /// A saved item just flipped `.ready` — kicks the auto-send pipeline
     /// (Kindle/ereaders). Bridged to `ArticleSendCoordinator.articleBecameReady`.
-    func articleBecameReady(_ item: ReadingListItem)
+    func articleBecameReady(_ item: SavedItem)
     /// Eagerly preloads the CURRENT pasteboard candidate's links (see
     /// `PreloadCoordinator.preloadPasteboard`).
     func preloadPasteboard(content: ArticleContent, sourceURL: URL)
     /// Destinations that are configured AND in double-save mode right now.
     func doubleSaveDestinationIDs() -> [String]
     /// Sends an article to one ereader destination (by id).
-    func sendToDestination(_ item: ReadingListItem, destinationID: String) async
+    func sendToDestination(_ item: SavedItem, destinationID: String) async
     /// Whether sends can actually go out to this destination.
     func isDestinationConfigured(_ destinationID: String) -> Bool
 }
@@ -49,8 +49,8 @@ public protocol IngestorMediaHandling {
     /// Ingests a recognized platform item (video or social post): best-effort
     /// metadata, then marks `.ready`. Never enters `.failed`.
     func ingestPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, platformItemID: String?,
-        store: ReadingListStore) async
+        _ item: SavedItem, platform: ContentPlatform, platformItemID: String?,
+        store: SavesStore) async
 }
 
 /// Product-kind ingestion behavior: turn a detected product page into a price
@@ -58,8 +58,8 @@ public protocol IngestorMediaHandling {
 /// matches). Implemented over `LunaPriceUI.ProductTrackerIngestor`.
 public protocol IngestorProductHandling {
     func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo,
-        store: ReadingListStore) async
+        _ item: SavedItem, url: URL, product: ProductInfo,
+        store: SavesStore) async
 }
 
 /// The per-kind INGESTOR handler registry — the store-writing counterpart of

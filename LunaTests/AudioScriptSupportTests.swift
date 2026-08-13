@@ -60,8 +60,8 @@ final class AudioScriptSupportTests: XCTestCase {
     // file I/O, temp dir) — the same pattern `AudioScriptStoreTests`/
     // `AudioScriptPipelineTests` use.
 
-    private func readableItem(seed: String) -> ReadingListItem {
-        var item = ReadingListItem(
+    private func readableItem(seed: String) -> SavedItem {
+        var item = SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: "Article \(seed)",
             dateAdded: Date(timeIntervalSince1970: 1_700_000_000), state: .ready)
         item.contentFileName = "\(item.id.uuidString).json"

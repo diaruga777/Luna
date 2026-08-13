@@ -80,7 +80,7 @@ public enum ArticleTextRenderer {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []
-        let imagesDirectory = ReadingListStore.shared.articlesDirectory
+        let imagesDirectory = SavesStore.shared.articlesDirectory
         // Cap to the readable text column so images don't overflow on iPad.
         let maxImageWidth = min(UIScreen.main.bounds.width - 100, 660)
 

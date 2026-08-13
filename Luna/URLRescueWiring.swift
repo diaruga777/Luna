@@ -60,7 +60,7 @@ enum URLRescueWiring {
         // Reader/Downloader failures are handed to the coordinator by the ingestor
         // (rescueTrigger). Extensions never install this, so a failure just stays
         // failed.
-        ReadingListIngestor.rescueTrigger = CoordinatorRescueTrigger()
+        SavesIngestor.rescueTrigger = CoordinatorRescueTrigger()
     }
 
     /// The coordinator's half of the bridge: the availability gate and one
@@ -71,7 +71,7 @@ enum URLRescueWiring {
         var isRescueAvailable: Bool { engine.isAvailable }
 
         func performRescue(
-            for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+            for item: SavedItem, hint: RescueHint?, interactive: Bool
         ) async -> URLRescueCoordinator.RescueRunResult {
             await URLRescueWiring.perform(
                 engine: engine, item: item, hint: hint, interactive: interactive)
@@ -103,7 +103,7 @@ enum URLRescueWiring {
     // MARK: - Perform (coordinator bridge)
 
     private static func perform(
-        engine: URLRescueEngine, item: ReadingListItem, hint: RescueHint?, interactive: Bool
+        engine: URLRescueEngine, item: SavedItem, hint: RescueHint?, interactive: Bool
     ) async -> URLRescueCoordinator.RescueRunResult {
         guard let url = item.url else { return .notRecovered }
         let record = SaveFailureStore.shared.record(for: item.id)
@@ -128,7 +128,7 @@ enum URLRescueWiring {
         }
         switch outcome {
         case .rescued(let result, _):
-            let applied = await ReadingListIngestor.shared.applyRescued(
+            let applied = await SavesIngestor.shared.applyRescued(
                 result, forItemID: item.id, interactive: interactive)
             if applied { return .advanced }
             // The model DID recover the content and this app's surface dropped it
@@ -165,7 +165,7 @@ enum URLRescueWiring {
                 return .notRecovered
             }
             RescueLedgerStore.shared.recordBrowserHandoff(item.id)
-            ReadingListStore.shared.markNeedsCaptcha(
+            SavesStore.shared.markNeedsCaptcha(
                 item.id, title: record?.resolvedTitle ?? item.title)
             SaveDiagnosticsStore.shared.delete(for: item.id)
             return .advanced
@@ -192,7 +192,7 @@ enum URLRescueWiring {
     /// branch of the pipeline gave up, and under `.auto` this is a FACT handed to
     /// the model, never a steer toward one content type.
     private static func failureKind(
-        for item: ReadingListItem, hint: RescueHint?
+        for item: SavedItem, hint: RescueHint?
     ) -> RescueRequest.FailureKind {
         if let hint {
             switch hint {

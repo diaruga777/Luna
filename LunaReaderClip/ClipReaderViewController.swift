@@ -22,7 +22,7 @@ final class ClipReaderViewController: UIViewController {
 
     private var state: State = .waiting
     private var task: Task<Void, Never>?
-    /// The clip's OWN reading-list store, in the clip's own container — never the
+    /// The clip's OWN saves store, in the clip's own container — never the
     /// App Group one the full app reads.
     ///
     /// `ArchiveWebReaderViewController` extracts THROUGH a store (it saves the
@@ -30,12 +30,12 @@ final class ClipReaderViewController: UIViewController {
     /// read-only with respect to the user's saved list: no clip save may show up in
     /// Luna Reader later. A private container satisfies both — the unlock writes
     /// somewhere real, and that somewhere is thrown away with the clip.
-    private lazy var scratchStore: ReadingListStore = {
+    private lazy var scratchStore: SavesStore = {
         let directory = URL.cachesDirectory.appendingPathComponent(
             "ClipArchiveUnlock", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true)
-        return ReadingListStore(containerURL: directory)
+        return SavesStore(containerURL: directory)
     }()
     private let spinner = HorizonSpinnerView(side: 36)
     private let titleLabel = UILabel()
@@ -83,7 +83,7 @@ final class ClipReaderViewController: UIViewController {
         switch ClipReaderRoute.route(for: result.outcome) {
         case .reader:
             guard case let .article(content, _) = result.outcome else { return }
-            var item = ReadingListItem(urlString: result.url.absoluteString)
+            var item = SavedItem(urlString: result.url.absoluteString)
             item.title = content.title
             item.state = .ready
             item.wordCount = content.wholeText.split(whereSeparator: \.isWhitespace).count
@@ -101,7 +101,7 @@ final class ClipReaderViewController: UIViewController {
         }
     }
 
-    fileprivate func presentReader(item: ReadingListItem, content: ArticleContent) {
+    fileprivate func presentReader(item: SavedItem, content: ArticleContent) {
         let reader = ReaderViewController(
             item: item,
             content: content,
@@ -227,9 +227,9 @@ final class ClipReaderViewController: UIViewController {
 private final class ClipUnlockLegs: ArchiveUnlockDelegate {
     private weak var host: ClipReaderViewController?
     private let itemID: UUID
-    private let store: ReadingListStore
+    private let store: SavesStore
 
-    init(host: ClipReaderViewController, itemID: UUID, store: ReadingListStore) {
+    init(host: ClipReaderViewController, itemID: UUID, store: SavesStore) {
         self.host = host
         self.itemID = itemID
         self.store = store

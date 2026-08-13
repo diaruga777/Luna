@@ -16,7 +16,7 @@ public enum ReaderModeIcons {
     private static let font = UIFont.systemFont(ofSize: 13, weight: .bold)
     private static let sample = "Abc" as NSString
 
-    public static func image(for mode: ReadingListItem.ReaderMode) -> UIImage {
+    public static func image(for mode: SavedItem.ReaderMode) -> UIImage {
         switch mode {
         case .scroll:
             return UIImage(systemName: "doc.richtext")?

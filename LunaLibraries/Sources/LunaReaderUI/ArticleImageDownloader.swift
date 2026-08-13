@@ -29,7 +29,7 @@ public enum ArticleImageDownloader {
     private static let maxStoredPixelSize = 2048
 
     public static func download(
-        _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
+        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL
     ) async -> ArticleContent {
         await download(content, itemID: itemID, store: store, refererURL: refererURL) { _, _ in true }
     }
@@ -38,7 +38,7 @@ public enum ArticleImageDownloader {
     /// Images with declared dimensions already have stable placeholders, so they do
     /// not need to block the row becoming readable.
     public static func downloadInitialLayoutImages(
-        _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
+        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL
     ) async -> ArticleContent {
         let initialTextBudget = 3_200
         return await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, textBeforeBlock in
@@ -56,7 +56,7 @@ public enum ArticleImageDownloader {
     /// declared dimensions are left alone — their placeholders already hold the
     /// right space, so they can load in behind them without moving a word.
     public static func downloadUnknownSizeImages(
-        _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
+        _ content: ArticleContent, itemID: UUID, store: SavesStore, refererURL: URL
     ) async -> ArticleContent {
         await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, _ in
             block.kind == .image && block.imageSize == nil
@@ -66,7 +66,7 @@ public enum ArticleImageDownloader {
     private static func download(
         _ content: ArticleContent,
         itemID: UUID,
-        store: ReadingListStore,
+        store: SavesStore,
         refererURL: URL,
         shouldDownload: (ArticleContent.Block, Int) -> Bool
     ) async -> ArticleContent {
@@ -152,7 +152,7 @@ public enum ArticleImageDownloader {
     /// Blocks whose file isn't cached yet are returned unchanged (the async `download`
     /// fetches those). Returns `content` untouched when no image needs resolving.
     public static func resolveLocalImages(
-        _ content: ArticleContent, store: ReadingListStore
+        _ content: ArticleContent, store: SavesStore
     ) -> ArticleContent {
         guard content.blocks.contains(where: { block in
             guard block.kind == .image else { return false }

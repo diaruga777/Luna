@@ -30,7 +30,7 @@ enum ProductShellWiring {
         // a fan-out (still fewer than two stores) kicks a comparison instead
         // of showing nothing forever — `LunaReadingList` cannot link
         // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
-        ReadingListIngestor.priceTrackerComparisonKicker = ResaveComparisonKicker()
+        SavesIngestor.priceTrackerComparisonKicker = ResaveComparisonKicker()
         // Action Button intents hand a saved product back as its comparison
         // summary (`claudedocs/price-comparison.md`).
         ProductIntentHandoff.install()
@@ -48,7 +48,7 @@ enum ProductShellWiring {
         // Product snapshots are NOT swept here: they are read once, on the
         // save path, when a tracker is created (`claudedocs/price-tracking.md`).
         Task {
-            await SellerComparison.completePending(store: ReadingListStore.shared)
+            await SellerComparison.completePending(store: SavesStore.shared)
         }
     }
 
@@ -75,7 +75,7 @@ enum ProductShellWiring {
     /// add-seller sheet — the Action Button intent's "add a seller" route.
     @MainActor
     static func openAddSeller(itemID: UUID, navigationController: UINavigationController) {
-        guard ReadingListStore.shared.item(withID: itemID)?.priceTracker != nil,
+        guard SavesStore.shared.item(withID: itemID)?.priceTracker != nil,
               let deck = navigationController.viewControllers.first
                 as? CardCarouselHostViewController else { return }
         navigationController.dismiss(animated: false)
@@ -102,14 +102,14 @@ private struct URLRescuePriceResolver: ProductPriceResolving {
 /// The re-save bridge: `LunaReadingList` cannot link `LunaPriceUI`, so the
 /// composition root carries the fan-out call.
 private struct ResaveComparisonKicker: PriceTrackerComparisonKicking {
-    func kickComparison(itemID: UUID, url: URL, store: ReadingListStore) {
+    func kickComparison(itemID: UUID, url: URL, store: SavesStore) {
         SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
     }
 }
 
 private struct ProductKindHandler: IngestorProductHandling {
     func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore
+        _ item: SavedItem, url: URL, product: ProductInfo, store: SavesStore
     ) async {
         await ProductTrackerIngestor.shared.ingest(item, url: url, product: product, store: store)
     }

@@ -51,7 +51,7 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
     /// On a merge the editor opens on the MATCHED tracker's item, in
     /// `.merge` mode, instead of duplicating — synchronously, with no image
     /// download or other await the extension cannot afford.
-    public func presentPriceEditor(product: ProductInfo, url: URL, store: ReadingListStore, host: ExtensionHost) {
+    public func presentPriceEditor(product: ProductInfo, url: URL, store: SavesStore, host: ExtensionHost) {
         let addSellerHandoff = ExtensionAddSellerHandoff(host: host)
         guard let placeholder = store.item(forURLString: url.absoluteString) else {
             host.confirmSavedThenComplete()
@@ -110,7 +110,7 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
     }
 
     private func backfillArtwork(
-        itemID: UUID, primaryURL: URL?, pageURL: URL, store: ReadingListStore
+        itemID: UUID, primaryURL: URL?, pageURL: URL, store: SavesStore
     ) {
         guard store.item(withID: itemID)?.priceTracker?.imageFileName == nil else { return }
         Task { [artworkLoader] in

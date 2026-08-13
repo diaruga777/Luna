@@ -27,11 +27,11 @@ public enum ExtensionAudioScriptWriter {
     /// `contentFileName` yet (nothing to key the sibling file off of) or a
     /// cached script already exists.
     ///
-    /// - Parameter articlesDirectory: `ReadingListStore.articlesDirectory`
+    /// - Parameter articlesDirectory: `SavesStore.articlesDirectory`
     ///   in production; tests pass a scratch directory.
     @discardableResult
     public static func writeHeuristicScriptIfNeeded(
-        item: ReadingListItem, content: ArticleContent, articlesDirectory: URL
+        item: SavedItem, content: ArticleContent, articlesDirectory: URL
     ) -> Bool {
         guard let contentFileName = item.contentFileName else { return false }
         let scriptStore = AudioScriptStore(articlesDirectory: articlesDirectory)

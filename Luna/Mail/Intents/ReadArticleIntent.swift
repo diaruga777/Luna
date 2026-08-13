@@ -50,8 +50,8 @@ struct ReadArticleIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let store = ReadingListStore.shared
-        let resolvedItem: ReadingListItem
+        let store = SavesStore.shared
+        let resolvedItem: SavedItem
         if let article, let item = store.item(withID: article.id), ArticleReadability.isReadableArticle(item) {
             resolvedItem = item
         } else if let latest = ArticleMatcher.latestUnread(in: store.items()) {

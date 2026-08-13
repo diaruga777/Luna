@@ -22,7 +22,7 @@
 //  presenters don't match its app's kinds, when anything outside a presenter
 //  install path writes the registry, and when the deck switches on kind itself.
 //
-//  A presenter answers questions about a `ReadingListItem` — never about a slot
+//  A presenter answers questions about a `SavedItem` — never about a slot
 //  index. Slot arithmetic, the util-card offset, the reload's fingerprint diff
 //  and the centering ladder all stay in the host, which is the only place that
 //  has ever needed them.
@@ -69,13 +69,13 @@ protocol CardPresenterHost: AnyObject, Sendable {
     /// into the destination card). The store write is still the KIND's —
     /// `setArchived(false:)` — so every companion flag and the row's bump date
     /// move together.
-    func unarchive(_ item: ReadingListItem, from sourceView: UIView?)
+    func unarchive(_ item: SavedItem, from sourceView: UIView?)
 
     /// Delete this save WHOLE: the kind's companion storage — a downloaded file,
     /// its Photos asset, its auto-download bookkeeping — and then the row.
     /// Reachable from a card's menu and from an archive-tray cell, which is the
     /// point: the tray's delete used to skip the companion half.
-    func deleteSave(_ item: ReadingListItem)
+    func deleteSave(_ item: SavedItem)
 
     /// A presenter's archive-tray download bars changed. Progress ticks arrive
     /// several times a second, so the tray updates its visible cells in place
@@ -104,7 +104,7 @@ protocol CardKindPresenting: AnyObject {
     /// Everything about this save that its card renders and the deck-generic
     /// fingerprint does not already carry. A media download finishing turns a
     /// placeholder into a player; a price change must re-render the graph.
-    func fingerprint(for item: ReadingListItem) -> String
+    func fingerprint(for item: SavedItem) -> String
 
     /// Whether this kind holds anything of its own to draw for this save yet —
     /// a media row behind a platform link, a tracker behind a product URL.
@@ -112,21 +112,21 @@ protocol CardKindPresenting: AnyObject {
     /// A deck with a generic link card of its own shows the save regardless (see
     /// `CardDeckConfiguration.showsSavesWithoutKindContent`); a deck without one
     /// gives it no slot, which is what the Downloader and Price Tracker have
-    /// always done by reading their own store rather than the reading list.
-    func hasContent(for item: ReadingListItem) -> Bool
+    /// always done by reading their own store rather than the saves list.
+    func hasContent(for item: SavedItem) -> Bool
 
     /// Whether this save currently belongs on the deck at all. A media row
     /// archived in the media store is gone from the deck even though its
-    /// reading-list row is live.
-    func isArchived(_ item: ReadingListItem) -> Bool
+    /// save row is live.
+    func isArchived(_ item: SavedItem) -> Bool
 
-    /// Saves this kind holds that have NO reading-list row to find them by.
+    /// Saves this kind holds that have NO save row to find them by.
     ///
-    /// The deck's slot list is the reading list, because that is the one store
+    /// The deck's slot list is the saves list, because that is the one store
     /// every kind writes. Media is the exception, and not a theoretical one: a
     /// media row is keyed by its own store's id and its `sourceURLString` is
     /// whatever the URL was when the DOWNLOAD started, which is not always what
-    /// the reading-list row says. A Reddit `/r/…/s/<token>` share link is
+    /// the save row says. A Reddit `/r/…/s/<token>` share link is
     /// network-resolved to its permalink inside `gateAndPrepare`; a wrapper URL
     /// is resolved by the share driver, which then deletes the wrapper row. Both
     /// leave real, downloaded user media with no row pointing at it —
@@ -137,30 +137,30 @@ protocol CardKindPresenting: AnyObject {
     /// store) and the deck routes those slots straight back to it, so they get
     /// the same card, verbs and archive behavior as any other save of the kind
     /// without the deck learning what a `SavedMediaItem` is.
-    func unbackedItems() -> [ReadingListItem]
+    func unbackedItems() -> [SavedItem]
 
     // MARK: The card
 
     /// The real card for this save. Nil leaves the deck's generic card in place
     /// (a reader for an article, a title-and-link card otherwise).
-    func cardContent(for item: ReadingListItem, host: CardPresenterHost)
+    func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
-    func topLeadingAccessory(for item: ReadingListItem) -> UIView?
-    func edgeGlowColor(for item: ReadingListItem) -> UIColor?
+    func topLeadingAccessory(for item: SavedItem) -> UIView?
+    func edgeGlowColor(for item: SavedItem) -> UIColor?
 
     // MARK: Strip and scrub preview
 
-    func title(for item: ReadingListItem) -> String?
+    func title(for item: SavedItem) -> String?
     func loadThumbnail(
-        for item: ReadingListItem, host: CardPresenterHost,
+        for item: SavedItem, host: CardPresenterHost,
         completion: @escaping (UIImage?) -> Void)
     func loadSourceBadge(
-        for item: ReadingListItem, completion: @escaping (CarouselSourceBadge?) -> Void)
+        for item: SavedItem, completion: @escaping (CarouselSourceBadge?) -> Void)
     func loadMiniCarouselAccessory(
-        for item: ReadingListItem, completion: @escaping (UIImage?) -> Void)
+        for item: SavedItem, completion: @escaping (UIImage?) -> Void)
     /// Whether this save's strip chip is its own full-bleed still rather than a
     /// mini card with a source badge.
-    func prefersThumbnailChip(for item: ReadingListItem) -> Bool
+    func prefersThumbnailChip(for item: SavedItem) -> Bool
 
     /// How this card PRESENTS its content — whether it dissolves at the edges,
     /// whether the scrub strip plays it, and whether a horizontal swipe across
@@ -176,45 +176,45 @@ protocol CardKindPresenting: AnyObject {
     /// article, a video and a product in one deck were three different
     /// rectangles and paging between them relayouted the card. Every card is the
     /// one frame `CardDeckGeometry` describes.
-    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle
+    func cardStyle(for item: SavedItem) -> CardCarouselCardStyle
     /// Whether the scrub strip may build this card's real content ahead of the
     /// finger. A card backed by a video player answers false — sweeping the
     /// strip must never spin up one player per chip.
-    func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool
+    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool
 
     // MARK: Verbs
 
     /// Kind-specific actions, offered above the deck's own Archive/Delete.
-    func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement]
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement]
 
     /// This save's share ladder for the deck's trailing circle. Nil when the
     /// kind has nothing of its own to offer, which is also what leaves the
     /// circle a plain tap running `share` below.
-    func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
+    func shareMenu(for item: SavedItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
 
     /// The single share verb, for a kind whose share is one action rather than a
-    /// ladder — a product shares its SELLER's page, which is not the reading-list
+    /// ladder — a product shares its SELLER's page, which is not the saves list
     /// row's URL. Return false to let the deck share the row's link instead.
     @discardableResult
-    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool
+    func share(_ item: SavedItem, host: CardPresenterHost, sourceView: UIView) -> Bool
 
     /// THE archive implementation for this kind — every store the kind owns, in
     /// one place. Archiving a media save in the Downloader and archiving it in
     /// the central app are the same write, because there is only one.
-    func setArchived(_ archived: Bool, for item: ReadingListItem)
+    func setArchived(_ archived: Bool, for item: SavedItem)
 
     /// Companion storage (a downloaded file, a Photos asset, auto-download
     /// bookkeeping) released when the save is deleted — from the deck OR from
     /// the archive tray. `host` is supplied so a failure that needs the user's
     /// attention (Photos permission) can be reported.
-    func deleteCompanionStorage(for item: ReadingListItem, host: CardPresenterHost?)
+    func deleteCompanionStorage(for item: SavedItem, host: CardPresenterHost?)
 
     // MARK: Lifecycle
 
     /// This save's card took the center: mark it opened, acknowledge its price
     /// alert, prewarm its share export.
-    func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost)
+    func itemDidCenter(_ item: SavedItem, host: CardPresenterHost)
 
     /// The permanent util card took the center; whatever the previous card had
     /// warmed up for itself is no longer wanted.
@@ -225,12 +225,12 @@ protocol CardKindPresenting: AnyObject {
     /// deck's own behavior (reader immersion, the unlock flow).
     @discardableResult
     func itemWasTapped(
-        _ item: ReadingListItem, cardContent: CardContentViewController?,
+        _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost) -> Bool
 
     // MARK: Stores
 
-    /// Change notifications BESIDES `.readingListChanged`, which every deck
+    /// Change notifications BESIDES `.savesChanged`, which every deck
     /// watches, that must reload a deck showing this kind.
     var changeNotificationNames: [Notification.Name] { get }
 
@@ -260,44 +260,44 @@ protocol CardKindPresenting: AnyObject {
     /// This kind's archived rows, as tray cells. The deck supplies the verbs it
     /// owns (unarchive choreography); the presenter supplies everything that is
     /// a statement about the kind.
-    func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
+    func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
 
     /// Open this save outside the deck (a deep link, an archive-tray tap on a
     /// row with no card). Return true when the presenter took it.
     @discardableResult
-    func openExternally(_ item: ReadingListItem, host: CardPresenterHost) -> Bool
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool
 }
 
 // Every hook a kind doesn't need.
 extension CardKindPresenting {
-    func fingerprint(for item: ReadingListItem) -> String { "" }
-    func hasContent(for item: ReadingListItem) -> Bool { true }
-    func isArchived(_ item: ReadingListItem) -> Bool { item.isArchived }
-    func unbackedItems() -> [ReadingListItem] { [] }
-    func cardContent(for item: ReadingListItem, host: CardPresenterHost)
+    func fingerprint(for item: SavedItem) -> String { "" }
+    func hasContent(for item: SavedItem) -> Bool { true }
+    func isArchived(_ item: SavedItem) -> Bool { item.isArchived }
+    func unbackedItems() -> [SavedItem] { [] }
+    func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController? { nil }
-    func topLeadingAccessory(for item: ReadingListItem) -> UIView? { nil }
-    func edgeGlowColor(for item: ReadingListItem) -> UIColor? { nil }
-    func title(for item: ReadingListItem) -> String? { nil }
+    func topLeadingAccessory(for item: SavedItem) -> UIView? { nil }
+    func edgeGlowColor(for item: SavedItem) -> UIColor? { nil }
+    func title(for item: SavedItem) -> String? { nil }
     func loadThumbnail(
-        for item: ReadingListItem, host: CardPresenterHost,
+        for item: SavedItem, host: CardPresenterHost,
         completion: @escaping (UIImage?) -> Void
     ) { completion(nil) }
     func loadSourceBadge(
-        for item: ReadingListItem, completion: @escaping (CarouselSourceBadge?) -> Void
+        for item: SavedItem, completion: @escaping (CarouselSourceBadge?) -> Void
     ) { completion(nil) }
     func loadMiniCarouselAccessory(
-        for item: ReadingListItem, completion: @escaping (UIImage?) -> Void
+        for item: SavedItem, completion: @escaping (UIImage?) -> Void
     ) { completion(nil) }
-    func prefersThumbnailChip(for item: ReadingListItem) -> Bool { false }
-    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle { .init() }
-    func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool { true }
-    func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] { [] }
-    func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
+    func prefersThumbnailChip(for item: SavedItem) -> Bool { false }
+    func cardStyle(for item: SavedItem) -> CardCarouselCardStyle { .init() }
+    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool { true }
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] { [] }
+    func shareMenu(for item: SavedItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu? { nil }
     @discardableResult
-    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
+    func share(_ item: SavedItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
         false
     }
     /// The row, and — on the way BACK — its sort date. Every deck orders on
@@ -305,16 +305,16 @@ extension CardKindPresenting {
     /// returns the save to wherever it was originally buried. A kind with a
     /// companion store overrides this to write that too, and calls the bump for
     /// the same reason.
-    func setArchived(_ archived: Bool, for item: ReadingListItem) {
-        ReadingListStore.shared.setArchived(archived, for: item.id)
-        if !archived { ReadingListStore.shared.bump(item.id) }
+    func setArchived(_ archived: Bool, for item: SavedItem) {
+        SavesStore.shared.setArchived(archived, for: item.id)
+        if !archived { SavesStore.shared.bump(item.id) }
     }
-    func deleteCompanionStorage(for item: ReadingListItem, host: CardPresenterHost?) {}
-    func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost) {}
+    func deleteCompanionStorage(for item: SavedItem, host: CardPresenterHost?) {}
+    func itemDidCenter(_ item: SavedItem, host: CardPresenterHost) {}
     func utilCardDidCenter() {}
     @discardableResult
     func itemWasTapped(
-        _ item: ReadingListItem, cardContent: CardContentViewController?,
+        _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
     ) -> Bool { false }
     var changeNotificationNames: [Notification.Name] { [] }
@@ -323,10 +323,10 @@ extension CardKindPresenting {
     func prepareSnapshotSideEffects() {}
     func didSettleReload(host: CardPresenterHost) {}
     var archiveDownloadProgress: [UUID: Double] { [:] }
-    func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
+    func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem? { nil }
     @discardableResult
-    func openExternally(_ item: ReadingListItem, host: CardPresenterHost) -> Bool { false }
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool { false }
 }
 
 // MARK: - The registry
@@ -349,8 +349,8 @@ enum CardKindPresenters {
     /// A FAILED save is kind-less by definition — the classifier never got one —
     /// so it belongs to no presenter and the deck draws the shared error card
     /// itself. That is also why every app shows failed saves.
-    static func presenter(for item: ReadingListItem) -> CardKindPresenting? {
-        if ReadingListSectioning.isFailedSave(item) { return nil }
+    static func presenter(for item: SavedItem) -> CardKindPresenting? {
+        if SavesSectioning.isFailedSave(item) { return nil }
         if item.isPriceTracker { return product }
         if item.contentPlatform != nil { return media }
         return article

@@ -36,7 +36,7 @@ enum ArticleShellWiring {
 
         // A completion written before a force-quit never received the normal
         // background callback. Promote it before constructing the Reader UI.
-        ReadingListStore.shared.archivePendingFinishedItems()
+        SavesStore.shared.archivePendingFinishedItems()
 
         // Send-to-Kindle emails go out through the connected email account.
         // LunaSend sits below LunaMailTransport, so the transport factory is
@@ -92,7 +92,7 @@ enum ArticleShellWiring {
 
     static func appDidLaunch() {
         // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
-        // reading list so saved articles are semantically discoverable and Siri
+        // saves list so saved articles are semantically discoverable and Siri
         // can resolve "my article about …"/"from …" without the app running.
         // An app that shows no article has nothing to index and no way to open
         // a result, so the index belongs to the article leg.
@@ -105,7 +105,7 @@ enum ArticleShellWiring {
         // archive move now, so the next launch starts settled — the other half
         // of the invariant `KindDeckProvider` documents (at launch AND at
         // background).
-        ReadingListStore.shared.archivePendingFinishedItems()
+        SavesStore.shared.archivePendingFinishedItems()
         retryPendingSends()
     }
 
@@ -127,8 +127,8 @@ enum ArticleShellWiring {
     #if DEBUG
     /// `-openArchive <url>` debug root: the interactive archive reader.
     static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? {
-        let item = ReadingListStore.shared.addIfAbsent(urlString: articleURL.absoluteString)
-            ?? ReadingListStore.shared.add(urlString: articleURL.absoluteString)
+        let item = SavesStore.shared.addIfAbsent(urlString: articleURL.absoluteString)
+            ?? SavesStore.shared.add(urlString: articleURL.absoluteString)
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id)
         return UINavigationController(rootViewController: reader)
     }
@@ -161,7 +161,7 @@ private struct EmailSetupPresenter: EmailSetupPresenting {
 /// exporters here because neither module can see the other.
 private struct ArticleExportImageDownloader: ArticleExportImagePreparing {
     func preparedContent(
-        _ content: ArticleContent, for item: ReadingListItem
+        _ content: ArticleContent, for item: SavedItem
     ) async -> ArticleContent {
         guard let referer = ArticleImageReferer.url(for: item, content: content) else {
             return content
@@ -197,7 +197,7 @@ private struct ImportArticleUnlocker: LinkImportArticleUnlocking {
 /// any article images that haven't landed yet before writing.
 private struct ArticleIntentExporter: IntentArticleExporting {
     func exportedFileURL(
-        for item: ReadingListItem, format: ArticleExportFormat
+        for item: SavedItem, format: ArticleExportFormat
     ) async -> URL? {
         try? await ArticleExportService().writePreparingImagesWhenAvailable(
             format, for: item)
@@ -207,7 +207,7 @@ private struct ArticleIntentExporter: IntentArticleExporting {
 /// A newly-ready article reaches the send pipeline, so Kindle/ereader auto-sends
 /// keep firing. LunaSend is outside LunaReaderUI's tier, hence the bridge here.
 private struct SendCoordinatorReadiness: ArticleReadinessObserving {
-    func articleBecameReady(_ item: ReadingListItem) {
+    func articleBecameReady(_ item: SavedItem) {
         ArticleSendCoordinator.shared.articleBecameReady(item)
     }
 }
@@ -221,25 +221,25 @@ private struct ArticleKindHandler: IngestorArticleHandling {
         readinessObserver: SendCoordinatorReadiness())
 
     func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem,
-        url: URL, store: ReadingListStore
+        _ content: ArticleContent, html: String, for item: SavedItem,
+        url: URL, store: SavesStore
     ) async {
         await handler.persistArticle(content, html: html, for: item, url: url, store: store)
     }
 
-    func ingestDocument(_ item: ReadingListItem, store: ReadingListStore) async {
+    func ingestDocument(_ item: SavedItem, store: SavesStore) async {
         await handler.ingestDocument(item, store: store)
     }
 
-    func backfillMissingWebArchives(store: ReadingListStore) {
+    func backfillMissingWebArchives(store: SavesStore) {
         handler.backfillMissingWebArchives(store: store)
     }
 
-    func backfillMissingThumbnails(store: ReadingListStore) {
+    func backfillMissingThumbnails(store: SavesStore) {
         handler.backfillMissingThumbnails(store: store)
     }
 
-    func articleBecameReady(_ item: ReadingListItem) {
+    func articleBecameReady(_ item: SavedItem) {
         ArticleSendCoordinator.shared.articleBecameReady(item)
     }
 
@@ -251,7 +251,7 @@ private struct ArticleKindHandler: IngestorArticleHandling {
         ArticleSendCoordinator.shared.doubleSaveDestinationIDs()
     }
 
-    func sendToDestination(_ item: ReadingListItem, destinationID: String) async {
+    func sendToDestination(_ item: SavedItem, destinationID: String) async {
         await ArticleSendCoordinator.shared.send(item, toDestinationID: destinationID)
     }
 

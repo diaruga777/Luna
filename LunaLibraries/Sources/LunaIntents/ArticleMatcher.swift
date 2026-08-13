@@ -8,9 +8,9 @@ import Foundation
 
 /// Selection/ranking logic behind `ArticleEntity`'s query (`Luna/Mail/Intents/
 /// ArticleEntity.swift`) and `ReadArticleIntent`'s nil-entity fallback. Kept
-/// as plain, store-free functions over `[ReadingListItem]` so it's
+/// as plain, store-free functions over `[SavedItem]` so it's
 /// unit-testable without AppIntents, CoreSpotlight, or a real
-/// `ReadingListStore`. Never loads `ArticleContent` — matching uses only
+/// `SavesStore`. Never loads `ArticleContent` — matching uses only
 /// `title`/`urlString`/`dateAdded`, so it stays cheap over a large list.
 public enum ArticleMatcher {
     /// The `EntityStringQuery.entities(matching:)` workhorse: matches
@@ -22,13 +22,13 @@ public enum ArticleMatcher {
     /// recency — which also makes "latest ⟨date/source⟩" phrasing fall out
     /// naturally rather than needing separate handling.
     public static func search(
-        query: String, in items: [ReadingListItem],
+        query: String, in items: [SavedItem],
         now: Date = Date(), calendar: Calendar = Calendar(identifier: .gregorian),
         limit: Int = 10
-    ) -> [ReadingListItem] {
+    ) -> [SavedItem] {
         let parsed = ArticleQueryParser.parse(query)
         let readable = items.filter(ArticleReadability.isReadableArticle)
-        let dateFiltered: [ReadingListItem]
+        let dateFiltered: [SavedItem]
         if let dateFilter = parsed.dateFilter {
             dateFiltered = readable.filter {
                 ArticleRelativeDateFilter.matches(date: $0.dateAdded, filter: dateFilter, now: now, calendar: calendar)
@@ -43,7 +43,7 @@ public enum ArticleMatcher {
             return Array(dateFiltered.sorted { $0.dateAdded > $1.dateAdded }.prefix(limit))
         }
 
-        let scored: [(item: ReadingListItem, score: Double)] = dateFiltered.compactMap { item in
+        let scored: [(item: SavedItem, score: Double)] = dateFiltered.compactMap { item in
             let score = matchScore(item: item, queryTokens: parsed.textTokens)
             return score > 0 ? (item, score) : nil
         }
@@ -56,7 +56,7 @@ public enum ArticleMatcher {
     }
 
     /// Recent unread readable articles, newest first — `suggestedEntities()`.
-    public static func suggested(in items: [ReadingListItem], limit: Int = 10) -> [ReadingListItem] {
+    public static func suggested(in items: [SavedItem], limit: Int = 10) -> [SavedItem] {
         Array(
             items
                 .filter { ArticleReadability.isReadableArticle($0) && $0.readState == .unopened }
@@ -66,7 +66,7 @@ public enum ArticleMatcher {
 
     /// The newest-saved unread readable article — `ReadArticleIntent`'s
     /// nil-entity fallback ("Read my latest ⟨app⟩ article").
-    public static func latestUnread(in items: [ReadingListItem]) -> ReadingListItem? {
+    public static func latestUnread(in items: [SavedItem]) -> SavedItem? {
         items
             .filter { ArticleReadability.isReadableArticle($0) && $0.readState == .unopened }
             .max { $0.dateAdded < $1.dateAdded }
@@ -75,7 +75,7 @@ public enum ArticleMatcher {
     /// Title-token matches count double; source-token matches (host + human
     /// name) count triple — a query built around "from ⟨source⟩" should
     /// outweigh an incidental word overlap in an unrelated article's title.
-    private static func matchScore(item: ReadingListItem, queryTokens: [String]) -> Double {
+    private static func matchScore(item: SavedItem, queryTokens: [String]) -> Double {
         let titleTokens = Set(ArticleQueryParser.tokenize(ArticleQueryParser.normalize(item.title ?? "")))
         var sourceTokens: Set<String> = []
         if let host = ArticleSourceName.host(fromURLString: item.urlString) {

@@ -85,11 +85,11 @@ protocol UtilCardDataSource: AnyObject {
 
 extension UtilCardDataSource {
     var utilCardSavedURLStrings: Set<String> {
-        Set(ReadingListStore.shared.items().map(\.urlString))
+        Set(SavesStore.shared.items().map(\.urlString))
     }
 
     var utilCardSavedDates: [Date] {
-        ReadingListStore.shared.items().map(\.dateAdded)
+        SavesStore.shared.items().map(\.dateAdded)
     }
 
     var utilCardIsEmailConnected: Bool {
@@ -300,7 +300,7 @@ final class UtilCardContentViewController: CardContentViewController {
             self?.updateOrVisibility()
         })
         observers.append(NotificationCenter.default.addObserver(
-            forName: .readingListChanged, object: nil, queue: .main
+            forName: .savesChanged, object: nil, queue: .main
         ) { [weak self] _ in
             self?.updateWeeklySavedState()
             self?.updateOrVisibility()

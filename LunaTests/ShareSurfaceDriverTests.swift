@@ -92,7 +92,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
     }
 
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
@@ -109,7 +109,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareSurfaceDriver-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
     }
 
     override func tearDown() {

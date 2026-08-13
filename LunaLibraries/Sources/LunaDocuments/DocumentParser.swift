@@ -16,7 +16,7 @@ import PDFKit
 /// **`title` is a FALLBACK for the container formats.** It is the shared file's
 /// name, which for a book is a distribution artifact ("pg84-images-3"); an EPUB
 /// or `.docx` that names itself in its own metadata wins, and `saveContent`
-/// carries that title back onto the reading-list row.
+/// carries that title back onto the save row.
 public enum DocumentParser {
 
     /// The formats `parse` has a specific reader for. Parsed ONCE, from the

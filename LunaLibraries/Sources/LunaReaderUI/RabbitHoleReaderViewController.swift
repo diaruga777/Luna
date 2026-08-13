@@ -23,8 +23,8 @@ import UIKit
 /// carousel's screen-level pill row (`providesOwnChrome = false`).
 public struct ReaderChromeState: Equatable {
     public var isArticle: Bool
-    public var modes: [ReadingListItem.ReaderMode]
-    public var selectedMode: ReadingListItem.ReaderMode
+    public var modes: [SavedItem.ReaderMode]
+    public var selectedMode: SavedItem.ReaderMode
     public var isAudioOn: Bool
     /// True when a layer is stacked above the root (back pops one layer).
     public var showsBack: Bool
@@ -36,7 +36,7 @@ public struct ReaderChromeState: Equatable {
 /// same buttons without replacing or moving them when a link opens.
 public protocol ReaderChromeControlling: AnyObject {
     var chromeState: ReaderChromeState? { get }
-    func chromeSetMode(_ mode: ReadingListItem.ReaderMode)
+    func chromeSetMode(_ mode: SavedItem.ReaderMode)
     func chromeToggleAudio()
     func chromeShare(from sourceView: UIView)
     /// The share options for the focused page as a menu, so the host's share pill can
@@ -64,11 +64,11 @@ public protocol RabbitHoleReaderDelegate: AnyObject {
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate,
     ReaderChromeControlling, RabbitHoleLayerDelegate {
 
-    private let rootItem: ReadingListItem
+    private let rootItem: SavedItem
     private let rootContent: ArticleContent
     private let shareProvider: ReaderShareProviding?
     private let includesArticleTitle: Bool
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
     private let stackStore = RabbitHoleStackStore.shared
     private var layout = RabbitHoleLayout()
 
@@ -83,7 +83,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private var edgePopPan: UIScreenEdgePanGestureRecognizer?
     private var didMarkOpened = false
 
-    public init(item: ReadingListItem, content: ArticleContent,
+    public init(item: SavedItem, content: ArticleContent,
                 shareProvider: ReaderShareProviding? = nil,
                 includesArticleTitle: Bool = true) {
         self.rootItem = item
@@ -185,7 +185,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         super.viewWillDisappear(animated)
         persist()
         // Hand the shared nav bar back to whatever screen we're returning to: restore it
-        // (and clear any leftover mutation) on the way out so the reading list — which
+        // (and clear any leftover mutation) on the way out so the saves list — which
         // shares this bar — comes back with its full header. The destination also
         // re-asserts its own state in viewWillAppear; this is the belt to that suspenders.
         if isMovingFromParent || isBeingDismissed, let nav = navigationController {
@@ -283,7 +283,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     public func layer(_ layer: RabbitHoleLayerViewController,
-                      didChangeMode mode: ReadingListItem.ReaderMode) {
+                      didChangeMode mode: SavedItem.ReaderMode) {
         persist()
         delegate?.readerContentHierarchyDidChange(self)
     }
@@ -437,7 +437,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             offersSaveShare: layer.offersSaveShare)
     }
 
-    public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
+    public func chromeSetMode(_ mode: SavedItem.ReaderMode) {
         layers[safe: focus]?.setMode(mode)
     }
 
@@ -554,7 +554,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             // durable item, so a plain reopen restores both consistently.
             let d = root.descriptor
             store.saveReaderExitPosition(
-                scrollOffset: d.scrollOffset.map(ReadingListStore.ScrollOffsetEdit.set) ?? .clear,
+                scrollOffset: d.scrollOffset.map(SavesStore.ScrollOffsetEdit.set) ?? .clear,
                 lastWordIndex: d.wordIndex,
                 lastOriginalScrollOffset: d.originalScrollOffset,
                 for: rootItem.id)

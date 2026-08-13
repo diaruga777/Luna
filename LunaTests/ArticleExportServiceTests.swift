@@ -22,7 +22,7 @@ private final class FakeExportImagePreparer: ArticleExportImagePreparing {
     }
 
     func preparedContent(
-        _ content: ArticleContent, for item: ReadingListItem
+        _ content: ArticleContent, for item: SavedItem
     ) async -> ArticleContent {
         ran = true
         return download(content)
@@ -32,14 +32,14 @@ private final class FakeExportImagePreparer: ArticleExportImagePreparing {
 final class ArticleExportServiceTests: XCTestCase {
 
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArticleExport-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
     }
 
     override func tearDown() {
@@ -47,7 +47,7 @@ final class ArticleExportServiceTests: XCTestCase {
         super.tearDown()
     }
 
-    private func readyItem(title: String, url: String) -> ReadingListItem {
+    private func readyItem(title: String, url: String) -> SavedItem {
         let item = store.add(urlString: url)
         let content = ArticleContent(
             title: title,
@@ -58,7 +58,7 @@ final class ArticleExportServiceTests: XCTestCase {
     /// An article saved with image blocks whose pictures haven't downloaded yet
     /// — the state EVERY save is in for a while, and permanently for a save
     /// that came through the share extension.
-    private func itemWithUnfetchedImage(url: String) -> ReadingListItem {
+    private func itemWithUnfetchedImage(url: String) -> SavedItem {
         let item = store.add(urlString: url)
         let content = ArticleContent(
             title: "Illustrated",

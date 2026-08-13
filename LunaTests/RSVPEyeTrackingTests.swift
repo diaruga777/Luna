@@ -32,8 +32,8 @@ private final class StubGazeTracker: GazeTracking {
 final class RSVPEyeTrackingTests: XCTestCase {
 
     private let content = UITestFixtures.sampleArticleContent(title: "Eye Tracking Fixture")
-    private var item: ReadingListItem {
-        ReadingListItem(seed: "eye-tracking", urlString: "https://example.com/eyes",
+    private var item: SavedItem {
+        SavedItem(seed: "eye-tracking", urlString: "https://example.com/eyes",
                         title: "Eye Tracking Fixture", dateAdded: UITestFixtures.baseDate,
                         state: .ready, wordCount: 480)
     }

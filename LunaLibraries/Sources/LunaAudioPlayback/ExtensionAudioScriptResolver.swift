@@ -4,7 +4,7 @@
 //
 //  Phase 6: lets a Share/Action extension speak the TRIMMED script when the
 //  user starts read-aloud there, without pulling `AudioScriptPipeline`'s
-//  main-app-only machinery (`install()`, the `.readingListChanged` sweep,
+//  main-app-only machinery (`install()`, the `.savesChanged` sweep,
 //  foreground/background tracking) into the extension process. See
 //  "Extension audio" in claudedocs/audio-playback.md.
 //
@@ -52,7 +52,7 @@ public final class ExtensionAudioScriptResolver {
     }
 
     /// - Parameters:
-    ///   - articlesDirectory: `ReadingListStore.articlesDirectory` in
+    ///   - articlesDirectory: `SavesStore.articlesDirectory` in
     ///     production (App-Group-backed, readable from an extension); tests
     ///     pass a scratch directory.
     ///   - modelSessions: defaults to the same iOS-26-gated maker
@@ -79,7 +79,7 @@ public final class ExtensionAudioScriptResolver {
     /// (subject to `AudioSettings.isIntelligentTrimmingEnabled` and model
     /// availability) that only writes the cache for a LATER session.
     public func bestAvailableScriptForImmediatePlayback(
-        item: ReadingListItem, content: ArticleContent
+        item: SavedItem, content: ArticleContent
     ) -> AudioScript {
         guard let contentFileName = item.contentFileName else {
             return AudioTrimHeuristics.classify(content).heuristicScript(for: content)

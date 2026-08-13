@@ -28,7 +28,7 @@ import LunaStorage
 ///
 /// **What happens when the granted window expires mid-ingest.** The lease's
 /// expiry cancels the ingest task at the ONE point that is safe to stop at:
-/// `ReadingListIngestor.ingest` checks `Task.isCancelled` after the pipeline and
+/// `SavesIngestor.ingest` checks `Task.isCancelled` after the pipeline and
 /// before it persists anything, so a cancelled pass writes nothing and the row
 /// stays exactly `.pending` — never half-written. The debt stays in
 /// `PendingIngestCompletions` with its attempt count bumped, and the next resume
@@ -52,7 +52,7 @@ public enum BackgroundIngestCompletion {
     /// on the central Luna app, so everything `AppDelegate` arms at launch is
     /// armed inside `LunaTests` too; a debt in the App-Group queue (a fixture's,
     /// or one a previous run left behind) would then make a REAL
-    /// `ReadingListIngestor` pass run at an arbitrary moment mid-suite, fetching
+    /// `SavesIngestor` pass run at an arbitrary moment mid-suite, fetching
     /// and driving WebKit capture against the same WebContent the archive tests
     /// are using. Suites that pass alone and fail together are exactly that.
     /// `LiveNetworkPolicy` closed the same class of problem for live traffic,
@@ -96,9 +96,9 @@ public enum BackgroundIngestCompletion {
     /// `completion` fires when the queue has been worked (a test seam, like
     /// `ingestAllPending`'s).
     public static func run(
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         completions: PendingIngestCompletions = .shared,
-        ingestor: ReadingListIngestor = .shared,
+        ingestor: SavesIngestor = .shared,
         completion: (() -> Void)? = nil
     ) {
         lock.lock()
@@ -133,8 +133,8 @@ public enum BackgroundIngestCompletion {
     /// finished by the sweep racing us at launch — and otherwise runs the
     /// ordinary ingest with no interactive prompt, exactly as the sweep would.
     private static func finish(
-        _ owed: PendingIngestCompletion, store: ReadingListStore,
-        completions: PendingIngestCompletions, ingestor: ReadingListIngestor
+        _ owed: PendingIngestCompletion, store: SavesStore,
+        completions: PendingIngestCompletions, ingestor: SavesIngestor
     ) async {
         // The launch sweep may already be ingesting this row. Two passes over
         // one item is a no-op inside the ingestor, but a no-op returns

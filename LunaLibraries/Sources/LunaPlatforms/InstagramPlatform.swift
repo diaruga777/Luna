@@ -12,8 +12,8 @@ public struct InstagramPlatform: PlatformModule {
     public let platform: ContentPlatform = .instagram
     public let glyphSymbolName = "camera.fill"
 
-    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: SavedItem) -> URL? { nil }
+    public func embed(for item: SavedItem) -> PlatformEmbed? { nil }
 
     public var metadataFetcher: PlatformMetadataFetching? { OpenGraphMetadataFetcher() }
 }

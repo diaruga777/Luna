@@ -19,7 +19,7 @@ public final class PreloadCoordinator {
     public static let shared = PreloadCoordinator()
 
     private let store: PreloadStore
-    private let readingListStore: ReadingListStore
+    private let savesStore: SavesStore
     /// Roots currently being preloaded, so a foreground resume can't double-run one.
     private var runningRoots: Set<UUID> = []
     /// The current foreground resume sweep, if any. Coalesced and cancelled when
@@ -61,9 +61,9 @@ public final class PreloadCoordinator {
         }
     }
 
-    public init(store: PreloadStore = .shared, readingListStore: ReadingListStore = .shared) {
+    public init(store: PreloadStore = .shared, savesStore: SavesStore = .shared) {
         self.store = store
-        self.readingListStore = readingListStore
+        self.savesStore = savesStore
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -94,7 +94,7 @@ public final class PreloadCoordinator {
         let task = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
             defer { self.lock.withLock { self.resumeTask = nil } }
-            for item in self.readingListStore.items()
+            for item in self.savesStore.items()
             where item.state == .ready && item.contentFileName != nil {
                 guard !Task.isCancelled, await Self.isApplicationActive
                 else { break }
@@ -151,8 +151,8 @@ public final class PreloadCoordinator {
     }
 
     private func run(rootID: UUID, allowsBackgroundTask: Bool = true) async {
-        guard let item = readingListStore.item(withID: rootID),
-              let content = readingListStore.content(for: item) else { return }
+        guard let item = savesStore.item(withID: rootID),
+              let content = savesStore.content(for: item) else { return }
         await performCrawl(
             rootID: rootID, seedLinks: Self.outboundURLs(from: content),
             allowsBackgroundTask: allowsBackgroundTask)
@@ -246,7 +246,7 @@ public final class PreloadCoordinator {
             // by image-URL hash) and cache the enriched content, so a preloaded link
             // opens with its images already local — no spinner-then-image-pop.
             let enriched = await ArticleImageDownloader.download(
-                content, itemID: rootID, store: readingListStore, refererURL: url)
+                content, itemID: rootID, store: savesStore, refererURL: url)
             let children = Self.outboundURLs(from: enriched)
             store.record(url: url, rootID: rootID, kind: .article,
                          content: enriched, children: children)

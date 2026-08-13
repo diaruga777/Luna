@@ -10,7 +10,7 @@ import Foundation
 
 /// One layer of a persisted RabbitHole breadcrumb trail. The root layer (index 0) is
 /// the save itself; deeper layers are links the user dove into. Stored separately from
-/// `ReadingListItem` (see `RabbitHoleStackStore`) so the cross-process saves
+/// `SavedItem` (see `RabbitHoleStackStore`) so the cross-process saves
 /// database is never touched by this experiment.
 public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     /// The page this layer shows, parsed ONCE (at construction/decode) rather
@@ -29,7 +29,7 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     /// shared reading position above.
     public var originalScrollOffset: Double
     /// Which reader mode this layer was last shown in.
-    public var readerMode: ReadingListItem.ReaderMode
+    public var readerMode: SavedItem.ReaderMode
     /// Resolved title (falls back to the URL in the lip when nil/empty).
     public var title: String?
     /// The text of the line the user tapped to descend INTO the next layer — shown in
@@ -46,7 +46,7 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
          wordIndex: Int? = nil,
          scrollOffset: Double? = nil,
          originalScrollOffset: Double = 0,
-         readerMode: ReadingListItem.ReaderMode = .scroll,
+         readerMode: SavedItem.ReaderMode = .scroll,
          title: String? = nil,
          bottomLipText: String? = nil) {
         self.url = URL(string: urlString)
@@ -68,7 +68,7 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
         wordIndex = try container.decodeIfPresent(Int.self, forKey: .wordIndex)
         scrollOffset = try container.decodeIfPresent(Double.self, forKey: .scrollOffset)
         originalScrollOffset = try container.decode(Double.self, forKey: .originalScrollOffset)
-        readerMode = try container.decode(ReadingListItem.ReaderMode.self, forKey: .readerMode)
+        readerMode = try container.decode(SavedItem.ReaderMode.self, forKey: .readerMode)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         bottomLipText = try container.decodeIfPresent(String.self, forKey: .bottomLipText)
     }
@@ -85,7 +85,7 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     }
 }
 
-/// The full persisted trail for one save (keyed by the root reading-list item id).
+/// The full persisted trail for one save (keyed by the root saved item id).
 public struct RabbitHoleStack: Codable, Equatable {
     public var layers: [RabbitHoleLayerDescriptor]
 

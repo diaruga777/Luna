@@ -182,8 +182,8 @@ final class ExtensionScrollGeometryTests: XCTestCase {
             "The reserved completion lane is exactly what must NOT shorten the track")
     }
 
-    private var freshItem: ReadingListItem {
-        ReadingListItem(
+    private var freshItem: SavedItem {
+        SavedItem(
             seed: "extension-geometry", urlString: "https://example.com/extension-reader",
             title: "Extension Reader Fixture", dateAdded: Date(timeIntervalSince1970: 1_700_000_000),
             state: .ready, wordCount: 600)

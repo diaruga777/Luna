@@ -3,7 +3,7 @@
 //  LunaTests
 //
 //  The save an extension performs: it has no ingestor, so it inserts through
-//  `ReadingListStore.addIfAbsent` / `addImportedDocument` and lets the main app
+//  `SavesStore.addIfAbsent` / `addImportedDocument` and lets the main app
 //  finish the work. What matters here is that the insert is deduped by URL, that
 //  it cannot disturb a row it does not name, and that the first one creates the
 //  database.
@@ -38,7 +38,7 @@ final class ExtensionSaveInsertTests: XCTestCase {
     /// lands a pending share-sheet row, and leaves it eligible for backup (this is
     /// durable user data).
     func testFirstSaveCreatesTheDatabaseAndLandsAPendingShareSheetRow() throws {
-        let store = ReadingListStore(containerURL: container)
+        let store = SavesStore(containerURL: container)
         XCTAssertFalse(FileManager.default.fileExists(atPath: databaseURL.path))
 
         let saved = store.addIfAbsent(urlString: "https://example.com/first", source: .shareSheet)
@@ -57,7 +57,7 @@ final class ExtensionSaveInsertTests: XCTestCase {
     /// The dedup: a second share of a URL already saved inserts nothing and keeps
     /// the row that is there, so nothing is re-attributed or re-notified.
     func testASecondSaveOfTheSameURLInsertsNothing() {
-        let store = ReadingListStore(containerURL: container)
+        let store = SavesStore(containerURL: container)
         let first = store.addIfAbsent(urlString: "https://example.com/story", source: .shareSheet)
 
         XCTAssertNil(store.addIfAbsent(urlString: "https://example.com/story", source: .shareSheet))
@@ -69,7 +69,7 @@ final class ExtensionSaveInsertTests: XCTestCase {
     /// field, including the ones an extension never writes — its platform, its
     /// read state, its price tracker.
     func testASaveLeavesEveryOtherRowExactlyAsItWas() {
-        let store = ReadingListStore(containerURL: container)
+        let store = SavesStore(containerURL: container)
         let older = store.add(urlString: "https://example.com/older")
         store.savePlatformMetadata(
             platform: .bluesky, platformItemID: "post-1", title: "Older",
@@ -89,7 +89,7 @@ final class ExtensionSaveInsertTests: XCTestCase {
     /// The document import copies the file into the Articles directory under the
     /// name the reader reads it back from, and titles the save from the file name.
     func testImportedDocumentIsCopiedBesideItsSave() throws {
-        let store = ReadingListStore(containerURL: container)
+        let store = SavesStore(containerURL: container)
         let source = FileManager.default.temporaryDirectory
             .appendingPathComponent("Some Notes.TXT")
         try Data("hello".utf8).write(to: source)

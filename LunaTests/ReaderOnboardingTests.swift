@@ -810,7 +810,7 @@ final class ReaderOnboardingTests: XCTestCase {
             defaults.removePersistentDomain(forName: suite)
         }
 
-        let contentStore = ReadingListStore(containerURL: directory)
+        let contentStore = SavesStore(containerURL: directory)
         let registry = AppOnboardingStore(app: .luna, defaults: defaults)
         let userSave = contentStore.add(urlString: "https://example.com/real")
         let legacy = contentStore.add(urlString: BundledLunaArticle.urlString)
@@ -863,7 +863,7 @@ final class ReaderOnboardingTests: XCTestCase {
         window.makeKeyAndVisible()
         onboarding.view.layoutIfNeeded()
 
-        let before = Set(ReadingListStore.shared.items().map(\.id))
+        let before = Set(SavesStore.shared.items().map(\.id))
         let button = try XCTUnwrap(
             onboarding.view.descendants(of: UIButton.self).first {
                 $0.accessibilityLabel == OnboardingStrings.Intro.safariAction.value()
@@ -878,7 +878,7 @@ final class ReaderOnboardingTests: XCTestCase {
         // runs one stage per run-loop turn.
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
-        XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
+        XCTAssertEqual(Set(SavesStore.shared.items().map(\.id)), before)
         XCTAssertNil(registry.temporarySaveIdentifier)
     }
 

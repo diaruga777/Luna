@@ -18,7 +18,7 @@ import Foundation
 /// central directory always can.
 ///
 /// Not supported, deliberately: ZIP64 (an ebook that needs 4GiB offsets is not
-/// a reading-list item), encryption, and multi-disk archives. Each returns nil
+/// a saved item), encryption, and multi-disk archives. Each returns nil
 /// rather than a partial read.
 public struct ZipArchiveReader {
 

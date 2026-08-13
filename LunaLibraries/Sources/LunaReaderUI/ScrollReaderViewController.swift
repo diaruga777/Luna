@@ -67,7 +67,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// once when the scroll settles.
     private var pendingFlingSpeedPointsPerSecond: CGFloat = 0
 
-    private var item: ReadingListItem
+    private var item: SavedItem
     private var content: ArticleContent
     private var rendered: RenderedArticle
     private var wordMap: WordMap
@@ -82,7 +82,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// width. The live text view stays masked but hidden until its final TextKit
     /// layout and anchored content offset are ready.
     private var viewportReflowTransition: TextViewportReflowTransition?
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
     private let finishedBadge = FinishedReadingBadgeView()
     private var didRestoreScroll = false
@@ -197,7 +197,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
-    public init(item: ReadingListItem, content: ArticleContent,
+    public init(item: SavedItem, content: ArticleContent,
          audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
          resumeWordIndex: Int? = nil,
@@ -207,7 +207,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // first render, so they appear in the same frame as the text instead of
         // popping in later via the async downloader. Cheap (hash + fileExists); only
         // genuinely-uncached images fall through to `fetchMissingImagesIfNeeded`.
-        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
+        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared)
         self.content = resolved
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
@@ -251,7 +251,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     ///   of the Phase-1 prefix + deferred Phase-2 swap, for hosts that cannot
     ///   tolerate progressive rendering.
     public func configureForReuse(
-        item: ReadingListItem,
+        item: SavedItem,
         content: ArticleContent,
         audioEnabled: Bool = false,
         shareProvider: ReaderShareProviding? = nil,
@@ -295,14 +295,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// once the view exists — installs it into the text view and its dependent
     /// features.
     private func applyContent(
-        item: ReadingListItem,
+        item: SavedItem,
         content: ArticleContent,
         audioEnabled: Bool,
         shareProvider: ReaderShareProviding?,
         resumeWordIndex: Int?,
         fullRenderUpFront: Bool
     ) {
-        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
+        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: SavesStore.shared)
         self.item = item
         self.content = resolved
         self.audioEnabled = audioEnabled
@@ -349,7 +349,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// the full article up front. Conservative on purpose: it only suppresses the
     /// progressive path for a genuine resume, never for the common top-of-article open.
     private static func openPositionLikelyBeyondPrefix(
-        item: ReadingListItem, resumeWordIndex: Int?, audioEnabled: Bool,
+        item: SavedItem, resumeWordIndex: Int?, audioEnabled: Bool,
         content: ArticleContent, budget: Int) -> Bool {
         // A non-trivial saved scroll offset (more than a screen down) resumes below
         // the prefix. A tiny offset (near the top) is fine to show against the prefix.
@@ -395,7 +395,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// threshold (→ first fully-visible word). Otherwise it returns the carried
     /// index unchanged — a no-op. See `ReaderResumePositionResolver`.
     ///
-    /// On a FRESH open (no carried index — e.g. straight from the reading list)
+    /// On a FRESH open (no carried index — e.g. straight from the saves list)
     /// there's no position to protect, so the first switch resumes from where
     /// the reader actually is: the first fully-visible word.
     public var currentReadingWordIndex: Int? {
@@ -1663,7 +1663,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// The text shared for a highlighted passage. Pure + static so it's unit-testable.
     /// With a real web URL: the quote in literal double-quotes, a blank line, then the
     /// URL. Otherwise (documents / synthetic-scheme imports): the bare trimmed quote.
-    public static func makeHighlightShareText(quote: String, item: ReadingListItem) -> String {
+    public static func makeHighlightShareText(quote: String, item: SavedItem) -> String {
         let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
         return item.isShareable ? "\"\(q)\"\n\n\(item.urlString)" : q
     }

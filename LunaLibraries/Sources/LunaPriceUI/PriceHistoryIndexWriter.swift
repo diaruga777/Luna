@@ -48,8 +48,8 @@ public enum PriceHistoryIndexWriter {
     }
 
     /// Regenerates the whole file from every non-archived tracker currently in
-    /// the reading list.
-    public static func regenerate(store: ReadingListStore = .shared, now: Date = Date()) {
+    /// the saves list.
+    public static func regenerate(store: SavesStore = .shared, now: Date = Date()) {
         let trackers = store.items().compactMap(\.priceTracker)
         write(makeEntries(from: trackers, now: now))
     }

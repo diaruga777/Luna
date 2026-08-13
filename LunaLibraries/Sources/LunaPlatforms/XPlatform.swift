@@ -33,11 +33,11 @@ public struct XPlatform: PlatformModule {
     public let platform: ContentPlatform = .x
     public let glyphSymbolName = "bird.fill"
 
-    public func appDeepLink(for item: ReadingListItem) -> URL? {
+    public func appDeepLink(for item: SavedItem) -> URL? {
         (item.platformItemID).flatMap(XLink.appURL(tweetID:))
     }
 
-    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func embed(for item: SavedItem) -> PlatformEmbed? { nil }
 
     public var metadataFetcher: PlatformMetadataFetching? { XMetadataFetcher() }
 }

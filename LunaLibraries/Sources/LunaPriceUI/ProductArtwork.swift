@@ -41,7 +41,7 @@ public enum PriceTrackerProductImage {
                 fetchFallback(pageURL: pageURL, completion: completion)
                 return
             }
-            let path = ReadingListStore.shared.articlesDirectory
+            let path = SavesStore.shared.articlesDirectory
                 .appendingPathComponent(imageFileName).path
             DownsampledImageLoader.load(
                 path: path, pointSize: cacheTargetPointSize, scale: cacheTargetScale,

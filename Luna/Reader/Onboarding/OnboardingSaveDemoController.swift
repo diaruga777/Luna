@@ -63,7 +63,7 @@ final class OnboardingSaveDemoController {
     let link: OnboardingSaveDemoLink
 
     private let onboardingStore: AppOnboardingStore
-    private let contentStore: ReadingListStore
+    private let contentStore: SavesStore
     private let session = HostedShareSession()
     private weak var host: UIViewController?
     /// Internal read for the lesson tests: loaded at `start`, mounted at
@@ -87,7 +87,7 @@ final class OnboardingSaveDemoController {
     init(
         link: OnboardingSaveDemoLink,
         onboardingStore: AppOnboardingStore = .shared,
-        contentStore: ReadingListStore = .shared
+        contentStore: SavesStore = .shared
     ) {
         self.link = link
         self.onboardingStore = onboardingStore
@@ -336,7 +336,7 @@ final class OnboardingSaveDemoController {
         onboardingStore.recordTemporarySave(identifier: id)
     }
 
-    /// Undoes the rehearsal. The reading-list row (with every file it owns), its
+    /// Undoes the rehearsal. The save row (with every file it owns), its
     /// failure record, and the media kind's own bookkeeping — then the marker
     /// itself, because there is nothing left for it to name.
     private func removeTemporarySave() {

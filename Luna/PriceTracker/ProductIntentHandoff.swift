@@ -42,7 +42,7 @@ enum ProductIntentHandoff {
     /// when that URL is not a tracked product — the ordinary answer for every
     /// article, post and video the intents save.
     static func document(forURLString urlString: String) async -> URL? {
-        let store = ReadingListStore.shared
+        let store = SavesStore.shared
         guard let match = store.priceTracker(containingStoreURL: urlString) else { return nil }
         // The ONE surface that still WAITS for the fan-out, because its whole
         // answer is a comparison between the sellers it finds. Everywhere else

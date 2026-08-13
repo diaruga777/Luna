@@ -13,21 +13,21 @@ import LunaModels
 /// queue / autoplay / persistence logic without real
 /// `AVSpeechSynthesizer`/`AVAudioEngine`/`AVAudioSession` involvement.
 
-final class FakePlaybackStore: ReadingListPlaybackStore {
-    var itemsByID: [UUID: ReadingListItem] = [:]
+final class FakePlaybackStore: SavesPlaybackStore {
+    var itemsByID: [UUID: SavedItem] = [:]
     var contentsByID: [UUID: ArticleContent] = [:]
-    var markedReadStates: [(itemID: UUID, state: ReadingListItem.ReadState)] = []
+    var markedReadStates: [(itemID: UUID, state: SavedItem.ReadState)] = []
     var finishedIDs: [UUID] = []
     var spokenWordIndexWrites: [(itemID: UUID, wordIndex: Int)] = []
 
-    func seed(_ item: ReadingListItem, content: ArticleContent?) {
+    func seed(_ item: SavedItem, content: ArticleContent?) {
         itemsByID[item.id] = item
         contentsByID[item.id] = content
     }
 
-    func item(withID itemID: UUID) -> ReadingListItem? { itemsByID[itemID] }
-    func content(for item: ReadingListItem) -> ArticleContent? { contentsByID[item.id] }
-    func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
+    func item(withID itemID: UUID) -> SavedItem? { itemsByID[itemID] }
+    func content(for item: SavedItem) -> ArticleContent? { contentsByID[item.id] }
+    func markReadState(_ newState: SavedItem.ReadState, for itemID: UUID) {
         markedReadStates.append((itemID, newState))
     }
     func markFinishedReading(_ itemID: UUID) { finishedIDs.append(itemID) }
@@ -124,11 +124,11 @@ final class FakeAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
 
     func nextCandidate() -> QueueCandidate? { nextCandidateResult }
 
-    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+    func script(for item: SavedItem, content: ArticleContent) -> AudioScript {
         AudioScript(passthrough: content)
     }
 
-    func prefetch(item: ReadingListItem, content: ArticleContent) {}
+    func prefetch(item: SavedItem, content: ArticleContent) {}
 }
 
 // MARK: - Fixture helpers
@@ -147,8 +147,8 @@ enum AudioPlaybackFixtures {
         return ArticleContent(title: title, blocks: blocks)
     }
 
-    static func item(seed: String, title: String = "Fixture Article") -> ReadingListItem {
-        ReadingListItem(
+    static func item(seed: String, title: String = "Fixture Article") -> SavedItem {
+        SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: title,
             dateAdded: Date(timeIntervalSince1970: 1_700_000_000))
     }

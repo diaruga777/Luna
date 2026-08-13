@@ -716,7 +716,7 @@ final class UtilCardTests: XCTestCase {
         XCTAssertTrue(actionButtons(in: card).isEmpty)
 
         saves = [clock, clock, clock]
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
         card.view.layoutIfNeeded()
 
         XCTAssertEqual(

@@ -187,7 +187,7 @@ final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelega
     // MARK: - AudioPlaybackHandoffTests helpers
 
     @discardableResult
-    private func startPlayback() -> ReadingListItem {
+    private func startPlayback() -> SavedItem {
         let item = AudioPlaybackFixtures.item(seed: "np-item", title: "Playing Title")
         let content = AudioPlaybackFixtures.content(title: "Playing Title", blockCount: 3)
         store.seed(item, content: content)
@@ -215,15 +215,15 @@ final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelega
     //
     // The autoplay queue rule (`AudioQueueRule.nextCandidate` in the app
     // shell): top-most unopened, readable Reader-surface article in the
-    // reading list's own displayed order, excluding the currently playing
+    // saves list's own displayed order, excluding the currently playing
     // item.
 
     private func fresh(_ seed: String,
-                       readState: ReadingListItem.ReadState = .unopened,
-                       state: ReadingListItem.State = .ready,
+                       readState: SavedItem.ReadState = .unopened,
+                       state: SavedItem.State = .ready,
                        platform: ContentPlatform? = nil,
-                       ageDays: Double = 1) -> ReadingListItem {
-        ReadingListItem(
+                       ageDays: Double = 1) -> SavedItem {
+        SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: seed,
             dateAdded: now.addingTimeInterval(-ageDays * 24 * 60 * 60),
             state: state, readState: readState, platform: platform)
@@ -236,10 +236,10 @@ final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelega
     }
 
     private func pick(
-        _ items: [ReadingListItem],
+        _ items: [SavedItem],
         excluding excludedItemID: UUID? = nil,
         contents: [UUID: ArticleContent]? = nil
-    ) -> ReadingListItem? {
+    ) -> SavedItem? {
         let contentByID = contents ?? Dictionary(
             uniqueKeysWithValues: items.map { ($0.id, readableContent()) })
         return AudioQueueRule.nextCandidate(

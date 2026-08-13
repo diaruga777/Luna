@@ -8,7 +8,7 @@ import Foundation
 /// Where the price-tracker editor is being shown, which decides its top-left
 /// navigation button.
 ///
-/// - `inApp`: pushed onto the reading-list navigation stack. The user came from the
+/// - `inApp`: pushed onto the saves navigation stack. The user came from the
 ///   list and should be able to go **back** to it (a chevron that pops).
 /// - `extension`: presented modally inside the action/share extension, which has no
 ///   navigation stack to pop to — the only way out is to **complete/dismiss** the
@@ -38,7 +38,7 @@ public enum PriceTrackingEntry: Equatable {
 
 /// The kind of top-left navigation button the editor should show for a given host.
 public enum PriceTrackingLeftButton: Equatable {
-    /// A chevron that pops back to the reading list (in-app).
+    /// A chevron that pops back to the saves list (in-app).
     case back
     /// A "Done" button that completes/dismisses the hosting extension.
     case done

@@ -17,7 +17,7 @@ import UIKit
 public enum ExtensionReaderMode: String {
     case reader, rsvp, chunk
 
-    public var readerMode: ReadingListItem.ReaderMode {
+    public var readerMode: SavedItem.ReaderMode {
         switch self {
         case .reader: return .scroll
         case .rsvp: return .rsvp
@@ -25,7 +25,7 @@ public enum ExtensionReaderMode: String {
         }
     }
 
-    public init(readerMode: ReadingListItem.ReaderMode) {
+    public init(readerMode: SavedItem.ReaderMode) {
         switch readerMode {
         case .scroll: self = .reader
         case .rsvp: self = .rsvp
@@ -48,15 +48,15 @@ public protocol ShareArticlePresenting {
     /// web archive, and the cover thumbnail — all no-ops on empty `html`
     /// exactly as before.
     func persistArticleExtras(
-        item: ReadingListItem, content: ArticleContent, html: String, url: URL,
-        store: ReadingListStore)
+        item: SavedItem, content: ArticleContent, html: String, url: URL,
+        store: SavesStore)
 
     /// Presents the in-sheet article reader (action extension).
     func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost)
 
     /// Presents the archive-CAPTCHA reader for a paywalled article whose row
     /// (`itemID`) the driver has already marked `.needsCaptcha`.
-    func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost)
+    func presentArchive(url: URL, itemID: UUID, store: SavesStore, host: ExtensionHost)
 }
 
 /// Media-kind presentation for the extension surfaces: the saved-non-textual
@@ -117,7 +117,7 @@ public protocol ShareProductPresenting {
     /// `store`), then presents the SAME price-tracking editor as the main app
     /// in the host's modal chrome (`confirmSavedThenComplete` if there is no
     /// row to attach it to).
-    func presentPriceEditor(product: ProductInfo, url: URL, store: ReadingListStore, host: ExtensionHost)
+    func presentPriceEditor(product: ProductInfo, url: URL, store: SavesStore, host: ExtensionHost)
 }
 
 /// The per-kind EXTENSION-PRESENTER registry, mirror of `IngestKindProcessors`

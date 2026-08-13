@@ -1,5 +1,5 @@
 //
-//  ReadingListSectioning.swift
+//  SavesSectioning.swift
 //  Luna
 //
 
@@ -14,7 +14,7 @@ import Foundation
 ///
 /// Everything the list alone needed (the `Section` enum and its display order,
 /// the `ListFilter` segments, the filter-visibility helpers) was deleted with it.
-public enum ReadingListSectioning {
+public enum SavesSectioning {
     /// Items older than this (by save date) and still unread fall out of the
     /// active Reading window into the Archive bucket.
     public static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
@@ -22,7 +22,7 @@ public enum ReadingListSectioning {
     /// Whether `item` is a kind-less failed save (the error-card state). Price
     /// trackers and platform items that merely failed a LATER step keep their own
     /// kind and their own UI, so they're excluded.
-    public static func isFailedSave(_ item: ReadingListItem) -> Bool {
+    public static func isFailedSave(_ item: SavedItem) -> Bool {
         item.state == .failed && !item.isPriceTracker && item.contentPlatform == nil
     }
 
@@ -30,7 +30,7 @@ public enum ReadingListSectioning {
     /// as opposed to media & links which open in a player, embed, or browser.
     /// Mirrors the tap routing. Price trackers are neither — they open the
     /// price-tracking screen.
-    public static func rendersAsReader(_ item: ReadingListItem) -> Bool {
+    public static func rendersAsReader(_ item: SavedItem) -> Bool {
         !item.isPriceTracker && item.contentPlatform == nil
     }
 
@@ -43,14 +43,14 @@ public enum ReadingListSectioning {
     /// order from these buckets, so autoplay-next picks the same article a reader
     /// would reach next.
     public static func assignSections(
-        items: [ReadingListItem],
+        items: [SavedItem],
         now: Date
-    ) -> (reading: [ReadingListItem], archive: [ReadingListItem], failed: [ReadingListItem],
-          priceTracking: [ReadingListItem]) {
-        var reading: [ReadingListItem] = []
-        var archive: [ReadingListItem] = []
-        var failed: [ReadingListItem] = []
-        var priceTracking: [ReadingListItem] = []
+    ) -> (reading: [SavedItem], archive: [SavedItem], failed: [SavedItem],
+          priceTracking: [SavedItem]) {
+        var reading: [SavedItem] = []
+        var archive: [SavedItem] = []
+        var failed: [SavedItem] = []
+        var priceTracking: [SavedItem] = []
         // The single triggered-but-unviewed tracker that floats to the very top (if any).
         let pinned = topUnviewedAlertingPriceTracker(items: items)
         for item in items {
@@ -78,7 +78,7 @@ public enum ReadingListSectioning {
     /// tracker with the greatest discount. Ties broken by greatest discount then
     /// by id for determinism. At most one. Nil when none qualifies — including
     /// when the user has already viewed every alert.
-    public static func topUnviewedAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
+    public static func topUnviewedAlertingPriceTracker(items: [SavedItem]) -> SavedItem? {
         items
             .filter { $0.priceTracker?.hasUnviewedAlert == true }
             .max { lhs, rhs in
@@ -103,13 +103,13 @@ public extension LunaApp {
     /// Lives here rather than on `LunaApp` in LunaModels because it needs the
     /// sectioning predicates above; the kind-free capability flags
     /// (`handlesArticles` &c.) are on the enum itself.
-    func includes(_ item: ReadingListItem) -> Bool {
-        if ReadingListSectioning.isFailedSave(item) { return true }
+    func includes(_ item: SavedItem) -> Bool {
+        if SavesSectioning.isFailedSave(item) { return true }
         switch self {
         case .luna: return true
-        case .reader: return ReadingListSectioning.rendersAsReader(item)
+        case .reader: return SavesSectioning.rendersAsReader(item)
         case .downloader:
-            return !ReadingListSectioning.rendersAsReader(item) && !item.isPriceTracker
+            return !SavesSectioning.rendersAsReader(item) && !item.isPriceTracker
         case .priceTracker: return item.isPriceTracker
         }
     }

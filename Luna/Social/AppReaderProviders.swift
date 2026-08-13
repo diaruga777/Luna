@@ -49,7 +49,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     private func rows(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) -> [ReaderShareSheet.Row]? {
-        let item = ReadingListStore.shared.item(forURLString: urlString)
+        let item = SavesStore.shared.item(forURLString: urlString)
         // File export is for readable articles/documents only — never media posts,
         // and only once the text is actually extracted: a pending, failed or
         // still-locked save has nothing any format could carry, so offering the
@@ -89,7 +89,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     private func presentExportOnlyShare(
         urlString: String, from presenter: UIViewController, sourceView: UIView
     ) {
-        guard let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
+        guard let item = SavesStore.shared.item(forURLString: urlString) else { return }
         ReaderShareSheet.present(
             from: presenter,
             rows: ReaderShareSheet.exportRows { [weak presenter] format in
@@ -101,10 +101,10 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     }
 
     public func saveLink(urlString: String) {
-        Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString) }
+        Task { await SavesIngestor.shared.handleSavePress(urlString: urlString) }
     }
 
-    private static func appClipShareURLString(for urlString: String, item: ReadingListItem?) -> String? {
+    private static func appClipShareURLString(for urlString: String, item: SavedItem?) -> String? {
         LunaAppClipInvocationURL.shareURL(
             for: urlString,
             destination: item?.isPlatformItem == true ? .downloader : .reader

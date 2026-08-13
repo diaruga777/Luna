@@ -11,10 +11,10 @@ import LunaModels
 import Foundation
 
 /// Persists each save's RabbitHole breadcrumb trail (the stack of layers the user dove
-/// into) as a small JSON file in the App Group container, keyed by the root reading-list
+/// into) as a small JSON file in the App Group container, keyed by the root saves list
 /// item id: `RabbitHole/<rootID>.json`.
 ///
-/// Deliberately separate from `ReadingListStore`/`ReadingListItem`: this is transient,
+/// Deliberately separate from `SavesStore`/`SavedItem`: this is transient,
 /// experiment-only session state, so it never touches the cross-process saves database
 /// nor bloats every list read. Only the main app reads/writes it, so no cross-process
 /// coordination is needed (plain atomic writes).

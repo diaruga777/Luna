@@ -154,7 +154,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // history at save time) and answered against the app-written tracked
             // index + the snapshot file (Feature 3, the "Was $X" history pill) in
             // the SAME round trip — one page-side extraction, one message. Never a
-            // save: nothing here schedules a refresh or writes a reading-list row.
+            // save: nothing here schedules a refresh or writes a save row.
             if Self.hostHandlesProducts, let snapshot = message?["snapshot"] as? [String: Any] {
                 let now = Date()
                 ProductSnapshotStore.shared.record(payload: snapshot, now: now)

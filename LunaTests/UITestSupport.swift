@@ -15,12 +15,12 @@ import XCTest
 @testable import Luna
 
 enum UITestSupport {
-    /// Seeds `ReadingListStore.shared` with a named fixture (reusing the exact same
+    /// Seeds `SavesStore.shared` with a named fixture (reusing the exact same
     /// path the in-app `UITestSeeder` uses) and disables animations. Returns the
     /// fixture's items for convenience. Call in `setUp`; pair with `wipeSharedStore`
     /// in `tearDown` so tests don't leak state into each other or onto the device.
     @discardableResult
-    static func seedSharedStore(_ state: UITestState) -> [ReadingListItem] {
+    static func seedSharedStore(_ state: UITestState) -> [SavedItem] {
         UIView.setAnimationsEnabled(false)
         UITestSeeder.seedSharedStore(state)
         return state.fixture.items
@@ -28,7 +28,7 @@ enum UITestSupport {
 
     /// Empties the shared store after a test and clears the pinned sectioning clock.
     static func wipeSharedStore() {
-        ReadingListStore.shared.wipeForTesting()
+        SavesStore.shared.wipeForTesting()
         UITestSeeder.sectioningNow = nil
     }
 

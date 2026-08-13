@@ -1,5 +1,5 @@
 //
-//  ReadingListIngestor.swift
+//  SavesIngestor.swift
 //  Luna
 //
 
@@ -42,7 +42,7 @@ public protocol IngestRescueTriggering {
 /// `LunaPriceUI`); uninstalled in a process that hasn't composed the product
 /// kind, where nothing runs anyway.
 public protocol PriceTrackerComparisonKicking {
-    func kickComparison(itemID: UUID, url: URL, store: ReadingListStore)
+    func kickComparison(itemID: UUID, url: URL, store: SavesStore)
 }
 
 /// The per-app content gate over a classified outcome (`SurfaceSupport`): a
@@ -65,12 +65,12 @@ public struct CurrentProcessIngestGate: IngestSurfaceGating {
     }
 }
 
-/// Downloads and extracts content for reading-list items: the immediate step
+/// Downloads and extracts content for saved items: the immediate step
 /// after a link is saved, plus a retry pass for anything still pending.
-public final class ReadingListIngestor {
-    public static let shared = ReadingListIngestor()
+public final class SavesIngestor {
+    public static let shared = SavesIngestor()
 
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let fetcher = ArticleFetcher()
     /// The per-app content gate over a classified outcome (`SurfaceSupport`).
     /// Injectable so tests can pin the running app without touching
@@ -95,7 +95,7 @@ public final class ReadingListIngestor {
     public static var priceTrackerComparisonKicker: (any PriceTrackerComparisonKicking)?
 
     public init(
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         surfaceGate: any IngestSurfaceGating = CurrentProcessIngestGate()
     ) {
         self.store = store
@@ -118,7 +118,7 @@ public final class ReadingListIngestor {
     /// from launch, foreground, and pull-to-refresh, none of which should block
     /// on it.
     private let sweepQueue = DispatchQueue(
-        label: "com.hsanabria.luna.readingListIngestor.sweep", qos: .utility)
+        label: "com.hsanabria.luna.savesIngestor.sweep", qos: .utility)
 
     /// Fetches and extracts content for one item. Safe to call repeatedly.
     ///
@@ -135,7 +135,7 @@ public final class ReadingListIngestor {
     /// sweep, which discards dropped leftovers silently; interactive saves
     /// (`.paste`/`.manual`) surface the error via `unsupportedSavePresenter`.
     @discardableResult
-    public func ingest(_ item: ReadingListItem, forceArticle: Bool = false,
+    public func ingest(_ item: SavedItem, forceArticle: Bool = false,
                        prefetchedHTML: String? = nil,
                        trustsPrefetchedHTML: Bool = false,
                        allowsInteractivePrompt: Bool = true) async -> SurfaceSupport.Decision {
@@ -219,7 +219,7 @@ public final class ReadingListIngestor {
     /// and presentation rules as any save. Returns the surface decision.
     @discardableResult
     func applyResult(
-        _ result: IngestResult, for item: ReadingListItem, forceArticle: Bool,
+        _ result: IngestResult, for item: SavedItem, forceArticle: Bool,
         allowsInteractivePrompt: Bool
     ) async -> SurfaceSupport.Decision {
         var item = item
@@ -362,7 +362,7 @@ public final class ReadingListIngestor {
 
     /// Persists a readable article via the registered article handler.
     fileprivate func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL
+        _ content: ArticleContent, html: String, for item: SavedItem, url: URL
     ) async {
         guard let handler = IngestorKindHandlers.article else {
             missingHandlerFallback(kind: "article", for: item)
@@ -372,20 +372,20 @@ public final class ReadingListIngestor {
     }
 
     /// Parks a paywalled article for the interactive archive reader.
-    fileprivate func parkNeedsArchive(title: String, for item: ReadingListItem) async {
+    fileprivate func parkNeedsArchive(title: String, for item: SavedItem) async {
         store.markNeedsCaptcha(item.id, title: title)
     }
 
     /// Marks a genuine failure, and files WHY in the sidecar so the failed card
     /// can explain itself instead of showing one generic sentence.
-    fileprivate func markFailed(for item: ReadingListItem, reason: SaveFailureReason? = nil) async {
+    fileprivate func markFailed(for item: SavedItem, reason: SaveFailureReason? = nil) async {
         store.markFailed(item.id)
         SaveFailureStore.shared.recordFailure(item.id, reason: reason)
     }
 
     /// Ingests a document outcome via the registered article handler (documents
     /// are article-kind: they read in the article reader and are Kindle-eligible).
-    fileprivate func handleDocument(type: String, for item: ReadingListItem) async {
+    fileprivate func handleDocument(type: String, for item: SavedItem) async {
         guard let handler = IngestorKindHandlers.article else {
             missingHandlerFallback(kind: "article (document)", for: item)
             return
@@ -396,7 +396,7 @@ public final class ReadingListIngestor {
     /// Ingests a recognized video or social-platform outcome via the
     /// registered media handler.
     fileprivate func handleMediaPlatform(
-        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
+        _ platform: ContentPlatform, itemID: String?, for item: SavedItem
     ) async {
         await ingestPlatformItem(item, platform: platform, itemID: itemID)
     }
@@ -404,7 +404,7 @@ public final class ReadingListIngestor {
     /// Turns a detected product page into a price tracker via the registered
     /// product handler.
     fileprivate func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo
+        _ item: SavedItem, url: URL, product: ProductInfo
     ) async {
         guard let handler = IngestorKindHandlers.product else {
             missingHandlerFallback(kind: "product", for: item)
@@ -415,7 +415,7 @@ public final class ReadingListIngestor {
 
     /// Ingests a recognized platform item via the registered media handler.
     private func ingestPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, itemID: String?
+        _ item: SavedItem, platform: ContentPlatform, itemID: String?
     ) async {
         guard let handler = IngestorKindHandlers.media else {
             missingHandlerFallback(kind: "media", for: item)
@@ -430,7 +430,7 @@ public final class ReadingListIngestor {
     /// an app only ever presents kinds it declared, and its composition root
     /// (`KindWiring`) must have installed the matching handler. Fail loudly in
     /// debug; in release, mark the item failed rather than leaving it pending.
-    private func missingHandlerFallback(kind: String, for item: ReadingListItem) {
+    private func missingHandlerFallback(kind: String, for item: SavedItem) {
         assertionFailure("no IngestorKindHandlers handler registered for \(kind)")
         SharedDiagnosticLog.record(
             "ingest: no \(kind) handler registered — marking \(item.id) failed",
@@ -444,7 +444,7 @@ public final class ReadingListIngestor {
     /// handler, and given the same release behavior: the row is marked failed so
     /// the list shows it, instead of spinning as `.pending` forever.
     fileprivate func markUnsupportedFailed(
-        owner: LunaApp, for item: ReadingListItem
+        owner: LunaApp, for item: SavedItem
     ) async {
         SharedDiagnosticLog.record(
             "ingest: unsupported outcome (owner \(owner.storageIdentifier)) reached the "
@@ -506,7 +506,7 @@ public final class ReadingListIngestor {
     /// What a save press did, so intents can wait on the right work.
     public enum SavePressResult {
         /// New URL — saved; ingestion may still be running.
-        case saved(ReadingListItem)
+        case saved(SavedItem)
         /// New URL whose classified outcome belongs to a kind this app doesn't
         /// handle: the item was DISCARDED — nothing remains in the store.
         /// Interactive in-app saves have already shown the unsupported-kind
@@ -514,19 +514,19 @@ public final class ReadingListIngestor {
         /// an error dialog.
         case unsupportedKind(owner: LunaApp)
         /// Double press — the article was (re)sent to one or more ereaders.
-        case sentToEreaders(ReadingListItem)
+        case sentToEreaders(SavedItem)
         /// Double press — the article was emailed to the preset friends.
-        case sentToFriends(ReadingListItem)
+        case sentToFriends(SavedItem)
         /// Double press — the app should open its friend selector for the item
         /// (the pending prompt is already recorded; the intent's caller returns
         /// the open-Luna token so the Shortcut foregrounds the app).
-        case friendPromptRequested(ReadingListItem)
+        case friendPromptRequested(SavedItem)
         /// Double press — the caller should build this item in this format and
         /// return the file as the App Intent's media. The file itself is NOT
         /// built here: serialization lives in LunaSend, an article-kind module
         /// this universal one can't link, so the intent layer does it through
         /// an injected seam.
-        case exportRequested(ReadingListItem, ArticleExportFormat)
+        case exportRequested(SavedItem, ArticleExportFormat)
         /// Duplicate press — nothing happened.
         case ignored
 
@@ -535,7 +535,7 @@ public final class ReadingListIngestor {
         /// landed) must re-read the store by this id: the copy carried here is
         /// the pre-ingest placeholder, and its URL may still be an unresolved
         /// wrapper.
-        public var item: ReadingListItem? {
+        public var item: SavedItem? {
             switch self {
             case let .saved(item), let .sentToEreaders(item),
                  let .sentToFriends(item), let .friendPromptRequested(item),
@@ -643,7 +643,7 @@ public final class ReadingListIngestor {
                 // A prior attempt can legitimately dedupe the placeholder into
                 // an existing canonical item. Carrying an item in the result is
                 // how intent verification recognizes that successful case.
-                return .saved(ReadingListItem(urlString: prepared.urlString))
+                return .saved(SavedItem(urlString: prepared.urlString))
             }
             if item.state == .ready || item.state == .needsCaptcha { return .saved(item) }
             let decision = await ingest(
@@ -759,7 +759,7 @@ public final class ReadingListIngestor {
     @discardableResult
     public func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual
-    ) async -> ReadingListItem? {
+    ) async -> SavedItem? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
 
@@ -789,17 +789,17 @@ public final class ReadingListIngestor {
     }
 }
 
-/// The main-app (foreground reading-list) presenter: maps each `Outcome` to the
+/// The main-app (foreground saves list) presenter: maps each `Outcome` to the
 /// ingestor's store-writing helpers. Exhaustive — every case is handled, so a new
 /// `Outcome` kind can't be silently dropped. This is the headless persistence
 /// presenter shared by interactive saves (paste/manual), app intents, and incoming
 /// friend shares; the foreground list opens the saved item via
 /// `ReadingListViewController.open(_:presenter:)` when tapped.
 public struct IngestorOutcomePresenter: OutcomePresenter {
-    public let ingestor: ReadingListIngestor
+    public let ingestor: SavesIngestor
     public let url: URL
 
-    public func present(_ outcome: Outcome, for item: ReadingListItem) async {
+    public func present(_ outcome: Outcome, for item: SavedItem) async {
         switch outcome {
         case let .article(content, html):
             await ingestor.persistArticle(content, html: html, for: item, url: url)

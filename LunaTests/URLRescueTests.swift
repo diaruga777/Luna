@@ -21,14 +21,14 @@ final class URLRescueTests: XCTestCase {
     private let builder = RescueDigestBuilder()
 
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShareRescue-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
     }
 
     override func tearDown() {
@@ -410,7 +410,7 @@ final class URLRescueTests: XCTestCase {
         XCTAssertTrue(written.contains("plan kind=give_up"))
     }
 
-    /// No item, no trace: the price editor's ad-hoc resolution has no reading-list
+    /// No item, no trace: the price editor's ad-hoc resolution has no saves list
     /// row to write against and must not invent one.
     func testAnItemlessRequestWritesNoTrace() async {
         let store = FakeRescueTraceStore()

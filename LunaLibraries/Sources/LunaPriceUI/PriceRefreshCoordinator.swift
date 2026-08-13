@@ -20,7 +20,7 @@ public final class PriceRefreshCoordinator {
     private let refresher: PriceRefresher
 
     public init(refresher: PriceRefresher = PriceRefresher(
-        store: ReadingListStore.shared, priceFetcher: PriceFetcher())) {
+        store: SavesStore.shared, priceFetcher: PriceFetcher())) {
         self.refresher = refresher
     }
 
@@ -39,7 +39,7 @@ public final class PriceRefreshCoordinator {
         // baseline it settles is what this cycle's alert decisions are made
         // against. A refresh cycle is exactly the right moment — the app is
         // already awake with the network, on the same 12 h rhythm.
-        let finished = await SellerComparison.completePending(store: ReadingListStore.shared)
+        let finished = await SellerComparison.completePending(store: SavesStore.shared)
         if finished > 0 {
             DiagnosticLog.shared.record(
                 "price refresh: finished \(finished) pending seller comparison(s)",
@@ -55,7 +55,7 @@ public final class PriceRefreshCoordinator {
         return outcomes
     }
 
-    /// Refreshes exactly ONE tracker (by reading-list item id) and notifies if
+    /// Refreshes exactly ONE tracker (by saved item id) and notifies if
     /// it newly crosses its threshold — the same notification behavior as a
     /// background cycle, scoped to one tracker. Used right after
     /// `ProductTrackerIngestor` seeds a fresh/merged tracker's history from

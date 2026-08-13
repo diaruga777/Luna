@@ -48,7 +48,7 @@ public enum UnattendedArticleUnlock {
     public static func unlock(
         itemID: UUID,
         urlString: String,
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         timeout: TimeInterval = defaultTimeout
     ) async -> Bool {
         guard let url = URL(string: urlString), let host = hostView() else { return false }

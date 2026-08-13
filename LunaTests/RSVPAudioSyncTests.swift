@@ -106,7 +106,7 @@ final class RSVPAudioSyncTests: XCTestCase {
     // word events are gated on `isPlaying`) and makes the play button's first
     // tap pause the audio instead of resuming. These tests pin that re-sync.
 
-    private func makeRSVP(item: ReadingListItem, content: ArticleContent) -> RSVPViewController {
+    private func makeRSVP(item: SavedItem, content: ArticleContent) -> RSVPViewController {
         let rsvp = RSVPViewController(item: item, content: content, audioEnabled: true)
         rsvp.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         rsvp.loadViewIfNeeded()

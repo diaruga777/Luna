@@ -7,7 +7,7 @@ import LunaModels
 import UIKit
 
 /// Namespace holding the pasteboard preview art seam. The candidate-evaluation
-/// flow this type used to carry (dedupe against the reading list, confirm
+/// flow this type used to carry (dedupe against the saves list, confirm
 /// readable or recognized-platform content, resolve a preview thumbnail) was
 /// dead — nothing called it — and was deleted; only the injection point below
 /// is still live, kept under this name because its installers

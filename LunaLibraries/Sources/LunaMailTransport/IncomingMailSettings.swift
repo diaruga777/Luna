@@ -7,7 +7,7 @@ import Foundation
 import LunaMailAccount
 import LunaStorage
 
-/// Settings for turning incoming emails (from allowed senders) into reading-list
+/// Settings for turning incoming emails (from allowed senders) into saves list
 /// items. Reuses the send-to-Kindle Gmail account + app password. Persisted in
 /// the shared App-Group suite, so the central app and the Reader import one
 /// mailbox against one cursor; the cursor dedupes processed mail.

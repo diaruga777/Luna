@@ -19,10 +19,10 @@ protocol OnboardingNewestSaveProviding {
     func newestSaveDate(excluding excludedID: UUID?) -> Date?
 }
 
-/// The production answer: the shared reading list.
+/// The production answer: the shared saves list.
 struct SharedStoreNewestSave: OnboardingNewestSaveProviding {
     func newestSaveDate(excluding excludedID: UUID?) -> Date? {
-        ReadingListStore.shared.items()
+        SavesStore.shared.items()
             .filter { $0.id != excludedID }
             .map(\.dateAdded).max()
     }

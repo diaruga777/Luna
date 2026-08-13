@@ -31,7 +31,7 @@ final class ArticleDeckOnboardingRoot: CompletedOnboardingRootMaking {
 final class OnboardingHandoffFullContentTests: XCTestCase {
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 
@@ -140,14 +140,14 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
     // MARK: - Helpers
 
     private func seedLongArticle() {
-        let item = ReadingListItem(
+        let item = SavedItem(
             seed: "onboarding-handoff",
             urlString: "https://example.com/onboarding-handoff",
             title: "Onboarding Handoff",
             dateAdded: Date(),
             state: .ready,
             wordCount: 480)
-        ReadingListStore.shared.seedForTesting(
+        SavesStore.shared.seedForTesting(
             items: [item],
             contents: [item.id: UITestFixtures.sampleArticleContent(title: "Onboarding Handoff")])
     }

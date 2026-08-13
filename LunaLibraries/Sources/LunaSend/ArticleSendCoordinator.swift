@@ -24,7 +24,7 @@ public protocol ArticleDestination {
     var isConfigured: Bool { get }
     /// The auto-send mode for an item, resolved from its capture source (email,
     /// App Intents, share sheet, friend shares, …).
-    func sendMode(for item: ReadingListItem) -> ArticleSendMode
+    func sendMode(for item: SavedItem) -> ArticleSendMode
     /// The mode governing App Intents / in-app saves — the only source whose
     /// "double save" press is detected at save time.
     var appIntentsSendMode: ArticleSendMode { get }
@@ -86,7 +86,7 @@ public final class KindleDestination: ArticleDestination {
 
     public var isConfigured: Bool { KindleSendSettings.isConfigured }
 
-    public func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+    public func sendMode(for item: SavedItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
             forDestination: id, source: item.effectiveCaptureSource,
             friendUsername: item.sharedByUsername)
@@ -136,7 +136,7 @@ public final class ArticleSendCoordinator {
     }
 
     private let logger = Logger(subsystem: LunaLogging.subsystem, category: "send")
-    private let store: ReadingListStore
+    private let store: SavesStore
     private let destinations: [ArticleDestination]
     private let retryPolicy: RetryPolicy
     private let now: () -> Date
@@ -157,7 +157,7 @@ public final class ArticleSendCoordinator {
     public weak var deliveryTaskObserver: (any ArticleDeliveryTaskObserving)?
 
     public init(
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         destinations: [ArticleDestination]? = nil,
         retryPolicy: RetryPolicy = RetryPolicy(),
         now: @escaping () -> Date = Date.init
@@ -189,7 +189,7 @@ public final class ArticleSendCoordinator {
 
     /// Explicit send of one article to one destination (the long-press menu).
     /// No-op when that destination isn't configured.
-    public func send(_ item: ReadingListItem, toDestinationID id: String) async {
+    public func send(_ item: SavedItem, toDestinationID id: String) async {
         guard let destination = destination(id: id) else { return }
         await sendBuildingEPUB(item, to: destination, respectBackoff: false)
     }
@@ -197,7 +197,7 @@ public final class ArticleSendCoordinator {
     /// Called by the ingestor when an article becomes ready: per destination,
     /// delivers anything queued by an earlier press, plus everything when that
     /// destination's mode is "all saves".
-    public func articleBecameReady(_ item: ReadingListItem) {
+    public func articleBecameReady(_ item: SavedItem) {
         guard !item.isPlatformItem else { return }
         for destination in destinations where destination.isConfigured {
             let state = item.sendState(for: destination.id)
@@ -228,7 +228,7 @@ public final class ArticleSendCoordinator {
 
     /// Builds the EPUB (once) and delivers to one destination.
     private func sendBuildingEPUB(
-        _ item: ReadingListItem, to destination: ArticleDestination, respectBackoff: Bool
+        _ item: SavedItem, to destination: ArticleDestination, respectBackoff: Bool
     ) async {
         guard destination.isConfigured else { return }
         guard let fresh = store.item(withID: item.id) else { return }
@@ -257,7 +257,7 @@ public final class ArticleSendCoordinator {
     }
 
     private func shouldAttempt(
-        _ item: ReadingListItem, destinationID: String, respectBackoff: Bool
+        _ item: SavedItem, destinationID: String, respectBackoff: Bool
     ) -> Bool {
         guard item.sendState(for: destinationID) != .failed else { return false }
         guard respectBackoff, let next = item.sendNextAttemptDates[destinationID] else {
@@ -272,7 +272,7 @@ public final class ArticleSendCoordinator {
         let title: String
     }
 
-    private func buildEPUB(for item: ReadingListItem) -> BuiltEPUB? {
+    private func buildEPUB(for item: SavedItem) -> BuiltEPUB? {
         guard let content = store.content(for: item) else { return nil }
         let title = item.title ?? item.urlString
         let data = EpubBuilder().build(

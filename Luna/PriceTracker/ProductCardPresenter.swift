@@ -23,7 +23,7 @@ import UIKit
 @MainActor
 final class ProductCardPresenter: CardKindPresenting {
 
-    private let store = ReadingListStore.shared
+    private let store = SavesStore.shared
     /// Held so the interactive-save observer outlives `willBeginObservingStores`.
     private var savedInteractivelyObserver: NSObjectProtocol?
 
@@ -32,7 +32,7 @@ final class ProductCardPresenter: CardKindPresenting {
     /// A price change must re-render the card. The central app's fingerprint had
     /// no price component at all, so a tracker whose price moved kept drawing
     /// its old graph until something unrelated forced a reload.
-    func fingerprint(for item: ReadingListItem) -> String {
+    func fingerprint(for item: SavedItem) -> String {
         guard let tracker = item.priceTracker else { return "" }
         let stores = tracker.stores.map {
             "\($0.urlString)|\($0.lastPrice.map(String.init(describing:)) ?? "")"
@@ -49,12 +49,12 @@ final class ProductCardPresenter: CardKindPresenting {
     }
 
     /// A product row with no tracker payload has nothing of this kind to draw.
-    func hasContent(for item: ReadingListItem) -> Bool { item.priceTracker != nil }
+    func hasContent(for item: SavedItem) -> Bool { item.priceTracker != nil }
 
     /// A tracker's archived flag lives on the tracker, not on the row — so both
     /// are consulted, which is what reconciles rows archived by only one of them
     /// before `setArchived` started writing both.
-    func isArchived(_ item: ReadingListItem) -> Bool {
+    func isArchived(_ item: SavedItem) -> Bool {
         item.isArchived || item.priceTracker?.isArchived == true
     }
 
@@ -62,7 +62,7 @@ final class ProductCardPresenter: CardKindPresenting {
 
     /// The real editor: product image and title, seller list with its add button,
     /// read-only price graph, and the dedicated alert row.
-    func cardContent(for item: ReadingListItem, host: CardPresenterHost)
+    func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
         guard item.priceTracker != nil else { return nil }
@@ -77,25 +77,25 @@ final class ProductCardPresenter: CardKindPresenting {
     /// aspect to honour — but sitting beside a 9:16 video card in the central
     /// app, "no aspect to honour" just meant "a different rectangle", so the
     /// column now scrolls inside the deck's one card frame.
-    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
+    func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
         style.pagesOnInCardSwipes = true
         return style
     }
 
-    func title(for item: ReadingListItem) -> String? {
+    func title(for item: SavedItem) -> String? {
         item.priceTracker?.productName
     }
 
     /// A product is marked by its tag, never by its seller's favicon.
     func loadSourceBadge(
-        for item: ReadingListItem, completion: @escaping (CarouselSourceBadge?) -> Void
+        for item: SavedItem, completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
         completion(.symbol("tag.fill"))
     }
 
     func loadThumbnail(
-        for item: ReadingListItem, host: CardPresenterHost,
+        for item: SavedItem, host: CardPresenterHost,
         completion: @escaping (UIImage?) -> Void
     ) {
         PriceTrackerProductImage.load(
@@ -106,10 +106,10 @@ final class ProductCardPresenter: CardKindPresenting {
 
     /// A product chip is its own picture, with the app icon's green tag
     /// silhouette pinned bottom-trailing.
-    func prefersThumbnailChip(for item: ReadingListItem) -> Bool { true }
+    func prefersThumbnailChip(for item: SavedItem) -> Bool { true }
 
     func loadMiniCarouselAccessory(
-        for item: ReadingListItem, completion: @escaping (UIImage?) -> Void
+        for item: SavedItem, completion: @escaping (UIImage?) -> Void
     ) {
         PriceTrackerProductImage.load(
             imageFileName: item.priceTracker?.imageFileName,
@@ -121,7 +121,7 @@ final class ProductCardPresenter: CardKindPresenting {
 
     /// Share sits above the deck's own Archive/Delete, as it always did here —
     /// and now in the central app too, which offered a product no share at all.
-    func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] {
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
         [
             UIAction(
                 title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
@@ -132,13 +132,13 @@ final class ProductCardPresenter: CardKindPresenting {
         ]
     }
 
-    /// What a product shares is the SELLER's page, not the reading-list row's
+    /// What a product shares is the SELLER's page, not the save row's
     /// URL — a tracker with several stores is one save over many pages, and the
     /// first store is the one its card leads with. `sourceView` is nil when the
     /// card isn't currently visible (e.g. a menu reached another way); the share
     /// sheet then anchors to the deck itself.
     @discardableResult
-    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView?) -> Bool {
+    func share(_ item: SavedItem, host: CardPresenterHost, sourceView: UIView?) -> Bool {
         guard let urlString = item.priceTracker?.stores.first?.urlString,
               let url = URL(string: urlString)
         else { return false }
@@ -148,12 +148,12 @@ final class ProductCardPresenter: CardKindPresenting {
         return true
     }
 
-    /// Both stores this kind owns: the tracker's own flag and the reading-list
+    /// Both stores this kind owns: the tracker's own flag and the saves list
     /// row. They were written separately, so a product archived in one app
     /// stayed live in the other. Unarchiving also bumps the row's date, which is
     /// the ONE ordering rule's way of resurfacing a restored save — the same
     /// thing `markUnread` does for an article.
-    func setArchived(_ archived: Bool, for item: ReadingListItem) {
+    func setArchived(_ archived: Bool, for item: SavedItem) {
         if var tracker = store.item(withID: item.id)?.priceTracker {
             tracker.isArchived = archived
             store.updatePriceTracker(tracker, for: item.id)
@@ -166,7 +166,7 @@ final class ProductCardPresenter: CardKindPresenting {
 
     /// Arriving at an alerting tracker is how its alert is acknowledged, so it
     /// stops floating above the other cards' ordering.
-    func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost) {
+    func itemDidCenter(_ item: SavedItem, host: CardPresenterHost) {
         guard var tracker = item.priceTracker, tracker.hasUnviewedAlert else { return }
         tracker.markAlertViewed()
         store.updatePriceTracker(tracker, for: item.id)
@@ -177,12 +177,12 @@ final class ProductCardPresenter: CardKindPresenting {
     /// treating a product card as a reader and toggling immersion on it.
     @discardableResult
     func itemWasTapped(
-        _ item: ReadingListItem, cardContent: CardContentViewController?,
+        _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
     ) -> Bool { true }
 
     @discardableResult
-    func openExternally(_ item: ReadingListItem, host: CardPresenterHost) -> Bool {
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
         guard let urlString = item.priceTracker?.stores.first?.urlString else { return false }
         InAppBrowser.present(urlString: urlString, from: host.presentingController)
         return true
@@ -213,7 +213,7 @@ final class ProductCardPresenter: CardKindPresenting {
     /// A product's tray row leads with its name and its current best price, and
     /// its tap opens the seller's page. The central app showed a favicon, the
     /// save date, and a tap that asked for a reader it could never build.
-    func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
+    func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {
         guard let tracker = item.priceTracker else { return nil }
@@ -245,7 +245,7 @@ final class ProductCardPresenter: CardKindPresenting {
                 host.reloadDeck()
             },
             delete: { [weak host] in
-                ReadingListStore.shared.delete(item)
+                SavesStore.shared.delete(item)
                 host?.reloadDeck()
             })
     }

@@ -21,12 +21,12 @@ public enum ArchiveUnlockFlow {
     /// `onUnlocked` — if the item has since vanished from the store, `onUnlocked`
     /// is not called.
     public static func present(
-        item: ReadingListItem,
+        item: SavedItem,
         articleURL: URL,
-        store: ReadingListStore,
+        store: SavesStore,
         from presenter: UIViewController,
         modalPresentationStyle: UIModalPresentationStyle = .automatic,
-        onUnlocked: @escaping (ReadingListItem) -> Void
+        onUnlocked: @escaping (SavedItem) -> Void
     ) {
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
@@ -47,16 +47,16 @@ public enum ArchiveUnlockFlow {
 private final class ModalUnlockLegs: ArchiveUnlockDelegate {
     private weak var nav: UINavigationController?
     private let itemID: UUID
-    private let store: ReadingListStore
-    private let onUnlocked: (ReadingListItem) -> Void
+    private let store: SavesStore
+    private let onUnlocked: (SavedItem) -> Void
 
     /// `nonisolated` because `present` above is not: UIKit's own main-actor members
     /// reach it through the `@preconcurrency` import, but a fresh type of ours gets
     /// the real rule. Nothing here touches isolated state — it stores what it was
     /// handed.
     nonisolated init(
-        nav: UINavigationController, itemID: UUID, store: ReadingListStore,
-        onUnlocked: @escaping (ReadingListItem) -> Void
+        nav: UINavigationController, itemID: UUID, store: SavesStore,
+        onUnlocked: @escaping (SavedItem) -> Void
     ) {
         self.nav = nav
         self.itemID = itemID

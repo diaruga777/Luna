@@ -16,7 +16,7 @@ import XCTest
 final class PriceTrackerProductImageTests: XCTestCase {
 
     private func writePNG(named name: String, side: CGFloat) -> String {
-        let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(name)
+        let fileURL = SavesStore.shared.articlesDirectory.appendingPathComponent(name)
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         // Pin the renderer to 1x: the default format uses the device scale, and a
@@ -53,7 +53,7 @@ final class PriceTrackerProductImageTests: XCTestCase {
         let name = writePNG(named: "product-oversized-\(UUID().uuidString).png", side: 4000)
         defer {
             try? FileManager.default.removeItem(
-                at: ReadingListStore.shared.articlesDirectory.appendingPathComponent(name))
+                at: SavesStore.shared.articlesDirectory.appendingPathComponent(name))
         }
 
         let image = try XCTUnwrap(load(name))
@@ -67,7 +67,7 @@ final class PriceTrackerProductImageTests: XCTestCase {
     /// file.
     func testRepeatedLoadIsServedFromCacheNotDisk() throws {
         let name = writePNG(named: "product-cache-\(UUID().uuidString).png", side: 40)
-        let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(name)
+        let fileURL = SavesStore.shared.articlesDirectory.appendingPathComponent(name)
 
         _ = try XCTUnwrap(load(name), "first load should decode the real file")
         try FileManager.default.removeItem(at: fileURL)

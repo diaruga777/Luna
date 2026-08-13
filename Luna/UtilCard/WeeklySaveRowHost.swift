@@ -257,7 +257,7 @@ final class WeeklySaveRowHost: UIView {
         row.setSaved(isSaved(display.save.urlString))
     }
 
-    /// Reconciled by the util card on `.readingListChanged`: saving or deleting
+    /// Reconciled by the util card on `.savesChanged`: saving or deleting
     /// the pick flips its row between offered and answered.
     func updateSavedStates() {
         for (offset, row) in rows.enumerated() {

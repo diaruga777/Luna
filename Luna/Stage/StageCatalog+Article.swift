@@ -244,8 +244,8 @@ enum ArticleStageCatalog {
 
     // MARK: - Fixture
 
-    private static var fixtureItem: ReadingListItem {
-        ReadingListItem(
+    private static var fixtureItem: SavedItem {
+        SavedItem(
             seed: "stage-reader", urlString: "https://example.com/reader",
             title: "The Quiet Architecture of Everyday Things",
             dateAdded: StageFixtures.now, state: .ready, wordCount: 480)
@@ -256,7 +256,7 @@ enum ArticleStageCatalog {
     }
 
     @MainActor
-    private static func reader(_ mode: ReadingListItem.ReaderMode) -> ReaderViewController {
+    private static func reader(_ mode: SavedItem.ReaderMode) -> ReaderViewController {
         ReaderViewController(
             item: fixtureItem, content: fixtureContent, forceMode: mode,
             persistsModePreference: false, marksOpenedOnLoad: false)

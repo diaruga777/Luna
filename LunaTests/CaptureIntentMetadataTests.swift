@@ -15,7 +15,7 @@ final class CaptureIntentMetadataTests: XCTestCase {
 
     func testSaveCheckpointRoundTripsAsOpaqueJSON() throws {
         let date = Date(timeIntervalSinceReferenceDate: 123_456)
-        let prepared = ReadingListIngestor.PreparedSavePress(
+        let prepared = SavesIngestor.PreparedSavePress(
             itemID: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
             urlString: "https://example.com/article",
             action: .saveNew,

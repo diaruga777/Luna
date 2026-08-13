@@ -27,8 +27,8 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
     /// itself stays in `ShareSurfaceDriver`); every step is a no-op on empty
     /// `html`, exactly as when this lived in the driver.
     public func persistArticleExtras(
-        item: ReadingListItem, content: ArticleContent, html: String, url: URL,
-        store: ReadingListStore
+        item: SavedItem, content: ArticleContent, html: String, url: URL,
+        store: SavesStore
     ) {
         // Phase 6, product requirement B: write a heuristics-only audio
         // script to the cache right away — cheap/synchronous, off the ingest
@@ -59,7 +59,7 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
         // from the page HTML the pipeline already fetched (Safari's text-only action
         // snapshot has no og:image, so it simply yields no cover here). The extension
         // is short-lived, so if this doesn't finish the app backfills it on next launch
-        // (ReadingListIngestor.backfillMissingThumbnails) — this just avoids the wait
+        // (SavesIngestor.backfillMissingThumbnails) — this just avoids the wait
         // in the common case. Skipped for the text-only snapshot, which has no <meta>.
         guard !html.isEmpty else { return }
         let itemID = item.id
@@ -103,7 +103,7 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
     /// extract, a surface with an in-sheet reader (`host.readerMode` non-nil)
     /// swaps in the native reader showing the captured content; the zero-UI
     /// share extension just confirms the save.
-    public func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost) {
+    public func presentArchive(url: URL, itemID: UUID, store: SavesStore, host: ExtensionHost) {
         let readerMode = host.readerMode.map(Self.readerMode)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: itemID)
         archive.delegate = ExtensionUnlockLegs(
@@ -146,9 +146,9 @@ private final class ExtensionReaderLegs: ShareReaderCompletionDelegate,
     }
 
     /// The action extension keeps its own last-used mode. The reader speaks in
-    /// `ReadingListItem.ReaderMode`; the surface stores `ExtensionReaderMode`, and
+    /// `SavedItem.ReaderMode`; the surface stores `ExtensionReaderMode`, and
     /// `ShareReaderViewController.Mode` is the shared vocabulary between them.
-    func reader(_ reader: UIViewController, didSelectMode mode: ReadingListItem.ReaderMode) {
+    func reader(_ reader: UIViewController, didSelectMode mode: SavedItem.ReaderMode) {
         ActionReaderMode.last = ExtensionArticlePresenter.extensionMode(
             ShareReaderViewController.Mode(readerMode: mode))
     }
@@ -168,13 +168,13 @@ private final class ExtensionUnlockLegs: ArchiveUnlockDelegate {
     private weak var host: (any ExtensionHost)?
     private let url: URL
     private let itemID: UUID
-    private let store: ReadingListStore
+    private let store: SavesStore
     /// The in-sheet reader to swap in once the article lands, or nil for the zero-UI
     /// share extension, which just confirms the save.
     private let readerMode: ShareReaderViewController.Mode?
 
     init(
-        host: any ExtensionHost, url: URL, itemID: UUID, store: ReadingListStore,
+        host: any ExtensionHost, url: URL, itemID: UUID, store: SavesStore,
         readerMode: ShareReaderViewController.Mode?
     ) {
         self.host = host

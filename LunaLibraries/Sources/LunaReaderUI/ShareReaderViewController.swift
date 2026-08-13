@@ -21,7 +21,7 @@ public final class ShareReaderViewController: UIViewController {
     public enum Mode: String {
         case reader, rsvp, chunk
 
-        var readerMode: ReadingListItem.ReaderMode {
+        var readerMode: SavedItem.ReaderMode {
             switch self {
             case .reader: return .scroll
             case .rsvp: return .rsvp
@@ -29,7 +29,7 @@ public final class ShareReaderViewController: UIViewController {
             }
         }
 
-        init(readerMode: ReadingListItem.ReaderMode) {
+        init(readerMode: SavedItem.ReaderMode) {
             switch readerMode {
             case .scroll: self = .reader
             case .rsvp: self = .rsvp
@@ -90,7 +90,7 @@ public final class ShareReaderViewController: UIViewController {
     /// the real bounded downloader; a test surface substitutes it so a fixture's
     /// `<img>` tags don't pull a unit test onto the network.
     static var settleImagesOverride: ((
-        _ content: ArticleContent, _ itemID: UUID, _ url: URL, _ store: ReadingListStore
+        _ content: ArticleContent, _ itemID: UUID, _ url: URL, _ store: SavesStore
     ) async -> ArticleContent)?
 
     /// Builds the finished reader for an already-extracted article: persists the
@@ -103,7 +103,7 @@ public final class ShareReaderViewController: UIViewController {
     /// appeared a beat early), and only then swap in the reader. One prepared
     /// hand-off replaces all three steps.
     public static func preparedReader(
-        url: URL, mode: Mode, content: ArticleContent, store: ReadingListStore = .shared,
+        url: URL, mode: Mode, content: ArticleContent, store: SavesStore = .shared,
         modePreferenceDelegate: (any ReaderModePreferenceDelegate)?,
         completionDelegate: any ShareReaderCompletionDelegate
     ) async -> UIViewController {
@@ -127,7 +127,7 @@ public final class ShareReaderViewController: UIViewController {
     /// On timeout the local resolve runs again, so files that did arrive before
     /// the deadline are still baked into the first render.
     public static func settledImageLayout(
-        for content: ArticleContent, item: ReadingListItem, url: URL, store: ReadingListStore
+        for content: ArticleContent, item: SavedItem, url: URL, store: SavesStore
     ) async -> ArticleContent {
         let local = ArticleImageDownloader.resolveLocalImages(content, store: store)
         let needsSettling = local.blocks.contains { block in
@@ -159,14 +159,14 @@ public final class ShareReaderViewController: UIViewController {
     }
 
     private static func makeReader(
-        item: ReadingListItem, content: ArticleContent, mode: Mode,
+        item: SavedItem, content: ArticleContent, mode: Mode,
         modePreferenceDelegate: (any ReaderModePreferenceDelegate)?,
         completionDelegate: any ShareReaderCompletionDelegate
     ) -> ReaderViewController {
         // A lightweight share provider (friend-share via the App Group queue +
         // link share — no CloudKit in the extension) so the reader's own share
         // button works. The reader marks the (real, shared) item opened/read
-        // via ReadingListStore.
+        // via SavesStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
             shareProvider: ExtensionReaderShareProvider(),
@@ -256,7 +256,7 @@ public final class ShareReaderViewController: UIViewController {
     private func ingestAndPresent() async {
         // Save immediately (shared storage) so the article is captured even if
         // the user exits mid-read; reuse the item the extension just appended.
-        let item = ReadingListStore.shared.add(urlString: url.absoluteString)
+        let item = SavesStore.shared.add(urlString: url.absoluteString)
 
         // Use the action extension's already-computed `Outcome` (the ONE shared
         // `IngestPipeline` ran upstream — bounded, classified video/social before any
@@ -275,13 +275,13 @@ public final class ShareReaderViewController: UIViewController {
             // article's first frame is its final one. Persist the parsed content
             // (with whatever images resolved) so the main app has it too.
             let settled = await Self.settledImageLayout(
-                for: content, item: item, url: url, store: ReadingListStore.shared)
-            let saved = ReadingListStore.shared.saveContent(settled, for: item)
+                for: content, item: item, url: url, store: SavesStore.shared)
+            let saved = SavesStore.shared.saveContent(settled, for: item)
             presentReader(item: saved, content: settled)
         case let .product(product, _):
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
-            ReadingListStore.shared.savePriceTracker(
+            SavesStore.shared.savePriceTracker(
                 product.makeTracker(
                     fallbackURL: url,
                     alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction),
@@ -308,10 +308,10 @@ public final class ShareReaderViewController: UIViewController {
     /// the user exits before solving it stays unlockable from the main app; once
     /// the snapshot loads, the web reader extracts the article and flips it to
     /// `.ready`.
-    private func presentArchiveReader(for item: ReadingListItem, fallbackTitle: String) {
+    private func presentArchiveReader(for item: SavedItem, fallbackTitle: String) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
-        ReadingListStore.shared.markNeedsCaptcha(item.id, title: fallbackTitle)
+        SavesStore.shared.markNeedsCaptcha(item.id, title: fallbackTitle)
         // The archive reader keeps its Done (and "open in Safari") in the bar this
         // screen hid — put it back before handing the stack over.
         navigationController?.setNavigationBarHidden(false, animated: false)
@@ -326,7 +326,7 @@ public final class ShareReaderViewController: UIViewController {
 
     /// `fileprivate` for the unlock coordinator below, which is what re-enters this
     /// screen once the archive CAPTCHA is solved.
-    fileprivate func presentReader(item: ReadingListItem, content: ArticleContent) {
+    fileprivate func presentReader(item: SavedItem, content: ArticleContent) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
         let reader = Self.makeReader(
@@ -434,12 +434,12 @@ private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
 
     func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
         guard let screen,
-              let fresh = ReadingListStore.shared.item(withID: itemID),
-              let content = ReadingListStore.shared.content(for: fresh) else { return }
+              let fresh = SavesStore.shared.item(withID: itemID),
+              let content = SavesStore.shared.content(for: fresh) else { return }
         Task { @MainActor in
             let settled = await ShareReaderViewController.settledImageLayout(
-                for: content, item: fresh, url: screen.url, store: ReadingListStore.shared)
-            let saved = ReadingListStore.shared.saveContent(settled, for: fresh)
+                for: content, item: fresh, url: screen.url, store: SavesStore.shared)
+            let saved = SavesStore.shared.saveContent(settled, for: fresh)
             screen.presentReader(item: saved, content: settled)
         }
     }

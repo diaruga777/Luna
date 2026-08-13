@@ -39,7 +39,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
 
     private var tempDirectory: URL!
     private var snapshotDirectory: URL?
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     private var presenter: ExtensionProductPresenter!
 
     override func setUp() {
@@ -48,7 +48,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ExtensionProductPresenterTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         presenter = ExtensionProductPresenter()
         presenter.snapshotStore = .temporary(directory: &snapshotDirectory)
         presenter.artworkLoader = StubArtworkLoader(data: nil)

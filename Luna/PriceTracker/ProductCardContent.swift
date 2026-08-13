@@ -77,7 +77,7 @@ enum ProductCardDeck {
             var configuration = CardDeckConfiguration()
             // This app has no generic link card: a product row with no tracker
             // payload behind it is not a slot here, which is the same set of rows
-            // it showed when it read the reading list for `priceTracker != nil`.
+            // it showed when it read the saves list for `priceTracker != nil`.
             configuration.showsSavesWithoutKindContent = false
             // The pill greys out on the util card rather than vanishing: it is a
             // fixture of this deck's chrome, and a gap beside the scrub strip

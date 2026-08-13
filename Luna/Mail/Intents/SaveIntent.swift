@@ -189,7 +189,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
 
         // Two-phase durable state. As soon as a URL is known, commit the
         // screenshot/URL/start timestamp before ingest or export. At every exit,
-        // extend both screenshot and reading-list markers to completion time.
+        // extend both screenshot and saves markers to completion time.
         var timingURLString: String?
         let commitResolvedURL: (String) -> Void = { urlString in
             timingURLString = urlString

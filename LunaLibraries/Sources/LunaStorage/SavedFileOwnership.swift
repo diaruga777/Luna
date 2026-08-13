@@ -78,7 +78,7 @@ enum SavedFileOwnership {
     /// a thumbnail the platform ingestor wrote, a product photo the price
     /// ingestor wrote — is owned from the moment the column points at it, without
     /// every writer having to remember.
-    static func columnDerivedPaths(of item: ReadingListItem) -> [(OwnedFileKind, String)] {
+    static func columnDerivedPaths(of item: SavedItem) -> [(OwnedFileKind, String)] {
         var paths: [(OwnedFileKind, String)] = []
         if let name = item.contentFileName, let path = articlesPath(name) {
             paths.append((.content, path))

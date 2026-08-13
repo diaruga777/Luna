@@ -32,7 +32,7 @@ final class NewSaveCenteringTests: XCTestCase {
     }
 
     override func tearDown() {
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         SavedMediaDeckFixtures.emptySharedMediaStore()
         super.tearDown()
     }
@@ -106,7 +106,7 @@ final class NewSaveCenteringTests: XCTestCase {
 
     /// The user is parked on the second card when a save lands in the shared
     /// store from somewhere else entirely. The deck reloads on
-    /// `.readingListChanged` — the notification every surface's write funnels
+    /// `.savesChanged` — the notification every surface's write funnels
     /// into, including `sceneWillEnterForeground`'s catch-up post — and must
     /// come to rest on the new card rather than the one it was holding.
     @MainActor
@@ -120,7 +120,7 @@ final class NewSaveCenteringTests: XCTestCase {
         XCTAssertEqual(deck.carousel.currentIndex, 1)
 
         seedArticles(count: 1, seedPrefix: "elsewhere", startingAt: Date(), existing: seeded)
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(
             deck.carousel.currentIndex, 1,
@@ -168,8 +168,8 @@ final class NewSaveCenteringTests: XCTestCase {
         XCTAssertEqual(deck.carousel.currentIndex, 2)
 
         seeded[0].title = "Retitled"
-        ReadingListStore.shared.seedForTesting(items: seeded, contents: contents(for: seeded))
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavesStore.shared.seedForTesting(items: seeded, contents: contents(for: seeded))
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(deck.carousel.currentIndex, 2)
         _ = window
@@ -188,16 +188,16 @@ final class NewSaveCenteringTests: XCTestCase {
         XCTAssertEqual(deck.carousel.currentIndex, 2)
 
         let url = "https://store.example.com/tracked-elsewhere"
-        let tracked = ReadingListItem(
+        let tracked = SavedItem(
             seed: "pt-elsewhere", urlString: url, title: "Elsewhere Lamp",
             dateAdded: Date().addingTimeInterval(60), state: .ready,
             captureSource: .manual,
             priceTracker: PriceTracker(
                 productName: "Elsewhere Lamp", firstStoreURL: url, price: 42,
                 currency: "USD", brand: "Acme", productID: "pt-elsewhere"))
-        ReadingListStore.shared.seedForTesting(
+        SavesStore.shared.seedForTesting(
             items: [tracked] + seeded, contents: [:])
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(
             deck.carousel.currentIndex, 1,
@@ -209,7 +209,7 @@ final class NewSaveCenteringTests: XCTestCase {
 
     /// The Downloader had no end-to-end case at all. Its rows are keyed by the
     /// MEDIA store's ids, so this also pins that the shared diff works on a deck
-    /// whose slot ids come from somewhere other than the reading list.
+    /// whose slot ids come from somewhere other than the saves list.
     @MainActor
     func testMediaDeckMovesToASaveMadeElsewhere() {
         seedMedia(count: 3)
@@ -241,14 +241,14 @@ final class NewSaveCenteringTests: XCTestCase {
         deck.carousel.reloadData(centeringAt: 2)
         XCTAssertEqual(deck.carousel.currentIndex, 2)
 
-        let broken = ReadingListItem(
+        let broken = SavedItem(
             seed: "new-save-broken",
             urlString: "https://broken.example.com/new-save",
             title: nil,
             dateAdded: Date().addingTimeInterval(60),
             state: .failed)
-        ReadingListStore.shared.seedForTesting(items: [broken], contents: [:])
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavesStore.shared.seedForTesting(items: [broken], contents: [:])
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(
             deck.slots[deck.carousel.currentIndex - deck.cardOffset].id, broken.id,
@@ -272,11 +272,11 @@ final class NewSaveCenteringTests: XCTestCase {
         count: Int,
         seedPrefix: String = "new-save",
         startingAt date: Date = Date(),
-        existing: [ReadingListItem] = []
-    ) -> [ReadingListItem] {
+        existing: [SavedItem] = []
+    ) -> [SavedItem] {
         var items = existing
         for offset in 0..<count {
-            items.append(ReadingListItem(
+            items.append(SavedItem(
                 seed: "\(seedPrefix)-\(offset)",
                 urlString: "https://example.com/\(seedPrefix)-\(offset)",
                 title: "\(seedPrefix) \(offset)",
@@ -285,11 +285,11 @@ final class NewSaveCenteringTests: XCTestCase {
                 readState: .unopened,
                 wordCount: 480))
         }
-        ReadingListStore.shared.seedForTesting(items: items, contents: contents(for: items))
+        SavesStore.shared.seedForTesting(items: items, contents: contents(for: items))
         return items
     }
 
-    private func contents(for items: [ReadingListItem]) -> [UUID: ArticleContent] {
+    private func contents(for items: [SavedItem]) -> [UUID: ArticleContent] {
         Dictionary(uniqueKeysWithValues: items.map {
             ($0.id, UITestFixtures.sampleArticleContent(title: $0.title ?? "Article"))
         })

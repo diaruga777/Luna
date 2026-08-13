@@ -24,14 +24,14 @@ private final class StubShareReaderHost: ShareReaderCompletionDelegate {
 final class ExtensionReaderPreparationTests: XCTestCase {
 
     private var scratch: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
 
     override func setUp() {
         super.setUp()
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("ReaderPrep-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: scratch)
+        store = SavesStore(containerURL: scratch)
     }
 
     override func tearDown() {

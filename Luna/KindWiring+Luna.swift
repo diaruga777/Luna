@@ -154,8 +154,8 @@ enum KindWiring {
         ArticleShellWiring.sceneDidForeground()
     }
 
-    static func readingListDidChange() {
-        MediaShellWiring.readingListDidChange()
+    static func savesDidChange() {
+        MediaShellWiring.savesDidChange()
     }
 
     static func wifiBecameAvailable() {

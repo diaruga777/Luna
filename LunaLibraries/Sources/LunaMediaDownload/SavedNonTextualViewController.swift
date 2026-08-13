@@ -24,7 +24,7 @@ import UIKit
 /// the media icon — there is no separate spinner (two indicators for one wait).
 /// A video gets a play-button overlay (tap → AVPlayer); an image just
 /// displays. Once downloaded (auto or manual) a "Save to Photos" button enables;
-/// saving writes to the Photos library AND marks the item read in the reading list.
+/// saving writes to the Photos library AND marks the item read in the saves list.
 ///
 /// The controls are two stacks in one column (`contentColumn`): the
 /// confirmation, the media, and the media's OWN action (Download / Save to
@@ -46,7 +46,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     private let showsSystemShare: Bool
     /// A bundled onboarding file runs the production result UI without a live
     /// post to resolve. It is deliberately display-only: the rehearsal must
-    /// never write to the reading list, Photos, or Downloader's library.
+    /// never write to the saves list, Photos, or Downloader's library.
     private let practiceVideoURL: URL?
     private var isPracticePreview: Bool { practiceVideoURL != nil }
 
@@ -815,7 +815,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         guard MediaAutoDownloader.isRunningInDownloader, !didPersistToLibrary else { return }
         didPersistToLibrary = true
         let sourceURLString = articleURLString
-        let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
+        let readingItem = SavesStore.shared.item(forURLString: sourceURLString)
         let title = readingItem?.title
         let previewURL = media.fileURL
         let kind = media.kind
@@ -1045,7 +1045,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     }
 
     /// Requests Photos add access and saves the downloaded file, then marks the item
-    /// READ in the reading list (saving counts as consuming it). Only
+    /// READ in the saves list (saving counts as consuming it). Only
     /// reachable for `.ready` (a fresh temp file PhotoKit moves) or an already-downloaded
     /// `.localFile` duplicate (a COPY is saved, then the library's own file is retired via
     /// `transitionToPhotosReference` — the button is disabled/hidden once already `.photosReference`).
@@ -1197,9 +1197,9 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
                         mediaItem.photosLocalIdentifier, saver: PhotoLibrarySaver())
                     SavedMediaStore.shared.delete(mediaItem)
                 }
-                if let readingItem = ReadingListStore.shared.item(
+                if let readingItem = SavesStore.shared.item(
                     forURLString: self.articleURLString) {
-                    ReadingListStore.shared.delete(readingItem)
+                    SavesStore.shared.delete(readingItem)
                 }
                 AutoDownloadSettings.unmarkDownloaded(self.articleURLString)
                 await MainActor.run { self.delegate?.savedMediaScreenDidFinish(self) }
@@ -1217,10 +1217,10 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         }
     }
 
-    /// Marks the saved reading-list item as read.
+    /// Marks the saved saved item as read.
     private func markItemRead() {
-        guard let item = ReadingListStore.shared.item(forURLString: articleURLString) else { return }
-        ReadingListStore.shared.markReadState(.read, for: item.id)
+        guard let item = SavesStore.shared.item(forURLString: articleURLString) else { return }
+        SavesStore.shared.markReadState(.read, for: item.id)
     }
 
     /// The extension may be the first surface to resolve this media. Persist the
@@ -1228,8 +1228,8 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// thumbnail even though no article ingestion runs for a ready platform item.
     private func persistPreviewThumbnail(_ image: UIImage) {
         guard let data = image.jpegData(compressionQuality: 0.88),
-              let item = ReadingListStore.shared.item(forURLString: articleURLString) else { return }
-        ReadingListStore.shared.setThumbnail(data, for: item.id)
+              let item = SavesStore.shared.item(forURLString: articleURLString) else { return }
+        SavesStore.shared.setThumbnail(data, for: item.id)
     }
 
     // MARK: - Image / video helpers

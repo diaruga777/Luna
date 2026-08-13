@@ -27,8 +27,8 @@ public struct RedditPlatform: PlatformModule {
     public let platform: ContentPlatform = .reddit
     public let glyphSymbolName = "bubble.left.and.text.bubble.right.fill"
 
-    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: SavedItem) -> URL? { nil }
+    public func embed(for item: SavedItem) -> PlatformEmbed? { nil }
 
     public var metadataFetcher: PlatformMetadataFetching? { RedditMetadataFetcher() }
 }

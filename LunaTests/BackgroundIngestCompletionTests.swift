@@ -90,7 +90,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     /// already; the runner must then settle the debt instead of re-ingesting a
     /// finished save.
     func testRunSettlesARowThatAlreadyReachedAVerdict() throws {
-        let store = ReadingListStore(containerURL: scratch)
+        let store = SavesStore(containerURL: scratch)
         let item = store.add(urlString: "https://x.com/luna/status/1")
         _ = store.savePlatformMetadata(
             platform: .x, platformItemID: "1", title: "A post",
@@ -102,7 +102,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         let finished = expectation(description: "queue worked")
         BackgroundIngestCompletion.run(
             store: store, completions: queue,
-            ingestor: ReadingListIngestor(store: store)) { finished.fulfill() }
+            ingestor: SavesIngestor(store: store)) { finished.fulfill() }
         wait(for: [finished], timeout: 5)
 
         XCTAssertTrue(queue.owed().isEmpty)
@@ -111,14 +111,14 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     /// A row the surface gate discarded (or a tracker merge deleted) is gone
     /// from the store entirely — nothing is owed for it any more.
     func testRunSettlesADebtWhoseRowNoLongerExists() {
-        let store = ReadingListStore(containerURL: scratch)
+        let store = SavesStore(containerURL: scratch)
         let queue = completions()
         queue.owe(itemID: UUID(), urlString: "https://x.com/luna/status/1")
 
         let finished = expectation(description: "queue worked")
         BackgroundIngestCompletion.run(
             store: store, completions: queue,
-            ingestor: ReadingListIngestor(store: store)) { finished.fulfill() }
+            ingestor: SavesIngestor(store: store)) { finished.fulfill() }
         wait(for: [finished], timeout: 5)
 
         XCTAssertTrue(queue.owed().isEmpty)
@@ -142,7 +142,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
         // 11 characters, because that is what a YouTube id is and
         // `PlatformRecognizer` checks.
         let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
-        let store = ReadingListStore(containerURL: scratch)
+        let store = SavesStore(containerURL: scratch)
         let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
             for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
@@ -164,7 +164,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     @MainActor
     func testIncompleteHandoffLeavesTheRowOwedForTheBackgroundIngest() throws {
         let videoID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(11))
-        let store = ReadingListStore(containerURL: scratch)
+        let store = SavesStore(containerURL: scratch)
         let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
             for: handoffRecord(urlString: "https://www.youtube.com/watch?v=\(videoID)",
@@ -182,7 +182,7 @@ final class BackgroundIngestCompletionTests: XCTestCase {
     /// pipeline rather than being guessed at here.
     @MainActor
     func testHandoffForAnUnrecognizedHostStaysOwed() throws {
-        let store = ReadingListStore(containerURL: scratch)
+        let store = SavesStore(containerURL: scratch)
         let queue = completions()
         let saved = PendingResolvedMediaDownloads.persistSave(
             for: handoffRecord(urlString: "https://example.org/clips/a-clip",

@@ -45,7 +45,7 @@ public enum IntentSaveTimeout {
 /// holds nothing, or holds only a failure (`IntentSaveVerification`).
 public enum IntentIngestHelper {
 
-    public typealias PreparedSavePress = ReadingListIngestor.PreparedSavePress
+    public typealias PreparedSavePress = SavesIngestor.PreparedSavePress
 
     /// What an Action Button save press produced, for the Provide Context /
     /// Save App Intents.
@@ -64,7 +64,7 @@ public enum IntentIngestHelper {
         /// Double save whose configured action is a file export: the intent
         /// should build `item` in `format` (through the app shell's article
         /// exporter seam) and return it as its media.
-        case exportRequested(item: ReadingListItem, format: ArticleExportFormat)
+        case exportRequested(item: SavedItem, format: ArticleExportFormat)
         /// Foreign-kind save (`SurfaceSupport`) — the item was DISCARDED. The
         /// intent throws an error dialog with the generic explanation.
         case unsupportedKind(owner: LunaApp)
@@ -119,7 +119,7 @@ public enum IntentIngestHelper {
         doubleSaveActionSurface surface: DoubleSaveSurface?,
         attemptDate: Date = Date()
     ) -> PreparedSavePress? {
-        ReadingListIngestor.shared.prepareSavePress(
+        SavesIngestor.shared.prepareSavePress(
             urlString: urlString, source: .appIntent,
             doubleSaveActionSurface: surface, attemptDate: attemptDate)
     }
@@ -131,7 +131,7 @@ public enum IntentIngestHelper {
         _ prepared: PreparedSavePress,
         waitForCancelledFastPath: Bool = false
     ) async -> ActionButtonSaveOutcome {
-        let result = await ReadingListIngestor.shared.performPreparedSavePress(
+        let result = await SavesIngestor.shared.performPreparedSavePress(
             prepared, waitForInFlight: waitForCancelledFastPath)
         return verifiedOutcome(
             from: result, pressedURLString: prepared.urlString,
@@ -141,26 +141,26 @@ public enum IntentIngestHelper {
 
     /// Recommits the intent's URL-level timing marker at the end of every
     /// remaining handoff (document build, download, foreground continuation).
-    /// `ReadingListIngestor` also finishes its own marker so a timed-out ingest
+    /// `SavesIngestor` also finishes its own marker so a timed-out ingest
     /// that outlives the intent still advances to its true completion time.
     public static func finishSaveAttempt(
         urlString: String, at date: Date = Date()
     ) {
         guard let normalized = URLUnwrapper.ingestURL(from: urlString)?.absoluteString,
-              let item = ReadingListStore.shared.item(forURLString: normalized)
+              let item = SavesStore.shared.item(forURLString: normalized)
         else { return }
-        ReadingListStore.shared.finishSaveAttempt(for: item.id, at: date)
+        SavesStore.shared.finishSaveAttempt(for: item.id, at: date)
     }
 
     /// Re-reads the store for what the press actually left behind: by item id
     /// when the press produced one (the id survives an unwrap repoint, the URL
     /// doesn't), else by the pressed URL for a duplicate/ignored press.
     private static func currentStoreItem(
-        for result: ReadingListIngestor.SavePressResult?, pressedURLString: String
-    ) -> ReadingListItem? {
+        for result: SavesIngestor.SavePressResult?, pressedURLString: String
+    ) -> SavedItem? {
         guard let result else { return nil }
-        if let item = result.item { return ReadingListStore.shared.item(withID: item.id) }
-        return ReadingListStore.shared.item(forURLString: pressedURLString)
+        if let item = result.item { return SavesStore.shared.item(withID: item.id) }
+        return SavesStore.shared.item(forURLString: pressedURLString)
     }
 
     /// Turns the ingest result plus the item now IN THE STORE into the
@@ -169,9 +169,9 @@ public enum IntentIngestHelper {
     /// that a missing or `.failed` item becomes `.saveFailed` instead of a
     /// success with nothing behind it.
     static func verifiedOutcome(
-        from result: ReadingListIngestor.SavePressResult?,
+        from result: SavesIngestor.SavePressResult?,
         pressedURLString: String,
-        storedItem: ReadingListItem?
+        storedItem: SavedItem?
     ) -> ActionButtonSaveOutcome {
         switch result {
         case nil:
@@ -213,7 +213,7 @@ public enum IntentIngestHelper {
     private static func savePressRacingTimeout(
         urlString: String, doubleSaveActionSurface: DoubleSaveSurface?, timeout: TimeInterval,
         attemptDate: Date
-    ) async -> ReadingListIngestor.SavePressResult? {
+    ) async -> SavesIngestor.SavePressResult? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         // NOT a task group: `withTaskGroup` awaits ALL children before returning,
@@ -224,11 +224,11 @@ public enum IntentIngestHelper {
         // for a later retry, exactly as documented above.
         let resumeLatch = OneShotLatch()
         return await withCheckedContinuation { continuation in
-            @Sendable func finish(_ value: ReadingListIngestor.SavePressResult?) {
+            @Sendable func finish(_ value: SavesIngestor.SavePressResult?) {
                 if resumeLatch.claim() { continuation.resume(returning: value) }
             }
             Task {
-                let result = await ReadingListIngestor.shared.handleSavePress(
+                let result = await SavesIngestor.shared.handleSavePress(
                     urlString: urlString, source: .appIntent,
                     doubleSaveActionSurface: doubleSaveActionSurface,
                     attemptDate: attemptDate)

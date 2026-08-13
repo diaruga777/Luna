@@ -120,7 +120,7 @@ public enum StageContainer {
 /// run (`-LunaStage`) or the UI-test seeding harness (`-uiTestState`).
 ///
 /// Its one job is suppressing the simulator-only debug tap targets (the
-/// reader's "Sim Dive"/"Sim Pop", the reading-list row ellipsis) that otherwise
+/// reader's "Sim Dive"/"Sim Pop", the save row ellipsis) that otherwise
 /// overlay the content being captured. They stay for interactive simulator
 /// automation, which passes none of these, and for unit tests, which build view
 /// controllers directly.

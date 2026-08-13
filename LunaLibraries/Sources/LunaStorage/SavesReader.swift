@@ -6,7 +6,7 @@
 import Foundation
 import LunaModels
 
-/// The queries `ReadingListStore` reads through. Each one names the store call it
+/// The queries `SavesStore` reads through. Each one names the store call it
 /// serves; the indexes it relies on are listed in `SavesSchema`.
 ///
 /// A save is assembled from up to five tables, so every read here runs a fixed
@@ -15,7 +15,7 @@ import LunaModels
 enum SavesReader {
 
     /// The whole list in its own order — `items()`.
-    static func allItems(in db: SavesDatabase) throws -> [ReadingListItem] {
+    static func allItems(in db: SavesDatabase) throws -> [SavedItem] {
         var saves: [StoredSave] = []
         try db.query("SELECT \(SaveRow.columns) FROM saves ORDER BY seq DESC, id ASC") { row in
             guard let item = SaveRow.item(from: row) else { return }

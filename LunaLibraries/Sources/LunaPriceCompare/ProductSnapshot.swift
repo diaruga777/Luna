@@ -11,7 +11,7 @@ import LunaModels
 /// A snapshot is written for EVERY product page any Luna process observes and
 /// for every alternative-seller result a fan-out returns — unconditionally, with
 /// no setting anywhere able to suppress it (`claudedocs/price-tracking.md`'s
-/// "Product snapshots"). It is never a save: no reading-list row, no refresh, no
+/// "Product snapshots"). It is never a save: no save row, no refresh, no
 /// alert. Its whole purpose is that a price tracker created LATER can be born
 /// with a history instead of a single point.
 ///

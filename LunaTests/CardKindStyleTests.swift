@@ -35,12 +35,12 @@ final class CardKindStyleTests: XCTestCase {
         installed = (CardKindPresenters.article, CardKindPresenters.media,
                      CardKindPresenters.product)
         SavedMediaDeckFixtures.emptySharedMediaStore()
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
     }
 
     override func tearDown() {
         SavedMediaDeckFixtures.emptySharedMediaStore()
-        ReadingListStore.shared.seedForTesting(items: [], contents: [:])
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         (CardKindPresenters.article, CardKindPresenters.media,
          CardKindPresenters.product) = installed
         super.tearDown()
@@ -52,7 +52,7 @@ final class CardKindStyleTests: XCTestCase {
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()
 
-        let article = ReadingListItem(urlString: "https://example.com/piece")
+        let article = SavedItem(urlString: "https://example.com/piece")
         SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "clip")
         let media = try XCTUnwrap(SavedMediaStore.shared.items().first)
         let mediaRow = mediaItem(for: media)
@@ -94,7 +94,7 @@ final class CardKindStyleTests: XCTestCase {
 
     func testAProductCardScrollsInsideTheOneCardFrameAndPages() throws {
         CardKindPresenters.product = ProductCardPresenter()
-        var item = ReadingListItem(urlString: "https://shop.example/widget")
+        var item = SavedItem(urlString: "https://shop.example/widget")
         item.priceTracker = PriceTracker(
             productName: "Widget",
             firstStoreURL: "https://shop.example/widget",
@@ -108,16 +108,16 @@ final class CardKindStyleTests: XCTestCase {
 
     // MARK: -
 
-    private func style(for item: ReadingListItem) throws -> CardCarouselCardStyle {
+    private func style(for item: SavedItem) throws -> CardCarouselCardStyle {
         try XCTUnwrap(CardKindPresenters.presenter(for: item)).cardStyle(for: item)
     }
 
-    /// The reading-list row behind a media save — carrying a platform, which is
+    /// The save row behind a media save — carrying a platform, which is
     /// what routes it to the media presenter. (An UNBACKED media row carries no
     /// platform and reaches its presenter another way: the deck records the
     /// presenter that contributed it and bypasses the registry entirely.)
-    private func mediaItem(for media: SavedMediaItem) -> ReadingListItem {
-        var item = ReadingListItem(urlString: media.sourceURLString, id: media.id)
+    private func mediaItem(for media: SavedMediaItem) -> SavedItem {
+        var item = SavedItem(urlString: media.sourceURLString, id: media.id)
         item.platform = media.platform ?? .youtube
         return item
     }

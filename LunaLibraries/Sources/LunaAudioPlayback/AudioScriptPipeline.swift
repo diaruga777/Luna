@@ -15,13 +15,13 @@ import UIKit
 ///
 /// Installed ONLY by the main app (`Luna/AudioScriptPipelineWiring.swift`,
 /// called once from `AppDelegate`) — the Share/Action extensions never call
-/// `install()`, so they never observe `.readingListChanged` or run the
+/// `install()`, so they never observe `.savesChanged` or run the
 /// builder themselves (extension memory limits + FoundationModels
 /// constraints), matching the plan doc's "MAIN APP ONLY" requirement.
 public final class AudioScriptPipeline {
     public static let shared = AudioScriptPipeline()
 
-    private let store: ReadingListScriptSource
+    private let store: SavesScriptSource
     private let scriptStore: AudioScriptStore
     /// A FRESH `AudioTrimModelSession` per article's refinement pass (not one
     /// shared instance reused across every article) — keeps each article's
@@ -29,12 +29,12 @@ public final class AudioScriptPipeline {
     /// accumulating turns across an entire sweep.
     private let modelSessions: any AudioTrimModelSessionMaking
 
-    /// Debounces bursts of `.readingListChanged` (e.g. a multi-item import)
+    /// Debounces bursts of `.savesChanged` (e.g. a multi-item import)
     /// into one sweep.
     private let debounceInterval: TimeInterval
     /// Owns the debounce scheduling + foreground tracking; `runSweep()` (this
     /// class's own reentrancy-guarded sweep body) and `isForeground` stay here.
-    private lazy var sweepDriver = ReadingListSweepDriver(
+    private lazy var sweepDriver = SavesSweepDriver(
         queueLabel: "com.hsanabria.luna.audioScriptPipeline",
         debounceInterval: debounceInterval,
         sweeper: self)
@@ -59,7 +59,7 @@ public final class AudioScriptPipeline {
     var didFinishSweepForTesting: (() -> Void)?
 
     public init(
-        store: ReadingListScriptSource = ReadingListStore.shared,
+        store: SavesScriptSource = SavesStore.shared,
         modelSessions: any AudioTrimModelSessionMaking = DefaultAudioTrimModelSessionMaker(),
         debounceInterval: TimeInterval = 1.5
     ) {
@@ -71,7 +71,7 @@ public final class AudioScriptPipeline {
 
     // MARK: - Installation (main app only)
 
-    /// Idempotent. Observes `.readingListChanged` (debounced) plus
+    /// Idempotent. Observes `.savesChanged` (debounced) plus
     /// foreground/background transitions, and runs an immediate launch
     /// sweep.
     public func install() {
@@ -86,7 +86,7 @@ public final class AudioScriptPipeline {
     /// NEXT time; never swaps the script an in-progress playback session is
     /// already using). Playback-time build is a last-resort fallback; the
     /// sweep below is what normally keeps scripts ready ahead of time.
-    public func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+    public func script(for item: SavedItem, content: ArticleContent) -> AudioScript {
         guard let contentFileName = item.contentFileName else {
             return AudioTrimHeuristics.classify(content).heuristicScript(for: content)
         }
@@ -107,7 +107,7 @@ public final class AudioScriptPipeline {
     /// Verifies/prefetches `item`'s script without returning it — called when
     /// `AudioPlaybackCenter` resolves the NEXT autoplay queue candidate, so
     /// its script is ready (or at least building) before playback reaches it.
-    public func prefetch(item: ReadingListItem, content: ArticleContent) {
+    public func prefetch(item: SavedItem, content: ArticleContent) {
         _ = script(for: item, content: content)
     }
 
@@ -136,7 +136,7 @@ public final class AudioScriptPipeline {
         }
     }
 
-    private func buildHeuristicScriptSync(item: ReadingListItem, content: ArticleContent, contentFileName: String) {
+    private func buildHeuristicScriptSync(item: SavedItem, content: ArticleContent, contentFileName: String) {
         let heuristicResult = AudioTrimHeuristics.classify(content)
         let script = heuristicResult.heuristicScript(for: content)
         let envelope = AudioScriptCacheEnvelope(script: script, refinementState: .heuristicOnly)
@@ -147,7 +147,7 @@ public final class AudioScriptPipeline {
     // MARK: - LLM refinement
 
     private func kickOffRefinementIfEligible(
-        item: ReadingListItem, content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
+        item: SavedItem, content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
     ) {
         guard AudioSettings.isIntelligentTrimmingEnabled, isForeground, !isInFlight(item.id) else { return }
         let session = modelSessions.makeSession()
@@ -168,7 +168,7 @@ public final class AudioScriptPipeline {
     }
 
     private func applyRefinement(
-        _ refinement: AudioTrimIntelligence.RefinementResult, item: ReadingListItem, content: ArticleContent,
+        _ refinement: AudioTrimIntelligence.RefinementResult, item: SavedItem, content: ArticleContent,
         contentFileName: String, heuristicResult: AudioTrimHeuristics.Result
     ) {
         if refinement.permanentFailure {
@@ -220,13 +220,13 @@ public final class AudioScriptPipeline {
     }
 }
 
-/// The sweep body and the foreground tracking `ReadingListSweepDriver` drives.
+/// The sweep body and the foreground tracking `SavesSweepDriver` drives.
 /// Only the scheduling lives in the driver; the reentrancy guard is this
 /// class's own.
-extension AudioScriptPipeline: ReadingListSweepForegroundTracking {
-    public func runReadingListSweep() { runSweep() }
+extension AudioScriptPipeline: SavesSweepForegroundTracking {
+    public func runSavesSweep() { runSweep() }
 
-    public func readingListSweepForegroundChanged(to isForeground: Bool) {
+    public func savesSweepForegroundChanged(to isForeground: Bool) {
         self.isForeground = isForeground
     }
 }

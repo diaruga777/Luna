@@ -78,7 +78,7 @@ final class OnboardingSaveDemoTests: XCTestCase {
     @MainActor
     func testHostedPracticeLinkShowsTheRealPreviewAndSavesNothing() throws {
         let url = try XCTUnwrap(URL(string: ShareSetupPractice.lunaURLString))
-        let before = Set(ReadingListStore.shared.items().map(\.id))
+        let before = Set(SavesStore.shared.items().map(\.id))
         let setup = LunaSetupStatusStore.shared
         let evidenceBefore = setup.shareActionHasRun(isCentral: true)
 
@@ -99,7 +99,7 @@ final class OnboardingSaveDemoTests: XCTestCase {
         XCTAssertTrue(
             surface.children.contains { $0 is UINavigationController },
             "The practice preview is presented in the surface's own nav context")
-        XCTAssertEqual(Set(ReadingListStore.shared.items().map(\.id)), before)
+        XCTAssertEqual(Set(SavesStore.shared.items().map(\.id)), before)
         XCTAssertEqual(finished, 0, "Nothing has completed the request yet")
         XCTAssertEqual(
             setup.shareActionHasRun(isCentral: true), evidenceBefore,
@@ -198,7 +198,7 @@ final class OnboardingSaveDemoTests: XCTestCase {
             defaults.removePersistentDomain(forName: suite)
         }
 
-        let contentStore = ReadingListStore(containerURL: directory)
+        let contentStore = SavesStore(containerURL: directory)
         let onboardingStore = AppOnboardingStore(app: .reader, defaults: defaults)
         let link = OnboardingSaveDemoLink.resolve(
             practiceURLString: ShareSetupPractice.lunaURLString,

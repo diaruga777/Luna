@@ -42,7 +42,7 @@ public struct FailedSaveCardModel {
         }
     }
 
-    /// The reading-list item this card stands for. The card watches
+    /// The saved item this card stands for. The card watches
     /// `.rescueProgressChanged` for this id so the eclipse bar advances without
     /// the host reloading its whole carousel several times a second.
     public var itemID: UUID

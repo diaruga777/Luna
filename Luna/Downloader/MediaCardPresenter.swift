@@ -75,16 +75,16 @@ final class MediaCardPresenter: CardKindPresenting {
     /// item to the media presenter, and a stand-in item for an UNBACKED media row
     /// (see `unbackedItems`) carries no platform to guard on. A URL with a media
     /// row IS media.
-    private func media(for item: ReadingListItem) -> SavedMediaItem? {
+    private func media(for item: SavedItem) -> SavedMediaItem? {
         store.item(forURLString: item.urlString)
     }
 
-    /// Media Luna holds that the reading list has no row for. See the protocol's
+    /// Media Luna holds that the saves list has no row for. See the protocol's
     /// `unbackedItems` for why these exist and why dropping them would delete
     /// real user downloads from the deck.
-    func unbackedItems() -> [ReadingListItem] {
-        let readingList = ReadingListStore.shared.items()
-        let backed = Set(readingList.map(\.urlString))
+    func unbackedItems() -> [SavedItem] {
+        let saves = SavesStore.shared.items()
+        let backed = Set(saves.map(\.urlString))
         return store.items()
             .filter { !backed.contains($0.sourceURLString) }
             .map { media in
@@ -92,7 +92,7 @@ final class MediaCardPresenter: CardKindPresenting {
                 // centering ladder and the archive tray all key off the row the
                 // user actually has — exactly as the Downloader's deck always
                 // did — while everything else reads a normal item.
-                var item = ReadingListItem(urlString: media.sourceURLString, id: media.id)
+                var item = SavedItem(urlString: media.sourceURLString, id: media.id)
                 item.title = media.title
                 item.dateAdded = media.dateSaved
                 item.bumpDate = media.dateSaved
@@ -108,7 +108,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// file is. Both decks now carry both components — the central app's omitted
     /// the thumbnail, so a download that produced a poster left the card showing
     /// the old one until something else forced a rebuild.
-    func fingerprint(for item: ReadingListItem) -> String {
+    func fingerprint(for item: SavedItem) -> String {
         guard let media = media(for: item) else { return "" }
         return "\(media.thumbnailFileName ?? "")|\(MediaItemActions.storageStateKey(media))"
     }
@@ -116,17 +116,17 @@ final class MediaCardPresenter: CardKindPresenting {
     /// A platform link Luna holds no media row for has no media card to draw.
     /// The central app and Reader still show it as a link card; the Downloader,
     /// which has no link card, gives it no slot — exactly as it did when it read
-    /// its own store instead of the reading list.
-    func hasContent(for item: ReadingListItem) -> Bool {
+    /// its own store instead of the saves list.
+    func hasContent(for item: SavedItem) -> Bool {
         media(for: item) != nil
     }
 
     /// Archived in EITHER store means archived. The two used to be written
     /// separately — the Downloader archived the media row, the central deck
-    /// archived the reading-list row — so a save archived in one app stayed live
+    /// archived the save row — so a save archived in one app stayed live
     /// in the other. `setArchived` now writes both; reading leniently is what
     /// reconciles the rows written before it did.
-    func isArchived(_ item: ReadingListItem) -> Bool {
+    func isArchived(_ item: SavedItem) -> Bool {
         item.isArchived || media(for: item)?.isArchived == true
     }
 
@@ -170,11 +170,11 @@ final class MediaCardPresenter: CardKindPresenting {
         archiveDownloadProgress = archiveDownloadProgress.filter { archived.contains($0.key) }
     }
 
-    /// The id the DECK knows a media row by: its reading-list row's when it has
+    /// The id the DECK knows a media row by: its save row's when it has
     /// one, its own when it does not (see `unbackedItems`). The archive tray's
     /// cells are keyed by the slot, so its download bars must be too.
     private func slotID(for media: SavedMediaItem) -> UUID {
-        ReadingListStore.shared.item(forURLString: media.sourceURLString)?.id ?? media.id
+        SavesStore.shared.item(forURLString: media.sourceURLString)?.id ?? media.id
     }
 
     /// A reload that changed NOTHING is exactly when a Photos asset deleted
@@ -186,7 +186,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     // MARK: - The card
 
-    func cardContent(for item: ReadingListItem, host: CardPresenterHost)
+    func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
         guard let media = media(for: item), !media.isArchived else { return nil }
@@ -197,14 +197,14 @@ final class MediaCardPresenter: CardKindPresenting {
             rescue: MediaCardRescue.starter(forSourceURLString: media.sourceURLString))
     }
 
-    func topLeadingAccessory(for item: ReadingListItem) -> UIView? {
+    func topLeadingAccessory(for item: SavedItem) -> UIView? {
         media(for: item).flatMap(MediaCardFactory.photosBadge(for:))
     }
 
     /// A media item whose DOWNLOAD failed wears the same soft red rim a failed
     /// SAVE does. The central app drew no rim at all, so the two failures looked
     /// nothing alike in the one deck that shows both.
-    func edgeGlowColor(for item: ReadingListItem) -> UIColor? {
+    func edgeGlowColor(for item: SavedItem) -> UIColor? {
         guard let media = media(for: item),
               LiveMediaDownloadManager.shared.currentDownloadSnapshot(
                 forSourceURLString: media.sourceURLString)?.phase == .failed
@@ -216,7 +216,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// A platform save is identified by its platform, not by its host's favicon.
     func loadSourceBadge(
-        for item: ReadingListItem, completion: @escaping (CarouselSourceBadge?) -> Void
+        for item: SavedItem, completion: @escaping (CarouselSourceBadge?) -> Void
     ) {
         guard let platform = item.contentPlatform else {
             completion(nil)
@@ -235,7 +235,7 @@ final class MediaCardPresenter: CardKindPresenting {
     }
 
     func loadThumbnail(
-        for item: ReadingListItem, host: CardPresenterHost,
+        for item: SavedItem, host: CardPresenterHost,
         completion: @escaping (UIImage?) -> Void
     ) {
         guard let media = media(for: item) else {
@@ -248,7 +248,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// A media save's card is a picture, so its strip chip is that picture too.
     /// An unarchived save with no still yet falls back to a badge chip.
-    func prefersThumbnailChip(for item: ReadingListItem) -> Bool {
+    func prefersThumbnailChip(for item: SavedItem) -> Bool {
         guard let media = media(for: item) else { return false }
         return !media.isArchived
     }
@@ -264,7 +264,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// PLAYING card everywhere (the carousel vetoes paging for playable
     /// content), but a DOWNLOADING card is not playable yet, and it paged in
     /// the central app while staying put in the Downloader.
-    func cardStyle(for item: ReadingListItem) -> CardCarouselCardStyle {
+    func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
         style.autoplaysScrubPreview = true
         return style
@@ -272,7 +272,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// Only media cards are expensive to build — each one is an AVPlayer, and
     /// the mini-card strip prepares its whole visible window at once.
-    func allowsPreparedPreviewContent(for item: ReadingListItem) -> Bool {
+    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool {
         media(for: item) == nil
     }
 
@@ -280,7 +280,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// The Downloader's own verbs for this row — the same switch over where its
     /// file is — offered above the deck's Archive/Delete.
-    func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] {
+    func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
         guard let media = media(for: item) else { return [] }
         let anchor = host.cardView(forItemID: item.id)
         return MediaItemActions.menuActions(
@@ -310,7 +310,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// an UNBACKED media row's stand-in carries whatever platform its media row
     /// recorded, and that is nil for a row saved before platform capture — a
     /// `contentPlatform`-only test cost those cards their entire share ladder.
-    func shareMenu(for item: ReadingListItem, host: CardPresenterHost, sourceView: UIView)
+    func shareMenu(for item: SavedItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
     {
         guard let media = media(for: item) else {
@@ -329,28 +329,28 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// ONE archive write for this kind, covering BOTH stores the kind owns. The
     /// Downloader used to archive only its media row and the central deck only
-    /// the reading-list row, so archiving in one app left the save live (or
+    /// the save row, so archiving in one app left the save live (or
     /// demoted to a link card) in the other.
     /// Unarchiving also bumps the row's date, which is how the ONE ordering rule
     /// resurfaces a restored save — the same thing `markUnread` does for an
     /// article. It is the only date this kind ever writes.
-    func setArchived(_ archived: Bool, for item: ReadingListItem) {
+    func setArchived(_ archived: Bool, for item: SavedItem) {
         if let media = media(for: item) {
             store.setArchived(archived, for: media.id)
         }
-        ReadingListStore.shared.setArchived(archived, for: item.id)
-        if !archived { ReadingListStore.shared.bump(item.id) }
+        SavesStore.shared.setArchived(archived, for: item.id)
+        if !archived { SavesStore.shared.bump(item.id) }
     }
 
     /// The whole save goes when the card does: the downloaded file, its Photos
     /// asset, and the auto-download bookkeeping that would otherwise treat the
-    /// URL as already fetched. The reading-list row itself is the deck's to
+    /// URL as already fetched. The save row itself is the deck's to
     /// delete. This ran only from the ACTIVE deck centrally, so deleting an
     /// archived media save from the tray left every one of those behind.
-    func deleteCompanionStorage(for item: ReadingListItem, host: CardPresenterHost?) {
+    func deleteCompanionStorage(for item: SavedItem, host: CardPresenterHost?) {
         guard let media = store.item(forURLString: item.urlString) else { return }
         MediaItemActions.release(
-            media, saver: photoSaver, deletesReadingListItem: false,
+            media, saver: photoSaver, deletesSavedItem: false,
             onPhotosDeletionFailure: { [weak host] in
                 guard let host else { return }
                 MediaItemActions.presentAlert(
@@ -363,8 +363,8 @@ final class MediaCardPresenter: CardKindPresenting {
 
     // MARK: - Lifecycle
 
-    func itemDidCenter(_ item: ReadingListItem, host: CardPresenterHost) {
-        ReadingListStore.shared.markReadState(.opened, for: item.id)
+    func itemDidCenter(_ item: SavedItem, host: CardPresenterHost) {
+        SavesStore.shared.markReadState(.opened, for: item.id)
         guard let media = media(for: item) else {
             discardPreparedShareFile()
             return
@@ -382,7 +382,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// there is nothing downloaded to show.
     @discardableResult
     func itemWasTapped(
-        _ item: ReadingListItem, cardContent: CardContentViewController?,
+        _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
     ) -> Bool {
         guard media(for: item) == nil else { return true }
@@ -392,7 +392,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// The platform open ladder: the real app if it is installed, then the
     /// platform's own embed, then the in-app browser.
     @discardableResult
-    func openExternally(_ item: ReadingListItem, host: CardPresenterHost) -> Bool {
+    func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {
         let presenter = host.presentingController
         guard let platform = item.contentPlatform,
               let module = PlatformRegistry.shared.module(for: platform)
@@ -402,7 +402,7 @@ final class MediaCardPresenter: CardKindPresenting {
         }
         if let appURL = module.appDeepLink(for: item), UIApplication.shared.canOpenURL(appURL) {
             UIApplication.shared.open(appURL) { success in
-                if success { ReadingListStore.shared.markReadState(.read, for: item.id) }
+                if success { SavesStore.shared.markReadState(.read, for: item.id) }
             }
             return true
         }
@@ -421,7 +421,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// there, and a tap that plays it fullscreen. The central app's tray showed
     /// a globe and a favicon fetch for these, and its tap went nowhere (it asked
     /// for a reader, and there is no reader for a video).
-    func archiveTrayItem(for item: ReadingListItem, host: CardPresenterHost)
+    func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {
         guard let media = store.item(forURLString: item.urlString) else { return nil }
@@ -453,7 +453,7 @@ final class MediaCardPresenter: CardKindPresenting {
             delete: { [weak self, weak host] in
                 guard let self else { return }
                 self.deleteCompanionStorage(for: item, host: host)
-                ReadingListStore.shared.delete(item)
+                SavesStore.shared.delete(item)
             })
     }
 
@@ -684,7 +684,7 @@ final class MediaCardPresenter: CardKindPresenting {
                     self.store.markArchivedPhotosAssetMissing(media.id)
                 } else {
                     MediaItemActions.release(
-                        media, saver: self.photoSaver, deletesReadingListItem: true,
+                        media, saver: self.photoSaver, deletesSavedItem: true,
                         onPhotosDeletionFailure: { [weak host] in
                             guard let host else { return }
                             MediaItemActions.presentAlert(

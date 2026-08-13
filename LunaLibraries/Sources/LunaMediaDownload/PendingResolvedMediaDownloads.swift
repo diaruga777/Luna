@@ -82,7 +82,7 @@ public enum PendingResolvedMediaDownloads {
                 // The save is persisted BEFORE anything that can fail or take
                 // time: it is what survives when the user never comes back to
                 // this app. The row also gives the download job its identity, so
-                // the media card and the reading-list row are the same item
+                // the media card and the save row are the same item
                 // rather than two orphans.
                 let urlString = persistSave(for: record)
                 let result = await LiveMediaDownloadManager.shared.startResultWithResolvedAssets(
@@ -128,9 +128,9 @@ public enum PendingResolvedMediaDownloads {
         await returnToSource(urlString: returnURLString)
     }
 
-    /// Reserves this post's reading-list row and returns the URL the save is
+    /// Reserves this post's save row and returns the URL the save is
     /// keyed under. Reserving is the synchronous half of an ordinary save press
-    /// (`ReadingListIngestor.prepareSavePress` does the same thing), and leaves
+    /// (`SavesIngestor.prepareSavePress` does the same thing), and leaves
     /// the row `.pending`.
     ///
     /// The other half — the metadata that gives the row its title and kind — is
@@ -144,13 +144,13 @@ public enum PendingResolvedMediaDownloads {
     /// finds the transfer already running rather than starting a second one.
     ///
     /// The two stores are parameters so a test can exercise this against its own
-    /// (a `.shared` reading list and a `.shared` debt queue both live in the App
+    /// (a `.shared` saves list and a `.shared` debt queue both live in the App
     /// Group, which the whole test run shares — a fixture that writes there is a
     /// fixture every later suite inherits).
     @MainActor
     static func persistSave(
         for record: ResolvedMediaRecord,
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         completions: PendingIngestCompletions = .shared
     ) -> String {
         let urlString = URLUnwrapper.ingestURL(from: record.sourceURLString)?.absoluteString
@@ -195,7 +195,7 @@ public enum PendingResolvedMediaDownloads {
     @discardableResult
     static func completeFromHandoff(
         _ record: ResolvedMediaRecord, urlString: String, itemID: UUID,
-        store: ReadingListStore = .shared,
+        store: SavesStore = .shared,
         completions: PendingIngestCompletions = .shared
     ) -> Bool {
         let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

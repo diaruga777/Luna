@@ -13,7 +13,7 @@ public enum ReaderHostFactory {
     /// - Parameter fullContentUpFront: render every layer's whole article
     ///   immediately (no progressive prefix → swap) for hosts that cannot
     ///   tolerate progressive rendering.
-    public static func make(item: ReadingListItem,
+    public static func make(item: SavedItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,
                      fullContentUpFront: Bool = false,

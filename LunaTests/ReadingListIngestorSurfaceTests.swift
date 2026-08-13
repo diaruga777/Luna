@@ -1,5 +1,5 @@
 //
-//  ReadingListIngestorSurfaceTests.swift
+//  SavesIngestorSurfaceTests.swift
 //  LunaTests
 //
 
@@ -27,7 +27,7 @@ struct ScriptedIngestGate: IngestSurfaceGating {
     func decision(for outcome: Outcome) -> SurfaceSupport.Decision { rule(outcome) }
 }
 
-/// The per-app content gate inside `ReadingListIngestor.ingest`
+/// The per-app content gate inside `SavesIngestor.ingest`
 /// (`SurfaceSupport`): a foreign-kind save is discarded (nothing remains in the
 /// store) for EVERY source, `.email`/`.friendShare` included, and the background
 /// sweep discards silently.
@@ -37,10 +37,10 @@ struct ScriptedIngestGate: IngestSurfaceGating {
 /// any fetch, and a `lunadoc://` item with a `documentType` classifies
 /// `.document` — so no test touches the network. The gate decision itself is
 /// injected, pinning the running app without the App Group.
-final class ReadingListIngestorSurfaceTests: XCTestCase {
+final class SavesIngestorSurfaceTests: XCTestCase {
 
     private var tempDirectory: URL!
-    private var store: ReadingListStore!
+    private var store: SavesStore!
     /// Recorded unsupported-save presentations.
     private var presentedOwners: [LunaApp] = []
     /// Rows this test wrote into the SHARED `SaveFailureStore`, cleaned up in
@@ -50,30 +50,30 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReadingListIngestorSurfaceTests-\(UUID().uuidString)")
+            .appendingPathComponent("SavesIngestorSurfaceTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        store = ReadingListStore(containerURL: tempDirectory)
+        store = SavesStore(containerURL: tempDirectory)
         presentedOwners = []
         touchedFailureIDs = []
-        ReadingListIngestor.unsupportedSavePresenter = RecordingUnsupportedSavePresenter { [weak self] owner in
+        SavesIngestor.unsupportedSavePresenter = RecordingUnsupportedSavePresenter { [weak self] owner in
             self?.presentedOwners.append(owner)
         }
     }
 
     override func tearDown() {
-        ReadingListIngestor.unsupportedSavePresenter = nil
+        SavesIngestor.unsupportedSavePresenter = nil
         for id in touchedFailureIDs { SaveFailureStore.shared.clear(id) }
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
 
-    private func makeIngestor(gate: ScriptedIngestGate) -> ReadingListIngestor {
-        ReadingListIngestor(store: store, surfaceGate: gate)
+    private func makeIngestor(gate: ScriptedIngestGate) -> SavesIngestor {
+        SavesIngestor(store: store, surfaceGate: gate)
     }
 
     /// A pending document item (deterministic `.document` outcome, no network).
-    private func pendingDocumentItem(seed: String) -> ReadingListItem {
-        let item = ReadingListItem(
+    private func pendingDocumentItem(seed: String) -> SavedItem {
+        let item = SavedItem(
             seed: seed, urlString: "lunadoc://\(seed)", title: "Doc \(seed)",
             dateAdded: Date(), state: .pending, documentType: "pdf",
             captureSource: nil)

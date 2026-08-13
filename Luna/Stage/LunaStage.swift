@@ -24,7 +24,7 @@ import UIKit
 /// behind, and a manifest an agent can enumerate without reading Swift.
 ///
 /// DEBUG-only, and the gate is `#if DEBUG` rather than a build setting on
-/// purpose: the stage catalogs reference `seedForTesting`, `ReadingListItem
+/// purpose: the stage catalogs reference `seedForTesting`, `SavedItem
 /// (seed:)` and the other DEBUG-only fixture seams, so a release build cannot
 /// compile them even if someone passed the launch argument. There is nothing to
 /// disable — in a shipped binary this file is an `isActive` that returns false.

@@ -7,18 +7,18 @@ import LunaModels
 import XCTest
 @testable import LunaAudioPlayback
 
-/// An in-memory `ReadingListScriptSource` fake backed by a real scratch
+/// An in-memory `SavesScriptSource` fake backed by a real scratch
 /// `articlesDirectory` (so `AudioScriptStore`'s file I/O is exercised for
 /// real, just against a temp directory instead of the App Group).
-final class FakeScriptSource: ReadingListScriptSource {
-    var itemsList: [ReadingListItem] = []
+final class FakeScriptSource: SavesScriptSource {
+    var itemsList: [SavedItem] = []
     var contentByID: [UUID: ArticleContent] = [:]
     let articlesDirectory: URL
 
     init(articlesDirectory: URL) { self.articlesDirectory = articlesDirectory }
 
-    func items() -> [ReadingListItem] { itemsList }
-    func content(for item: ReadingListItem) -> ArticleContent? { contentByID[item.id] }
+    func items() -> [SavedItem] { itemsList }
+    func content(for item: SavedItem) -> ArticleContent? { contentByID[item.id] }
 }
 
 final class AudioScriptPipelineTests: XCTestCase {
@@ -43,8 +43,8 @@ final class AudioScriptPipelineTests: XCTestCase {
         super.tearDown()
     }
 
-    private func readableItem(seed: String) -> ReadingListItem {
-        var item = ReadingListItem(
+    private func readableItem(seed: String) -> SavedItem {
+        var item = SavedItem(
             seed: seed, urlString: "https://example.com/\(seed)", title: "Article \(seed)",
             dateAdded: Date(timeIntervalSince1970: 1_700_000_000), state: .ready)
         item.contentFileName = "\(item.id.uuidString).json"
@@ -101,9 +101,9 @@ final class AudioScriptPipelineTests: XCTestCase {
         XCTAssertEqual(script, seededScript)
     }
 
-    // MARK: - Sweep: .readingListChanged builds a missing script
+    // MARK: - Sweep: .savesChanged builds a missing script
 
-    func testReadingListChangedBuildsAScriptForANewlyDiscoveredReadableItem() async throws {
+    func testSavesChangedBuildsAScriptForANewlyDiscoveredReadableItem() async throws {
         let session = FakeTrimModelSession()
         session.isAvailable = false
         let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
@@ -113,7 +113,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.itemsList = [item]
         source.contentByID[item.id] = readableContent()
 
-        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        NotificationCenter.default.post(name: .savesChanged, object: nil)
         try await waitFor { self.scriptStore.load(forContentFileName: item.contentFileName!) != nil }
 
         XCTAssertNotNil(scriptStore.load(forContentFileName: item.contentFileName!))
@@ -130,7 +130,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.contentByID[emptyItem.id] = ArticleContent(title: "Title", blocks: [.init(kind: .image, text: "", links: [])])
 
         let swept = expectation(description: "launch sweep ran")
-        // `.readingListChanged` is process-global, so a sibling test's store
+        // `.savesChanged` is process-global, so a sibling test's store
         // write can debounce a second sweep in behind ours.
         swept.assertForOverFulfill = false
         pipeline.didFinishSweepForTesting = { swept.fulfill() }
@@ -187,7 +187,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         // The sweep decides eligibility synchronously, so a sweep that has RUN
         // and started nothing is the whole assertion — no sleeping required.
         let swept = expectation(description: "launch sweep ran")
-        // `.readingListChanged` is process-global, so a sibling test's store
+        // `.savesChanged` is process-global, so a sibling test's store
         // write can debounce a second sweep in behind ours.
         swept.assertForOverFulfill = false
         pipeline.didFinishSweepForTesting = { swept.fulfill() }
@@ -216,7 +216,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         source.itemsList = [item]
         source.contentByID[item.id] = content
         let swept = expectation(description: "launch sweep ran")
-        // `.readingListChanged` is process-global, so a sibling test's store
+        // `.savesChanged` is process-global, so a sibling test's store
         // write can debounce a second sweep in behind ours.
         swept.assertForOverFulfill = false
         pipeline.didFinishSweepForTesting = { swept.fulfill() }

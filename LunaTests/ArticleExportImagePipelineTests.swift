@@ -24,8 +24,8 @@ final class ArticleExportImagePipelineTests: XCTestCase {
     private var savedItemID: UUID?
 
     override func tearDown() {
-        if let savedItemID, let item = ReadingListStore.shared.item(withID: savedItemID) {
-            ReadingListStore.shared.delete(item)
+        if let savedItemID, let item = SavesStore.shared.item(withID: savedItemID) {
+            SavesStore.shared.delete(item)
         }
         savedItemID = nil
         super.tearDown()
@@ -43,7 +43,7 @@ final class ArticleExportImagePipelineTests: XCTestCase {
             context.fill(CGRect(x: 0, y: 0, width: 2048, height: 1365))
         }
         try? image.jpegData(compressionQuality: 0.82)?
-            .write(to: ReadingListStore.shared.articlesDirectory.appendingPathComponent(name))
+            .write(to: SavesStore.shared.articlesDirectory.appendingPathComponent(name))
         return name
     }
 
@@ -62,11 +62,11 @@ final class ArticleExportImagePipelineTests: XCTestCase {
             ])
     }
 
-    private func saveArticle(recordingFileName: String?) -> ReadingListItem {
-        let item = ReadingListStore.shared.add(
+    private func saveArticle(recordingFileName: String?) -> SavedItem {
+        let item = SavesStore.shared.add(
             urlString: "https://example.com/illustrated-\(UUID().uuidString)")
         savedItemID = item.id
-        return ReadingListStore.shared.saveContent(
+        return SavesStore.shared.saveContent(
             articleContent(recordingFileName: recordingFileName), for: item)
     }
 
@@ -127,7 +127,7 @@ final class ArticleExportImagePipelineTests: XCTestCase {
 
         // Precondition: this is exactly the split — the reader resolves it, the
         // stored content does not carry it.
-        let stored = try XCTUnwrap(ReadingListStore.shared.content(for: item))
+        let stored = try XCTUnwrap(SavesStore.shared.content(for: item))
         XCTAssertNil(stored.blocks.first(where: { $0.kind == .image })?.imageFileName)
         let asTheReaderSeesIt = ArticleImageDownloader.resolveLocalImages(
             stored, store: .shared)
@@ -168,7 +168,7 @@ final class ArticleExportImagePipelineTests: XCTestCase {
     func testEveryImageCarryingFormatKeepsTheImage() throws {
         let fileName = writeDownloadedImage()
         let sourceImage = try Data(contentsOf:
-            ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName))
+            SavesStore.shared.articlesDirectory.appendingPathComponent(fileName))
         let item = saveArticle(recordingFileName: fileName)
         let service = ArticleExportService()
 

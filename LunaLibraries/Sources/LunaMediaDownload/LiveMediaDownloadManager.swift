@@ -679,7 +679,7 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     /// Restarts every persisted transfer that no longer has a live background
-    /// task. Used on launch/foreground and by the overnight processing job.
+    /// task. Reached at launch, on foreground, and when Wi-Fi returns.
     public func resumeUnfinishedDownloads() async {
         await reapExpiredSuspensions()
         let activeJobIDs = await activeTaskJobIDs()

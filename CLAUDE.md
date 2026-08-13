@@ -335,8 +335,8 @@ plus fixed lifecycle points (`appDidLaunch/appDidEnterBackground/sceneDidForegro
 readingListDidChange/wifiBecameAvailable/retryPendingArticleSends/
 resumeUnfinishedMediaDownloads/attachBackgroundURLSessionHandler/priceRefreshRunner`), so
 the universal shell never names a foreign kind's symbols. The Action Button intents' media handoff goes through
-`ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), read-aloud via
-`ReadArticleIntent.playArticle`, and URL Rescue's kind legs via
+`ActionButtonIntentSupport.mediaHandoff` (installed by `MediaIntentHandoff`), and URL
+Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
 media: the media deck provider, auto-download settings, intent handoff, the bulk

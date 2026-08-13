@@ -9,13 +9,16 @@ import LunaStorage
 import Foundation
 
 /// Keeps `ArticleEntity`'s Spotlight index in sync with the reading list:
-/// installed once at launch (`AppDelegate`, right after `AudioPlaybackWiring`/
-/// `AudioScriptPipelineWiring`), it sweeps immediately and again on every
-/// debounced `.readingListChanged` (mirrors `AudioScriptPipeline`'s
-/// debounce), indexing every readable article and deleting Spotlight entries
-/// for ones that are no longer readable/present. Main-app-only — the
-/// Share/Action extensions never call `install()` (they don't index at all;
-/// their saves get picked up the next time the main app sweeps).
+/// installed once at launch by `ArticleShellWiring.appDidLaunch()`, it sweeps
+/// immediately and again on every debounced `.readingListChanged` (mirrors
+/// `AudioScriptPipeline`'s debounce), indexing every readable article and
+/// deleting Spotlight entries for ones that are no longer readable/present.
+///
+/// An article app's main process only. The Share/Action extensions never call
+/// `install()` (they don't index at all; their saves get picked up the next
+/// time the main app sweeps), and the Downloader / Price Tracker exclude this
+/// file by membership exception — they can open no article, so a Spotlight hit
+/// there would lead nowhere.
 enum ArticleSpotlightIndexWiring {
     private static let domainIdentifier = "articles"
     private static let lastIndexedIDsKey = "articleSpotlightIndex.lastIndexedIDs"

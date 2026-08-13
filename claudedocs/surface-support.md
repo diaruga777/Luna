@@ -111,11 +111,11 @@ one variant, and the variants reference the kind modules' symbols directly
   mini-player, audio wiring and reader/email settings screens; the media
   auto-download settings and `MediaIntentHandoff`; the product card content;
   and the central-only `UITestScreen`) are excluded from foreign targets
-  through the same membership-exception mechanism. Intent seams:
-  `ActionButtonIntentSupport.mediaHandoff` (media),
-  `ReadArticleIntent.playArticle` (article; nil throws a friendly
-  "not available in this app" error — the intent TYPE ships everywhere because
-  the AppShortcuts metadata is shared), and URL Rescue's
+  through the same membership-exception mechanism. `ReadArticleIntent` is one of
+  those files: it calls `AudioPlaybackCenter` directly and compiles only in the
+  two apps that link read-aloud, so the two apps without it also compile a
+  `LunaShortcuts` variant that omits the shortcut. Intent seams:
+  `ActionButtonIntentSupport.mediaHandoff` (media) and URL Rescue's
   `URLRescueWiring.mediaRescueStarter` / `rescueProductInfo` legs.
 - Share/action extensions: `LunaShare/ShareEntry+*.swift` and
   `LunaAction/ActionEntry+*.swift` — the extension principal class

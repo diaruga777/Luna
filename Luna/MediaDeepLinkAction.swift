@@ -9,8 +9,8 @@ import Foundation
 /// link) should do, decided by `KindWiring.mediaDeepLinkAction(forURLString:)`
 /// — one variant per app, since only media-linking apps (Luna, LunaDownloader)
 /// have an answer. Kind-neutral shape (no media-module types), so it lives in
-/// the universal app shell alongside `ExternalItemOpening`; `SceneDelegate`
-/// switches on it without ever naming a media-kind symbol.
+/// the universal app shell; `SceneDelegate` switches on it without ever naming
+/// a media-kind symbol.
 enum MediaDeepLinkAction: Equatable {
     /// A downloaded local file — `SceneDelegate` centers the deck on this
     /// saved item. The card itself is the destination; a handoff must not

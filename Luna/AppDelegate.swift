@@ -80,13 +80,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // background for one finished in this one. Skipped legs keep their
         // button. See `claudedocs/util-card.md`.
         AppOnboardingStore.shared.retireCompletedSetupButtons()
-        UtilCardContentViewController.setupJourneyLauncher = { presenter, source in
-            AppOnboardingViewController.presentSetupReplay(
-                source,
-                from: presenter,
-                makeCompletedRootViewController:
-                    KindWiring.makeSetupReplayRootViewController)
-        }
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()
@@ -146,12 +139,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailAccountStore.shared.account?.address ?? "none"
         }
 
-        // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
-        // reading list so saved articles are semantically discoverable and
-        // Siri can resolve "my article about …"/"from …" without the app
-        // running. Main app only (extensions don't index).
-        if !LunaStage.isActive { ArticleSpotlightIndexWiring.install() }
-
         // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
         // bridge + coordinator (all three apps; main-app only — extensions never
         // link the engine). Must precede ingestAllPending() so the ingestor's
@@ -187,7 +174,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             // rather than duplicating.
             BackgroundIngestCompletion.runFromLifecycle()
             // Kind-specific launch resumption: orphaned-media sweep + Live Activity
-            // reattachment (media apps), pending ereader-send retry (article apps).
+            // reattachment (media apps), Spotlight indexing and pending
+            // ereader-send retry (article apps).
             KindWiring.appDidLaunch()
         }
 
@@ -342,11 +330,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
             KindWiring.retryPendingArticleSends()
-            // Overnight backstop for every unfinished media job, including a
-            // transfer whose server supplied resume data after an interruption.
-            // The background URLSession continues after this processing task
-            // exits. (No-op outside the Downloader app.)
-            await KindWiring.resumeUnfinishedMediaDownloads()
             task.setTaskCompleted(success: !Task.isCancelled)
         }
     }

@@ -20,8 +20,8 @@ import Foundation
 /// saved date, and source host in its visible representation. Restricted to
 /// `ArticleReadability.isReadableArticle` articles (never videos, social
 /// posts, or price trackers). `IndexedEntity` keeps it semantically
-/// discoverable in Spotlight; `ArticleSpotlightIndexWiring` (main app only)
-/// drives the actual `CSSearchableIndex` writes.
+/// discoverable in Spotlight; `ArticleSpotlightIndexWiring` (the article apps'
+/// main process only) drives the actual `CSSearchableIndex` writes.
 struct ArticleEntity: AppEntity, IndexedEntity {
     let id: UUID
     @Property(title: "Intents_articleEntity_titleProperty_title_Luna") var title: String

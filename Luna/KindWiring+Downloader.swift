@@ -11,20 +11,11 @@
 
 import LunaMediaDownload
 import LunaModels
-import LunaPlatforms
 import LunaReadingList
 import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// A media save lands in both stores, so the watch covers both.
-    private static let onboardingContentWatch = OnboardingContentWatch(
-        changeNotifications: [.readingListChanged, .savedMediaChanged],
-        storedIdentifiers: {
-            Set(ReadingListStore.shared.items().map(\.id))
-                .union(SavedMediaStore.shared.items().map(\.id))
-        })
-
     /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
     private static let legacyOnboardingDemoSave =
         DownloaderOnboardingDemoSave.legacyCleanup
@@ -46,47 +37,9 @@ enum KindWiring {
         // The media kind's CARD half, on the same principle — the one
         // definition the central app installs too (`CardKindPresenter.swift`).
         CardKindPresenters.media = MediaCardPresenter()
-        // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
-        // the app-shell media ingestor handler.
-        IngestorKindHandlers.media = MediaKindHandler()
-        PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
-            await PlatformItemIngestor.shared.pasteboardPreviewArtData(
-                platform: platform, itemID: itemID, urlString: urlString)
-                .flatMap { UIImage(data: $0) }
-        }
-        // Action Button intents hand recognized posts to the media downloader.
-        MediaIntentHandoff.install()
-        // The util card's inline "Store downloads …" line. Only an app that
-        // downloads has anywhere to store, so only an app that links this module
-        // installs the choice (`claudedocs/util-card.md`).
-        MediaUtilCardStorageChoice.install()
-        // URL Rescue's media leg: download engine-resolved assets directly.
-        URLRescueWiring.mediaResolverFactory = { SocialMediaResolver() }
-        URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
-            await LiveMediaDownloadManager.shared.startWithResolvedAssets(
-                sourceURLString: sourceURLString, title: title, assets: assets)
-        }
-        // The factory reset's media leg: a Live Activity outlives the process
-        // that started it, so the wipe has to end them itself.
-        FactoryReset.additionalErasers.append {
-            await LiveMediaDownloadManager.shared.endAllActivities()
-        }
-        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
-        // A bulk import runs its own progress bar; the per-transfer Live
-        // Activity alerts (banner + sound + haptic) would buzz twice per link
-        // over the top of it.
-        // Photos access asked for at the START of an import, not when the first
-        // transfer wants it (`claudedocs/import-export.md`).
-        LinkImportRunner.mediaStoragePreflight = { urlStrings in
-            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
-        }
-        LinkImportRunner.mediaAlertSuspension = { suspended in
-            if suspended {
-                LiveMediaDownloadManager.suspendActivityAlerts()
-            } else {
-                LiveMediaDownloadManager.resumeActivityAlerts()
-            }
-        }
+        // …and the media kind's half of the app shell, which the central app
+        // installs from the same file (`MediaShellWiring`).
+        MediaShellWiring.install()
     }
 
     // MARK: - Root UI shape
@@ -98,16 +51,6 @@ enum KindWiring {
     @MainActor
     static func makeRootViewController() -> UIViewController {
         UINavigationController(rootViewController: MediaCardDeck.makeRoot())
-    }
-
-    @MainActor
-    private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
-    }
-
-    @MainActor
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
     }
 
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
@@ -128,99 +71,48 @@ enum KindWiring {
 
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
-    /// Safari's in-page player queued these; the extension already resolved
-    /// them, so the drain hands the assets straight to the download manager.
-    /// Also runs at launch and on foreground, so a deep link that never arrived
-    /// (a responder-chain open can silently fail) still lands its download.
     static func drainPendingResolvedMedia(returningToSource: Bool) {
-        PendingResolvedMediaDownloads.drain(returningToSource: returningToSource)
+        MediaShellWiring.drainPendingResolvedMedia(returningToSource: returningToSource)
     }
 
     static func appDidLaunch() {
         legacyOnboardingDemoSave.cleanup()
-        drainPendingResolvedMedia(returningToSource: false)
-        // Sweep any downloaded-but-never-saved media preview files orphaned by a
-        // previous run that was killed before its preview screen could clean up.
-        // Also apply the saved-media retention policy. Safe at launch (no
-        // preview is open yet); off the main thread to not block startup.
-        DispatchQueue.global(qos: .utility).async {
-            MediaDownloadStorage.purgeAll()
-            SavedMediaStore.shared.purgeExpired()
-        }
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
+        MediaShellWiring.appDidLaunch()
     }
 
     static func appDidEnterBackground() {
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
+        MediaShellWiring.appDidEnterBackground()
     }
 
     static func sceneDidForeground() {
-        drainPendingResolvedMedia(returningToSource: false)
-        // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
-        // keep it off the main thread (the store already posts its own change
-        // notification back on main).
-        DispatchQueue.global(qos: .utility).async {
-            SavedMediaStore.shared.purgeExpired()
-        }
-        // Resume any downloads a Wi-Fi-only policy deferred, now that we're
-        // foregrounding (possibly on Wi-Fi for the first time since they queued).
-        Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
+        MediaShellWiring.sceneDidForeground()
+        // Foregrounding is possibly the first time this process is on Wi-Fi
+        // since a download queued, so it resumes what the policy deferred —
+        // the central app leaves that to the reachability notification.
+        MediaShellWiring.resumePendingWiFiDownloads()
     }
 
     static func readingListDidChange() {
-        // purgeExpired() off the main thread — see sceneDidForeground.
-        DispatchQueue.global(qos: .utility).async {
-            SavedMediaStore.shared.purgeExpired()
-        }
+        MediaShellWiring.readingListDidChange()
     }
 
     static func wifiBecameAvailable() {
-        Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
+        MediaShellWiring.resumePendingWiFiDownloads()
     }
 
     /// Downloader handles no articles — ereader sends are never pending here.
     static func retryPendingArticleSends() {}
 
-    /// Overnight mail-fetch backstop for every unfinished media job, including
-    /// a transfer whose server supplied resume data after an interruption.
-    static func resumeUnfinishedMediaDownloads() async {
-        await LiveMediaDownloadManager.shared.resumeUnfinishedDownloads()
-    }
-
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
+        MediaShellWiring.attachBackgroundURLSessionHandler(completionHandler)
     }
 
-    /// The download Live Activity's tap-to-view link, resolved against the
-    /// saved-media store: a downloaded local file centers the deck's card;
-    /// a Photos-backed save opens Photos directly (reusing the card's
-    /// own rosette mechanism); still-downloading or unknown lands on the deck.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction {
-        guard let matched = SavedMediaStore.shared.matchingItem(forURLString: urlString) else { return .none }
-        switch matched.storageState {
-        case .localFile:
-            return .center(matched.id)
-        case .photosReference(let localIdentifier, _, _):
-            MediaCardFactory.openInPhotos(localIdentifier: localIdentifier)
-            return .openedExternally
-        case .undownloaded:
-            return .none
-        }
+        MediaShellWiring.deepLinkAction(forURLString: urlString)
     }
 
-    /// The finished activity's Share button (`&share=1`): a downloaded local
-    /// file becomes a concrete shareable copy with a human-readable name —
-    /// exactly the export the card's own share menu and the App Intent handoff
-    /// use. Anything else has no file to hand over and the route falls back to
-    /// the plain open.
-    static let mediaShareFileExporter: MediaShareFileExporting? = MediaShareFileExporting(
-        export: { itemID in
-            guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
-                  case .localFile = item.storageState
-            else { return nil }
-            return await MediaAutoDownloader.exportFile(from: item)?.fileURL
-        },
-        discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+    static let mediaShareFileExporter: MediaShareFileExporting? =
+        MediaShellWiring.shareFileExporter
 
     /// Downloader handles no products — no runner ⇒ AppDelegate never registers
     /// or schedules the price-refresh BGTask.
@@ -234,15 +126,4 @@ enum KindWiring {
     /// Luna app (the UI-test/screenshot host).
     static func uiTestRootViewController(named name: String) -> UIViewController? { nil }
     #endif
-}
-
-/// Bridges `IngestorMediaHandling` to LunaPlatforms' `PlatformItemIngestor`.
-private struct MediaKindHandler: IngestorMediaHandling {
-    func ingestPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, platformItemID: String?,
-        store: ReadingListStore
-    ) async {
-        await PlatformItemIngestor.shared.ingest(
-            item, platform: platform, platformItemID: platformItemID, store: store)
-    }
 }

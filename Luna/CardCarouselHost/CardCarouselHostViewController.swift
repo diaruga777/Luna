@@ -1477,6 +1477,16 @@ extension CardCarouselHostViewController: CardPresenterHost {
             ?? CardKindPresenters.presenter(for: item)
     }
 
+    /// Opens a save from outside the deck — the `<scheme>://read` deep link's
+    /// "open elsewhere" leg, and the fallback when a Live Activity's Share
+    /// button can produce no file. WHERE it goes is the kind's answer
+    /// (`CardKindPresenting.openExternally`), so every app's root offers the
+    /// leg: article decks reach the reader, media decks Photos or the player.
+    func openExternally(_ item: ReadingListItem) {
+        guard let presenter = presenter(forItem: item) else { return }
+        presenter.openExternally(item, host: self)
+    }
+
     /// Unarchive, with this deck's choreography around the kind's store write.
     /// One implementation for all three kinds: the tray rows used to each carry
     /// their own, and only the article one bumped the row's date.

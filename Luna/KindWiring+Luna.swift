@@ -9,37 +9,20 @@
 //  — the registries and the static lifecycle API below mirror the link set.
 //
 
-import LunaArchiveReader
-import LunaArticleIngest
-import LunaAudioPlayback
-import LunaHTMLClassification
 import LunaIngest
 import LunaMailAccount
-import LunaMailTransport
 import LunaMediaDownload
 import LunaModels
-import LunaPlatforms
-import LunaPriceIngest
 import LunaPriceUI
 import LunaReaderUI
 import LunaReadingList
-import LunaSend
 import LunaSocialUI
 import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// The central app's deck draws every kind, so a save into EITHER store —
-    /// article, media, tracker — is the real content onboarding completes around.
-    static let onboardingContentWatch = OnboardingContentWatch(
-        changeNotifications: [.readingListChanged, .savedMediaChanged],
-        storedIdentifiers: {
-            Set(ReadingListStore.shared.items().map(\.id))
-                .union(SavedMediaStore.shared.items().map(\.id))
-        })
-
     /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
-    static let legacyOnboardingDemoSave = OnboardingLegacyDemoSave(
+    private static let legacyOnboardingDemoSave = OnboardingLegacyDemoSave(
         cleanup: { BundledLunaArticle.cleanupLegacyTemporarySave() })
 
     @MainActor
@@ -63,13 +46,6 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
-        // A re-save that merges into a tracker which has never been through
-        // a fan-out (still fewer than two stores) kicks a comparison instead
-        // of showing nothing forever — `LunaReadingList` cannot link
-        // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
-        ReadingListIngestor.priceTrackerComparisonKicker = { itemID, url, store in
-            SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
-        }
         // …and the CARD half of each kind, on the same principle: one
         // definition per kind, installed by every app that shows it, so the
         // central deck and each single-kind deck cannot disagree about the
@@ -77,163 +53,16 @@ enum KindWiring {
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()
         CardKindPresenters.product = ProductCardPresenter()
-        // The central Luna app handles every kind, so it installs every
-        // ingestor handler and every kind-specific presentation hook.
-        IngestorKindHandlers.article = ArticleKindHandler()
-        IngestorKindHandlers.media = MediaKindHandler()
-        IngestorKindHandlers.product = ProductKindHandler()
-        // Action Button intents hand a saved product back as its comparison
-        // summary (`claudedocs/price-comparison.md`).
-        ProductIntentHandoff.install()
-        PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
-            await PlatformItemIngestor.shared.pasteboardPreviewArtData(
-                platform: platform, itemID: itemID, urlString: urlString)
-                .flatMap { UIImage(data: $0) }
-        }
+        // …and the app-shell half of each kind, from the same files each
+        // single-kind app installs (`ArticleShellWiring` and its siblings), so
+        // the central app cannot drift from the app that specializes in a kind.
+        ArticleShellWiring.install()
+        MediaShellWiring.install()
+        ProductShellWiring.install()
+        // A Luna email carrying a price tracker shows its graph as an image —
+        // the one seam that needs an article-app capability (email) and a
+        // product-app one (the graph) at once, so it belongs to neither leg.
         EmailShareCenter.priceGraphSnapshot = { PriceGraphEmailSnapshot.jpegData(for: $0) }
-
-        // Sending needs a connected email account: an attempted send without one
-        // redirects to the screen that connects it (its Sharing Account section is
-        // the sign-in form until then). Only the email-sending apps install this.
-        SendToFriendSheet.accountSetupLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
-        // The util card's email nudge goes to the same one place.
-        UtilCardContentViewController.emailSetupLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
-        installArticleLaunchWiring()
-        installMediaLaunchWiring()
-        installProductLaunchWiring()
-    }
-
-    /// Article-kind launch wiring (identical in the Reader variant).
-    private static func installArticleLaunchWiring() {
-        // A completion written before a force-quit never received the normal
-        // background callback. Promote it before constructing the Reader UI.
-        ReadingListStore.shared.archivePendingFinishedItems()
-
-        // Send-to-Kindle emails go out through the connected email account.
-        // LunaSend sits below LunaMailTransport, so the transport factory is
-        // injected here (extensions leave it nil → Kindle sends are no-ops there).
-        ArticleEmailTransportProvider.make = { MailTransportFactory.make() }
-
-        // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
-        // install the autoplay queue provider and register the Now Playing /
-        // remote-command coordinator. Registration must happen at launch (not
-        // lazily) so a cold background relaunch from a lock-screen play command
-        // can restore the persisted session. Read-aloud (the app-wide center,
-        // its background session, the window mini-player) belongs exclusively
-        // to article-handling apps — the Downloader / Price Tracker variants
-        // leave `ReaderAudioLauncher.center` nil, keeping the shared readers on
-        // their legacy self-contained `SpeechController` path.
-        AudioPlaybackWiring.install()
-        // Phase 4 (trimming): opportunistic script-cache builder, wired
-        // right after playback so its scriptProvider/scriptPrefetchHandler
-        // seams are set before anything could call into the center.
-        AudioScriptPipelineWiring.install()
-
-        // The Read Article intent plays through the same center.
-        ReadArticleIntent.playArticle = { item, content in
-            AudioPlaybackCenter.shared.play(item: item, content: content)
-        }
-
-        // The Action Button double save (claudedocs/double-save.md): its
-        // "View immediately" returns an article document, and Kindle needs
-        // the account/Kindle setup screens. Both are article-only, so both are
-        // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
-        // which arms double save in exactly the apps that link LunaSend.
-        ActionButtonIntentSupport.articleExporter = { item, format in
-            try? await ArticleExportService().writePreparingImagesWhenAvailable(
-                format, for: item)
-        }
-        // Exports fetch the article images that haven't landed yet rather than
-        // shipping a file with none. The downloader is LunaReaderUI's and the
-        // exporters are LunaSend's, so the composition root joins them.
-        ArticleExportImages.preparer = { content, item in
-            guard let referer = ArticleImageReferer.url(for: item, content: content) else {
-                return content
-            }
-            return await ArticleImageDownloader.download(
-                content, itemID: item.id, store: .shared, refererURL: referer)
-        }
-        DoubleSaveSettingsSupport.kindleSetupLauncher = { presenter in
-            guard EmailAccountStore.shared.isConfigured else {
-                EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-                return
-            }
-            presenter.navigationController?.pushViewController(
-                KindleSettingsScreen(), animated: true)
-        }
-
-        // A bulk import's pass over the saves that came back hard-paywalled:
-        // the same web unlock a tap would run, off-screen and giving up on any
-        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
-        // no article save to unlock anywhere else.
-        LinkImportRunner.articleUnlocker = { itemID, urlString in
-            await UnattendedArticleUnlock.unlock(itemID: itemID, urlString: urlString)
-        }
-
-        // Voice status and installation now live on the Audio settings page.
-        VoiceFirstRunPrompt.openVoiceSettings = { presenter in
-            let audio = AudioSettingsScreen()
-            if let nav = presenter.navigationController {
-                nav.pushViewController(audio, animated: true)
-            } else {
-                let nav = UINavigationController(rootViewController: audio)
-                presenter.present(nav, animated: true)
-            }
-        }
-    }
-
-    /// Media-kind launch wiring (identical in the Downloader variant).
-    @MainActor
-    private static func installMediaLaunchWiring() {
-        // Action Button intents hand recognized posts to the media downloader.
-        MediaIntentHandoff.install()
-        // The util card's inline "Store downloads …" line. Only an app that
-        // downloads has anywhere to store, so only an app that links this module
-        // installs the choice (`claudedocs/util-card.md`).
-        MediaUtilCardStorageChoice.install()
-        // URL Rescue's media leg: download engine-resolved assets directly.
-        URLRescueWiring.mediaResolverFactory = { SocialMediaResolver() }
-        URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
-            await LiveMediaDownloadManager.shared.startWithResolvedAssets(
-                sourceURLString: sourceURLString, title: title, assets: assets)
-        }
-        // The factory reset's media leg: a Live Activity outlives the process
-        // that started it, so the wipe has to end them itself.
-        FactoryReset.additionalErasers.append {
-            await LiveMediaDownloadManager.shared.endAllActivities()
-        }
-        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
-        // A bulk import runs its own progress bar; the per-transfer Live
-        // Activity alerts (banner + sound + haptic) would buzz twice per link
-        // over the top of it.
-        // Photos access asked for at the START of an import, not when the first
-        // transfer wants it (`claudedocs/import-export.md`).
-        LinkImportRunner.mediaStoragePreflight = { urlStrings in
-            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
-        }
-        LinkImportRunner.mediaAlertSuspension = { suspended in
-            if suspended {
-                LiveMediaDownloadManager.suspendActivityAlerts()
-            } else {
-                LiveMediaDownloadManager.resumeActivityAlerts()
-            }
-        }
-    }
-
-    /// Product-kind launch wiring (identical in the Price Tracker variant).
-    private static func installProductLaunchWiring() {
-        // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
-        // Rescue Phase 6 UI).
-        ProductPriceRescue.resolver = { urlString in
-            guard let info = await URLRescueWiring.rescueProductInfo(urlString: urlString)
-            else { return nil }
-            return ProductPriceRescue.ResolvedPrice(
-                amount: info.priceAmount, currency: info.priceCurrency)
-        }
     }
 
     // MARK: - Root UI shape
@@ -247,15 +76,6 @@ enum KindWiring {
         return MiniPlayerHostViewController(content: nav)
     }
 
-    private static func makeCompletedRootViewController() -> UIViewController {
-        let nav = UINavigationController(rootViewController: ArticleCardsViewController())
-        return MiniPlayerHostViewController(content: nav)
-    }
-
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
-    }
-
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         if let host = root as? MiniPlayerHostViewController {
             return host.contentNavigationController
@@ -267,14 +87,8 @@ enum KindWiring {
     static func openPriceTrackerAddSeller(
         itemID: UUID, navigationController: UINavigationController
     ) {
-        guard ReadingListStore.shared.item(withID: itemID)?.priceTracker != nil,
-              let deck = navigationController.viewControllers.first
-                as? CardCarouselHostViewController else { return }
-        navigationController.dismiss(animated: false)
-        navigationController.popToRootViewController(animated: false)
-        deck.requestCentering(onSlotID: itemID)
-        deck.reload()
-        PriceTrackerAddSellerRoute.request(itemID: itemID)
+        ProductShellWiring.openAddSeller(
+            itemID: itemID, navigationController: navigationController)
     }
 
     static func settingsCategories() -> [SettingsCategory] {
@@ -308,133 +122,61 @@ enum KindWiring {
 
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
-    /// Safari's in-page player queued these; the extension already resolved
-    /// them, so the drain hands the assets straight to the download manager.
-    /// Also runs at launch and on foreground, so a deep link that never arrived
-    /// (a responder-chain open can silently fail) still lands its download.
     static func drainPendingResolvedMedia(returningToSource: Bool) {
-        PendingResolvedMediaDownloads.drain(returningToSource: returningToSource)
+        MediaShellWiring.drainPendingResolvedMedia(returningToSource: returningToSource)
     }
 
     static func appDidLaunch() {
         legacyOnboardingDemoSave.cleanup()
-        drainPendingResolvedMedia(returningToSource: false)
-        // The all-kinds deck draws real media cards, so it needs the same
-        // cross-process bridge the Downloader has: a save or delete made by an
-        // extension is a different process, and only a Darwin notification
-        // brings its `.savedMediaChanged` post back here.
-        SavedMediaStore.startObservingCrossProcessChanges()
-        // Sweep any downloaded-but-never-saved media preview files orphaned by a
-        // previous run that was killed before its preview screen could clean up.
-        // Also apply the saved-media retention policy. Safe at launch (no
-        // preview is open yet); off the main thread to not block startup.
-        DispatchQueue.global(qos: .utility).async {
-            MediaDownloadStorage.purgeAll()
-            SavedMediaStore.shared.purgeExpired()
-        }
-        ArticleSendCoordinator.shared.retryPendingSends()
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
-        // A save-time seller fan-out that never finished — a share extension is
-        // torn down the moment the user is done with it — is resumed here, from
-        // the pending marker the tracker carries (`claudedocs/price-comparison.md`).
-        // Product snapshots are NOT swept here: they are read once, on the
-        // save path, when a tracker is created (`claudedocs/price-tracking.md`).
-        Task {
-            await SellerComparison.completePending(store: ReadingListStore.shared)
-        }
+        ArticleShellWiring.appDidLaunch()
+        MediaShellWiring.appDidLaunch()
+        ProductShellWiring.appDidLaunch()
     }
 
     static func appDidEnterBackground() {
-        ArticleSendCoordinator.shared.retryPendingSends()
-        LiveMediaDownloadManager.shared.resumeLiveActivities()
-        // Keeps the Safari extension's history-pill data current even between
-        // refresh cycles (e.g. after the user edits an alert threshold or
-        // archives a tracker, neither of which triggers a refresh).
-        PriceHistoryIndexWriter.regenerate()
+        ArticleShellWiring.appDidEnterBackground()
+        MediaShellWiring.appDidEnterBackground()
+        ProductShellWiring.appDidEnterBackground()
     }
 
     static func sceneDidForeground() {
-        drainPendingResolvedMedia(returningToSource: false)
-        // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
-        // keep it off the main thread (the store already posts its own change
-        // notification back on main).
-        DispatchQueue.global(qos: .utility).async {
-            SavedMediaStore.shared.purgeExpired()
-        }
-        ArticleSendCoordinator.shared.retryPendingSends()
-        // Resume any link preloading left incomplete (interrupted save / new depth).
-        PreloadCoordinator.shared.resumeIncomplete()
+        MediaShellWiring.sceneDidForeground()
+        ArticleShellWiring.sceneDidForeground()
     }
 
     static func readingListDidChange() {
-        // purgeExpired() off the main thread — see sceneDidForeground.
-        DispatchQueue.global(qos: .utility).async {
-            SavedMediaStore.shared.purgeExpired()
-        }
+        MediaShellWiring.readingListDidChange()
     }
 
     static func wifiBecameAvailable() {
-        Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
-        PreloadCoordinator.shared.resumeIncomplete()
+        MediaShellWiring.resumePendingWiFiDownloads()
+        ArticleShellWiring.resumeIncompletePreloads()
     }
 
     static func retryPendingArticleSends() {
-        ArticleSendCoordinator.shared.retryPendingSends()
+        ArticleShellWiring.retryPendingSends()
     }
-
-    /// Overnight mail-fetch backstop for unfinished media jobs — Downloader
-    /// only (matches the pre-split gate), so the central app is a no-op.
-    static func resumeUnfinishedMediaDownloads() async {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
+        MediaShellWiring.attachBackgroundURLSessionHandler(completionHandler)
     }
 
-    /// The download Live Activity's tap-to-view link, resolved against the
-    /// saved-media store: a downloaded local file centers the deck's card;
-    /// a Photos-backed save opens Photos directly (reusing the card's
-    /// own rosette mechanism); still-downloading or unknown lands on the deck.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction {
-        guard let matched = SavedMediaStore.shared.matchingItem(forURLString: urlString) else { return .none }
-        switch matched.storageState {
-        case .localFile:
-            return .center(matched.id)
-        case .photosReference(let localIdentifier, _, _):
-            MediaCardFactory.openInPhotos(localIdentifier: localIdentifier)
-            return .openedExternally
-        case .undownloaded:
-            return .none
-        }
+        MediaShellWiring.deepLinkAction(forURLString: urlString)
     }
 
-    /// The finished activity's Share button (`&share=1`): a downloaded local
-    /// file becomes a concrete shareable copy with a human-readable name —
-    /// exactly the export the card's own share menu and the App Intent handoff
-    /// use. Anything else has no file to hand over and the route falls back to
-    /// the plain open.
-    static let mediaShareFileExporter: MediaShareFileExporting? = MediaShareFileExporting(
-        export: { itemID in
-            guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
-                  case .localFile = item.storageState
-            else { return nil }
-            return await MediaAutoDownloader.exportFile(from: item)?.fileURL
-        },
-        discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+    static let mediaShareFileExporter: MediaShareFileExporting? =
+        MediaShellWiring.shareFileExporter
 
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.
-    static let priceRefreshRunner: (() async -> Int)? = {
-        await PriceRefreshCoordinator.shared.refreshAndNotify().count
-    }
+    static let priceRefreshRunner: (() async -> Int)? = ProductShellWiring.priceRefreshRunner
 
     #if DEBUG
     /// `-openArchive <url>` debug root: the interactive archive reader.
     static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? {
-        let item = ReadingListStore.shared.addIfAbsent(urlString: articleURL.absoluteString)
-            ?? ReadingListStore.shared.add(urlString: articleURL.absoluteString)
-        let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id)
-        return UINavigationController(rootViewController: reader)
+        ArticleShellWiring.debugArchiveReaderRoot(articleURL: articleURL)
     }
 
     /// The deep-linked UI-test screen catalog is kind-woven, so only the
@@ -444,73 +186,4 @@ enum KindWiring {
         return UITestScreenBuilder.rootViewController(for: screen)
     }
     #endif
-}
-
-/// Bridges `IngestorArticleHandling` to the article-kind modules: persistence
-/// in LunaReaderUI (`ArticleIngestHandler`, `PreloadCoordinator`) and sends in
-/// LunaSend (`ArticleSendCoordinator`) — the composition root is the one place
-/// allowed to see both tiers at once.
-private struct ArticleKindHandler: IngestorArticleHandling {
-    private let handler = ArticleIngestHandler(articleBecameReady: {
-        ArticleSendCoordinator.shared.articleBecameReady($0)
-    })
-
-    func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem,
-        url: URL, store: ReadingListStore
-    ) async {
-        await handler.persistArticle(content, html: html, for: item, url: url, store: store)
-    }
-
-    func ingestDocument(_ item: ReadingListItem, store: ReadingListStore) async {
-        await handler.ingestDocument(item, store: store)
-    }
-
-    func backfillMissingWebArchives(store: ReadingListStore) {
-        handler.backfillMissingWebArchives(store: store)
-    }
-
-    func backfillMissingThumbnails(store: ReadingListStore) {
-        handler.backfillMissingThumbnails(store: store)
-    }
-
-    func articleBecameReady(_ item: ReadingListItem) {
-        ArticleSendCoordinator.shared.articleBecameReady(item)
-    }
-
-    func preloadPasteboard(content: ArticleContent, sourceURL: URL) {
-        PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: sourceURL)
-    }
-
-    func doubleSaveDestinationIDs() -> [String] {
-        ArticleSendCoordinator.shared.doubleSaveDestinationIDs()
-    }
-
-    func sendToDestination(_ item: ReadingListItem, destinationID: String) async {
-        await ArticleSendCoordinator.shared.send(item, toDestinationID: destinationID)
-    }
-
-    func isDestinationConfigured(_ destinationID: String) -> Bool {
-        ArticleSendCoordinator.shared.isConfigured(destinationID: destinationID)
-    }
-}
-
-/// Bridges `IngestorMediaHandling` to LunaPlatforms' `PlatformItemIngestor`.
-private struct MediaKindHandler: IngestorMediaHandling {
-    func ingestPlatformItem(
-        _ item: ReadingListItem, platform: ContentPlatform, platformItemID: String?,
-        store: ReadingListStore
-    ) async {
-        await PlatformItemIngestor.shared.ingest(
-            item, platform: platform, platformItemID: platformItemID, store: store)
-    }
-}
-
-/// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
-private struct ProductKindHandler: IngestorProductHandling {
-    func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo, store: ReadingListStore
-    ) async {
-        await ProductTrackerIngestor.shared.ingest(item, url: url, product: product, store: store)
-    }
 }

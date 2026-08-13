@@ -457,10 +457,10 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
   still readable); nil → `ArticleMatcher.latestUnread`. Loads the item's
   `ArticleContent` from `ReadingListStore` and calls the SAME
   `AudioPlaybackCenter.shared.play(item:content:)` the in-app mini-player
-  uses — `AudioPlaybackWiring.install()` runs in `AppDelegate.
-  didFinishLaunching`, before any intent could plausibly run, so the center
-  is always wired. Dialog: `"Reading <title>."`; throws a localized error for
-  no-unread-articles or missing content.
+  uses — `ArticleShellWiring.install()` runs `AudioPlaybackWiring.install()`
+  from `AppDelegate.didFinishLaunching`, before any intent could plausibly
+  run, so the center is always wired. Dialog: `"Reading <title>."`; throws a
+  localized error for no-unread-articles or missing content.
 - **`LunaShortcuts`** (`AppShortcutsProvider`) gained a 10th `AppShortcut`
   (the provider's documented hard cap — see `claudedocs/app-intents.md`) with
   7 phrase variants covering all three utterance families: bare/"latest"
@@ -468,8 +468,8 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
   entity-parameterized "about `$article`"/"from `$article`" variants (both
   "Read" and "Play").
 - **`ArticleSpotlightIndexWiring`** (`Luna/ArticleSpotlightIndexWiring.swift`,
-  installed at launch right after `AudioScriptPipelineWiring`, main-app-only
-  like the trimming pipeline) — sweeps on launch and on debounced (1.5s)
+  installed by `ArticleShellWiring.appDidLaunch()`, so only the two apps that
+  handle articles compile it at all) — sweeps on launch and on debounced (1.5s)
   `.readingListChanged`: builds a `CSSearchableItem` per readable article from
   `ArticleEntity.attributeSet`, calls `associateAppEntity` (so Spotlight's
   semantic index can resolve back to the entity/intent), indexes them via

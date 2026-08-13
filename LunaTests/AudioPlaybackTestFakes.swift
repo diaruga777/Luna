@@ -61,7 +61,7 @@ final class FakeAudioEngine: ArticleAudioEngineControlling {
     var rate: Float = 1.0
     private(set) var isPlaying = true
     var currentTime: TimeInterval = 0
-    var needsMoreAudioHandler: (() -> Void)?
+    weak var delegate: ArticleAudioEngineDelegate?
 
     private(set) var scheduledSegments: [(segment: RenderedSegment, rateMode: SegmentRateMode, completion: (() -> Void)?)] = []
     private(set) var scheduledTones: [(asset: ToneAsset, completion: (() -> Void)?)] = []
@@ -91,10 +91,15 @@ final class FakeAudioEngine: ArticleAudioEngineControlling {
     func completeTone(at index: Int) {
         scheduledTones[index].completion?()
     }
+
+    /// Reports the low-water mark the real engine trips when its queue drains.
+    func signalNeedsMoreAudio() {
+        delegate?.articleAudioEngineNeedsMoreAudio(self)
+    }
 }
 
 final class FakeSessionCoordinator: AudioSessionControlling {
-    var actionHandler: ((AudioSessionCoordinator.Action) -> Void)?
+    weak var delegate: AudioSessionCoordinatorDelegate?
     private(set) var startCount = 0
     private(set) var activateCount = 0
     private(set) var deactivationsScheduled = 0
@@ -102,6 +107,12 @@ final class FakeSessionCoordinator: AudioSessionControlling {
     func start() { startCount += 1 }
     func activate() { activateCount += 1 }
     func scheduleDeactivationAfterUserPause() { deactivationsScheduled += 1 }
+
+    /// Reports an interruption/route-change decision, as the real coordinator
+    /// does from its notification observers.
+    func request(_ action: AudioSessionCoordinator.Action) {
+        delegate?.audioSession(self, didRequest: action)
+    }
 }
 
 /// Test double for `AudioPlaybackCenterDataSource`. `script(for:content:)`

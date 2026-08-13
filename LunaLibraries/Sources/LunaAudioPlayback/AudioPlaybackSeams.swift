@@ -63,6 +63,12 @@ public protocol SpeechRendering: AnyObject {
 
 extension SpeechRenderer: SpeechRendering {}
 
+/// The engine's host: told when the scheduled audio has run low enough that
+/// another block must be rendered.
+public protocol ArticleAudioEngineDelegate: AnyObject {
+    func articleAudioEngineNeedsMoreAudio(_ engine: ArticleAudioEngineControlling)
+}
+
 /// The slice of `ArticleAudioEngine` `AudioPlaybackCenter` drives, kept as a
 /// protocol so tests can substitute a fake playback graph instead of a real
 /// `AVAudioEngine`.
@@ -70,7 +76,7 @@ public protocol ArticleAudioEngineControlling: AnyObject {
     var rate: Float { get set }
     var isPlaying: Bool { get }
     var currentTime: TimeInterval { get }
-    var needsMoreAudioHandler: (() -> Void)? { get set }
+    var delegate: ArticleAudioEngineDelegate? { get set }
 
     func play()
     func pause()
@@ -81,11 +87,18 @@ public protocol ArticleAudioEngineControlling: AnyObject {
 
 extension ArticleAudioEngine: ArticleAudioEngineControlling {}
 
+/// The session's host: translates an interruption/route-change decision into
+/// its own pause/resume.
+public protocol AudioSessionCoordinatorDelegate: AnyObject {
+    func audioSession(
+        _ session: AudioSessionControlling, didRequest action: AudioSessionCoordinator.Action)
+}
+
 /// The slice of `AudioSessionCoordinator` `AudioPlaybackCenter` drives, kept as
 /// a protocol so tests can substitute a no-op fake instead of touching a real
 /// `AVAudioSession`/`NotificationCenter`.
 public protocol AudioSessionControlling: AnyObject {
-    var actionHandler: ((AudioSessionCoordinator.Action) -> Void)? { get set }
+    var delegate: AudioSessionCoordinatorDelegate? { get set }
     func start()
     func activate()
     func scheduleDeactivationAfterUserPause()

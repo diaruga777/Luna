@@ -27,7 +27,15 @@ import XCTest
 /// unverifiable behavior change for what should be a pure fixture-count
 /// merge — those fixtures' completion/notification callbacks are not
 /// guaranteed to already be main-actor-isolated.
-final class AudioPlaybackSupportTests: XCTestCase {
+final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelegate {
+
+    /// The session coordinator reports its interruption/route-change decisions
+    /// here (`AudioSessionCoordinatorTests` below reads `actions`).
+    func audioSession(
+        _ session: AudioSessionControlling, didRequest action: AudioSessionCoordinator.Action
+    ) {
+        actions.append(action)
+    }
 
     // MARK: - NowPlayingCoordinatorTests seam fakes
 
@@ -129,7 +137,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
         // AudioSessionCoordinatorTests
         audioSessionCoordinatorUnderTest = AudioSessionCoordinator()
         actions = []
-        audioSessionCoordinatorUnderTest.actionHandler = { [weak self] action in self?.actions.append(action) }
+        audioSessionCoordinatorUnderTest.delegate = self
         audioSessionCoordinatorUnderTest.start()
     }
 

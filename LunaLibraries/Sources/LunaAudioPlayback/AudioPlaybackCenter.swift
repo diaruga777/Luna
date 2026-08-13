@@ -153,7 +153,8 @@ public protocol AudioPlaybackCenterDataSource: AnyObject {
 /// fakes instead of real `AVSpeechSynthesizer`/`AVAudioEngine`/
 /// `AVAudioSession` — this class owns real Apple frameworks in production via
 /// its default parameter values only.
-public final class AudioPlaybackCenter {
+public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
+    ArticleAudioEngineDelegate {
     public static let shared = AudioPlaybackCenter()
 
     /// Default estimate for words-not-yet-rendered-this-session (bootstrap,
@@ -319,12 +320,7 @@ public final class AudioPlaybackCenter {
         self.positionStore = positionStore
         self.sessionCoordinator = sessionCoordinator
         self.engineFactory = engineFactory
-        self.sessionCoordinator.actionHandler = { [weak self] action in
-            switch action {
-            case .pause: self?.handleExternalPause()
-            case .resume: self?.handleExternalResume()
-            }
-        }
+        self.sessionCoordinator.delegate = self
         self.sessionCoordinator.start()
     }
 
@@ -660,7 +656,7 @@ public final class AudioPlaybackCenter {
         if engine == nil {
             do {
                 engine = try engineFactory(segment.format)
-                engine?.needsMoreAudioHandler = { [weak self] in self?.pumpRenderingIfNeeded() }
+                engine?.delegate = self
             } catch {
                 setState(.idle)
                 return
@@ -813,14 +809,24 @@ public final class AudioPlaybackCenter {
 
     // MARK: - External (session-driven) pause/resume
 
-    private func handleExternalPause() {
-        // The interruption/route-change already owns session state here —
-        // deliberately NOT deactivating (no scheduleDeactivationAfterUserPause).
-        pauseInternal(deactivateSessionAfterGrace: false)
+    public func audioSession(
+        _ session: AudioSessionControlling, didRequest action: AudioSessionCoordinator.Action
+    ) {
+        switch action {
+        case .pause:
+            // The interruption/route-change already owns session state here —
+            // deliberately NOT deactivating (no
+            // scheduleDeactivationAfterUserPause).
+            pauseInternal(deactivateSessionAfterGrace: false)
+        case .resume:
+            resume()
+        }
     }
 
-    private func handleExternalResume() {
-        resume()
+    // MARK: - The engine's render pump
+
+    public func articleAudioEngineNeedsMoreAudio(_ engine: ArticleAudioEngineControlling) {
+        pumpRenderingIfNeeded()
     }
 
     // MARK: - Persistence

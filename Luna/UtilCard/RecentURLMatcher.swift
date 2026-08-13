@@ -284,8 +284,9 @@ final class RecentURLMatcher {
                 kind: .article, imageData: await faviconData(for: result.url))
         case let .social(platform, itemID), let .video(platform, itemID):
             guard surface.handlesMedia else { return nil }
-            let image = await PasteboardSuggester.platformPreviewArt?(
-                platform, itemID, result.url.absoluteString)
+            let image = await PasteboardSuggester.platformPreviewArt?.previewArt(
+                platform: platform, itemID: itemID,
+                urlString: result.url.absoluteString)
             return RecentURLPreview(
                 urlString: result.url.absoluteString,
                 title: platform.displayName, subtitle: result.url.host,

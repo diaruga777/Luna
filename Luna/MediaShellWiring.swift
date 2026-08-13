@@ -28,11 +28,7 @@ enum MediaShellWiring {
         // Post-save ingestion — metadata, thumbnail, auto-download handoff — is
         // the app-shell media ingestor handler.
         IngestorKindHandlers.media = MediaKindHandler()
-        PasteboardSuggester.platformPreviewArt = { platform, itemID, urlString in
-            await PlatformItemIngestor.shared.pasteboardPreviewArtData(
-                platform: platform, itemID: itemID, urlString: urlString)
-                .flatMap { UIImage(data: $0) }
-        }
+        PasteboardSuggester.platformPreviewArt = PlatformPreviewArt()
         // Action Button intents hand recognized posts to the media downloader.
         MediaIntentHandoff.install()
         // The util card's inline "Store downloads …" line. Only an app that
@@ -129,6 +125,17 @@ enum MediaShellWiring {
     /// The finished activity's Share button (`&share=1`). Anything with no file
     /// to hand over falls the route back to the plain open.
     static let shareFileExporter: (any MediaShareFileExporting)? = DownloadedFileExporter()
+}
+
+/// A recent URL's preview art, from the platform's own metadata fetcher.
+private struct PlatformPreviewArt: PlatformPreviewArtProviding {
+    func previewArt(
+        platform: ContentPlatform, itemID: String?, urlString: String
+    ) async -> UIImage? {
+        await PlatformItemIngestor.shared.pasteboardPreviewArtData(
+            platform: platform, itemID: itemID, urlString: urlString)
+            .flatMap { UIImage(data: $0) }
+    }
 }
 
 /// The finished activity's Share button (`&share=1`): a downloaded local file

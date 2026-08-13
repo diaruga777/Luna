@@ -815,8 +815,8 @@ public enum RedditMediaParser {
     /// (confirmed against real `DASHPlaylist.mpd` manifests — its audio
     /// `Representation`'s own `<BaseURL>` is literally the plain string
     /// `audio`, resolved against the same `/{videoID}/` directory every
-    /// resolution's video file lives in — not `DASH_audio.mp4`, which was
-    /// this code's previous, incorrect guess).
+    /// resolution's video file lives in — NOT `DASH_audio.mp4`, a filename
+    /// some public downloaders assume instead).
     private static func audioURL(forVideoURL videoURL: URL) -> URL? {
         guard var components = URLComponents(url: videoURL, resolvingAgainstBaseURL: false) else { return nil }
         var segments = components.path.split(separator: "/").map(String.init)

@@ -86,12 +86,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         // DEBUG-only UI-test seeding (no-op unless launched with `-uiTestState`).
         UITestSeeder.applyIfNeeded()
-        if let rootForUITest = uiTestRootViewController() {
-            window.rootViewController = rootForUITest
-            self.window = window
-            window.makeKeyAndVisible()
-            return
-        }
 
         #if DEBUG
         if let archiveArg = debugLaunchArgValue(after: "-openArchive"),
@@ -337,22 +331,5 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
-    }
-
-    private func uiTestRootViewController() -> UIViewController? {
-        #if DEBUG
-        // The deep-linked screen catalog is kind-woven (readers, price editor,
-        // saved-media screen), so only the central Luna app — the UI-test /
-        // screenshot host — can build it; the single-kind apps return nil here.
-        if let name = UITestSeeder.requestedScreenName,
-           let root = KindWiring.uiTestRootViewController(named: name) {
-            return root
-        }
-        // A bare `-uiTestState` seed used to force the sectioned table list as the
-        // root. That list had no other caller left, so it was deleted — a seeded
-        // launch now falls through to the app's REAL root (its card deck), which is
-        // what a screenshot run wants anyway.
-        #endif
-        return nil
     }
 }

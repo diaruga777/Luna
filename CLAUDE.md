@@ -340,10 +340,8 @@ Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
 media: the media deck provider, auto-download settings, intent handoff, the bulk
-import's download watcher;
-`UITestScreen`/`NonArticleCardOpening`:
-central-app-only) are excluded from foreign targets via the same membership-exception
-mechanism. The Share/Action extensions
+import's download watcher) are excluded from foreign targets via the same
+membership-exception mechanism. The Share/Action extensions
 link `LunaShareSurface` (+ transitive) plus their host's kind modules. **The four
 `LunaSafari` appexes used to link NOTHING; they now link the Foundation-only floor**
 — `LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,

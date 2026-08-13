@@ -117,8 +117,7 @@ public enum StageContainer {
 }
 
 /// Whether this process was launched for a DETERMINISTIC CAPTURE — a staged
-/// run (`-LunaStage`), the UI-test seeding harness (`-uiTestState`) or its
-/// screen catalog (`-uiTestScreen`).
+/// run (`-LunaStage`) or the UI-test seeding harness (`-uiTestState`).
 ///
 /// Its one job is suppressing the simulator-only debug tap targets (the
 /// reader's "Sim Dive"/"Sim Pop", the reading-list row ellipsis) that otherwise
@@ -132,7 +131,7 @@ public enum StageContainer {
 /// It had drifted: adding `-LunaStage` to the app's copy left both readers
 /// still drawing their debug pills over every staged capture.
 public enum CaptureLaunch {
-    private static let argumentKeys = ["-uiTestState", "-uiTestScreen", "-LunaStage"]
+    private static let argumentKeys = ["-uiTestState", "-LunaStage"]
 
     public static var isActive: Bool {
         let arguments = ProcessInfo.processInfo.arguments

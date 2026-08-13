@@ -121,9 +121,5 @@ enum KindWiring {
     #if DEBUG
     /// `-openArchive` is an article-app debug tool.
     static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? { nil }
-
-    /// The kind-woven UI-test screen catalog compiles only into the central
-    /// Luna app (the UI-test/screenshot host).
-    static func uiTestRootViewController(named name: String) -> UIViewController? { nil }
     #endif
 }

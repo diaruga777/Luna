@@ -144,9 +144,5 @@ enum KindWiring {
     static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? {
         ArticleShellWiring.debugArchiveReaderRoot(articleURL: articleURL)
     }
-
-    /// The kind-woven UI-test screen catalog compiles only into the central
-    /// Luna app (the UI-test/screenshot host).
-    static func uiTestRootViewController(named name: String) -> UIViewController? { nil }
     #endif
 }

@@ -7,6 +7,7 @@ import LunaAppConfig
 import LunaModels
 import LunaStorage
 @testable import LunaMediaDownload
+import Photos
 import XCTest
 
 final class AutoDownloadSettingsTests: XCTestCase {
@@ -151,7 +152,8 @@ final class AutoDownloadSettingsTests: XCTestCase {
     func testChoosingInLunaTakesTheInlineAgeButNeverRetimesAnExistingOne() {
         preservingSettings {
             let choice = MediaUtilCardStorageChoice(
-                saver: StubPhotoLibrary(granted: true), authorizationStatus: { .authorized })
+                saver: StubPhotoLibrary(granted: true),
+                authorization: StubPhotoAuthorization(.authorized))
 
             MediaStorageSettings.option = .photos
             choice.chooseInLuna()
@@ -172,7 +174,7 @@ final class AutoDownloadSettingsTests: XCTestCase {
         for granted in [true, false] {
             let saver = StubPhotoLibrary(granted: granted)
             let choice = MediaUtilCardStorageChoice(
-                saver: saver, authorizationStatus: { .notDetermined })
+                saver: saver, authorization: StubPhotoAuthorization(.notDetermined))
             let previousPhotos = defaults.object(forKey: photosKey)
             let previousDisabled = defaults.object(forKey: retentionDisabledKey)
             let previousDays = defaults.object(forKey: retentionDaysKey)
@@ -216,7 +218,7 @@ final class AutoDownloadSettingsTests: XCTestCase {
         }
         let saver = StubPhotoLibrary(granted: true)
         let choice = MediaUtilCardStorageChoice(
-            saver: saver, authorizationStatus: { .denied })
+            saver: saver, authorization: StubPhotoAuthorization(.denied))
         let previousChoice = defaults.object(forKey: explicitChoiceKey)
         defer { restore(previousChoice, forKey: explicitChoiceKey) }
 
@@ -303,6 +305,16 @@ final class AutoDownloadSettingsTests: XCTestCase {
         XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: "https://www.tiktok.com/@luna/video/123",
             handlesMedia: false))
+    }
+}
+
+/// One pinned authorization status, so a test can put the row in any of the
+/// states iOS can hand it without a real photo library.
+private struct StubPhotoAuthorization: PhotoLibraryAuthorizationProbing {
+    let readWriteStatus: PHAuthorizationStatus
+
+    init(_ readWriteStatus: PHAuthorizationStatus) {
+        self.readWriteStatus = readWriteStatus
     }
 }
 

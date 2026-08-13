@@ -17,19 +17,8 @@ import LunaStorage
 /// The engine deliberately makes no request of its own, because the same
 /// orchestration also has to run inside a Safari appex that can link almost
 /// nothing (`claudedocs/price-comparison.md`). This type is the OTHER end of
-/// that trade — the three closures the full profile is worth having:
-///
-/// - `fetch` goes through `ArticleFetcher`, so a candidate page is read with the
-///   same single deterministic Safari UA and the same size ceiling as every
-///   other fetch Luna makes. Its `badResponse(status:)` is what carries a bot
-///   wall's status code back to the engine.
-/// - `webSearch` is `DuckDuckGoSearch.results` — Layer 2, which reaches
-///   retailers the bundled directory has never heard of.
-/// - `richResolve` is `ProductPageSuggestion.resolve`, i.e. the entire
-///   `IngestPipeline`: classification, product eligibility, per-host price
-///   rules, and (in the app) the WKWebView render tier. A seller whose price
-///   only exists after client-side rendering is invisible to the regex parser
-///   and perfectly visible here.
+/// that trade: it runs the full profile against `PipelineSellerNetworking`, the
+/// conformer that has every leg the engine offers.
 ///
 /// **It is installed rather than called.** `ProductKindComposition.install()`
 /// fills `installed`, so a process that did not compose the product kind has no
@@ -105,10 +94,7 @@ public enum SellerComparisonRunner {
         let fanOut = SellerFanOut(
             directory: directory,
             profile: profile,
-            fetch: fetchPage,
-            webSearch: { await DuckDuckGoSearch.results(forQuery: $0) },
-            richResolve: richResolve,
-            renderSearch: renderSearch,
+            networking: PipelineSellerNetworking(profile: profile),
             onResult: onResult,
             onAttempt: { attempt in
                 DiagnosticLog.shared.record(attempt.logLine, category: logCategory)
@@ -129,86 +115,6 @@ public enum SellerComparisonRunner {
     /// retailers were chosen, what each answered, and what became of every link.
     /// Before this, twelve candidates and zero results left no trace at all.
     public static let logCategory = "SellerComparison"
-
-    /// The render fallback, and the only reason this module is the one wiring
-    /// the engine up: a search page whose results are drawn by JavaScript is
-    /// empty markup to the lean extractor, and `LunaPriceCompare` may not link
-    /// WebKit (it has to fit in the Safari appex). So the engine asks for a
-    /// render through a closure, and only the app tier can answer.
-    ///
-    /// Readiness is "the rendered DOM yields a product link" rather than a fixed
-    /// settle window, so a fast page returns fast and a slow one is still caught.
-    static let renderSearch: SellerFanOut.RenderSearch = { url in
-        await WebViewPriceRenderer.renderedSearchHTML(for: url) { html in
-            !LeanProductPageParser.productLinks(
-                inSearchHTML: html, baseURL: url, limit: 1).isEmpty
-        }
-    }
-
-    /// One page, through the app's ordinary fetcher, under the profile's
-    /// per-fetch allowance.
-    ///
-    /// A refusal is a RESULT here, not an error: the engine's bot-wall rule is
-    /// the reason candidates are over-provisioned, and it can only apply that
-    /// rule if the status code survives the throw.
-    ///
-    /// **The cap is this closure's job, and it was missing.** `perFetchTimeout`
-    /// is advisory on the profile precisely because the engine makes no request
-    /// of its own — the Safari appex honours it by building its `URLSession`
-    /// around it, and this side simply did not, so a candidate fetch was bounded
-    /// only by `URLRequest.timeoutInterval` (20 s). That interval measures the
-    /// gap between packets, not the transfer, and `URLSession.shared` leaves
-    /// `timeoutIntervalForResource` at its 7-day default: a retailer that dribbles
-    /// a multi-megabyte search page never trips either. One such page could
-    /// outlast the whole run's 35 s budget, which the engine checks only BETWEEN
-    /// candidates.
-    static let fetchPage: SellerFanOut.Fetch = { url in
-        await TimeLimit.run(profile.perFetchTimeout) { await uncappedFetchPage(url) } ?? nil
-    }
-
-    private static func uncappedFetchPage(_ url: URL) async -> FetchedPage? {
-        do {
-            let html = try await ArticleFetcher().fetchHTML(from: url)
-            return FetchedPage(url: url, html: html, statusCode: 200)
-        } catch let error as ArticleFetcher.FetchError {
-            guard case let .badResponse(status) = error, let status else { return nil }
-            return FetchedPage(url: url, html: "", statusCode: status)
-        } catch {
-            return nil
-        }
-    }
-
-    /// A candidate page through the SHARED pipeline, bounded.
-    ///
-    /// `ProductPageSuggestion.resolve` can spend up to `IngestPipeline
-    /// .processTimeout` (28 s) on one URL, which is most of the fan-out's whole
-    /// budget — so it is raced against the profile's per-fetch allowance and,
-    /// when it loses, the engine falls back to its own regex parser for that
-    /// page rather than the run losing a candidate.
-    static let richResolve: SellerFanOut.RichResolve = { url in
-        await withDeadline(profile.perFetchTimeout * 2) {
-            guard let suggestion = await ProductPageSuggestion.resolve(url: url) else {
-                return ParsedProductPage?.none
-            }
-            return parsedPage(from: suggestion)
-        } ?? nil
-    }
-
-    /// Maps the pipeline's answer onto the engine's value type, folding the
-    /// flattened brand into the keyed set so a name-tier match can still be
-    /// brand-qualified.
-    static func parsedPage(from suggestion: ProductPageSuggestion) -> ParsedProductPage? {
-        let metadata = suggestion.metadata
-        var identifiers = metadata.identifiers
-        if identifiers.brand == nil { identifiers.brand = metadata.brand }
-        return ParsedProductPage(
-            url: suggestion.url,
-            name: metadata.name,
-            price: metadata.price.amount,
-            currency: metadata.price.currency,
-            imageURL: metadata.imageURL,
-            identifiers: identifiers)
-    }
 
     /// Returns `operation`'s value, or nil at `seconds`. Never throws, because
     /// every caller treats "no comparison" and "a comparison that found nothing"

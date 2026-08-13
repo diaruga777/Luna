@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaMailAccount
+import LunaSend
 
 /// Builds the right `EmailTransport` for the connected account: the app-password
 /// IMAP/SMTP backend for Gmail/iCloud/Yahoo/custom, or the Graph backend for

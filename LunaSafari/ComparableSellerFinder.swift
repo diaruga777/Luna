@@ -170,9 +170,7 @@ enum ComparableSellerFinder {
         let outcome = await SellerFanOut(
             directory: directory,
             profile: profile,
-            fetch: makeFetch(timeout: profile.perFetchTimeout),
-            webSearch: nil,
-            richResolve: nil
+            networking: URLSessionSellerNetworking(timeout: profile.perFetchTimeout)
         ).run(SellerFanOutRequest(
             sourceURL: sourceURL, productName: page.name, identifiers: identifiers,
             // The market is the page's own: its currency picks the storefronts
@@ -196,35 +194,6 @@ enum ComparableSellerFinder {
             pagePrice: pagePrice, pageCurrency: page.currency,
             pageDomain: ProductIdentityMatching.registrableDomain(page.host), now: now)
             .map(answer(from:))
-    }
-
-    /// The injected fetcher: a plain ephemeral `URLSession` carrying the same
-    /// mobile-Safari User-Agent every other Luna fetch uses
-    /// (`WebFetchConstants`, which lives low enough for this target to link),
-    /// with the response capped at the same byte ceiling so a mis-served large
-    /// file cannot push a memory-limited appex into jetsam.
-    static func makeFetch(timeout: TimeInterval) -> SellerFanOut.Fetch {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = timeout
-        configuration.timeoutIntervalForResource = timeout
-        configuration.httpAdditionalHeaders = [
-            "User-Agent": WebFetchConstants.safariUserAgent,
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "en-US,en;q=0.9",
-        ]
-        let session = URLSession(configuration: configuration)
-        return { url in
-            guard let (data, response) = try? await session.data(from: url),
-                  let http = response as? HTTPURLResponse
-            else { return nil }
-            let capped = data.count > WebFetchConstants.maxBytes
-                ? data.prefix(WebFetchConstants.maxBytes)
-                : data[...]
-            return FetchedPage(
-                url: http.url ?? url,
-                html: String(decoding: capped, as: UTF8.self),
-                statusCode: http.statusCode)
-        }
     }
 
     // MARK: - Shared
@@ -268,5 +237,47 @@ enum ComparableSellerFinder {
 
     private static func instant(_ iso: String) -> Date? {
         ISO8601DateFormatter().date(from: iso)
+    }
+}
+
+/// The appex's whole networking answer: a plain ephemeral `URLSession` carrying
+/// the same mobile-Safari User-Agent every other Luna fetch uses
+/// (`WebFetchConstants`, which lives low enough for this target to link), with
+/// the response capped at the same byte ceiling so a mis-served large file
+/// cannot push a memory-limited appex into jetsam.
+///
+/// It declares NO optional layers: there is no web search, no ingest pipeline
+/// and no WebKit render tier in here, which is exactly the trade
+/// `PipelineSellerNetworking` sits at the other end of.
+struct URLSessionSellerNetworking: SellerFanOutNetworking {
+    let availableLayers: SellerFanOutLayers = []
+
+    private let session: URLSession
+
+    /// `timeout` is the profile's per-fetch allowance, honoured by the session
+    /// itself — the engine checks its own budget only between candidates.
+    init(timeout: TimeInterval) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
+        configuration.httpAdditionalHeaders = [
+            "User-Agent": WebFetchConstants.safariUserAgent,
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        ]
+        session = URLSession(configuration: configuration)
+    }
+
+    func fetch(_ url: URL) async -> FetchedPage? {
+        guard let (data, response) = try? await session.data(from: url),
+              let http = response as? HTTPURLResponse
+        else { return nil }
+        let capped = data.count > WebFetchConstants.maxBytes
+            ? data.prefix(WebFetchConstants.maxBytes)
+            : data[...]
+        return FetchedPage(
+            url: http.url ?? url,
+            html: String(decoding: capped, as: UTF8.self),
+            statusCode: http.statusCode)
     }
 }

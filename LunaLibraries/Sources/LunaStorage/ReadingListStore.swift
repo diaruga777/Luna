@@ -12,13 +12,21 @@ public extension Notification.Name {
     static let readingListChanged = Notification.Name("readingListChanged")
 }
 
-/// Persists the reading list as JSON in the shared App Group container so both
-/// the app and the SaveLink intent (which may run while the app is backgrounded)
-/// see the same data. `items()` serves a validated in-memory cache instead of
-/// decoding the file on every call (see `cachedItems`/`cacheToken` below); every
-/// mutation refreshes the cache from the array it just wrote (or read, if the
-/// write was skipped as a no-op), so this process never has to re-read its own
-/// writes.
+/// Persists the reading list in `saves.sqlite` in the shared App Group container
+/// so every Luna process — the four apps, their share/action/Safari extensions,
+/// the App Intents, the mail-fetch background task — sees the same data.
+///
+/// SQLite owns cross-process consistency: a mutation is one `BEGIN IMMEDIATE`
+/// transaction, so two processes that read-modify-write at the same moment take
+/// turns instead of losing one side's update, and a reader always sees a whole
+/// committed state. `items()` serves an in-memory list validated against `PRAGMA
+/// data_version` — which changes only when ANOTHER connection commits — so a
+/// repeated read costs one pragma, and a sibling process's write is picked up on
+/// the next call without waiting for a notification.
+///
+/// Payload FILES (parsed article JSON, web archives, imported documents,
+/// thumbnails, downloaded images) stay on disk beside the database, named from
+/// the save's id.
 public final class ReadingListStore {
     public static let shared = ReadingListStore()
 
@@ -27,21 +35,12 @@ public final class ReadingListStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
 
-    /// Serializes read-modify-write mutations WITHIN this process. Also guards
-    /// `cachedItems`/`cacheToken` — cache reads/writes never happen outside this lock.
-    private let mutationLock = NSLock()
     /// Off-main home for fire-and-forget position writes (`asyncUpdate` below) —
     /// a serial queue so those writes still apply in submission order relative to
-    /// each other. `mutationLock` still serializes the actual read-modify-write
-    /// against synchronous callers on other threads; this queue only decides
-    /// which thread performs it.
+    /// each other. The database's own serial queue still serializes the actual
+    /// read-modify-write against synchronous callers on other threads; this queue
+    /// only decides which thread performs it.
     private let asyncUpdateQueue = DispatchQueue(label: "com.hsanabria.luna.readingListStore.asyncUpdate")
-    /// Serializes read-modify-write mutations ACROSS processes (app, SaveLink
-    /// intent, share/action extensions all write `readingList.json`): without it,
-    /// two processes that load → modify → save concurrently silently lose one
-    /// side's update. Every mutation runs its read+modify+write inside one writing
-    /// coordination via `coordinatedMutate`/`coordinatedUpdate`.
-    private let fileCoordinator = NSFileCoordinator()
 
     /// Refcount for downloaded article images (shared `Articles/img-<hash>` files):
     /// a saved item owns the images its content references, so deleting the item frees
@@ -49,24 +48,17 @@ public final class ReadingListStore {
     private let imageReferences: ImageReferenceStore
     private let preloads: PreloadStore
 
-    /// In-memory cache of the decoded list, valid only while `cacheToken` matches the
-    /// file's current (modification date, size). Filled by `items()` on a cache miss
-    /// and refreshed by every mutation from the array it just confirmed on disk —
-    /// guarded entirely by `mutationLock`.
-    private var cachedItems: [ReadingListItem]?
-    private var cacheToken: FileStatToken?
+    /// Guards the lazy open of `openedDatabase` only. Everything the connection
+    /// itself touches — including `cachedItems` — is serialized by the database's
+    /// own queue.
+    private let openLock = NSLock()
+    private var openedDatabase: SavesDatabase?
+    private var loggedOpenFailure = false
 
-    /// A cheap proxy for "has the file changed since we last read it" — cross-process
-    /// writers (the app's other processes: SaveLink intent, share/action extensions)
-    /// don't share this in-process cache, so every `items()` call re-stats the file and
-    /// only trusts the cache when the stat still matches. A same-mtime, same-size write
-    /// from another process within the filesystem's timestamp granularity is the
-    /// accepted trade-off — rare, harmless, and covered by that write's own
-    /// `.readingListChanged` notification driving a reload through the normal path.
-    private struct FileStatToken: Equatable {
-        let modificationDate: Date
-        let size: Int
-    }
+    /// The whole list as last read, valid while `cachedDataVersion` still matches
+    /// the file's. Only ever read or written from inside a database transaction.
+    private var cachedItems: [ReadingListItem]?
+    private var cachedDataVersion: Int64?
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
@@ -83,10 +75,9 @@ public final class ReadingListStore {
         return AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory
     }
 
-    private var listFileURL: URL {
-        let url = containerURL.appendingPathComponent("readingList.json")
-        BackupPolicy.includeInBackups(url)
-        return url
+    /// The database file. Its `-wal`/`-shm` siblings sit beside it.
+    var databaseFileURL: URL {
+        containerURL.appendingPathComponent("saves.sqlite")
     }
 
     public var articlesDirectory: URL {
@@ -106,28 +97,57 @@ public final class ReadingListStore {
         return dir
     }
 
+    // MARK: - The connection
+
+    /// This process's connection, opened on first use. A failure to open leaves
+    /// every read empty and every mutation a no-op — the same floor an unreadable
+    /// file had — and is logged once.
+    private func database() -> SavesDatabase? {
+        openLock.lock()
+        defer { openLock.unlock() }
+        if let openedDatabase { return openedDatabase }
+        do {
+            let database = try SavesDatabase(fileURL: databaseFileURL)
+            BackupPolicy.includeInBackups(database.fileURL)
+            openedDatabase = database
+            return database
+        } catch {
+            if !loggedOpenFailure {
+                loggedOpenFailure = true
+                SharedDiagnosticLog.record(
+                    "saves database unavailable: \(error)", category: "store")
+            }
+            return nil
+        }
+    }
+
+    /// Logs an unexpected SQL failure. Every caller then behaves as if the
+    /// mutation had been a no-op, which is what a failed write is.
+    private func record(_ error: Error, _ operation: String) {
+        SharedDiagnosticLog.record("saves \(operation) failed: \(error)", category: "store")
+    }
+
     // MARK: - List operations
 
     /// All items in saved order — newest first (new items prepend), reorderable
     /// by the user.
     public func items() -> [ReadingListItem] {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
-        let token = currentFileStatToken()
-        if let cachedItems, token != nil, token == cacheToken {
-            return cachedItems
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                try db.readTransaction {
+                    let version = db.dataVersion
+                    if let cachedItems, version == cachedDataVersion { return cachedItems }
+                    let items = try SavesReader.allItems(in: db)
+                    cachedItems = items
+                    cachedDataVersion = version
+                    return items
+                }
+            }
+        } catch {
+            record(error, "read")
+            return []
         }
-        var result: [ReadingListItem] = []
-        var coordError: NSError?
-        var ran = false
-        fileCoordinator.coordinate(readingItemAt: listFileURL, options: [], error: &coordError) { url in
-            ran = true
-            result = Self.decodeItems(at: url)
-        }
-        if !ran { result = Self.decodeItems(at: listFileURL) }
-        cachedItems = result
-        cacheToken = token
-        return result
     }
 
     /// The existing item for a URL, if it's already in the list.
@@ -146,43 +166,49 @@ public final class ReadingListStore {
     /// removed (with its files) and nil is returned so the caller stops ingesting it.
     @discardableResult
     public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
-        // The duplicate's files are released after the list's coordination closes —
-        // `removeFiles` takes writing coordinations of its own (see `removeFiles`).
+        // The duplicate's row goes inside the transaction; its files are released
+        // after it commits, because `removeFiles` writes two other index files.
         var removedDuplicate: ReadingListItem?
-        let result: ReadingListItem? = coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
-            if all.contains(where: { $0.id != itemID && $0.urlString == urlString }) {
-                removedDuplicate = all.remove(at: index)
+        let result: ReadingListItem? = write { db -> ReadingListItem? in
+            guard var stored = try SavesReader.item(id: itemID, in: db) else { return nil }
+            if try SavesReader.urlIsTaken(urlString, excluding: itemID, in: db) {
+                removedDuplicate = stored.item
+                try self.deleteRow(itemID, in: db)
                 return nil
             }
-            all[index].urlString = urlString
-            return all[index]
-        }
+            let previous = stored.item
+            stored.item.urlString = urlString
+            try self.writeSave(stored, previous: previous, in: db)
+            return stored.item
+        } ?? nil
         if let removedDuplicate { removeFiles(for: removedDuplicate) }
         return result
     }
 
     @discardableResult
     public func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
-        coordinatedMutate { all in
-            if let existing = all.first(where: { $0.urlString == urlString }) {
-                return existing
+        var item = ReadingListItem(urlString: urlString)
+        item.captureSource = source
+        let inserted: ReadingListItem? = write { db in
+            if let existing = try SavesReader.item(forURLString: urlString, in: db) {
+                return existing.item
             }
-            var item = ReadingListItem(urlString: urlString)
-            item.captureSource = source
-            all.insert(item, at: 0) // newest first
+            try self.insertAtFront([item], in: db)
             return item
         }
+        // A database that cannot be opened returns the unsaved item, which is what
+        // a failed write always did.
+        return inserted ?? item
     }
 
     /// The atomic first step of a save-button run. It either reserves a new URL
     /// in the list or records the press time on the existing item, returning the
     /// prior press time used by `SavePressPolicy`.
     ///
-    /// Keeping lookup, insertion, and timestamp mutation inside ONE coordinated
-    /// read-modify-write closes the overlapping-App-Intent race where two runs
-    /// could both observe "not saved" before either inserted the item. `at` is
-    /// captured when the intent starts, not after extraction/ingest finishes.
+    /// Keeping lookup, insertion, and timestamp mutation inside ONE transaction
+    /// closes the overlapping-App-Intent race where two runs could both observe
+    /// "not saved" before either inserted the item. `at` is captured when the
+    /// intent starts, not after extraction/ingest finishes.
     public struct SaveAttemptReservation {
         public let item: ReadingListItem
         public let wasAdded: Bool
@@ -198,26 +224,29 @@ public final class ReadingListStore {
     public func reserveSaveAttempt(
         urlString: String, source: CaptureSource = .manual, at date: Date
     ) -> SaveAttemptReservation {
-        coordinatedMutate { all in
-            if let index = all.firstIndex(where: { $0.urlString == urlString }) {
-                let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+        var fresh = ReadingListItem(urlString: urlString)
+        fresh.dateAdded = date
+        // Persist the exact policy timestamp too; dateAdded remains a fallback,
+        // not the only durable record for a first save attempt.
+        fresh.lastSaveAttemptDate = date
+        fresh.captureSource = source
+
+        let reservation: SaveAttemptReservation? = write { db in
+            if var stored = try SavesReader.item(forURLString: urlString, in: db) {
+                let previousItem = stored.item
+                let previous = stored.item.lastSaveAttemptDate ?? stored.item.dateAdded
                 // Overlapping intents can reach this store in the opposite order
                 // from when they started. Never move the durable marker backward.
-                all[index].lastSaveAttemptDate = max(previous, date)
+                stored.item.lastSaveAttemptDate = max(previous, date)
+                try self.writeSave(stored, previous: previousItem, in: db)
                 return SaveAttemptReservation(
-                    item: all[index], wasAdded: false, previousPressDate: previous)
+                    item: stored.item, wasAdded: false, previousPressDate: previous)
             }
-
-            var item = ReadingListItem(urlString: urlString)
-            item.dateAdded = date
-            // Persist the exact policy timestamp too; dateAdded remains a legacy
-            // fallback, not the only durable record for a first save attempt.
-            item.lastSaveAttemptDate = date
-            item.captureSource = source
-            all.insert(item, at: 0)
-            return SaveAttemptReservation(
-                item: item, wasAdded: true, previousPressDate: nil)
+            try self.insertAtFront([fresh], in: db)
+            return SaveAttemptReservation(item: fresh, wasAdded: true, previousPressDate: nil)
         }
+        return reservation
+            ?? SaveAttemptReservation(item: fresh, wasAdded: true, previousPressDate: nil)
     }
 
     /// Extends an attempt's seven-second marker to its actual completion time.
@@ -225,11 +254,10 @@ public final class ReadingListStore {
     /// second commit makes the window effectively run from start while work is
     /// active, then from completion once it finishes.
     public func finishSaveAttempt(for itemID: UUID, at date: Date = Date()) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+        updateItem(itemID) { item in
+            let previous = item.lastSaveAttemptDate ?? item.dateAdded
             guard date > previous else { return false }
-            all[index].lastSaveAttemptDate = date
+            item.lastSaveAttemptDate = date
             return true
         }
     }
@@ -237,16 +265,57 @@ public final class ReadingListStore {
     /// Adds a URL only when it isn't already saved, returning the new item, or nil
     /// when an item with that exact URL already exists. THE single URL-existence
     /// dedup authority for "drop a duplicate incoming item" (the recipient-side
-    /// friend-share guard): callers that must NOT re-attribute / re-notify a
-    /// duplicate route through here rather than pre-checking `item(forURLString:)`
-    /// then calling `add`. (The ingestor's separate tracker-merge guard is an
-    /// orthogonal condition — same URL inside a different item's price tracker.)
+    /// friend-share guard, and the share/action extensions' own save): callers
+    /// that must NOT re-attribute / re-notify a duplicate route through here
+    /// rather than pre-checking `item(forURLString:)` then calling `add`. (The
+    /// ingestor's separate tracker-merge guard is an orthogonal condition — same
+    /// URL inside a different item's price tracker.)
+    @discardableResult
     public func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
-        coordinatedMutate { all in
-            guard !all.contains(where: { $0.urlString == urlString }) else { return nil }
-            var item = ReadingListItem(urlString: urlString)
-            item.captureSource = source
-            all.insert(item, at: 0) // newest first
+        var item = ReadingListItem(urlString: urlString)
+        item.captureSource = source
+        return write { db -> ReadingListItem? in
+            guard try SavesReader.item(forURLString: urlString, in: db) == nil else { return nil }
+            try self.insertAtFront([item], in: db)
+            return item
+        } ?? nil
+    }
+
+    /// Copies an imported document into the Articles directory and saves a pending
+    /// item pointing at it (`Articles/<id>-source.<ext>`, the layout
+    /// `originalDocumentURL(for:)` reads). Returns nil when the copy fails —
+    /// nothing is saved in that case, so there is no item promising a file that
+    /// isn't there.
+    ///
+    /// The copy is SYNCHRONOUS on purpose: the share extension's provider deletes
+    /// `sourceURL` the moment its callback returns.
+    @discardableResult
+    public func addImportedDocument(
+        sourceURL: URL, source: CaptureSource = .shareSheet
+    ) -> ReadingListItem? {
+        let id = UUID()
+        // Restrict the extension to alphanumerics so it can't smuggle path
+        // separators into the `<id>-source.<ext>` filename.
+        let rawExtension = sourceURL.pathExtension.lowercased().filter { $0.isLetter || $0.isNumber }
+        let fileExtension = rawExtension.isEmpty ? "txt" : String(rawExtension.prefix(8))
+        let name = sourceURL.deletingPathExtension().lastPathComponent
+        let destination = articlesDirectory
+            .appendingPathComponent("\(id.uuidString)-source.\(fileExtension)")
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destination)
+        } catch {
+            SharedDiagnosticLog.record(
+                "failed to copy imported document: \(error.localizedDescription)", category: "store")
+            return nil
+        }
+        BackupPolicy.includeInBackups(destination)
+
+        var item = ReadingListItem(urlString: "lunadoc://\(id.uuidString)", id: id)
+        item.title = name.isEmpty ? L10n.string("Common_document") : name
+        item.documentType = fileExtension
+        item.captureSource = source
+        return write { db -> ReadingListItem in
+            try self.insertAtFront([item], in: db)
             return item
         }
     }
@@ -278,21 +347,21 @@ public final class ReadingListStore {
         }
     }
 
-    /// Places a whole imported batch in ONE coordinated write, preserving the
-    /// caller's order (see `claudedocs/import-export.md`).
+    /// Places a whole imported batch in ONE transaction, preserving the caller's
+    /// order (see `claudedocs/import-export.md`).
     ///
     /// Three things this does that a loop over `addIfAbsent` cannot:
     ///
     /// - **Order survives.** Every deck sorts by `bumpDate ?? dateAdded`
-    ///   descending, not by array position, so N items stamped with the same
+    ///   descending, not by list position, so N items stamped with the same
     ///   `Date()` come out ordered by UUID — i.e. shuffled. Each item's
     ///   `dateAdded` is therefore stepped `spacing` further back than the one
     ///   before it, which reproduces the file's order exactly. `spacing` is
     ///   deliberately small: the whole batch should still read as "just now".
-    /// - **One file coordination** instead of N read-modify-write cycles over the
-    ///   entire list, which for a few hundred links is the difference between a
+    /// - **One transaction** instead of N read-modify-write cycles over the
+    ///   whole list, which for a few hundred links is the difference between a
     ///   blink and a visible stall.
-    /// - **The archive arrives archived**, in the same write, so a batch
+    /// - **The archive arrives archived**, in the same commit, so a batch
     ///   interrupted by a crash or a background can't leave archived saves
     ///   sitting in the deck.
     ///
@@ -311,9 +380,10 @@ public final class ReadingListStore {
         startingAt date: Date = Date(), spacing: TimeInterval = 0.01
     ) -> [ImportedLinkPlacement] {
         guard !links.isEmpty else { return [] }
-        return coordinatedMutate { all in
+        let placements: [ImportedLinkPlacement]? = write { db in
             var existingByURL = Dictionary(
-                all.map { ($0.urlString, $0) }, uniquingKeysWith: { first, _ in first })
+                try SavesReader.allItems(in: db).map { ($0.urlString, $0) },
+                uniquingKeysWith: { first, _ in first })
             var placements: [ImportedLinkPlacement] = []
             var inserted: [ReadingListItem] = []
             placements.reserveCapacity(links.count)
@@ -334,10 +404,11 @@ public final class ReadingListStore {
                 placements.append(ImportedLinkPlacement(item: item, wasInserted: true))
             }
             // `inserted` is already newest-first (index 0 carries the latest
-            // `dateAdded`), which is the array's own convention.
-            all.insert(contentsOf: inserted, at: 0)
+            // `dateAdded`), which is the list's own convention.
+            try self.insertAtFront(inserted, in: db)
             return placements
         }
+        return placements ?? []
     }
 
     // Mutations are targeted (fetch-fresh, set one field, save) rather than
@@ -346,9 +417,8 @@ public final class ReadingListStore {
 
     /// Marks a download/extraction failure.
     public func markFailed(_ itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            all[index].state = .failed
+        updateItem(itemID) { item in
+            item.state = .failed
             return true
         }
     }
@@ -364,10 +434,10 @@ public final class ReadingListStore {
     }
 
     /// Persists a reader's resume position on exit.
-    /// One coordinated write for everything a reader persists on close — scroll
+    /// One transaction for everything a reader persists on close — scroll
     /// offset, reading progress (monotonic), spoken word, RSVP word index —
-    /// instead of several back-to-back whole-list read-modify-write cycles on the
-    /// main thread. nil parameters leave their field untouched; `lastWordIndex`
+    /// instead of several back-to-back read-modify-write cycles on the main
+    /// thread. nil parameters leave their field untouched; `lastWordIndex`
     /// lets the RSVP reader batch its exit save the same way the scroll reader does.
     /// - Parameter scrollOffset: what to do with `lastScrollOffset` — leave it
     ///   alone, clear it (the RSVP reader moves the shared position in word space
@@ -385,40 +455,39 @@ public final class ReadingListStore {
         lastOriginalScrollOffset: Double? = nil,
         for itemID: UUID
     ) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        asyncUpdate(itemID) { item in
             var changed = false
             switch scrollOffset {
             case .unchanged:
                 break
             case .clear:
-                if all[index].lastScrollOffset != nil {
-                    all[index].lastScrollOffset = nil
+                if item.lastScrollOffset != nil {
+                    item.lastScrollOffset = nil
                     changed = true
                 }
             case .set(let value):
-                if all[index].lastScrollOffset != value {
-                    all[index].lastScrollOffset = value
+                if item.lastScrollOffset != value {
+                    item.lastScrollOffset = value
                     changed = true
                 }
             }
-            if let lastOriginalScrollOffset, all[index].lastOriginalScrollOffset != lastOriginalScrollOffset {
-                all[index].lastOriginalScrollOffset = lastOriginalScrollOffset
+            if let lastOriginalScrollOffset, item.lastOriginalScrollOffset != lastOriginalScrollOffset {
+                item.lastOriginalScrollOffset = lastOriginalScrollOffset
                 changed = true
             }
             if let readingProgress {
                 let clamped = min(max(readingProgress, 0), 1)
-                if clamped > (all[index].readingProgress ?? 0) {
-                    all[index].readingProgress = clamped
+                if clamped > (item.readingProgress ?? 0) {
+                    item.readingProgress = clamped
                     changed = true
                 }
             }
-            if let lastSpokenWordIndex, all[index].lastSpokenWordIndex != lastSpokenWordIndex {
-                all[index].lastSpokenWordIndex = lastSpokenWordIndex
+            if let lastSpokenWordIndex, item.lastSpokenWordIndex != lastSpokenWordIndex {
+                item.lastSpokenWordIndex = lastSpokenWordIndex
                 changed = true
             }
-            if let lastWordIndex, all[index].lastWordIndex != lastWordIndex {
-                all[index].lastWordIndex = lastWordIndex
+            if let lastWordIndex, item.lastWordIndex != lastWordIndex {
+                item.lastWordIndex = lastWordIndex
                 changed = true
             }
             return changed
@@ -429,22 +498,22 @@ public final class ReadingListStore {
     /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
     /// NEXT open, not read back immediately after being set.
     public func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].lastSpokenWordIndex != wordIndex else { return false }
-            all[index].lastSpokenWordIndex = wordIndex
+        asyncUpdate(itemID) { item in
+            guard item.lastSpokenWordIndex != wordIndex else { return false }
+            item.lastSpokenWordIndex = wordIndex
             return true
         }
     }
 
     public func delete(_ item: ReadingListItem) {
-        // The row goes inside the list's coordination; its files go after it, because
+        // The row goes inside the transaction; its files go after it, because
         // `removeFiles` releases two refcount indexes that each take a writing
-        // coordination of their own (see `removeFiles`).
+        // file coordination of their own (see `removeFiles`).
         var removed: ReadingListItem?
-        coordinatedMutate { all in
-            removed = all.first { $0.id == item.id }
-            all.removeAll { $0.id == item.id }
+        write { db in
+            guard let stored = try SavesReader.item(id: item.id, in: db) else { return }
+            removed = stored.item
+            try self.deleteRow(item.id, in: db)
         }
         if let removed { removeFiles(for: removed) }
         SaveDiagnosticsStore.shared.delete(for: item.id)
@@ -454,20 +523,15 @@ public final class ReadingListStore {
     /// the saved article/document bytes intact, but releases this root's entire
     /// recursive preload tree so it owns no speculative descendants (depth 0).
     public func setArchived(_ archived: Bool, for itemID: UUID, at date: Date = Date()) {
-        let changed = coordinatedMutate { all -> Bool in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        let changed = updateItem(itemID) { item in
             if archived {
-                guard all[index].archivedAt == nil || all[index].pendingArchiveAt != nil else {
-                    return false
-                }
-                if all[index].archivedAt == nil { all[index].archivedAt = date }
+                guard item.archivedAt == nil || item.pendingArchiveAt != nil else { return false }
+                if item.archivedAt == nil { item.archivedAt = date }
             } else {
-                guard all[index].archivedAt != nil || all[index].pendingArchiveAt != nil else {
-                    return false
-                }
-                all[index].archivedAt = nil
+                guard item.archivedAt != nil || item.pendingArchiveAt != nil else { return false }
+                item.archivedAt = nil
             }
-            all[index].pendingArchiveAt = nil
+            item.pendingArchiveAt = nil
             return true
         }
         if changed, archived {
@@ -477,10 +541,9 @@ public final class ReadingListStore {
 
     /// Remembers which reader the user last used for an article.
     public func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].lastReaderMode != mode else { return false }
-            all[index].lastReaderMode = mode
+        updateItem(itemID) { item in
+            guard item.lastReaderMode != mode else { return false }
+            item.lastReaderMode = mode
             return true
         }
     }
@@ -490,14 +553,13 @@ public final class ReadingListStore {
     public func setSendState(
         _ sendState: ReadingListItem.SendState, for itemID: UUID, destination: String
     ) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            all[index].sendStates[destination] = sendState
+        updateItem(itemID) { item in
+            item.sendStates[destination] = sendState
             if sendState == .sent {
-                all[index].datesSent[destination] = Date()
-                all[index].sendFailureCounts[destination] = nil
-                all[index].sendNextAttemptDates[destination] = nil
-                all[index].sendLastErrors[destination] = nil
+                item.datesSent[destination] = Date()
+                item.sendFailureCounts[destination] = nil
+                item.sendNextAttemptDates[destination] = nil
+                item.sendLastErrors[destination] = nil
             }
             return true
         }
@@ -507,9 +569,8 @@ public final class ReadingListStore {
     /// retry metadata. If the app is killed mid-send, the queued state is retried
     /// on a later sweep.
     public func markSendAttemptStarted(for itemID: UUID, destination: String) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            all[index].sendStates[destination] = .queued
+        updateItem(itemID) { item in
+            item.sendStates[destination] = .queued
             return true
         }
     }
@@ -519,12 +580,11 @@ public final class ReadingListStore {
         for itemID: UUID, destination: String, failureCount: Int,
         nextAttemptDate: Date, errorMessage: String
     ) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            all[index].sendStates[destination] = .queued
-            all[index].sendFailureCounts[destination] = failureCount
-            all[index].sendNextAttemptDates[destination] = nextAttemptDate
-            all[index].sendLastErrors[destination] = errorMessage
+        updateItem(itemID) { item in
+            item.sendStates[destination] = .queued
+            item.sendFailureCounts[destination] = failureCount
+            item.sendNextAttemptDates[destination] = nextAttemptDate
+            item.sendLastErrors[destination] = errorMessage
             return true
         }
     }
@@ -535,14 +595,13 @@ public final class ReadingListStore {
         for itemID: UUID, destination: String, errorMessage: String,
         failureCount: Int? = nil
     ) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            all[index].sendStates[destination] = .failed
+        updateItem(itemID) { item in
+            item.sendStates[destination] = .failed
             if let failureCount {
-                all[index].sendFailureCounts[destination] = failureCount
+                item.sendFailureCounts[destination] = failureCount
             }
-            all[index].sendNextAttemptDates[destination] = nil
-            all[index].sendLastErrors[destination] = errorMessage
+            item.sendNextAttemptDates[destination] = nil
+            item.sendLastErrors[destination] = errorMessage
             return true
         }
     }
@@ -551,12 +610,10 @@ public final class ReadingListStore {
     /// retaining the parsed name as a fallback when no contact exists. The only
     /// writer of `senderName`.
     public func setIncomingSender(email: String, displayName: String, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            let changed = all[index].incomingSenderEmail != email
-                || all[index].senderName != displayName
-            all[index].incomingSenderEmail = email
-            all[index].senderName = displayName
+        updateItem(itemID) { item in
+            let changed = item.incomingSenderEmail != email || item.senderName != displayName
+            item.incomingSenderEmail = email
+            item.senderName = displayName
             return changed
         }
     }
@@ -564,8 +621,7 @@ public final class ReadingListStore {
     /// Writes downloaded art bytes to the Articles dir and points the item at it.
     public func setThumbnail(_ data: Data, for itemID: UUID) {
         let fileName = "\(itemID.uuidString)-thumb.jpg"
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        updateItem(itemID) { item in
             do {
                 let url = self.articlesDirectory.appendingPathComponent(fileName)
                 try data.write(to: url, options: .atomic)
@@ -575,7 +631,7 @@ public final class ReadingListStore {
                     "failed to write thumbnail: \(error.localizedDescription)", category: "store")
                 return false
             }
-            all[index].thumbnailFileName = fileName
+            item.thumbnailFileName = fileName
             return true
         }
     }
@@ -587,14 +643,13 @@ public final class ReadingListStore {
         platform: ContentPlatform, platformItemID: String?, title: String?,
         thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
-        let result: ReadingListItem? = coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
-            all[index].platform = platform
-            all[index].platformItemID = platformItemID
-            if let title, !title.isEmpty { all[index].title = title }
-            if let thumbnailFileName { all[index].thumbnailFileName = thumbnailFileName }
-            all[index].state = .ready
-            return all[index]
+        let result = mutateItem(itemID) { item -> ReadingListItem in
+            item.platform = platform
+            item.platformItemID = platformItemID
+            if let title, !title.isEmpty { item.title = title }
+            if let thumbnailFileName { item.thumbnailFileName = thumbnailFileName }
+            item.state = .ready
+            return item
         }
         // No longer failed: drop the sidecar's failure detail so a LATER failure
         // starts from a clean count and reason.
@@ -604,14 +659,13 @@ public final class ReadingListStore {
 
     /// Raises the item's read state; never downgrades (read stays read).
     public func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        updateItem(itemID) { item in
             let order: [ReadingListItem.ReadState] = [.unopened, .opened, .read]
-            guard let current = order.firstIndex(of: all[index].readState),
+            guard let current = order.firstIndex(of: item.readState),
                   let proposed = order.firstIndex(of: newState),
                   proposed > current
             else { return false }
-            all[index].readState = newState
+            item.readState = newState
             return true
         }
     }
@@ -627,39 +681,41 @@ public final class ReadingListStore {
     }
 
     public func markFinishedReading(_ itemID: UUID, at date: Date) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        updateItem(itemID) { item in
             var changed = false
-            if all[index].readState != .read {
-                all[index].readState = .read
+            if item.readState != .read {
+                item.readState = .read
                 changed = true
             }
-            if (all[index].readingProgress ?? 0) < 1 {
-                all[index].readingProgress = 1
+            if (item.readingProgress ?? 0) < 1 {
+                item.readingProgress = 1
                 changed = true
             }
-            if all[index].archivedAt == nil, all[index].pendingArchiveAt == nil {
-                all[index].pendingArchiveAt = date
+            if item.archivedAt == nil, item.pendingArchiveAt == nil {
+                item.pendingArchiveAt = date
                 changed = true
             }
             return changed
         }
     }
 
-    /// Moves every reader-completed item into Archive in one coordinated write.
+    /// Moves every reader-completed item into Archive in one transaction.
     /// Called by the Reader app on background and once during cold launch.
     public func archivePendingFinishedItems() {
-        let archivedIDs: [UUID] = coordinatedMutate { all in
-            var ids: [UUID] = []
-            for index in all.indices {
-                guard let pending = all[index].pendingArchiveAt else { continue }
-                if all[index].archivedAt == nil {
-                    all[index].archivedAt = pending
-                    ids.append(all[index].id)
+        var archivedIDs: [UUID] = []
+        write { db in
+            let pending = try SavesReader.itemsWithPendingArchive(in: db)
+            guard !pending.isEmpty else { return }
+            for var stored in pending {
+                let previous = stored.item
+                guard let pendingAt = stored.item.pendingArchiveAt else { continue }
+                if stored.item.archivedAt == nil {
+                    stored.item.archivedAt = pendingAt
+                    archivedIDs.append(stored.item.id)
                 }
-                all[index].pendingArchiveAt = nil
+                stored.item.pendingArchiveAt = nil
+                try self.writeSave(stored, previous: previous, in: db)
             }
-            return ids
         }
         for id in archivedIDs { preloads.releaseTree(rootID: id) }
     }
@@ -669,16 +725,15 @@ public final class ReadingListStore {
     /// action). This is a deliberate downgrade that `markReadState`'s
     /// forward-only guard disallows.
     public func markUnread(_ itemID: UUID, at date: Date = Date()) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].readState != .unopened
-                    || all[index].archivedAt != nil
-                    || all[index].pendingArchiveAt != nil
+        updateItem(itemID) { item in
+            guard item.readState != .unopened
+                    || item.archivedAt != nil
+                    || item.pendingArchiveAt != nil
             else { return false }
-            all[index].readState = .unopened
-            all[index].archivedAt = nil
-            all[index].pendingArchiveAt = nil
-            all[index].bumpDate = date
+            item.readState = .unopened
+            item.archivedAt = nil
+            item.pendingArchiveAt = nil
+            item.bumpDate = date
             return true
         }
     }
@@ -689,12 +744,11 @@ public final class ReadingListStore {
     /// has no article content to download). Returns the refreshed item.
     @discardableResult
     public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        let result: ReadingListItem? = coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
-            all[index].priceTracker = tracker
-            all[index].title = tracker.productName
-            all[index].state = .ready
-            return all[index]
+        let result = mutateItem(itemID) { item -> ReadingListItem in
+            item.priceTracker = tracker
+            item.title = tracker.productName
+            item.state = .ready
+            return item
         }
         if result != nil { Self.clearFailureRecords(itemID) }
         return result
@@ -717,29 +771,38 @@ public final class ReadingListStore {
     /// change threshold, archive). Returns the refreshed item.
     @discardableResult
     public func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
-        coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].priceTracker != nil else { return nil }
-            all[index].priceTracker = tracker
-            all[index].title = tracker.productName
-            return all[index]
-        }
+        mutateItem(itemID) { item -> ReadingListItem? in
+            guard item.priceTracker != nil else { return nil }
+            item.priceTracker = tracker
+            item.title = tracker.productName
+            return item
+        } ?? nil
     }
 
     /// The existing price tracker (and its item id) whose stores already include
     /// `urlString`, if any. Lets a re-save of an already-tracked URL short-circuit
     /// to the existing tracker instead of re-detecting (and re-merging into a
-    /// duplicate). Items are scanned in stable id order so the result is
+    /// duplicate). Candidates are scanned in stable id order so the result is
     /// deterministic when (defensively) more than one tracker holds the URL.
     public func priceTracker(containingStoreURL urlString: String) -> (itemID: UUID, tracker: PriceTracker)? {
-        let candidates = items()
-            .compactMap { item -> (itemID: UUID, tracker: PriceTracker)? in
-                guard let tracker = item.priceTracker,
-                      tracker.hasStore(urlString: urlString) else { return nil }
-                return (item.id, tracker)
+        guard let database = database() else { return nil }
+        do {
+            let candidates: [UUID] = try database.perform { db in
+                try db.readTransaction { try SavesReader.saveIDs(trackingStoreURL: urlString, in: db) }
             }
-            .sorted { $0.itemID.uuidString < $1.itemID.uuidString }
-        return candidates.first
+            let byID = Dictionary(items().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return candidates
+                .sorted { $0.uuidString < $1.uuidString }
+                .compactMap { id -> (itemID: UUID, tracker: PriceTracker)? in
+                    guard let tracker = byID[id]?.priceTracker,
+                          tracker.hasStore(urlString: urlString) else { return nil }
+                    return (id, tracker)
+                }
+                .first
+        } catch {
+            record(error, "tracker lookup")
+            return nil
+        }
     }
 
     /// All non-archived price trackers, ordered stalest-first (oldest minimum
@@ -765,12 +828,12 @@ public final class ReadingListStore {
     /// Stamps a new bump date on an item and moves it to the top of the list (the
     /// row's own "Bump to Top" action re-sorts it up in the reading list).
     public func bump(_ itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            var item = all.remove(at: index)
-            item.bumpDate = Date()
-            all.insert(item, at: 0)
-            return true
+        write { db in
+            guard var stored = try SavesReader.item(id: itemID, in: db) else { return }
+            let previous = stored.item
+            stored.item.bumpDate = Date()
+            stored.seq = try SavesReader.nextSeq(in: db)
+            try self.writeSave(stored, previous: previous, in: db)
         }
     }
 
@@ -778,35 +841,34 @@ public final class ReadingListStore {
 
     public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
-        // The images this save owns, applied to the refcount index after the list's
-        // own coordination closes. `ImageReferenceStore.mutate` takes a writing
-        // coordination of its own, on another file from another `NSFileCoordinator`,
-        // and nesting two coordinated writes risks a deadlock (see `removeFiles`).
+        // The images this save owns, applied to the refcount index after the
+        // transaction commits: `ImageReferenceStore.mutate` takes a writing file
+        // coordination of its own, and holding a database write open across it
+        // buys nothing (see `removeFiles`).
         var ownedImageFiles: [String]?
-        let saved: ReadingListItem = coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
+        let saved = mutateItem(item.id) { stored -> ReadingListItem in
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
             if let data = try? JSONEncoder().encode(content),
                (try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName),
                                 options: .atomic)) != nil {
                 BackupPolicy.includeInBackups(self.articlesDirectory.appendingPathComponent(fileName))
-                all[index].contentFileName = fileName
-                all[index].title = content.title
+                stored.contentFileName = fileName
+                stored.title = content.title
                 // This save now owns the images its content references (so they survive
                 // until the item is deleted, and aren't deleted while it still needs them).
                 ownedImageFiles = ImageReferenceStore.imageFiles(in: content)
                 // Real content now exists (possibly after the user solved an archive
                 // CAPTCHA), so this is the terminal ready state regardless of how it got here.
-                all[index].state = .ready
-                all[index].wordCount = content.blocks.reduce(0) {
+                stored.state = .ready
+                stored.wordCount = content.blocks.reduce(0) {
                     $0 + $1.text.split(whereSeparator: { $0.isWhitespace }).count
                 }
             } else {
-                all[index].state = .failed
+                stored.state = .failed
             }
-            return all[index]
-        }
+            return stored
+        } ?? item
         if let ownedImageFiles {
             imageReferences.setReferences(
                 contentKey: ImageReferenceStore.itemKey(item.id), files: ownedImageFiles)
@@ -826,20 +888,19 @@ public final class ReadingListStore {
     /// a web view; once the user solves the CAPTCHA the article is extracted and
     /// `saveContent` moves it to `.ready`.
     public func markNeedsCaptcha(_ itemID: UUID, title: String?) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+        updateItem(itemID) { item in
             // Never downgrade a readable item (a concurrent app/extension extract,
             // or a reused cf_clearance, may have already filled it in).
-            guard all[index].state != .ready else { return false }
-            all[index].state = .needsCaptcha
-            if let title, !title.isEmpty { all[index].title = title }
+            guard item.state != .ready else { return false }
+            item.state = .needsCaptcha
+            if let title, !title.isEmpty { item.title = title }
             return true
         }
         // A locked-but-titled item is not a failed save; it has its own UX.
         Self.clearFailureRecords(itemID)
     }
 
-    /// Everything a FAILED item accumulates outside `readingList.json`: the
+    /// Everything a FAILED item accumulates outside the saves database: the
     /// reason/count sidecar and the diagnostic trace. They are dropped together,
     /// because an item that is no longer failed carrying last week's trace is
     /// worse than carrying none — the failed card would offer to share a story
@@ -862,16 +923,14 @@ public final class ReadingListStore {
     public func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
-        coordinatedMutate { all in
+        write { db in
             // Remove every prior article content/source file so leftover state from
             // an earlier seed can't leak into this one.
-            if let existing = try? self.fileManager.contentsOfDirectory(
-                at: articlesDir, includingPropertiesForKeys: nil) {
-                for file in existing { try? self.fileManager.removeItem(at: file) }
-            }
-            if let existing = try? self.fileManager.contentsOfDirectory(
-                at: originalsDir, includingPropertiesForKeys: nil) {
-                for file in existing { try? self.fileManager.removeItem(at: file) }
+            for directory in [articlesDir, originalsDir] {
+                if let existing = try? self.fileManager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil) {
+                    for file in existing { try? self.fileManager.removeItem(at: file) }
+                }
             }
             var seeded = items
             for index in seeded.indices {
@@ -884,7 +943,7 @@ public final class ReadingListStore {
                     seeded[index].contentFileName = fileName
                 }
             }
-            all = seeded
+            try self.replaceAll(with: seeded, in: db)
         }
     }
 
@@ -892,17 +951,21 @@ public final class ReadingListStore {
     public func wipeForTesting() {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
-        coordinatedMutate { all in
-            if let existing = try? self.fileManager.contentsOfDirectory(
-                at: articlesDir, includingPropertiesForKeys: nil) {
-                for file in existing { try? self.fileManager.removeItem(at: file) }
+        write { db in
+            for directory in [articlesDir, originalsDir] {
+                if let existing = try? self.fileManager.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil) {
+                    for file in existing { try? self.fileManager.removeItem(at: file) }
+                }
             }
-            if let existing = try? self.fileManager.contentsOfDirectory(
-                at: originalsDir, includingPropertiesForKeys: nil) {
-                for file in existing { try? self.fileManager.removeItem(at: file) }
-            }
-            all = []
+            try self.replaceAll(with: [], in: db)
         }
+    }
+
+    /// Rows this connection has written since it opened. Lets a test prove a
+    /// no-op mutation wrote nothing at all rather than identical values.
+    public var writtenRowCountForTesting: Int {
+        database()?.totalChanges ?? 0
     }
     #endif
 
@@ -925,10 +988,9 @@ public final class ReadingListStore {
         } catch {
             return
         }
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == item.id }),
-                  all[index].originalArchiveFileName != fileName else { return false }
-            all[index].originalArchiveFileName = fileName
+        updateItem(item.id) { stored in
+            guard stored.originalArchiveFileName != fileName else { return false }
+            stored.originalArchiveFileName = fileName
             return true
         }
     }
@@ -1005,110 +1067,78 @@ public final class ReadingListStore {
         item.canHaveOriginalArchive
     }
 
-    // MARK: - Private
+    // MARK: - Mutation primitives
 
-    /// One row of the shared list file, decoded failably: a structurally corrupt
-    /// row becomes nil instead of failing the whole array (enum version skew is
-    /// already absorbed inside `ReadingListItem.init(from:)`).
-    private struct FailableItem: Decodable {
-        let item: ReadingListItem?
-        init(from decoder: Decoder) throws { self.item = try? ReadingListItem(from: decoder) }
-    }
-
-    private static func decodeItems(at url: URL) -> [ReadingListItem] {
-        decodeList(at: url).items
-    }
-
-    /// nil when the file doesn't exist (or its attributes can't be read) — such a
-    /// token never matches a previously cached one, so the next read decodes fresh.
-    private func currentFileStatToken() -> FileStatToken? {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: listFileURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date,
-              let size = attributes[.size] as? Int
-        else { return nil }
-        return FileStatToken(modificationDate: modificationDate, size: size)
-    }
-
-    /// Decodes the shared file. `safeToRewrite` is false only when a NON-EMPTY
-    /// file is entirely unreadable — a mutation must then refuse to write, because
-    /// re-encoding the fallback empty array would destroy every saved item.
-    private static func decodeList(at url: URL) -> (items: [ReadingListItem], safeToRewrite: Bool) {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return ([], true) }
-        guard let rows = try? JSONDecoder().decode([FailableItem].self, from: data) else {
-            SharedDiagnosticLog.record(
-                "readingList.json unreadable — refusing writes to avoid wiping the list",
-                category: "store")
-            return ([], false)
-        }
-        let items = rows.compactMap(\.item)
-        if items.count < rows.count {
-            SharedDiagnosticLog.record(
-                "skipped \(rows.count - items.count) undecodable reading-list row(s)",
-                category: "store")
-        }
-        return (items, true)
-    }
-
-    private static func encodeItems(_ items: [ReadingListItem], to url: URL) {
-        do {
-            let data = try JSONEncoder().encode(items)
-            try data.write(to: url, options: .atomic)
-            BackupPolicy.includeInBackups(url)
-        } catch {
-            SharedDiagnosticLog.record(
-                "failed to write readingList.json: \(error.localizedDescription)",
-                category: "store")
-        }
-    }
-
-    /// Coordinated read-modify-write of the whole list, returning `body`'s value.
-    /// Holds the in-process `mutationLock` AND an `NSFileCoordinator` writing
-    /// coordination across the entire read+modify+write so other processes can't
-    /// lose this update (or vice versa). Writes + posts `.readingListChanged` only
-    /// when `body` actually changed the array (e.g. `add` returning an existing
-    /// item, or `savePriceTracker` on a missing id are no-ops) — comparing against
-    /// `ReadingListItem: Equatable` — and never when the file is unreadable (see
-    /// `decodeList` — never wipe the list).
+    /// One write transaction. Returns nil when the database is unavailable or the
+    /// transaction failed — every caller then behaves as it did when a write
+    /// couldn't land. Posts `.readingListChanged` once, after the commit, if
+    /// anything was written.
     @discardableResult
-    private func coordinatedMutate<T>(_ body: (inout [ReadingListItem]) -> T) -> T {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+    private func write<T>(_ body: (SavesDatabase) throws -> T) -> T? {
+        guard let database = database() else { return nil }
         var wrote = false
-        func perform(_ url: URL) -> T {
-            let (decoded, safeToRewrite) = Self.decodeList(at: url)
-            var all = decoded
-            let result = body(&all)
-            guard safeToRewrite else { return result }
-            if all != decoded {
-                Self.encodeItems(all, to: url)
-                wrote = true
+        do {
+            let result = try database.transaction { db in
+                let changesBefore = db.totalChanges
+                let value = try body(db)
+                wrote = db.totalChanges != changesBefore
+                if wrote {
+                    // Another connection's commits are picked up by data_version;
+                    // our own are not, so drop the list and re-read it on the
+                    // next call.
+                    cachedItems = nil
+                    cachedDataVersion = nil
+                }
+                return value
             }
-            // Either way, disk truth is now known (the just-written `all`, or the
-            // unchanged `decoded` we just read) — refresh the cache from it.
-            cachedItems = all
-            cacheToken = currentFileStatToken()
+            if wrote { postChanged() }
             return result
+        } catch {
+            record(error, "write")
+            return nil
         }
-        var coordResult: T?
-        var coordError: NSError?
-        fileCoordinator.coordinate(writingItemAt: listFileURL, options: [], error: &coordError) { url in
-            coordResult = perform(url)
-        }
-        let result = coordResult ?? perform(listFileURL)
-        if wrote { postChanged() }
-        return result
     }
 
-    /// Runs `coordinatedUpdate` on `asyncUpdateQueue` instead of the caller's own
+    /// Reads the save `itemID` names, hands it to `body`, and writes it back only
+    /// when `body` says it changed something. A missing id is a no-op, which is
+    /// what every targeted setter wants.
+    @discardableResult
+    private func updateItem(_ itemID: UUID, _ body: (inout ReadingListItem) -> Bool) -> Bool {
+        write { db in
+            guard var stored = try SavesReader.item(id: itemID, in: db) else { return false }
+            let previous = stored.item
+            guard body(&stored.item) else { return false }
+            try self.writeSave(stored, previous: previous, in: db)
+            return true
+        } ?? false
+    }
+
+    /// Like `updateItem` but for the setters that return something: `body`'s
+    /// result is handed back, and the row is written when the item actually
+    /// changed by value (so a setter that lands on the values already stored
+    /// neither writes nor notifies).
+    private func mutateItem<T>(_ itemID: UUID, _ body: (inout ReadingListItem) -> T) -> T? {
+        write { db in
+            guard var stored = try SavesReader.item(id: itemID, in: db) else { return nil }
+            let previous = stored.item
+            let result = body(&stored.item)
+            if stored.item != previous {
+                try self.writeSave(stored, previous: previous, in: db)
+            }
+            return result
+        } ?? nil
+    }
+
+    /// Runs `updateItem` on `asyncUpdateQueue` instead of the caller's own
     /// thread. Reserved for setters whose callers don't need to observe the
     /// write's completion or read the field back immediately (resume positions,
     /// consumed on the NEXT open) — anything with a return value or a read-back
-    /// expectation must stay on synchronous `coordinatedUpdate`/`coordinatedMutate`.
+    /// expectation must stay on the synchronous primitives.
     /// A queued write targeting an item deleted before it runs is already a safe
-    /// no-op (`coordinatedUpdate`'s own `firstIndex` guard).
-    private func asyncUpdate(_ body: @escaping (inout [ReadingListItem]) -> Bool) {
+    /// no-op (`updateItem`'s own missing-row guard).
+    private func asyncUpdate(_ itemID: UUID, _ body: @escaping (inout ReadingListItem) -> Bool) {
         asyncUpdateQueue.async { [weak self] in
-            self?.coordinatedUpdate(body)
+            self?.updateItem(itemID, body)
         }
     }
 
@@ -1119,48 +1149,125 @@ public final class ReadingListStore {
         asyncUpdateQueue.sync {}
     }
 
-    /// Like `coordinatedMutate` but only writes + notifies when `body` reports a
-    /// change — preserves the "skip the write if nothing changed" behavior of the
-    /// targeted setters (no spurious reloads).
-    private func coordinatedUpdate(_ body: (inout [ReadingListItem]) -> Bool) {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
-        var changed = false
-        func perform(_ url: URL) {
-            let (decoded, safeToRewrite) = Self.decodeList(at: url)
-            var all = decoded
-            if body(&all), safeToRewrite {
-                Self.encodeItems(all, to: url)
-                BackupPolicy.includeInBackups(url)
-                changed = true
-                cachedItems = all
-                cacheToken = currentFileStatToken()
-            }
-        }
-        var coordError: NSError?
-        var ran = false
-        fileCoordinator.coordinate(writingItemAt: listFileURL, options: [], error: &coordError) { url in
-            ran = true
-            perform(url)
-        }
-        if !ran { perform(listFileURL) }
-        if changed { postChanged() }
-    }
-
     private func postChanged() {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .readingListChanged, object: nil)
         }
     }
 
+    // MARK: - Row writes
+
+    /// Writes one save's row, and its child rows when the part they hold changed.
+    ///
+    /// `previous` is the row as it was read (nil for an insert). The send
+    /// bookkeeping and the price tracker are each rewritten wholesale when they
+    /// differ, which is what keeps an ordinary field update — a resume position,
+    /// a read state — down to the one row it touches.
+    private func writeSave(
+        _ stored: StoredSave, previous: ReadingListItem?, in db: SavesDatabase
+    ) throws {
+        try db.run(SaveRow.upsertSQL) { try SaveRow.bind(stored.item, seq: stored.seq, to: $0) }
+        let sendStatesChanged = previous.map { Self.sendBookkeepingDiffers($0, stored.item) }
+            ?? !SaveRow.sendDestinations(of: stored.item).isEmpty
+        if sendStatesChanged {
+            try db.run("DELETE FROM send_states WHERE save_id = ?") {
+                try $0.bind(1, uuid: stored.item.id)
+            }
+            for destination in SaveRow.sendDestinations(of: stored.item) {
+                try db.run(SaveRow.insertSendStateSQL) {
+                    try SaveRow.bindSendState(stored.item, destination: destination, to: $0)
+                }
+            }
+        }
+        if previous?.priceTracker != stored.item.priceTracker {
+            try db.run("DELETE FROM price_trackers WHERE save_id = ?") {
+                try $0.bind(1, uuid: stored.item.id)
+            }
+            try db.run("DELETE FROM tracker_stores WHERE save_id = ?") {
+                try $0.bind(1, uuid: stored.item.id)
+            }
+            try db.run("DELETE FROM tracker_rejected_sellers WHERE save_id = ?") {
+                try $0.bind(1, uuid: stored.item.id)
+            }
+            if let tracker = stored.item.priceTracker {
+                try writeTracker(tracker, saveID: stored.item.id, in: db)
+            }
+        }
+    }
+
+    private static func sendBookkeepingDiffers(
+        _ lhs: ReadingListItem, _ rhs: ReadingListItem
+    ) -> Bool {
+        lhs.sendStates != rhs.sendStates
+            || lhs.datesSent != rhs.datesSent
+            || lhs.sendFailureCounts != rhs.sendFailureCounts
+            || lhs.sendNextAttemptDates != rhs.sendNextAttemptDates
+            || lhs.sendLastErrors != rhs.sendLastErrors
+    }
+
+    private func writeTracker(
+        _ tracker: PriceTracker, saveID: UUID, in db: SavesDatabase
+    ) throws {
+        try db.run(SaveRow.insertTrackerSQL) {
+            try SaveRow.bindTracker(tracker, saveID: saveID, to: $0)
+        }
+        for host in tracker.rejectedSellerHosts {
+            try db.run(
+                "INSERT OR IGNORE INTO tracker_rejected_sellers (save_id, host) VALUES (?, ?)"
+            ) {
+                try $0.bind(1, uuid: saveID)
+                try $0.bind(2, host)
+            }
+        }
+        for (position, store) in tracker.stores.enumerated() {
+            try db.run(SaveRow.insertStoreSQL) {
+                try SaveRow.bindStore(store, saveID: saveID, position: position, to: $0)
+            }
+            let storeID = try SavesReader.storeID(saveID: saveID, urlString: store.urlString, in: db)
+            guard let storeID else { continue }
+            for point in store.priceHistory {
+                try db.run(SaveRow.insertPricePointSQL) {
+                    try SaveRow.bindPricePoint(point, storeID: storeID, to: $0)
+                }
+            }
+        }
+    }
+
+    /// Inserts new saves at the FRONT of the list, keeping their own order
+    /// (`items[0]` ends up first). Nothing already stored is touched.
+    private func insertAtFront(_ items: [ReadingListItem], in db: SavesDatabase) throws {
+        guard !items.isEmpty else { return }
+        let base = try SavesReader.maxSeq(in: db)
+        for (offset, item) in items.enumerated() {
+            let seq = base + Int64(items.count - offset)
+            try writeSave(StoredSave(item: item, seq: seq), previous: nil, in: db)
+        }
+    }
+
+    /// Replaces the whole list with `items`, in the order given. The child rows
+    /// go with the saves through `ON DELETE CASCADE`.
+    private func replaceAll(with items: [ReadingListItem], in db: SavesDatabase) throws {
+        try db.execute("DELETE FROM saves")
+        for (offset, item) in items.enumerated() {
+            let seq = Int64(items.count - offset)
+            try writeSave(StoredSave(item: item, seq: seq), previous: nil, in: db)
+        }
+    }
+
+    private func deleteRow(_ itemID: UUID, in db: SavesDatabase) throws {
+        try db.run("DELETE FROM saves WHERE id = ?") { try $0.bind(1, uuid: itemID) }
+    }
+
+    // MARK: - Private
+
     /// Removes an item's on-disk artifacts (content JSON, imported source file,
     /// thumbnail). The source extension is the SANITIZED document type so a crafted
     /// `documentType` can't point the delete outside the Articles directory.
     ///
-    /// Call this OUTSIDE `coordinatedMutate`/`coordinatedUpdate`: the two refcount
-    /// releases at the end each take an `NSFileCoordinator` writing coordination of
-    /// their own, on their own index file, and nesting one coordinated write inside
-    /// another is a deadlock risk.
+    /// Call this OUTSIDE a database transaction: the two refcount releases at the
+    /// end each take an `NSFileCoordinator` writing coordination of their own, on
+    /// their own index file, and holding the database's write lock across that
+    /// buys nothing.
     private func removeFiles(for item: ReadingListItem) {
         if let fileName = item.contentFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
@@ -1186,4 +1293,11 @@ public final class ReadingListStore {
         // files under Preloads/, never a user save).
         preloads.releaseTree(rootID: item.id)
     }
+}
+
+/// A save as stored: the item plus the list-position column, which is the list's
+/// own order rather than anything the model carries.
+struct StoredSave {
+    var item: ReadingListItem
+    var seq: Int64
 }

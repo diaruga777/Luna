@@ -9,9 +9,9 @@ import Foundation
 ///
 /// `Equatable` (synthesized — every stored field is a value type, and the enum
 /// fields below get automatic Equatable as enums with no associated values) lets
-/// `ReadingListStore` detect a mutation that changed nothing and skip the
-/// re-encode + `.readingListChanged` notification.
-public struct ReadingListItem: Codable, Identifiable, Equatable {
+/// `ReadingListStore` detect a mutation that changed nothing and skip both the
+/// row write and the `.readingListChanged` notification.
+public struct ReadingListItem: Identifiable, Equatable {
     /// Lifecycle of the item's downloaded content.
     public enum State: String, Codable {
         /// Saved but content not yet downloaded/extracted.
@@ -112,10 +112,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// and the reader card's sender label (`ArticleCardPresenter
     /// .resolvedSenderName`), both of which read it only when
     /// `effectiveCaptureSource == .email`. Nothing else writes it.
-    ///
-    /// It was once `channelName` and doubled as a media item's creator/channel;
-    /// that second meaning is gone (no surface displayed it), and the decoder
-    /// migrates the old key for email rows only — see `init(from:)`.
     public var senderName: String?
     /// Normalized sender address for an incoming-email save. The UI resolves
     /// this through the contact store so later renames appear immediately.
@@ -177,8 +173,8 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var isDocument: Bool { documentType != nil }
 
     /// `documentType` reduced to a safe file extension — lowercased alphanumerics,
-    /// capped — so a crafted value (the field is decoded from App-Group JSON any
-    /// process can write) can't smuggle path separators into a file path.
+    /// capped — so a crafted value (the field is read from the shared App-Group
+    /// database any process can write) can't smuggle path separators into a file path.
     public var sanitizedDocumentType: String? {
         guard let documentType else { return nil }
         let cleaned = documentType.lowercased().filter { $0.isLetter || $0.isNumber }
@@ -335,107 +331,4 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
             bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
-    /// Legacy single-destination send keys, read only to migrate old reading-list
-    /// JSON into the per-destination `sendStates`/`datesSent` (folded under the
-    /// "kindle" id, which is all that existed before).
-    private enum LegacyCodingKeys: String, CodingKey {
-        case sendState, dateSent, originalPageFileName
-        /// `senderName`'s former name, when it also held a media item's
-        /// creator/channel. Read for email rows only (see `init(from:)`).
-        case channelName
-    }
-
-    // Manual decoding so items saved before readState existed still decode.
-    //
-    // Enum-typed fields decode TOLERANTLY (unknown raw value → fallback, never
-    // throw): three separately-updated apps plus their extensions share one
-    // readingList.json, so a newer sibling writing a new enum case must not make
-    // this item — let alone the whole file — undecodable for the others.
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        urlString = try container.decode(String.self, forKey: .urlString)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        dateAdded = try container.decode(Date.self, forKey: .dateAdded)
-        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
-        pendingArchiveAt = try container.decodeIfPresent(Date.self, forKey: .pendingArchiveAt)
-        bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
-        // Unknown state → .pending: the safe floor (the item is re-ingested
-        // rather than dropped or mislabeled ready).
-        state = Self.tolerant(State.self, container, .state) ?? .pending
-        contentFileName = try container.decodeIfPresent(String.self, forKey: .contentFileName)
-        originalArchiveFileName = try container.decodeIfPresent(String.self, forKey: .originalArchiveFileName)
-        // Pre-webarchive builds stored a reconstructed HTML reader page under this
-        // key. Retain only the name long enough for delete cleanup; `.html` is never
-        // considered an original archive by `ReadingListStore`.
-        if originalArchiveFileName == nil {
-            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
-            originalArchiveFileName = try legacy.decodeIfPresent(String.self, forKey: .originalPageFileName)
-        }
-        lastWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastWordIndex)
-        readState = Self.tolerant(ReadState.self, container, .readState) ?? .unopened
-        lastReaderMode = Self.tolerant(ReaderMode.self, container, .lastReaderMode)
-        lastScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastScrollOffset)
-        lastOriginalScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastOriginalScrollOffset)
-        lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
-        wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
-        readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
-        incomingSenderEmail = try container.decodeIfPresent(String.self, forKey: .incomingSenderEmail)
-        thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
-        sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
-        documentType = try container.decodeIfPresent(String.self, forKey: .documentType)
-        if let states = try container.decodeIfPresent([String: String].self, forKey: .sendStates) {
-            sendStates = states.compactMapValues(SendState.init(rawValue:))
-        } else {
-            // Migrate the pre-multi-destination single `sendState` → "kindle".
-            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
-            if let old = try legacy.decodeIfPresent(SendState.self, forKey: .sendState) {
-                sendStates = ["kindle": old]
-            } else {
-                sendStates = [:]
-            }
-        }
-        if let dates = try container.decodeIfPresent([String: Date].self, forKey: .datesSent) {
-            datesSent = dates
-        } else {
-            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
-            if let old = try legacy.decodeIfPresent(Date.self, forKey: .dateSent) {
-                datesSent = ["kindle": old]
-            } else {
-                datesSent = [:]
-            }
-        }
-        sendFailureCounts = try container.decodeIfPresent([String: Int].self, forKey: .sendFailureCounts) ?? [:]
-        sendNextAttemptDates = try container.decodeIfPresent([String: Date].self, forKey: .sendNextAttemptDates) ?? [:]
-        sendLastErrors = try container.decodeIfPresent([String: String].self, forKey: .sendLastErrors) ?? [:]
-        lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
-        platform = Self.tolerant(ContentPlatform.self, container, .platform)
-        platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
-        captureSource = Self.tolerant(CaptureSource.self, container, .captureSource)
-        priceTracker = try container.decodeIfPresent(PriceTracker.self, forKey: .priceTracker)
-
-        // `senderName` was written as `channelName` until the media
-        // creator/channel concept was removed. That one key held two unrelated
-        // meanings — an email sender's display name AND a video's creator — so
-        // the old value is only carried over for rows that are actually email
-        // captures, which is exactly the set the sender badge reads. A media
-        // row's creator is dropped on the next write, deliberately.
-        if let senderName = try container.decodeIfPresent(String.self, forKey: .senderName) {
-            self.senderName = senderName
-        } else if captureSource == .email || URL(string: urlString)?.scheme == "lunamail" {
-            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
-            self.senderName = try legacy.decodeIfPresent(String.self, forKey: .channelName)
-        } else {
-            self.senderName = nil
-        }
-    }
-
-    /// Decodes a string-backed enum field, mapping an absent key OR an unknown
-    /// raw value (written by a newer sibling app) to nil instead of throwing.
-    private static func tolerant<E: RawRepresentable, Key: CodingKey>(
-        _ type: E.Type, _ container: KeyedDecodingContainer<Key>, _ key: Key
-    ) -> E? where E.RawValue == String {
-        guard let raw = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
-        return E(rawValue: raw)
-    }
 }

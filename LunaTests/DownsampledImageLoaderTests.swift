@@ -10,8 +10,8 @@ import XCTest
 /// Covers the shared thumbnail loader introduced for WS-B (Downloader grid cells,
 /// and available to any other on-disk-thumbnail consumer): downsampling to the
 /// requested size, caching the decoded bitmap, and dropping a delivery once the
-/// caller has marked itself stale (the same contract `ReadingListItemCell.loadToken`
-/// established, generalized so it doesn't have to be reinvented per call site).
+/// caller has marked itself stale — a staleness contract generalized so it
+/// doesn't have to be reinvented per call site.
 final class DownsampledImageLoaderTests: XCTestCase {
     private var scratch: URL!
 

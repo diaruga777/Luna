@@ -257,9 +257,7 @@ final class DiagnosticsViewController: UIViewController {
             presentAlert(title: L10n.string("Settings_diagnostics_exportFailedTitle"), message: L10n.string("Settings_diagnostics_exportFailedMessage"))
             return
         }
-        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = header
-        present(activity, animated: true)
+        LunaShareSheet.present(items: [url], from: self, anchor: .view(header))
     }
 
     @objc private func clear() {

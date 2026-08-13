@@ -127,28 +127,24 @@ final class ProductCardPresenter: CardKindPresenting {
                 title: L10n.string("Common_share"), image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self, weak host] _ in
                 guard let self, let host else { return }
-                self.share(
-                    item, host: host,
-                    sourceView: host.cardView(forItemID: item.id)
-                        ?? host.presentingController.view!)
+                self.share(item, host: host, sourceView: host.cardView(forItemID: item.id))
             },
         ]
     }
 
     /// What a product shares is the SELLER's page, not the reading-list row's
     /// URL — a tracker with several stores is one save over many pages, and the
-    /// first store is the one its card leads with.
+    /// first store is the one its card leads with. `sourceView` is nil when the
+    /// card isn't currently visible (e.g. a menu reached another way); the share
+    /// sheet then anchors to the deck itself.
     @discardableResult
-    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView) -> Bool {
+    func share(_ item: ReadingListItem, host: CardPresenterHost, sourceView: UIView?) -> Bool {
         guard let urlString = item.priceTracker?.stores.first?.urlString,
               let url = URL(string: urlString)
         else { return false }
-        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = sourceView
-            popover.sourceRect = sourceView.bounds
-        }
-        host.presentingController.present(sheet, animated: true)
+        LunaShareSheet.present(
+            items: [url], from: host.presentingController,
+            anchor: sourceView.map(LunaShareSheetAnchor.viewBounds))
         return true
     }
 

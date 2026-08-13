@@ -243,9 +243,7 @@ public final class RescueFailureViewController: UIViewController {
 
     private func shareTapped() {
         guard let url else { return }
-        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        sheet.popoverPresentationController?.sourceView = shareButton
-        present(sheet, animated: true)
+        LunaShareSheet.present(items: [url], from: self, anchor: .view(shareButton))
     }
 
     @objc private func finishTapped() {

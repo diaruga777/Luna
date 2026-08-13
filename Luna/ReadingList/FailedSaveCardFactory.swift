@@ -145,10 +145,8 @@ enum FailedSaveCardFactory {
                 for: item.id, header: header)
             DispatchQueue.main.async {
                 guard let host, let fileURL else { return }
-                let activity = UIActivityViewController(
-                    activityItems: [fileURL], applicationActivities: nil)
-                activity.popoverPresentationController?.sourceView = sourceView ?? host.view
-                host.present(activity, animated: true)
+                LunaShareSheet.present(
+                    items: [fileURL], from: host, anchor: .view(sourceView ?? host.view))
             }
         }
     }

@@ -5,11 +5,9 @@
 
 import UIKit
 
-/// A shared, cross-feature version of the decode-off-main + NSCache + staleness-token
-/// pattern `ReadingListItemCell` pioneered (see its `decodedCache`/`loadToken`). That
-/// cell's own implementation is left alone (its timing is snapshot-tested), but any
-/// OTHER on-disk-thumbnail consumer — grid cells, viewers, footers — can adopt this
-/// instead of writing the pattern a third time.
+/// A shared, cross-feature decode-off-main + NSCache + staleness-token loader:
+/// any on-disk-thumbnail consumer — grid cells, viewers, footers — can adopt
+/// this instead of writing the pattern from scratch.
 public enum DownsampledImageLoader {
     /// Decoded, downsampled bitmaps keyed by path + target pixel size, so the same
     /// file requested at two different sizes (e.g. a grid cell and a detail view)

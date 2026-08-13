@@ -104,10 +104,7 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
                 message: L10n.string("Settings_importExport_exportFailedMessage"))
             return
         }
-        let activity = UIActivityViewController(
-            activityItems: [fileURL], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView
-        present(activity, animated: true)
+        LunaShareSheet.present(items: [fileURL], from: self, anchor: .view(sourceView))
     }
 
     // MARK: - Import

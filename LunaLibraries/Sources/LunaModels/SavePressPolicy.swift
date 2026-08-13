@@ -55,10 +55,10 @@ public enum SavePressPolicy {
         case promptFriendSelector
     }
 
-    /// Which double-save regime a press is governed by — the two used to be
-    /// expressed as an `intentAction: IntentAction?` alongside a
-    /// `doubleSaveDestinationIDs: [String]` that the intent regime silently
-    /// ignored. They are mutually exclusive, so a caller now picks exactly one.
+    /// Which double-save regime a press is governed by. The two regimes are
+    /// mutually exclusive, so a caller picks exactly one — instead of setting
+    /// an `intentAction: IntentAction?` alongside a `doubleSaveDestinationIDs:
+    /// [String]` that the intent regime would silently ignore.
     public enum SavePressRegime: Equatable {
         /// Legacy in-app regime: a second press within `doublePressWindow`
         /// sends to every ereader destination in double-save mode.
@@ -149,9 +149,9 @@ public enum SavePressPolicy {
         }
     }
 
-    /// The three `.isEmpty → .ignore` guards this policy used to repeat inline
-    /// (Kindle's eligible set, the legacy eligible set, and the friend-emails
-    /// list) collapse to these two one-liners.
+    /// The shared `.isEmpty → .ignore` guard for all three destination lists —
+    /// Kindle's eligible set, the legacy eligible set, and the friend-emails
+    /// list — as two one-liners.
     private static func sendToEreadersOrIgnore(_ destinationIDs: [String]) -> Decision {
         destinationIDs.isEmpty ? .ignore : .sendToEreaders(destinationIDs: destinationIDs)
     }

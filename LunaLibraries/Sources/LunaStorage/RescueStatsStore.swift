@@ -9,11 +9,11 @@ import LunaAppConfig
 /// Aggregate rescue counters — how many attempts ran, how they ended, and which
 /// method recovered the ones that worked.
 ///
-/// The feature had NO measurement of any kind: the only durable record was the
-/// per-item ledger, pruned the moment an item disappeared, so "I've yet to see
-/// it accomplish anything" was neither confirmable nor refutable. These are
-/// counts, not events: nothing here identifies an item, a URL or a host, so the
-/// file survives item deletion and carries nothing worth protecting.
+/// `RescueLedgerStore`'s per-item ledger is pruned once an item disappears, so
+/// this file is the only durable, aggregate record of how rescue performs.
+/// These are counts, not events: nothing here identifies an item, a URL, or a
+/// host, so the file survives item deletion and carries nothing worth
+/// protecting.
 ///
 /// Sidecar, never a column on a save — same reasoning as `RescueLedgerStore`.
 public struct RescueStats: Codable, Equatable {

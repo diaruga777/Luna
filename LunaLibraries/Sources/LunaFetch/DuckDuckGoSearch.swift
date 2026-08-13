@@ -152,9 +152,7 @@ public enum DuckDuckGoSearch {
     /// Two shapes, because the site serves both depending on the request: the
     /// legacy redirect wrapper (`…/l/?uddg=<percent-encoded-url>`) and — what
     /// `html.duckduckgo.com` now actually serves — a DIRECT href on the
-    /// `result__a` anchor (`class="result__a" href="https://…"`). The old
-    /// parser only understood the first shape, so a 200 page full of real
-    /// results parsed to zero links and Layer 2 was silently dead.
+    /// `result__a` anchor (`class="result__a" href="https://…"`).
     public static func resultURLs(inHTML html: String) -> [URL] {
         var seen: Set<String> = []
         return resultAnchorHrefs(in: html).compactMap { href -> URL? in

@@ -1,15 +1,15 @@
 //
 //  ArticleExtraction.swift
-//  ReaderKit
+//  Luna
 //
 
 import LunaModels
 import Foundation
 
-/// Extracted content paired with the source HTML it came from — always present
-/// together (the project's "two optionals that travel as one" rule). Lets the
-/// readable predicate hang off the pair and gives the resolver a structural
-/// `Equatable` instead of a hand-written tuple comparison.
+/// Extracted content paired with the source HTML it came from. The two always
+/// travel together, so the readable predicate can hang off the pair and the
+/// resolver gets a structural `Equatable` instead of a hand-written tuple
+/// comparison.
 public struct ExtractedArticle: Equatable {
     public let content: ArticleContent
     public let sourceHTML: String
@@ -20,59 +20,62 @@ public struct ExtractedArticle: Equatable {
     }
 }
 
-/// Stage-2 processing component: the ONE place that turns markup into structured
-/// `ArticleContent` and judges whether that content is a readable article. Pure
-/// core (`extract` / `extractFromJSONLD` delegate to `ArticleExtractor`) plus a
-/// single bounded-I/O helper (`fetchAndExtract`) used by every fetch-then-extract
-/// call site, so every fetch-then-extract call site shares one implementation.
+/// Turns markup into structured `ArticleContent` and judges whether that
+/// content is a readable article. `extract`/`extractFromJSONLD` delegate to
+/// the pure `ArticleExtractor`; `fetchAndExtract` is the one bounded-I/O
+/// helper every fetch-then-extract call site shares.
 ///
-/// Extraction NEVER knows that bypass exists; bypass only supplies candidate HTML.
+/// Extraction never knows that bypass exists; bypass only supplies candidate
+/// HTML.
 public struct ArticleExtraction {
 
-    /// The pure HTML→blocks parser. Stateless, so a shared instance is fine.
+    /// The stateless HTML-to-blocks parser. A shared instance is safe.
     private let extractor: ArticleExtractor
 
     public init(extractor: ArticleExtractor = ArticleExtractor()) {
         self.extractor = extractor
     }
 
-    /// Parse `html` into structured content. Throws `ArticleExtractor.ExtractError`
-    /// only when the document holds no usable text at all. Pure (no network).
+    /// Parses `html` into structured content. Throws
+    /// `ArticleExtractor.ExtractError` only when the document holds no usable
+    /// text at all. Pure — no network access.
     public func extract(html: String, baseURL: URL) throws -> ArticleContent {
         try extractor.extract(html: html, baseURL: baseURL)
     }
 
-    /// JSON-LD `articleBody`-only extraction, for the `.jsonLDBody` bypass strategy.
-    /// Pure (parse only). Nil when the page carries no `articleBody`.
+    /// Extracts JSON-LD `articleBody` only, for the `.jsonLDBody` bypass
+    /// strategy. Pure. Returns nil when the page carries no `articleBody`.
     public func extractFromJSONLD(html: String, baseURL: URL) -> ArticleContent? {
         extractor.extractFromJSONLD(html: html, baseURL: baseURL)
     }
 
-    /// THE single readable-vs-paywall-stub predicate, shared by the resolver,
-    /// `ArticleContent.hasReadableBody`, and `BypassGate`: a body that clears the
-    /// length threshold AND doesn't read as a paywall (including the publisher-
-    /// declared schema.org lock the HTML carries). Pass `html` whenever the source
-    /// HTML is available so the lock signal can't be bypassed by reaching for a
-    /// text-only path. Pure.
+    /// The one readable-vs-paywall-stub predicate. The resolver,
+    /// `ArticleContent.hasReadableBody`, and `BypassGate` all share it. It
+    /// returns true when the body clears the length threshold and doesn't
+    /// read as a paywall, including the publisher-declared schema.org lock.
+    /// Pass `html` whenever the source HTML is available, so the lock signal
+    /// can't be bypassed by calling the text-only path instead. Pure.
     public static func isReadableArticle(_ content: ArticleContent, html: String?) -> Bool {
         content.bodyTextLength >= ArticleContent.readableBodyThreshold
             && !PaywallDetector.looksPaywalled(content: content, html: html)
     }
 
-    /// Whether a fetched+extracted pair is a readable article — the pair-shaped
-    /// overload of `isReadableArticle` (the source HTML is always known here).
+    /// The pair-shaped overload of `isReadableArticle`. The source HTML is
+    /// always known here, so it's passed through directly.
     public static func isReadableArticle(_ article: ExtractedArticle) -> Bool {
         isReadableArticle(article.content, html: article.sourceHTML)
     }
 
-    /// Runs an HTML fetch and extracts it, pairing the parsed content with its source
-    /// HTML. Returns nil if the fetch or parse fails (so a dead source falls through
-    /// gracefully). The ONE shared fetch-then-extract helper for the whole pipeline.
+    /// Fetches HTML and extracts it, pairing the parsed content with its
+    /// source HTML. Returns nil if the fetch or parse fails, so a dead source
+    /// falls through gracefully. The one shared fetch-then-extract helper for
+    /// the whole pipeline.
     ///
-    /// `onFetchError` observes the swallowed error WITHOUT changing the
-    /// fall-through contract: a failed save needs to explain WHY the page was
-    /// unreachable (403 vs offline vs timeout), and this is the only place that
-    /// error still exists. Defaulted, so every existing call site is unchanged.
+    /// `onFetchError` observes the swallowed error without changing the
+    /// fall-through contract. A failed save needs to explain why the page was
+    /// unreachable (403, offline, timeout), and this is the only place that
+    /// error still exists. It defaults to nil, so existing call sites are
+    /// unchanged.
     public func fetchAndExtract(
         baseURL: URL, fetch: () async throws -> String,
         onFetchError: ((Error) -> Void)? = nil

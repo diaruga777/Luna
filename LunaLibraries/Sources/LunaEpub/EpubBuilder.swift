@@ -27,10 +27,10 @@ public struct EpubBuilder {
     ]
 
     /// Anything else Luna may have stored (WebP, HEIC, AVIF, or the `img`
-    /// unknown-type fallback) is TRANSCODED to a core type rather than dropped.
-    /// WebP used to be embedded as-is and is not a core media type: Kindle's
-    /// converter and most reading systems reject it, so those images silently
-    /// vanished from the book.
+    /// unknown-type fallback) is transcoded to a core type rather than
+    /// dropped. WebP is not a core media type: Kindle's converter and most
+    /// reading systems reject it, so embedding it as-is would make those
+    /// images silently vanish from the book.
     private static func transcodedToCoreType(_ data: Data) -> (data: Data, ext: String, mediaType: String)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
@@ -102,9 +102,9 @@ public struct EpubBuilder {
     /// because the file is resolved by URL hash and because a non-core format is
     /// transcoded).
     ///
-    /// Deduped: an image reused across blocks (a repeated logo) must produce ONE
-    /// zip entry and ONE manifest item — duplicates make the EPUB invalid and
-    /// Kindle conversion can reject it.
+    /// Deduped: an image reused across blocks (a repeated logo) must produce
+    /// one zip entry and one manifest item — duplicates make the EPUB
+    /// invalid and Kindle conversion can reject it.
     private func embeddableImages(
         in content: ArticleContent, imagesDirectory: URL
     ) -> (images: [EmbeddedImage], entryNames: [String: String]) {

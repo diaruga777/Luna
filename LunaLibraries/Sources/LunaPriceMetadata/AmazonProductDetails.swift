@@ -8,16 +8,17 @@ import Foundation
 /// Reads the identifiers and the buy-box price out of an Amazon product page.
 ///
 /// **Why this exists at all.** Amazon publishes no JSON-LD `Product`, no
-/// `product:price:amount` meta tag, and no microdata. Everything a cross-retailer
-/// comparison needs — the ISBN, the UPC/EAN, the "Item model number", the brand —
-/// is plain text inside the product-details table, and the price is plain text
-/// inside the buy box. So a page that any structured-data reader calls empty is
-/// in fact the most completely identified page on the web, and Luna was walking
-/// past it: an Amazon SOURCE save produced no keyed identifiers at all (so the
-/// fan-out had nothing to verify anyone AGAINST), and an Amazon CANDIDATE parsed
-/// with `price == nil` (so the lean profile could never price it). Amazon is the
-/// single most important retailer in the feature and it was the one retailer that
-/// could not participate in either direction.
+/// `product:price:amount` meta tag, and no microdata. Everything a
+/// cross-retailer comparison needs — the ISBN, the UPC/EAN, the "Item model
+/// number", the brand — is plain text inside the product-details table, and
+/// the price is plain text inside the buy box. So a page that any
+/// structured-data reader calls empty is in fact the most completely
+/// identified page on the web. Without this reader, an Amazon source save
+/// would carry no keyed identifiers, leaving the fan-out nothing to verify
+/// candidates against, and an Amazon candidate would parse with `price ==
+/// nil`, so the lean profile could never price it. Amazon is the single most
+/// important retailer in the feature, and it is the one retailer that could
+/// not otherwise participate in either direction.
 ///
 /// **Why regex and not a DOM.** This module is Foundation-only by design: it is
 /// the shared floor under both the SwiftSoup-backed ingest path and the lean
@@ -27,11 +28,11 @@ import Foundation
 /// **Why label windows and not selectors.** Amazon ships at least four detail
 /// layouts concurrently (the `prodDetTable` key/value table, the
 /// `detailBullets` list, the newer "rich product information" cards, and the
-/// product-overview grid), and which one a request gets depends on the device,
-/// the category and the experiment bucket. Every one of them puts the label
-/// immediately before the value, so this finds the LABEL and then reads the
-/// first value-SHAPED run of text after it. Shape is what makes that safe: an
-/// ISBN-13 window only ever yields thirteen digits.
+/// product-overview grid), and which one a request gets depends on the
+/// device, the category, and the experiment bucket. Every one of them puts
+/// the label immediately before the value, so this finds the label and then
+/// reads the first value-shaped run of text after it. Shape is what makes
+/// that safe: an ISBN-13 window only ever yields thirteen digits.
 public enum AmazonProductDetails {
 
     /// What an Amazon page turned out to state about the product's identity.
@@ -55,10 +56,10 @@ public enum AmazonProductDetails {
         public var isEmpty: Bool { gtin == nil && mpn == nil && sku == nil && brand == nil }
     }
 
-    /// Whether `host` is an Amazon storefront by SHAPE. The authoritative list
-    /// is `AmazonStorefronts` (LunaURLClassification), which this module may not
-    /// import; every caller that has the list should prefer it, and this is the
-    /// fallback for the ones that do not.
+    /// Whether `host` is an Amazon storefront by shape. The authoritative
+    /// list is `AmazonStorefronts` (LunaURLClassification), which this
+    /// module may not import; every caller that has the list should prefer
+    /// it, and this is the fallback for the ones that do not.
     public static func isAmazonHost(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
         return host == "amazon.com" || host.hasSuffix(".amazon.com")
@@ -69,10 +70,10 @@ public enum AmazonProductDetails {
 
     /// The identifiers stated in `html`, plus anything derivable from `url`.
     ///
-    /// The URL leg is not a nicety: for books, Amazon's ASIN IS the ISBN-10, so
-    /// `/dp/0735211299` states the product's global identifier even on a page
-    /// whose details table did not load. `GTINForms.isValidISBN10` is what keeps
-    /// that from firing on an ordinary ASIN.
+    /// The URL leg is not a nicety: for books, Amazon's ASIN is the ISBN-10,
+    /// so `/dp/0735211299` states the product's global identifier even on a
+    /// page whose details table did not load. `GTINForms.isValidISBN10` is
+    /// what keeps that from firing on an ordinary ASIN.
     public static func identifiers(inHTML html: String, url: URL?) -> Identifiers {
         // A product URL always states the ASIN even when Amazon lazy-loads or
         // omits every product-details module. Preserve it as retailer-scoped
@@ -110,10 +111,10 @@ public enum AmazonProductDetails {
                 break
             }
         }
-        // Brand only from the two labels that MEAN brand. "Publisher" is the
+        // Brand only from the two labels that mean brand. "Publisher" is the
         // book analogue and is deliberately left out: a publisher is not what
-        // another retailer prints as the brand, and a brand mismatch is a hard
-        // refusal in two of the three verification tiers.
+        // another retailer prints as the brand, and a brand mismatch is a
+        // hard refusal in two of the three verification tiers.
         for label in ["Brand", "Manufacturer"] {
             if let value = firstValue(after: label, in: html, matching: brandShape) {
                 found.brand = value
@@ -246,12 +247,12 @@ public enum AmazonProductDetails {
         return nil
     }
 
-    /// The buy box's price when it is SPLIT across elements —
+    /// The buy box's price when it is split across elements —
     /// `<span class="a-price-symbol">$</span><span class="a-price-whole">350…`
     /// `<span class="a-price-fraction">97</span>` — with the accessible
-    /// `a-offscreen` copy served EMPTY, which is what the current desktop layout
-    /// does on many pages. Without this leg, Amazon prices as nil on exactly the
-    /// pages that are laid out most recently.
+    /// `a-offscreen` copy served empty, which is what the current desktop
+    /// layout does on many pages. Without this leg, Amazon prices as nil on
+    /// exactly the pages that are laid out most recently.
     static func composedPrice(in window: String, currencyHint: String?)
         -> (amount: Decimal, currency: String)? {
         guard let whole = captures(#"a-price-whole[^>]*>([0-9][0-9,.]{0,12})"#, in: window).first
@@ -357,17 +358,17 @@ public enum AmazonProductDetails {
     /// The parts of the page that actually carry the details, concatenated.
     ///
     /// This is a precision fix before it is a speed one. Scanning the whole
-    /// 2.5MB document for the word "Manufacturer" finds the WARRANTY PARAGRAPH
-    /// first ("Manufacturer's warranty can be requested from customer service"),
-    /// and the first plausible-looking run of text after it is not a brand.
-    /// Narrowing to the detail containers removes that whole class of false
-    /// positive — and, incidentally, takes the extraction from ~1.5s to a few
-    /// milliseconds, which matters when it runs once per candidate page inside a
-    /// 15s appex budget.
+    /// 2.5MB document for the word "Manufacturer" finds the warranty
+    /// paragraph first ("Manufacturer's warranty can be requested from
+    /// customer service"), and the first plausible-looking run of text after
+    /// it is not a brand. Narrowing to the detail containers removes that
+    /// whole class of false positive, and, incidentally, takes the
+    /// extraction from about 1.5s to a few milliseconds, which matters when
+    /// it runs once per candidate page inside a 15s appex budget.
     ///
     /// A page carrying none of the containers falls back to the whole document,
-    /// capped: an unrecognized layout should degrade to the old behaviour, not
-    /// to nothing.
+    /// capped: an unrecognized layout still scans the whole document rather than
+    /// finding nothing.
     static func detailsRegions(in html: String) -> String {
         var regions: [String] = []
         var total = 0
@@ -409,7 +410,7 @@ public enum AmazonProductDetails {
             guard attempts <= maximumLabelOccurrences else { return nil }
             // A label is a whole word: "Brand" must not fire inside "Branding".
             if range.upperBound < html.endIndex, html[range.upperBound].isLetter { continue }
-            // …and it must be CONTENT, not markup. Amazon's product-overview
+            // …and it must be content, not markup. Amazon's product-overview
             // grid tags the row `class="po-brand"`, whose window's first text
             // node is the word "Brand" itself — so without this the brand of
             // every overview-grid page is the string "Brand".
@@ -417,7 +418,7 @@ public enum AmazonProductDetails {
             let windowEnd = html.index(
                 range.upperBound, offsetBy: labelWindow, limitedBy: html.endIndex)
                 ?? html.endIndex
-            // The RAW window: a shape that wants plain text strips it itself,
+            // The raw window: a shape that wants plain text strips it itself,
             // and the brand shape needs the element boundaries to know where
             // the value ends.
             if let value = shape(String(html[range.upperBound..<windowEnd])) { return value }
@@ -428,7 +429,7 @@ public enum AmazonProductDetails {
     static let maximumLabelOccurrences = 12
 
     /// Whether `index` sits inside a tag rather than in text content: walking
-    /// back, the nearest angle bracket is an OPENING one.
+    /// back, the nearest angle bracket is an opening one.
     static func isInsideTag(_ html: String, at index: String.Index) -> Bool {
         let start = html.index(index, offsetBy: -tagLookBehind, limitedBy: html.startIndex)
             ?? html.startIndex
@@ -501,7 +502,7 @@ public enum AmazonProductDetails {
         return candidate.contains(where: \.isNumber) ? candidate : nil
     }
 
-    /// A brand is the VALUE NODE, not the next few words.
+    /// A brand is the value node, not the next few words.
     ///
     /// Every detail layout puts the brand in its own element right after the
     /// label, so the honest reading is "the first non-empty text node", and

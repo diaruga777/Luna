@@ -81,7 +81,8 @@ public struct ArticleContent: Codable, Equatable {
 
         private enum CodingKeys: String, CodingKey {
             case kind, text, links, anchorID, imageURLString, imageFileName, imageSize
-            // Legacy on-disk keys from before the two were unified into `imageSize`.
+            // Old on-disk keys, from before width and height merged into `imageSize`.
+            // Decoding still falls back to them for saves made before the merge.
             case imageWidth, imageHeight
         }
 
@@ -115,9 +116,8 @@ public struct ArticleContent: Codable, Equatable {
         }
     }
 
-    /// A `.image` block's declared source dimensions — always both or neither;
-    /// there is no state representing "width known, height not" that every
-    /// consumer used to have to check for.
+    /// A `.image` block's declared source dimensions. Both fields are always
+    /// present together, so no consumer needs to handle a partial state.
     public struct BlockImageSize: Codable, Equatable {
         public let width: Int
         public let height: Int

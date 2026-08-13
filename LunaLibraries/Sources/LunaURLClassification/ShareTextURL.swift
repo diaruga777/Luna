@@ -1,6 +1,6 @@
 //
 //  ShareTextURL.swift
-//  LunaShare
+//  Luna
 //
 
 import Foundation

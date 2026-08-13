@@ -7,7 +7,7 @@ import Foundation
 
 /// Splits an over-long RSVP word into parts that fit the focal column.
 /// Hyphenated words break at their hyphens first (the hyphen is shown at the
-/// end of the part before the break AND the start of the part after it); any
+/// end of the part before the break and the start of the part after it); any
 /// part still too long is hard-hyphenated into fitting chunks. Words within
 /// the limit are returned unchanged. Pure, tested.
 public enum WordSplitter {

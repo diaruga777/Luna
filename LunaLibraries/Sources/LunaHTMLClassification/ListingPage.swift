@@ -6,24 +6,19 @@
 import Foundation
 import SwiftSoup
 
-/// The Swift twin of the Safari extension's index veto — the one place that
-/// answers "is this page a LISTING rather than a single piece of content?".
+/// The Swift twin of the Safari extension's index veto. It answers one
+/// question: is this page a LISTING rather than a single piece of content?
+/// A Google search page or a publisher front page gets no Luna pill in Safari
+/// (`looksLikeNonArticleIndex` in `LunaSafari/Resources/content.js`), and for
+/// the same reason must not become an `.article` here when `Classifier`'s URL
+/// table misses and hands the page to article extraction.
 ///
-/// The extension has always had this test (`looksLikeNonArticleIndex` in
-/// `LunaSafari/Resources/content.js`), which is why a Google search page or a
-/// publisher front page gets no Luna pill. The ingest pipeline had no equivalent:
-/// `Classifier` decides a KIND from the URL table and, failing that, hands every
-/// remaining page to article extraction, so an index that happens to extract past
-/// `ArticleContent.readableBodyThreshold` became a real `.article` and a titled
-/// index with no prose parked for the archive reader. Both the Safari-trail
-/// suggestions (`RecentURLMatcher`) and a direct share therefore surfaced pages
-/// Safari itself had already declined to offer.
+/// The signals are deliberately the SAME ones the extension uses, so the two
+/// sides agree: `SafariIndexVetoParityTests` runs one fixture set through this
+/// type and through the production `content.js` in a bare `WKWebView`, and
+/// fails if they disagree.
 ///
-/// The signals are deliberately the SAME ones, so the two sides agree:
-/// `SafariIndexVetoParityTests` runs one fixture set through this type and through
-/// the production `content.js` in a bare `WKWebView` and fails if they disagree.
-///
-/// Pure (no I/O, no UIKit) — usable from every extension target.
+/// Pure — no I/O, no UIKit — so it's usable from every extension target.
 public enum ListingPage {
 
     // MARK: - The verdict

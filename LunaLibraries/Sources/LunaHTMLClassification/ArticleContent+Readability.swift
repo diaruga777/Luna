@@ -2,28 +2,29 @@
 //  ArticleContent+Readability.swift
 //  Luna
 //
-//  Readability judgments that depend on the HTML-classification layer
-//  (ArticleExtraction / PaywallDetector) — kept off the LunaModels value type
-//  so the base model stays pure.
+//  This extension depends on ArticleExtraction and PaywallDetector, so it lives
+//  here instead of on the LunaModels value type. That keeps the base model
+//  free of HTML-classification logic.
 //
 
 import LunaModels
 import Foundation
 
 public extension ArticleContent {
-    /// Enough body text to be worth reading rather than a paywall stub — the
-    /// text-only convenience reading of the shared `ArticleExtraction.isReadableArticle`
-    /// predicate (no source HTML, so the publisher-declared lock signal isn't applied).
-    /// Callers holding the source HTML should use `ArticleExtraction.isReadableArticle`
-    /// for the stronger, HTML-aware judgment.
+    /// True when the article has enough body text to read, not just a paywall
+    /// stub. This is the text-only reading of
+    /// `ArticleExtraction.isReadableArticle`: it has no HTML, so it can't see
+    /// the publisher's lock signal. Callers that hold the source HTML should
+    /// call `ArticleExtraction.isReadableArticle` directly for the stronger,
+    /// HTML-aware check.
     var hasReadableBody: Bool {
         ArticleExtraction.isReadableArticle(self, html: nil)
     }
 
-    /// Whether this extracted text reads as a subscription wall / metered teaser
-    /// rather than the real article. Delegates to the shared `PaywallDetector`
-    /// (text-only here — callers with the source HTML should use
-    /// `PaywallDetector.looksPaywalled(content:html:)` for the stronger signal).
+    /// True when the extracted text reads as a paywall or metered-teaser
+    /// stub, not a full article. This is the text-only reading of
+    /// `PaywallDetector`. Callers that hold the source HTML should call
+    /// `PaywallDetector.looksPaywalled(content:html:)` for the stronger check.
     var looksPaywalled: Bool {
         PaywallDetector.textLooksPaywalled(wholeText, bodyLength: bodyTextLength)
     }

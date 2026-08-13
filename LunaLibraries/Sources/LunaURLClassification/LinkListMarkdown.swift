@@ -22,12 +22,11 @@ import Foundation
 ///
 ///     - [An Old One](https://example.com/old)
 ///
-/// It replaced a `section,url` CSV, which was correct and unreadable: AirDropping
-/// it opened the file in Notes, and what came back out of Notes was text with no
-/// CSV left in it — so the whole file re-imported as one flat list and the archive
-/// split was lost. Markdown survives that trip because its structure is *prose*: a
-/// heading is still a heading after a round trip through a rich-text editor that
-/// dropped the `##`, and a bullet is still a line with a link on it.
+/// This format survives a round trip through a rich-text editor: AirDropping the
+/// file often opens it in Notes, which strips markdown syntax from the text. A
+/// heading still reads as a heading once the `##` is gone, and a bullet still
+/// reads as a line with a link on it, because the structure is *prose*, not
+/// syntax that a plain-text editor can strip.
 ///
 /// Which is exactly what the reader below leans on. It does NOT require the `##`,
 /// the `-`, or even the exact word: a **short line with no URL in it** whose

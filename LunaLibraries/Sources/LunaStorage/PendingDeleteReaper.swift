@@ -7,22 +7,25 @@ import Foundation
 
 /// Unlinks the files the database has finished with.
 ///
-/// A file system cannot join a transaction, so releasing an artifact is two
-/// commits: the transaction that drops the last ownership edge queues the path in
-/// `pending_deletes` (a trigger does it), and this runs afterwards to unlink the
-/// file and clear the row. Nothing is lost to a crash in between — the row is
-/// still there at the next launch, and the work is the same work.
+/// A file system cannot join a transaction, so releasing an artifact takes
+/// two commits: the transaction that drops the last ownership edge queues
+/// the path in `pending_deletes` (a trigger does it), and this runs
+/// afterwards to unlink the file and clear the row. A crash in between
+/// loses nothing — the row is still there at the next launch, and the work
+/// is the same work.
 ///
-/// **Any process may run it, at any time, as often as it likes.** It is called
+/// **Any process may run it, at any time, as often as it likes.** It runs
 /// after the mutations that queue something, at launch, and when an app
-/// backgrounds. Each path is handled in its own transaction, which is what makes
-/// two processes reaping at once harmless: the second finds the row gone.
+/// backgrounds. Each path is handled in its own transaction, which is what
+/// makes two processes reaping at once harmless: the second finds the row
+/// gone.
 ///
-/// The re-reference check inside that transaction is the race this exists to
-/// close. Between the commit that queued a path and the unlink, another process
-/// can save an article that references the same image; the insert rescues the path
-/// out of the queue, but only a check taken under the write lock can be sure it
-/// happened BEFORE the unlink rather than during it.
+/// The re-reference check inside that transaction closes the race this
+/// type exists for. Between the commit that queued a path and the unlink,
+/// another process can save an article that references the same image; the
+/// insert rescues the path out of the queue, but only a check taken under
+/// the write lock can be sure it happened BEFORE the unlink rather than
+/// during it.
 enum PendingDeleteReaper {
 
     /// Failures tolerated in silence. A path failing this often is not a transient

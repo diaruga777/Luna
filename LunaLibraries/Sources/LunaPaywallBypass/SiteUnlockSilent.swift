@@ -7,9 +7,10 @@ import LunaFetch
 import LunaURLClassification
 import Foundation
 
-/// The silent (URLSession) leg of the site paywall-unlock engine: applies a rule's
-/// REQUEST-level technique — a crawler/custom User-Agent, a spoofed Referer, an
-/// `X-Forwarded-For`, and cookie handling — then leaves extraction to the caller.
+/// The silent (URLSession) leg of the site paywall-unlock engine: applies a
+/// rule's request-level technique — a crawler/custom User-Agent, a spoofed
+/// Referer, an `X-Forwarded-For`, and cookie handling — then leaves
+/// extraction to the caller.
 ///
 /// Request-only techniques are the ones a background fetch can honor. Script blocking
 /// (`blockRegex`) and DOM cleanup (`csDompurify`, `cs_code`) need a rendered page and

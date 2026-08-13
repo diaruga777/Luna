@@ -58,10 +58,10 @@ public enum ArticleImageFiles {
     /// when that file is really there, else the URL-hash-keyed file some other
     /// save/preload already downloaded. Nil when nothing is local yet.
     ///
-    /// The fallback is what keeps an export honest. Content is persisted the
-    /// moment an article becomes readable, and its images finish downloading
-    /// AFTER that — so a stored `imageFileName` of nil means "not yet", not
-    /// "never", and trusting it verbatim is why exports used to come out blank.
+    /// The fallback keeps an export honest. Content is persisted the moment an
+    /// article becomes readable, but its images finish downloading after that.
+    /// A stored `imageFileName` of nil means "not yet," not "never" — trusting
+    /// it alone would ship an export with no pictures.
     public static func localFileName(
         for block: ArticleContent.Block, in directory: URL
     ) -> String? {

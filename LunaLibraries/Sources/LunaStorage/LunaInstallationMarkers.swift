@@ -2,10 +2,10 @@
 //  LunaInstallationMarkers.swift
 //  LunaStorage
 //
-//  Moved from LunaMediaDownload: this is kind-neutral App-Group bookkeeping
-//  (every app writes its own marker at launch), so it lives with the other
-//  App-Group stores instead of dragging the media-download module into
-//  article/product-only apps.
+//  Kind-neutral App-Group bookkeeping (every app writes its own marker at
+//  launch). It lives here, with the other App-Group stores, rather than in a
+//  kind module, so linking it never drags the media-download module into an
+//  article- or product-only app.
 //
 
 import LunaAppConfig

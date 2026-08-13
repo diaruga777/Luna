@@ -5,10 +5,11 @@
 
 import Foundation
 
-/// The result of an `NSFileCoordinator` accessor block, for the callers that
-/// have to tell "the accessor produced nil" from "the accessor never ran"
-/// (coordination can fail, in which case the work still has to happen). A
-/// `?? fallback` cannot make that distinction when the value is itself optional.
+/// The result of an `NSFileCoordinator` accessor block. Coordination can
+/// fail, but the work must still happen when it does. A caller needs to
+/// know whether the accessor produced nil or never ran at all — a plain
+/// `?? fallback` cannot make that distinction when the value itself is
+/// optional.
 enum CoordinatedAccessorResult<Value> {
     case notRun
     case value(Value)
@@ -17,27 +18,30 @@ enum CoordinatedAccessorResult<Value> {
 /// One App-Group JSON file, read and mutated safely from every process that
 /// shares it.
 ///
-/// The app, its share/action extensions and its intents all write these sidecar
-/// files, and they take turns rather than run together: an extension records a
-/// failure while the app is suspended, and the app's next mutation has to build
-/// on what the extension left behind. So a mutation is never applied to a
-/// snapshot taken earlier — it takes an `NSFileCoordinator` writing
-/// coordination, decodes the file inside it, applies the change, and writes the
-/// result back. `lock` serializes callers inside this process; the coordination
-/// serializes across processes.
+/// The app, its share/action extensions, and its intents all write these
+/// sidecar files. They take turns rather than run at the same time: an
+/// extension can record a failure while the app is suspended, and the app's
+/// next mutation must build on what the extension left behind. So a
+/// mutation never applies to a snapshot taken earlier. It opens an
+/// `NSFileCoordinator` writing coordination, decodes the file inside it,
+/// applies the change, and writes the result back. `lock` serializes
+/// callers inside this process; the coordination serializes callers across
+/// processes.
 ///
-/// Reads decode the file too, skipping the coordination only while the file's
+/// Reads also decode the file, but skip the coordination while the file's
 /// (modification date, size) still matches the stat the cached value was
-/// decoded under — a cross-process writer does not share this cache, so a read
-/// re-stats before trusting it.
+/// decoded under. A cross-process writer does not share this cache, so a
+/// read re-stats the file before it trusts the cache.
 ///
 /// `Value` carries its own JSON shape, so one file's date format or key
-/// strategy stays that file's business: pass the coders the format needs.
+/// strategy stays that file's own business: pass the coders the format
+/// needs.
 public final class CoordinatedJSONFile<Value: Codable> {
 
-    /// The cheap "has this file changed since we decoded it" proxy. A
-    /// same-mtime, same-size write from another process inside the filesystem's
-    /// timestamp granularity is the accepted trade-off.
+    /// The cheap check for whether the file changed since this process last
+    /// decoded it. A same-mtime, same-size write from another process,
+    /// inside the filesystem's timestamp granularity, is an accepted
+    /// trade-off.
     private struct FileStatToken: Equatable {
         let modificationDate: Date
         let size: Int
@@ -62,8 +66,8 @@ public final class CoordinatedJSONFile<Value: Codable> {
     ///     A nil URL means no shared container: the value then lives in memory
     ///     for this process only.
     ///   - onWrite: runs after a successful write, with the URL written. An
-    ///     atomic write replaces the file, so anything set on the file itself —
-    ///     a backup-eligibility flag — has to be re-applied here.
+    ///     atomic write replaces the file, so any per-file attribute — a
+    ///     backup-eligibility flag, for example — must be re-applied here.
     ///   - empty: the value a missing or unreadable file stands for.
     public init(url: @escaping () -> URL?,
                 encoder: JSONEncoder = JSONEncoder(),
@@ -100,9 +104,9 @@ public final class CoordinatedJSONFile<Value: Codable> {
         mutateIfChanged { value in (result: body(&value), changed: true) }.result
     }
 
-    /// The same transaction, where `body` reports whether it changed anything —
-    /// an unchanged value is not written. Reports back whether the file was
-    /// written, for callers that only notify on a real change.
+    /// The same transaction, but `body` also reports whether it changed
+    /// anything; an unchanged value is not written. Returns whether the
+    /// file was written, for callers that only notify on a real change.
     @discardableResult
     public func mutateIfChanged<T>(
         _ body: (inout Value) -> (result: T, changed: Bool)
@@ -138,8 +142,8 @@ public final class CoordinatedJSONFile<Value: Codable> {
         case .value(let value): result = value
         case .notRun: result = perform(url)
         }
-        // Only a value the file is now known to hold may be cached; a failed
-        // write leaves the old contents there.
+        // Cache only a value the file is now known to hold. A failed write
+        // leaves the old contents in place.
         if let settled {
             cachedValue = settled
             cacheToken = statToken(of: url)
@@ -194,8 +198,8 @@ public final class CoordinatedJSONFile<Value: Codable> {
 }
 
 extension JSONEncoder {
-    /// ISO-8601 dates — the on-disk date format of the sidecar files beside the
-    /// saves list (`saveFailures.json`, `rescueLedger.json`).
+    /// ISO-8601 dates: the on-disk date format for the sidecar files stored
+    /// beside the saves list (`saveFailures.json`, `rescueLedger.json`).
     static var sidecarISO8601: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

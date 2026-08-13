@@ -5,26 +5,27 @@
 
 import Foundation
 
-/// The decoded shape of one keyless fxtwitter response, covering both endpoints
-/// the X text path uses:
+/// The decoded shape of one keyless fxtwitter response, covering both
+/// endpoints the X text path uses:
 ///
-///   • `GET /2/thread/<id>`  → `{ status, thread, author }` — the UNROLLED
-///     self-reply chain. Returns the whole thread from ANY member (verified
-///     against a mid-thread id), so there is no backward `replying_to_status`
-///     walk to do; the array is already author-only and in posting order.
-///   • `GET /status/<id>`    → `{ tweet }` — the v1 single-post fallback used
+///   • `GET /2/thread/<id>` → `{ status, thread, author }`: the unrolled
+///     self-reply chain. It returns the whole thread from any member
+///     (verified against a mid-thread id), so there is no backward
+///     `replying_to_status` walk to do; the array is already author-only and
+///     in posting order.
+///   • `GET /status/<id>` → `{ tweet }`: the v1 single-post fallback used
 ///     when the v2 thread route is unavailable.
 ///
-/// Both decode into this one type so `XPostExtractor` has a single input shape.
-/// Property names deliberately keep the wire's snake_case (matching the existing
-/// `XMetadataFetcher` payload in LunaPlatforms) rather than adding a CodingKeys
-/// wall — these types exist only to be decoded.
+/// Both decode into this one type, so `XPostExtractor` has a single input
+/// shape. Property names deliberately keep the wire's snake_case (matching
+/// the existing `XMetadataFetcher` payload in LunaPlatforms) rather than
+/// adding a CodingKeys wall, since these types exist only to be decoded.
 ///
-/// X itself serves NONE of this to an unauthenticated client: `x.com/<user>/status/<id>`
-/// returns a JS login shell with no post text in it, so HTML article extraction can
-/// never work on an X link. fxtwitter is a keyless read-only mirror of the public
-/// post, which is why the text path goes through an API instead of the fetch/extract
-/// tiers every other article uses.
+/// X serves none of this to an unauthenticated client: `x.com/<user>/status/<id>`
+/// returns a JS login shell with no post text in it, so HTML article
+/// extraction can never work on an X link. fxtwitter is a keyless read-only
+/// mirror of the public post, which is why the text path goes through an API
+/// instead of the fetch/extract tiers every other article uses.
 public struct XPostPayload: Decodable {
     /// v2: the post the URL actually named.
     public let status: Post?
@@ -55,7 +56,7 @@ public struct XPostPayload: Decodable {
     /// The authoritative author: the thread's, else the first post's.
     public var rootAuthor: Author? { author ?? posts.first?.author }
 
-    /// The post the SHARED URL actually named — which is not necessarily the
+    /// The post the shared URL actually named, which is not necessarily the
     /// thread root, since a thread unrolls from any member. Used to decide
     /// whether the user shared a video (media) or text (reader) item.
     public var sharedPost: Post? { status ?? tweet ?? posts.first }
@@ -85,14 +86,14 @@ public struct XPostPayload: Decodable {
 
     public struct Post: Decodable {
         public let id: String?
-        /// The DISPLAY text: fxtwitter has already expanded every `t.co` to its
-        /// destination inline and dropped the trailing self-link a quoted
-        /// post/article/media attachment adds. This is the field to read — the
-        /// `raw_text` facet indices are offsets into the UNEXPANDED string and do
-        /// not line up with it.
+        /// The display text: fxtwitter has already expanded every `t.co` to
+        /// its destination inline and dropped the trailing self-link a
+        /// quoted post/article/media attachment adds. Read this field — the
+        /// `raw_text` facet indices are offsets into the unexpanded string
+        /// and do not line up with it.
         public let text: String?
         public let author: Author?
-        /// X's own long-form composer flag. Present but NOT a usable
+        /// X's own long-form composer flag. Present, but not a usable
         /// long/short discriminator on its own — see `XPostExtractor`.
         public let is_note_tweet: Bool?
         /// An X Article (the premium long-form editor): a real title plus a
@@ -158,7 +159,7 @@ public struct XPostPayload: Decodable {
     /// `entityRanges` point into.
     public struct DraftContent: Decodable {
         public let blocks: [DraftBlock]?
-        /// Serialized as an ARRAY of `{key, value}` pairs (not a JSON object).
+        /// Serialized as an array of `{key, value}` pairs, not a JSON object.
         public let entityMap: [EntityEntry]?
 
         public init(blocks: [DraftBlock]? = nil, entityMap: [EntityEntry]? = nil) {

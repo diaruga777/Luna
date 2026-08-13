@@ -10,18 +10,19 @@ import Security
 
 /// Shared keychain primitive for user-restorable Luna credentials.
 ///
-/// These secrets are user-created app credentials/tokens rather than
-/// device-bound keys. Use a migratable class so encrypted device backups can
-/// restore them, and mark them synchronizable so iCloud Keychain can carry them
-/// between the user's trusted devices when enabled.
+/// These secrets are user-created app credentials and tokens rather than
+/// device-bound keys. Items store under a migratable class, so encrypted
+/// device backups can restore them, and mark themselves synchronizable, so
+/// iCloud Keychain can carry them between the user's trusted devices when
+/// enabled.
 ///
 /// Items live in the shared App-Group keychain access group (on iOS the
-/// app-group entitlement doubles as a keychain access group), so a credential
-/// saved in any one Luna app is readable by the other apps in the suite —
-/// that's what lets a second app's onboarding skip the email sign-in. Items
-/// written before this sharing existed sit in each app's private access group;
-/// `readData` migrates such an item into the shared group when it's the only
-/// copy found.
+/// app-group entitlement doubles as a keychain access group), so a
+/// credential saved in one Luna app is readable by the other apps in the
+/// suite. That is what lets a second app's onboarding skip the email
+/// sign-in. An item written before this sharing existed sits in that app's
+/// private access group instead; `readData` migrates it into the shared
+/// group when it is the only copy found.
 public enum CredentialKeychain {
     private static let logger = Logger(subsystem: LunaLogging.subsystem, category: "keychain")
 
@@ -61,10 +62,11 @@ public enum CredentialKeychain {
         }
     }
 
-    /// Deletes every copy of the item this process can reach — the shared-group
-    /// item AND any legacy private-group leftover (no access-group filter means
-    /// all accessible groups), so a cleared credential can't resurrect later
-    /// through the legacy-migration read path.
+    /// Deletes every copy of the item this process can reach: the
+    /// shared-group item and any legacy private-group leftover (no
+    /// access-group filter means all accessible groups). This keeps a
+    /// cleared credential from resurrecting later through the
+    /// legacy-migration read path.
     public static func delete(service: String, account: String) {
         SecItemDelete(baseQuery(
             service: service, account: account, synchronizable: kSecAttrSynchronizableAny
@@ -105,11 +107,12 @@ public enum CredentialKeychain {
         return data
     }
 
-    /// Pre-suite builds wrote the item into this app's own private access group,
-    /// invisible to the other Luna apps. Called only after a shared-group miss:
-    /// an unscoped search covers every group this process can reach, so any hit
-    /// here is a legacy item — rewrite it into the shared group (`write` first
-    /// deletes all reachable copies) and return it.
+    /// Pre-suite builds wrote the item into this app's own private access
+    /// group, invisible to the other Luna apps. Called only after a
+    /// shared-group miss: an unscoped search covers every group this
+    /// process can reach, so any hit here is a legacy item. Rewrite it into
+    /// the shared group (`write` first deletes all reachable copies) and
+    /// return it.
     private static func migrateLegacyItem(service: String, account: String) -> Data? {
         guard let data = copyData(service: service, account: account, accessGroup: nil)
         else { return nil }

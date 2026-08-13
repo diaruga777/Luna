@@ -26,8 +26,8 @@ import Foundation
 public enum LunaDeepLink {
     /// The central Luna app's scheme.
     public static let lunaScheme = "luna"
-    /// Luna Reader's scheme — also the historical scheme every app registered
-    /// before the split, so older links keep opening Reader.
+    /// Luna Reader's scheme. Every app registered this scheme before the
+    /// per-app split, so a link written before then still opens Reader.
     public static let readerScheme = "lunareader"
     public static let downloaderScheme = "lunadownloader"
     public static let priceTrackerScheme = "lunapricetracker"

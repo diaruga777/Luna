@@ -1,6 +1,6 @@
 //
 //  PaywallDetector.swift
-//  ReaderKit
+//  Luna
 //
 
 import LunaModels

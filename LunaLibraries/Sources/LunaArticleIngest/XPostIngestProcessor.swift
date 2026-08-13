@@ -7,21 +7,22 @@ import LunaIngest
 import LunaModels
 import Foundation
 
-/// The social-text pipeline processor: turns a long-form X post (or an unrolled
-/// self-thread) into a readable article, and declines everything else.
+/// The social-text pipeline processor: turns a long-form X post (or an
+/// unrolled self-thread) into a readable article, and declines everything
+/// else.
 ///
-/// Registered into `IngestKindProcessors.socialText` by article-handling targets'
-/// composition roots (the central Luna app + Reader). The Downloader and Price
-/// Tracker link no article module, register nothing, and so keep today's behavior
-/// exactly: every X link stays `.social` and is handled (or dropped) as before.
+/// Article-handling targets' composition roots (the central Luna app and
+/// Reader) register this into `IngestKindProcessors.socialText`. The
+/// Downloader and Price Tracker link no article module and register nothing,
+/// so every X link there stays `.social`.
 ///
 /// ## Why this is an API call and not HTML extraction
 ///
-/// X serves an unauthenticated client a JavaScript login shell — the post text is
-/// simply not in the HTML — so the ordinary fetch/extract/bypass tiers can never
-/// read one. The keyless fxtwitter mirror is the same source the existing
-/// `XMetadataFetcher` and `SocialMediaResolver` already read for X metadata and
-/// media; this asks it for the post's text instead.
+/// X serves an unauthenticated client a JavaScript login shell; the post text
+/// is simply not in the HTML, so the ordinary fetch/extract/bypass tiers can
+/// never read one. The keyless fxtwitter mirror is the same source the
+/// existing `XMetadataFetcher` and `SocialMediaResolver` already read for X
+/// metadata and media; this asks it for the post's text instead.
 public final class XPostIngestProcessor: SocialTextIngestProcessing {
     /// Injectable so tests exercise the whole processor from fixtures with no
     /// network. Production uses the fxtwitter fetch below.
@@ -43,9 +44,10 @@ public final class XPostIngestProcessor: SocialTextIngestProcessing {
         guard platform == .x, let itemID, !itemID.isEmpty,
               itemID.allSatisfy(\.isNumber) else { return nil }
 
-        // The v2 thread route first: it unrolls a self-thread from ANY member, so
-        // one call covers both the single-post and chained-thread cases. The v1
-        // single-post route is the fallback if v2 is unavailable.
+        // The v2 thread route first: it unrolls a self-thread from any
+        // member, so one call covers both the single-post and chained-thread
+        // cases. The v1 single-post route is the fallback if v2 is
+        // unavailable.
         for endpoint in [
             "https://api.fxtwitter.com/2/thread/\(itemID)",
             "https://api.fxtwitter.com/status/\(itemID)",

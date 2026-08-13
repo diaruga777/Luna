@@ -9,52 +9,54 @@ import LunaAppConfig
 import Security
 import UserNotifications
 
-/// Erases everything this install has ever written: both containers (the app's
-/// own and the shared App Group), both defaults domains, every keychain item
-/// this process can reach, the notification queue, and the Spotlight index.
-/// Reached from Settings → Diagnostics, which is itself behind five taps.
-///
-/// **It is a file sweep, not a list of stores.** Naming each store here would
-/// mean a new store silently surviving the wipe the day someone adds one — and
-/// the whole point of the button is that nothing survives. The two containers
-/// hold every file any Luna process writes, so emptying them covers the stores
-/// that exist today and the ones that don't yet.
-///
-/// **The other Luna apps are wiped too, and that is intended.** The App Group
-/// container and the shared keychain group are one thing shared by four apps;
-/// "start over from scratch" cannot mean leaving the sibling's copy of the
-/// saves list in place. What is NOT reachable: another app's or extension's
-/// *private* container (iOS gives each `.appex` its own, and nothing in Luna
-/// keeps state there — extensions write to the App Group precisely so they can
-/// be read back) and the Safari web extension's `browser.storage`, which lives
-/// inside Safari.
-///
-/// The caller is expected to TERMINATE the process straight afterwards. Every
-/// store in the app is a long-lived singleton holding a decoded cache, and a
-/// cache that outlives its file will write it back.
-/// Teardown one kind owns, run as part of the wipe.
+/// Teardown that a kind module owns, run as part of the wipe.
 public protocol FactoryResetErasing {
     func erase() async
 }
 
+/// Erases everything this install has ever written: both containers (the
+/// app's own and the shared App Group), both defaults domains, every
+/// keychain item this process can reach, the notification queue, and the
+/// Spotlight index. Reached from Settings → Diagnostics, itself behind five
+/// taps.
+///
+/// **This sweeps every file in the two containers, instead of naming each
+/// store.** Naming a store here would let a new store silently survive the
+/// wipe the day someone adds one, and the whole point of the button is that
+/// nothing survives. The two containers hold every file any Luna process
+/// writes, so emptying them covers today's stores and any added later.
+///
+/// **The other Luna apps are wiped too, and that is intended.** The App
+/// Group container and the shared keychain group are one thing shared by
+/// four apps. "Start over from scratch" cannot mean leaving a sibling's copy
+/// of the saves list in place. Out of reach: another app's or extension's
+/// *private* container (iOS gives each `.appex` its own, and nothing in
+/// Luna keeps state there — extensions write to the App Group precisely so
+/// they can be read back), and the Safari web extension's
+/// `browser.storage`, which lives inside Safari.
+///
+/// The caller must terminate the process immediately afterward. Every store
+/// in the app is a long-lived singleton holding a decoded cache, and a
+/// cache that outlives its file writes itself back.
 public enum FactoryReset {
 
-    /// Teardown a kind module owns and this one cannot name. The media apps
-    /// register an "end every Live Activity" eraser: an activity outlives the
-    /// process that started it, so a wiped download would otherwise keep a
-    /// lock-screen card describing itself. Registered by the composition roots
-    /// (`KindWiring+*`), like every other cross-tier seam.
+    /// Teardown a kind module owns that this one cannot name. The media
+    /// apps register an "end every Live Activity" eraser: an activity
+    /// outlives the process that started it, so a wiped download would
+    /// otherwise keep a lock-screen card describing itself. Registered by
+    /// the composition roots (`KindWiring+*`), like every other cross-tier
+    /// seam.
     private static var additionalErasers: [any FactoryResetErasing] = []
 
-    /// Adds a kind's teardown to the sweep. Call at launch, from the composition
-    /// root of an app that links the kind.
+    /// Adds a kind's teardown to the sweep. Call at launch, from the
+    /// composition root of an app that links the kind.
     public static func register(eraser: any FactoryResetErasing) {
         additionalErasers.append(eraser)
     }
 
     /// What the sweep did, for the diagnostic line. Deliberately paths and
-    /// counts rather than a bool: a wipe that quietly failed on one directory
-    /// looks exactly like a wipe that worked.
+    /// counts rather than a bool: a wipe that quietly failed on one
+    /// directory looks exactly like a wipe that worked.
     public struct Report {
         public var removedPaths: [String] = []
         public var failures: [String] = []

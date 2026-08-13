@@ -34,11 +34,11 @@ public enum ArticleExportFormat: String, CaseIterable, Codable, Sendable {
     case document
 
     /// What the article "Export as…" menu offers, in menu order: EPUB first
-    /// (the ereader-universal default and the only format Luna offered before),
-    /// then PDF, then the Word document, then plain text. `.markdown` is
-    /// intentionally absent — a rich document that keeps images and live links
-    /// is the useful thing to hand another app, and Markdown's own audience is
-    /// served by the `.docx` every editor imports.
+    /// (the ereader-universal default), then PDF, then the Word document, then
+    /// plain text. `.markdown` is intentionally absent — a rich document that
+    /// keeps images and live links is the more useful thing to hand another
+    /// app, and Markdown's own audience is served by the `.docx` every editor
+    /// imports.
     public static let shareMenuFormats: [ArticleExportFormat] =
         [.epub, .pdf, .document, .plainText]
 

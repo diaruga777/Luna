@@ -38,10 +38,10 @@ public protocol HTMLFetching {
 
 /// Downloads raw HTML for a weblink with a single, deterministic Safari user agent
 /// (the bytes a normal reader sees). The Googlebot crawler trick — which many soft
-/// paywalls serve full content to — is no longer the default read; it is an explicit
+/// paywalls serve full content to — runs only as an explicit
 /// `.userAgent(.googlebotDesktop)` bypass strategy (`CrawlerAgent.googlebotDesktop`),
-/// so the direct read is reproducible and the paywall judgment isn't computed over
-/// crawler-served HTML.
+/// never as the default read, so the direct read stays reproducible and the paywall
+/// judgment is never computed over crawler-served HTML.
 public struct ArticleFetcher: HTMLFetching {
     public init() {}
 
@@ -58,13 +58,14 @@ public struct ArticleFetcher: HTMLFetching {
         case badResponse(status: Int?)
         case notHTML
         case tooLarge
-        /// The request for an ARTICLE was redirected into the publisher's own
-        /// subscribe / sign-in / cookie-check interstitial (`landedOn`). A 200 with
-        /// a body — but the body is the subscription pitch, not the article, and it
-        /// runs long enough and clean enough of gate wording to read as a perfectly
-        /// good article to the extractor. So the fetch FAILS here instead: the page
-        /// we asked for was never served (News Corp's
-        /// `…/subscribe/news/1/?dest=<article>` is the live case).
+        /// The request for an ARTICLE was redirected to the publisher's own
+        /// subscribe / sign-in / cookie-check interstitial (`landedOn`). The
+        /// response is a 200 with a body, but the body is the subscription
+        /// pitch, not the article. That pitch runs long and reads clean of gate
+        /// wording, so the extractor would otherwise treat it as a genuine
+        /// article. The fetch FAILS here instead, because the page we asked for
+        /// was never served (News Corp's `…/subscribe/news/1/?dest=<article>`
+        /// is the live case).
         case subscribeRedirect(landedOn: URL)
     }
 

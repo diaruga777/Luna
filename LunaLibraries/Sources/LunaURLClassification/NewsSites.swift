@@ -1,6 +1,6 @@
 //
 //  NewsSites.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

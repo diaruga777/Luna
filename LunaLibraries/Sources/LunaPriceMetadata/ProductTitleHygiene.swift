@@ -10,17 +10,16 @@ import Foundation
 /// A page title is not a product name. Amazon's is `Amazon.com: Atomic Habits:
 /// An Easy & Proven Way to Build Good Habits & Break Bad Ones | Clear, James:
 /// Books`; Walmart's ends `- Walmart.com`; a Shopify shop ends `– The Widget
-/// Shop`. Two things downstream care, and both were measurably wrong before
-/// this existed:
+/// Shop`. Two things downstream depend on this stripping:
 ///
 /// - **The search query.** Falling back to the name means searching another
-///   retailer's site for the string "Amazon.com", which returns nothing on the
-///   first page of every retailer in the directory.
+///   retailer's site for the string "Amazon.com", which returns nothing on
+///   the first page of every retailer in the directory.
 /// - **Name similarity.** `nameSimilarity` is Jaccard over tokens, so the
-///   storefront's name, its TLD and its category trail are all tokens the two
-///   sides cannot share — the source is penalized for words that describe the
-///   SHOP rather than the product, and a genuine match falls under the
-///   threshold.
+///   storefront's name, its TLD, and its category trail are all tokens the
+///   two sides cannot share — the source is penalized for words that
+///   describe the shop rather than the product, and a genuine match falls
+///   under the threshold.
 ///
 /// Deliberately conservative: it removes prefixes and suffixes that are
 /// definitely chrome and leaves everything it is unsure about, because a title
@@ -42,7 +41,7 @@ public enum ProductTitleHygiene {
         title = strippingStorefrontSuffix(title)
         title = strippingFormatTail(title)
         title = title.trimmingCharacters(in: CharacterSet(charactersIn: " -–—|:·,"))
-        // Nothing survived: the chrome WAS the title, so keep the original
+        // Nothing survived: the chrome was the title, so keep the original
         // rather than hand a caller an empty product name.
         return title.isEmpty ? raw.trimmingCharacters(in: .whitespacesAndNewlines) : title
     }
@@ -57,16 +56,16 @@ public enum ProductTitleHygiene {
     }
 
     /// `<name>: <category>: Amazon.com.au`, `<name> : Amazon.com.au: <category>`
-    /// — Amazon AU's `<title>` puts its own domain in a COLON-separated
+    /// — Amazon AU's `<title>` puts its own domain in a colon-separated
     /// segment after the product name, with a breadcrumb-style category
     /// segment on either side of it (measured live: `… Chrome: Toasters:
     /// Amazon.com.au` and `… ES9600 : Amazon.com.au: Health, Household &
-    /// Personal Care` — the second has the storefront BEFORE the category,
+    /// Personal Care` — the second has the storefront before the category,
     /// the first after it). Neither shape is a dash/pipe suffix, so
-    /// `strippingStorefrontSuffix` never sees it, and it isn't the PREFIX
-    /// either (`strippingStorefrontPrefix` only looks at the head before the
-    /// FIRST colon). Once any segment beyond the first is domain-shaped
-    /// (contains a dot, e.g. `amazon.com.au` — narrower than
+    /// `strippingStorefrontSuffix` never sees it, and it is not the prefix
+    /// either, since `strippingStorefrontPrefix` only looks at the head
+    /// before the first colon. Once any segment beyond the first is
+    /// domain-shaped (contains a dot, e.g. `amazon.com.au` — narrower than
     /// `looksLikeStorefront`'s bare-word match, which would also fire on an
     /// innocent category segment like "Books"), the product name is just the
     /// first segment: a category carries no product information wherever it
@@ -82,9 +81,9 @@ public enum ProductTitleHygiene {
         return first
     }
 
-    /// The DOMAIN-shaped half of `looksLikeStorefront` only — a fragment must
+    /// The domain-shaped half of `looksLikeStorefront` only — a fragment must
     /// contain a dot (`amazon.com.au`), never a bare word (`Books`, `Target`)
-    /// alone. The bare-word match is right for a dash/pipe SUFFIX (an actual
+    /// alone. The bare-word match is right for a dash/pipe suffix (an actual
     /// chrome fragment there never doubles as a legitimate category name),
     /// but a colon-separated segment is exactly where a real category name
     /// (`Toasters`, `Books`) sits, so the colon-tail stripper needs the
@@ -116,9 +115,10 @@ public enum ProductTitleHygiene {
     }
 
     /// A trailing format/edition parenthetical, which is retailer vocabulary
-    /// rather than the product: `(Paperback)`, `(Hardcover)`, `[Blu-ray]`.
-    /// A parenthetical the table does not recognize — an edition name, a colour,
-    /// a pack size — is left alone, because those DO distinguish products.
+    /// rather than the product: `(Paperback)`, `(Hardcover)`, `[Blu-ray]`. A
+    /// parenthetical the table does not recognize — an edition name, a
+    /// colour, a pack size — is left alone, because those do distinguish
+    /// products.
     static func strippingFormatTail(_ title: String) -> String {
         var result = title
         while let tail = result.range(of: #"[\(\[][^()\[\]]{1,40}[\)\]]\s*$"#,
@@ -139,8 +139,8 @@ public enum ProductTitleHygiene {
         "new", "used", "refurbished", "open box",
     ]
 
-    /// Whether a fragment names a SHOP rather than a product: a bare domain, or
-    /// a known storefront word. Anything else is left in the title.
+    /// Whether a fragment names a shop rather than a product: a bare domain,
+    /// or a known storefront word. Anything else is left in the title.
     static func looksLikeStorefront(_ fragment: String) -> Bool {
         let text = fragment.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return false }

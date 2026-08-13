@@ -1,6 +1,6 @@
 //
 //  URLCanonicalizer.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

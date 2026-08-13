@@ -100,8 +100,8 @@ public struct SiteUnlockRule: Decodable, Equatable {
     }
 }
 
-/// A global paywall-vendor script blocker: its script/XHR requests are blocked on
-/// ALL sites except `excludedDomains`.
+/// A global paywall-vendor script blocker: its script/XHR requests are
+/// blocked on all sites except `excludedDomains`.
 public struct VendorScriptBlocker: Decodable, Equatable {
     public let blockRegex: String
     public let excludedDomains: [String]

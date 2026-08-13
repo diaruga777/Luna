@@ -1,6 +1,6 @@
 //
 //  Classifier.swift
-//  ReaderKit
+//  Luna
 //
 
 import LunaURLClassification
@@ -8,10 +8,10 @@ import LunaModels
 import Foundation
 import SwiftSoup
 
-/// THE content classifier — pure, dependency-free of UIKit/network, living in
-/// ReaderKit so the main app AND every extension classify a URL identically from
-/// one source of truth. Determination only: it returns WHAT a URL is and never
-/// fetches, prices, bypasses, or renders.
+/// The content classifier: pure, with no UIKit or network dependency, so the
+/// main app and every extension classify a URL identically from one source of
+/// truth. Determination only — it returns what a URL is and never fetches,
+/// prices, bypasses, or renders.
 ///
 /// Two phases, in strict order:
 /// 1. **Deterministic `[KnownSite]` table FIRST** (URL-only, no HTML). Platform /

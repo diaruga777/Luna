@@ -12,10 +12,10 @@ import SwiftSoup
 /// be edited elsewhere can come back.
 ///
 /// It reads `word/document.xml` directly rather than going through
-/// `NSAttributedString`: UIKit's document-type list has no Office Open XML on
-/// iOS (that initializer is AppKit's), and the paragraph STYLE is the only thing
-/// that says which lines are headings — which is exactly what a reader needs and
-/// what a flattened attributed string throws away.
+/// `NSAttributedString`: UIKit's document-type list has no Office Open XML
+/// on iOS (that initializer is AppKit's), and the paragraph style is the
+/// only thing that says which lines are headings — which is exactly what a
+/// reader needs and what a flattened attributed string throws away.
 public enum DocxDocumentParser {
 
     public static func parse(data: Data, fallbackTitle: String) -> ArticleContent? {
@@ -51,9 +51,10 @@ public enum DocxDocumentParser {
     private static func collect(_ node: Node, into pieces: inout [String]) {
         if let element = node as? Element {
             switch element.tagName().lowercased() {
-            // The RAW text, not `text()`: SwiftSoup normalizes whitespace, and a
-            // run's trailing space (`xml:space="preserve"`) is the only thing
-            // separating it from the next one — "the" + "end" is not "the end".
+            // The raw text, not `text()`: SwiftSoup normalizes whitespace, and
+            // a run's trailing space (`xml:space="preserve"`) is the only
+            // thing separating it from the next one — "the" + "end" is not
+            // "the end".
             case "w:t": pieces.append(element.textNodes().map { $0.getWholeText() }.joined())
             case "w:tab": pieces.append("\t")
             case "w:br", "w:cr": pieces.append(" ")

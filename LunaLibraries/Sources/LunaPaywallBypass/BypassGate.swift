@@ -9,10 +9,11 @@ import LunaURLClassification
 import LunaModels
 import Foundation
 
-/// The single hard GATE that decides whether a paywall bypass (any silent strategy
-/// OR the WKWebView archive reader) may run for a page. It exists to stop bypass
-/// false positives: a bypass must fire ONLY for content that is genuinely paywalled,
-/// never for a fully-readable article, a product page, or a social/platform link.
+/// The single hard gate that decides whether a paywall bypass, any silent
+/// strategy or the WKWebView archive reader, may run for a page. It exists
+/// to stop bypass false positives: a bypass must fire only for content that
+/// is genuinely paywalled, never for a fully-readable article, a product
+/// page, or a social/platform link.
 ///
 /// Pure (no I/O, no UIKit) so it can be the one source of truth reused everywhere a
 /// bypass could start — the resolver's silent strategies, the archive reader's
@@ -23,11 +24,11 @@ public enum BypassGate {
 
     /// Why a bypass was allowed, or blocked.
     public enum Decision: Equatable {
-        /// A bypass MAY run. Every caller only ever asks whether a bypass is
-        /// allowed, never which paywall evidence justified it, so this carries
-        /// no payload.
+        /// A bypass may run. Every caller only ever asks whether a bypass is
+        /// allowed, never which paywall evidence justified it, so this
+        /// carries no payload.
         case attempt
-        /// A bypass must NOT run. The associated `Block` records why.
+        /// A bypass must not run. The associated `Block` records why.
         case block(Block)
 
         /// Convenience: whether a bypass is allowed.
@@ -56,12 +57,12 @@ public enum BypassGate {
         case nonContentPage
     }
 
-    /// Whether a bypass may be attempted for `url`, given the direct page's `html`
-    /// (nil if the direct fetch failed) and the already-extracted article
-    /// (nil if extraction failed). PURE.
+    /// Whether a bypass may be attempted for `url`, given the direct page's
+    /// `html` (nil if the direct fetch failed) and the already-extracted
+    /// article (nil if extraction failed). Pure.
     ///
-    /// Decision order — the BLOCKS come first so a genuine non-paywall can never be
-    /// bypassed, then the paywall SIGNALS:
+    /// Decision order — the blocks come first so a genuine non-paywall can
+    /// never be bypassed, then the paywall signals:
     /// 1. Platform/social link → block (these never paywall-bypass).
     /// 2. Product page → block (routed to price tracking), except that a
     ///    deterministic news-host classification is authoritative over commerce
@@ -105,13 +106,14 @@ public enum BypassGate {
         // strategy below is pointless — and the last one is archive.today, which
         // would put a CAPTCHA in front of a Google search page.
         //
-        // Deliberately the URL-ONLY half of `ListingPage`: the HTML listing shapes
-        // (link density, repeated `<article>`s) describe a metered article whose
-        // body has been cut back to headline links just as well as a real index, so
-        // consulting them HERE would disable the unlock the Reader exists for. They
-        // are applied one level up, in `IngestPipeline`, where a locked page is
-        // exempt. Nothing is lost at the archive reader's own entry point either:
-        // it builds its plan with `directHTML: nil`, so only this half could fire.
+        // Deliberately the URL-only half of `ListingPage`: the HTML listing
+        // shapes (link density, repeated `<article>`s) describe a metered
+        // article whose body has been cut back to headline links just as
+        // well as a real index, so consulting them here would disable the
+        // unlock the Reader exists for. They are applied one level up, in
+        // `IngestPipeline`, where a locked page is exempt. Nothing is lost
+        // at the archive reader's own entry point either: it builds its plan
+        // with `directHTML: nil`, so only this half could fire.
         if ListingPage.isSearchResultsURL(url) {
             return .block(.nonContentPage)
         }
@@ -149,9 +151,10 @@ public enum BypassGate {
             return .attempt
         }
 
-        // (8) Direct fetch failed on an unknown host: we can't prove the page is free
-        // (it may be JS-walled), so a best-effort bypass is allowed. A page we DID
-        // fetch and that shows no paywall evidence falls through to (9).
+        // (8) Direct fetch failed on an unknown host: we cannot prove the
+        // page is free (it may be JS-walled), so a best-effort bypass is
+        // allowed. A page we did fetch, and that shows no paywall evidence,
+        // falls through to (9).
         if html == nil {
             return .attempt
         }

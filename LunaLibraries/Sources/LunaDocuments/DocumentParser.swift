@@ -13,13 +13,14 @@ import PDFKit
 /// Markdown via the pure parsers below. Returns nil when nothing readable can be
 /// extracted.
 ///
-/// **`title` is a FALLBACK for the container formats.** It is the shared file's
-/// name, which for a book is a distribution artifact ("pg84-images-3"); an EPUB
-/// or `.docx` that names itself in its own metadata wins, and `saveContent`
-/// carries that title back onto the save row.
+/// **`title` is a fallback for the container formats.** It is the shared
+/// file's name, which for a book is a distribution artifact
+/// ("pg84-images-3"); an EPUB or `.docx` that names itself in its own
+/// metadata wins, and `saveContent` carries that title back onto the save
+/// row.
 public enum DocumentParser {
 
-    /// The formats `parse` has a specific reader for. Parsed ONCE, from the
+    /// The formats `parse` has a specific reader for. Parsed once, from the
     /// raw extension string, instead of switching on that string twice over
     /// two separately hand-kept case lists.
     enum ReadableDocumentFormat: String, CaseIterable {

@@ -11,9 +11,9 @@ import Foundation
 /// JS/cookies/meter don't apply — yet the server still returns the full article
 /// (same cert, same content, HTTP 200). Confirmed on NYT and reported to work on
 /// other client-side cookie/origin-keyed meters; spotty, so it's a *cheap try*,
-/// never a guarantee. The transform is publisher-agnostic — `BypassStrategySelector`
-/// decides *when* to apply it (per-host rule or the generic metered branch), so the
-/// transform no longer gates on host.
+/// never a guarantee. The transform itself is publisher-agnostic —
+/// `BypassStrategySelector` decides *when* to apply it (per-host rule or the generic
+/// metered branch), not this type.
 public enum TrailingDotBypass {
 
     /// The trailing-dot variant of an article URL (`host` → `host.`), preserving the
@@ -27,8 +27,8 @@ public enum TrailingDotBypass {
     }
 
     /// Whether `host` is a New York Times property (the apex, any subdomain, or the
-    /// `nyt.com` alias). Retained for the per-host rule table / callers that still
-    /// reason about NYT specifically. A trailing dot is tolerated (idempotent).
+    /// `nyt.com` alias). Used by the per-host rule table and other callers that reason
+    /// about NYT specifically. A trailing dot is tolerated (idempotent).
     public static func isNYTHost(_ host: String) -> Bool {
         let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return host == "nytimes.com" || host.hasSuffix(".nytimes.com")

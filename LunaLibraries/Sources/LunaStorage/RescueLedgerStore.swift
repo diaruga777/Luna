@@ -43,12 +43,12 @@ public struct RescueLedgerEntry: Codable, Equatable {
     }
 }
 
-/// App-Group-backed ledger, written to `rescueLedger.json` beside the reading
+/// App-Group-backed ledger, written to `rescueLedger.json` beside the saves
 /// list. Every read and every mutation goes through the file (see
-/// `CoordinatedJSONFile`), so a ledger row written from another process is not
-/// rewritten away by this one's next attempt. "In-flight" is deliberately NOT
-/// persisted (a crash must not strand an item) — the coordinator tracks that in
-/// process memory.
+/// `CoordinatedJSONFile`), so a ledger row written from another process is
+/// not rewritten away by this one's next attempt. "In-flight" is
+/// deliberately NOT persisted — a crash must not strand an item — so the
+/// coordinator tracks that in process memory instead.
 public final class RescueLedgerStore {
     public static let shared = RescueLedgerStore()
 

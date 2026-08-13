@@ -1,6 +1,6 @@
 //
 //  PlatformRecognizer.swift
-//  ReaderKit
+//  Luna
 //
 
 import LunaModels

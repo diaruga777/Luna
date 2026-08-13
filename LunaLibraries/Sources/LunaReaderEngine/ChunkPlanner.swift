@@ -92,8 +92,8 @@ public enum ChunkPlanner {
 
             let chunkHasBody = (end - start) >= 2
             let prevBinds = ReadingHeuristics.isLeadingBinder(previous.text)
-            // Natural phrase start: break BEFORE a preposition/conjunction so the
-            // phrase it introduces stays together as the next chunk.
+            // Natural phrase start: break before a preposition/conjunction so
+            // the phrase it introduces stays together as the next chunk.
             if chunkHasBody, !prevBinds, ReadingHeuristics.isPhraseStarter(word.text) { break }
             // Soft boundary: a clause mark (, ; :) once the chunk has some body.
             if chunkHasBody, !prevBinds, previous.endsClause { break }

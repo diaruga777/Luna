@@ -10,11 +10,11 @@ import SwiftSoup
 /// for the three imported formats that are markup underneath: a `.html`/`.xhtml`
 /// file, and every chapter of an EPUB.
 ///
-/// Deliberately NOT the web article extractor. That one's job is to find the
-/// article inside a page full of navigation, promos and comment threads, and it
-/// scores candidates to do it — which is the wrong instinct here, where the file
-/// IS the content and a short chapter would lose to nothing at all. This takes
-/// the document's own block elements, in the document's own order.
+/// Deliberately not the web article extractor. That one's job is to find the
+/// article inside a page full of navigation, promos, and comment threads, and
+/// it scores candidates to do it — which is the wrong instinct here, where
+/// the file is the content and a short chapter would lose to nothing at all.
+/// This takes the document's own block elements, in the document's own order.
 public enum MarkupBlockExtractor {
 
     /// Block-level elements worth a block of their own, as one selector so
@@ -33,9 +33,10 @@ public enum MarkupBlockExtractor {
         _ = try? body.select(strippedSelector).remove()
 
         guard let matches = try? body.select(blockSelector) else { return [] }
-        // A `p` inside a `blockquote` matches the selector too, and emitting both
-        // would print the quote twice — once as itself and once as its contents.
-        // The OUTER element wins: it knows what kind of block this is.
+        // A `p` inside a `blockquote` matches the selector too, and emitting
+        // both would print the quote twice — once as itself and once as its
+        // contents. The outer element wins: it knows what kind of block this
+        // is.
         let matched = Set(matches.array().map(ObjectIdentifier.init))
 
         var blocks: [ArticleContent.Block] = []

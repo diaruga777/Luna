@@ -90,22 +90,22 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     }
 
     /// This app's identity in the Action Button double-save system, or nil for
-    /// the two apps that don't arm it — only the two article-file apps
+    /// the two apps that don't arm it. Only the two article-file apps
     /// (`handlesArticles`, and specifically Luna/Reader rather than a future
-    /// third) let a repeat press build/send an article. The ONE place that
-    /// decision is made; `ActionButtonIntentSupport.doubleSaveSurface` and
-    /// `SettingsViewController`'s own property used to each hand-write this
-    /// same `switch` independently.
+    /// third) let a repeat press build and send an article. This is the ONE
+    /// place that decision is made: `ActionButtonIntentSupport.doubleSaveSurface`
+    /// and `SettingsViewController`'s own property both read it here instead of
+    /// each hand-writing the same `switch`.
     public var doubleSaveSurface: DoubleSaveSurface? {
         DoubleSaveSurface(app: self)
     }
 }
 
 /// Which app's Action Button double-save setting a save press is scoped to.
-/// Parsed once from `LunaApp.doubleSaveSurface`; `rawValue` is used only at
-/// `DoubleSaveActionStore`'s defaults-key boundary, never to smuggle this
-/// value through the intent/ingest pipeline as a bare `String` the way it
-/// used to be.
+/// Parsed once from `LunaApp.doubleSaveSurface`. `rawValue` is used only at
+/// `DoubleSaveActionStore`'s defaults-key boundary — never to carry this value
+/// through the intent/ingest pipeline as a bare `String`; that pipeline must
+/// pass the typed enum instead.
 public enum DoubleSaveSurface: String, Codable, Equatable, Sendable {
     case luna
     case reader

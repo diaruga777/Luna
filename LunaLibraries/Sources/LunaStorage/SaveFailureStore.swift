@@ -13,7 +13,7 @@ import LunaModels
 ///
 /// Kept in a SIDECAR file, never on `ReadingListItem` — failure detail belongs to
 /// the layer that produced it rather than to the row four apps share (the same
-/// reasoning as `RescueLedgerStore` and the imageRefs / preloads sidecars).
+/// reasoning as `RescueLedgerStore` and the preloads sidecar).
 public struct SaveFailureRecord: Codable, Equatable, Sendable {
     /// The coarse reason, straight off the ingest outcome.
     public var reason: SaveFailureReason?

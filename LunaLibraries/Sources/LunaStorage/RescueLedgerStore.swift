@@ -12,7 +12,7 @@ import LunaModels
 /// `ReadingListItem`: the row every save has is read and rewritten by four
 /// independently-updated apps, and bookkeeping only the rescue layer understands
 /// has no business there. A sidecar only that layer touches keeps the hot shared
-/// model untouched (same reasoning as the imageRefs / preloads sidecars).
+/// model untouched (same reasoning as the preloads sidecar).
 public struct RescueLedgerEntry: Codable, Equatable {
     public var attemptCount: Int
     public var lastAttemptDate: Date?

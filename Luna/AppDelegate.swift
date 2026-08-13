@@ -140,13 +140,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // rescueTrigger is set before the launch re-ingest can surface failures.
         URLRescueWiring.install()
 
-        // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated) and
-        // run the one-time image-ownership backfill so images shared with pre-existing
-        // saves/preloads are reference-counted before any preload release could delete one.
+        // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated)
+        // and finish any file deletion a previous run committed but was killed
+        // before it could unlink (`PendingDeleteReaper`).
         if !LunaStage.isActive {
             DispatchQueue.global(qos: .utility).async {
                 _ = NetworkReachability.shared
-                ImageReferenceStore.shared.backfillIfNeeded(readingList: .shared, preloads: .shared)
+                ReadingListStore.shared.reapPendingDeletes()
             }
         }
 
@@ -277,6 +277,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
         WeeklyProposalBackgroundCheck.schedule(reason: "entered background")
+        // A file released by an extension while this app was in the foreground has
+        // nobody else to unlink it.
+        ReadingListStore.shared.reapPendingDeletes()
     }
 
     func application(

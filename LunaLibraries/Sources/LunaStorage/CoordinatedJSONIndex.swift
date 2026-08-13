@@ -7,7 +7,7 @@ import Foundation
 
 /// The shared `NSLock` + `NSFileCoordinator` "load → mutate → save" wrapper for a
 /// JSON index file mutated from multiple processes (the app and its extensions all
-/// touch `imageRefs.json`/`preloads.json`): an uncoordinated load→save would let the
+/// touch `preloads.json`): an uncoordinated load→save would let the
 /// last writer clobber another process's concurrent change. `lock` serializes
 /// callers within this process; `fileCoordinator` serializes across processes.
 /// `load`/`save` do the caller's own JSON (de)coding, so this stays index-type-agnostic.

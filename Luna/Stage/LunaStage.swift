@@ -24,10 +24,11 @@ import UIKit
 /// behind, and a manifest an agent can enumerate without reading Swift.
 ///
 /// DEBUG-only, and the gate is `#if DEBUG` rather than a build setting on
-/// purpose: the stage catalogs reference `seedForTesting`, `SavedItem
-/// (seed:)` and the other DEBUG-only fixture seams, so a release build cannot
-/// compile them even if someone passed the launch argument. There is nothing to
-/// disable — in a shipped binary this file is an `isActive` that returns false.
+/// purpose. The stage catalogs reference `seedForTesting`, `SavedItem
+/// (seed:)`, and the other DEBUG-only fixture seams, so a release build
+/// cannot compile them even if someone passes the launch argument. There is
+/// nothing to disable: in a shipped binary, this file is just an `isActive`
+/// that returns false.
 enum LunaStage {
 
     /// `-LunaStage <id>` — boot into that stage.
@@ -61,13 +62,13 @@ enum LunaStage {
     /// resolve the real one. Everything after this — including the app's own
     /// launch bookkeeping — writes to scratch.
     ///
-    /// Animations are deliberately left ON. Turning them off globally is the
-    /// obvious way to make a capture deterministic and it is wrong here: the
-    /// card carousel mounts its cards through an animated path, so
+    /// Animations stay on deliberately. Turning them off globally looks like
+    /// the obvious way to make a capture deterministic, but it is wrong
+    /// here: the card carousel mounts its cards through an animated path, so
     /// `UIView.setAnimationsEnabled(false)` rendered every deck stage as a
-    /// black screen. Determinism comes from the HARNESS instead — the capture
-    /// script waits for two identical frames rather than for a fixed delay
-    /// (`scripts/stage_screenshots.py`), which is both more accurate and
+    /// black screen. Determinism comes from the harness instead: the capture
+    /// script (`scripts/stage_screenshots.py`) waits for two identical
+    /// frames rather than a fixed delay, which is both more accurate and
     /// impossible to get wrong from inside the app.
     static func prepareIfNeeded() {
         guard isActive else { return }
@@ -86,14 +87,14 @@ enum LunaStage {
         exit(0)
     }
 
-    /// Step 4, from `SceneDelegate`: seed the stage's fixtures and build its
-    /// screen. Returns nil when no stage was requested (production launch) or
-    /// when the stage asked for the app's own root — in which case the caller
-    /// carries on down the normal path with the store already seeded.
+    /// Step 4, from `SceneDelegate`: seeds the stage's fixtures and builds
+    /// its screen. Returns nil when no stage was requested (a production
+    /// launch) or when the stage asked for the app's own root — the caller
+    /// then carries on down the normal path with the store already seeded.
     ///
-    /// An unknown id is a hard failure rather than a silent fall-through to the
-    /// normal root: a screenshot run that quietly captured the wrong screen for
-    /// a typo'd id is worse than one that stops.
+    /// An unknown id is a hard failure, not a silent fall-through to the
+    /// normal root: a screenshot run that quietly captured the wrong screen
+    /// for a typo'd id is worse than one that stops.
     @MainActor
     static func rootViewController() -> UIViewController? {
         guard let requestedID else { return nil }

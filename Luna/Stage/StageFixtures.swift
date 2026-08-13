@@ -13,17 +13,17 @@ import UIKit
 
 /// The stub data staged mode seeds, and the small helpers every catalog needs.
 ///
-/// Everything here builds on the fixtures the snapshot tests already use —
+/// Everything here builds on the fixtures the snapshot tests already use:
 /// `UITestFixtures.baseDate` / `ago(days:hours:)` for stable dates,
-/// `SavedItem(seed:)` for stable ids, `sampleArticleContent` for body
-/// text — so a staged screen and its snapshot test are looking at the same
-/// article. What is new here is the per-STATE fixtures (a locked save on its
-/// own, a tracker mid-drop, a download frozen at 45%) that a screenshot pass
-/// needs and a snapshot test never did.
+/// `SavedItem(seed:)` for stable ids, `sampleArticleContent` for body text.
+/// A staged screen and its snapshot test therefore look at the same
+/// article. What is new here are the per-state fixtures — a locked save on
+/// its own, a tracker mid-drop, a download frozen at 45% — that a
+/// screenshot pass needs and a snapshot test never did.
 ///
-/// Because a staged run's container is a throwaway
-/// (`StageContainer.activate`), everything below writes to the real store API
-/// and still leaves nothing behind.
+/// A staged run's container is a throwaway (`StageContainer.activate`), so
+/// everything below writes through the real store API and still leaves
+/// nothing behind.
 enum StageFixtures {
 
     // MARK: - Dates

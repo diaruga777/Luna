@@ -7,15 +7,16 @@
 
 import UIKit
 
-/// A container that shows `host` and, once it has appeared, presents a modal built
-/// by `makeModal`. Used to deep-link to screens the app only ever shows modally over
-/// another root (e.g. the nested split-web overlay). DEBUG-only test scaffolding.
+/// Shows `host`, then presents a modal built by `makeModal` once `host` has
+/// appeared. Used to deep-link into screens the app only ever shows modally
+/// over another root — for example the nested split-web overlay. DEBUG-only
+/// test scaffolding.
 final class PresentingHostViewController: UIViewController {
     private let host: UIViewController
     private let makeModal: @MainActor () -> UIViewController?
-    /// Whether the presentation animates. Off by default — a capture wants the
-    /// settled frame — but the nested split-web overlay's whole subject IS its
-    /// transition, so that one opts in.
+    /// Whether the presentation animates. Off by default, since a capture
+    /// wants the settled frame — but the nested split-web overlay's whole
+    /// subject is its transition, so that one opts in.
     private let animates: Bool
     private var hasPresented = false
 

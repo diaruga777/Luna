@@ -513,6 +513,46 @@ with relationships and indexes — not a JSON payload column.
 5. `scripts/select_changed_tests.py`'s path table and any script naming the
    module/file paths get the rename in the same commit.
 
+### Wave 6 — comment hygiene + type-enforced invariants (after Wave 5)
+
+Owner directive (2026-08-13). Two halves, run per-module:
+
+**6A — comments.** Every comment in the tree is rewritten to ASD-STE100
+principles or deleted:
+- Active voice, simple verbs, short sentences, one idea per sentence.
+- A comment says what the code DOES and how it interacts with other code —
+  never what the code isn't, never a deleted feature or an old design, never
+  the spec restated verbatim.
+- A comment exists only where the code cannot speak for itself: a constraint
+  the code can't show, why esoteric code exists, a cross-artifact contract.
+  Delete comments that narrate the next line, repeat the signature, or
+  restate a name.
+- Keep: parity/contract comments that name their pinning test or the foreign
+  artifact they mirror (these ARE cross-artifact constraints); license/header
+  lines; `MARK:` structure.
+- Doc comments on public API keep their role but follow the same style.
+
+**6B — types over comments.** Where a comment enforces an invariant, prefer a
+compiler-enforced design. The pattern to hunt: a POST-PROCESSING RESULT whose
+downstream consumers must trust an invariant the processor established —
+represent the processed result as its own type so the invariant travels with
+the value ("parse, don't validate"). Worth the overhead ONLY when the
+invariant crosses a function/module boundary and is currently prose (e.g. a
+"already canonicalized/unwrapped URL" string handed between tiers, an
+"already sanitized" HTML payload, a "resolved, non-placeholder" item state, a
+"validated directive" in rescue). NOT worth it for local trivia
+(NonEmptyString-grade wrappers are explicitly out). Each 6B change is a small,
+behavior-preserving refactor: introduce the result type at the processor,
+thread it to the consumers, delete the comment the type replaced. Flag (do
+not execute) any case where threading the type would touch more than ~10
+files — batch those for review.
+
+Execution: per-module agents (comment edits are wide but shallow — several
+agents in parallel on disjoint module sets); 6B candidates collected first by
+an inventory pass, then executed individually. Compile gate per module;
+existing suites green; comments in test files follow the same rules. The
+final doc pass adds this standard to CLAUDE.md.
+
 ## Explicitly deferred (documented, not executed — report only)
 
 - Moving JS heuristics into the Safari handler (sync→async round-trip risk;

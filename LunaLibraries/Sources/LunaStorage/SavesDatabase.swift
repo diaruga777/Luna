@@ -237,7 +237,7 @@ final class SavesDatabase {
     /// this process's own writes refresh the cache directly, so a value that
     /// still matches means nothing has happened elsewhere.
     var dataVersion: Int64 {
-        (try? scalarInt("PRAGMA data_version")) .flatMap { $0 } ?? 0
+        ((try? scalarInt("PRAGMA data_version")) ?? nil) ?? 0
     }
 
     /// Total rows this connection has inserted, updated or deleted since it was

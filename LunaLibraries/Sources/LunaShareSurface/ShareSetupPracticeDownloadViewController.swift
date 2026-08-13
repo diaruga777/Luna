@@ -215,11 +215,17 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
     private func finishDownloadBeat() {
         progress.isHidden = true
         status.isHidden = true
-        pendingIcon.isHidden = true
-        posterView.image = Self.posterFrame(of: videoURL)
-        posterView.isHidden = posterView.image == nil
-        pendingIcon.isHidden = !posterView.isHidden
         playBadge.isHidden = false
+        // The first frame is decoded off the main thread now (the synchronous
+        // read of it was deprecated in iOS 18), so the pending icon holds the
+        // slot until it lands — and keeps it if the clip has no readable frame.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let poster = await Self.posterFrame(of: self.videoURL)
+            self.posterView.image = poster
+            self.posterView.isHidden = poster == nil
+            self.pendingIcon.isHidden = !self.posterView.isHidden
+        }
 
         guard let session = HostedShareSession.current else { return }
         session.onMediaFileReady?(videoURL)
@@ -229,11 +235,11 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
 
     /// The clip's own opening frame, so the poster is unmistakably the thing
     /// that is about to play rather than a stand-in for it.
-    private static func posterFrame(of url: URL) -> UIImage? {
+    private static func posterFrame(of url: URL) async -> UIImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
-        guard let cgImage = try? generator.copyCGImage(
-            at: CMTime(value: 0, timescale: 1), actualTime: nil)
+        guard let cgImage = try? await generator.image(
+            at: CMTime(value: 0, timescale: 1)).image
         else { return nil }
         return UIImage(cgImage: cgImage)
     }

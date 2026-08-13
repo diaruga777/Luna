@@ -1250,11 +1250,11 @@ public final class LiveMediaDownloadManager: NSObject {
         return Self.writeThumbnail(cgImage, jobID: jobID)
     }
 
-    private func makeVideoThumbnail(from fileURL: URL, jobID: String) -> String? {
+    private func makeVideoThumbnail(from fileURL: URL, jobID: String) async -> String? {
         let asset = AVURLAsset(url: fileURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        guard let cgImage = try? generator.copyCGImage(at: .zero, actualTime: nil) else { return nil }
+        guard let cgImage = try? await generator.image(at: .zero).image else { return nil }
         return Self.writeThumbnail(cgImage, jobID: jobID)
     }
 
@@ -1348,7 +1348,7 @@ public final class LiveMediaDownloadManager: NSObject {
                     throw MediaDownloadError.downloadFailed
                 }
                 if (job.mediaKind ?? .image) == .video, job.thumbnailFileName == nil {
-                    job.thumbnailFileName = self.makeVideoThumbnail(
+                    job.thumbnailFileName = await self.makeVideoThumbnail(
                         from: destination, jobID: job.id)
                 }
                 self.store.upsert(job)
@@ -1836,7 +1836,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 // Keep the completed transfer as an app-owned file below.
             }
         }
-        return try SavedMediaStore.shared.addDownloadedFile(
+        return try await SavedMediaStore.shared.addDownloadedFile(
             fileURL,
             kind: kind,
             sourceURLString: job.sourceURLString,

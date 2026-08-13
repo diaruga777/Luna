@@ -105,7 +105,7 @@ public final class ReadingListIngestor {
             return running
         }
         guard !alreadyRunning else { return .supported }
-        defer { lock.withLock { inFlight.remove(item.id) } }
+        defer { lock.withLock { _ = inFlight.remove(item.id) } }
 
         let url = initialURL
 

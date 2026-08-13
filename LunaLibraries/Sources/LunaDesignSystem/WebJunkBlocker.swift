@@ -72,16 +72,16 @@ public enum WebJunkBlocker {
     })();
     """
 
-    /// One shared web content process pool across every junk-blocking web view, so a
-    /// second web view (e.g. a cache-miss inline link, or the Original mode switch)
-    /// reuses the already-warm web process instead of cold-starting its own.
-    private static let sharedProcessPool = WKProcessPool()
-
-    /// A web view configuration with the cleanup script pre-installed and the shared
-    /// process pool attached.
+    /// A web view configuration with the cleanup script pre-installed.
+    ///
+    /// This used to also hand every junk-blocking web view one shared
+    /// `WKProcessPool`, so a second web view (a cache-miss inline link, the
+    /// Original mode switch) reused the already-warm web process. Since iOS 15
+    /// that pool is documented to have no effect — process sharing follows the
+    /// `websiteDataStore` instead, and these configurations all take the
+    /// default one — so the pool bought nothing and is gone.
     public static func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
-        configuration.processPool = sharedProcessPool
         addCleanupScript(to: configuration.userContentController)
         return configuration
     }
@@ -122,6 +122,9 @@ public enum WebJunkBlocker {
     }
 
     /// Async form used when a caller must attach the blocker before navigation.
+    /// Main-actor because `WKContentRuleListStore` is; every caller is building
+    /// a web view anyway.
+    @MainActor
     public static func compiledRuleList() async -> WKContentRuleList? {
         await withCheckedContinuation { continuation in
             guard let store = WKContentRuleListStore.default() else {

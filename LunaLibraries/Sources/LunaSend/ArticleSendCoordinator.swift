@@ -273,7 +273,7 @@ public final class ArticleSendCoordinator {
             return sending
         }
         guard !alreadySending else { return }
-        defer { lock.withLock { inFlight.remove(key) } }
+        defer { lock.withLock { _ = inFlight.remove(key) } }
 
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
         store.markSendAttemptStarted(for: itemID, destination: destination.id)

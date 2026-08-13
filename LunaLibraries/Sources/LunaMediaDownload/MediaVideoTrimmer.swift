@@ -33,24 +33,15 @@ enum MediaVideoTrimmer {
         else { throw MediaDownloadError.downloadFailed }
         let output = MediaDownloadStorage.newFileURL(extension: "mp4")
         try? FileManager.default.removeItem(at: output)
-        exporter.outputURL = output
-        exporter.outputFileType = .mp4
         exporter.shouldOptimizeForNetworkUse = true
         exporter.timeRange = CMTimeRange(start: start, end: end)
 
-        try await withCheckedThrowingContinuation { continuation in
-            exporter.exportAsynchronously {
-                switch exporter.status {
-                case .completed:
-                    continuation.resume()
-                case .cancelled:
-                    continuation.resume(throwing: CancellationError())
-                default:
-                    continuation.resume(
-                        throwing: exporter.error ?? MediaDownloadError.downloadFailed)
-                }
-            }
-        }
+        // iOS 18's `export(to:as:)` replaces `exportAsynchronously` plus the
+        // `status`/`error` poll it left you to interpret: it throws the failure
+        // directly and carries task cancellation itself. The destination moves
+        // into the call, so `outputURL`/`outputFileType` are no longer set here
+        // (setting them and then calling this is an error).
+        try await exporter.export(to: output, as: .mp4)
         return output
     }
 }

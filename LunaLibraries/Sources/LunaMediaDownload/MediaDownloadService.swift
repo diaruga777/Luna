@@ -115,7 +115,7 @@ public struct MediaDownloadService {
         }
 
         do {
-            let item = try SavedMediaStore.shared.addDownloadedFile(
+            let item = try await SavedMediaStore.shared.addDownloadedFile(
                 fileURL,
                 kind: asset.kind,
                 sourceURLString: url.absoluteString,

@@ -38,3 +38,13 @@ INFOPLIST_KEY_UIBackgroundModes = audio
 // flags per-target, because the two compile modes are mutually exclusive.
 MTL_COMPILER_FLAGS = -fcikernel
 MTLLINKER_FLAGS = -fcikernel
+
+// Core Image Kernel Language (`CIWarpKernel(source:)` / `CIColorKernel(source:)`)
+// has been deprecated since iOS 12, and the Metal-library constructors that
+// replace it are what `OnboardingActionButtonEffects` reaches for FIRST. The
+// CIKL spellings survive only as its fallback for a missing `default.metallib`
+// — the one case the replacement cannot serve, since it needs that library —
+// so there is nothing to migrate them to. This define is Apple's own escape
+// hatch for exactly that, named in the deprecation message itself; it reaches
+// the Swift importer through the CoreImage headers.
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) CI_SILENCE_GL_DEPRECATION=1

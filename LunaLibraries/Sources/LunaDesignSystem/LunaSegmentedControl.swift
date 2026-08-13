@@ -109,11 +109,6 @@ public final class LunaSegmentedControl: UIControl {
         updateColors()
     }
 
-    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        updateColors()
-    }
-
     public override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         selectSegment(at: touch.location(in: self), sendsAction: true)
         return true
@@ -131,6 +126,12 @@ public final class LunaSegmentedControl: UIControl {
         selectedLayer.cornerCurve = .continuous
         layer.addSublayer(selectedLayer)
         layer.addSublayer(separatorLayer)
+        // The appearance rides `LunaSkyTrait`, not `userInterfaceStyle` (which
+        // is pinned to `.dark` app-wide), and `updateColors` caches resolved
+        // CGColors — so this is the notification that has to arrive.
+        registerForTraitChanges([LunaSkyTrait.self]) { (control: LunaSegmentedControl, _) in
+            control.updateColors()
+        }
         updateColors()
     }
 

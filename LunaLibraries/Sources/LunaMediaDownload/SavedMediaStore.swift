@@ -416,6 +416,9 @@ public final class SavedMediaStore {
     }
 
     @discardableResult
+    /// `async` because the video thumbnail's first-frame read is: iOS 18
+    /// deprecated the synchronous `copyCGImage` in favour of `image(at:)`.
+    /// Every caller was already in an async context.
     public func addDownloadedFile(
         _ fileURL: URL,
         kind: MediaAsset.Kind,
@@ -424,20 +427,20 @@ public final class SavedMediaStore {
         fileExtension ext: String? = nil,
         dateSaved: Date = Date(),
         requiringItemID: UUID? = nil
-    ) throws -> SavedMediaItem {
+    ) async throws -> SavedMediaItem {
         let recognized = PlatformRecognizer.recognize(sourceURLString)
-        lock.lock()
-        var items = loadUnlocked()
-        let existingIndex = Self.matchIndex(
-            in: items, id: requiringItemID, sourceURLString: sourceURLString)
-        let existing = existingIndex.map { items[$0] }
-        guard requiringItemID == nil || existing?.id == requiringItemID else {
-            lock.unlock()
-            throw SavedMediaStoreMutationError.itemRemoved
+        let (existing, protectedItemID, id) = try lock.withLock {
+            () -> (SavedMediaItem?, UUID?, UUID) in
+            let items = loadUnlocked()
+            let existingIndex = Self.matchIndex(
+                in: items, id: requiringItemID, sourceURLString: sourceURLString)
+            let existing = existingIndex.map { items[$0] }
+            guard requiringItemID == nil || existing?.id == requiringItemID else {
+                throw SavedMediaStoreMutationError.itemRemoved
+            }
+            let protectedItemID = requiringItemID ?? existing?.id
+            return (existing, protectedItemID, protectedItemID ?? UUID())
         }
-        let protectedItemID = requiringItemID ?? existing?.id
-        let id = protectedItemID ?? UUID()
-        lock.unlock()
         let cleanExt = Self.cleanExtension(ext ?? fileURL.pathExtension, kind: kind)
         // A fresh name keeps an existing durable local backing intact until the
         // replacement manifest has committed successfully.
@@ -446,7 +449,7 @@ public final class SavedMediaStore {
         try? fm.removeItem(at: destination)
         try fm.moveItem(at: fileURL, to: destination)
 
-        let thumbnailName = makeThumbnail(for: destination, kind: kind, id: id)
+        let thumbnailName = await makeThumbnail(for: destination, kind: kind, id: id)
         let item = SavedMediaItem(
             id: id,
             sourceURLString: sourceURLString,
@@ -457,42 +460,48 @@ public final class SavedMediaStore {
             thumbnailFileName: thumbnailName,
             platform: recognized?.platform ?? existing?.platform,
             platformItemID: recognized?.itemID ?? existing?.platformItemID)
-        var persistedItem = item
         func removeNewFiles() {
             try? fm.removeItem(at: destination)
             if let thumbnailName {
                 try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailName))
             }
         }
-        lock.lock()
-        items = loadUnlocked()
-        let latestIndex = Self.matchIndex(in: items, id: id, sourceURLString: sourceURLString)
-        let latest = latestIndex.map { items[$0] }
-        guard protectedItemID == nil || latest?.id == protectedItemID else {
-            lock.unlock()
-            removeNewFiles()
-            throw SavedMediaStoreMutationError.itemRemoved
-        }
-        // Metadata and archive status may have changed while the file move and
-        // thumbnail generation were in flight. Merge from the latest manifest,
-        // never from the stale pre-I/O snapshot.
-        persistedItem.title = title ?? latest?.title ?? existing?.title
-        persistedItem.platform = recognized?.platform ?? latest?.platform ?? existing?.platform
-        persistedItem.platformItemID = recognized?.itemID
-            ?? latest?.platformItemID ?? existing?.platformItemID
-        if let latest {
-            persistedItem.archivedAt = latest.archivedAt
-        } else {
-            persistedItem.archivedAt = existing?.archivedAt
-        }
-        let replaced = items.filter { $0.id == id }
-        items.removeAll { $0.id == id }
-        items.append(persistedItem)
+        // The commit runs under one `withLock`; a failure inside it rethrows and
+        // the file cleanup happens outside, so the lock is never held across it.
+        let replaced: [SavedMediaItem]
+        let persistedItem: SavedMediaItem
         do {
-            try saveUnlocked(items)
-            lock.unlock()
+            (replaced, persistedItem) = try lock.withLock {
+                () -> ([SavedMediaItem], SavedMediaItem) in
+                var items = loadUnlocked()
+                let latestIndex = Self.matchIndex(
+                    in: items, id: id, sourceURLString: sourceURLString)
+                let latest = latestIndex.map { items[$0] }
+                guard protectedItemID == nil || latest?.id == protectedItemID else {
+                    throw SavedMediaStoreMutationError.itemRemoved
+                }
+                // Metadata and archive status may have changed while the file move
+                // and thumbnail generation were in flight. Merge from the latest
+                // manifest, never from the stale pre-I/O snapshot.
+                var merged = item
+                merged.title = title ?? latest?.title ?? existing?.title
+                merged.platform = recognized?.platform ?? latest?.platform ?? existing?.platform
+                merged.platformItemID = recognized?.itemID
+                    ?? latest?.platformItemID ?? existing?.platformItemID
+                // A row that exists but is NOT archived clears the flag; only
+                // the absence of a latest row falls back to the pre-I/O one.
+                if let latest {
+                    merged.archivedAt = latest.archivedAt
+                } else {
+                    merged.archivedAt = existing?.archivedAt
+                }
+                let replaced = items.filter { $0.id == id }
+                items.removeAll { $0.id == id }
+                items.append(merged)
+                try saveUnlocked(items)
+                return (replaced, merged)
+            }
         } catch {
-            lock.unlock()
             removeNewFiles()
             throw error
         }
@@ -882,7 +891,7 @@ public final class SavedMediaStore {
         postCrossProcessChange()
     }
 
-    private func makeThumbnail(for fileURL: URL, kind: MediaAsset.Kind, id: UUID) -> String? {
+    private func makeThumbnail(for fileURL: URL, kind: MediaAsset.Kind, id: UUID) async -> String? {
         let name = "\(id.uuidString).jpg"
         let destination = thumbnailDirectory.appendingPathComponent(name)
         let image: UIImage?
@@ -892,7 +901,7 @@ public final class SavedMediaStore {
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             image = kind == .video
-                ? (try? generator.copyCGImage(at: .zero, actualTime: nil)).map(UIImage.init(cgImage:))
+                ? (try? await generator.image(at: .zero).image).map(UIImage.init(cgImage:))
                 : nil
         case .gif, .image:
             guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),

@@ -41,6 +41,11 @@ public final class FinishedReadingBadgeView: UIView {
         super.init(frame: frame)
         isHidden = true
         clipsToBounds = false
+        // `updateForegroundColor` resolves and caches a CGColor, and the
+        // appearance rides `LunaSkyTrait` rather than `userInterfaceStyle`.
+        registerForTraitChanges([LunaSkyTrait.self]) { (badge: FinishedReadingBadgeView, _) in
+            badge.updateForegroundColor()
+        }
 
         if #available(iOS 26.0, *) {
             glassView.cornerConfiguration = .capsule()
@@ -83,11 +88,6 @@ public final class FinishedReadingBadgeView: UIView {
         guard glassView.layer.animationKeys()?.isEmpty != false else { return }
         glassView.frame = pillFrame(width: isExpanded ? Self.expandedWidth : Self.collapsedWidth)
         layoutPillContents()
-    }
-
-    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        updateForegroundColor()
     }
 
     public override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {

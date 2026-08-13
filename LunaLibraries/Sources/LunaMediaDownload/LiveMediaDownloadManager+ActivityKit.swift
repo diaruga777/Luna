@@ -54,10 +54,13 @@ extension LiveMediaDownloadManager {
             title: job.title)
         let state = activityState(for: job)
         do {
-            let activity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: ActivityContent(state: state, staleDate: nil),
+                pushType: nil)
             if announce, !Self.areActivityAlertsSuspended {
                 await activity.update(
-                    using: state,
+                    ActivityContent(state: state, staleDate: nil),
                     alertConfiguration: AlertConfiguration(
                         title: L10n.resource("Downloader_liveActivity_alert_downloadStartedTitle"),
                         body: "\(job.title)",
@@ -116,9 +119,10 @@ extension LiveMediaDownloadManager {
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
             if let alert {
-                await activity.update(using: state, alertConfiguration: alert)
+                await activity.update(
+                    ActivityContent(state: state, staleDate: nil), alertConfiguration: alert)
             } else {
-                await activity.update(using: state)
+                await activity.update(ActivityContent(state: state, staleDate: nil))
             }
         }
         #endif
@@ -132,9 +136,12 @@ extension LiveMediaDownloadManager {
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
             if let alert {
-                await activity.update(using: state, alertConfiguration: alert)
+                await activity.update(
+                    ActivityContent(state: state, staleDate: nil), alertConfiguration: alert)
             }
-            await activity.end(using: state, dismissalPolicy: .after(Date(timeIntervalSinceNow: dismissalDelay)))
+            await activity.end(
+                ActivityContent(state: state, staleDate: nil),
+                dismissalPolicy: .after(Date(timeIntervalSinceNow: dismissalDelay)))
         }
         #endif
     }

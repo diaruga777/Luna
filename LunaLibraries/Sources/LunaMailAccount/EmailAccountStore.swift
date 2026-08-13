@@ -41,7 +41,11 @@ public enum EmailAuthenticationIssue: String, Codable, Equatable {
 /// property is a `let`, and the account metadata and secret live in
 /// `UserDefaults` and the Keychain, both of which are thread-safe. The
 /// transports that carry one across a concurrency boundary rely on this.
-public final class EmailAccountStore: Sendable {
+///
+/// `@unchecked` for one reason only: `UserDefaults` is documented as
+/// thread-safe but is not annotated `Sendable`, so the compiler cannot see
+/// the guarantee this class is resting on.
+public final class EmailAccountStore: @unchecked Sendable {
 
     public static let shared = EmailAccountStore()
 

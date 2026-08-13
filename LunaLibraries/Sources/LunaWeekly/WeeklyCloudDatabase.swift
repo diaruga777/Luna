@@ -66,9 +66,9 @@ public final class CKWeeklyCloudDatabase: WeeklyCloudDatabase, @unchecked Sendab
     public func fetchWeeklySaves(for kinds: [WeeklySaveKind]) async throws -> [WeeklySave] {
         // One batched operation, not a round-trip per kind: the util card is
         // waiting on this at launch, so the kinds travel together and the
-        // request is explicitly user-initiated — the convenience API's default
-        // configuration is discretionary-eligible, which is exactly the "a
-        // couple of seconds on good internet" the row used to sit out.
+        // request is explicitly user-initiated. The convenience API's default
+        // configuration is discretionary-eligible, which would leave the row
+        // sitting out for a couple of seconds even on good internet.
         let ids = kinds.map { CKRecord.ID(recordName: $0.recordName) }
         let operation = CKFetchRecordsOperation(recordIDs: ids)
         operation.configuration.qualityOfService = .userInitiated

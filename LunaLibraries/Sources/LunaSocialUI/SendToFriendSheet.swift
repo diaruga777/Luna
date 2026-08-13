@@ -64,11 +64,8 @@ public enum SendToFriendSheet {
     }
 
     /// Shows the transient "Copied" confirmation: a toast near the bottom of the
-    /// screen. It used to be a modal alert, which could only be presented AFTER
-    /// whatever menu or sheet spawned it had finished dismissing — hence the
-    /// noticeable lag between picking Copy link and being told about it. A toast is
-    /// an ordinary non-interactive subview, so it can go up immediately, even while
-    /// a menu is still wiping away.
+    /// screen. A toast is an ordinary non-interactive subview, so it can appear
+    /// immediately, even while the menu or sheet that spawned it is still dismissing.
     private static func presentCopiedConfirmation(from presenter: UIViewController) {
         LunaToast.show(L10n.string("Sharing_sendToFriend_copiedToast"), from: presenter)
     }

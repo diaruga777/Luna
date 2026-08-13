@@ -1795,7 +1795,8 @@ public final class LiveMediaDownloadManager: NSObject {
             markFinishedHold(job.id, held: false)
             // The widget reads the thumbnail off disk on EVERY render, so it has
             // to outlive the card; nothing refers to it once the card is gone,
-            // and a finished job used to leak it here forever.
+            // so this cleanup is what stops a finished job's files from
+            // leaking here forever.
             store.removeFiles(for: job)
             lease.end()
         }

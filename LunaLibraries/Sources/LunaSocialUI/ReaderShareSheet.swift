@@ -27,9 +27,8 @@ import LunaModels
 public final class ReaderShareSheet: UIViewController {
 
     /// One row's behavior when tapped: fire an action, or open a nested list of
-    /// more rows. A row can never carry both — `.submenu` and `.tap` used to be
-    /// two separately-settable properties (`children`/`action`) where a non-empty
-    /// `children` silently made `action` dead.
+    /// more rows. The enum makes the two mutually exclusive, so a row can never
+    /// carry both.
     public struct Row {
         public enum Behavior {
             case tap(() -> Void)

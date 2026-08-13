@@ -302,11 +302,12 @@ public final class ProductSnapshotStore: @unchecked Sendable {
 
     /// The payload's price as a bare decimal string, or nil when no digits
     /// survive. The meta/microdata capture tiers hand over the page's RAW price
-    /// text ("$1,299.00"), which `Decimal(string:)` refuses outright — so every
-    /// such visit used to be dropped, silently. Mirrors `content.js`'s
-    /// `parsePriceNumber` (strip currency symbols, then drop the thousands
-    /// commas) — except the SIGN survives, so a negative payload still fails
-    /// the `amount > 0` gate rather than being laundered into a positive price.
+    /// text ("$1,299.00"), which `Decimal(string:)` refuses outright — without
+    /// this sanitizing step, every such visit would be dropped, silently.
+    /// Mirrors `content.js`'s `parsePriceNumber` (strip currency symbols, then
+    /// drop the thousands commas) — except the SIGN survives, so a negative
+    /// payload still fails the `amount > 0` gate rather than being laundered
+    /// into a positive price.
     public static func sanitizedDecimalString(_ raw: String) -> String? {
         let stripped = raw.filter { $0.isNumber || $0 == "." || $0 == "," || $0 == "-" }
             .replacingOccurrences(of: ",", with: "")

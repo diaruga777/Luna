@@ -42,7 +42,7 @@ public enum ArchiveUnlockFlow {
 /// A small coordinator rather than the flow itself: `ArchiveUnlockFlow` is an enum
 /// with nothing to hold, while the unlock stays on screen until the user or the
 /// CAPTCHA resolves it. The reader retains this; this holds the navigation controller
-/// weakly, so nothing cycles — the same shape the three closures it replaces had.
+/// weakly, so nothing cycles.
 @MainActor
 private final class ModalUnlockLegs: ArchiveUnlockDelegate {
     private weak var nav: UINavigationController?

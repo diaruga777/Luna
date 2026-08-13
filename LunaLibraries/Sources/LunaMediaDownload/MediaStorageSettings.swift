@@ -72,12 +72,12 @@ public enum MediaStorageSettings {
     /// Reads and writes the two underlying prefs
     /// (`AutoDownloadSettings.autoSaveDownloadsToPhotos` and
     /// `MediaRetentionSettings.option`) as one exclusive choice, so every
-    /// existing consumer of those prefs keeps working unchanged. The only
-    /// mutator (alongside `AutoDownloadSettings.policy` for its own pair) —
-    /// `autoSaveDownloadsToPhotos`'s setter is module-internal — so retention
-    /// can no longer go stale at `.never` while Photos is off; the getter and
-    /// setter used to re-normalize that combination back to `defaultRetention`
-    /// for installs that reached it through the old independent toggle/picker.
+    /// existing consumer of those prefs keeps working unchanged. `set` always
+    /// writes both prefs together, so retention can never go stale at `.never`
+    /// while Photos is off. `autoSaveDownloadsToPhotos`'s own setter is
+    /// module-internal, making this (alongside `AutoDownloadSettings.policy`
+    /// for its own pair) the only way to change either pref from outside the
+    /// module.
     public static var option: MediaStorageOption {
         get {
             guard !AutoDownloadSettings.autoSaveDownloadsToPhotos else { return .photos }

@@ -733,10 +733,10 @@ public final class SavedMediaStore {
 
     /// Applies the age-based retention policy. Saved media is app-owned: it is the
     /// Downloader grid's primary content, deleted explicitly from the grid (`delete`)
-    /// or aged out here — NOT tied to saves membership. (An earlier version
-    /// also purged any item whose `sourceURLString` wasn't in the saves list; that
-    /// silently deleted freshly-saved media whenever the app's ingest unwrapped/
-    /// normalized a URL, since the stored copy keeps the pre-unwrap source URL.)
+    /// or aged out here — NOT tied to saves membership. Do NOT also purge any item
+    /// whose `sourceURLString` isn't in the saves list: the stored copy keeps the
+    /// pre-unwrap source URL, so that check would silently delete freshly-saved
+    /// media whenever the app's ingest unwraps or normalizes a URL.
     public func purgeExpired(now: Date = Date()) {
         lock.lock()
         let items = loadUnlocked()

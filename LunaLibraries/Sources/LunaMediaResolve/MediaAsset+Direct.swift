@@ -2,10 +2,9 @@
 //  MediaAsset+Direct.swift
 //  LunaMediaResolve
 //
-//  Moved out of LunaMediaDownload's MediaDownload.swift with the resolvers —
-//  it is `SocialMediaResolver.resolveAssets`'s first step, so it has to live
-//  where the resolvers do. LunaMediaDownload re-exports this module, so its
-//  own call sites are unchanged.
+//  Lives in LunaMediaResolve, with the resolvers, because it is
+//  `SocialMediaResolver.resolveAssets`'s first step. LunaMediaDownload
+//  re-exports this module, so its call sites use it unchanged.
 //
 
 import Foundation

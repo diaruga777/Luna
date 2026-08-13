@@ -385,8 +385,8 @@ public final class URLRescueEngine {
         }
     }
 
-    /// Every model error gets its own log line and its own verdict — the three
-    /// that used to be mapped, and the ones that used to vanish into `.other`.
+    /// Every model error gets its own log line and its own verdict; none fall
+    /// through to `.other` by default.
     private func modelOutcome(
         _ error: RescueModelError, host: String, request: RescueRequest
     ) -> RescueOutcome {
@@ -419,8 +419,8 @@ public final class URLRescueEngine {
     // MARK: - Budgets
 
     /// Splits a character budget between the page digest and the failure
-    /// evidence. With no trace the digest keeps everything, so a rescue on a
-    /// device that never recorded one looks exactly as it did before.
+    /// evidence. With no trace the digest keeps the whole budget, so a rescue
+    /// on a device that never recorded one gets the plain digest-only prompt.
     static func split(
         budget: RescueDigestBudget, hasEvidence: Bool
     ) -> (digest: RescueDigestBudget, evidence: Int) {

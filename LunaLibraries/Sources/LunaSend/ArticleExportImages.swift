@@ -26,10 +26,10 @@ public protocol ArticleExportImagePreparing {
 /// becomes `.ready` once its text is extracted and only its unknown-size
 /// top-of-page images have landed, with the rest downloading in a detached task
 /// afterwards — and a save through the share/action extension, a paste, or a
-/// mail import downloads none at all. An export taken in that window (a double
-/// save fires within SEVEN SECONDS of the save) used to come out with no images
-/// whatsoever. `ArticleImageFiles` finds anything already local; this closes the
-/// rest of the gap.
+/// mail import downloads none at all. Without this seam, an export taken in
+/// that window (a double save fires within SEVEN SECONDS of the save) would
+/// have no images at all. `ArticleImageFiles` finds anything already local;
+/// this closes the rest of the gap.
 ///
 /// The downloader lives in LunaReaderUI, which this module can't see, so the app
 /// installs a witness from its `KindWiring` — the one place allowed to see

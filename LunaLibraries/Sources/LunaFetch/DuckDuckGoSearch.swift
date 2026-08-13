@@ -25,10 +25,22 @@ public enum DuckDuckGoSearch {
     /// which otherwise passes the 2xx guard and parses to an empty, silently
     /// "successful" result.
     public static func results(forQuery query: String) async -> [URL]? {
+        guard let html = await searchHTML(forQuery: query, context: "DuckDuckGoSearch.results")
+        else { return nil }
+        return resultURLs(inHTML: html)
+    }
+
+    /// One search request: the query URL, the Safari User-Agent, and the guards
+    /// that separate a real results page from a non-2xx response and from the
+    /// bot-detection challenge DuckDuckGo intermittently serves under a 202 OR an
+    /// ordinary 200 (which otherwise parses to an empty, silently "successful"
+    /// result). Nil means no results page arrived; each caller spells that
+    /// failure in its own return type.
+    private static func searchHTML(forQuery query: String, context: String) async -> String? {
         guard var components = URLComponents(string: "https://html.duckduckgo.com/html/") else { return nil }
         components.queryItems = [URLQueryItem(name: "q", value: query)]
         guard let url = components.url,
-              LiveNetworkPolicy.allows(url, context: "DuckDuckGoSearch.results")
+              LiveNetworkPolicy.allows(url, context: context)
         else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
@@ -38,7 +50,7 @@ public enum DuckDuckGoSearch {
         else { return nil }
         guard http.statusCode != anomalyStatusCode, !isAnomalyPage(html) else { return nil }
         guard (200..<300).contains(http.statusCode) else { return nil }
-        return resultURLs(inHTML: html)
+        return html
     }
 
     /// One organic result with its link TEXT — what DuckDuckGo prints as the
@@ -59,19 +71,8 @@ public enum DuckDuckGoSearch {
     /// Returns an empty array (not nil) on any failure — the one caller treats
     /// "no candidates" and "search unavailable" identically.
     public static func entries(forQuery query: String) async -> [Entry] {
-        guard var components = URLComponents(string: "https://html.duckduckgo.com/html/") else { return [] }
-        components.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = components.url,
-              LiveNetworkPolicy.allows(url, context: "DuckDuckGoSearch.entries")
+        guard let html = await searchHTML(forQuery: query, context: "DuckDuckGoSearch.entries")
         else { return [] }
-        var request = URLRequest(url: url, timeoutInterval: 12)
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              let html = String(data: data, encoding: .utf8)
-        else { return [] }
-        guard http.statusCode != anomalyStatusCode, !isAnomalyPage(html),
-              (200..<300).contains(http.statusCode) else { return [] }
         return resultEntries(inHTML: html)
     }
 
@@ -89,23 +90,33 @@ public enum DuckDuckGoSearch {
         }
     }
 
+    /// An anchor carrying DuckDuckGo's `result__a` class, capturing its href.
+    /// `class` and `href` come in either order in the tag, so both orders are
+    /// matched: group 1 or group 2 holds the href, whichever alternative ran.
+    static let resultAnchorPattern =
+        #"<a\b[^>]*(?:class="result__a"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="result__a")[^>]*>"#
+
     /// Every `result__a` anchor's href AND inner markup, in document order.
     static func resultAnchors(in html: String) -> [(href: String, text: String)] {
-        let pattern = #"<a\b[^>]*(?:class="result__a"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="result__a")[^>]*>([\s\S]*?)</a>"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        guard let regex = try? NSRegularExpression(
+            pattern: resultAnchorPattern + #"([\s\S]*?)</a>"#, options: [.caseInsensitive])
         else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         return regex.matches(in: html, range: range).compactMap { match in
-            var href: String?
-            for group in 1...2 where match.range(at: group).location != NSNotFound {
-                guard let r = Range(match.range(at: group), in: html) else { continue }
-                href = String(html[r]).replacingOccurrences(of: "&amp;", with: "&")
-                break
-            }
-            guard let href else { return nil }
+            guard let href = href(inMatch: match, html: html) else { return nil }
             let text = Range(match.range(at: 3), in: html).map { String(html[$0]) } ?? ""
             return (href, text)
         }
+    }
+
+    /// The href from whichever of the pattern's two attribute orders matched,
+    /// with the one entity a URL query string carries decoded.
+    private static func href(inMatch match: NSTextCheckingResult, html: String) -> String? {
+        for group in 1...2 where match.range(at: group).location != NSNotFound {
+            guard let range = Range(match.range(at: group), in: html) else { continue }
+            return String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
+        }
+        return nil
     }
 
     /// Strips the `<b>` highlighting DuckDuckGo wraps query terms in and decodes
@@ -155,19 +166,15 @@ public enum DuckDuckGoSearch {
     }
 
     /// Every `href` on an anchor carrying DuckDuckGo's `result__a` class, in
-    /// document order. `class` and `href` can appear in either order in the
-    /// tag, so both are matched.
+    /// document order. Unlike `resultAnchors(in:)` this needs no closing tag, so
+    /// a truncated last result still yields its link.
     static func resultAnchorHrefs(in html: String) -> [String] {
-        let pattern = #"<a\b[^>]*(?:class="result__a"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="result__a")[^>]*>"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        guard let regex = try? NSRegularExpression(
+            pattern: resultAnchorPattern, options: [.caseInsensitive])
         else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         return regex.matches(in: html, range: range).compactMap { match in
-            for group in 1...2 where match.range(at: group).location != NSNotFound {
-                guard let r = Range(match.range(at: group), in: html) else { continue }
-                return String(html[r]).replacingOccurrences(of: "&amp;", with: "&")
-            }
-            return nil
+            href(inMatch: match, html: html)
         }
     }
 

@@ -9,7 +9,7 @@ import LunaModels
 /// IMAP/SMTP connection settings for an app-password account. IMAP is always
 /// implicit TLS on 993 for the providers we support; SMTP is either implicit
 /// TLS (465) or STARTTLS (587, e.g. iCloud).
-public struct MailServerConfig: Codable, Equatable {
+public struct MailServerConfig: Codable, Equatable, Sendable {
     public var imapHost: String
     public var imapPort: Int
     public var smtpHost: String
@@ -31,9 +31,9 @@ public struct MailServerConfig: Codable, Equatable {
 /// A supported email provider and everything Luna needs to talk to it: the
 /// server settings (for app-password providers), how to authenticate, how the
 /// user obtains a credential, and whether filters can be automated.
-public struct MailProvider: Equatable {
+public struct MailProvider: Equatable, Sendable {
 
-    public enum ID: String, Codable, CaseIterable, Equatable {
+    public enum ID: String, Codable, CaseIterable, Equatable, Sendable {
         case gmail
         case icloud
         case yahoo

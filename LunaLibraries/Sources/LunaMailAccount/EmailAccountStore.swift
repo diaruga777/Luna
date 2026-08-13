@@ -37,7 +37,11 @@ public enum EmailAuthenticationIssue: String, Codable, Equatable {
 /// connected" step instead of asking the user to sign in again. The secrets
 /// are migratable and iCloud-Keychain synchronizable so device
 /// transfer/restore can preserve the connected account.
-public final class EmailAccountStore {
+/// Sendable because it stores no mutable state of its own: every stored
+/// property is a `let`, and the account metadata and secret live in
+/// `UserDefaults` and the Keychain, both of which are thread-safe. The
+/// transports that carry one across a concurrency boundary rely on this.
+public final class EmailAccountStore: Sendable {
 
     public static let shared = EmailAccountStore()
 

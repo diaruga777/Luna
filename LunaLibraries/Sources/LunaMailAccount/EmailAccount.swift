@@ -28,7 +28,7 @@ public struct OAuthTokens: Codable, Equatable {
 /// with. One account per install (shared across the three apps via the App
 /// Group). Metadata is Codable and lives in App-Group defaults; the secret
 /// (app password or OAuth tokens) lives in the Keychain, keyed separately.
-public struct EmailAccount: Codable, Equatable {
+public struct EmailAccount: Codable, Equatable, Sendable {
     public var providerID: MailProvider.ID
     /// Full email address — the From address and (for app-password providers)
     /// the SMTP/IMAP account.

@@ -9,7 +9,7 @@ import LunaStorage
 /// Where `EmailAccountStore` persists the account **secret** (the metadata lives
 /// in `UserDefaults` directly). Exists so tests can swap the Keychain for an
 /// in-memory stand-in without touching `EmailAccountStore`'s own logic.
-public protocol MailCredentialStorage {
+public protocol MailCredentialStorage: Sendable {
     func read(service: String, account: String) -> String?
     func write(_ value: String?, service: String, account: String)
     func delete(service: String, account: String)
@@ -36,7 +36,7 @@ public struct KeychainCredentialStorage: MailCredentialStorage {
 /// A scratch, process-local credential store. Nothing written here ever reaches
 /// the real Keychain — used by tests that exercise sign-in without leaving a real
 /// credential behind.
-public final class InMemoryCredentialStorage: MailCredentialStorage {
+public final class InMemoryCredentialStorage: MailCredentialStorage, @unchecked Sendable {
     private var storage: [String: String] = [:]
     private let lock = NSLock()
 

@@ -8,7 +8,7 @@ import Foundation
 /// The central Luna app's bundle id is the bare product prefix
 /// (`com.hsanabria.luna`) with no content suffix, so "no suffix" resolves to
 /// `.luna` — which is also the right default for the unit-test host.
-public enum LunaApp: CaseIterable, Equatable, Hashable {
+public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// The central Luna app — accepts and processes every content kind.
     case luna
     case reader
@@ -106,7 +106,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable {
 /// `DoubleSaveActionStore`'s defaults-key boundary, never to smuggle this
 /// value through the intent/ingest pipeline as a bare `String` the way it
 /// used to be.
-public enum DoubleSaveSurface: String, Codable, Equatable {
+public enum DoubleSaveSurface: String, Codable, Equatable, Sendable {
     case luna
     case reader
 

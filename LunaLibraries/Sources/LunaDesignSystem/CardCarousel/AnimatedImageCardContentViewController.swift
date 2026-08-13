@@ -150,7 +150,7 @@ public final class AnimatedImageCardContentViewController: CardContentViewContro
         let changed = wantsPlaying != playing
         wantsPlaying = playing
         if playing { startDisplayLink() } else { stopDisplayLink() }
-        if changed { playbackStateChanged?() }
+        if changed { reportPlaybackStateChange() }
     }
 
     public override func seek(toFraction fraction: Double) {

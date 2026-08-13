@@ -19,7 +19,7 @@
 
 import UIKit
 
-final class CarouselScrubPreviewController {
+final class CarouselScrubPreviewController: CardContentAudioAvailabilityObserving {
 
     /// One previewed card: the surface, the card index it stands for, and
     /// whatever it is currently showing.
@@ -208,7 +208,7 @@ final class CarouselScrubPreviewController {
         preview.card.installContentView(content.view)
         content.didMove(toParent: carousel)
         content.setMuted(carousel.isSoundMuted)
-        content.audioAvailabilityChanged = { [weak self] in self?.updateMuteButtons() }
+        content.audioAvailabilityObserver = self
         preview.content = content
         updateFill(preview)
     }
@@ -216,7 +216,7 @@ final class CarouselScrubPreviewController {
     private func unmountContent(from preview: Preview) {
         guard let content = preview.content else { return }
         content.setPlaying(false)
-        content.audioAvailabilityChanged = nil
+        content.audioAvailabilityObserver = nil
         content.willMove(toParent: nil)
         content.view.removeFromSuperview()
         content.removeFromParent()
@@ -252,6 +252,10 @@ final class CarouselScrubPreviewController {
         }
     }
 
+    func cardContentDidChangeAudioAvailability(_ content: CardContentViewController) {
+        updateMuteButtons()
+    }
+
     /// Re-evaluates which preview shows the mute button — the center one, and
     /// only once its content reports that it actually carries audio.
     func updateMuteButtons() {
@@ -273,7 +277,7 @@ final class CarouselScrubPreviewController {
         guard let center = previews[0], let content = center.content else { return nil }
         preparedContent[center.index] = nil
         center.content = nil
-        content.audioAvailabilityChanged = nil
+        content.audioAvailabilityObserver = nil
         content.view.removeFromSuperview()
         return content
     }

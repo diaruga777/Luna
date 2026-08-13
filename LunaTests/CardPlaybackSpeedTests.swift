@@ -51,7 +51,7 @@ final class CardPlaybackSpeedTests: XCTestCase {
         override func setPlaying(_ playing: Bool) {
             guard self.playing != playing else { return }
             self.playing = playing
-            playbackStateChanged?()
+            reportPlaybackStateChange()
         }
 
         override func setPlaybackSpeed(_ speed: Double) {

@@ -13,10 +13,10 @@
 //  tap goes, what deleting it releases, and how its store is ordered, filtered,
 //  and watched.
 //
-//  Each deck view controller IS its own provider (`deckProvider` returns
-//  `self`): the kind-specific half of a deck is exactly the code that already
-//  lived in that file, and returning self keeps it there without a second
-//  object, a second lifetime, or a retain cycle.
+//  `KindDeckProvider` (`CardCarouselHost/KindDeckProvider.swift`) is the one
+//  conformer, shared by every app: what a card looks like, what its long
+//  press offers, and how its store is ordered all come from
+//  `CardKindPresenters.presenter(for:)` rather than from a per-app subclass.
 //
 
 import LunaDesignSystem

@@ -11,16 +11,17 @@ import LunaModels
 import Foundation
 
 /// App-shell composition for the new audio-playback stack (Phase 2 of
-/// `claudedocs/audio-playback-plan.md`): installed once at launch from
-/// `AppDelegate`, but ONLY in Luna Reader — read-aloud (the app-wide center,
-/// its background session, the window mini-player) is a Reader-exclusive
-/// feature. The Downloader / Price Tracker apps skip this install entirely, so
+/// `claudedocs/audio-playback-plan.md`): installed once at launch, via
+/// `ArticleShellWiring.install()`, in both apps that handle articles (the
+/// central Luna app and Luna Reader) — read-aloud (the app-wide center, its
+/// background session, the window mini-player) is an article-app feature.
+/// The Downloader / Price Tracker apps compile no article leg at all, so
 /// `ReaderAudioLauncher.center` stays nil there and their shared readers keep
 /// the legacy self-contained `SpeechController` path (no audio controls).
 ///
 /// This is the injected-composition pattern the app shell already uses
 /// elsewhere (`SendToFriendSheet.accountSetupLauncher`,
-/// `DiagnosticLog.export*`, `PriceTrackingViewController.intelligentPriceResolver`):
+/// `DiagnosticLog.export*`, `ProductPriceRescue.resolver`):
 /// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {

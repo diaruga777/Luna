@@ -51,9 +51,10 @@ public protocol RemoteCommandBinding: AnyObject {
 ///   2. In-app, the shared readers route through `ReaderAudioLauncher.center`
 ///      (installed by `AudioPlaybackWiring.install()`) whenever it's non-nil,
 ///      so `SpeechController`'s conflicting Now-Playing/remote-command code is
-///      only ever reachable in-app if that install never ran — it isn't, in
-///      Luna Reader. The legacy path in practice only runs in the Share/Action
-///      extensions, which never touch `AudioPlaybackCenter` at all.
+///      only ever reachable in-app if that install never ran — it always does,
+///      in both apps that handle articles. The legacy path in practice only
+///      runs in the Share/Action extensions, which never touch
+///      `AudioPlaybackCenter` at all.
 /// Where a currently-playing item's `thumbnailFileName` lives on disk — the
 /// one join both the Now Playing artwork lookup (here) and the mini-player's
 /// thumbnail image view (`MiniPlayerHostViewController`) need, over the same

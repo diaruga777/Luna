@@ -9,9 +9,9 @@ import LunaModels
 /// Compresses a save's diagnostic trace (`SaveDiagnosticsStore.contents(for:)`)
 /// into a token-budgeted excerpt the rescue prompt can carry.
 ///
-/// The model used to be blind to the failure: it got the URL, one canned
-/// sentence, and a digest of the page, and had to re-discover in one shot what
-/// the pipeline already knew (which statuses came back, which of the bypass
+/// Without it, the model would only get the URL, one canned sentence, and a
+/// digest of the page, and would have to re-discover in one shot what the
+/// pipeline already knew (which statuses came back, which of the bypass
 /// strategies ran, where a redirect landed). This turns that record into a few
 /// dozen lines.
 ///
@@ -19,7 +19,7 @@ import LunaModels
 /// URLs — so the output is fenced and labeled untrusted by `RescuePrompts` and
 /// never reaches the instructions. Degrades to nil whenever the trace is absent
 /// (older failures, extension-side failures not yet flushed), and the prompt
-/// then looks exactly as it did before.
+/// then falls back to its plain form with no evidence section.
 enum RescueFailureEvidence {
 
     /// One parsed trace line. Timestamps are dropped on the way out — they cost
@@ -164,9 +164,8 @@ enum RescueFailureEvidence {
     // MARK: - The failure sentence
 
     /// One or two lines naming what already went wrong, built from the RECORDED
-    /// reason rather than the three canned sentences the pass used to carry. The
-    /// evidence excerpt holds the detail; this is the headline the model reads
-    /// even when no trace exists.
+    /// reason. The evidence excerpt holds the detail; this is the headline the
+    /// model reads even when no trace exists.
     static func failureSentence(
         kind: RescueRequest.FailureKind, reason: SaveFailureReason?
     ) -> String {
@@ -210,8 +209,8 @@ enum RescueFailureEvidence {
         }
     }
 
-    /// What the pass used to say, kept for the reason-less case (an older
-    /// failure recorded before the sidecar carried one).
+    /// A generic sentence for the reason-less case: an older failure recorded
+    /// before the sidecar carried a `SaveFailureReason`.
     private static func fallbackSentence(_ kind: RescueRequest.FailureKind) -> String {
         switch kind {
         case .articleFailed:

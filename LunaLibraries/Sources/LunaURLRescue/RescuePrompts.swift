@@ -154,10 +154,9 @@ enum RescuePrompts {
         """
     }
 
-    /// The digest section when the page could not be re-fetched at all. The
-    /// rescue used to die here without ever asking the model — but reroute,
-    /// search and the browser handoff need no page HTML, so the model is asked
-    /// with this marker in the digest's place.
+    /// The digest section when the page could not be re-fetched at all.
+    /// Reroute, search, and the browser handoff need no page HTML, so the
+    /// model is still asked, with this marker in the digest's place.
     static func unavailableDigest(reason: String) -> String {
         "PAGE DIGEST: unavailable (fetch failed: \(reason)). "
             + "No page content could be read. Strategies that need the page's data "

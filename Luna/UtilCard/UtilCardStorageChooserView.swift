@@ -7,6 +7,21 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// The two taps the storage row reports.
+@MainActor
+protocol UtilCardStorageChooserDelegate: AnyObject {
+    /// An option was tapped. `luna` is applied by the card directly; `photos`
+    /// may be refused, which is why the CARD — not the row — owns what the
+    /// selection becomes.
+    func storageChooser(
+        _ chooser: UtilCardStorageChooserView,
+        didChoose option: UtilCardStorageChooserView.Option)
+
+    /// The red exclamation badge was tapped — shown only while the selection is
+    /// Photos and this process still lacks Photos access.
+    func storageChooserDidTapPermissionError(_ chooser: UtilCardStorageChooserView)
+}
+
 /// The util card's one-line "Store downloads …" choice, at the top of the setup
 /// block in the two apps that download media.
 ///
@@ -47,13 +62,8 @@ final class UtilCardStorageChooserView: UIView {
     /// not permission is missing.
     private static let permissionErrorBadgeSide: CGFloat = 20
 
-    /// The user tapped an option. `luna` is applied by the caller directly;
-    /// `photos` may be refused, which is why the caller — not this view — owns
-    /// what the selection becomes.
-    var onSelect: ((Option) -> Void)?
-    /// The user tapped the red exclamation badge — shown only while the
-    /// selection is Photos and this process still lacks Photos access.
-    var onPermissionErrorTapped: (() -> Void)?
+    /// The util card, which owns this row — hence weak.
+    weak var delegate: (any UtilCardStorageChooserDelegate)?
 
     private(set) var selection: Option = .luna
     private(set) var hasPermissionError = false
@@ -142,7 +152,7 @@ final class UtilCardStorageChooserView: UIView {
 
     /// Whether Photos is selected but this process still lacks Photos access
     /// — shown as a red exclamation badge on the selector's corner. Tapping it
-    /// is the caller's business (`onPermissionErrorTapped`).
+    /// is the caller's business (`storageChooserDidTapPermissionError`).
     func setPermissionError(_ hasError: Bool) {
         guard hasError != hasPermissionError else { return }
         hasPermissionError = hasError
@@ -151,7 +161,7 @@ final class UtilCardStorageChooserView: UIView {
     }
 
     @objc private func permissionErrorTapped() {
-        onPermissionErrorTapped?()
+        delegate?.storageChooserDidTapPermissionError(self)
     }
 
     private func apply(selection: Option) {
@@ -393,7 +403,7 @@ final class UtilCardStorageChooserView: UIView {
     @objc private func optionTapped(_ sender: UIControl) {
         let option: Option = sender.tag == 0 ? .luna : .photos
         collapse()
-        onSelect?(option)
+        delegate?.storageChooser(self, didChoose: option)
     }
 
     // MARK: - Option artwork and wording

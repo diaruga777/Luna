@@ -81,13 +81,23 @@ enum OnboardingIntroActionMetrics {
     }
 }
 
-final class OnboardingIntroCardContentViewController: CardContentViewController {
-    var onSafari: (() -> Void)?
-    var onShortcut: (() -> Void)?
-    var onPaste: ((String) -> Void)?
-    /// Fired when the headline's first beat completes — the host preloads the
+/// What the intro card asks of the onboarding host: the two setup lessons, a
+/// pasted link, and the one timing beat the host paces its preload against.
+@MainActor
+protocol OnboardingIntroCardDelegate: AnyObject {
+    func introCardDidChooseSafariLesson()
+    func introCardDidChooseSaveLesson()
+    func introCard(didPasteURLString urlString: String)
+
+    /// The headline's first beat has completed — the host preloads the
     /// demonstration in the reading pause, never inside a reveal's own turn.
-    var onFirstLineRevealed: (() -> Void)?
+    func introCardDidRevealFirstLine()
+}
+
+final class OnboardingIntroCardContentViewController: CardContentViewController {
+
+    /// The onboarding host, which owns this card — hence weak.
+    weak var delegate: (any OnboardingIntroCardDelegate)?
 
     private let headline: OnboardingIntroHeadlineView
     private let safariButton = UIButton(type: .system)
@@ -232,7 +242,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
             duration: OnboardingIntroTiming.lineRevealDuration
         ) { [weak self] in
             guard let self else { return }
-            self.onFirstLineRevealed?()
+            self.delegate?.introCardDidRevealFirstLine()
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + OnboardingAnimationClock.delay(
                     OnboardingIntroTiming.interLineDelay)
@@ -339,7 +349,7 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
     /// before anyone has decided anything about it.
     func didPaste(_ value: String) {
         pasteRow.showPastedValue(value)
-        onPaste?(value)
+        delegate?.introCard(didPasteURLString: value)
     }
 
     private func configure(
@@ -393,12 +403,12 @@ final class OnboardingIntroCardContentViewController: CardContentViewController 
 
     @objc private func safariTapped() {
         setActionsEnabled(false)
-        onSafari?()
+        delegate?.introCardDidChooseSafariLesson()
     }
 
     @objc private func shortcutTapped() {
         setActionsEnabled(false)
-        onShortcut?()
+        delegate?.introCardDidChooseSaveLesson()
     }
 
     private static func buttonIcon(_ image: UIImage) -> UIImage {

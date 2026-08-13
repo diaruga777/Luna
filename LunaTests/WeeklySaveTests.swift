@@ -18,6 +18,37 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// Stands in for the util card that holds the Save of the Week slot.
+@MainActor
+final class RecordingWeeklySaveRowHostDelegate: WeeklySaveRowHostDelegate {
+    private(set) var chosenURLStrings: [String] = []
+    private(set) var presenceChanges = 0
+    private(set) var cycledKinds: [WeeklySaveKind] = []
+    /// What the deck is pretending to already hold.
+    var savedURLStrings: Set<String> = []
+
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, didChooseURLString urlString: String,
+        from sourceView: UIView
+    ) {
+        chosenURLStrings.append(urlString)
+    }
+
+    func weeklySaveRowHostPresenceDidChange(_ host: WeeklySaveRowHost) {
+        presenceChanges += 1
+    }
+
+    func weeklySaveRowHost(_ host: WeeklySaveRowHost, didCycleTo kind: WeeklySaveKind) {
+        cycledKinds.append(kind)
+    }
+
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, isSavedURLString urlString: String
+    ) -> Bool {
+        savedURLStrings.contains(urlString)
+    }
+}
+
 /// A stand-in for the public database. CloudKit is NEVER exercised by tests —
 /// no container exists yet, and every call site is required to survive its
 /// absence.
@@ -378,21 +409,21 @@ final class WeeklySaveTests: XCTestCase {
     func testAVanishedEntryEmptiesTheHostAndReportsThePresenceChange() {
         seed(.article, "https://a.example/1")
         let host = makeHost(app: .reader)
-        var presenceChanges = 0
-        host.onPresenceChange = { presenceChanges += 1 }
+        let card = RecordingWeeklySaveRowHostDelegate()
+        host.delegate = card
         store.clear(kind: .article)
         host.reload(animated: true)
         XCTAssertTrue(host.isEmpty)
-        XCTAssertEqual(presenceChanges, 1)
+        XCTAssertEqual(card.presenceChanges, 1)
     }
 
     func testTappingARowReportsItsStoredURL() throws {
         seed(.article, "https://a.example/1")
         let host = makeHost(app: .reader)
-        var saved: String?
-        host.onSave = { url, _ in saved = url }
+        let card = RecordingWeeklySaveRowHostDelegate()
+        host.delegate = card
         try XCTUnwrap(host.rows.first).sendActions(for: .touchUpInside)
-        XCTAssertEqual(saved, "https://a.example/1")
+        XCTAssertEqual(card.chosenURLStrings, ["https://a.example/1"])
     }
 
     // MARK: WeeklyRowHostTests: Central-app cycling

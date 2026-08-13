@@ -360,12 +360,7 @@ final class AppOnboardingViewController: UIViewController {
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        intro.onSafari = { [weak self] in self?.showSafariCard() }
-        intro.onShortcut = { [weak self] in self?.showMessagesCard() }
-        intro.onPaste = { [weak self] value in self?.pasteArticleURL(value) }
-        intro.onFirstLineRevealed = { [weak self] in
-            self?.firstIntroLineDidReveal()
-        }
+        intro.delegate = self
         safariSetupState = LunaSetupStatusStore.shared.safariRunApplies(
             to: configuration.app) ? .completed : .pending
         shortcutSetupState = saveSetupHasRun ? .completed : .pending
@@ -924,8 +919,7 @@ final class AppOnboardingViewController: UIViewController {
 
         let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
         popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        popup.onActivate = { [weak self] in self?.openSafariSetup() }
-        popup.onSkip = { [weak self] in self?.skipSafariSetupAndContinue() }
+        popup.delegate = self
         safariSetupPopup = popup
         host.addSubview(popup)
         popup.layoutIfNeeded()
@@ -2139,5 +2133,41 @@ extension AppOnboardingViewController: OnboardingSaveSourceDelegate {
         _ source: OnboardingSaveSourceViewController
     ) {
         actionButtonWaveDidFinish(from: .safari)
+    }
+}
+
+// MARK: - The intro card's delegate
+
+// The card offers two lessons, a paste, and one timing report; every one of them
+// lands on the method the host already had for it.
+extension AppOnboardingViewController: OnboardingIntroCardDelegate {
+    func introCardDidChooseSafariLesson() {
+        showSafariCard()
+    }
+
+    func introCardDidChooseSaveLesson() {
+        showMessagesCard()
+    }
+
+    func introCard(didPasteURLString urlString: String) {
+        pasteArticleURL(urlString)
+    }
+
+    func introCardDidRevealFirstLine() {
+        firstIntroLineDidReveal()
+    }
+}
+
+// MARK: - The shared Safari setup popup's delegate
+
+// Both answers land on the method the host already had; "Set up" opens the
+// hosted setup page, Skip records the skip and continues the lesson cycle.
+extension AppOnboardingViewController: OnboardingSafariSetupPopupDelegate {
+    func safariSetupPopupDidChooseSetUp() {
+        openSafariSetup()
+    }
+
+    func safariSetupPopupDidSkip() {
+        skipSafariSetupAndContinue()
     }
 }

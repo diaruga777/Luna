@@ -266,13 +266,7 @@ final class UtilCardContentViewController: CardContentViewController {
         view.addSubview(weeklyHost)
         view.addSubview(pasteRow)
 
-        weeklyHost.onSave = { [weak self] urlString, sourceView in
-            self?.save(urlString, source: .manual, sourceView: sourceView)
-        }
-        weeklyHost.onPresenceChange = { [weak self] in self?.view.setNeedsLayout() }
-        weeklyHost.isSaved = { [weak self] urlString in
-            self?.dataSource?.utilCardSavedURLStrings.contains(urlString) ?? false
-        }
+        weeklyHost.delegate = self
         weeklyAppearanceDeferred = animatesIntro
         weeklyHost.setCycleVisible(!weeklyAppearanceDeferred)
         weeklyHost.isHidden = weeklyHost.isEmpty || weeklyAppearanceDeferred
@@ -764,14 +758,7 @@ final class UtilCardContentViewController: CardContentViewController {
             setupTextCycler = UtilCardSetupTextCycler(
                 safariButton: safariButton,
                 shortcutButton: saveSetupButton)
-            setupTextCycler?.onCycleStart = { [weak self] _ in
-                self?.setupTextCycleDidStart()
-            }
-            // The row names which app is due; the labels never count for
-            // themselves, so the phrasing and the pick are always the same app's.
-            weeklyHost.onCycle = { [weak self] kind in
-                self?.setupTextCycler?.show(kind.owningApp)
-            }
+            setupTextCycler?.delegate = self
         }
     }
 
@@ -993,12 +980,7 @@ final class UtilCardContentViewController: CardContentViewController {
         let chooser = UtilCardStorageChooserView()
         chooser.setSelection(storageChoice.usesPhotos ? .photos : .luna)
         chooser.setPermissionError(needsPermissionRelay)
-        chooser.onSelect = { [weak self] option in
-            self?.applyStorageChoice(option)
-        }
-        chooser.onPermissionErrorTapped = { [weak self] in
-            self?.presentPhotosPermissionAlert()
-        }
+        chooser.delegate = self
         view.addSubview(chooser)
         storageChooser = chooser
         // Fires the instant the row appears — the same system prompt a manual
@@ -1062,15 +1044,81 @@ final class UtilCardContentViewController: CardContentViewController {
         recentRows = (dataSource?.utilCardRecentMatches ?? []).map { preview in
             let row = UtilURLRow(style: .recent)
             row.configure(preview)
-            row.onTap = { [weak self, weak row] in
-                guard let self, let row else { return }
-                self.save(preview.urlString, source: .manual, sourceView: row)
-            }
+            row.delegate = self
             view.addSubview(row)
             return row
         }
         view.setNeedsLayout()
     }
+}
+
+// MARK: - The Save of the Week slot's delegate
+
+extension UtilCardContentViewController: WeeklySaveRowHostDelegate {
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, didChooseURLString urlString: String,
+        from sourceView: UIView
+    ) {
+        save(urlString, source: .manual, sourceView: sourceView)
+    }
+
+    func weeklySaveRowHostPresenceDidChange(_ host: WeeklySaveRowHost) {
+        view.setNeedsLayout()
+    }
+
+    /// The row names which app is due; the labels never count for themselves, so
+    /// the phrasing and the pick are always the same app's. Only central Luna
+    /// builds a cycler, so everywhere else this is a no-op.
+    func weeklySaveRowHost(_ host: WeeklySaveRowHost, didCycleTo kind: WeeklySaveKind) {
+        setupTextCycler?.show(kind.owningApp)
+    }
+
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, isSavedURLString urlString: String
+    ) -> Bool {
+        dataSource?.utilCardSavedURLStrings.contains(urlString) ?? false
+    }
+}
+
+// MARK: - The recent-history rows' delegate
+
+extension UtilCardContentViewController: UtilURLRowDelegate {
+    func utilURLRowWasTapped(_ row: UtilURLRow) {
+        guard let urlString = row.urlString else { return }
+        save(urlString, source: .manual, sourceView: row)
+    }
+}
+
+// MARK: - The download-storage row's delegate
+
+extension UtilCardContentViewController: UtilCardStorageChooserDelegate {
+    func storageChooser(
+        _ chooser: UtilCardStorageChooserView,
+        didChoose option: UtilCardStorageChooserView.Option
+    ) {
+        applyStorageChoice(option)
+    }
+
+    func storageChooserDidTapPermissionError(_ chooser: UtilCardStorageChooserView) {
+        presentPhotosPermissionAlert()
+    }
+}
+
+// MARK: - The setup labels' cycler delegate
+
+extension UtilCardContentViewController: UtilCardSetupTextCyclerDelegate {
+    func setupTextCycler(
+        _ cycler: UtilCardSetupTextCycler, willBeginCycleTo app: LunaApp
+    ) {
+        setupTextCycleDidStart()
+    }
+}
+
+/// A tapped URL row, reported to whichever list built it. The link is the row's
+/// own `urlString`.
+@MainActor
+protocol UtilURLRowDelegate: AnyObject {
+    func utilURLRowWasTapped(_ row: UtilURLRow)
 }
 
 /// A black URL row with a narrow Liquid Glass rim — the same rim the deck's own
@@ -1116,7 +1164,12 @@ final class UtilURLRow: UIControl {
     private var previewKind: RecentURLPreview.Kind?
     private var weeklyTint = LunaSurfacePalette.baseColor
     private(set) var isShownAsSaved = false
-    var onTap: (() -> Void)?
+    /// Whichever list built this row — hence weak.
+    weak var delegate: (any UtilURLRowDelegate)?
+
+    /// The link this row currently shows, so a tap reports what was tapped
+    /// without its owner keeping a parallel model array. Set by `configure`.
+    private(set) var urlString: String?
 
     init(style: Style) {
         self.style = style
@@ -1193,6 +1246,7 @@ final class UtilURLRow: UIControl {
         weeklyTint: UIColor? = nil
     ) {
         if let weeklyTint { applyWeeklyTint(weeklyTint) }
+        urlString = preview.urlString
         previewKind = preview.kind
         let artwork = preview.image
         thumbnail.image = artwork ?? UIImage(
@@ -1346,7 +1400,7 @@ final class UtilURLRow: UIControl {
         border.frame = bounds
     }
 
-    @objc private func tapped() { onTap?() }
+    @objc private func tapped() { delegate?.utilURLRowWasTapped(self) }
 }
 
 @MainActor

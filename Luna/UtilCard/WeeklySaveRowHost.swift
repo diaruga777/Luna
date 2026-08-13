@@ -8,6 +8,32 @@ import LunaModels
 import LunaWeekly
 import UIKit
 
+/// What the Save of the Week slot reports to the card that holds it, plus the one
+/// thing it has to ask.
+@MainActor
+protocol WeeklySaveRowHostDelegate: AnyObject {
+    /// A tapped row is saved, exactly like a recent-history row. `sourceView` is
+    /// the row itself, for whatever the save presents from.
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, didChooseURLString urlString: String,
+        from sourceView: UIView)
+
+    /// The card relayouts whenever the slot appears or disappears.
+    func weeklySaveRowHostPresenceDidChange(_ host: WeeklySaveRowHost)
+
+    /// The central onboarding labels follow this rather than maintaining a
+    /// second timer, so both changes begin on the same clock tick — and `kind`
+    /// is the one the row is arriving AT, not the one it is leaving, so a
+    /// listener can never be a turn behind. A manual swipe reports too: the
+    /// labels follow the row whoever moved it.
+    func weeklySaveRowHost(_ host: WeeklySaveRowHost, didCycleTo kind: WeeklySaveKind)
+
+    /// Whether the deck already holds this URL — an answered pick shows dimmed
+    /// under a checkmark rather than offered.
+    func weeklySaveRowHost(
+        _ host: WeeklySaveRowHost, isSavedURLString urlString: String) -> Bool
+}
+
 /// The util card's Save of the Week slot.
 ///
 /// It owns whatever rows the local store currently has for THIS app's kinds —
@@ -15,19 +41,9 @@ import UIKit
 /// central app, up to three that take turns in the same place. Everything it
 /// draws comes from `WeeklySaveStore`; it never fetches.
 final class WeeklySaveRowHost: UIView {
-    /// Tapping a row saves it, exactly like a recent-history row.
-    var onSave: ((_ urlString: String, _ sourceView: UIView) -> Void)?
-    /// The card asks for a relayout whenever the slot appears or disappears.
-    var onPresenceChange: (() -> Void)?
-    /// The central onboarding labels subscribe here rather than maintaining a
-    /// second timer, so both changes begin on the same clock tick — and it
-    /// carries the kind the row is arriving AT, not the one it is leaving, so a
-    /// subscriber can never be a turn behind. A manual swipe reports too: the
-    /// labels follow the row whoever moved it.
-    var onCycle: ((WeeklySaveKind) -> Void)?
-    /// Whether the deck already holds this URL — installed by the util card so
-    /// an answered pick shows dimmed under a checkmark rather than offered.
-    var isSaved: ((_ urlString: String) -> Bool)? {
+
+    /// The util card, which owns this slot — hence weak.
+    weak var delegate: (any WeeklySaveRowHostDelegate)? {
         didSet { updateSavedStates() }
     }
 
@@ -95,9 +111,7 @@ final class WeeklySaveRowHost: UIView {
         pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         addGestureRecognizer(pan)
 
-        pacer.onAdvance = { [weak self] in
-            self?.advance(forward: true, velocity: 0)
-        }
+        pacer.delegate = self
         pacer.reduceMotion = UIAccessibility.isReduceMotionEnabled
         lifecycleObservers.append(NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
@@ -172,7 +186,7 @@ final class WeeklySaveRowHost: UIView {
         rebuildRows()
         setNeedsLayout()
         let presenceChanged = wasEmpty != isEmpty
-        if presenceChanged { onPresenceChange?() }
+        if presenceChanged { delegate?.weeklySaveRowHostPresenceDidChange(self) }
         return presenceChanged
     }
 
@@ -239,11 +253,8 @@ final class WeeklySaveRowHost: UIView {
             weeklyLabel: WeeklySaveLabels.subtitle(
                 for: app, monthTier: display.save.isMonthTier(now: now())),
             weeklyTint: Self.softTint(for: display.save.kind))
-        row.onTap = { [weak self, weak row] in
-            guard let self, let row else { return }
-            self.onSave?(display.save.urlString, row)
-        }
-        row.setSaved(isSaved?(display.save.urlString) ?? false)
+        row.delegate = self
+        row.setSaved(isSaved(display.save.urlString))
     }
 
     /// Reconciled by the util card on `.readingListChanged`: saving or deleting
@@ -253,8 +264,12 @@ final class WeeklySaveRowHost: UIView {
             guard slots.indices.contains(offset), let display = slots[offset] else {
                 continue
             }
-            row.setSaved(isSaved?(display.save.urlString) ?? false)
+            row.setSaved(isSaved(display.save.urlString))
         }
+    }
+
+    private func isSaved(_ urlString: String) -> Bool {
+        delegate?.weeklySaveRowHost(self, isSavedURLString: urlString) ?? false
     }
 
     /// Only the current row is on screen; the rest wait hidden.
@@ -340,7 +355,9 @@ final class WeeklySaveRowHost: UIView {
         // that knows the DESTINATION, and it is reached by an auto-advance and a
         // committed swipe alike. A cancelled drag changes nothing, so it says
         // nothing.
-        if commit, let kind = kind(atSlot: target) { onCycle?(kind) }
+        if commit, let kind = kind(atSlot: target) {
+            delegate?.weeklySaveRowHost(self, didCycleTo: kind)
+        }
         let width = max(clip.bounds.width, 1)
         let outgoing = rows[index]
         let incoming = rows[target]
@@ -506,5 +523,20 @@ final class WeeklySaveRowHost: UIView {
         for row in rows where !row.isHidden && row.transform.isIdentity {
             row.frame = clip.bounds
         }
+    }
+}
+
+/// The pacer decides WHEN; the host decides what moving means.
+extension WeeklySaveRowHost: WeeklyCyclePacerDelegate {
+    func weeklyCyclePacerDidTick() {
+        advance(forward: true, velocity: 0)
+    }
+}
+
+/// A tapped pick goes to the card, which saves it exactly as it saves a recent.
+extension WeeklySaveRowHost: UtilURLRowDelegate {
+    func utilURLRowWasTapped(_ row: UtilURLRow) {
+        guard let urlString = row.urlString else { return }
+        delegate?.weeklySaveRowHost(self, didChooseURLString: urlString, from: row)
     }
 }

@@ -12,6 +12,18 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// Stands in for the util card the setup-label cycler reports to.
+@MainActor
+final class RecordingSetupTextCyclerDelegate: UtilCardSetupTextCyclerDelegate {
+    private(set) var startedApps: [LunaApp] = []
+
+    func setupTextCycler(
+        _ cycler: UtilCardSetupTextCycler, willBeginCycleTo app: LunaApp
+    ) {
+        startedApps.append(app)
+    }
+}
+
 @MainActor
 final class UtilCardTests: XCTestCase {
     private var suiteName: String!
@@ -388,7 +400,7 @@ final class UtilCardTests: XCTestCase {
         let shortcut = try XCTUnwrap(buttons.last)
         var scheduledInterval: TimeInterval?
         var tick: (() -> Void)?
-        var startedApps: [LunaApp] = []
+        let host = RecordingSetupTextCyclerDelegate()
         let cycler = UtilCardSetupTextCycler(
             safariButton: safari,
             shortcutButton: shortcut,
@@ -397,14 +409,14 @@ final class UtilCardTests: XCTestCase {
                 tick = callback
                 return {}
             })
-        cycler.onCycleStart = { startedApps.append($0) }
+        cycler.delegate = host
 
         cycler.startCycling()
         XCTAssertEqual(scheduledInterval, WeeklyCyclePacer.interval)
-        XCTAssertTrue(startedApps.isEmpty)
+        XCTAssertTrue(host.startedApps.isEmpty)
 
         tick?()
-        XCTAssertEqual(startedApps, [.reader])
+        XCTAssertEqual(host.startedApps, [.reader])
     }
 
     /// The cycling belongs to central Luna, not to its first run. The completed

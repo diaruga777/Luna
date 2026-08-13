@@ -7,6 +7,7 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
 import LunaStorage
+import Synchronization
 import XCTest
 @testable import LunaPriceUI
 
@@ -246,12 +247,12 @@ final class SellerComparisonTests: XCTestCase {
 
     /// Sellers arrive one at a time, so the list fills in front of the user
     /// Collects the per-landing store counts from inside the runner's
-    /// `@Sendable` closure.
-    private final class CountsBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var storage: [Int] = []
-        var values: [Int] { lock.withLock { storage } }
-        func append(_ count: Int) { lock.withLock { storage.append(count) } }
+    /// `@Sendable` closure. `Mutex` rather than a hand-guarded `var`, so the
+    /// `Sendable` the closure needs is checked rather than asserted.
+    private final class CountsBox: Sendable {
+        private let storage = Mutex<[Int]>([])
+        var values: [Int] { storage.withLock { $0 } }
+        func append(_ count: Int) { storage.withLock { $0.append(count) } }
     }
 
     /// rather than appearing all at once when the run ends.

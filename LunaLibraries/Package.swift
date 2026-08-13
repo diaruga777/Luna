@@ -6,7 +6,10 @@ let package = Package(
     defaultLocalization: "en",
     // macOS support exists solely so the pure-library test suite can run in CI;
     // products are consumed by the iOS app and its extensions.
-    platforms: [.iOS(.v18), .macOS(.v14)],
+    // macOS 15 for `Synchronization.Mutex` (`OneShotLatch`,
+    // `InMemoryCredentialStorage`). Nothing ships to macOS — the floor exists so
+    // a `swift build` on the Mac still compiles the Foundation-only tiers.
+    platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(name: "LunaAppConfig", targets: ["LunaAppConfig"]),
         .library(name: "LunaModels", targets: ["LunaModels"]),

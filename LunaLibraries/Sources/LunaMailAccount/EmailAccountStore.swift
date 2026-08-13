@@ -39,19 +39,24 @@ public enum EmailAuthenticationIssue: String, Codable, Equatable {
 /// transfer/restore can preserve the connected account.
 /// Sendable because it stores no mutable state of its own: every stored
 /// property is a `let`, and the account metadata and secret live in
-/// `UserDefaults` and the Keychain, both of which are thread-safe. The
-/// transports that carry one across a concurrency boundary rely on this.
+/// `UserDefaults` and the Keychain, both of which are thread-safe. The two
+/// mail transports that carry one across a concurrency boundary rely on this.
 ///
-/// `@unchecked` for one reason only: `UserDefaults` is documented as
-/// thread-safe but is not annotated `Sendable`, so the compiler cannot see
-/// the guarantee this class is resting on.
-public final class EmailAccountStore: @unchecked Sendable {
+/// The conformance is CHECKED apart from `defaults` below, which carries a
+/// `nonisolated(unsafe)` of its own — see the note there. Scoping the escape
+/// hatch to that one property is the point: everything else in this class,
+/// and anything added to it later, still has to satisfy the compiler.
+public final class EmailAccountStore: Sendable {
 
     public static let shared = EmailAccountStore()
 
     private let accountKey = "lunaEmailAccount"
     private let authenticationIssueKey = "lunaEmailAuthenticationIssue"
-    private let defaults: UserDefaults
+    /// `UserDefaults` is documented thread-safe but Foundation does not
+    /// annotate it `Sendable`, so this one reference is the only thing here the
+    /// compiler cannot verify. It is a `let` that is never reassigned, and every
+    /// use below is a defaults read or write.
+    nonisolated(unsafe) private let defaults: UserDefaults
     private let credentialStorage: MailCredentialStorage
     private let service = "com.hsanabria.luna.mailaccount"
     private let appPasswordAccount = "app-password"

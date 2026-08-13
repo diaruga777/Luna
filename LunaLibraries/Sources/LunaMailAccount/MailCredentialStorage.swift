@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaStorage
+import Synchronization
 
 /// Where `EmailAccountStore` persists the account **secret** (the metadata lives
 /// in `UserDefaults` directly). Exists so tests can swap the Keychain for an
@@ -36,34 +37,34 @@ public struct KeychainCredentialStorage: MailCredentialStorage {
 /// A scratch, process-local credential store. Nothing written here ever reaches
 /// the real Keychain — used by tests that exercise sign-in without leaving a real
 /// credential behind.
-public final class InMemoryCredentialStorage: MailCredentialStorage, @unchecked Sendable {
-    private var storage: [String: String] = [:]
-    private let lock = NSLock()
+///
+/// The store lives in a `Mutex`, so the `Sendable` that `MailCredentialStorage`
+/// now requires is CHECKED here rather than asserted.
+public final class InMemoryCredentialStorage: MailCredentialStorage {
+    private let storage = Mutex<[String: String]>([:])
 
     public init() {}
 
     private func key(service: String, account: String) -> String { "\(service)|\(account)" }
 
     public func read(service: String, account: String) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return storage[key(service: service, account: account)]
+        let key = key(service: service, account: account)
+        return storage.withLock { $0[key] }
     }
 
     public func write(_ value: String?, service: String, account: String) {
-        lock.lock()
-        defer { lock.unlock() }
         let key = key(service: service, account: account)
-        if let value, !value.isEmpty {
-            storage[key] = value
-        } else {
-            storage.removeValue(forKey: key)
+        storage.withLock { storage in
+            if let value, !value.isEmpty {
+                storage[key] = value
+            } else {
+                storage.removeValue(forKey: key)
+            }
         }
     }
 
     public func delete(service: String, account: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        storage.removeValue(forKey: key(service: service, account: account))
+        let key = key(service: service, account: account)
+        storage.withLock { _ = $0.removeValue(forKey: key) }
     }
 }

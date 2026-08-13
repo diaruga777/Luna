@@ -3,7 +3,7 @@
 //  LunaModels
 //
 
-import Foundation
+import Synchronization
 
 /// A thread-safe one-shot latch: `claim()` returns `true` for exactly one
 /// caller, however many race for it, and `false` for everyone after.
@@ -15,17 +15,21 @@ import Foundation
 /// first. Each used to spell it as a local `var resumed` guarded by its own
 /// `NSLock`; that is the same guarantee, but a captured `var` mutated from
 /// concurrently-executing tasks is a data race the compiler can only warn
-/// about rather than verify. A `Sendable` latch says it in a form it can check,
-/// and says it once instead of three times.
-public final class OneShotLatch: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
+/// about rather than verify.
+///
+/// The state lives in a `Mutex`, so this class's `Sendable` is CHECKED — the
+/// compiler verifies it rather than taking the annotation's word for it. A
+/// `Mutex` is non-copyable and so cannot be captured by an escaping closure
+/// directly; holding one behind a final class is what lets the racing tasks
+/// share it.
+public final class OneShotLatch: Sendable {
+    private let claimed = Mutex(false)
 
     public init() {}
 
     /// `true` for the first caller only. Safe to call from any thread.
     public func claim() -> Bool {
-        lock.withLock {
+        claimed.withLock { claimed in
             if claimed { return false }
             claimed = true
             return true

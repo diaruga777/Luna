@@ -35,7 +35,11 @@ import UIKit
 public final class SavedNonTextualViewController: UIViewController, HostedShareBeatReplaying {
 
     private let articleURLString: String
-    private let onDone: () -> Void
+    /// The surface that presented this screen. Weak, and it is the HOST itself
+    /// (`ExtensionHost` refines `SavedMediaScreenDelegate`): the host presents this
+    /// screen, so it already owns it, and a strong reference back would cycle. Nil in
+    /// a stage, which has no extension request to complete.
+    private weak var delegate: (any SavedMediaScreenDelegate)?
     /// Whether to offer the system share sheet for the downloaded file. The
     /// ACTION extension does (it's a destination in its own right); the share
     /// extension doesn't — the user arrived from a share sheet.
@@ -165,12 +169,12 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     public init(
         articleURLString: String, showsSystemShare: Bool = false,
         practiceVideoURL: URL? = nil,
-        onDone: @escaping () -> Void
+        delegate: (any SavedMediaScreenDelegate)?
     ) {
         self.articleURLString = articleURLString
         self.showsSystemShare = showsSystemShare
         self.practiceVideoURL = practiceVideoURL
-        self.onDone = onDone
+        self.delegate = delegate
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -448,7 +452,12 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         guard doneButton.configuration == nil else { return }
         doneButton.configuration = GlassStyle.primaryActionButtonConfiguration(
             title: L10n.string("Common_done"), symbol: "checkmark", tint: Self.tint)
-        doneButton.addAction(UIAction { [weak self] _ in self?.onDone() }, for: .touchUpInside)
+        doneButton.addAction(
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.delegate?.savedMediaScreenDidFinish(self)
+            },
+            for: .touchUpInside)
     }
 
     /// The Share circle, sitting against the trailing edge the pills under it
@@ -1165,7 +1174,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
 
     private func deleteAndExit() {
         if isPracticePreview {
-            onDone()
+            delegate?.savedMediaScreenDidFinish(self)
             return
         }
         guard !isDeleting else { return }
@@ -1193,7 +1202,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
                     ReadingListStore.shared.delete(readingItem)
                 }
                 AutoDownloadSettings.unmarkDownloaded(self.articleURLString)
-                await MainActor.run { self.onDone() }
+                await MainActor.run { self.delegate?.savedMediaScreenDidFinish(self) }
             } catch {
                 let message = (error as? MediaDownloadError)?.message
                     ?? L10n.string("Downloader_media_error_deleteFailed")

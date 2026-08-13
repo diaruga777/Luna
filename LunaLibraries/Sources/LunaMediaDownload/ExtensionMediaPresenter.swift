@@ -24,16 +24,15 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
     /// non-downloadable items retain the share extension's silent-save terminal
     /// (`host.autoDownloadThenComplete`, a confirm when nothing is downloadable).
     ///
-    /// Leaving the saved-content screen completes SILENTLY (`host.completeSilently`,
-    /// not the host's saved-checkmark chrome): that screen's own header already
-    /// says "Saved to Luna", so the badge was a second confirmation card
-    /// animating in over a screen the user had just dismissed.
+    /// Leaving the saved-content screen completes SILENTLY rather than through the
+    /// host's saved-checkmark chrome — the host IS the screen's
+    /// `SavedMediaScreenDelegate` and answers there, with the reason.
     public func presentNonTextual(urlString: String, host: ExtensionHost) {
         let interactive = host.readerMode != nil
         if interactive || MediaDownloadablePlatform.supports(urlString) {
             host.presentModally(SavedNonTextualViewController(
                 articleURLString: urlString, showsSystemShare: interactive,
-                onDone: { [weak host] in host?.completeSilently() }))
+                delegate: host))
         } else {
             host.autoDownloadThenComplete(urlString: urlString)
         }
@@ -49,7 +48,7 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
             articleURLString: ShareSetupPractice.instaTokURLString,
             showsSystemShare: interactive,
             practiceVideoURL: videoURL,
-            onDone: { [weak host] in host?.completeSilently() }))
+            delegate: host))
         return true
     }
 

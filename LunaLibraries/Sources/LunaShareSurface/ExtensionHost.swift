@@ -25,8 +25,21 @@ import UIKit
 /// host's own chrome, and Done on it means the same thing to all of them (see the
 /// default below). Declaring it here is what lets the driver hand the card
 /// `host` directly instead of an adapter per call site.
+/// What a hosted saved-media screen tells the surface that presented it: the user
+/// has left it, by Done or by deleting the save.
+///
+/// The sender is a bare `UIViewController` (as `ReaderCompletionDelegate`'s is) so
+/// this can sit here, below the media kind: `ExtensionHost` refines it, which is what
+/// lets the media presenter hand the screen `host` directly instead of an adapter per
+/// call site.
 @MainActor
-public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate {
+public protocol SavedMediaScreenDelegate: AnyObject {
+    func savedMediaScreenDidFinish(_ screen: UIViewController)
+}
+
+@MainActor
+public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
+    SavedMediaScreenDelegate {
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
     /// reader-vs-save-silently fork in the unified presenter. Kind-neutral
@@ -67,6 +80,14 @@ public extension ExtensionHost {
     /// Nothing was saved, so the drop card's Done completes the request without
     /// a "Saved" checkmark — the same answer for every extension host.
     func unsupportedSaveCardDidFinish(_ card: UnsupportedSaveCardViewController) {
+        completeSilently()
+    }
+
+    /// Leaving the saved-media screen completes SILENTLY rather than through the
+    /// saved-checkmark chrome: that screen's own header already says "Saved to Luna",
+    /// so the badge was a second confirmation card animating in over a screen the
+    /// user had just dismissed. The same answer for every extension host.
+    func savedMediaScreenDidFinish(_ screen: UIViewController) {
         completeSilently()
     }
 }

@@ -203,7 +203,9 @@ enum MediaStageCatalog {
                     UINavigationController(
                         rootViewController: SavedNonTextualViewController(
                             articleURLString: "https://x.com/user/status/123",
-                            showsSystemShare: true, onDone: {}))
+                            // No delegate: a staged screen has no extension request
+                            // to complete, as the empty closure it replaces had none.
+                            showsSystemShare: true, delegate: nil))
                 }),
             StageDescriptor(
                 id: "util.download-storage", screen: "Util card",

@@ -113,9 +113,8 @@ public enum SendToFriendSheet {
     ) {
         let urlToShare = sharedURLString ?? urlString
         let shared: Any = URL(string: urlToShare) ?? urlToShare
-        let activity = UIActivityViewController(activityItems: [shared], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView ?? presenter.view
-        presenter.present(activity, animated: true)
+        LunaShareSheet.present(
+            items: [shared], from: presenter, anchor: .view(sourceView ?? presenter.view))
     }
 
     // MARK: - Delivery

@@ -1030,13 +1030,9 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     private func presentShareSheet(for fileURL: URL) {
-        let activity = UIActivityViewController(
-            activityItems: [fileURL], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = shareButton
-        activity.popoverPresentationController?.sourceRect = shareButton.bounds
         // Don't let a playing video keep running behind the share sheet.
         activePlayer?.pause()
-        present(activity, animated: true)
+        LunaShareSheet.present(items: [fileURL], from: self, anchor: .viewBounds(shareButton))
     }
 
     /// Requests Photos add access and saves the downloaded file, then marks the item

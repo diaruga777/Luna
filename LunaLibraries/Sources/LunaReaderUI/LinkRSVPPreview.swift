@@ -279,11 +279,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         guard let host else { return }
         switch action {
         case .share:
-            let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = host.view
-            activity.popoverPresentationController?.sourceRect = CGRect(
-                x: host.view.bounds.midX, y: host.view.bounds.midY, width: 1, height: 1)
-            host.present(activity, animated: true)
+            LunaShareSheet.present(items: [url], from: host, anchor: nil)
         case .copy:
             UIPasteboard.general.url = url
             UINotificationFeedbackGenerator().notificationOccurred(.success)

@@ -3,6 +3,7 @@
 //  LunaReaderUI
 //
 
+import LunaDesignSystem
 import LunaStorage
 import UIKit
 
@@ -16,10 +17,7 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
     ) {
         // Plain URL only — no Luna deep link, no accessory text.
         let shared: Any = URL(string: urlString) ?? urlString
-        let activity = UIActivityViewController(
-            activityItems: [shared], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView
-        presenter.present(activity, animated: true)
+        LunaShareSheet.present(items: [shared], from: presenter, anchor: .view(sourceView))
     }
 
     public func saveLink(urlString: String) {

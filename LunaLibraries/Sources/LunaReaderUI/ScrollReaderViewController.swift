@@ -1685,19 +1685,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// to the current selection (mirrors the link-share popover anchoring above).
     private func shareHighlightedText(_ quote: String, in range: NSRange) {
         let text = Self.makeHighlightShareText(quote: quote, item: item)
-        let activity = UIActivityViewController(activityItems: [text], applicationActivities: nil)
-        if let popover = activity.popoverPresentationController {
-            popover.sourceView = textView
-            if let selection = textView.selectedTextRange {
-                let rect = textView.firstRect(for: selection)
-                popover.sourceRect = (rect.isNull || rect.isInfinite)
-                    ? CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
-                    : rect
-            } else {
-                popover.sourceRect = CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
-            }
+        let rect: CGRect
+        if let selection = textView.selectedTextRange {
+            let selectionRect = textView.firstRect(for: selection)
+            rect = (selectionRect.isNull || selectionRect.isInfinite)
+                ? CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
+                : selectionRect
+        } else {
+            rect = CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
         }
-        present(activity, animated: true)
+        LunaShareSheet.present(items: [text], from: self, anchor: .rect(rect, in: textView))
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {

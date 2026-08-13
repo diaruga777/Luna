@@ -282,7 +282,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// file is — offered above the deck's Archive/Delete.
     func menuActions(for item: ReadingListItem, host: CardPresenterHost) -> [UIMenuElement] {
         guard let media = media(for: item) else { return [] }
-        let anchor = host.cardView(forItemID: item.id) ?? host.presentingController.view!
+        let anchor = host.cardView(forItemID: item.id)
         return MediaItemActions.menuActions(
             for: media,
             download: { MediaItemActions.startManualDownload(media) },
@@ -323,9 +323,7 @@ final class MediaCardPresenter: CardKindPresenting {
             for: media, presenter: host.presentingController, sourceView: sourceView,
             shareFile: { [weak self, weak host, weak sourceView] in
                 guard let self, let host else { return }
-                self.share(
-                    media, from: host,
-                    sourceView: sourceView ?? host.presentingController.view!)
+                self.share(media, from: host, sourceView: sourceView)
             })
     }
 
@@ -559,9 +557,11 @@ final class MediaCardPresenter: CardKindPresenting {
     // MARK: - Sharing
 
     /// A single concrete file URL is the whole payload — the system derives the
-    /// preview and no Luna metadata rides along.
+    /// preview and no Luna metadata rides along. `sourceView` is nil when the
+    /// caller's own anchor view is gone (the card scrolled away, a weakly-held
+    /// view already deallocated); the share sheet then anchors to the deck itself.
     private func share(
-        _ media: SavedMediaItem, from host: CardPresenterHost, sourceView: UIView
+        _ media: SavedMediaItem, from host: CardPresenterHost, sourceView: UIView?
     ) {
         Task { @MainActor [weak self, weak host] in
             guard let self, let host else { return }
@@ -572,17 +572,15 @@ final class MediaCardPresenter: CardKindPresenting {
                     from: host.presentingController)
                 return
             }
-            let activity = UIActivityViewController(
-                activityItems: [fileURL], applicationActivities: nil)
-            activity.completionWithItemsHandler = { [weak self] _, _, _, _ in
-                Task { @MainActor in self?.discardPreparedShareFile(for: media.id) }
-            }
-            activity.popoverPresentationController?.sourceView = sourceView
-            activity.popoverPresentationController?.sourceRect = sourceView.bounds
             // Don't let a playing video keep running (and talking) behind the
             // share sheet.
             self.activePlayer?.pause()
-            host.presentingController.present(activity, animated: true)
+            LunaShareSheet.present(
+                items: [fileURL], from: host.presentingController,
+                anchor: sourceView.map(LunaShareSheetAnchor.viewBounds),
+                completion: { [weak self] _, _, _, _ in
+                    Task { @MainActor in self?.discardPreparedShareFile(for: media.id) }
+                })
         }
     }
 

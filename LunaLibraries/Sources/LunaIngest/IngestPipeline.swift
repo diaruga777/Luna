@@ -191,7 +191,15 @@ public enum IngestPipeline {
                     productProcessor: productProcessor, socialTextProcessor: socialTextProcessor)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                // A `catch` rather than `try?`: when the work leg finishes first the
+                // group cancels this one, the sleep throws, and the timeout leg must
+                // report NOTHING. Swallowing that cancellation put a false "budget
+                // elapsed" line into every save's diagnostics.
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                } catch {
+                    return nil
+                }
                 // The timeout leg returns the hard-fail fallback for `input.url` — a
                 // hard-paywall host parks for the archive reader, everything else fails.
                 let url = URLUnwrapper.unwrapOffline(input.url).url

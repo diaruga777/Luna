@@ -377,10 +377,10 @@ public final class PreloadStore {
         for file in orphanedFiles {
             try? fileManager.removeItem(at: contentURL(fileName: file))
         }
-        // Release each orphaned page's images (deleted only if no other page/save owns
-        // them) and drop its decoded copy from the in-memory cache.
+        // Release the orphaned pages' images (each deleted only if no other page or
+        // save owns it) and drop their decoded copies from the in-memory cache.
+        ownershipStore().releasePreloadedPages(pageKeys: orphanedKeys)
         for key in orphanedKeys {
-            ownershipStore().releasePreloadedPage(pageKey: key)
             memoryCache.removeObject(forKey: key as NSString)
         }
     }

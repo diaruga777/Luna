@@ -276,7 +276,7 @@ final class SavedFileOwnershipTests: XCTestCase {
         store.delete(store.item(withID: item.id)!)
         XCTAssertTrue(exists("img-page.jpg"), "the preloaded page still holds it")
 
-        store.releasePreloadedPage(pageKey: "page-hash")
+        store.releasePreloadedPages(pageKeys: ["page-hash"])
         XCTAssertFalse(exists("img-page.jpg"))
     }
 

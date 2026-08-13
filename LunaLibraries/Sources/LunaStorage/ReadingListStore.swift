@@ -1180,10 +1180,14 @@ public final class ReadingListStore {
         reapPendingDeletes()
     }
 
-    /// Drops a preloaded page's claim on its images.
-    public func releasePreloadedPage(pageKey: String) {
+    /// Drops these preloaded pages' claims on their images. A whole released
+    /// subtree arrives in one call, so it is one transaction and one unlink pass.
+    public func releasePreloadedPages(pageKeys: [String]) {
+        guard !pageKeys.isEmpty else { return }
         writeFileOwnership { db in
-            try SavedFileOwnership.releaseHolder(holderKey: pageKey, in: db)
+            for pageKey in pageKeys {
+                try SavedFileOwnership.releaseHolder(holderKey: pageKey, in: db)
+            }
         }
         reapPendingDeletes()
     }

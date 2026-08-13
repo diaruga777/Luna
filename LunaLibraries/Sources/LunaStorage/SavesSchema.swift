@@ -64,10 +64,13 @@ enum SavesSchema {
     }
 
     /// Records the ownership edges for saves written before `files`/`file_refs`
-    /// existed, so deleting one of them still frees its artifacts. Everything a
-    /// save's own columns name is recovered here; a save's downloaded images are
-    /// not (their names live inside the content JSON, not in a column), so those
-    /// files stay until the article's content is written again.
+    /// existed, so deleting one of them still frees its artifacts.
+    ///
+    /// It recovers what a COLUMN names: the content JSON, the captured archive, the
+    /// thumbnail, the product photo. The two artifacts whose names are not in a
+    /// column are left — a downloaded image (named inside the content JSON) and an
+    /// imported document (named from the id and the document type) — so those stay
+    /// on disk until the save writes its content again.
     private static func backfillFileOwnership(in database: SavesDatabase) throws {
         // (table, the id column pointing at `saves`, the file-name column, the
         // directory the name is relative to, the kind recorded). A name holding a

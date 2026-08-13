@@ -44,9 +44,8 @@ public struct PreloadEntry: Codable, Equatable {
     }
 
     /// Whether the crawl reached this URL successfully — an article or a
-    /// resolved platform link, as opposed to `.unrepresentable`. Fully
-    /// determined by `kind`; there used to be a separately-stored `state`
-    /// that this always agreed with.
+    /// resolved platform link, as opposed to `.unrepresentable`. Derived from
+    /// `kind` alone.
     public var loadedSuccessfully: Bool { kind != .unrepresentable }
 }
 

@@ -135,8 +135,7 @@ public final class SavesIngestor {
     /// (`.paste`/`.manual`) surface the error via `unsupportedSavePresenter`.
     @discardableResult
     public func ingest(_ item: SavedItem, forceArticle: Bool = false,
-                       prefetchedHTML: String? = nil,
-                       trustsPrefetchedHTML: Bool = false,
+                       page: CapturedPage = .none,
                        allowsInteractivePrompt: Bool = true) async -> SurfaceSupport.Decision {
         guard item.state != .ready, let initialURL = item.url else { return .supported }
 
@@ -161,7 +160,7 @@ public final class SavesIngestor {
         recorder.record(
             "ingest: begin \(SaveDiagnostics.url(url)) source=\(item.effectiveCaptureSource.rawValue)"
                 + (forceArticle ? " forceArticle" : "")
-                + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
+                + (page.html.map { " prefetchedHTML=\($0.count)ch" } ?? ""),
             category: "ingest")
 
         // The one shared pipeline resolves wrappers, classifies, and
@@ -171,8 +170,7 @@ public final class SavesIngestor {
             await IngestPipeline.processResolved(
                 IngestInput(url: url, source: item.effectiveCaptureSource,
                             documentType: item.sanitizedDocumentType,
-                            prefetchedHTML: prefetchedHTML, forceArticle: forceArticle,
-                            trustsPrefetchedHTML: trustsPrefetchedHTML),
+                            page: page, forceArticle: forceArticle),
                 fetcher: fetcher)
         }
 
@@ -633,8 +631,7 @@ public final class SavesIngestor {
     @discardableResult
     public func performPreparedSavePress(
         _ prepared: PreparedSavePress,
-        prefetchedHTML: String? = nil,
-        trustsPrefetchedHTML: Bool = false,
+        page: CapturedPage = .none,
         waitForInFlight: Bool = false
     ) async -> SavePressResult {
         if waitForInFlight {
@@ -654,9 +651,7 @@ public final class SavesIngestor {
                 return .saved(SavedItem(urlString: prepared.urlString))
             }
             if item.state == .ready || item.state == .needsCaptcha { return .saved(item) }
-            let decision = await ingest(
-                item, prefetchedHTML: prefetchedHTML,
-                trustsPrefetchedHTML: trustsPrefetchedHTML)
+            let decision = await ingest(item, page: page)
             switch decision {
             case let .unsupported(owner): return .unsupportedKind(owner: owner)
             case .supported: return .saved(item)
@@ -708,8 +703,7 @@ public final class SavesIngestor {
     /// legacy ereader double save.
     @discardableResult
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
-                                prefetchedHTML: String? = nil,
-                                trustsPrefetchedHTML: Bool = false,
+                                page: CapturedPage = .none,
                                 doubleSaveActionSurface: DoubleSaveSurface? = nil,
                                 attemptDate: Date = Date()) async -> SavePressResult {
         guard let prepared = prepareSavePress(
@@ -717,9 +711,7 @@ public final class SavesIngestor {
             doubleSaveActionSurface: doubleSaveActionSurface,
             attemptDate: attemptDate)
         else { return .ignored }
-        return await performPreparedSavePress(
-            prepared, prefetchedHTML: prefetchedHTML,
-            trustsPrefetchedHTML: trustsPrefetchedHTML)
+        return await performPreparedSavePress(prepared, page: page)
     }
 
     private static func preparedAction(

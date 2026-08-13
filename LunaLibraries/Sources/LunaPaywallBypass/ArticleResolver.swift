@@ -67,11 +67,10 @@ public enum ArticleResolver {
     /// FT's from the direct stub), else `.unreadable`.
     public static func resolve(
         url: URL,
-        prefetchedHTML: String? = nil,
+        page: CapturedPage = .none,
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
-        runner: BypassRunning? = nil,
-        trustsPrefetchedHTML: Bool = false
+        runner: BypassRunning? = nil
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
         let siteRule = SiteUnlockRules.rule(for: url)
@@ -84,7 +83,7 @@ public enum ArticleResolver {
         let direct = await extraction.fetchAndExtract(
             baseURL: url,
             fetch: {
-                if let prefetchedHTML { return prefetchedHTML }
+                if let html = page.html { return html }
                 return try await fetcher.fetchHTML(from: url)
             },
             onFetchError: { directFailure = SaveFailureReason(fetchError: $0) })
@@ -118,7 +117,7 @@ public enum ArticleResolver {
             if ArticleExtraction.isReadableArticle(direct) {
                 return .readable(direct.content, html: direct.sourceHTML)
             }
-            if trustsPrefetchedHTML, prefetchedHTML != nil,
+            if case .unlockedCapture = page,
                direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold {
                 trustedCapture = direct
             }

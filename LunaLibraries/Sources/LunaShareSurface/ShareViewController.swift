@@ -351,9 +351,11 @@ open class ShareViewController: UIViewController {
         // is the subscription pitch, so it must not travel with the
         // unwrapped article URL.
         let capturesOwnPage = rawURLString.map { !URLUnwrapper.unwrapsToDifferentPage($0) } ?? false
-        let prefetchedHTML = kind == "article" && capturesOwnPage
-            ? Self.articleSnapshotHTML(title: title, text: articleText)
-            : nil
+        let page: CapturedPage = kind == "article" && capturesOwnPage
+            ? (Self.articleSnapshotHTML(title: title, text: articleText).map {
+                CapturedPage.fetched($0)
+              } ?? .none)
+            : .none
         let url = rawURLString.flatMap { URLUnwrapper.ingestURL(from: $0) }
         SharedDiagnosticLog.record(
             "action: JS callback url=\(url?.absoluteString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
@@ -363,7 +365,7 @@ open class ShareViewController: UIViewController {
                 SavesStore.shared.addIfAbsent(
                     urlString: url.absoluteString, source: .shareSheet)
                 SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
-                self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
+                self.presentSavedOrReader(url: url, page: page)
             } else {
                 self.failOrComplete(L10n.string("ShareExtension_share_missingPageAddressMessage"))
             }
@@ -434,12 +436,12 @@ open class ShareViewController: UIViewController {
     /// driver unwraps, classifies, and processes under a hard timeout,
     /// then persists and presents the `Outcome` through this view
     /// controller as its `ExtensionHost`. Safe to call from any thread.
-    private func presentSavedOrReader(url originalURL: URL, prefetchedHTML: String? = nil) {
+    private func presentSavedOrReader(url originalURL: URL, page: CapturedPage = .none) {
         recordShareSurfaceRun()
         Task { [weak self] in
             guard let self else { return }
             await ShareSurfaceDriver(host: self).ingestAndPresent(
-                originalURL: originalURL, prefetchedHTML: prefetchedHTML)
+                originalURL: originalURL, page: page)
         }
     }
 

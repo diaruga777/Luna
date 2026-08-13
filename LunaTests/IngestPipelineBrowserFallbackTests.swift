@@ -60,7 +60,7 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         let html = BypassFixtures.html("Products/nested-currency-state.html")
 
         let outcome = await IngestPipeline.process(
-            IngestInput(url: url, source: .paste, prefetchedHTML: html),
+            IngestInput(url: url, source: .paste, page: .fetched(html)),
             timeout: 1,
             fetcher: MockArticleFetcher(),
             articleProcessor: ArticleIngestProcessor(),
@@ -103,7 +103,7 @@ final class IngestPipelineBrowserFallbackTests: XCTestCase {
         XCTAssertEqual(Classifier.classify(url: url), .paywalledArticle(hardHost: true))
 
         let outcome = await IngestPipeline.process(
-            IngestInput(url: url, source: .paste, prefetchedHTML: html),
+            IngestInput(url: url, source: .paste, page: .fetched(html)),
             timeout: 1,
             fetcher: MockArticleFetcher(),
             articleProcessor: ArticleIngestProcessor(),

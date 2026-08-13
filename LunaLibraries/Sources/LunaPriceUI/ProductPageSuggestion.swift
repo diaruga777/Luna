@@ -36,7 +36,7 @@ public extension ProductPageSuggestion {
         html: String? = nil
     ) async -> ProductPageSuggestion? {
         let result = await IngestPipeline.processResolved(
-            IngestInput(url: url, source: .manual, prefetchedHTML: html))
+            IngestInput(url: url, source: .manual, page: html.map { .fetched($0) } ?? .none))
         guard case let .product(product, processedHTML) = result.outcome else { return nil }
         return ProductPageSuggestion(
             url: result.url,

@@ -174,7 +174,7 @@ final class ArticleResolverTests: XCTestCase {
         fetcher.htmlByURL[articleURL.absoluteString] = html
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, trustsPrefetchedHTML: false)
+            url: articleURL, fetcher: fetcher)
         if case .readable = result {} else { XCTFail("long direct body should be readable, got \(result)") }
         XCTAssertEqual(fetcher.calls.first?.kind, .plain)
     }
@@ -189,13 +189,11 @@ final class ArticleResolverTests: XCTestCase {
             + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
 
         let parked = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
-            trustsPrefetchedHTML: false)
+            url: articleURL, page: .fetched(html), fetcher: MockArticleFetcher())
         if case .readable = parked { XCTFail("short untrusted prefetch must not bypass the schema lock") }
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
-            trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: html), fetcher: MockArticleFetcher())
         if case .readable = result {} else { XCTFail("trusted prefetch should be readable, got \(result)") }
     }
 
@@ -249,13 +247,12 @@ final class ArticleResolverTests: XCTestCase {
         fetcher.htmlByURL[articleURL.absoluteString] = proseHTML("nyt-unlocked", paragraphs: 8)
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: capture), fetcher: fetcher)
 
         // The same capture with no reachable unlock resolves to the capture itself,
         // which gives the length to beat.
         let fallback = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: capture, fetcher: MockArticleFetcher(),
-            trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: capture), fetcher: MockArticleFetcher())
         guard let unlocked = bodyLength(of: result), let captured = bodyLength(of: fallback) else {
             return XCTFail("expected readable results, got \(result) / \(fallback)")
         }
@@ -273,7 +270,7 @@ final class ArticleResolverTests: XCTestCase {
         let fetcher = MockArticleFetcher()          // every fetch throws (no stubs)
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: capture), fetcher: fetcher)
 
         if case let .readable(_, html) = result {
             XCTAssertEqual(html, capture)
@@ -292,7 +289,7 @@ final class ArticleResolverTests: XCTestCase {
         fetcher.htmlByURL[articleURL.absoluteString] = proseHTML("nyt-teaser", paragraphs: 1)
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: capture), fetcher: fetcher)
 
         if case let .readable(_, html) = result {
             XCTAssertEqual(html, capture, "the longer capture must be kept")
@@ -312,7 +309,7 @@ final class ArticleResolverTests: XCTestCase {
         let fetcher = MockArticleFetcher()
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, prefetchedHTML: capture, fetcher: fetcher, trustsPrefetchedHTML: true)
+            url: articleURL, page: .safariHandoff(html: capture), fetcher: fetcher)
 
         if case let .readable(_, html) = result {
             XCTAssertEqual(html, capture)

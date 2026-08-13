@@ -25,34 +25,25 @@ public struct IngestInput {
     /// A save-time document type flag (pdf/epub/…) when the surface imported
     /// a file rather than a web URL. Always wins classification (`.document`).
     public let documentType: String?
-    /// Page HTML the surface already fetched, reused so the pipeline does not
+    /// Page HTML the surface already has, reused so the pipeline does not
     /// refetch it.
-    public let prefetchedHTML: String?
+    public let page: CapturedPage
     /// The "Read instead" override. Forces the article path even for a
     /// product page.
     public let forceArticle: Bool
-    /// Set when `prefetchedHTML` is the already-unlocked, on-screen article DOM
-    /// captured in Safari (the "Read in Luna" hand-off). A publisher's stale
-    /// schema.org lock (`isAccessibleForFree:false`, still in the page's
-    /// JSON-LD after a client-side unlock) must not re-reject that HTML as
-    /// paywalled. Only the Safari hand-off sets this; every other prefetch
-    /// (share sheet, product pages) keeps the full paywall gate.
-    public let trustsPrefetchedHTML: Bool
 
     public init(
         url: URL,
         source: CaptureSource,
         documentType: String? = nil,
-        prefetchedHTML: String? = nil,
-        forceArticle: Bool = false,
-        trustsPrefetchedHTML: Bool = false
+        page: CapturedPage = .none,
+        forceArticle: Bool = false
     ) {
         self.url = url
         self.source = source
         self.documentType = documentType
-        self.prefetchedHTML = prefetchedHTML
+        self.page = page
         self.forceArticle = forceArticle
-        self.trustsPrefetchedHTML = trustsPrefetchedHTML
     }
 }
 
@@ -327,18 +318,20 @@ public enum IngestPipeline {
         // Fetch the direct HTML once, reusing the surface's prefetch if one
         // exists. Product detection and article resolution share this single
         // fetch, so the pipeline never fetches the page twice.
-        let directHTML: String?
-        if let prefetched = input.prefetchedHTML {
-            directHTML = prefetched
-        } else if input.forceArticle {
-            directHTML = nil
-        } else {
-            directHTML = try? await fetcher.fetchHTML(from: url)
+        let page: CapturedPage
+        switch input.page {
+        case .fetched, .unlockedCapture:
+            page = input.page
+        case .none where input.forceArticle:
+            page = .none
+        case .none:
+            page = (try? await fetcher.fetchHTML(from: url)).map { .fetched($0) } ?? .none
         }
+        let directHTML = page.html
         SaveDiagnostics.record(
             "pipeline: direct HTML "
                 + (directHTML.map { "\($0.count)ch" } ?? "unavailable")
-                + (input.prefetchedHTML != nil ? " (prefetched by the surface)" : "")
+                + (input.page.html != nil ? " (prefetched by the surface)" : "")
                 + (input.forceArticle ? " (forceArticle: skipped)" : ""),
             category: "ingest")
 
@@ -407,7 +400,7 @@ public enum IngestPipeline {
         // on it; vetoing those would disable the unlock the Reader exists
         // for. That is the whole difference between "we can't read this yet"
         // and "there is nothing here to read".
-        if !input.forceArticle, !input.trustsPrefetchedHTML,
+        if !input.forceArticle, !input.page.isUnlockedCapture,
            !ArticleFetcher.isHardPaywallHost(url),
            !(directHTML.map(declaresPaywall) ?? false),
            ListingPage.isNonContentPage(url: url, html: directHTML) {
@@ -426,9 +419,7 @@ public enum IngestPipeline {
             return .unsupported(owner: .reader)
         }
         SaveDiagnostics.record("pipeline: article path entered", category: "ingest")
-        return await articleProcessor.process(
-            url: url, directHTML: directHTML,
-            trustsPrefetchedHTML: input.trustsPrefetchedHTML, fetcher: fetcher)
+        return await articleProcessor.process(url: url, page: page, fetcher: fetcher)
     }
 
     /// A URL that names a set of items rather than one: a search-results page

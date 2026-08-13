@@ -230,7 +230,7 @@ final class SurfaceParityTests: XCTestCase {
         // of the LunaIngest framework, so the host app's launch registration
         // (KindWiring) isn't necessarily visible through the registry here.
         return await IngestPipeline.process(
-            IngestInput(url: url(link.url), source: source, prefetchedHTML: prefetched),
+            IngestInput(url: url(link.url), source: source, page: prefetched.map { .fetched($0) } ?? .none),
             timeout: 10, session: OfflineFailingProtocol.session(), fetcher: fetcher(for: link),
             articleProcessor: ArticleIngestProcessor(),
             productProcessor: ProductIngestProcessor())

@@ -5,40 +5,50 @@
 
 import Foundation
 import LunaMailAccount
+import LunaStorage
 
 /// Settings for turning incoming emails (from allowed senders) into reading-list
 /// items. Reuses the send-to-Kindle Gmail account + app password. Persisted in
-/// standard defaults; the cursor dedupes processed mail.
+/// the shared App-Group suite, so the central app and the Reader import one
+/// mailbox against one cursor; the cursor dedupes processed mail.
 public enum IncomingMailSettings {
     private static let enabledKey = "incomingMailEnabled"
     private static let sendersKey = "incomingMailAllowedSenders"
     private static let subjectFiltersKey = "incomingMailSubjectFilters"
     private static let autoSendKey = "incomingMailAutoSendToKindle"
 
+    /// Overridable so tests can drive both halves of the read-through without
+    /// touching the real container. Production code never sets it.
+    static var testDefaultsOverride: MigratingAppGroupDefaults?
+
+    private static var defaults: MigratingAppGroupDefaults {
+        testDefaultsOverride ?? MigratingAppGroupDefaults()
+    }
+
     public static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: enabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+        get { defaults.bool(forKey: enabledKey) }
+        set { defaults.set(newValue, forKey: enabledKey) }
     }
 
     /// When on (and Send-to-Kindle is configured), imported-email articles are
     /// also sent to Kindle.
     public static var autoSendToKindle: Bool {
-        get { UserDefaults.standard.bool(forKey: autoSendKey) }
-        set { UserDefaults.standard.set(newValue, forKey: autoSendKey) }
+        get { defaults.bool(forKey: autoSendKey) }
+        set { defaults.set(newValue, forKey: autoSendKey) }
     }
 
     /// Allowed sender email addresses; mail from these is imported.
     public static var allowedSenders: [String] {
-        get { UserDefaults.standard.stringArray(forKey: sendersKey) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: sendersKey) }
+        get { defaults.stringArray(forKey: sendersKey) ?? [] }
+        set { defaults.set(newValue, forKey: sendersKey) }
     }
 
     /// Subject-line substrings; mail whose subject fuzzily contains any of these
     /// is imported regardless of sender (e.g. "Money Stuff"). Matched
     /// server-side via IMAP `SUBJECT` search (case-insensitive substring).
     public static var subjectFilters: [String] {
-        get { UserDefaults.standard.stringArray(forKey: subjectFiltersKey) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: subjectFiltersKey) }
+        get { defaults.stringArray(forKey: subjectFiltersKey) ?? [] }
+        set { defaults.set(newValue, forKey: subjectFiltersKey) }
     }
 
     /// The dedupe cursor persisted between fetches, as one JSON blob under
@@ -50,7 +60,7 @@ public enum IncomingMailSettings {
     /// `migrateLegacyCursor`) and never looks at them again.
     public static var cursor: MailCursor {
         get {
-            if let data = UserDefaults.standard.data(forKey: cursorKey),
+            if let data = defaults.data(forKey: cursorKey),
                let decoded = try? JSONDecoder().decode(MailCursor.self, from: data) {
                 return decoded
             }
@@ -58,7 +68,7 @@ public enum IncomingMailSettings {
         }
         set {
             guard let data = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(data, forKey: cursorKey)
+            defaults.set(data, forKey: cursorKey)
         }
     }
 
@@ -72,7 +82,7 @@ public enum IncomingMailSettings {
     /// An install with none of the legacy keys set (a fresh install, or one
     /// that already migrated) reads as `.fresh`.
     private static func migrateLegacyCursor() -> MailCursor {
-        let defaults = UserDefaults.standard
+        let defaults = Self.defaults
         let legacyUID = defaults.integer(forKey: legacyLastUIDKey)
         let migrated: MailCursor
         if legacyUID > 0 {

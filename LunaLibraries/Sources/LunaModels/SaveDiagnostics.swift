@@ -23,17 +23,30 @@ import Foundation
 /// message, thanks to the autoclosure) unless a save has bound a recorder to
 /// the current task. So a preload, a metadata refresh, or the onboarding demo
 /// runs the same code and writes nothing.
+public protocol SaveDiagnosticsMirroring: Sendable {
+    /// Mirrors one recorded line to the general diagnostics stream
+    /// (`clip-diagnostics.log`), so a live tail shows the save as it happens even
+    /// when it ultimately succeeds and the buffer is dropped. The app installs
+    /// `DiagnosticLog.shared.record`; an extension installs the SYNCHRONOUS
+    /// `SharedDiagnosticLog.record`.
+    func mirror(message: String, category: String)
+}
+
+/// The default: a trace nobody is tailing, buffered and nothing more.
+public struct DiscardedSaveDiagnosticsMirror: SaveDiagnosticsMirroring {
+    public init() {}
+
+    public func mirror(message: String, category: String) {}
+}
+
 public final class SaveDiagnosticsRecorder: @unchecked Sendable {
 
     /// The reading-list item this trace belongs to — the correlation id.
     public let itemID: UUID
 
-    /// Mirrors each recorded message to the general diagnostics stream
-    /// (`clip-diagnostics.log`), so a live tail shows the save as it happens
-    /// even when it ultimately succeeds and the buffer is dropped. Installed by
-    /// the layer that owns storage: `DiagnosticLog.shared.record` in the app,
-    /// `SharedDiagnosticLog.record` (synchronous) in an extension.
-    private let mirror: @Sendable (String, String) -> Void
+    /// Where each recorded message is mirrored as it happens. Handed in by the
+    /// layer that owns storage — LunaModels sits below it.
+    private let mirror: any SaveDiagnosticsMirroring
 
     /// One formatter per recorder: `ISO8601DateFormatter` is not safe to share
     /// across the threads a save's legs run on, and a recorder is bound to one
@@ -52,7 +65,7 @@ public final class SaveDiagnosticsRecorder: @unchecked Sendable {
     public init(
         itemID: UUID,
         maxBufferedLines: Int = 2_000,
-        mirror: @escaping @Sendable (String, String) -> Void = { _, _ in }
+        mirror: any SaveDiagnosticsMirroring = DiscardedSaveDiagnosticsMirror()
     ) {
         self.itemID = itemID
         self.maxBufferedLines = maxBufferedLines
@@ -83,7 +96,7 @@ public final class SaveDiagnosticsRecorder: @unchecked Sendable {
                 lines.removeFirst(lines.count - maxBufferedLines)
             }
         }
-        mirror("\(tag) \(message)", category)
+        mirror.mirror(message: "\(tag) \(message)", category: category)
     }
 
     /// The buffered lines, emptying the buffer — the failure-time flush. A

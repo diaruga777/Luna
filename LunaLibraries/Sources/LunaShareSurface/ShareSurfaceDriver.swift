@@ -11,6 +11,15 @@ import LunaHTMLClassification
 import LunaURLClassification
 import UIKit
 
+/// An extension's diagnostics stream: the SYNCHRONOUS logger, because an
+/// extension can be jetsammed the instant it finishes and an async queue hop
+/// would lose the tail of the story (`claudedocs/save-diagnostics.md`).
+struct SharedDiagnosticsMirror: SaveDiagnosticsMirroring {
+    func mirror(message: String, category: String) {
+        SharedDiagnosticLog.record(message, category: category)
+    }
+}
+
 /// The HOST-AGNOSTIC ingest+present flow for the share/action extension surfaces.
 ///
 /// It runs the ONE shared `IngestPipeline` for an appended URL and presents the
@@ -81,9 +90,7 @@ public final class ShareSurfaceDriver {
         // async queue hop would lose the tail of the story
         // (`claudedocs/save-diagnostics.md`).
         let recorder = pendingItemID.map { itemID in
-            SaveDiagnosticsRecorder(itemID: itemID) { message, category in
-                SharedDiagnosticLog.record(message, category: category)
-            }
+            SaveDiagnosticsRecorder(itemID: itemID, mirror: SharedDiagnosticsMirror())
         }
         self.recorder = recorder
         recorder?.record(

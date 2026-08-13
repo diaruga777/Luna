@@ -12,6 +12,14 @@ import LunaModels
 import LunaSocial
 import Foundation
 
+/// The app's own diagnostics stream, which a save's trace is mirrored into as it
+/// happens.
+private struct AppDiagnosticsMirror: SaveDiagnosticsMirroring {
+    func mirror(message: String, category: String) {
+        DiagnosticLog.shared.record(message, category: category)
+    }
+}
+
 /// Presents the unsupported-kind error for a dropped INTERACTIVE in-app save.
 /// Installed by the app shell at launch (AppDelegate) — LunaReadingList can't
 /// know how the app presents modals.
@@ -130,9 +138,8 @@ public final class ReadingListIngestor {
         // diagnostics stream. Bound as a task-local, so the fetcher, the bypass
         // runner, the classifier and the resolvers record without threading an
         // argument through six modules (`claudedocs/save-diagnostics.md`).
-        let recorder = SaveDiagnosticsRecorder(itemID: item.id) { message, category in
-            DiagnosticLog.shared.record(message, category: category)
-        }
+        let recorder = SaveDiagnosticsRecorder(
+            itemID: item.id, mirror: AppDiagnosticsMirror())
         recorder.record(
             "ingest: begin \(SaveDiagnostics.url(url)) source=\(item.effectiveCaptureSource.rawValue)"
                 + (forceArticle ? " forceArticle" : "")

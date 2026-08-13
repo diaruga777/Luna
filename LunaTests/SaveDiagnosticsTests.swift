@@ -20,11 +20,18 @@ final class SaveDiagnosticsRecorderTests: XCTestCase {
     ) -> (SaveDiagnosticsRecorder, () -> [(String, String)]) {
         let box = MirrorBox()
         let recorder = SaveDiagnosticsRecorder(
-            itemID: itemID, maxBufferedLines: maxBufferedLines
-        ) { message, category in
+            itemID: itemID, maxBufferedLines: maxBufferedLines,
+            mirror: RecordingMirror(box: box))
+        return (recorder, { box.messages })
+    }
+
+    /// Collects the mirrored lines the recorder hands out.
+    private struct RecordingMirror: SaveDiagnosticsMirroring {
+        let box: MirrorBox
+
+        func mirror(message: String, category: String) {
             box.append((message, category))
         }
-        return (recorder, { box.messages })
     }
 
     private final class MirrorBox: @unchecked Sendable {

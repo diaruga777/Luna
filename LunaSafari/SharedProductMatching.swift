@@ -40,8 +40,8 @@ enum SharedProductMatching {
                 }
             }
         }
-        // Indexed: only observations filed under one of this page's own
-        // identifiers are opened, never the whole store.
+        // Indexed: this opens only observations filed under one of this page's
+        // own identifiers, never the whole store.
         let otherSnapshots = ProductSnapshotStore.shared
             .snapshots(forKeys: page.indexKeys)
             .filter { $0.url != page.url }

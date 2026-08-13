@@ -13,27 +13,26 @@ import LunaURLClassification
 /// Answers "is this product cheaper somewhere else, right now?" for the product
 /// page the content script just extracted.
 ///
-/// Two legs, in this order, and the order is the whole point:
+/// Two legs run in this order:
 ///
 /// 1. **What Luna already knows.** The app-written price-history index and the
-///    passive snapshot file are already in the App Group container, and
-///    `ProductPageMatching`'s tiers say which of them are this page. A price
+///    passive snapshot file already sit in the App Group container, and
+///    `ProductPageMatching`'s tiers say which entries match this page. A price
 ///    another retailer was seen at in the last 24h is a real answer, and it
 ///    costs no network at all.
-/// 2. **A constrained fan-out**, only when leg 1 has nothing. `SellerFanOut`
-///    with `.constrained` — six candidate retailers, three results, no
-///    web-search layer, no name-only matches — fetched with a bare
-///    `URLSession`, because the appex cannot link `LunaFetch` (see
-///    `claudedocs/safari-extension.md`'s size ceiling) and does not need to:
-///    the engine takes its fetching injected precisely so this environment
-///    exists.
+/// 2. **A constrained fan-out**, run only when leg 1 finds nothing. `SellerFanOut`
+///    runs with `.constrained` — six candidate retailers, three results, no
+///    web-search layer, no name-only matches — over a bare `URLSession`,
+///    because the appex cannot link `LunaFetch` (see `claudedocs
+///    /safari-extension.md`'s size ceiling) and does not need to: the engine
+///    takes its fetching injected precisely so this environment can supply it.
 ///
 /// Whatever leg 2 fetches is written into the snapshot store on the way out, so
 /// a price found for a pill also feeds everything snapshots already feed.
 ///
-/// The answer is deliberately the LOWEST price that beats the page — not a list.
-/// A pill is one line on someone else's shopping page; if it cannot be reduced
-/// to "£X at <shop>", it should not be there.
+/// The answer is always the LOWEST price that beats the page, never a list. A
+/// pill is one line on someone else's shopping page: if it cannot be reduced to
+/// "£X at <shop>", it does not belong there.
 enum ComparableSellerFinder {
 
     /// What the page is told. Nil answers are the common case and are not
@@ -45,12 +44,12 @@ enum ComparableSellerFinder {
         var urlString: String
     }
 
-    /// Wall clock for the whole lookup, sitting INSIDE the appex's own 20s
-    /// notion (`SafariWebExtensionHandler.resolveTimeout`) so the finder gives
-    /// up before the handler would have to, and the page's promise settles with
-    /// a real answer rather than a timeout. The fan-out's `.constrained` budget
-    /// (15s) is the inner one; the margin covers container reads and the
-    /// snapshot write-back.
+    /// Wall clock for the whole lookup. It sits inside the appex's own 20s
+    /// notion (`SafariWebExtensionHandler.resolveTimeout`), so the finder gives
+    /// up before the handler must, and the page's promise settles with a real
+    /// answer rather than a timeout. The fan-out's `.constrained` budget (15s)
+    /// is the inner one; the margin covers container reads and the snapshot
+    /// write-back.
     static let budget: TimeInterval = 18
 
     private static let log = Logger(
@@ -102,8 +101,8 @@ enum ComparableSellerFinder {
     /// Points from the tracked-product index the app writes.
     ///
     /// An index point records a DAY, not an instant, so its honest timestamp is
-    /// that day's UTC start — which makes `isFresh` exactly "recorded today",
-    /// since today's start is always less than 24h ago and yesterday's never is.
+    /// that day's UTC start. That makes `isFresh` mean exactly "recorded today":
+    /// today's start is always less than 24h ago, and yesterday's never is.
     private static func indexPoints(
         matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
@@ -179,11 +178,11 @@ enum ComparableSellerFinder {
             // on the way to the pill — the same rule at both ends).
             sourceCurrency: page.currency))
 
-        // ONE line. The app writes the whole per-candidate story to its
+        // One line. The app writes the whole per-candidate story to its
         // shareable diagnostic log (`SellerComparisonRunner.logCategory`); an
-        // appex with a hard memory ceiling and a 20s budget gets the summary,
-        // which is still the difference between "the pill never appears" and a
-        // reason it never appears.
+        // appex with a hard memory ceiling and a 20s budget gets only the
+        // summary — still the difference between "the pill never appears" and
+        // a reason why.
         log.info("\(outcome.compactLogLine, privacy: .public)")
 
         for result in outcome.results {
@@ -200,10 +199,9 @@ enum ComparableSellerFinder {
 
     /// Races `work` against the finder's own wall clock. A lookup that overruns
     /// answers nothing rather than leaving the page's `sendMessage` promise —
-    /// and with it the spinner pill — hanging.
-    /// Both branches answer `Answer?`, and for both of them nil means the same
-    /// thing — no alternative seller — so whichever finishes first is simply
-    /// the answer.
+    /// and the spinner pill with it — hanging.
+    /// Both branches answer `Answer?`, and nil means the same thing in both: no
+    /// alternative seller. Whichever finishes first is simply the answer.
     private static func withinBudget(_ work: @escaping @Sendable () async -> Answer?) async -> Answer? {
         await TimeLimit.run(budget, operation: work) ?? nil
     }
@@ -242,13 +240,13 @@ enum ComparableSellerFinder {
 
 /// The appex's whole networking answer: a plain ephemeral `URLSession` carrying
 /// the same mobile-Safari User-Agent every other Luna fetch uses
-/// (`WebFetchConstants`, which lives low enough for this target to link), with
-/// the response capped at the same byte ceiling so a mis-served large file
+/// (`WebFetchConstants`, which lives low enough for this target to link). The
+/// response is capped at the same byte ceiling, so a mis-served large file
 /// cannot push a memory-limited appex into jetsam.
 ///
-/// It declares NO optional layers: there is no web search, no ingest pipeline
-/// and no WebKit render tier in here, which is exactly the trade
-/// `PipelineSellerNetworking` sits at the other end of.
+/// It declares no optional layers: no web search, no ingest pipeline, and no
+/// WebKit render tier. That is exactly the trade `PipelineSellerNetworking`
+/// sits at the other end of.
 struct URLSessionSellerNetworking: SellerFanOutNetworking {
     let availableLayers: SellerFanOutLayers = []
 

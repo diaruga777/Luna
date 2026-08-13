@@ -206,8 +206,8 @@ public final class LunaSetupStatusStore {
     }
 
     /// Stamped by the extension's native handler the first time it ever runs for
-    /// this app. Read-only here: the app never writes it, so it can't manufacture
-    /// evidence that the extension works.
+    /// this app (`recordSafariExtensionRun`), and only there — no app-side path
+    /// writes it, so an app cannot manufacture evidence that its extension works.
     public func safariExtensionFirstRunDate(for app: LunaApp) -> Date? {
         Self.date(defaults.object(forKey: Self.safariFirstRunKey(for: app)))
     }

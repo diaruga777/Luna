@@ -15,8 +15,8 @@ import LunaURLClassification
 /// Two legs, in this order, and the order is the whole point:
 ///
 /// 1. **What Luna already knows.** The app-written price-history index and the
-///    passive snapshot file are already in the App Group container, already
-///    matched against this page by `SharedProductMatching`'s tiers. A price
+///    passive snapshot file are already in the App Group container, and
+///    `ProductPageMatching`'s tiers say which of them are this page. A price
 ///    another retailer was seen at in the last 24h is a real answer, and it
 ///    costs no network at all.
 /// 2. **A constrained fan-out**, only when leg 1 has nothing. `SellerFanOut`

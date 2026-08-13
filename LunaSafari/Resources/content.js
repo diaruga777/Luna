@@ -1927,7 +1927,7 @@
 
     // Extracts once, sends ONE `productSnapshot` message (recorded passively
     // AND answered against tracked/snapshot history in the same round trip --
-    // see SharedProductSnapshots/SharedProductMatching), then asks for
+    // see SharedProductMatching.historyAnswer), then asks for
     // alternative sellers before rendering. Falls back to the plain Track pill
     // when there's no browser host, no extraction, or the round trip fails.
     function handleProductPage(context) {

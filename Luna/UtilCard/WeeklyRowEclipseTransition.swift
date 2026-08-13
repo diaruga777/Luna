@@ -105,7 +105,8 @@ final class WeeklyRowEclipseTransition {
                 corona.alpha = 1
             }
         } completion: { [weak self] _ in
-            self?.runEgress()
+            // UIView animation completions land on the main thread.
+            MainActor.assumeIsolated { self?.runEgress() }
         }
     }
 

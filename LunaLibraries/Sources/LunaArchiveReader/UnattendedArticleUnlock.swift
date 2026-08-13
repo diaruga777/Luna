@@ -34,7 +34,9 @@ public enum UnattendedArticleUnlock {
     /// archive.today round trip, short enough that a file with fifty locked
     /// articles can't hold the import open for an hour. A slow one is abandoned,
     /// not failed.
-    public static let defaultTimeout: TimeInterval = 45
+    /// `nonisolated` so `unlock` can take it as a default argument: a default
+    /// is evaluated in the caller's context, which is not this actor.
+    public nonisolated static let defaultTimeout: TimeInterval = 45
 
     /// Attempts the unlock; returns whether the article's content ended up saved.
     ///

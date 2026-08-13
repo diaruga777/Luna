@@ -39,8 +39,12 @@ import UIKit
 /// The deck, as the kind drawing into it sees it. A presenter holds no
 /// reference to this — every call that needs the deck is handed it — so a
 /// process-wide registry entry can never outlive, or capture, one screen.
+/// `Sendable` because every conformer is a main-actor class (there is one, the
+/// deck itself), and a presenter hands a host into notification-observer blocks
+/// that the compiler checks as `@Sendable`. The isolation is what makes it
+/// safe: nothing reaches a host except on the main actor.
 @MainActor
-protocol CardPresenterHost: AnyObject {
+protocol CardPresenterHost: AnyObject, Sendable {
     /// Where a presenter presents from: share sheets, alerts, fullscreen
     /// players, the price editor.
     var presentingController: UIViewController { get }

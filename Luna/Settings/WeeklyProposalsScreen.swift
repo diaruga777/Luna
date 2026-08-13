@@ -25,8 +25,11 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
         return formatter
     }()
 
-    init(refresher: WeeklySaveRefresher = .shared) {
-        self.refresher = refresher
+    /// Defaulted to `nil` and resolved here: a default argument is evaluated in
+    /// the CALLER's context, which is not the main actor even though this
+    /// initializer is, and `WeeklySaveRefresher` is main-actor isolated.
+    init(refresher: WeeklySaveRefresher? = nil) {
+        self.refresher = refresher ?? .shared
         super.init(style: .insetGrouped)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

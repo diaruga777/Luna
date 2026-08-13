@@ -16,7 +16,7 @@ import UIKit
 /// another root (e.g. the nested split-web overlay). DEBUG-only test scaffolding.
 final class PresentingHostViewController: UIViewController {
     private let host: UIViewController
-    private let makeModal: () -> UIViewController?
+    private let makeModal: @MainActor () -> UIViewController?
     /// Whether the presentation animates. Off by default — a capture wants the
     /// settled frame — but the nested split-web overlay's whole subject IS its
     /// transition, so that one opts in.
@@ -25,7 +25,7 @@ final class PresentingHostViewController: UIViewController {
 
     init(
         host: UIViewController, animates: Bool = false,
-        makeModal: @escaping () -> UIViewController?
+        makeModal: @escaping @MainActor () -> UIViewController?
     ) {
         self.host = host
         self.animates = animates

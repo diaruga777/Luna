@@ -29,7 +29,7 @@ enum WeeklyPromotionMenu {
     static func actions(
         for item: ReadingListItem,
         presenter: UIViewController,
-        refresher: WeeklySaveRefresher = .shared,
+        refresher: WeeklySaveRefresher? = nil,
         isKeyHolder: Bool = WeeklyPromotionKeyStore.isKeyHolder,
         app: LunaApp = .current
     ) -> [UIAction] {
@@ -48,10 +48,14 @@ enum WeeklyPromotionMenu {
         urlString: String,
         title: String?,
         presenter: UIViewController,
-        refresher: WeeklySaveRefresher = .shared,
+        refresher: WeeklySaveRefresher? = nil,
         isKeyHolder: Bool = WeeklyPromotionKeyStore.isKeyHolder,
         app: LunaApp = .current
     ) -> [UIAction] {
+        // Resolved here rather than as a default argument: a default is
+        // evaluated in the CALLER's context, which is not the main actor even
+        // though this is, and `WeeklySaveRefresher` is main-actor isolated.
+        let refresher = refresher ?? .shared
         var actions: [UIAction] = []
         if isKeyHolder {
             actions.append(UIAction(

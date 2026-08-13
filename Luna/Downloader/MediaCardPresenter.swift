@@ -149,7 +149,8 @@ final class MediaCardPresenter: CardKindPresenting {
             ) { [weak self] _ in
                 // AVPlayerViewController's player otherwise keeps its playback
                 // session when a download completion backgrounds the app.
-                self?.activePlayer?.pause()
+                // `queue: .main` is what makes the assumption hold.
+                MainActor.assumeIsolated { self?.activePlayer?.pause() }
             }
         }
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT

@@ -69,10 +69,7 @@ final class LinkImportPreviewLoader {
     private let fetchImageData: (URL) async throws -> Data
     private let isOnline: () -> Bool
 
-    /// `nonisolated` so the sheet can take one as a default argument — a default is
-    /// evaluated in the CALLER's context, which is not the main actor even when the
-    /// initializer it feeds is. Nothing here touches the isolated state.
-    nonisolated init(
+    init(
         maximumConcurrent: Int = 3,
         fetchPreview: @escaping (URL) async throws -> LinkPreview = { url in
             try await LinkPreviewFetcher().fetchPreview(for: url)

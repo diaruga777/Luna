@@ -294,7 +294,7 @@ public final class PreloadCoordinator {
     @MainActor
     private static func beginBackgroundTask(
         named name: String,
-        expirationHandler: @escaping () -> Void
+        expirationHandler: @escaping @Sendable () -> Void
     ) -> UIBackgroundTaskIdentifier {
         UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: expirationHandler)
     }

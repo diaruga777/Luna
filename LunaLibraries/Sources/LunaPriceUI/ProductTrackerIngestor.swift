@@ -135,12 +135,16 @@ public final class ProductTrackerIngestor {
             backgroundTaskID = .invalid
         }
         guard backgroundTaskID != .invalid else { return }
+        // The expiration handler above still needs the mutable `var`; the task
+        // takes an immutable copy, because `UIApplication` is main-actor
+        // isolated and this class is not — the end call has to hop.
+        let taskID = backgroundTaskID
         Task {
             // Regenerates the index again on completion (`refreshTracker`
             // does this itself in production) — a live price is exactly the
             // kind of change the history pill's data should reflect right away.
             _ = await refreshRunner(itemID)
-            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            await MainActor.run { UIApplication.shared.endBackgroundTask(taskID) }
         }
     }
 

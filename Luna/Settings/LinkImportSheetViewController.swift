@@ -86,13 +86,16 @@ final class LinkImportSheetViewController: UIViewController {
 
     // MARK: - Init
 
-    /// `@MainActor` for the preview loader's sake — it owns UIKit state and its
-    /// default here constructs one.
+    /// `previews` defaults to `nil` rather than to a fresh loader, and is
+    /// resolved in the body: a default argument is evaluated in the CALLER's
+    /// context, which is not the main actor even though this initializer is,
+    /// and the loader owns main-actor UIKit state. The body is the first place
+    /// that isolation is guaranteed.
     @MainActor
     init(
         document: LinkListDocument,
         runner: LinkImportRunner = LinkImportRunner(),
-        previews: LinkImportPreviewLoader = LinkImportPreviewLoader()
+        previews: LinkImportPreviewLoader? = nil
     ) {
         self.links = document.links.map {
             Entry(urlString: $0, fileTitle: document.titles[$0])
@@ -102,7 +105,7 @@ final class LinkImportSheetViewController: UIViewController {
         }
         self.isStructured = document.isStructured
         self.runner = runner
-        self.previews = previews
+        self.previews = previews ?? LinkImportPreviewLoader()
         super.init(nibName: nil, bundle: nil)
         // Most of the screen, and not dismissable by a swipe once links are
         // being saved — see `presentationControllerShouldDismiss`.

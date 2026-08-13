@@ -22,12 +22,12 @@ public enum DocumentParser {
     /// The formats `parse` has a specific reader for. Parsed ONCE, from the
     /// raw extension string, instead of switching on that string twice over
     /// two separately hand-kept case lists.
-    public enum ReadableDocumentFormat: String, CaseIterable {
+    enum ReadableDocumentFormat: String, CaseIterable {
         case pdf, epub, docx, rtf, html, htm, xhtml, md, markdown, txt, text
 
         /// Case-insensitive; nil for an extension `parse` has no specific reader
         /// for — which still parses (as plain text), it just isn't one of these.
-        public init?(extension rawExtension: String) {
+        init?(extension rawExtension: String) {
             self.init(rawValue: rawExtension.lowercased())
         }
     }

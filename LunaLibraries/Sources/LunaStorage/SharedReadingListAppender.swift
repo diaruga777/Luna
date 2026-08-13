@@ -13,11 +13,11 @@ import Foundation
 /// extension readers' "save this link" affordances), so it lives here in
 /// LunaStorage rather than in any one surface or kind module.
 ///
-/// The extension can't link the app's `ReadingListItem` type, so it writes raw
-/// JSON dictionaries via `JSONSerialization` and — crucially — preserves every
-/// EXISTING item verbatim. (Decoding the whole list into a schema-locked mirror
-/// struct and re-encoding it would silently drop any field the mirror doesn't
-/// know about — e.g. `platform`/`sendStates` — corrupting other items.)
+/// It writes raw JSON dictionaries via `JSONSerialization` rather than decoding
+/// through `ReadingListItem` and — crucially — preserves every EXISTING item
+/// verbatim. Decoding the whole list into a schema-locked mirror struct and
+/// re-encoding it would silently drop any field the mirror doesn't know about
+/// — e.g. `platform`/`sendStates` — corrupting other items.
 public enum SharedReadingListAppender {
 
     public static func append(urlString: String) {
@@ -71,8 +71,8 @@ public enum SharedReadingListAppender {
             "state": "pending",
             "readState": "unopened",
             // Everything appended here arrived via the iOS share sheet. Raw
-            // string (not the `CaptureSource` enum) to avoid linking ReaderKit
-            // into the extension — must match `CaptureSource.shareSheet`.
+            // string, matching every other field in this dictionary, rather
+            // than the `CaptureSource` enum — must match `CaptureSource.shareSheet`.
             "captureSource": "shareSheet",
         ]
         if let title { dict["title"] = title }

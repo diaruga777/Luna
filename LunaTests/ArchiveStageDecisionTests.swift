@@ -3,9 +3,9 @@
 //  LunaTests
 //
 
-import LunaArchiveReader
 import XCTest
 @testable import Luna
+@testable import LunaArchiveReader
 
 /// Exercises `ArchiveWebReaderViewController.decideStage` — the pure stage→action
 /// logic of the in-app archive.today reader. The regression of record: after the

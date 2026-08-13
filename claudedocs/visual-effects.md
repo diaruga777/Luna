@@ -57,8 +57,10 @@ builds its root controller.
 ## Starfield (`StarfieldView`)
 
 `LunaLibraries/Sources/LunaDesignSystem/StarfieldView.swift` puts an extremely faint
-scatter of stars behind the card decks (`ArticleCardsViewController`,
-`SavedMediaCardsViewController`) and the reading list (as `tableView.backgroundView`).
+scatter of stars behind the card decks — installed by the one shared
+`CardCarouselHostViewController` every app roots on, and again by its Reader
+subclass `ArticleCardsViewController` — and the reading list (as
+`tableView.backgroundView`).
 
 Quiet, but not invisible: the brightest star sits at ~20% alpha and most are under 8%, so
 the background still reads as black and the stars stay something you notice rather than

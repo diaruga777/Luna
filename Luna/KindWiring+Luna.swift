@@ -178,12 +178,5 @@ enum KindWiring {
     static func debugArchiveReaderRoot(articleURL: URL) -> UIViewController? {
         ArticleShellWiring.debugArchiveReaderRoot(articleURL: articleURL)
     }
-
-    /// The deep-linked UI-test screen catalog is kind-woven, so only the
-    /// central Luna app (the UI-test/screenshot host) builds it.
-    static func uiTestRootViewController(named name: String) -> UIViewController? {
-        guard let screen = UITestScreen(rawValue: name) else { return nil }
-        return UITestScreenBuilder.rootViewController(for: screen)
-    }
     #endif
 }

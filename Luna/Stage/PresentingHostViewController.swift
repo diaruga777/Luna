@@ -7,10 +7,6 @@
 
 import UIKit
 
-// Moved here from `UITestScreen.swift`, which compiles only into the central
-// app: staged mode needs the same helper in all four, and the deep-linked
-// screen catalog and the stage catalogs both present modals over a host.
-
 /// A container that shows `host` and, once it has appeared, presents a modal built
 /// by `makeModal`. Used to deep-link to screens the app only ever shows modally over
 /// another root (e.g. the nested split-web overlay). DEBUG-only test scaffolding.

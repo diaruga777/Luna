@@ -24,7 +24,7 @@ public protocol GazeTracking: AnyObject {
 public enum GazeTrackingAvailability {
 
     /// Test seam. `nil` (the default) means "ask the device".
-    public static var supportOverride: Bool?
+    static var supportOverride: Bool?
 
     /// True only in a host app on hardware with a TrueDepth camera.
     ///
@@ -54,7 +54,7 @@ public enum GazeTrackingPermission {
     public enum Status: Equatable { case granted, denied, undetermined }
 
     /// Test seam, mirroring `GazeTrackingAvailability.supportOverride`.
-    public static var statusOverride: Status?
+    static var statusOverride: Status?
 
     public static var status: Status {
         if let statusOverride { return statusOverride }

@@ -663,7 +663,6 @@
 				"Stage/StageCatalog+Article.swift",
 				"Stage/StageCatalog+Email.swift",
 				"Stage/StageCatalog+Product.swift",
-				UITestScreen.swift,
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
 		};
@@ -704,7 +703,6 @@
 				"Stage/StageCatalog+Article.swift",
 				"Stage/StageCatalog+Email.swift",
 				"Stage/StageCatalog+Media.swift",
-				UITestScreen.swift,
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
 		};
@@ -767,7 +765,6 @@
 				Settings/DownloadsSettingsScreen.swift,
 				"Stage/StageCatalog+Media.swift",
 				"Stage/StageCatalog+Product.swift",
-				UITestScreen.swift,
 			);
 			target = AAE000000000000000000000 /* LunaReader */;
 		};

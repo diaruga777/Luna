@@ -87,11 +87,11 @@ public enum LeanProductURLRules {
     /// A URL matching neither list falls through to the shared tiers, so an
     /// entry can only ever ADD reach — a pattern guessed wrong costs nothing,
     /// which is why the table covers retailers nobody has measured.
-    public struct RetailerURLRule: Equatable, Sendable {
-        public let accept: [String]
-        public let reject: [String]
+    struct RetailerURLRule: Equatable, Sendable {
+        let accept: [String]
+        let reject: [String]
 
-        public init(accept: [String], reject: [String] = []) {
+        init(accept: [String], reject: [String] = []) {
             self.accept = accept
             self.reject = reject
         }
@@ -99,7 +99,7 @@ public enum LeanProductURLRules {
 
     /// Registrable domain → its product-path shapes. Anchored at the start of
     /// the path (`^`) unless the shape genuinely floats.
-    public static let retailerRules: [String: RetailerURLRule] = {
+    static let retailerRules: [String: RetailerURLRule] = {
         var rules: [String: RetailerURLRule] = [:]
 
         // Amazon, every storefront: an ASIN is exactly ten characters, and the
@@ -331,7 +331,7 @@ public enum LeanProductURLRules {
     }()
 
     /// The rule for `host`'s retailer family, if the table knows it.
-    public static func retailerRule(forHost host: String) -> RetailerURLRule? {
+    static func retailerRule(forHost host: String) -> RetailerURLRule? {
         retailerRules[registrableDomain(host)]
     }
 

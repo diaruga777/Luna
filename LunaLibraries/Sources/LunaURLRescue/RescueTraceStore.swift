@@ -23,8 +23,8 @@ extension SaveDiagnosticsStore: RescueTraceStoring {}
 
 /// Stands in when no item id is known (the price editor's ad-hoc resolution, the
 /// media card) or when a caller deliberately runs trace-less.
-public final class NoRescueTraceStore: RescueTraceStoring {
-    public init() {}
-    public func contents(for itemID: UUID) -> String? { nil }
-    public func appendLine(_ line: String, for itemID: UUID) {}
+final class NoRescueTraceStore: RescueTraceStoring {
+    init() {}
+    func contents(for itemID: UUID) -> String? { nil }
+    func appendLine(_ line: String, for itemID: UUID) {}
 }

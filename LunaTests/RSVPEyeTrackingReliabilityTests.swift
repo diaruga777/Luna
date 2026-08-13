@@ -7,11 +7,11 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReaderUI
 import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaReaderUI
 
 private final class ReliabilityGazeTracker: GazeTracking {
     var onSample: ((GazeSample) -> Void)?

@@ -684,7 +684,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// `checkDirectBypassStage`'s own probe only ever returns `challenge`/
     /// `content-root`, or the page's own visible text — `.text` carries that raw
     /// text so `isJavaScriptRequiredGate` can still inspect it.
-    public enum ProbedStage: Equatable {
+    enum ProbedStage: Equatable {
         case error
         case blocked
         case homepage
@@ -693,7 +693,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         case waiting
         case text(String)
 
-        public init(rawProbe: String) {
+        init(rawProbe: String) {
             switch rawProbe {
             case "error": self = .error
             case "blocked": self = .blocked
@@ -712,7 +712,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Crucially, after the homepage has been submitted (`didLeaveHomepage`), a
     /// page that still shows the `input[name=url]` box is NOT treated as the
     /// homepage again — every archive.today page carries that box in its chrome.
-    public enum StageDecision: Equatable {
+    enum StageDecision: Equatable {
         case wait                  // waiting for a semantic page transition/root
         case challenge             // a CAPTCHA gate is up — reveal the page for the user
         case submitHomepage        // on the homepage form, not yet submitted — submit the URL
@@ -721,7 +721,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         case attemptExtract        // page has real text — try extracting the article
     }
 
-    public static func decideStage(
+    static func decideStage(
         _ stage: ProbedStage,
         didLeaveHomepage: Bool,
         isSubmittingHomepage: Bool,

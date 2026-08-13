@@ -109,9 +109,9 @@ one variant, and the variants reference the kind modules' symbols directly
   compiled like the wiring); kind-specific shell FILES (each kind's card
   presenter — see "Card presenters" below — plus the article chrome deck,
   mini-player, audio wiring and reader/email settings screens; the media
-  auto-download settings and `MediaIntentHandoff`; the product card content;
-  and the central-only `UITestScreen`) are excluded from foreign targets
-  through the same membership-exception mechanism. `ReadArticleIntent` is one of
+  auto-download settings and `MediaIntentHandoff`; and the product card
+  content) are excluded from foreign targets through the same
+  membership-exception mechanism. `ReadArticleIntent` is one of
   those files: it calls `AudioPlaybackCenter` directly and compiles only in the
   two apps that link read-aloud, so the two apps without it also compile a
   `LunaShortcuts` variant that omits the shortcut. Intent seams:

@@ -4,8 +4,8 @@
 //
 
 import LunaModels
-import LunaPriceCompare
 import XCTest
+@testable import LunaPriceCompare
 
 /// The ranking that decides which dozen retailers (out of 200-odd) get asked.
 /// It runs identically in the app, the extensions and the Safari appex, so it

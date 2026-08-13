@@ -77,12 +77,12 @@ public final class ShareReaderViewController: UIViewController {
     /// must not strand the sheet on a spinner; whatever landed by the deadline is
     /// still baked in. A `var` only so a test can prove the bound holds without
     /// spending eight seconds proving it; nothing in the app writes it.
-    public static var imagePreparationTimeout: TimeInterval = 8
+    static var imagePreparationTimeout: TimeInterval = 8
 
     /// Replaces the blocking half of the image settling. Nil (production) runs
     /// the real bounded downloader; a test surface substitutes it so a fixture's
     /// `<img>` tags don't pull a unit test onto the network.
-    public static var settleImagesOverride: ((
+    static var settleImagesOverride: ((
         _ content: ArticleContent, _ itemID: UUID, _ url: URL, _ store: ReadingListStore
     ) async -> ArticleContent)?
 

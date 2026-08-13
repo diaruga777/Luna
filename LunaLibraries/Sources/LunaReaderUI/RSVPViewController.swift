@@ -210,12 +210,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let eyeTrackingButton = EyeTrackingToggleButton()
     private var gazeCoordinator: RSVPGazeCoordinator?
     /// Test seam: substitutes the gaze source. Must be set before the view loads.
-    public var gazeTrackerOverride: GazeTracking?
+    var gazeTrackerOverride: GazeTracking?
     /// Test seam: substitutes the clock the gaze coordinator measures its
     /// away-threshold and resume-dwell against, so a test can prove what
     /// happens after four seconds of staring without spending four seconds.
     /// Must be set before the view loads.
-    public var gazeClockOverride: (() -> TimeInterval)?
+    var gazeClockOverride: (() -> TimeInterval)?
 
     /// Words a skip button jumps from the current position.
     private static let skipWordCount = 25
@@ -2021,29 +2021,29 @@ extension RSVPViewController {
     /// above, playback controls below) and what landed where within it. Read by
     /// the layout tests so they assert on the geometry the reader actually
     /// computed rather than re-deriving it from private constants.
-    public struct LayoutGeometry {
-        public let bandTop: CGFloat
-        public let bandBottom: CGFloat
-        public let focalCenterY: CGFloat
+    struct LayoutGeometry {
+        let bandTop: CGFloat
+        let bandBottom: CGFloat
+        let focalCenterY: CGFloat
         /// Half-height of the focal display (word line box / reticule reach, or
         /// the phrase panel) — the edge the prose gaps are measured from.
-        public let focalHalfHeight: CGFloat
-        public let precedingContext: CGRect
-        public let trailingContext: CGRect
-        public let pillRow: CGRect
-        public let controls: CGRect
+        let focalHalfHeight: CGFloat
+        let precedingContext: CGRect
+        let trailingContext: CGRect
+        let pillRow: CGRect
+        let controls: CGRect
         /// Midpoint of the band — where the focal word rests, plus its bias.
-        public var bandCenterY: CGFloat { (bandTop + bandBottom) / 2 }
+        var bandCenterY: CGFloat { (bandTop + bandBottom) / 2 }
         /// Air between the focal display and the prose above / below it.
-        public var gapAboveProse: CGFloat {
+        var gapAboveProse: CGFloat {
             focalCenterY - focalHalfHeight - precedingContext.maxY
         }
-        public var gapBelowProse: CGFloat {
+        var gapBelowProse: CGFloat {
             trailingContext.minY - focalCenterY - focalHalfHeight
         }
     }
 
-    public var layoutGeometryForTesting: LayoutGeometry {
+    var layoutGeometryForTesting: LayoutGeometry {
         LayoutGeometry(
             bandTop: readingBandTop,
             bandBottom: readingBandBottom,
@@ -2056,11 +2056,11 @@ extension RSVPViewController {
     }
 
     /// The focal word's downward lean off the band midpoint, for the tests.
-    public static var focalCenterBiasForTesting: CGFloat { focalCenterBias }
+    static var focalCenterBiasForTesting: CGFloat { focalCenterBias }
 
     /// What the two prose lanes are actually showing — the fitted text, not the
     /// window it was cut from.
-    public var contextProseForTesting: (preceding: String, following: String) {
+    var contextProseForTesting: (preceding: String, following: String) {
         (previousContextLabel.attributedText?.string ?? previousContextLabel.text ?? "",
          nextContextLabel.attributedText?.string ?? nextContextLabel.text ?? "")
     }

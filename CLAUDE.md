@@ -340,10 +340,8 @@ Rescue's kind legs via
 `URLRescueWiring.mediaRescueStarter`/`rescueProductInfo`. Kind-specific shell files
 (article: the article deck provider, mini-player, audio wiring, reader/email settings;
 media: the media deck provider, auto-download settings, intent handoff, the bulk
-import's download watcher;
-`UITestScreen`/`NonArticleCardOpening`:
-central-app-only) are excluded from foreign targets via the same membership-exception
-mechanism. The Share/Action extensions
+import's download watcher) are excluded from foreign targets via the same
+membership-exception mechanism. The Share/Action extensions
 link `LunaShareSurface` (+ transitive) plus their host's kind modules. **The four
 `LunaSafari` appexes used to link NOTHING; they now link the Foundation-only floor**
 — `LunaAppConfig`, `LunaModels`, `LunaURLClassification`, `LunaMediaResolve`,
@@ -353,14 +351,16 @@ post's video for the in-page player; see `claudedocs/safari-extension.md`'s "Whe
 work runs"). `LunaMediaResolve` exists for exactly that: post URL → direct CDN asset is
 Foundation + URLSession, while the rest of `LunaMediaDownload` pulls UIKit/Photos/
 ActivityKit/SwiftSoup that no appex can afford; `LunaMediaDownload` `@_exported import`s
-it, so nothing else changed. The `LunaSafari/Shared*.swift` HAND-COPIES (App-Group key
-formats, product matching) stay hand-copies and stay parity-tested — that pattern is for
-string constants, never for logic. `SafariAppGroup` still reads the App Group id from the
-extension's own Info.plist. Cross-tier wiring uses injected
+it, so nothing else changed. The App-Group key format and product-matching hand-copies
+that used to live in `LunaSafari/Shared*.swift` are gone — `LunaSafari/SharedProductMatching.swift`
+now just reduces a "Was $X on <date>" answer over the real `LunaPriceCompare.ProductPageMatching`
+the app links too. `AppConfig.appGroupID` reads the App Group id from the extension's own
+Info.plist, the same `LunaAppGroupID` key every other target reads (`Bundle.main` always
+resolves to the calling process's own bundle). Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
 `AudioPlaybackCenter.dataSource`, `ReadingListIngestor.unsupportedSavePresenter`,
 `DiagnosticLog.exportIdentityProvider`,
-`PriceTrackingViewController.intelligentPriceResolver`). Component-boundary communication
+`ProductPriceRescue.resolver`). Component-boundary communication
 inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
 `ReaderCompletionDelegate`, `InlineReaderPresentationCoordinating`,
 `CarouselScrubberViewDelegate`), not stored closures. The package is pinned to Swift
@@ -479,9 +479,7 @@ scripts/run_tests.sh --changed  # INNER LOOP ONLY — just the tests the diff re
 > The EXEMPT pins are cross-ARTIFACT consistency checks and stay: `*Parity*`
 > suites, `KindCompositionRootTests`, `LocalizableStringsTests`, the two
 > geometry suites, `StageRegistryTests`, `WaveKernelSourceTests`, and
-> source-text pins against the unlinked `LunaSafari/` hand-copies (e.g.
-> `SafariSetupCelebrationTests` — the "unused" Swift readers in
-> `LunaSetupStatusStore` are that suite's parity anchor, not dead code). A production seam
+> source-text pins against the unlinked `LunaSafari/` hand-copies. A production seam
 > (`…ForTesting`, settable static, injected closure) may exist ONLY while a
 > behavior-asserting test uses it — a seam whose tests die dies with them.
 > **The package declares NO test targets**: `LunaLibraries/Tests/` was deleted

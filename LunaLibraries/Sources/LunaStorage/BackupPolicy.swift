@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import os
 
 /// Applies Luna's backup policy to files in the app/group containers.
@@ -12,7 +13,7 @@ import os
 /// Rebuildable caches, diagnostics, and transient downloads should be explicitly
 /// excluded so backups stay useful without growing from data Luna can recreate.
 public enum BackupPolicy {
-    private static let logger = Logger(subsystem: "luna", category: "backup")
+    private static let logger = Logger(subsystem: LunaLogging.subsystem, category: "backup")
 
     public static func includeInBackups(_ url: URL) {
         setExcludedFromBackup(false, for: url)

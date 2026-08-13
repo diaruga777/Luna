@@ -32,10 +32,9 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 | `ReaderKit/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
 | `ReaderKit/ReadingListItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
 | `ReaderKit/ReadingListStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
-| `Luna/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
-| `Luna/UITestScreen.swift` | `UITestScreen` enum + `UITestScreenBuilder`: deep-links the window root to any named screen for the screenshot agent. DEBUG-only. |
+| `Luna/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>`. Exposes `isUITestLaunch`. |
 | `ReaderKit/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args; usable from ReaderKit, which can't import the app target). |
-| `Luna/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen or reading list). |
+| `Luna/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` before showing the app's real root. |
 
 ### Named states (`UITestState`)
 
@@ -59,23 +58,6 @@ prefs** (selected filter → All, default collapsed set), and `SceneDelegate` fo
 the right root VC. No-op (production paths unchanged) when the arg is absent or in
 release. Verified live: `simctl launch com.hsanabria.luna -uiTestState mixed`.
 
-### Screen deep-linking (`-uiTestScreen <name>`)
-
-For capturing a specific screen across many device sizes without fragile
-coordinate-tapping, launch with `-uiTestScreen <rawValue>` (seeds `.mixed`
-automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that screen
-(or presents it over a host) as the window root using the **same construction seams
-the snapshot tests use**. Cases: `friends`, `friendDetail`, `settings`,
-`priceTrackingEditor`, `importExport`, `importReview`,
-`readerScroll`/`readerHighlight`/`readerRSVP`/
-`readerOriginal`/`readerInlineHeader`/`readerNested`/
-`shareMediaPlatform`/`actionMediaPlatform`. Share/action-extension screens are
-hosted in-app (the real share sheet can't be driven on a simulator) — the two
-media cases differ only in the action extension's floating share button.
-`importReview` carries a fixture document for the same reason: the real one only
-ever arrives from a file the document picker returned, which a simulator run
-can't produce (`claudedocs/import-export.md`).
-
 > **Two booted simulators break interaction, silently.** `get_screenshot` honors
 > an explicit udid but taps land on whichever device is "booted" by default, so a
 > screenshot of the right device and a tap on the wrong one look exactly like an
@@ -86,8 +68,8 @@ can't produce (`claudedocs/import-export.md`).
 
 The simulator-only debug tap targets (reading-list row ellipsis, reader "Split
 High/Low") overlay real content. They are gated on
-`!UITestLaunch.isActive`, so they vanish for any `-uiTestState`/`-uiTestScreen`
-launch (the screenshot agent) but remain for interactive
+`!UITestLaunch.isActive`, so they vanish for any `-uiTestState` launch (the
+screenshot agent) but remain for interactive
 simulator automation (no launch arg) and for unit/snapshot tests (which build VCs
 directly, so reference images are unaffected).
 

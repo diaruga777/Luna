@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaAppConfig
 import os
 import WebKit
 
@@ -114,7 +115,7 @@ public enum WebJunkBlocker {
                 } else if let error {
                     // A malformed rulesJSON would otherwise silently disable
                     // all junk blocking.
-                    Logger(subsystem: "luna", category: "webjunk")
+                    Logger(subsystem: LunaLogging.subsystem, category: "webjunk")
                         .error("content rule compile failed: \(error.localizedDescription)")
                 }
             }
@@ -141,7 +142,7 @@ public enum WebJunkBlocker {
                     encodedContentRuleList: rulesJSON
                 ) { compiled, error in
                     if let error {
-                        Logger(subsystem: "luna", category: "webjunk")
+                        Logger(subsystem: LunaLogging.subsystem, category: "webjunk")
                             .error("content rule compile failed: \(error.localizedDescription)")
                     }
                     continuation.resume(returning: compiled)

@@ -18,13 +18,10 @@ import UIKit
 /// instead of a navigation script per screen: no onboarding to answer, no
 /// account to connect, no permission sheet, and the same state every run.
 ///
-/// This is the same idea as the older `-uiTestScreen` catalog
-/// (`UITestScreen.swift`) and deliberately does NOT replace it — that one is the
-/// snapshot tests' construction seam and compiles only into the central app.
-/// Staged mode is the four-app, four-surface version: a registry rather than an
-/// enum, per-kind catalogs so a single-kind app only knows its own screens, a
-/// throwaway container so a run leaves nothing behind, and a manifest an agent
-/// can enumerate without reading Swift.
+/// Staged mode is the four-app, four-surface version of the same idea: a
+/// registry rather than an enum, per-kind catalogs so a single-kind app only
+/// knows its own screens, a throwaway container so a run leaves nothing
+/// behind, and a manifest an agent can enumerate without reading Swift.
 ///
 /// DEBUG-only, and the gate is `#if DEBUG` rather than a build setting on
 /// purpose: the stage catalogs reference `seedForTesting`, `ReadingListItem

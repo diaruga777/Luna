@@ -8,11 +8,11 @@ import LunaModels
 import LunaPriceMetadata
 
 /// A directory seller with the score that put it where it is in the ranking.
-public struct ScoredSeller: Equatable, Sendable {
-    public let seller: Seller
-    public let score: Int
+struct ScoredSeller: Equatable, Sendable {
+    let seller: Seller
+    let score: Int
 
-    public init(seller: Seller, score: Int) {
+    init(seller: Seller, score: Int) {
         self.seller = seller
         self.score = score
     }
@@ -27,34 +27,34 @@ public struct ScoredSeller: Equatable, Sendable {
 /// first. Candidates are deliberately OVER-provisioned relative to the result
 /// target, because a bot wall on a tier-1 retailer is an expected outcome, not
 /// an error (`claudedocs/price-comparison.md`).
-public enum SellerCandidateSelector {
+enum SellerCandidateSelector {
 
     /// Everything the ranking is a function of. Pure input — no clock, no
     /// locale lookup, no network — so a given `Input` always yields the same
     /// ordering.
-    public struct Input: Equatable, Sendable {
+    struct Input: Equatable, Sendable {
         /// Host of the page being saved (excluded from its own comparison).
-        public let sourceHost: String
-        public let identifiers: ProductIdentifiers
-        public let productName: String
+        let sourceHost: String
+        let identifiers: ProductIdentifiers
+        let productName: String
         /// Free-text category evidence from the source page (JSON-LD
         /// `category`, breadcrumbs, …).
-        public let categoryHints: [String]
+        let categoryHints: [String]
         /// Hosts already covered — the source, plus every store already on the
         /// tracker. Excluded by retailer FAMILY, not by exact host.
-        public let excludedHosts: [String]
+        let excludedHosts: [String]
         /// Two-letter region whose storefronts are eligible.
-        public let region: String
+        let region: String
         /// Maximum candidates to return (the profile's candidate budget).
-        public let limit: Int
+        let limit: Int
         /// Whether sellers whose search results only exist after client-side
         /// rendering are ineligible. True in a context that cannot render (the
         /// Safari appex): the candidate budget is six, and spending one of them
         /// on a page that is structurally empty is a slot the run never gets
         /// back.
-        public let excludesClientRenderedSearch: Bool
+        let excludesClientRenderedSearch: Bool
 
-        public init(
+        init(
             sourceHost: String, identifiers: ProductIdentifiers, productName: String,
             categoryHints: [String] = [], excludedHosts: [String] = [],
             region: String, limit: Int, excludesClientRenderedSearch: Bool = false
@@ -102,7 +102,7 @@ public enum SellerCandidateSelector {
     /// holiday must not redirect it): the directory's own region for a known
     /// retailer, else the country the host's TLD claims, else the region whose
     /// storefronts transact in the page's own declared currency, else `US`.
-    public static func resolveRegion(
+    static func resolveRegion(
         sourceHost: String, sourceCurrency: String? = nil, directory: SellerDirectory
     ) -> String {
         if let seller = directory.seller(forHost: sourceHost) { return seller.region.uppercased() }
@@ -134,7 +134,7 @@ public enum SellerCandidateSelector {
     // MARK: - Selection
 
     /// The ranked candidates for `input`, best first, at most `input.limit`.
-    public static func select(_ input: Input, in directory: SellerDirectory) -> [ScoredSeller] {
+    static func select(_ input: Input, in directory: SellerDirectory) -> [ScoredSeller] {
         let excludedDomains = Set(
             ([input.sourceHost] + input.excludedHosts)
                 .filter { !$0.isEmpty }
@@ -176,7 +176,7 @@ public enum SellerCandidateSelector {
 
     /// The deterministic score for one seller. Public so the weights can be
     /// asserted directly rather than inferred from an ordering.
-    public static func score(_ seller: Seller, categories: Set<String>, hasGTIN: Bool) -> Int {
+    static func score(_ seller: Seller, categories: Set<String>, hasGTIN: Bool) -> Int {
         var score = tierScores[seller.tier] ?? 0
         let overlap = categories.intersection(seller.categories).count
         score += min(overlap * categoryOverlapBonus, maximumCategoryBonus)
@@ -193,7 +193,7 @@ public enum SellerCandidateSelector {
     /// The query to search a given seller with: raw GTIN digits when the seller
     /// is known to accept them and we have one (an exact lookup), else the
     /// product name (a guess the match verifier still has to confirm).
-    public static func query(for seller: Seller, identifiers: ProductIdentifiers, productName: String)
+    static func query(for seller: Seller, identifiers: ProductIdentifiers, productName: String)
         -> String {
         queries(for: seller, identifiers: identifiers, productName: productName)[0]
     }
@@ -214,7 +214,7 @@ public enum SellerCandidateSelector {
     /// candidate: a shop that does not index barcodes answers a GTIN search
     /// with an empty results page, and that costs one extra fetch to discover,
     /// against a whole retailer's price to skip it.
-    public static func queries(
+    static func queries(
         for seller: Seller, identifiers: ProductIdentifiers, productName: String
     ) -> [String] {
         let name = ProductTitleHygiene.cleaned(productName)

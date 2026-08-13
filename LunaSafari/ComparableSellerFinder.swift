@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import LunaModels
 import os
 import LunaPriceCompare
@@ -53,7 +54,7 @@ enum ComparableSellerFinder {
     static let budget: TimeInterval = 18
 
     private static let log = Logger(
-        subsystem: "com.hsanabria.luna.safari", category: "SellerComparison")
+        subsystem: LunaLogging.subsystem, category: "SellerComparison")
 
     // MARK: - Entry point
 

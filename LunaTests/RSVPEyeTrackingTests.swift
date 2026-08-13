@@ -9,11 +9,11 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReaderUI
 import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaReaderUI
 
 /// Stands in for `ARFaceGazeTracker` — face tracking is never available on the
 /// simulator, and the tests need to say exactly where the reader is looking.

@@ -26,9 +26,10 @@ final class RecordingExtensionLoadingHost: ExtensionLoadingExitDelegate {
 @MainActor
 final class ExtensionLoadingContinuityTests: XCTestCase {
 
-    /// The SPINNER is what's centred — not a stack containing it. The reader used to
-    /// centre [spinner, label, button], which put its spinner ~28pt above where the
-    /// extension had just been drawing one, so the spinner hopped at the handover.
+    /// The SPINNER is what's centred, not a stack containing it. Centering a
+    /// [spinner, label, button] stack instead would put the spinner ~28pt
+    /// above where the extension had just been drawing one, so the spinner
+    /// would hop at the handover.
     func testSharedLayoutCentresTheSpinnerNotTheStack() {
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let spinner = HorizonSpinnerView(side: 36)

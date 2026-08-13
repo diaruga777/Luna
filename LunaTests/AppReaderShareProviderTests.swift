@@ -9,9 +9,9 @@ import UIKit
 import XCTest
 @testable import Luna
 
-/// Which share options `AppReaderShareProvider` offers for a given saved item —
-/// specifically the "Export as…" gate, which must appear only for an article
-/// whose text is actually extracted (see claudedocs/article-export.md).
+/// Pins which share options `AppReaderShareProvider` offers for a saved item.
+/// The "Export as…" option must appear only for an article with extracted
+/// text. See `claudedocs/article-export.md`.
 final class AppReaderShareProviderTests: XCTestCase {
 
     private var presenter: UIViewController!
@@ -64,8 +64,8 @@ final class AppReaderShareProviderTests: XCTestCase {
         XCTAssertEqual(submenu?.children.count, ArticleExportFormat.shareMenuFormats.count)
     }
 
-    /// A pending, failed or still-locked save has no extracted text, so every
-    /// format would fail — the option must not be offered at all.
+    /// A pending, failed, or locked save has no extracted text. It must not
+    /// offer any export format.
     @MainActor
     func testUnreadyArticleOffersNoExport() {
         for state in [SavedItem.State.pending, .failed, .needsCaptcha] {
@@ -73,7 +73,7 @@ final class AppReaderShareProviderTests: XCTestCase {
                  state: state, withContent: false)
             let titles = menuTitles(for: "https://example.com/\(state.rawValue)")
             XCTAssertFalse(titles.contains("Export as…"), "\(state): \(titles)")
-            // The link-sharing options still stand — a locked save has a URL.
+            // A locked save still has a URL, so link-sharing stays offered.
             XCTAssertEqual(titles, ["Copy link", "Share link", "Send as email"], "\(state)")
         }
     }

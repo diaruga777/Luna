@@ -104,8 +104,8 @@ final class EmailLoginTests: XCTestCase {
         XCTAssertEqual(badge.alpha, 0)
     }
 
-    /// With no account connected the Sharing Account section IS the sign-in form,
-    /// so the old separate "Connect Email Account…" push has no row left.
+    /// With no account connected, the Sharing Account section IS the sign-in
+    /// form — there is no separate push row to a connect screen.
     func testUnconfiguredAccountSectionShowsTheFormAndNoPushRow() throws {
         let (screen, _) = try makeUnconfiguredAccountForm()
 

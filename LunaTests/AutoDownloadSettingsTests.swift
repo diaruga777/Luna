@@ -113,15 +113,10 @@ final class AutoDownloadSettingsTests: XCTestCase {
         }
     }
 
-    /// `MediaStorageSettings.option` used to re-normalize a `.never` retention
-    /// back to `defaultRetention` on both read and write, defending against
-    /// "Photos off, no retention" — reachable only by poking the two backing
-    /// prefs independently, which is exactly what `autoSaveDownloadsToPhotos`'s
-    /// setter going module-internal (this D12 change) rules out: `option` is
-    /// now the only path that can set either pref, and it always sets both
-    /// together. `.deleteAfter(.never)` is still constructible and, since
-    /// nothing needs to defend against a combination nothing can produce
-    /// anymore, `option` now simply round-trips it rather than re-normalizing.
+    /// `MediaStorageSettings.option` is the only path that sets either backing
+    /// pref, and it always sets both together. So "Photos off, no retention"
+    /// can never arise, and `option` round-trips `.deleteAfter(.never)`
+    /// directly rather than re-normalizing it.
     func testStorageOptionRoundTripsNeverWithoutRenormalizing() {
         preservingSettings {
             MediaStorageSettings.option = .deleteAfter(.never)

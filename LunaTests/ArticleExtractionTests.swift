@@ -8,17 +8,16 @@ import LunaModels
 import XCTest
 @testable import Luna
 
-/// Exercises the Stage-2 `ArticleExtraction` component: the single
-/// `isReadableArticle(content:html:)` predicate that consolidated the three former
-/// duplicate readable/locked checks, driven per-site over readable + paywalled-stub
-/// fixtures (nytimes / washingtonpost / wsj / smh.com.au / theparisreview).
+/// Pins the Stage-2 `ArticleExtraction` component: the one
+/// `isReadableArticle(content:html:)` predicate that decides readable vs.
+/// locked, driven per-site over readable and paywalled-stub fixtures
+/// (nytimes / washingtonpost / wsj / smh.com.au / theparisreview).
 ///
-/// This is the ONLY sweep of the `Fixtures/Readable/*` corpus, and it reads each
-/// fixture once. The predicate's synthetic decision boundaries (HTML lock vs body
-/// length, gate markers at any length) are pinned one layer down in
-/// `PaywallDetectorTests`, against the detector they actually belong to; the
-/// empty-document throw is pinned in `ArticleExtractorTests` against the parser that
-/// raises it.
+/// This is the only sweep of the `Fixtures/Readable/*` corpus; it reads each
+/// fixture once. `PaywallDetectorTests` pins the predicate's own decision
+/// boundaries (HTML lock vs. body length, gate markers at any length) against
+/// the detector that owns them. `ArticleExtractorTests` pins the
+/// empty-document throw against the parser that raises it.
 final class ArticleExtractionTests: XCTestCase {
 
     private let extraction = ArticleExtraction()

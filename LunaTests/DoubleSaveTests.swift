@@ -2,12 +2,10 @@
 //  DoubleSaveTests.swift
 //  LunaTests
 //
-//  Merges DoubleSaveActionStoreTests, DoubleSavePolicyTests,
-//  SavePressPolicyTests, and ScreenshotDoublePressTests: the double-save
-//  action settings store, the two `SavePressPolicy` regimes — the
-//  Action-Button 7s `intentAction` regime (`DoubleSavePolicyTests`) and the
-//  legacy pre-Action-Button 12s in-app-save regime (`SavePressPolicyTests`) —
-//  and the screenshot double-press heuristic that sits on top of it. See
+//  Covers the double-save action settings store, the two `SavePressPolicy`
+//  regimes — the Action-Button 7s `intentAction` regime and the legacy
+//  pre-Action-Button 12s in-app-save regime — and the screenshot
+//  double-press heuristic that sits on top of it. See
 //  claudedocs/double-save.md.
 //
 
@@ -174,13 +172,6 @@ final class DoubleSaveTests: XCTestCase {
             .ignore)
     }
 
-    // testIntentRegimeDoesNotFallBackToLegacyTwelveSecondWindow used to prove an
-    // armed `intentAction` didn't fall back into the legacy 12 s send. That was
-    // testing a redundancy in the old two-optional-parameter shape: `regime:
-    // .actionButton` and `.inApp(doubleSaveDestinationIDs:)` are now mutually
-    // exclusive by construction, so there is no `doubleSaveDestinationIDs` to
-    // fall back to and the case can no longer be expressed.
-
     func testIntentKindleRespectsResendCooldown() {
         XCTAssertEqual(
             decideIntent(
@@ -247,11 +238,6 @@ final class DoubleSaveTests: XCTestCase {
                 previousPressDate: intentRegimeNow.addingTimeInterval(-5), action: .doNothing),
             .ignore)
     }
-
-    // testIntentDoNothingDoesNotFallBackToLegacyEreaderSend used to prove
-    // `.doNothing` didn't slip into the legacy 12 s ereader regime and send
-    // anyway. Same redundancy as above: `regime: .actionButton(.doNothing)`
-    // has no `doubleSaveDestinationIDs` to fall back to.
 
     func testIntentDoNothingStillSavesANewURL() {
         XCTAssertEqual(

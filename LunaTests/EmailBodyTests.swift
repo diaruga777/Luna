@@ -2,9 +2,6 @@
 //  EmailBodyTests.swift
 //  LunaTests
 //
-//  Ported from LunaLibraries/Tests/LunaMailAccountTests (retired — that SwiftPM
-//  test target never ran under the app-hosted `LunaTests` bundle).
-//
 
 import XCTest
 import LunaMailTransport

@@ -8,12 +8,12 @@ import LunaStorage
 import LunaModels
 import XCTest
 
-/// Locks in cross-entry-point thumbnail parity: the action/share extension persists
-/// article content WITHOUT fetching the page cover (it's short-lived + sandboxed), so
-/// the app must backfill a row thumbnail for any ready web article missing one. These
-/// tests exercise the network-free backfill path (reuse an already-downloaded lead
-/// image) and the idempotency/skip guards — the og:image fetch leg needs the network
-/// and is covered by `LeadImageExtractor` extraction tests instead.
+/// Pins the row-thumbnail backfill. The action/share extension saves article
+/// content without fetching the page cover, so the app must backfill a row
+/// thumbnail for any ready web article missing one. These tests cover the
+/// network-free path — reusing an already-downloaded lead image — plus the
+/// idempotency and skip guards. `LeadImageExtractor`'s own tests cover the
+/// og:image network fetch.
 @MainActor
 final class ArticleCoverThumbnailTests: XCTestCase {
     private var scratch: URL!
@@ -32,20 +32,18 @@ final class ArticleCoverThumbnailTests: XCTestCase {
         super.tearDown()
     }
 
-    /// A 2x2 PNG, big enough to clear the 512-byte cover floor isn't guaranteed, so
-    /// pad with a comment chunk — we only need a real, decodable file on disk.
+    /// A stub image file, well over the 512-byte cover floor. The backfill
+    /// only checks file size, not image validity, so raw bytes stand in for a
+    /// downloaded lead image.
     private func sampleImageData() -> Data {
-        // Minimal valid JPEG-ish blob is awkward; just write >512 bytes of stable bytes.
-        // The backfill reads the file by name and only checks the byte floor, so any
-        // sufficiently large blob stands in for a downloaded lead image.
         Data(repeating: 0xAB, count: 1024)
     }
 
-    /// Writes `data` to the Articles dir under the stable image-hash name the
-    /// downloader uses, and returns that file name.
+    /// Writes `data` under a lead-image file name and returns that name. Real
+    /// downloads use `ArticleImageDownloader.stableBase`'s hashed name, but
+    /// that helper is private, so the content here links the file name
+    /// directly instead of reproducing the hash.
     private func seedDownloadedImage(forImageURL imageURL: String, data: Data) -> String {
-        // Mirror ArticleImageDownloader.stableBase (SHA256 prefix-16) so resolveLocalImages finds it.
-        // We can't reach the private helper, so persist content with the file linked directly instead.
         let fileName = "lead-\(UUID().uuidString).jpg"
         try? data.write(to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
         return fileName

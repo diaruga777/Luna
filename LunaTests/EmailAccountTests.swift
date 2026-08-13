@@ -348,14 +348,11 @@ final class EmailAccountTests: XCTestCase {
     // destination ids as opaque strings for the email/share-paste/friend-share
     // toggles, so a made-up id exercises those generic (non-Kindle) code paths.
     //
-    // Note: unlike the destination this file used to test (Boox, removed in
-    // commit 97833a34), a generic/unregistered destination id has no
-    // App-Intents mode of its own — `appIntentsMode`/`setAppIntentsMode` only
-    // have a real branch for `ArticleDestinationID.kindle` today, so a
-    // made-up id's App-Intents mode is always `.off` regardless of what's set.
-    // That also means the "legacy all-saves inherited by default" behavior
-    // (`legacyDefault`, keyed off App-Intents mode) can no longer be
-    // exercised generically — it only applies to Kindle now.
+    // `appIntentsMode`/`setAppIntentsMode` only have a real branch for
+    // `ArticleDestinationID.kindle`, so a made-up id's App-Intents mode is
+    // always `.off` regardless of what's set, and the "legacy all-saves
+    // inherited by default" behavior (`legacyDefault`) only applies to
+    // Kindle.
 
     private func mode(_ source: CaptureSource, friend: String? = nil) -> ArticleSendMode {
         SourceSendSettings.sendMode(forDestination: sourceSendDestinationID, source: source, friendUsername: friend)

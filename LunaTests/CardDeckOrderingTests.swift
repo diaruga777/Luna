@@ -9,20 +9,11 @@ import XCTest
 @testable import Luna
 
 /// ONE ordering rule, for every kind in every app: `bumpDate ?? dateAdded`,
-/// descending, ties broken by id.
+/// descending, ties broken by id. A save sits in the same place regardless
+/// of which app shows it.
 ///
-/// This replaces `ArticleCardOrderingTests` and `SavedMediaCardOrderingTests`,
-/// which proved two different rules over two different types because the decks
-/// really did order differently — the Reader filed finished articles after
-/// unopened ones and the central app could not adopt that ("read" is an
-/// article-only notion; it would have filed a just-watched video behind
-/// everything else), so the same save sat in a different place depending on
-/// which icon you tapped.
-///
-/// The read/unread grouping is GONE, deliberately, and this file no longer
-/// tests it. Finished reads leave the deck on their own through
-/// `SavesStore.archivePendingFinishedItems()` at launch/background, which
-/// is what the grouping was standing in for.
+/// Read state never affects order. `SavesStore.archivePendingFinishedItems()`
+/// archives a finished read out of the deck at launch and background instead.
 final class CardDeckOrderingTests: XCTestCase {
 
     // MARK: - The rule
@@ -65,9 +56,8 @@ final class CardDeckOrderingTests: XCTestCase {
         XCTAssertEqual(KindDeckProvider.ordered([b, c, a]).map(\.id), expected)
     }
 
-    /// A read article does NOT sink. The Reader used to group it last; every
-    /// deck now leaves it where its date puts it, and completion is what
-    /// eventually archives it away.
+    /// A read article does not sink. Its date alone decides its position;
+    /// completion is what eventually archives it away.
     func testReadStateDoesNotAffectOrder() {
         let newestRead = item("newest-read", daysAgo: 0, readState: .read)
         let olderUnread = item("older-unread", daysAgo: 2, readState: .unopened)

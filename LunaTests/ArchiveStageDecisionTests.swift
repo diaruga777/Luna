@@ -7,11 +7,11 @@ import XCTest
 @testable import Luna
 @testable import LunaArchiveReader
 
-/// Exercises `ArchiveWebReaderViewController.decideStage` — the pure stage→action
-/// logic of the in-app archive.today reader. The regression of record: after the
-/// homepage was submitted, a rendered snapshot whose chrome still carries the
-/// `input[name=url]` box was mis-classified as the homepage and never extracted,
-/// leaving the spinner up forever.
+/// Pins `ArchiveWebReaderViewController.decideStage`, the pure stage→action
+/// logic of the in-app archive.today reader. Guards a real regression: a
+/// rendered snapshot whose chrome still carries the `input[name=url]` box was
+/// mis-classified as the homepage after submit and never extracted, so the
+/// spinner never cleared.
 final class ArchiveStageDecisionTests: XCTestCase {
 
     private func decide(
@@ -45,9 +45,8 @@ final class ArchiveStageDecisionTests: XCTestCase {
 
     func testStageDecisions() {
         let cases: [StageCase] = [
-            // The fixed regression: the snapshot's chrome still has the home form.
-            // It is not itself a content signal; wait for the semantic content-root
-            // probe instead of resubmitting or gating on text length.
+            // The chrome's home form is not a content signal. Wait for the
+            // content-root probe instead of resubmitting or gating on text length.
             .init(name: "homepage chrome after submit does not resubmit",
                   stage: "homepage", didLeaveHomepage: true, expected: .wait),
             .init(name: "content-root after submit extracts",
@@ -99,8 +98,8 @@ final class ArchiveStageDecisionTests: XCTestCase {
     // MARK: - JS-required gate (pre-stage hardening)
 
     func testJavaScriptRequiredGate() {
-        // A real, rendered article that merely mentions JavaScript must NOT be
-        // treated as a gate — the gate is conditioned on a SHORT body.
+        // An article that merely mentions JavaScript is not a gate. The gate
+        // requires a SHORT body.
         let longArticle = String(repeating: "This post is about JavaScript frameworks. ", count: 60)
         let cases: [(name: String, text: String, isGate: Bool)] = [
             ("please enable", "Please enable JavaScript to continue.", true),
@@ -117,10 +116,4 @@ final class ArchiveStageDecisionTests: XCTestCase {
                 testCase.name)
         }
     }
-
-    // testTheCoverOnlyComesOffForAControllerThatIsStayingUp used to pin
-    // `uncoversPageAfterExtraction`, a one-line `!hasExtractedHandler` wrapper
-    // with no other caller. It's now inlined at its one call site (the
-    // extraction-completion closure in `extractAndSave`, private), so there is
-    // no longer a standalone pure function to assert against.
 }

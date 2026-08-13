@@ -2,9 +2,6 @@
 //  AudioTrimmingTests.swift
 //  LunaTests
 //
-//  Merged from AudioTrimHeuristicsTests, AudioTrimIntelligenceTests, and
-//  SpeechControllerAudioTrimmingTests.
-//
 
 import LunaModels
 import XCTest
@@ -52,12 +49,9 @@ final class AudioTrimmingTests: XCTestCase {
 
     // MARK: - Shared block/content helpers
     //
-    // Identical across AudioTrimHeuristicsTests, AudioTrimIntelligenceTests
-    // (`block`/`content`) and SpeechControllerAudioTrimmingTests
-    // (`content` only) — kept once. SpeechControllerAudioTrimmingTests'
-    // own differently-shaped `block(_:kind:)` (text-first, no `links`
-    // parameter) is kept below as `speechBlock` since its body/signature
-    // differ from this one.
+    // `speechBlock` below builds a block with a different shape (text-first,
+    // no `links` parameter) for the `SpeechController` tests, since its
+    // signature differs from `block` here.
 
     private func block(
         _ kind: ArticleContent.Block.Kind = .paragraph, _ text: String, links: [ArticleContent.Link] = []
@@ -90,10 +84,10 @@ final class AudioTrimmingTests: XCTestCase {
 
     // MARK: - SpeechControllerAudioTrimmingTests helpers
     //
-    // Phase 6: the legacy extension-only read-aloud path
-    // (`SpeechController`) now speaks a TRIMMED subset of an article's
-    // blocks. `speakableBlocks(content:spokenBlockIndices:)` is the pure
-    // filtering logic behind `SpeechController.init` — tested directly (no
+    // The legacy extension-only read-aloud path (`SpeechController`) speaks
+    // a TRIMMED subset of an article's blocks.
+    // `speakableBlocks(content:spokenBlockIndices:)` is the pure filtering
+    // logic behind `SpeechController.init` — tested directly (no
     // `AVSpeechSynthesizer` involved) to pin the hard contract every other
     // method in the class depends on: each surviving entry keeps its
     // ORIGINAL `content.blocks` index, never renumbered, so
@@ -103,10 +97,9 @@ final class AudioTrimmingTests: XCTestCase {
     // UNTRIMMED visual reader regardless of which/how many blocks were
     // filtered.
 
-    /// Renamed from the original `block(_:kind:)` — same name as the
-    /// `block(_:_:links:)` helper above but a DIFFERENT signature/body
-    /// (text-first, no `links` parameter), so it's kept distinct rather
-    /// than overloaded.
+    /// A different shape from the `block(_:_:links:)` helper above
+    /// (text-first, no `links` parameter), kept distinct rather than
+    /// overloaded.
     private func speechBlock(_ text: String, kind: ArticleContent.Block.Kind = .paragraph) -> ArticleContent.Block {
         ArticleContent.Block(kind: kind, text: text, links: [])
     }

@@ -523,9 +523,8 @@ final class ArticleCardsChromeTests: XCTestCase {
     func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
         let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
         let item = try XCTUnwrap(SavesStore.shared.items().first)
-        // The menu comes from the ONE provider now, not from a per-deck shim —
-        // which is the point: this is the same code path the Downloader and
-        // Price Tracker roots take for their own cards.
+        // The menu comes from the one shared provider — the same code path
+        // the Downloader and Price Tracker roots use for their own cards.
         let slot = try XCTUnwrap(
             controller.slotIndex(forCarouselIndex: controller.carousel.currentIndex))
         let menu = try XCTUnwrap(controller.deckProvider?.deckMenu(forSlot: slot))

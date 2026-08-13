@@ -19,6 +19,16 @@ import UIKit
 /// It lives in the module rather than the app shell because the extension-hosted
 /// editor draws the same header, and an extension has no app shell.
 public enum PriceTrackerProductImage {
+    /// The decode/cache target every consumer of this loader shares — the mini
+    /// carousel accessory, the deck's own thumbnail chip and scrub preview, the
+    /// archive tray row, and the product detail header. Comfortably larger than
+    /// any of them ever renders at (even the widest iPad card), so downsampling
+    /// to it never visibly differs from a full decode; it exists to cap memory
+    /// on an oversized source photo and to give every caller ONE cached decode
+    /// instead of a re-decode per deck reload.
+    private static let cacheTargetPointSize = CGSize(width: 900, height: 900)
+    private static let cacheTargetScale: CGFloat = 3
+
     /// Loads the persisted product artwork, recovering a website-owned image
     /// for trackers made by an older build before images were always collected.
     /// The recovery path is header artwork first, then the site's favicon —
@@ -27,22 +37,33 @@ public enum PriceTrackerProductImage {
         imageFileName: String?, pageURL: URL?, completion: @escaping (UIImage?) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
-            if let imageFileName {
-                let path = ReadingListStore.shared.articlesDirectory
-                    .appendingPathComponent(imageFileName).path
-                if let image = UIImage(contentsOfFile: path)?.preparingForDisplay() {
-                    completion(image)
-                    return
-                }
-            }
-            guard let pageURL else {
-                completion(nil)
+            guard let imageFileName else {
+                fetchFallback(pageURL: pageURL, completion: completion)
                 return
             }
-            Task {
-                let data = await ProductTrackerArtwork.fallbackData(for: pageURL)
-                completion(data.flatMap(UIImage.init(data:))?.preparingForDisplay())
+            let path = ReadingListStore.shared.articlesDirectory
+                .appendingPathComponent(imageFileName).path
+            DownsampledImageLoader.load(
+                path: path, pointSize: cacheTargetPointSize, scale: cacheTargetScale,
+                isStale: { false }
+            ) { image in
+                if let image {
+                    completion(image)
+                } else {
+                    fetchFallback(pageURL: pageURL, completion: completion)
+                }
             }
+        }
+    }
+
+    private static func fetchFallback(pageURL: URL?, completion: @escaping (UIImage?) -> Void) {
+        guard let pageURL else {
+            completion(nil)
+            return
+        }
+        Task {
+            let data = await ProductTrackerArtwork.fallbackData(for: pageURL)
+            completion(data.flatMap(UIImage.init(data:))?.preparingForDisplay())
         }
     }
 }

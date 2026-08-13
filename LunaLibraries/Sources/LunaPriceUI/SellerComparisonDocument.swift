@@ -293,7 +293,7 @@ public enum SellerComparisonDocument {
     }
 
     private static func graphSection(_ content: Content) -> String {
-        var html = "<h2>\(escape(L10n.string("PriceTrackerCompareDoc_06_historyHeading")))</h2>\n"
+        let html = "<h2>\(escape(L10n.string("PriceTrackerCompareDoc_06_historyHeading")))</h2>\n"
         return html + graphSVG(content) + "\n"
     }
 

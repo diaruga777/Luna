@@ -149,11 +149,11 @@ public struct RescueDigestBuilder {
     private func visibleText(_ document: Document) -> String {
         guard let body = document.body() else { return "" }
         // Work on a clone so we don't mutate the document other sections read.
-        guard let clone = try? body.copy() as? Element else {
+        guard let clone = body.copy() as? Element else {
             return collapseWhitespace((try? body.text()) ?? "")
         }
         if let junk = try? clone.select("script, style, nav, footer, header, aside, form, noscript") {
-            try? junk.remove()
+            _ = try? junk.remove()
         }
         return collapseWhitespace((try? clone.text()) ?? "")
     }

@@ -89,6 +89,9 @@ public final class FoundationModelsScreenCaptureSession: ScreenCaptureModelSessi
         case .networkFailure: return .networkFailure
         case .quotaLimitReached: return .quotaLimitReached
         case .serviceUnavailable: return .serviceUnavailable
+        // Non-frozen: a case added by a later SDK keeps its underlying error
+        // for diagnostics rather than being silently mapped onto a sibling.
+        @unknown default: return .other(error)
         }
     }
 

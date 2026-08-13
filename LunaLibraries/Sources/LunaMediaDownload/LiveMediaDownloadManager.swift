@@ -440,7 +440,7 @@ public final class LiveMediaDownloadManager: NSObject {
             await updateActivity(for: existing)
             return .started
         }
-        var job = LiveMediaDownloadJob(
+        let job = LiveMediaDownloadJob(
             id: UUID().uuidString,
             sourceURLString: sourceURLString,
             assetURLString: asset.url.absoluteString,

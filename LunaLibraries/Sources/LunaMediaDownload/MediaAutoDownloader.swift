@@ -268,7 +268,7 @@ public enum MediaAutoDownloader {
     private static func ensureUndownloaded(_ urlString: String) {
         guard isRunningInDownloader,
               let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
-        try? SavedMediaStore.shared.ensureUndownloaded(
+        _ = try? SavedMediaStore.shared.ensureUndownloaded(
             id: item.id,
             sourceURLString: item.urlString,
             title: item.title,

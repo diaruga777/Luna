@@ -31,7 +31,7 @@ struct StreamIMAPClient {
         let session = try await Session.open(host: host, port: port)
         defer { session.close() }
         try await session.login(username: username, password: password)
-        try? await session.run("LOGOUT", step: "logout")
+        _ = try? await session.run("LOGOUT", step: "logout")
     }
 
     /// Finds messages with UID greater than `after.uid` matching the Luna header,
@@ -63,7 +63,7 @@ struct StreamIMAPClient {
         }
 
         if afterUID == 0 {
-            try? await session.run("LOGOUT", step: "logout")
+            _ = try? await session.run("LOGOUT", step: "logout")
             return FetchResult(
                 messages: [],
                 cursor: .imap(uid: uidNext - 1, uidValidity: uidValidity))
@@ -110,7 +110,7 @@ struct StreamIMAPClient {
                 from: headers["from"] ?? "", subject: headers["subject"] ?? "",
                 date: headers["date"] ?? "", headers: headers, bodyText: body, marker: marker))
         }
-        try? await session.run("LOGOUT", step: "logout")
+        _ = try? await session.run("LOGOUT", step: "logout")
         return FetchResult(
             messages: messages, cursor: .imap(uid: highestUID, uidValidity: uidValidity))
     }
@@ -123,8 +123,8 @@ struct StreamIMAPClient {
         try await session.login(username: username, password: password)
         try await session.run("SELECT INBOX", step: "select")
         let set = uids.map(String.init).joined(separator: ",")
-        try? await session.run("UID STORE \(set) +FLAGS (\\Seen)", step: "store")
-        try? await session.run("LOGOUT", step: "logout")
+        _ = try? await session.run("UID STORE \(set) +FLAGS (\\Seen)", step: "store")
+        _ = try? await session.run("LOGOUT", step: "logout")
     }
 
     // MARK: - Helpers

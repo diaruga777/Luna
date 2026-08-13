@@ -144,7 +144,7 @@ enum InPageAnchors {
             guard let host, host.tagName() != "body", host.tagName() != "html",
                   identifier(of: host) == nil
             else { continue }
-            try? host.attr("id", id)
+            _ = try? host.attr("id", id)
         }
     }
 
@@ -170,7 +170,7 @@ enum InPageAnchors {
         else { return }
         for candidate in candidates.array()
         where qualifiesAsTableOfContents(candidate, resolvable: resolvable, baseURL: baseURL) {
-            try? candidate.attr(marker, "1")
+            _ = try? candidate.attr(marker, "1")
         }
     }
 

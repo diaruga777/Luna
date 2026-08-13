@@ -439,12 +439,12 @@ public final class SplitWebOverlayViewController: UIViewController,
             guard let sourcePoint = pendingSourcePoint else { return nil }
             let animator = InlineReaderEclipseAnimator(
                 sourcePoint: sourcePoint, direction: .forward, sceneContainer: view,
-                sceneFrame: localCardFrame
-            ) { [weak self] in
-                guard let self else { return }
-                self.cardView.contentContainer.bringSubviewToFront(self.innerNav.view)
-                self.syncHeaderToTopPage(animateNewTab: true)
-            }
+                sceneFrame: localCardFrame,
+                atZenith: { [weak self] in
+                    guard let self else { return }
+                    self.cardView.contentContainer.bringSubviewToFront(self.innerNav.view)
+                    self.syncHeaderToTopPage(animateNewTab: true)
+                })
             pendingSourcePoint = nil
             return animator
         case .pop:
@@ -623,7 +623,6 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     private func layoutTabs(scrollToRight: Bool) {
-        let count = tabButtons.count
         let idealWidths = tabButtons.map { $0.idealWidth }
         let metrics = InlineReaderTabMetrics(
             availableWidth: tabScrollView.bounds.width,

@@ -787,7 +787,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Phrases mode they hug the phrase panel (and are always shown); in Words
     /// mode they fill the space above/below the single word (shown when paused).
     private func layoutContext() {
-        let centerY = focalCenterY
         let horizontalMargin: CGFloat = 28
         let column = contentColumn
         let width = max(0, column.width - horizontalMargin * 2)

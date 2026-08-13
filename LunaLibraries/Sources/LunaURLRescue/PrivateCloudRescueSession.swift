@@ -109,6 +109,10 @@ public final class PrivateCloudRescueSession: RescueModelSession {
         case .networkFailure: return .networkFailure
         case .quotaLimitReached: return .quotaLimitReached
         case .serviceUnavailable: return .serviceUnavailable
+        // Non-frozen: a case added by a later SDK keeps its underlying error
+        // for diagnostics rather than being guessed onto a sibling — and
+        // `.other` is not transient, so it can't retry forever.
+        @unknown default: return .other(error)
         }
     }
 }

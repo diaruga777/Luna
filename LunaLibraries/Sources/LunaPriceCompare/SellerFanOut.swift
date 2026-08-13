@@ -366,11 +366,12 @@ public struct ComparableResultMerger: Equatable, Sendable {
 /// own site, verify that what came back is the same product, and collect its
 /// price — with a keyless web search running alongside as a second opinion.
 ///
-/// Everything that touches the network is injected. That is not only for tests:
-/// the app fetches through `ArticleFetcher` and can route candidate
-/// verification through the whole shared ingest pipeline, while the Safari
-/// appex has neither and must use `URLSession` plus this module's regex parser.
-/// One orchestration, two very different environments.
+/// Everything that touches the network arrives as one `SellerFanOutNetworking`
+/// conformer. That is not only for tests: the app fetches through
+/// `ArticleFetcher` and can route candidate verification through the whole
+/// shared ingest pipeline, while the Safari appex has neither and must use
+/// `URLSession` plus this module's regex parser. One orchestration, two very
+/// different environments.
 public struct SellerFanOut {
 
     /// Called the moment a verified seller ENTERS the merged list, so a surface

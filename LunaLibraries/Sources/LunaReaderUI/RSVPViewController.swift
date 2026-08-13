@@ -8,6 +8,7 @@ import LunaReaderEngine
 import LunaDesignSystem
 import LunaStorage
 import LunaModels
+import LunaURLClassification
 import AVFoundation
 import UIKit
 
@@ -999,7 +1000,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             linkPillHideTimer = nil
             if url != linkPillURL {
                 linkPillURL = url
-                let host = url.host?.replacingOccurrences(of: "www.", with: "") ?? url.absoluteString
+                let host = url.host.map(HostMatching.normalizedHost) ?? url.absoluteString
                 linkPill.configuration?.title = host
                 view.setNeedsLayout()
             }

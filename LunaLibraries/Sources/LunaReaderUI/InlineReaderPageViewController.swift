@@ -8,6 +8,7 @@ import LunaStorage
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
+import LunaURLClassification
 import UIKit
 import WebKit
 
@@ -83,7 +84,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             .first(where: { !$0.isEmpty }) {
             return title
         }
-        return url.host?.replacingOccurrences(of: "www.", with: "")
+        return url.host.map(HostMatching.normalizedHost)
             ?? L10n.string("Common_reader")
     }
 

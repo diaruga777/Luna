@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaFetch
 import LunaModels
 import LunaStorage
+import LunaURLClassification
 import UIKit
 
 /// Where a nested reader appears — the one decision that separates the phone's
@@ -652,7 +653,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private static func titleFallback(_ title: String?, url: URL) -> String {
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
-        return url.host?.replacingOccurrences(of: "www.", with: "")
+        return url.host.map(HostMatching.normalizedHost)
             ?? L10n.string("Common_reader")
     }
 

@@ -847,7 +847,7 @@ public struct ProductPageDetector {
         if let itemprop = itempropValue(document, "name")?.trimmedNonEmpty { return itemprop }
         if let og = metaContent(document, names: ["og:title", "twitter:title"])?.trimmedNonEmpty { return og }
         if let title = (try? document.title())?.trimmedNonEmpty { return title }
-        return baseURL?.host?.replacingOccurrences(of: "www.", with: "")
+        return baseURL?.host.map(HostMatching.normalizedHost)
             ?? L10n.string("Common_productLabel")
     }
 

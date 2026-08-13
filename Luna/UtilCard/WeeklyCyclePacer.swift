@@ -142,16 +142,24 @@ final class UtilCardSetupTextCycler {
     /// through a changing title.
     var onCycleStart: ((LunaApp) -> Void)?
 
+    /// Stands in for the real timer in the cycler the util card builds for
+    /// itself, which a test cannot reach to inject. Nothing in the app writes
+    /// it; it exists so the fallback clock's behaviour can be asserted without
+    /// waiting out four-second turns.
+    static var schedulerOverrideForTesting: Scheduler?
+
     init(
         safariButton: UIButton,
         shortcutButton: UIButton,
-        scheduler: @escaping Scheduler = UtilCardSetupTextCycler.timerScheduler
+        scheduler: Scheduler? = nil
     ) {
         self.safariButton = safariButton
         self.shortcutButton = shortcutButton
         baseSafariTitle = safariButton.configuration?.title ?? ""
         baseShortcutTitle = shortcutButton.configuration?.title ?? ""
         self.scheduler = scheduler
+            ?? Self.schedulerOverrideForTesting
+            ?? Self.timerScheduler
         safariButton.clipsToBounds = true
         shortcutButton.clipsToBounds = true
     }

@@ -403,6 +403,86 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(startedApps, [.reader])
     }
 
+    /// The cycling belongs to central Luna, not to its first run. The completed
+    /// card keeps these two buttons and keeps them stretched edge to edge — room
+    /// reserved for a longer sibling phrase — so the phrases have to keep
+    /// arriving. The cycler used to be built only when the card was showing
+    /// onboarding, so the first save latched completion and from the next launch
+    /// the labels stood still inside buttons sized for movement.
+    func testCompletedCentralCardCyclesItsSetupLabelsWithTheRow() throws {
+        seedWeekly(.article, url: "https://a.example.com/x", title: "A Read")
+        seedWeekly(.media, url: "https://b.example.com/x", title: "A Watch")
+        seedWeekly(.product, url: "https://c.example.com/x", title: "A Deal")
+        let card = makeCard(showsOnboarding: false, hasSaves: true, app: .luna)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+        let host = try XCTUnwrap(card.view.descendants(of: WeeklySaveRowHost.self).first)
+        let buttons = actionButtons(in: card)
+        let safari = try XCTUnwrap(buttons.first)
+        let shortcut = try XCTUnwrap(buttons.last)
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(false) }
+
+        for (app, rowTitle) in [
+            (LunaApp.downloader, "A Watch"),
+            (.priceTracker, "A Deal"),
+            (.reader, "A Read"),
+        ] {
+            host.advance(forward: true, velocity: 0)
+            waitUntil("\(app)'s phrasing never reached the completed card") {
+                self.visibleWeeklyRow(in: host)?.accessibilityLabel?
+                    .contains(rowTitle) == true
+                    && safari.configuration?.title
+                    == OnboardingStrings.Intro.safariAction.value(for: app)
+            }
+            XCTAssertEqual(
+                shortcut.configuration?.title,
+                OnboardingStrings.Intro.shortcutAction.value(for: app))
+        }
+    }
+
+    /// With no live pick there is no row on screen to carry the labels' clock —
+    /// so they keep their own. The hand-off at the end of the intro used to stop
+    /// that clock unconditionally and hand over to a row that never appeared,
+    /// freezing both labels on the single turn the hand-off had just made. Off
+    /// centre nothing runs at all.
+    func testSetupLabelsKeepTheirOwnClockWithNoWeeklyPickToDriveThem() throws {
+        var tick: (() -> Void)?
+        UtilCardSetupTextCycler.schedulerOverrideForTesting = { _, callback in
+            tick = callback
+            return { tick = nil }
+        }
+        defer { UtilCardSetupTextCycler.schedulerOverrideForTesting = nil }
+        let card = makeCard(showsOnboarding: false, hasSaves: true, app: .luna)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+        let safari = try XCTUnwrap(actionButtons(in: card).first)
+        XCTAssertNil(tick, "an off-centre card must run no label clock")
+
+        card.cardDidBecomeCentered()
+        let advance = try XCTUnwrap(
+            tick, "an empty weekly slot must leave the labels a clock of their own")
+        UIView.setAnimationsEnabled(true)
+        defer { UIView.setAnimationsEnabled(false) }
+
+        for app in [LunaApp.reader, .downloader, .priceTracker] {
+            advance()
+            waitUntil("\(app)'s phrasing never arrived") {
+                safari.configuration?.title
+                    == OnboardingStrings.Intro.safariAction.value(for: app)
+            }
+        }
+
+        card.cardDidLeaveCenter()
+        XCTAssertNil(tick, "leaving centre must stop the labels' own clock")
+        XCTAssertEqual(
+            safari.configuration?.title,
+            OnboardingStrings.Intro.safariAction.value(for: .luna),
+            "and put central Luna's own line back")
+    }
+
     /// A cycling label slides sideways, and UIKit lays a configuration button's
     /// title out by assigning its frame — so a layout pass landing mid-slide
     /// used to bake the offset into the label's centre and walk the title toward

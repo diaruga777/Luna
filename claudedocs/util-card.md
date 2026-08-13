@@ -145,6 +145,25 @@ buttons' labels through every sibling app's own phrasing as the weekly row
 cycles, so those two buttons stay stretched edge to edge — the room a longer
 sibling phrase might need.
 
+**The cycling belongs to central Luna, not to its first run.** Both states keep
+these buttons, and both keep them full-width, so both keep the phrases arriving:
+the cycler is built for `app == .luna` alone. It was once built only while the
+card `showsOnboarding`, and since a save from any surface latches completion, the
+first save froze the labels from the next launch on — edge-to-edge buttons sized
+for movement that had stopped.
+
+**Exactly one clock advances the labels, and the weekly row gets first refusal**
+(`UtilCardContentViewController.updateSetupLabelClock`, the single decision
+point — called at the intro hand-off, on a presence change, on a retirement, and
+as the card takes or leaves centre). A row on screen is the better clock, since
+its turn and the labels are then the same app's by construction. But a card with
+no live pick has no row at all: then the cycler keeps its OWN timer, which is
+also what carries the opening cadence before the row appears. The hand-off at the
+end of the intro used to stop that timer unconditionally and hand over to a row
+that, with an empty `WeeklySaveStore`, never came — so a first run without a live
+pick moved both labels exactly once and then stood still for good. Nothing runs
+while the card is off centre, or while no cycling button is on the card.
+
 **The labels are the ROW's app, and they hold no counter of their own.**
 `WeeklySaveRowHost.onCycle` reports the KIND the row is arriving at — from
 `settle`, the one place that knows the destination, which an auto-advance and a

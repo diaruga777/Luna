@@ -22,8 +22,8 @@ public protocol RescuePipelineReentering {
     func reprocess(_ input: IngestInput) async -> IngestResult
 }
 
-/// The shipped conformer, and the whole of the invariant above: the RAW
-/// pipeline, exactly as the default closure it replaces was.
+/// The shipped conformer, and the whole of the invariant above: it calls only
+/// the RAW pipeline.
 public struct RawIngestPipelineReentry: RescuePipelineReentering {
     public init() {}
 

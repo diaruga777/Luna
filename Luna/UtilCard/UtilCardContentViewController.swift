@@ -982,17 +982,7 @@ final class UtilCardContentViewController: CardContentViewController {
     /// Directs the user to this app's own page in system Settings — the only
     /// place a denied Photos permission can now be granted.
     private func presentPhotosPermissionAlert() {
-        let alert = UIAlertController(
-            title: L10n.string("Onboarding_Util_storagePermissionAlertTitle"),
-            message: L10n.string("Onboarding_Util_storagePermissionAlertMessage"),
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(
-            title: L10n.string("Common_openSettings"), style: .default
-        ) { [weak self] _ in
-            self?.openSystemSettings()
-        })
-        present(alert, animated: true)
+        PhotosPermissionAlert.present(from: self, openSettings: openSystemSettings)
     }
 
     /// Applies a tap on the storage line. "In Luna" is immediate; "in Photos"

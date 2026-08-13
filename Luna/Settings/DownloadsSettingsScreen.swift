@@ -141,18 +141,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
     /// Directs the user to this app's own page in system Settings — the only
     /// place a denied Photos permission can now be granted.
     private func presentPhotosPermissionAlert() {
-        let alert = UIAlertController(
-            title: L10n.string("Onboarding_Util_storagePermissionAlertTitle"),
-            message: L10n.string("Onboarding_Util_storagePermissionAlertMessage"),
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(
-            title: L10n.string("Common_openSettings"), style: .default
-        ) { _ in
-            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-            UIApplication.shared.open(url)
-        })
-        present(alert, animated: true)
+        PhotosPermissionAlert.present(from: self)
     }
 
     private func apply(_ policy: AutoDownloadPolicy) {

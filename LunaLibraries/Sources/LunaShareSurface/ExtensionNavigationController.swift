@@ -5,6 +5,15 @@
 
 import UIKit
 
+/// Told when a qualifying downward swipe asks the extension's sheet to go away.
+/// The host answers on the same completion path every Done/Close affordance uses;
+/// the navigation container only recognizes the gesture.
+@MainActor
+public protocol ExtensionSwipeDismissDelegate: AnyObject {
+    func extensionNavigationControllerDidSwipeToDismiss(
+        _ navigationController: ExtensionNavigationController)
+}
+
 /// The navigation container the extension surfaces put their screens in — and the
 /// one place that decides how much of the sheet the header bar owns.
 ///
@@ -36,11 +45,10 @@ public final class ExtensionNavigationController: UINavigationController,
     /// reader extensions completely untouched.
     public var allowsSwipeDownToDismiss = false
 
-    /// Called when the visible action-extension screen receives a qualifying
-    /// downward swipe. The host installs the same completion closure used by
-    /// every Done/Close affordance; the navigation container only recognizes
-    /// the gesture and does not own extension completion itself.
-    public var onSwipeDownToDismiss: (() -> Void)?
+    /// Told when the visible action-extension screen receives a qualifying
+    /// downward swipe. Weak: the host owns this container, and the container
+    /// does not own extension completion.
+    public weak var swipeDismissDelegate: (any ExtensionSwipeDismissDelegate)?
 
     private lazy var swipeDownGesture: UIPanGestureRecognizer = {
         let gesture = UIPanGestureRecognizer(
@@ -156,7 +164,8 @@ public final class ExtensionNavigationController: UINavigationController,
                 peakLateralVelocity: peakLateralVelocity
             ) else { return }
             didRequestSwipeDismiss = true
-            onSwipeDownToDismiss?()
+            swipeDismissDelegate?
+                .extensionNavigationControllerDidSwipeToDismiss(self)
         case .cancelled, .failed:
             didRequestSwipeDismiss = false
         default:

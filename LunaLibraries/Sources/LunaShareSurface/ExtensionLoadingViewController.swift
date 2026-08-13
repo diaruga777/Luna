@@ -7,6 +7,13 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// Told when the wait screen's header exit is tapped.
+@MainActor
+public protocol ExtensionLoadingExitDelegate: AnyObject {
+    func extensionLoadingViewControllerDidExit(
+        _ screen: ExtensionLoadingViewController)
+}
+
 /// The action extension's first frame: a spinner, rotating status copy, and a header
 /// carrying the way out.
 ///
@@ -26,7 +33,8 @@ public final class ExtensionLoadingViewController: UIViewController {
     private let statusLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private let initialText: String
-    private let onExit: () -> Void
+    /// The extension host, which owns this screen — hence weak.
+    public weak var exitDelegate: (any ExtensionLoadingExitDelegate)?
     /// Built only when a terminal state actually asks for them, so the ordinary
     /// wait carries no extra views.
     private var iconView: UIImageView?
@@ -34,10 +42,10 @@ public final class ExtensionLoadingViewController: UIViewController {
 
     /// - Parameters:
     ///   - initialText: the first phrase; the cycler rotates its reassurance after.
-    ///   - onExit: tapped the header's exit button.
-    public init(initialText: String, onExit: @escaping () -> Void) {
+    ///   - exitDelegate: told when the header's exit button is tapped.
+    public init(initialText: String, exitDelegate: (any ExtensionLoadingExitDelegate)?) {
         self.initialText = initialText
-        self.onExit = onExit
+        self.exitDelegate = exitDelegate
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -49,7 +57,10 @@ public final class ExtensionLoadingViewController: UIViewController {
         view.backgroundColor = LunaColors.background
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "xmark"),
-            primaryAction: UIAction { [weak self] _ in self?.onExit() })
+            primaryAction: UIAction { [weak self] _ in
+                guard let self else { return }
+                exitDelegate?.extensionLoadingViewControllerDidExit(self)
+            })
         navigationItem.leftBarButtonItem?.accessibilityLabel = L10n.string("Common_close")
 
         spinner.startAnimating()

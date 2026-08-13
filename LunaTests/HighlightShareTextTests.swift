@@ -13,6 +13,24 @@ import LunaModels
 import UIKit
 import XCTest
 
+/// Stands in for the reader behind a `QuotingTextView`, recording which ranges it
+/// was asked to quote.
+@MainActor
+final class RecordingQuotingReader: QuotingTextViewDelegate {
+    private let handles: Bool
+    private(set) var askedRanges: [NSRange] = []
+
+    init(handles: Bool) { self.handles = handles }
+
+    func quotingTextView(
+        _ textView: QuotingTextView, copySelectionIn range: NSRange
+    ) -> Bool {
+        askedRanges.append(range)
+        return handles
+    }
+}
+
+@MainActor
 final class HighlightShareTextTests: XCTestCase {
 
     /// A real web URL (isShareable == true) → the quote in literal double-quotes,
@@ -70,15 +88,12 @@ final class HighlightShareTextTests: XCTestCase {
         let textView = QuotingTextView(usingTextLayoutManager: false)
         textView.text = "One sentence. Another one."
         textView.selectedRange = NSRange(location: 0, length: 13)
-        var asked: [NSRange] = []
-        textView.copySelectionAsQuote = { range in
-            asked.append(range)
-            return true
-        }
+        let reader = RecordingQuotingReader(handles: true)
+        textView.quotingDelegate = reader
 
         textView.copy(nil)
 
-        XCTAssertEqual(asked, [NSRange(location: 0, length: 13)])
+        XCTAssertEqual(reader.askedRanges, [NSRange(location: 0, length: 13)])
     }
 
     /// With nothing selected there is no quote to make, so the copy falls straight
@@ -87,15 +102,12 @@ final class HighlightShareTextTests: XCTestCase {
         let textView = QuotingTextView(usingTextLayoutManager: false)
         textView.text = "One sentence."
         textView.selectedRange = NSRange(location: 4, length: 0)
-        var asked = false
-        textView.copySelectionAsQuote = { _ in
-            asked = true
-            return true
-        }
+        let reader = RecordingQuotingReader(handles: true)
+        textView.quotingDelegate = reader
 
         textView.copy(nil)
 
-        XCTAssertFalse(asked)
+        XCTAssertTrue(reader.askedRanges.isEmpty)
     }
 
     // MARK: - When the long press expands the selection itself

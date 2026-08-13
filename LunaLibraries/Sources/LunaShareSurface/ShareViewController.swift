@@ -180,8 +180,7 @@ open class ShareViewController: UIViewController {
     private func setUpStatusUI() {
         view.backgroundColor = LunaColors.background
         let loading = ExtensionLoadingViewController(
-            initialText: L10n.string("Common_openingInLuna")
-        ) { [weak self] in self?.complete() }
+            initialText: L10n.string("Common_openingInLuna"), exitDelegate: self)
         loadingScreen = loading
         hostInNavigation(loading)
     }
@@ -838,11 +837,7 @@ open class ShareViewController: UIViewController {
     ) {
         guard supportsSwipeDownDismissal else { return }
         navigationController.allowsSwipeDownToDismiss = true
-        navigationController.onSwipeDownToDismiss = { [weak self] in
-            // Use the same completion path as Done/Close, including cancelling
-            // any attachment-load watchdog before the request is finished.
-            self?.completeSilently()
-        }
+        navigationController.swipeDismissDelegate = self
     }
 
     private func showSavedBadge() {
@@ -953,5 +948,25 @@ extension ShareViewController: ExtensionHost {
         ])
         navigationController.didMove(toParent: self)
         actionNavigationController = navigationController
+    }
+}
+
+/// The wait screen's header exit completes the request, same as Done.
+extension ShareViewController: ExtensionLoadingExitDelegate {
+    public func extensionLoadingViewControllerDidExit(
+        _ screen: ExtensionLoadingViewController
+    ) {
+        complete()
+    }
+}
+
+/// A sheet-wide swipe down exits on the same completion path as Done/Close,
+/// including cancelling any attachment-load watchdog before the request is
+/// finished.
+extension ShareViewController: ExtensionSwipeDismissDelegate {
+    public func extensionNavigationControllerDidSwipeToDismiss(
+        _ navigationController: ExtensionNavigationController
+    ) {
+        completeSilently()
     }
 }

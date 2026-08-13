@@ -11,6 +11,18 @@ import XCTest
 /// The action extension's wait and the archive reader's cover run back to back in one
 /// sheet, so anything that differs between them reads as the UI jumping rather than as
 /// one wait continuing. These pin the three things that differed.
+/// Stands in for the extension host behind the wait screen.
+@MainActor
+final class RecordingExtensionLoadingHost: ExtensionLoadingExitDelegate {
+    private(set) var exits = 0
+
+    func extensionLoadingViewControllerDidExit(
+        _ screen: ExtensionLoadingViewController
+    ) {
+        exits += 1
+    }
+}
+
 @MainActor
 final class ExtensionLoadingContinuityTests: XCTestCase {
 
@@ -66,9 +78,9 @@ final class ExtensionLoadingContinuityTests: XCTestCase {
     /// `xmark` (nothing has been saved yet), and shows its status copy — which is the
     /// `EclipseBloomStatusLabel` deadlock fix observed in situ.
     func testWaitScreenHasAnExitAndVisibleCopyFromTheStart() {
-        var exited = false
+        let host = RecordingExtensionLoadingHost()
         let screen = ExtensionLoadingViewController(
-            initialText: "Opening in Luna…") { exited = true }
+            initialText: "Opening in Luna…", exitDelegate: host)
         screen.view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         screen.loadViewIfNeeded()
         screen.view.layoutIfNeeded()
@@ -83,7 +95,7 @@ final class ExtensionLoadingContinuityTests: XCTestCase {
 
         // The exit is wired, not decorative.
         (item?.primaryAction as UIAction?)?.performWithoutAnimation()
-        XCTAssertTrue(exited || item?.primaryAction != nil)
+        XCTAssertTrue(host.exits > 0 || item?.primaryAction != nil)
     }
 }
 

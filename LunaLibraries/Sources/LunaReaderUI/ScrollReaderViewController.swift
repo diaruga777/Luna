@@ -575,9 +575,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.isSelectable = true
         textView.delegate = self
         // Copy carries the same quote-plus-URL payload the selection menu shares.
-        textView.copySelectionAsQuote = { [weak self] range in
-            self?.copyHighlightedText(in: range) ?? false
-        }
+        textView.quotingDelegate = self
         textView.attributedText = rendered.text
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 40, right: 20)
         textView.linkTextAttributes = [
@@ -1878,5 +1876,15 @@ extension ScrollReaderViewController: AudioPlaybackObserver {
     public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didUpdateItem info: AudioPlaybackItemInfo?) {
         guard isViewLoaded, info?.itemID != item.id else { return }
         removeHighlight()
+    }
+}
+
+/// Copy in the reader's own format — the same quote-plus-URL payload the
+/// selection menu's Share sends, so every copy route agrees.
+extension ScrollReaderViewController: QuotingTextViewDelegate {
+    public func quotingTextView(
+        _ textView: QuotingTextView, copySelectionIn range: NSRange
+    ) -> Bool {
+        copyHighlightedText(in: range)
     }
 }

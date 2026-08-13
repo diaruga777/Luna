@@ -25,12 +25,6 @@ public final class WebPageViewController: UIViewController {
     private let webView: WKWebView
     private let progress = HorizonSpinnerView()
 
-    /// Called when the user taps Done. Defaults to dismissing the presentation.
-    public var onClose: (() -> Void)?
-    /// Called when the user escapes to real Safari. Defaults to
-    /// `UIApplication.open` after dismissing.
-    public var onOpenInBrowser: ((URL) -> Void)?
-
     public init(url: URL) {
         self.url = url
         let configuration = WKWebViewConfiguration()
@@ -50,8 +44,7 @@ public final class WebPageViewController: UIViewController {
 
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak self] _ in
-                guard let self else { return }
-                if let onClose { onClose() } else { dismiss(animated: true) }
+                self?.dismiss(animated: true)
             })
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "safari"),
@@ -81,10 +74,6 @@ public final class WebPageViewController: UIViewController {
 
     private func openInBrowser() {
         let target = webView.url ?? url
-        if let onOpenInBrowser {
-            onOpenInBrowser(target)
-            return
-        }
         dismiss(animated: true) {
             UIApplication.shared.open(target)
         }
@@ -93,14 +82,15 @@ public final class WebPageViewController: UIViewController {
     /// Presents `url` full-screen inside its own navigation controller (which
     /// the Done / Safari bar buttons live in). Mirrors `ArchiveUnlockFlow.present`
     /// so both web surfaces are opened the same way.
+    ///
+    /// The bar buttons need no seam of their own: `dismiss(animated:)` on a
+    /// pushed controller forwards to whoever presented the navigation
+    /// controller, which is exactly what the two closures this used to install
+    /// spelled out by hand.
     public static func present(url: URL, from presenter: UIViewController) {
         let controller = WebPageViewController(url: url)
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .fullScreen
-        controller.onClose = { navigation.dismiss(animated: true) }
-        controller.onOpenInBrowser = { target in
-            navigation.dismiss(animated: true) { UIApplication.shared.open(target) }
-        }
         presenter.present(navigation, animated: true)
     }
 }

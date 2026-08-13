@@ -20,11 +20,8 @@ import UIKit
 ///   never runs any of our code at all;
 /// - **tests**, which pin the two answers together so they cannot drift.
 ///
-/// `AppLaunchGeometry` used to hand-copy the article card's inset, aspect and
-/// bottom clearance into three constants tuned on one reference iPhone, with a
-/// separate "launch-safe approximation" for every other device. There is nothing
-/// to approximate: the deck's card frame is this function of the screen, the
-/// same on every device, for every app and every content kind.
+/// There is nothing to approximate: the deck's card frame is this function of
+/// the screen, the same on every device, for every app and every content kind.
 public enum CardDeckGeometry {
     /// Chrome clearance every deck reserves between the safe-area top and the
     /// card area.

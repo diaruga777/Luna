@@ -11,16 +11,14 @@ import UIKit
 ///
 /// It exists because those two run back to back in the same sheet, and any
 /// difference between them reads as the UI jumping rather than as one wait
-/// continuing. The archive reader used to stack [spinner, label, button] and centre
-/// the STACK, so its spinner sat ~28pt above where the extension had just been
-/// drawing one — the spinner appeared to hop upwards at the handover. Here the
-/// SPINNER is what's centred and the copy hangs beneath it, so the spinner holds
-/// still while text comes and goes underneath.
+/// continuing. The SPINNER is centred, and the copy hangs beneath it, so the
+/// spinner holds still at the same point on screen while text comes and goes
+/// underneath.
 ///
 /// The tint is deliberately NOT set: `HorizonSpinnerView` defaults to the horizon
-/// palette (`MoonHorizonStyle.sunlight`), and one surface overriding that with the
-/// reader accent — which follows the user's highlight preference and so is usually a
-/// bright blue — was the other half of the same hop.
+/// palette (`MoonHorizonStyle.sunlight`). A surface that overrides it with the
+/// reader accent — which follows the user's highlight preference and is usually
+/// a bright blue — would make the spinner change colour at the handover.
 public enum LoadingStatusLayout {
 
     /// Gap between the spinner and its status copy.

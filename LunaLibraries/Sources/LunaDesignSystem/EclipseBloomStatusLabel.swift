@@ -107,14 +107,12 @@ public final class EclipseBloomStatusLabel: UIView {
     ///
     /// The TEXT is applied before the size check, and that ordering is load-bearing.
     /// This view has no intrinsic size of its own — it takes the size of the labels
-    /// pinned inside it — so a `reveal` that returned early WITHOUT setting the text
-    /// (which is what the bounds guard used to do) left a view whose labels were
-    /// empty, whose width was therefore zero, and whose bounds could never become
-    /// non-zero: `layoutSubviews`' retry re-entered the same guard forever and the
-    /// caller's status copy never appeared at all. Every loading surface that starts
-    /// its cycler in view setup — the action extension, the archive reader — was
-    /// asking for text before its first layout pass, so none of them ever showed a
-    /// word, including the rotating "Still going…" reassurance.
+    /// pinned inside it. If the bounds guard below ran before the text were set, the
+    /// labels would stay empty, their width would stay zero, and the bounds could
+    /// never become non-zero: `layoutSubviews`' retry would re-enter the same guard
+    /// forever, and the caller's status copy would never appear. This matters most
+    /// for a surface that starts its cycler in view setup, before its first layout
+    /// pass — the action extension, the archive reader.
     ///
     /// So: set the text first (that alone gives the view a size), then either animate
     /// now or park the reveal for `layoutSubviews` to run once there are bounds to
@@ -221,8 +219,8 @@ public final class EclipseBloomStatusLabel: UIView {
     public override func layoutSubviews() {
         super.layoutSubviews()
         // Run a reveal that was asked for before there were bounds to sweep. Keyed on
-        // the parked duration rather than on `finalLabel.text != requestedText`, which
-        // can no longer be the signal now that the text is applied up front.
+        // the parked duration rather than on `finalLabel.text != requestedText`: since
+        // `reveal` sets the text up front, that comparison can never be true.
         guard let duration = pendingRevealDuration, let requestedText,
               !isRevealing, bounds.width > 0, bounds.height > 0
         else { return }

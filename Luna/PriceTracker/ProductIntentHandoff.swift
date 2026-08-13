@@ -33,11 +33,6 @@ enum ProductIntentHandoff {
         }
     }
 
-    /// Test seam: the refresh a stale tracker gets before it is rendered.
-    static var refreshRunner: (UUID) async -> Void = {
-        _ = await PriceRefreshCoordinator.shared.refreshTracker(itemID: $0)
-    }
-
     /// The comparison document for whichever tracker holds `urlString`, or nil
     /// when that URL is not a tracked product — the ordinary answer for every
     /// article, post and video the intents save.
@@ -56,7 +51,7 @@ enum ProductIntentHandoff {
         }
         guard let refreshed = store.item(withID: match.itemID)?.priceTracker else { return nil }
         if isStale(refreshed) {
-            await refreshRunner(match.itemID)
+            _ = await PriceRefreshCoordinator.shared.refreshTracker(itemID: match.itemID)
         }
         guard let tracker = store.item(withID: match.itemID)?.priceTracker else { return nil }
         return await SellerComparisonDocument.write(

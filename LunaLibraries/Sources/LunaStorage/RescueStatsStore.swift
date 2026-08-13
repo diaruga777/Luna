@@ -63,25 +63,23 @@ public enum RescueStatsOutcome: String, CaseIterable, Sendable {
     case timedOut
 }
 
-/// App-Group-backed counters in `rescueStats.json`, same lock + atomic-write
-/// shape as `SaveFailureStore`.
+/// App-Group-backed counters in `rescueStats.json`, on the same coordinated file
+/// as `SaveFailureStore`: a counter bumped in another process is read back
+/// before this one adds to it, so no tally is overwritten.
 public final class RescueStatsStore: @unchecked Sendable {
     public static let shared = RescueStatsStore()
 
-    private let fileURL: URL?
-    private let lock = NSLock()
-    private var stats: RescueStats
+    private let file: CoordinatedJSONFile<RescueStats>
 
     public init(containerURL: URL? = nil) {
         let base = containerURL ?? AppConfig.sharedContainerURL()
-        self.fileURL = base?.appendingPathComponent("rescueStats.json")
-        self.stats = RescueStats()
-        loadFromDisk()
+        self.file = CoordinatedJSONFile(
+            url: base?.appendingPathComponent("rescueStats.json"),
+            empty: { RescueStats() })
     }
 
     public func snapshot() -> RescueStats {
-        lock.lock(); defer { lock.unlock() }
-        return stats
+        file.read()
     }
 
     public func recordAttempt() {
@@ -102,9 +100,7 @@ public final class RescueStatsStore: @unchecked Sendable {
     }
 
     public func reset() {
-        lock.lock(); defer { lock.unlock() }
-        stats = RescueStats()
-        persistLocked()
+        file.mutate { $0 = RescueStats() }
     }
 
     /// The `[rescue]` line a sweep logs, and the same numbers the Diagnostics
@@ -124,20 +120,6 @@ public final class RescueStatsStore: @unchecked Sendable {
     // MARK: - Private
 
     private func mutate(_ body: (inout RescueStats) -> Void) {
-        lock.lock(); defer { lock.unlock() }
-        body(&stats)
-        persistLocked()
-    }
-
-    private func loadFromDisk() {
-        guard let fileURL, let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode(RescueStats.self, from: data)
-        else { return }
-        stats = decoded
-    }
-
-    private func persistLocked() {
-        guard let fileURL, let data = try? JSONEncoder().encode(stats) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        file.mutate(body)
     }
 }

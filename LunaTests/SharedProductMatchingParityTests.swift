@@ -120,6 +120,150 @@ final class SharedProductMatchingParityTests: XCTestCase {
         }
     }
 
+    // MARK: - The page matcher, tier by tier
+
+    /// `ProductPageMatching.matches(page:snapshot:)` decides identity between two
+    /// observations, which is the same question `SnapshotMatcher`'s identifier
+    /// tiers answer for a product being saved — asked in the terms a Safari page
+    /// has (keyed identifiers on both sides).
+    func testThePageMatcherDecidesEachIdentifierTier() {
+        struct Case {
+            let name: String
+            let expect: Bool
+            let page: ProductSnapshot
+            let stored: ProductSnapshot
+        }
+        let cases: [Case] = [
+            // Tier 1: a GTIN matches across hosts, and widths are equalised by
+            // zero-padding into the GTIN-14 numberspace.
+            Case(name: "gtin, declared at different widths", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", gtin: "12345678905"),
+                 stored: snapshot(url: "https://a.example/p", gtin: "0012345678905")),
+            Case(name: "different gtins", expect: false,
+                 page: snapshot(name: "Widget", url: "https://shop.example/p/9", gtin: "1111111111116"),
+                 stored: snapshot(
+                    name: "Something Else Entirely", url: "https://a.example/p",
+                    gtin: "0012345678905")),
+            // Tier 2: a retailer's own item id is meaningless off that retailer.
+            Case(name: "retailer item id, same family", expect: true,
+                 page: snapshot(url: "https://www.shop.example/dp/B000TEST1", retailerItemID: "B000TEST1"),
+                 stored: snapshot(url: "https://shop.example/dp/B000TEST1", retailerItemID: "B000TEST1")),
+            Case(name: "retailer item id, different family", expect: false,
+                 page: snapshot(
+                    name: "Widget", url: "https://shop.example/dp/B000TEST1",
+                    retailerItemID: "B000TEST1"),
+                 stored: snapshot(
+                    name: "Something Else Entirely", url: "https://www.amazon.com/dp/B000TEST1",
+                    retailerItemID: "B000TEST1")),
+            // Tier 3: an MPN is manufacturer-scoped, so a conflicting brand vetoes it.
+            Case(name: "mpn with compatible brand", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", mpn: "MPN-1", brand: "Acme"),
+                 stored: snapshot(url: "https://a.example/p", mpn: "mpn1", brand: "acme")),
+            Case(name: "mpn with conflicting brand", expect: false,
+                 page: snapshot(url: "https://shop.example/p/9", mpn: "MPN-1", brand: "Acme"),
+                 stored: snapshot(url: "https://a.example/p", mpn: "MPN-1", brand: "Globex")),
+            // Tier 4: an SKU means nothing on another host.
+            Case(name: "sku on the same host", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", sku: "SKU-1"),
+                 stored: snapshot(url: "https://shop.example/p/other", sku: "sku1")),
+            Case(name: "sku on another host", expect: false,
+                 page: snapshot(name: "Widget", url: "https://shop.example/p/9", sku: "SKU-1"),
+                 stored: snapshot(
+                    name: "Something Else Entirely", url: "https://other.example/p", sku: "SKU-1")),
+            // Tier 5: the same page, seen twice, with tracking parameters that
+            // differ between visits.
+            Case(name: "canonical url, tracking params stripped", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9?utm_source=x"),
+                 stored: snapshot(url: "https://shop.example/p/9?gclid=y")),
+            // And no tier at all for a similar NAME: this comparison retrieves
+            // BY identifier, and a name is not one.
+            Case(name: "similar name, same brand, no identifiers", expect: false,
+                 page: snapshot(
+                    name: "Acme Wireless Keyboard Pro", url: "https://shop.example/p/9",
+                    brand: "Acme"),
+                 stored: snapshot(
+                    name: "Acme Wireless Keyboard", url: "https://a.example/p", brand: "Acme")),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                ProductPageMatching.matches(page: testCase.page, snapshot: testCase.stored),
+                testCase.expect,
+                "the page matcher disagreed for: \(testCase.name)")
+        }
+    }
+
+    /// A tracked index entry carries ONE flattened `productID` (its kind thrown
+    /// away long before it got there) plus its store hosts and URLs, so the page's
+    /// KEYED fields are compared against it in the same precedence order. This
+    /// comparison DOES end in a fuzzy-name tier: a tracked product is one the user
+    /// chose and named, and the index has no keyed identifiers to try instead.
+    func testThePageMatcherDecidesEachTrackedEntryTier() {
+        func entry(
+            name: String = "Widget", brand: String? = nil, productID: String? = nil,
+            storeURL: String = "https://tracked.example/p"
+        ) -> PriceHistoryIndexEntry {
+            PriceHistoryIndexEntry(
+                name: name, brand: brand, productID: productID,
+                stores: [PriceHistoryIndexEntry.StorePoints(
+                    url: storeURL, host: URL(string: storeURL)!.host!, points: [])])
+        }
+        struct Case {
+            let name: String
+            let expect: Bool
+            let page: ProductSnapshot
+            let entry: PriceHistoryIndexEntry
+        }
+        let cases: [Case] = [
+            Case(name: "gtin", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", gtin: "12345678905"),
+                 entry: entry(productID: "0012345678905")),
+            Case(name: "retailer item id on a tracked store's family", expect: true,
+                 page: snapshot(
+                    url: "https://www.shop.example/dp/B000TEST1", retailerItemID: "B000TEST1"),
+                 entry: entry(productID: "B000TEST1", storeURL: "https://shop.example/dp/B000TEST1")),
+            Case(name: "retailer item id on another family", expect: false,
+                 page: snapshot(
+                    name: "Widget", url: "https://shop.example/dp/B000TEST1",
+                    retailerItemID: "B000TEST1"),
+                 entry: entry(
+                    name: "Something Else Entirely", productID: "B000TEST1",
+                    storeURL: "https://www.amazon.com/dp/B000TEST1")),
+            Case(name: "mpn with compatible brand", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", mpn: "MPN-1", brand: "Acme"),
+                 entry: entry(brand: "acme", productID: "mpn1")),
+            Case(name: "mpn with conflicting brand", expect: false,
+                 page: snapshot(url: "https://shop.example/p/9", mpn: "MPN-1", brand: "Acme"),
+                 entry: entry(brand: "Globex", productID: "MPN-1")),
+            Case(name: "sku on a tracked store's own host", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9", sku: "SKU-1"),
+                 entry: entry(productID: "sku1", storeURL: "https://shop.example/p/other")),
+            Case(name: "sku on another host", expect: false,
+                 page: snapshot(name: "Widget", url: "https://shop.example/p/9", sku: "SKU-1"),
+                 entry: entry(
+                    name: "Something Else Entirely", productID: "SKU-1",
+                    storeURL: "https://other.example/p")),
+            Case(name: "a tracked store url, tracking params stripped", expect: true,
+                 page: snapshot(url: "https://shop.example/p/9?utm_source=x"),
+                 entry: entry(
+                    name: "Something Else Entirely",
+                    storeURL: "https://shop.example/p/9?srsltid=z")),
+            Case(name: "similar name, same declared brand", expect: true,
+                 page: snapshot(
+                    name: "Acme Wireless Keyboard Pro", url: "https://shop.example/p/9",
+                    brand: "Acme"),
+                 entry: entry(name: "Acme Wireless Keyboard", brand: "Acme")),
+            Case(name: "nothing in common", expect: false,
+                 page: snapshot(name: "Widget", url: "https://shop.example/p/9"),
+                 entry: entry(name: "Something Else Entirely")),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                ProductPageMatching.matches(page: testCase.page, indexEntry: testCase.entry),
+                testCase.expect,
+                "the page matcher disagreed about tracked entry: \(testCase.name)")
+        }
+    }
+
     // MARK: - Structural parity with the extension's copy
 
     func testTheExtensionImplementsEveryPrecedenceTier() {

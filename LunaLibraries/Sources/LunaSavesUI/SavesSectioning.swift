@@ -6,14 +6,9 @@
 import LunaModels
 import Foundation
 
-/// Pure, UIKit-free decision rules about which saved items belong where. Named
-/// for the sectioned table list it was extracted from; that list is gone, and
-/// what survived is the part the CARD DECKS and the read-aloud queue rely on —
-/// which items an app shows, which of them read as text, and the
-/// Reading/Archive/Error split that fixes autoplay order.
-///
-/// Everything the list alone needed (the `Section` enum and its display order,
-/// the `ListFilter` segments, the filter-visibility helpers) was deleted with it.
+/// Pure, UIKit-free rules for grouping saved items: which items an app shows,
+/// which of them read as text, and the Reading/Archive/Error split that fixes
+/// autoplay order. The card decks and the read-aloud queue both depend on it.
 public enum SavesSectioning {
     /// Items older than this (by save date) and still unread fall out of the
     /// active Reading window into the Archive bucket.

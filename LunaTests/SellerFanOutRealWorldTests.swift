@@ -54,8 +54,8 @@ final class RealWorldSearchLinkExtractionTests: XCTestCase {
     }
 
     /// Barnes & Noble keeps every product under `/w/`, which no shared pattern
-    /// matches. The only link the old extractor found on this page was a Nook
-    /// e-reader SAMPLE on a different subdomain.
+    /// matches. A generic extractor would find only a Nook e-reader SAMPLE on
+    /// a different subdomain.
     func testBarnesAndNobleProductLinksAreFoundAndTheNookSampleIsNot() {
         let found = links(
             "barnesandnoble-search.html", base: "https://www.barnesandnoble.com/s/x",
@@ -466,7 +466,7 @@ final class GTINInPageMatchingTests: XCTestCase {
         XCTAssertEqual(verify(html: "<td>978-0-7352-1129-2</td>"), .gtinInPage)
     }
 
-    /// Search provenance is no longer a precondition: the NAME already has to
+    /// Search provenance is not a precondition: the NAME already has to
     /// agree before this tier is even consulted (the caller's own nesting),
     /// and that plus containment is what makes it evidence rather than a
     /// "related items" rail — a web-search hit, or a retailer's own search
@@ -613,12 +613,13 @@ final class MPNContainmentMatchingTests: XCTestCase {
 
 // MARK: - The relaxed name + model-code tier
 
-/// A candidate with NO structured identifiers at all (the common case for a
-/// plain retail listing) used to be reachable only through the ordinary
-/// name-only tier — which the source having a GTIN/MPN blocks outright. The
-/// measured case: a Costco AU page, $1599.99, 0.90 name similarity, no
-/// JSON-LD — refused. The model code (`HRFD634BW`) printed in Costco's own
-/// URL/PDP is the discriminator that makes trusting a bare name match safe.
+/// A candidate with NO structured identifiers at all — the common case for a
+/// plain retail listing — would otherwise reach only the ordinary name-only
+/// tier, which the source having a GTIN/MPN blocks outright. The measured
+/// case: a Costco AU page, $1599.99, 0.90 name similarity, no JSON-LD —
+/// refused without this tier. The model code (`HRFD634BW`) printed in
+/// Costco's own URL/PDP is the discriminator that makes trusting a bare name
+/// match safe.
 /// The model-code check reads the URL/markup ONLY, never the candidate name
 /// itself — the name has already been compared (at this tier's own HIGHER
 /// bar) to reach here, so a token that is only found by re-scanning that

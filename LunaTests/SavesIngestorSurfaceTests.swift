@@ -113,8 +113,8 @@ final class SavesIngestorSurfaceTests: XCTestCase {
 
     // MARK: - No source exemptions
 
-    /// Not a kind question, so not the matrix's: EVERY capture source is gated,
-    /// including the two that used to be exempt.
+    /// Not a kind question, so not the matrix's: EVERY capture source is
+    /// gated, with no exemptions.
     func testNoCaptureSourceIsExemptFromTheGate() async {
         let ingestor = makeIngestor(gate: .foreign)
 

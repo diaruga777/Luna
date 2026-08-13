@@ -343,9 +343,9 @@ final class SellerComparisonTests: XCTestCase {
     }
 
     /// The market rule at the end of a whole run: a foreign-currency result is
-    /// never attached at all (it used to join the list and merely sit out the
-    /// median — a GBP row in a USD seller list was exactly the reported bug),
-    /// and the baseline settles on the market-currency stores alone.
+    /// never attached at all — a GBP row appearing in a USD seller list, even
+    /// excluded from the median, was the reported bug — and the baseline
+    /// settles on the market-currency stores alone.
     func testAForeignCurrencySellerIsNeverAttachedAndTheMedianIgnoresIt() async {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(price: "100", currency: "USD"), for: item.id)

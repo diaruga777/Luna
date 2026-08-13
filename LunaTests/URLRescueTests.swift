@@ -82,8 +82,8 @@ final class URLRescueTests: XCTestCase {
         XCTAssertTrue(outcome.isPermanentlyBlocked)
     }
 
-    /// A flat refusal is the same kind of verdict and used to vanish into an
-    /// anonymous `.other`.
+    /// A flat refusal is the same kind of verdict, and must not vanish into
+    /// an anonymous `.other`.
     func testRefusalIsAlsoPermanent() async {
         let session = FakeRescueModelSession(responses: [.failure(.refusal)])
         let (engine, _) = makeEngine(session: session)
@@ -420,10 +420,11 @@ final class URLRescueTests: XCTestCase {
         XCTAssertTrue(store.appended.isEmpty)
     }
 
-    // MARK: - No HTML is no longer instant death
+    // MARK: - A failed refetch still asks the model
 
-    /// The pages most in need of rescue are the ones whose refetch fails. Dying
-    /// here without asking meant never asking about the cases that matter most.
+    /// The pages most in need of rescue are the ones whose refetch fails.
+    /// Refusing to ask here would mean never asking about the cases that
+    /// matter most.
     func testAFailedRefetchStillAsksTheModel() async {
         let session = FakeRescueModelSession(responses: [
             .plan(RescuePlanResponse(kind: "reroute", rerouteURLString: "https://amp.example.com/story"))
@@ -840,10 +841,10 @@ final class URLRescueTests: XCTestCase {
         func openURL(_ url: URL) { openedURLs.append(url) }
     }
 
-    /// The extension no longer asks what the save should become — the model
-    /// classifies the page when the app drains the queue — so the queued record
-    /// must carry NO hint. A hint here would silently pin the answer and undo the
-    /// classification (a nil hint).
+    /// The extension never asks what the save should become — the model
+    /// classifies the page when the app drains the queue — so the queued
+    /// record must carry NO hint. A hint here would silently pin the answer
+    /// and undo the classification.
     func testQueuedRescueRequestCarriesNoContentHint() {
         _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
         let host = FakeHost(isActionExtension: true)

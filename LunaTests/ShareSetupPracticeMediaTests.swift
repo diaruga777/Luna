@@ -13,8 +13,8 @@ import XCTest
 
 /// The save lesson rehearses with a practice link, and which rehearsal that link
 /// gets is what this pins. The Downloader's link is a VIDEO POST: showing it the
-/// article preview taught the Reader's lesson to someone who came for videos —
-/// the same mistake the Safari demonstration used to make on `luna.app`.
+/// article preview would teach the Reader's lesson to someone who came for
+/// videos — the same mismatch the Safari demonstration must avoid on `luna.app`.
 @MainActor
 final class ShareSetupPracticeMediaTests: XCTestCase {
 

@@ -65,9 +65,9 @@ final class SharedProductMatchingParityTests: XCTestCase {
                  snapshot: snapshot(url: "https://a.example/p", gtin: "0012345678905")),
             // The candidate's own URL decides the retailer FAMILY, so the
             // snapshot has to sit on a sibling host of `url` for tier 2 to be
-            // what answers. (With a foreign host here the case used to pass on
-            // the fuzzy-name tier instead — both sides defaulted to "Widget" —
-            // and said nothing about retailer scoping at all.)
+            // what answers. (A foreign host here would pass on the
+            // fuzzy-name tier instead — both sides default to "Widget" —
+            // and say nothing about retailer scoping at all.)
             Case(name: "retailerItemID same family", expect: true,
                  candidate: candidate(productID: "B000TEST1"),
                  snapshot: snapshot(url: "https://www.shop.example/dp/B000TEST1", retailerItemID: "B000TEST1")),

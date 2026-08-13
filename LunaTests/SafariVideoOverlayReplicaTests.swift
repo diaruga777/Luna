@@ -157,8 +157,7 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
     /// The one place the replica deliberately parts company with `content.js`.
     /// In Safari the backdrop buries the page you already know; in the lesson
     /// that page is the question the panel answers, so it has to stay legible
-    /// behind it for the whole demonstration — which is now just the one
-    /// player state, since the panel no longer grows a second one.
+    /// behind it for the whole demonstration — the panel's one player state.
     func testTheBlockedPostIsStillVisibleBehindThePanel() throws {
         let builder = try videoOverlayBuilder()
         XCTAssertTrue(
@@ -194,10 +193,9 @@ final class SafariVideoOverlayReplicaTests: XCTestCase {
 
     // MARK: - The stage fits on the shortest phone
 
-    /// The panel stays in its one player state for the whole lesson now — the
-    /// grow beat that used to swap the download button for enable steps is
-    /// gone, that ask having moved to the shared setup popup. What remains to
-    /// verify is that the now-portrait stage still fits: the shortest phone
+    /// The panel stays in its one player state for the whole lesson: the
+    /// enable-steps ask lives in the shared setup popup instead. What remains
+    /// to verify is that the portrait stage still fits — the shortest phone
     /// Luna ships to is the one a full-height 9:16 stage does not fit on, and
     /// letterboxing the clip is the give that costs the lesson nothing.
     func testTheStageLetterboxesToFitOnTheShortestPhone() throws {

@@ -141,9 +141,10 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
 
     // MARK: - The share / action extensions
 
-    /// Two things at once, because they were one bug: the extension's failure
-    /// leg used to call `markFailed` alone, so an extension failure was the ONE
-    /// path with no reason and no count — and now it also flushes its trace.
+    /// Two things at once, because they were one bug: an extension failure
+    /// calls `markFailed` and flushes its trace together, so it always
+    /// carries a reason and a count rather than being the one path with
+    /// neither.
     func testAFailedExtensionSaveRecordsAReasonAndFlushesItsTrace() async {
         let host = FakeExtensionHost()
         let item = store.add(urlString: "https://example.com/broken", source: .shareSheet)
@@ -228,9 +229,10 @@ final class MediaSaveFailureRecordingTests: XCTestCase {
         return item
     }
 
-    /// The branch `URLRescueWiring` reads and nothing used to write: a media
-    /// link that resolved no asset files `.noMediaFound` against its item, so
-    /// the rescue asks the model about media rather than about a failed article.
+    /// A media link that resolved no asset files `.noMediaFound` against its
+    /// item, so the rescue asks the model about media rather than about a
+    /// failed article. This is the one branch `URLRescueWiring` reads that
+    /// nothing else writes.
     func testAResolveWithNoAssetFilesTheReasonAgainstTheItem() {
         let item = seedItem()
 

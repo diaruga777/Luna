@@ -232,7 +232,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             Task { await IncomingMailImporter.shared.importNewMail() }
             scheduleMailFetch()
         }
-        // Both calls start with a full readingList.json decode
+        // Both calls start with a full list read
         // (priceTrackersStalestFirst() -> items()); defer that store read off the
         // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
         // each call still runs exactly once per launch — just not synchronously

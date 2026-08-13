@@ -52,7 +52,7 @@ public struct PreloadEntry: Codable, Equatable {
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
 /// isolated** from real saves: it lives in its own `Preloads/` directory and
-/// `preloads.json` index and NEVER touches `readingList.json` / `Articles/`, so a
+/// `preloads.json` index and NEVER touches `saves.sqlite` / `Articles/`, so a
 /// preload bug can only waste cache space, never corrupt the user's library.
 ///
 /// Duplicate links (within one save's tree or across saves) share a single on-disk

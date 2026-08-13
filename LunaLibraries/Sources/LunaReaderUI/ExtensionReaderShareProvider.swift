@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import LunaStorage
+import LunaURLClassification
 import UIKit
 
 /// The action extension's reader sharing: save the article to Luna or share the
@@ -22,6 +23,9 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
 
     public func saveLink(urlString: String) {
         // No ingestor in the extension — queue the URL; the main app ingests it.
-        SharedReadingListAppender.append(urlString: urlString)
+        // The link comes from a tapped page link, so it is unwrapped here (the
+        // app's own path unwraps inside the ingestor).
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
+        ReadingListStore.shared.addIfAbsent(urlString: url.absoluteString, source: .shareSheet)
     }
 }

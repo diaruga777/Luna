@@ -11,10 +11,9 @@ import LunaModels
 /// failed, when, how many times, and the best title/site name Luna could
 /// recover for a page it could never actually read.
 ///
-/// Kept in a SIDECAR file, never on `ReadingListItem` — an older sibling app
-/// decoding and re-encoding the shared `readingList.json` would silently drop
-/// unknown keys and wipe it (the same reasoning as `RescueLedgerStore` and the
-/// imageRefs / preloads sidecars).
+/// Kept in a SIDECAR file, never on `ReadingListItem` — failure detail belongs to
+/// the layer that produced it rather than to the row four apps share (the same
+/// reasoning as `RescueLedgerStore` and the imageRefs / preloads sidecars).
 public struct SaveFailureRecord: Codable, Equatable, Sendable {
     /// The coarse reason, straight off the ingest outcome.
     public var reason: SaveFailureReason?

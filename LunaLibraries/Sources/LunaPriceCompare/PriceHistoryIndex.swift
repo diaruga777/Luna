@@ -8,8 +8,9 @@ import LunaAppConfig
 
 /// One tracked product's compact history, as written to the shared App Group
 /// `priceHistoryIndex.json` — the tracked-product counterpart to
-/// `ProductSnapshot`, small enough for an appex to read whole (`readingList.json`
-/// is both too large and not a format worth parsing there).
+/// `ProductSnapshot`, small enough for an appex to read whole (a tracker's own
+/// rows in the saves database are spread over four tables, which is more machinery
+/// than a Safari extension asking one question should need).
 public struct PriceHistoryIndexEntry: Codable, Equatable {
     public struct Point: Codable, Equatable {
         public var day: String

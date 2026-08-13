@@ -15,7 +15,7 @@ import LunaAppConfig
 /// counts, not events: nothing here identifies an item, a URL or a host, so the
 /// file survives item deletion and carries nothing worth protecting.
 ///
-/// Sidecar, never `readingList.json` — same reasoning as `RescueLedgerStore`.
+/// Sidecar, never a column on a save — same reasoning as `RescueLedgerStore`.
 public struct RescueStats: Codable, Equatable {
     /// Attempts that reached the engine (a cached-rule replay counts).
     public var attempts: Int

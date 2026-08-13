@@ -72,17 +72,17 @@ final class ImageReferenceStoreTests: XCTestCase {
     func testOnlyDeletesImgPrefixedFiles() {
         // A non-`img-` file is tracked but must never be deleted (guards content JSON,
         // thumbnails, anything that isn't a shared image).
-        makeImage("readingList.json")
-        store.setReferences(contentKey: "item:A", files: ["readingList.json"])
+        makeImage("saves.sqlite")
+        store.setReferences(contentKey: "item:A", files: ["saves.sqlite"])
         store.removeReferences(contentKey: "item:A")
-        XCTAssertTrue(exists("readingList.json"))
+        XCTAssertTrue(exists("saves.sqlite"))
     }
 
     // MARK: - Through the reading-list store
 
-    /// `saveContent` and `delete` write the reading list under one file coordination
-    /// and this index under another, so the refcount legs run outside the list's
-    /// coordination. Both writes must still happen, with the same values: a saved
+    /// `saveContent` and `delete` write the save's row in a database transaction and
+    /// this index under its own file coordination, so the refcount legs run outside
+    /// the transaction. Both writes must still happen, with the same values: a saved
     /// article owns its images while it lives, and releases them when it is deleted.
     func testSavingAndDeletingAnArticleTakesAndReleasesItsImages() {
         let list = ReadingListStore(containerURL: dir)

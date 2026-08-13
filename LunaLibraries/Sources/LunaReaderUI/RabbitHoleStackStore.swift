@@ -15,9 +15,9 @@ import Foundation
 /// item id: `RabbitHole/<rootID>.json`.
 ///
 /// Deliberately separate from `ReadingListStore`/`ReadingListItem`: this is transient,
-/// experiment-only session state, so it never touches the conservative cross-process
-/// reading-list JSON nor bloats every list read. Only the main app reads/writes it, so
-/// no cross-process coordination is needed (plain atomic writes).
+/// experiment-only session state, so it never touches the cross-process saves database
+/// nor bloats every list read. Only the main app reads/writes it, so no cross-process
+/// coordination is needed (plain atomic writes).
 public final class RabbitHoleStackStore {
     public static let shared = RabbitHoleStackStore()
 

@@ -101,7 +101,7 @@ final class ClipReaderViewController: UIViewController {
         }
     }
 
-    private func presentReader(item: ReadingListItem, content: ArticleContent) {
+    fileprivate func presentReader(item: ReadingListItem, content: ArticleContent) {
         let reader = ReaderViewController(
             item: item,
             content: content,
@@ -126,26 +126,16 @@ final class ClipReaderViewController: UIViewController {
         // A clip lives in a window it doesn't own the root of, so — like the
         // extensions — each screen pins the appearance itself.
         AppearanceSettings.apply(to: archive)
-        archive.onClose = { [weak self] in
-            // There is nowhere to go back to in a clip: return to this screen with
-            // the full app offered as the remaining route, and the unlock one tap
-            // away again via Retry.
-            guard let self else { return }
-            self.navigationController?.setViewControllers([self], animated: false)
-            self.update(.failed(L10n.string("AppClip_reader_needsArchiveUnlockMessage")))
-        }
-        // Unlike the extensions, a clip IS an app: `UIApplication` is available, so
-        // the CAPTCHA-loop escape into real Safari works here.
-        archive.onOpenInBrowser = { archiveURL in
-            UIApplication.shared.open(archiveURL)
-        }
-        archive.onExtracted = { [weak self] in
-            guard let self,
-                  let unlocked = self.scratchStore.item(withID: item.id),
-                  let content = self.scratchStore.content(for: unlocked) else { return }
-            self.presentReader(item: unlocked, content: content)
-        }
+        archive.delegate = ClipUnlockLegs(host: self, itemID: item.id, store: scratchStore)
         navigationController?.setViewControllers([archive], animated: false)
+    }
+
+    /// The clip's answer to a closed unlock: there is nowhere to go back to, so it
+    /// returns to this screen with the full app offered as the remaining route, and
+    /// the unlock one tap away again via Retry.
+    fileprivate func returnFromUnlock() {
+        navigationController?.setViewControllers([self], animated: false)
+        update(.failed(L10n.string("AppClip_reader_needsArchiveUnlockMessage")))
     }
 
     private func configureLayout() {
@@ -224,5 +214,43 @@ final class ClipReaderViewController: UIViewController {
     @objc private func retryTapped() {
         guard let lastSourceURL else { return }
         load(lastSourceURL)
+    }
+}
+
+/// The clip's legs for the archive unlock. The reader retains this; it holds the
+/// clip screen weakly, the same lifetime rule the extensions' own legs follow.
+///
+/// It is the one host that ANSWERS the Safari escape: a clip is an app, so
+/// `UIApplication` is there to leave with, where an `.appex` has nothing to open a
+/// URL through and takes the protocol's `false`.
+@MainActor
+private final class ClipUnlockLegs: ArchiveUnlockDelegate {
+    private weak var host: ClipReaderViewController?
+    private let itemID: UUID
+    private let store: ReadingListStore
+
+    init(host: ClipReaderViewController, itemID: UUID, store: ReadingListStore) {
+        self.host = host
+        self.itemID = itemID
+        self.store = store
+    }
+
+    var offersSystemBrowserEscape: Bool { true }
+
+    func archiveReader(
+        _ reader: ArchiveWebReaderViewController, openInSystemBrowser url: URL
+    ) {
+        UIApplication.shared.open(url)
+    }
+
+    func archiveReaderDidClose(_ reader: ArchiveWebReaderViewController) {
+        host?.returnFromUnlock()
+    }
+
+    func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
+        guard let host,
+              let unlocked = store.item(withID: itemID),
+              let content = store.content(for: unlocked) else { return }
+        host.presentReader(item: unlocked, content: content)
     }
 }

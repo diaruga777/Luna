@@ -2,12 +2,9 @@
 //  ReadingListStoreCacheTests.swift
 //  LunaTests
 //
-//  ReadingListStore serves items() from an in-memory cache validated against a
-//  (modification date, size) stat token, and skips the write + notification
-//  when a mutation doesn't actually change the array. Per the ingest-pipeline
-//  audit (§3), these are the two PERF_REVIEW_PLAN tests that were specified
-//  but never landed — there was previously no dedicated ReadingListStoreTests
-//  file at all.
+//  ReadingListStore serves items() from an in-memory list validated against
+//  `PRAGMA data_version`, and skips the row write + notification when a mutation
+//  doesn't actually change anything.
 //
 
 import LunaStorage
@@ -18,14 +15,12 @@ final class ReadingListStoreCacheTests: XCTestCase {
 
     private var scratchDirectory: URL!
     private var store: ReadingListStore!
-    private var listFileURL: URL!
 
     override func setUp() {
         super.setUp()
         scratchDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ReadingListStoreCacheTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
-        listFileURL = scratchDirectory.appendingPathComponent("readingList.json")
         store = ReadingListStore(containerURL: scratchDirectory)
     }
 
@@ -34,7 +29,7 @@ final class ReadingListStoreCacheTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Cache coherence: an externally-written file invalidates the cache
+    // MARK: - Cache coherence: another connection's commit invalidates the cache
 
     /// `postChanged()` dispatches the notification `async` on the main queue —
     /// every test that triggers a genuine (notifying) mutation waits for it
@@ -50,61 +45,50 @@ final class ReadingListStoreCacheTests: XCTestCase {
         return item
     }
 
-    /// Both halves of the stat-token contract over one seeded store: an
-    /// external write with a different (mtime, size) invalidates the cache, and
-    /// an unchanged file keeps serving consistent reads.
-    func testStatTokenInvalidatesOnExternalWriteAndServesTheCacheOtherwise() throws {
-        // Fills the cache with one item.
+    /// Both halves of the cache contract over one seeded store: repeated reads
+    /// with nothing else happening stay consistent, and a second store instance
+    /// on the same directory — a separate connection, which is what another
+    /// process is — has its commit picked up without any notification.
+    func testAnotherConnectionsCommitInvalidatesTheCacheAndTheCacheServesReadsOtherwise() {
         addAndWaitForNotification("https://example.com/a")
         XCTAssertEqual(store.items().map(\.urlString), ["https://example.com/a"])
 
-        // No external write in between — the stat token is unchanged, so
-        // repeated reads must stay consistent with each other (same cached
-        // array; ReadingListItem is a value type, so this compares by value).
+        // Nothing has committed in between, so repeated reads must stay
+        // consistent with each other (ReadingListItem is a value type, so this
+        // compares by value).
         XCTAssertEqual(store.items(), store.items())
 
-        // A second process (SaveLink intent, an extension) writes the shared file
-        // directly — a different item count, so the byte size necessarily
-        // differs regardless of the filesystem's mtime-timestamp granularity.
-        let externalItems = [
-            ReadingListItem(urlString: "https://example.com/a"),
-            ReadingListItem(urlString: "https://example.com/b"),
-        ]
-        let data = try JSONEncoder().encode(externalItems)
-        try data.write(to: listFileURL, options: .atomic)
+        // A second process (the SaveLink intent, an extension) writes the shared
+        // database through its own connection.
+        let sibling = ReadingListStore(containerURL: scratchDirectory)
+        sibling.add(urlString: "https://example.com/b")
 
-        let reread = store.items()
-        XCTAssertEqual(Set(reread.map(\.urlString)),
+        XCTAssertEqual(Set(store.items().map(\.urlString)),
                        ["https://example.com/a", "https://example.com/b"],
-                       "a changed (mtime, size) stat token must invalidate the in-process cache")
+                       "another connection's commit must invalidate the in-process list")
     }
 
     // MARK: - Skip-write-when-unchanged
 
-    /// The two no-op mutation paths — `coordinatedMutate` (a duplicate `add`)
-    /// and `coordinatedUpdate` (`markFailed` on an id that isn't there) — share
-    /// ONE inverted expectation, so proving "neither notifies" costs one 0.5s
-    /// window rather than two.
-    func testNoOpMutationsNeitherNotifyNorRewriteTheFile() throws {
-        // The first add is a genuine change and must notify.
+    /// The two no-op mutation paths — a duplicate `add` and `markFailed` on an id
+    /// that isn't there — share ONE inverted expectation, so proving "neither
+    /// notifies" costs one 0.5s window rather than two.
+    func testNoOpMutationsNeitherNotifyNorWriteARow() {
         addAndWaitForNotification("https://example.com/dup")
-        let sizeAfterFirstWrite = try FileManager.default
-            .attributesOfItem(atPath: listFileURL.path)[.size] as? Int
+        let rowsWrittenAfterFirstSave = store.writtenRowCountForTesting
 
         let mustNotNotify = expectation(forNotification: .readingListChanged, object: nil)
         mustNotNotify.isInverted = true
         // A second add for the SAME url returns the existing item without
-        // mutating the array; markFailed for a missing id is the same no-op on
-        // the coordinatedUpdate side.
+        // inserting; markFailed for a missing id is the same no-op on the
+        // targeted-setter side.
         _ = store.add(urlString: "https://example.com/dup")
         store.markFailed(UUID())
         wait(for: [mustNotNotify], timeout: 0.5)
 
-        XCTAssertEqual(store.items().count, 1, "the duplicate add must not have appended a second row")
-        let sizeAfterNoOps = try FileManager.default
-            .attributesOfItem(atPath: listFileURL.path)[.size] as? Int
-        XCTAssertEqual(sizeAfterFirstWrite, sizeAfterNoOps,
-                       "a no-op mutation must skip the write entirely, not write identical bytes")
+        XCTAssertEqual(store.items().count, 1, "the duplicate add must not have inserted a second row")
+        XCTAssertEqual(store.writtenRowCountForTesting, rowsWrittenAfterFirstSave,
+                       "a no-op mutation must skip the write entirely, not rewrite identical values")
     }
 
     // MARK: - Atomic save-attempt reservation

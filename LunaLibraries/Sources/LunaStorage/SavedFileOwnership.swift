@@ -155,7 +155,7 @@ enum SavedFileOwnership {
     /// edge that was meant to follow it would be exactly the zero-holder row the
     /// schema's triggers exist to prevent.
     static func attach(
-        path: String, kind: OwnedFileKind?, to saveID: UUID, in db: SavesDatabase
+        path: String, kind: OwnedFileKind, to saveID: UUID, in db: SavesDatabase
     ) throws {
         try db.run(
             """
@@ -165,7 +165,7 @@ enum SavedFileOwnership {
             """
         ) {
             try $0.bind(1, path)
-            try $0.bind(2, kind?.rawValue)
+            try $0.bind(2, kind.rawValue)
             try $0.bind(3, uuid: saveID)
         }
         try db.run(
@@ -256,7 +256,7 @@ enum SavedFileOwnership {
     // MARK: - Files
 
     private static func insertFile(
-        path: String, kind: OwnedFileKind?, in db: SavesDatabase
+        path: String, kind: OwnedFileKind, in db: SavesDatabase
     ) throws {
         try db.run(
             """
@@ -265,7 +265,7 @@ enum SavedFileOwnership {
             """
         ) {
             try $0.bind(1, path)
-            try $0.bind(2, kind?.rawValue)
+            try $0.bind(2, kind.rawValue)
         }
     }
 }

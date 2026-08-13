@@ -223,7 +223,6 @@ final class UtilCardTests: XCTestCase {
     // MARK: - Layout
 
     func testSetupActionsStackUpFromThePasteFieldAndTheHeadlineSitsBelowTheCardTop() throws {
-        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
         let card = makeCard(showsOnboarding: true, hasSaves: false)
         card.loadViewIfNeeded()
         card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
@@ -238,10 +237,6 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(buttons.count, 2)
         let headline = try XCTUnwrap(
             card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
-        let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
-        // The row lives inside the host's clipping child, so its own frame is
-        // in that child's space — compare it in card coordinates.
-        let weeklyFrame = weekly.convert(weekly.bounds, to: card.view)
 
         // Bottom-up: paste field, the seam, both setup actions.
         XCTAssertLessThan(separator.frame.maxY, paste.frame.minY)
@@ -251,7 +246,33 @@ final class UtilCardTests: XCTestCase {
         // the standalone onboarding root used.
         XCTAssertGreaterThan(headline.frame.minY, card.view.bounds.height * 0.2)
         XCTAssertLessThan(headline.frame.minY, card.view.bounds.height / 3)
-        XCTAssertGreaterThan(weeklyFrame.minY, headline.frame.maxY)
+    }
+
+    /// A rebuilt (non-launch) card with a live pick settles straight into the
+    /// yielded state: the headline stands down and the weekly row takes its
+    /// seat above the setup block, rather than reappearing over the row it had
+    /// already yielded to.
+    func testALivePickClaimsTheHeadlineSeatOnARebuiltCard() throws {
+        seedWeekly(.article, url: "https://example.com/a", title: "A Read")
+        let card = makeCard(showsOnboarding: true, hasSaves: false)
+        card.loadViewIfNeeded()
+        card.view.frame = CGRect(x: 0, y: 0, width: 360, height: 640)
+        card.view.layoutIfNeeded()
+
+        let headline = try XCTUnwrap(
+            card.view.descendants(of: OnboardingIntroHeadlineView.self).first)
+        XCTAssertTrue(headline.isHidden)
+
+        let buttons = card.view.descendants(of: UIButton.self)
+            .filter { $0.superview === card.view }
+            .sorted { $0.frame.minY < $1.frame.minY }
+        XCTAssertEqual(buttons.count, 2)
+        let host = try XCTUnwrap(card.view.descendant(identifier: "utilCard.weeklyHost"))
+        XCTAssertFalse(host.isHidden)
+        let weekly = try XCTUnwrap(card.view.descendant(identifier: "utilCard.saveOfTheWeek"))
+        // The row lives inside the host's clipping child, so its own frame is
+        // in that child's space — compare it in card coordinates.
+        let weeklyFrame = weekly.convert(weekly.bounds, to: card.view)
         XCTAssertLessThan(weeklyFrame.maxY, buttons[0].frame.minY)
     }
 

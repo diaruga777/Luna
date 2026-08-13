@@ -104,25 +104,28 @@
  * shown by the in-app card, the share/action extensions' card, and the App
  * Intents' error dialog. ===================== */
 "UnsupportedSave_header_Luna" = "Unable to save this link in %@";
-"UnsupportedSave_upsell_Luna" = "You can get the %@ app for this type of link";
+"UnsupportedSave_upsell_Luna" = "Get the %@ app to save this link";
 
 /* ===================== Weekly — Save of the Week, faceted per app (each
  * app renames the noun it collects; see WeeklySaveLabels). ===================== */
 "Weekly_subtitle_week_Luna" = "Save of the week";
 "Weekly_subtitle_week_Reader" = "Read of the week";
-"Weekly_subtitle_week_Downloader" = "Download of the week";
+"Weekly_subtitle_week_Downloader" = "Video of the week";
 "Weekly_subtitle_week_PriceTracker" = "Deal of the week";
 "Weekly_subtitle_month_Luna" = "Save of the month";
 "Weekly_subtitle_month_Reader" = "Read of the month";
-"Weekly_subtitle_month_Downloader" = "Download of the month";
+"Weekly_subtitle_month_Downloader" = "Video of the month";
 "Weekly_subtitle_month_PriceTracker" = "Deal of the month";
 "Weekly_promoteMenuTitle_Luna" = "Promote to Save of the Week";
 "Weekly_promoteMenuTitle_Reader" = "Promote to Read of the Week";
-"Weekly_promoteMenuTitle_Downloader" = "Promote to Download of the Week";
+"Weekly_promoteMenuTitle_Downloader" = "Promote to Video of the Week";
 "Weekly_promoteMenuTitle_PriceTracker" = "Promote to Deal of the Week";
 "Weekly_proposeMenuTitle_Luna" = "Propose Save of the Week";
+"Weekly_proposeMenuTitle_Reader" = "Propose Read of the Week";
+"Weekly_proposeMenuTitle_Downloader" = "Propose Video of the Week";
+"Weekly_proposeMenuTitle_PriceTracker" = "Propose Deal of the Week";
 "SaveOfWeek_promote_successTitle_Luna" = "Promoted";
-"SaveOfWeek_promote_successMessage_Luna" = "Every Luna will show it on its next check.";
+"SaveOfWeek_promote_successMessage_Luna" = "Every app will show it on its next check.";
 "SaveOfWeek_propose_needsICloudTitle_Luna" = "Sign in to iCloud";
 "SaveOfWeek_propose_needsICloudMessage_Luna" = "Proposing a Save of the Week needs an iCloud account. Sign in from Settings and try again.";
 "SaveOfWeek_propose_sentTitle_Luna" = "Proposal Sent";
@@ -186,7 +189,7 @@
 "LoadingStatus_stage1_stillGoing_Luna" = "Not stuck I promise…";
 "LoadingStatus_stage2_justABitLonger_Luna" = "Just a bit longer…";
 "LoadingStatus_stage3_findingTheGoodPart_Luna" = "Spinning the gears…";
-"LoadingStatus_stage4_nearlyThere_Luna" = "Patience is a virtue";
+"LoadingStatus_stage4_nearlyThere_Luna" = "Patience is a virtue…";
 
 /* ===================== ExportFormat — the article export format picker
  * (share-sheet export of an unlocked article). ===================== */
@@ -240,7 +243,7 @@
 "SaveFailure_openInBrowserHint_Luna" = "Opening it in your browser might work.";
 "SaveFailure_mayHaveMovedHint_Luna" = "The page may have moved — try the browser to check.";
 "SaveFailure_sitesProblemHint_Luna" = "The site's problem, not yours. Retry in a little while.";
-"SaveFailure_appleIntelligenceHint_Luna" = "Apple Intelligence can sometimes pull an article out anyway.";
+"SaveFailure_appleIntelligenceHint_Luna" = "Apple Intelligence can sometimes recover the save anyway.";
 "SaveFailure_searchResultsHint_Luna" = "If you're trying a page with search results or some other list, try going to a particular item's page and save that instead.";
 "SaveFailure_openInBrowserToReadHint_Luna" = "Open it in your browser to read it there.";
 
@@ -268,27 +271,27 @@
 "Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
 "Onboarding_Intro_headline1Initial_Downloader" = "Download any video.";
-"Onboarding_Intro_headline1Initial_PriceTracker" = "Get the best price.";
+"Onboarding_Intro_headline1Initial_PriceTracker" = "Want the best price?";
 "Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Core" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
 "Onboarding_Intro_headline2Final_Downloader" = "Download any video.\nNo sign in required.";
-"Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price. Always.";
+"Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price.";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
 "Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
-"Onboarding_Intro_safariAction_Reader" = "Unlock reading in Safari";
-"Onboarding_Intro_safariAction_Downloader" = "Download and watch in Safari";
-"Onboarding_Intro_safariAction_PriceTracker" = "Show best prices right in Safari";
+"Onboarding_Intro_safariAction_Reader" = "Unlock & read in Safari";
+"Onboarding_Intro_safariAction_Downloader" = "Watch & download in Safari";
+"Onboarding_Intro_safariAction_PriceTracker" = "Show better prices right in Safari";
 "Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
 "Onboarding_Intro_saveBenefit_Core" = "Save anything";
 "Onboarding_Intro_saveBenefit_Reader" = "Read offline later";
 "Onboarding_Intro_saveBenefit_Downloader" = "Watch or share";
 "Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
-"Onboarding_Intro_shortcutAction_Luna" = "Save in one click";
-"Onboarding_Intro_shortcutAction_Reader" = "Unlock & save in one click";
+"Onboarding_Intro_shortcutAction_Luna" = "Save in 1 click";
+"Onboarding_Intro_shortcutAction_Reader" = "Save for later in 1 click";
 "Onboarding_Intro_shortcutAction_Downloader" = "Download videos in 1 click";
-"Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in one click";
+"Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in 1 click";
 "Onboarding_Intro_unableToLoadPage_Luna" = "Unable to load website";
 
 /* ===== Onboarding_Demo — InstaTok/Amayzon mock-page copy (Luna/UtilCard + Reader/Onboarding, OnboardingStrings.Demo) ===== */
@@ -341,14 +344,14 @@
 "Onboarding_Safari_adTrick_Luna" = "You won't BELIEVE this one weird trick";
 "Onboarding_Safari_appStepTemplate_Luna" = "Switch on %@";
 "Onboarding_Safari_bylineTemplate_Luna" = "A Safari extension • by %@";
-"Onboarding_Safari_explainerChunk1_Luna" = "Stop popups and blocking ads, automatically.";
-"Onboarding_Safari_explainerChunk1_Core" = "Stop popups and blocking ads, automatically.";
-"Onboarding_Safari_explainerChunk1_Reader" = "Stop popups and blocking ads, automatically.";
-"Onboarding_Safari_explainerChunk1_Downloader" = "Watch shared videos without signing in (or up).";
+"Onboarding_Safari_explainerChunk1_Luna" = "Unlock content.";
+"Onboarding_Safari_explainerChunk1_Core" = "Unlock content.";
+"Onboarding_Safari_explainerChunk1_Reader" = "Unlock content.";
+"Onboarding_Safari_explainerChunk1_Downloader" = "Watch reels without signing in (or up).";
 "Onboarding_Safari_explainerChunk1_PriceTracker" = "Automatically scan for better deals.";
-"Onboarding_Safari_explainerChunk2_Luna" = "\n\nUnlock content so you can read what you like.";
-"Onboarding_Safari_explainerChunk2_Core" = "\n\nUnlock content so you can read what you like.";
-"Onboarding_Safari_explainerChunk2_Reader" = "\n\nUnlock content so you can read what you like.";
+"Onboarding_Safari_explainerChunk2_Luna" = "\n\nStop popups and blocking ads.";
+"Onboarding_Safari_explainerChunk2_Core" = "\n\nStop popups and blocking ads.";
+"Onboarding_Safari_explainerChunk2_Reader" = "\n\nStop popups and blocking ads.";
 "Onboarding_Safari_explainerChunk2_Downloader" = "\n\nDownload in one tap.";
 "Onboarding_Safari_explainerChunk2_PriceTracker" = "\n\nOne tap to get alerted when the price drops.";
 "Onboarding_Safari_explainerChunk3_Luna" = "\n\n";
@@ -356,7 +359,7 @@
 "Onboarding_Safari_explainerChunk3_Reader" = "\n\n";
 "Onboarding_Safari_explainerChunk3_Downloader" = "\n\n";
 "Onboarding_Safari_explainerChunk3_PriceTracker" = "\n\n";
-"Onboarding_Safari_explainerChunk4_Luna" = "All offline. No servers, just your phone.";
+"Onboarding_Safari_explainerChunk4_Luna" = "All on device. No data leaves your phone.";
 "Onboarding_Safari_explainerChunk5_Luna" = "\n\n";
 "Onboarding_Safari_explainerChunk5_Core" = "\n\n";
 "Onboarding_Safari_manageExtensionsStepTemplate_Luna" = "Choose “%@”";
@@ -379,15 +382,15 @@
 "Onboarding_Safari_pricePillLooking_Luna" = "Finding other sellers…";
 "Onboarding_Safari_setUpInSafari_Luna" = "Set up in Safari";
 "Onboarding_Safari_skip_Luna" = "Skip";
-"Onboarding_Safari_stepsHeading_Luna" = "Turn it on in Safari";
+"Onboarding_Safari_stepsHeading_Luna" = "Enable the web extension";
 "Onboarding_Safari_subscriptionBody_Luna" = "You've reached your free article limit for this month. Get unlimited access to independent journalism.";
 "Onboarding_Safari_subscriptionSignIn_Luna" = "Already a subscriber? Sign in";
 "Onboarding_Safari_subscriptionSubmit_Luna" = "Subscribe for $4.99/month";
 "Onboarding_Safari_subscriptionTitle_Luna" = "Subscribe to keep reading";
-"Onboarding_Safari_title_Luna" = "Read in peace. Popups begone.";
+"Onboarding_Safari_title_Luna" = "The web, for readers.";
 "Onboarding_Safari_title_Core" = "The web. As it should be.";
-"Onboarding_Safari_title_Downloader" = "Watch or download videos unimpeded";
-"Onboarding_Safari_title_PriceTracker" = "Get the best price without leaving the store";
+"Onboarding_Safari_title_Downloader" = "Share videos, not links";
+"Onboarding_Safari_title_PriceTracker" = "Always get the best deal";
 
 /* ===== Onboarding_Messages — mock Messages conversation walking through the Action Button save setup (Luna/UtilCard, OnboardingStrings.Messages) ===== */
 "Onboarding_Messages_answer_Luna" = "Nah. Its kinda dead tbh.";

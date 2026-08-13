@@ -19,12 +19,33 @@ enum ReaderCardViewportPolicy {
     }
 }
 
+/// The host of a tracked reader: it takes the immersion signal, and it answers
+/// how far its immersed card extends past its resting footprint.
+protocol ReaderImmersionTrackerDelegate: AnyObject {
+    /// The reader wants the host chrome faded away (`immersed` true — reading is
+    /// under way) or back in. `extendsCard` mirrors the host's own choice of
+    /// whether an immersed layout should extend into the freed room: true for the
+    /// scroll reader (more content shows), false for RSVP, whose fixed layout
+    /// must not move when playback starts — only the chrome fades.
+    func immersionTracker(
+        _ tracker: ScrollDirectionImmersionTracker,
+        didChangeImmersion immersed: Bool, extendsCard: Bool)
+
+    /// How much taller the live, immersed card is than its resting footprint —
+    /// i.e. how far the card's bottom edge travels back UP when the chrome
+    /// returns. It does not gate the bottom restore (the article's end can never
+    /// reach the restored edge while the taller card still owns the scroll
+    /// range); it marks the card as currently immersed and floors the downward
+    /// dismissal dead zone.
+    func immersionBottomExtension(for tracker: ScrollDirectionImmersionTracker) -> CGFloat
+}
+
 /// Detects "is the user reading on, or surfacing" under an arbitrary reader
 /// hierarchy and reports it as a single immersion signal: KVO on every nested
-/// scroll view for the scroll reader's direction, `onPlaybackStateChanged` on
-/// every nested RSVP controller for its play state. Generic over any reader
-/// hosted anywhere — nothing here is carousel- or card-specific.
-final class ScrollDirectionImmersionTracker {
+/// scroll view for the scroll reader's direction, the play state of every nested
+/// RSVP controller. Generic over any reader hosted anywhere — nothing here is
+/// carousel- or card-specific.
+final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
 
     /// False on large/wide hosts, where scrolling must never change card chrome.
     /// RSVP callbacks remain active because its play/pause state is independent
@@ -36,21 +57,9 @@ final class ScrollDirectionImmersionTracker {
         }
     }
 
-    /// The reader wants the host chrome faded away (true — reading is under
-    /// way) or back in (false — the user is surfacing). `extendsCard` mirrors
-    /// the host's own choice of whether an immersed layout should extend into
-    /// the freed room: true for the scroll reader (more content shows), false
-    /// for RSVP, whose fixed layout must not move when playback starts — only
-    /// the chrome fades.
-    var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
-
-    /// How much taller the live, immersed card is than its resting footprint —
-    /// i.e. how far the card's bottom edge travels back UP when the chrome
-    /// returns. It does not gate the bottom restore (the article's end can never
-    /// reach the restored edge while the taller card still owns the scroll
-    /// range); it marks the card as currently immersed and floors the downward
-    /// dismissal dead zone.
-    var immersionBottomExtension: (() -> CGFloat)?
+    /// The host this tracker reports to, and asks for the immersed card's extra
+    /// height.
+    weak var delegate: ReaderImmersionTrackerDelegate?
 
     /// Whether the tracker currently reports. Side cards' readers are live but
     /// inert, so the host sets this only while its card is centered; going
@@ -113,12 +122,7 @@ final class ScrollDirectionImmersionTracker {
     /// late embed swaps the live scroll views / RSVP controllers).
     func observe(_ root: UIViewController) {
         for rsvp in Self.rsvpControllers(of: root) {
-            rsvp.onPlaybackStateChanged = { [weak self] playing in
-                guard let self, self.isActive else { return }
-                // RSVP immerses without the card-bottom extension: its layout
-                // is fixed, so play/pause must not move anything on screen.
-                self.onImmersionChange?(playing, false)
-            }
+            rsvp.playbackObserver = self
         }
         for scrollView in Self.scrollViews(in: root.view) {
             let key = ObjectIdentifier(scrollView)
@@ -154,7 +158,7 @@ final class ScrollDirectionImmersionTracker {
             scrollView.contentSize.height + scrollView.adjustedContentInset.top
                 + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
         let remainingToBottom = max(0, maximumPosition - position)
-        let bottomExtension = max(0, immersionBottomExtension?() ?? 0)
+        let bottomExtension = max(0, delegate?.immersionBottomExtension(for: self) ?? 0)
         let dismissalDeadZoneStart = Self.dismissalDeadZoneStart(
             viewportHeight: scrollView.bounds.height,
             scrollableRange: maximumPosition,
@@ -170,7 +174,7 @@ final class ScrollDirectionImmersionTracker {
         if (previous != nil && (position <= 0 || reachedArticleEnd))
             || (bottomExtension > 0 && reachedArticleEnd) {
             scrollRuns = [:]
-            onImmersionChange?(false, true)
+            delegate?.immersionTracker(self, didChangeImmersion: false, extendsCard: true)
             return
         }
         guard let previous else {
@@ -193,11 +197,18 @@ final class ScrollDirectionImmersionTracker {
         // the runs cleared first, that event just seeds a fresh baseline.
         if run <= -Self.fadeInTravel {
             scrollRuns = [:]
-            onImmersionChange?(false, true)
+            delegate?.immersionTracker(self, didChangeImmersion: false, extendsCard: true)
         } else if run >= Self.fadeOutTravel, position > 0 {
             scrollRuns = [:]
-            onImmersionChange?(true, true)
+            delegate?.immersionTracker(self, didChangeImmersion: true, extendsCard: true)
         }
+    }
+
+    /// RSVP immerses without the card-bottom extension: its layout is fixed, so
+    /// play/pause must not move anything on screen.
+    func rsvpReader(_ reader: RSVPViewController, didChangePlaybackState playing: Bool) {
+        guard isActive else { return }
+        delegate?.immersionTracker(self, didChangeImmersion: playing, extendsCard: false)
     }
 
     private static func rsvpControllers(of root: UIViewController) -> [RSVPViewController] {

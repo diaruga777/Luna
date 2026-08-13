@@ -26,10 +26,36 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         override var isDecelerating: Bool { fakeIsDecelerating }
     }
 
+    /// Stands in for the reader card: records the immersion signal and answers
+    /// the immersed card's extra height. `clampsOnFirstEvent` reproduces the
+    /// synchronous card resize, whose offset clamp re-enters the KVO path from
+    /// inside the callback.
+    private final class ImmersionHost: ReaderImmersionTrackerDelegate {
+        var events: [(immersed: Bool, extendsCard: Bool)] = []
+        var bottomExtension: CGFloat = 0
+        weak var clampsOnFirstEvent: UIScrollView?
+        private var hasFired = false
+
+        func immersionTracker(
+            _ tracker: ScrollDirectionImmersionTracker,
+            didChangeImmersion immersed: Bool, extendsCard: Bool
+        ) {
+            events.append((immersed, extendsCard))
+            guard !hasFired, let scrollView = clampsOnFirstEvent else { return }
+            hasFired = true
+            scrollView.contentOffset = CGPoint(x: 0, y: 40)
+        }
+
+        func immersionBottomExtension(
+            for tracker: ScrollDirectionImmersionTracker
+        ) -> CGFloat { bottomExtension }
+    }
+
     private var container: UIViewController!
     private var scrollView: FakeScrollView!
     private var tracker: ScrollDirectionImmersionTracker!
-    private var events: [(immersed: Bool, extendsCard: Bool)] = []
+    private var host: ImmersionHost!
+    private var events: [(immersed: Bool, extendsCard: Bool)] { host.events }
 
     override func setUp() {
         super.setUp()
@@ -41,11 +67,8 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         container.view.addSubview(scrollView)
 
         tracker = ScrollDirectionImmersionTracker()
-        tracker.immersionBottomExtension = { 0 }
-        events = []
-        tracker.onImmersionChange = { [weak self] immersed, extendsCard in
-            self?.events.append((immersed, extendsCard))
-        }
+        host = ImmersionHost()
+        tracker.delegate = host
         tracker.observe(container)
         tracker.isActive = true
     }
@@ -128,7 +151,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testArticleBottomRestoresOnlyOnceTheEndOfTheContentArrives() {
-        tracker.immersionBottomExtension = { 100 }
+        host.bottomExtension = 100
         // Positioning/restoration itself is not user motion and must not count
         // toward the directional threshold. Maximum position is 3200.
         scrollView.fakeIsDragging = false
@@ -143,7 +166,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDownwardDismissalIsIgnoredWithinHalfAViewportOfBottomRestore() {
-        tracker.immersionBottomExtension = { 100 }
+        host.bottomExtension = 100
         // With an 800pt viewport, the directional dismissal dead zone begins
         // 400pt from the maximum position (half a viewport).
         scrollView.fakeIsDragging = false
@@ -155,7 +178,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
     }
 
     func testDownwardDismissalStillAppliesJustOutsideBottomDeadZone() {
-        tracker.immersionBottomExtension = { 100 }
+        host.bottomExtension = 100
         scrollView.fakeIsDragging = false
         scrollView.contentOffset = CGPoint(x: 0, y: 2600)
         drag(to: 2680) // seed with 520pt remaining
@@ -215,14 +238,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         // which can clamp the offset and re-enter this same KVO path from inside
         // the callback. Re-seeding `scrollRuns` before invoking the callback means
         // that re-entrant change just seeds a fresh baseline instead of firing again.
-        var reentered = false
-        tracker.onImmersionChange = { [weak self] immersed, extendsCard in
-            self?.events.append((immersed, extendsCard))
-            if !reentered {
-                reentered = true
-                self?.scrollView.contentOffset = CGPoint(x: 0, y: 40) // synthetic clamp
-            }
-        }
+        host.clampsOnFirstEvent = scrollView
         drag(to: 0)
         drag(to: 60)
         drag(to: 110) // crosses fadeOutTravel, triggers the reentrant write above

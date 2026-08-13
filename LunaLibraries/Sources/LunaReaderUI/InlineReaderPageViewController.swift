@@ -40,7 +40,8 @@ public protocol InlineReaderPageDelegate: AnyObject {
 ///
 /// The content sits below the host's ancestor-tab strip. Mode and audio controls
 /// remain in the outer reader's stable chrome and are routed to this page.
-public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
+public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate,
+    ReaderLinkActivationDelegate {
 
     public let url: URL
     private var headerHeight: CGFloat
@@ -320,20 +321,12 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         case .scroll, .original:
             let scroll = ScrollReaderViewController(
                 item: transient, content: content, audioEnabled: isAudioOn)
-            scroll.onLinkActivatedWithRange = { [weak self, weak scroll] url, range in
-                guard let self, let scroll else { return }
-                let point = scroll.view.convert(
-                    scroll.linkActivationPoint(forCharacterRange: range), to: self.view)
-                self.delegate?.page(self, didActivateLink: url, at: point)
-            }
+            scroll.linkActivationDelegate = self
             child = scroll
         default:
             let rsvp = RSVPViewController(
                 item: transient, content: content, audioEnabled: isAudioOn)
-            rsvp.onLinkActivatedAtPoint = { [weak self] url, point in
-                guard let self else { return }
-                self.delegate?.page(self, didActivateLink: url, at: self.view.convert(point, from: rsvp.view))
-            }
+            rsvp.linkActivationDelegate = self
             child = rsvp
         }
         addChild(child)
@@ -354,6 +347,24 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             .activateVisibleReader(deferFullContentUntilHostCompletion: false)
         readerMode = mode
         delegate?.pageDidChangeContentScrollView(self)
+    }
+
+    // MARK: - ReaderLinkActivationDelegate
+
+    /// A link tapped inside either embedded reader belongs to the page's own
+    /// navigation stack, so it travels up as a point in THIS page's coordinates.
+    public func reader(
+        _ reader: ScrollReaderViewController, didActivateLink url: URL, inRange range: NSRange
+    ) {
+        let point = reader.view.convert(
+            reader.linkActivationPoint(forCharacterRange: range), to: view)
+        delegate?.page(self, didActivateLink: url, at: point)
+    }
+
+    public func reader(
+        _ reader: RSVPViewController, didActivateLink url: URL, at point: CGPoint
+    ) {
+        delegate?.page(self, didActivateLink: url, at: view.convert(point, from: reader.view))
     }
 
     private static func firstScrollView(in view: UIView) -> UIScrollView? {

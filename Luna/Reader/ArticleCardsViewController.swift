@@ -36,7 +36,8 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
-final class ArticleCardsViewController: CardCarouselHostViewController {
+final class ArticleCardsViewController: CardCarouselHostViewController,
+    CardDeckFallbackContentProviding {
 
     private let store = ReadingListStore.shared
     // Screen-level reader chrome (see mountTopChrome / configureTrailingBottomButton).
@@ -107,12 +108,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             // Reader and the central app both have a reader card to fall back
             // on, so a save whose kind holds nothing yet is still a card here.
             configuration.showsSavesWithoutKindContent = true
-            configuration.fallbackContent = { [weak host] item in
-                guard let host = host as? ArticleCardsViewController else {
-                    return CardContentViewController()
-                }
-                return host.makeReaderCard(for: item)
-            }
+            configuration.fallbackContentProvider = host as? ArticleCardsViewController
             return KindDeckProvider(host: host, configuration: configuration)
         }
         // The header row and the flanking Settings/Share circles persist through
@@ -803,8 +799,13 @@ extension ArticleCardsViewController: ArticleDeckChromeHosting {
     }
 
     /// The link-style card for a save whose kind has nothing to draw yet, and
-    /// the reader card for every article. Handed to the provider as its
-    /// `fallbackContent` so this class builds no card on its own account.
+    /// the reader card for every article. Reached through
+    /// `CardDeckFallbackContentProviding` so this class builds no card on its
+    /// own account.
+    func fallbackCardContent(for item: ReadingListItem) -> CardContentViewController {
+        makeReaderCard(for: item)
+    }
+
     func makeReaderCard(for item: ReadingListItem) -> CardContentViewController {
         let content = ReaderCardContentViewController(
             item: item, senderName: ArticleCardPresenter.senderName(for: item))
@@ -1146,7 +1147,8 @@ protocol ReaderCardContentDelegate: AnyObject {
 /// states. The card reports reading activity so the host can fade the carousel
 /// chrome around it: scroll direction in the scroll reader, play state in RSVP.
 final class ReaderCardContentViewController: CardContentViewController,
-    InlineReaderPresentationCoordinating, RabbitHoleReaderDelegate {
+    InlineReaderPresentationCoordinating, RabbitHoleReaderDelegate,
+    ReaderImmersionTrackerDelegate {
 
     weak var delegate: ReaderCardContentDelegate?
 
@@ -1204,23 +1206,28 @@ final class ReaderCardContentViewController: CardContentViewController,
         self.scrollTitleHeader = ReaderCardTitleHeaderView(
             title: item.title ?? L10n.string("Common_untitled"), subtitle: senderSubtitle)
         super.init()
-        immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
-            guard let self else { return }
-            // Sampled before the card resizes: only a restore triggered by
-            // reaching the article's end owes the content a compensating slide.
-            let restoringAtArticleEnd = !immersed && extendsCard && self.isFocusedContentAtEnd
-            let extensionBeforeRestore = self.immersionBottomExtension
-            self.delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
-            if restoringAtArticleEnd {
-                self.keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
-            }
-        }
-        immersionTracker.immersionBottomExtension = { [weak self] in
-            self?.immersionBottomExtension ?? 0
-        }
+        immersionTracker.delegate = self
     }
 
     // MARK: - Immersion geometry
+
+    func immersionTracker(
+        _ tracker: ScrollDirectionImmersionTracker,
+        didChangeImmersion immersed: Bool, extendsCard: Bool
+    ) {
+        // Sampled before the card resizes: only a restore triggered by
+        // reaching the article's end owes the content a compensating slide.
+        let restoringAtArticleEnd = !immersed && extendsCard && isFocusedContentAtEnd
+        let extensionBeforeRestore = immersionBottomExtension
+        delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
+        if restoringAtArticleEnd {
+            keepArticleEndAtReturningCardEdge(by: extensionBeforeRestore)
+        }
+    }
+
+    func immersionBottomExtension(for tracker: ScrollDirectionImmersionTracker) -> CGFloat {
+        immersionBottomExtension
+    }
 
     /// How much taller the live card is than its resting footprint — the
     /// distance the card's bottom edge travels back UP when the chrome returns.

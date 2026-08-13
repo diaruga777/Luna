@@ -719,12 +719,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
         if mode == .rsvp {
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
-            rsvpReader.onLinkActivatedAtPoint = { [weak self] url, point in
-                guard let self else { return }
-                self.delegate?.layer(
-                    self, didActivateLink: url, lineText: nil,
-                    at: self.view.convert(point, from: self.rsvpReader.view))
-            }
+            rsvpReader.linkActivationDelegate = self
             rsvpReader.completionDelegate = self
             showChild(rsvpReader)
         } else {
@@ -733,14 +728,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             scrollReader.configureForReuse(
                 item: readerItem, content: content, audioEnabled: audioOn,
                 fullRenderUpFront: rendersFullContentUpFront)
-            scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
-                guard let self else { return }
-                let lineText = self.lineText(for: range)
-                let point = self.scrollReader.linkActivationPoint(forCharacterRange: range)
-                self.delegate?.layer(
-                    self, didActivateLink: url, lineText: lineText,
-                    at: self.view.convert(point, from: self.scrollReader.view))
-            }
+            scrollReader.linkActivationDelegate = self
             scrollReader.completionDelegate = self
             showChild(scrollReader)
         }
@@ -913,6 +901,29 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         if articleContent == nil, (error as NSError).code != NSURLErrorCancelled {
             showLoadError()
         }
+    }
+}
+
+extension RabbitHoleLayerViewController: ReaderLinkActivationDelegate {
+    /// A dive begins at the tapped link. RSVP has only the pill's position to
+    /// report, so its dive carries no lip text; the scroll reader's range gives
+    /// the bottom lip the line the link sat in.
+    public func reader(
+        _ reader: RSVPViewController, didActivateLink url: URL, at point: CGPoint
+    ) {
+        delegate?.layer(
+            self, didActivateLink: url, lineText: nil,
+            at: view.convert(point, from: reader.view))
+    }
+
+    public func reader(
+        _ reader: ScrollReaderViewController, didActivateLink url: URL, inRange range: NSRange
+    ) {
+        let lineText = self.lineText(for: range)
+        let point = reader.linkActivationPoint(forCharacterRange: range)
+        delegate?.layer(
+            self, didActivateLink: url, lineText: lineText,
+            at: view.convert(point, from: reader.view))
     }
 }
 

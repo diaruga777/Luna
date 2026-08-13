@@ -8,6 +8,7 @@ import LunaReadingList
 import LunaMailTransport
 import LunaMailAccount
 import LunaSend
+import LunaSocialUI
 import LunaModels
 import LunaDesignSystem
 import UIKit
@@ -71,9 +72,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// The one destination for "this needs an email account first": pushes this
-    /// screen with the inline sign-in field already focused. Installed as
-    /// `SendToFriendSheet.accountSetupLauncher` by the `KindWiring` variants of the
-    /// apps that send email.
+    /// screen with the inline sign-in field already focused. Reached through
+    /// `EmailAccountSetupRoute`, installed as
+    /// `SendToFriendSheet.accountSetupPresenter` by the `KindWiring` variants of
+    /// the apps that send email.
     static func pushForAccountSetup(from presenter: UIViewController) {
         let screen = EmailAndKindleSettingsScreen()
         screen.focusesAddressField = true
@@ -692,5 +694,13 @@ final class KindleSettingsScreen: NavHeaderTableController {
                     title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
             }
         }
+    }
+}
+
+/// LunaSocialUI's route to account setup. A send attempted with no connected
+/// account redirects through this rather than explaining in an alert.
+struct EmailAccountSetupRoute: AccountSetupPresenting {
+    func presentAccountSetup(from presenter: UIViewController) {
+        EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
     }
 }

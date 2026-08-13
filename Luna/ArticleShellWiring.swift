@@ -41,7 +41,7 @@ enum ArticleShellWiring {
         // Send-to-Kindle emails go out through the connected email account.
         // LunaSend sits below LunaMailTransport, so the transport factory is
         // injected here (extensions leave it nil → Kindle sends are no-ops there).
-        ArticleEmailTransportProvider.make = { MailTransportFactory.make() }
+        ArticleEmailTransportProvider.installed = MailFactoryTransportProvider()
 
         // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
         // install the autoplay queue provider and register the Now Playing /
@@ -109,9 +109,7 @@ enum ArticleShellWiring {
         // redirects to the screen that connects it (its Sharing Account section is
         // the sign-in form until then). Only the email-sending apps compile that
         // screen, and they are exactly the article apps.
-        SendToFriendSheet.accountSetupLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
+        SendToFriendSheet.accountSetupPresenter = EmailAccountSetupRoute()
         // The util card's email nudge goes to the same one place.
         UtilCardContentViewController.emailSetupLauncher = { presenter in
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)

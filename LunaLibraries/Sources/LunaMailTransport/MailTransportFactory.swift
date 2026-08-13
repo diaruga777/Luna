@@ -29,6 +29,22 @@ public enum MailTransportFactory {
     }
 }
 
+/// The factory as LunaSend's `EmailTransportProviding` seam: LunaSend can't see
+/// this module, so the app installs this witness into
+/// `ArticleEmailTransportProvider.installed` at launch and a send asks it for
+/// the connected account's transport.
+public struct MailFactoryTransportProvider: EmailTransportProviding {
+    private let store: EmailAccountStore
+
+    public init(store: EmailAccountStore = .shared) {
+        self.store = store
+    }
+
+    public func makeTransport() -> EmailTransport? {
+        MailTransportFactory.make(store: store)
+    }
+}
+
 /// Persists only typed authentication failures emitted by a concrete transport.
 /// A later successful authenticated operation clears a stale issue automatically.
 public struct AuthenticationStateTrackingTransport: EmailTransport {

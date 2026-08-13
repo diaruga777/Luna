@@ -45,7 +45,7 @@ private final class MockDestination: ArticleDestination {
     }
 }
 
-final class ArticleSendCoordinatorTests: XCTestCase {
+final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObserving {
 
     private var store: ReadingListStore!
     private var scratchDirectory: URL!
@@ -57,10 +57,16 @@ final class ArticleSendCoordinatorTests: XCTestCase {
     private var coordinator: ArticleSendCoordinator!
     private var currentDate: Date!
     /// Every background delivery task `articleBecameReady`/`retryPendingSends`
-    /// starts, collected through the coordinator's `didStartDeliveryTask` seam
+    /// starts, collected through the coordinator's `deliveryTaskObserver` seam
     /// so `drainDeliveries()` can await them instead of sleeping.
     private let taskLock = NSLock()
     private var deliveryTasks: [Task<Void, Never>] = []
+
+    func coordinatorDidStartDeliveryTask(_ task: Task<Void, Never>) {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        deliveryTasks.append(task)
+    }
 
     override func setUp() {
         super.setUp()
@@ -76,16 +82,12 @@ final class ArticleSendCoordinatorTests: XCTestCase {
             destinations: [kindle, second],
             retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
             now: { self.currentDate })
-        coordinator.didStartDeliveryTask = { [taskLock] task in
-            taskLock.lock()
-            defer { taskLock.unlock() }
-            self.deliveryTasks.append(task)
-        }
+        coordinator.deliveryTaskObserver = self
     }
 
     override func tearDown() {
-        // Breaks the test -> coordinator -> closure -> test retain cycle.
-        coordinator?.didStartDeliveryTask = nil
+        // The observer reference is weak, so nothing holds the test here.
+        coordinator?.deliveryTaskObserver = nil
         deliveryTasks.forEach { $0.cancel() }
         deliveryTasks.removeAll()
         try? FileManager.default.removeItem(at: scratchDirectory)

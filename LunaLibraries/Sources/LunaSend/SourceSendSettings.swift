@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import Foundation
 
 /// Per-capture-source auto-send configuration for one ereader destination
@@ -15,10 +16,21 @@ import Foundation
 ///   • Share sheet & paste — on/off.
 ///   • Friend shares — on/off, with a default plus per-friend overrides.
 ///
-/// Persisted in standard defaults under a per-destination key prefix. Sources
-/// other than App Intents default to the legacy "all saves" behavior so existing
-/// setups are unchanged until the user touches the new controls.
+/// Persisted in the shared App-Group suite under a per-destination key prefix,
+/// with a read-through for the values an older per-app build left in `standard`
+/// (`MigratingAppGroupDefaults`) — the central app and the Reader send from ONE
+/// connected account, so "email saves go to Kindle" cannot be two answers.
+/// Sources other than App Intents default to the legacy "all saves" behavior so
+/// existing setups are unchanged until the user touches the new controls.
 public enum SourceSendSettings {
+
+    /// Overridable so tests can drive both halves of the read-through without
+    /// touching the real container. Production code never sets it.
+    static var testDefaultsOverride: MigratingAppGroupDefaults?
+
+    private static var defaults: MigratingAppGroupDefaults {
+        testDefaultsOverride ?? MigratingAppGroupDefaults()
+    }
 
     // MARK: Legacy / App-Intents mode (the destination's existing global mode)
 
@@ -53,7 +65,7 @@ public enum SourceSendSettings {
             KindleSendSettings.autoSendToKindle = on
             return
         }
-        UserDefaults.standard.set(on, forKey: key(id, "email"))
+        defaults.set(on, forKey: key(id, "email"))
     }
 
     // MARK: Share sheet & paste
@@ -63,7 +75,7 @@ public enum SourceSendSettings {
     }
 
     public static func setShareAndPasteEnabled(_ on: Bool, forDestination id: String) {
-        UserDefaults.standard.set(on, forKey: key(id, "sharePaste"))
+        defaults.set(on, forKey: key(id, "sharePaste"))
     }
 
     // MARK: Friend shares (default + per-friend overrides)
@@ -74,7 +86,7 @@ public enum SourceSendSettings {
     }
 
     public static func setFriendSharesEnabledDefault(_ on: Bool, forDestination id: String) {
-        UserDefaults.standard.set(on, forKey: key(id, "friendDefault"))
+        defaults.set(on, forKey: key(id, "friendDefault"))
     }
 
     /// Per-friend enablement, falling back to the destination's friend default.
@@ -86,12 +98,12 @@ public enum SourceSendSettings {
         var overrides = friendOverrides(forDestination: id)
         overrides[username] = on
         if let data = try? JSONEncoder().encode(overrides) {
-            UserDefaults.standard.set(data, forKey: key(id, "friendOverrides"))
+            defaults.set(data, forKey: key(id, "friendOverrides"))
         }
     }
 
     private static func friendOverrides(forDestination id: String) -> [String: Bool] {
-        guard let data = UserDefaults.standard.data(forKey: key(id, "friendOverrides")),
+        guard let data = defaults.data(forKey: key(id, "friendOverrides")),
               let map = try? JSONDecoder().decode([String: Bool].self, from: data)
         else { return [:] }
         return map
@@ -132,9 +144,9 @@ public enum SourceSendSettings {
         "send.\(destinationID).\(suffix)"
     }
 
+    /// An absent value is the legacy default; a STORED one is honoured even
+    /// when it is `false`, which is the whole reason this is not `bool(forKey:)`.
     private static func boolWithDefault(_ key: String, default def: Bool) -> Bool {
-        UserDefaults.standard.object(forKey: key) == nil
-            ? def
-            : UserDefaults.standard.bool(forKey: key)
+        defaults.object(forKey: key) == nil ? def : defaults.bool(forKey: key)
     }
 }

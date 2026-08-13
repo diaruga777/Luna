@@ -4,6 +4,7 @@
 //
 
 import LunaMailAccount
+import LunaModels
 import LunaStorage
 import XCTest
 @testable import LunaMailTransport
@@ -28,11 +29,13 @@ final class MailSettingsMigrationTests: XCTestCase {
         let store = MigratingAppGroupDefaults(group: group, legacy: legacy)
         IncomingMailSettings.testDefaultsOverride = store
         KindleSendSettings.testDefaultsOverride = store
+        SourceSendSettings.testDefaultsOverride = store
     }
 
     override func tearDown() {
         IncomingMailSettings.testDefaultsOverride = nil
         KindleSendSettings.testDefaultsOverride = nil
+        SourceSendSettings.testDefaultsOverride = nil
         group.removePersistentDomain(forName: groupSuite)
         legacy.removePersistentDomain(forName: legacySuite)
         group = nil
@@ -175,4 +178,71 @@ final class MailSettingsMigrationTests: XCTestCase {
 
         XCTAssertFalse(IncomingMailSettings.autoSendToKindle)
     }
+
+    // MARK: - SourceSendSettings
+
+    /// The per-source toggles ("send friend shares", "send share-sheet saves")
+    /// were the last `standard`-backed corner of the send settings, so the
+    /// central app and the Reader each held their own answer for the ONE
+    /// connected account.
+    func testPerSourceTogglesWriteOnlyToTheGroup() {
+        SourceSendSettings.setShareAndPasteEnabled(true, forDestination: destination)
+
+        XCTAssertTrue(SourceSendSettings.shareAndPasteEnabled(forDestination: destination))
+        XCTAssertTrue(group.bool(forKey: "send.otherEreader.sharePaste"))
+        XCTAssertNil(legacy.object(forKey: "send.otherEreader.sharePaste"))
+    }
+
+    func testPerSourceToggleWrittenByAnOlderBuildMigratesOnFirstRead() {
+        legacy.set(true, forKey: "send.otherEreader.friendDefault")
+
+        XCTAssertTrue(SourceSendSettings.friendSharesEnabledDefault(forDestination: destination))
+        XCTAssertTrue(group.bool(forKey: "send.otherEreader.friendDefault"))
+
+        legacy.removeObject(forKey: "send.otherEreader.friendDefault")
+        XCTAssertTrue(SourceSendSettings.friendSharesEnabledDefault(forDestination: destination))
+    }
+
+    /// A stored OFF has to survive the read-through, not fall back to the legacy
+    /// "all saves" default — otherwise a Kindle user who turned share-sheet sends
+    /// off gets them all back on the build that migrates them.
+    func testAnOlderBuildsExplicitOffSurvivesTheMigration() {
+        KindleSendSettings.sendMode = .allSaves
+        legacy.set(false, forKey: "send.kindle.sharePaste")
+
+        XCTAssertFalse(
+            SourceSendSettings.shareAndPasteEnabled(forDestination: ArticleDestinationID.kindle))
+        XCTAssertEqual(
+            SourceSendSettings.sendMode(
+                forDestination: ArticleDestinationID.kindle, source: .shareSheet,
+                friendUsername: nil),
+            .off)
+    }
+
+    /// The per-friend overrides are a JSON blob rather than a flag, and they
+    /// migrate as one value: the first read copies the older build's map over,
+    /// and a new override is merged into it in the group.
+    func testFriendOverridesMigrateAndThenMergeInTheGroup() throws {
+        legacy.set(
+            try JSONEncoder().encode(["alice": false]),
+            forKey: "send.otherEreader.friendOverrides")
+
+        XCTAssertFalse(
+            SourceSendSettings.friendShareEnabled(forDestination: destination, username: "alice"))
+
+        SourceSendSettings.setFriendShareEnabled(
+            true, forDestination: destination, username: "bob")
+
+        XCTAssertFalse(
+            SourceSendSettings.friendShareEnabled(forDestination: destination, username: "alice"),
+            "the migrated override is not lost by the write that follows it")
+        XCTAssertTrue(
+            SourceSendSettings.friendShareEnabled(forDestination: destination, username: "bob"))
+        XCTAssertNotNil(group.data(forKey: "send.otherEreader.friendOverrides"))
+    }
+
+    /// A destination other than Kindle, whose toggles are the plain stored keys.
+    /// Kindle special-cases its App-Intents mode and its email toggle onto
+    /// `KindleSendSettings`, so it exercises less of this.
+    private var destination: String { "otherEreader" }
 }

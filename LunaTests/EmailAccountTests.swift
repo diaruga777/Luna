@@ -7,16 +7,15 @@
 //  CaptureSourceCodableTests companion), and EmailEntryAutoFillTests.
 //
 //  Each original concern gets its own namespaced fixtures below, all built
-//  fresh (random suite/service names, or fixed-but-cleared UserDefaults.standard
-//  keys) in one unioned setUp/tearDown so none of the five leak state into the
-//  others.
+//  fresh (random suite/service names) in one unioned setUp/tearDown so none of
+//  the five leak state into the others.
 //
 
 import LunaAppConfig
 import LunaMailAccount
 @testable import LunaMailTransport
 import LunaModels
-import LunaSend
+@testable import LunaSend
 import LunaStorage
 import Security
 import UIKit
@@ -50,19 +49,16 @@ final class EmailAccountTests: XCTestCase {
     private let keychainAccount = "test-credential"
 
     // SourceSendSettings concern — opaque generic destination id exercising
-    // the plain UserDefaults-backed (non-Kindle) code paths. Kindle is
-    // special-cased for App-Intents mode (`KindleSendSettings.sendMode`) and
-    // for the email toggle (it reuses the "Also Send to Kindle" import
-    // setting), so a generic id is needed here. These keys live on
-    // UserDefaults.standard (shared, not a random suite), so they're cleared
-    // in both setUp and tearDown.
+    // the plain stored (non-Kindle) code paths. Kindle is special-cased for
+    // App-Intents mode (`KindleSendSettings.sendMode`) and for the email toggle
+    // (it reuses the "Also Send to Kindle" import setting), so a generic id is
+    // needed here. The settings resolve the shared App-Group suite, so the test
+    // points them at throwaway suites rather than the real container.
     private let sourceSendDestinationID = "genericDestination"
-    private let sourceSendKeys = [
-        "send.genericDestination.email",
-        "send.genericDestination.sharePaste",
-        "send.genericDestination.friendDefault",
-        "send.genericDestination.friendOverrides",
-    ]
+    private var sourceSendGroupSuiteName: String!
+    private var sourceSendLegacySuiteName: String!
+    private var sourceSendGroup: UserDefaults!
+    private var sourceSendLegacy: UserDefaults!
 
     override func setUp() {
         super.setUp()
@@ -85,7 +81,12 @@ final class EmailAccountTests: XCTestCase {
 
         keychainService = "com.hsanabria.luna.tests.keychain.\(UUID().uuidString)"
 
-        sourceSendKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        sourceSendGroupSuiteName = "SourceSendSettingsTests.group.\(UUID().uuidString)"
+        sourceSendLegacySuiteName = "SourceSendSettingsTests.legacy.\(UUID().uuidString)"
+        sourceSendGroup = UserDefaults(suiteName: sourceSendGroupSuiteName)
+        sourceSendLegacy = UserDefaults(suiteName: sourceSendLegacySuiteName)
+        SourceSendSettings.testDefaultsOverride = MigratingAppGroupDefaults(
+            group: sourceSendGroup, legacy: sourceSendLegacy)
     }
 
     override func tearDown() {
@@ -110,7 +111,13 @@ final class EmailAccountTests: XCTestCase {
         CredentialKeychain.delete(service: keychainService, account: keychainAccount)
         keychainService = nil
 
-        sourceSendKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        SourceSendSettings.testDefaultsOverride = nil
+        sourceSendGroup.removePersistentDomain(forName: sourceSendGroupSuiteName)
+        sourceSendLegacy.removePersistentDomain(forName: sourceSendLegacySuiteName)
+        sourceSendGroup = nil
+        sourceSendLegacy = nil
+        sourceSendGroupSuiteName = nil
+        sourceSendLegacySuiteName = nil
 
         super.tearDown()
     }

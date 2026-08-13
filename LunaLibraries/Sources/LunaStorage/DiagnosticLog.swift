@@ -13,21 +13,10 @@ import Foundation
 /// This is independent of Console.app and the unified log's archive format —
 /// which can't be read across macOS/iOS-beta version gaps — and it survives
 /// relaunches and background (push / bg-refresh) wakeups.
-public protocol DiagnosticLogging: Sendable {
-    /// Appends one timestamped line tagged with `category`.
-    func record(_ message: String, category: String)
-    /// The full accumulated log text, oldest line first.
-    func contents() -> String
-    /// Writes a header + the full log to a shareable `.txt` file, returning it.
-    func exportFile() throws -> URL
-    /// Erases the log file.
-    func clear()
-}
-
-/// File-backed `DiagnosticLogging`. Appends are serialized on a private queue;
-/// the file is trimmed to its most recent half once it exceeds `maxBytes` so it
-/// can't grow without bound.
-public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
+///
+/// Appends are serialized on a private queue; the file is trimmed to its most
+/// recent half once it exceeds `maxBytes` so it can't grow without bound.
+public final class DiagnosticLog: @unchecked Sendable {
 
     public static let shared = DiagnosticLog()
 

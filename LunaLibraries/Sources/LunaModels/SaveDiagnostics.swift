@@ -168,14 +168,6 @@ public enum SaveDiagnostics {
         return formatter
     }()
 
-    /// Runs `body` with `recorder` bound. The explicit form exists so a caller
-    /// that already has a recorder doesn't have to reach for `$recorder`.
-    public static func withRecorder<T>(
-        _ recorder: SaveDiagnosticsRecorder?, operation body: () async throws -> T
-    ) async rethrows -> T {
-        try await $recorder.withValue(recorder, operation: body)
-    }
-
     /// Clamps a quoted fragment (an error string, a title, a page snippet) to a
     /// safe length for the trace, collapsing newlines so one record stays one
     /// line.

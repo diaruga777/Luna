@@ -23,50 +23,6 @@ public struct MediaDownloadService {
         self.saver = saver
     }
 
-    /// Resolves the post's media, downloads the FIRST item, and saves it to Photos.
-    /// Reports coarse 0…1 progress via `onProgress`. Returns the saved item's kind;
-    /// throws `MediaDownloadError` on any failure.
-    public func downloadFirstMediaToPhotos(
-        from url: URL, onProgress: @escaping (Double) -> Void
-    ) async throws -> MediaAsset.Kind {
-        guard MediaDownloadablePlatform.supports(url.absoluteString) else {
-            throw MediaDownloadError.unsupported
-        }
-        if MediaAsset.direct(url: url)?.kind == .audio {
-            throw MediaDownloadError.unsupported
-        }
-        // Permission first (so the prompt appears before any work), then resolve.
-        guard await saver.requestAddAuthorization() else { throw MediaDownloadError.permissionDenied }
-
-        let assets = await resolver.resolveAssets(for: url)
-        guard let asset = assets.first else { throw MediaDownloadError.noMedia }
-        let expected = await MediaDownloadPreflight.expectedByteCount(
-            for: asset, sourceURL: url)
-        if let error = MediaDownloadPreflight.storageError(
-            expectedByteCount: expected,
-            requiresProcessingCopy: asset.timeRange?.isEffective == true) {
-            throw error
-        }
-
-        let referer = MediaDownloadService.referer(for: url)
-        let fileURL: URL
-        do {
-            fileURL = try await MediaFileDownloader.download(asset, referer: referer, onProgress: onProgress)
-        } catch {
-            throw MediaDownloadError.downloadFailed
-        }
-
-        do {
-            _ = try await saver.save(fileURL: fileURL, kind: asset.kind)
-        } catch {
-            try? FileManager.default.removeItem(at: fileURL)
-            throw MediaDownloadError.saveFailed
-        }
-        // `shouldMoveFile` consumes it on success; clean up defensively otherwise.
-        try? FileManager.default.removeItem(at: fileURL)
-        return asset.kind
-    }
-
     /// Resolves the post's media, downloads the FIRST item, and moves it into
     /// Luna Downloader's app-owned saved-media library.
     public func downloadFirstMediaToAppStorage(

@@ -300,10 +300,6 @@ final class OnboardingSafariSetupPopupView: UIView {
     }
 
     #if DEBUG
-    /// The flag, not the animations: CoreAnimation drops an animation off a
-    /// backgrounded layer, so only this survives a test that spins the run
-    /// loop.
-    var isPulsingForTesting: Bool { isPulsing }
     var activateButtonForTesting: UIButton { activateButton }
     var skipButtonForTesting: UIButton { skipButton }
     #endif

@@ -116,13 +116,6 @@ public enum ReaderSettings {
         fontScale * systemTypeScale
     }
 
-    /// Legacy serif (New York) vs sans toggle — superseded by `font`, kept for
-    /// compatibility with older clients and persisted settings.
-    public static var useSerifFont: Bool {
-        get { (defaults.object(forKey: serifKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: serifKey) }
-    }
-
     /// The reader typeface. Lexend is the default; unknown values from removed
     /// font choices also resolve to Lexend.
     public static var font: ReaderFont {

@@ -35,7 +35,7 @@ public enum PriceHistoryIndexWriter {
                     .filter { $0.dayStart >= cutoff }
                     .map {
                         PriceHistoryIndexEntry.Point(
-                            day: ProductSnapshotStore.dayString(for: $0.dayStart),
+                            day: UTCDay($0.dayStart),
                             price: NSDecimalNumber(decimal: $0.lowestPrice).stringValue,
                             currency: $0.currency)
                     }

@@ -212,7 +212,7 @@ public enum SnapshotMatcher {
     ) -> [ProductSnapshot] {
         var seen = Set<String>()
         return (lhs + rhs)
-            .filter { seen.insert("\($0.url)|\($0.day)").inserted }
+            .filter { seen.insert("\($0.url)|\($0.day.text)").inserted }
             .sorted { $0.day != $1.day ? $0.day < $1.day : $0.url < $1.url }
     }
 

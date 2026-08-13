@@ -30,7 +30,7 @@ enum SharedProductMatching {
         let index = PriceHistoryIndex.load()
         let trackedMatch = index.first { ProductPageMatching.matches(page: page, indexEntry: $0) }
 
-        var points: [(price: Decimal, currency: String, day: String)] = []
+        var points: [(price: Decimal, currency: String, day: UTCDay)] = []
         if let trackedMatch {
             for store in trackedMatch.stores {
                 for point in store.points {
@@ -66,6 +66,6 @@ enum SharedProductMatching {
         return HistoryAnswer(
             isTracked: trackedMatch != nil, hasHistory: true,
             amount: NSDecimalNumber(decimal: lowest.price).stringValue,
-            currency: lowest.currency, day: lowest.day)
+            currency: lowest.currency, day: lowest.day.text)
     }
 }

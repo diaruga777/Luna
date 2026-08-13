@@ -210,7 +210,8 @@ final class ProductTrackerMergeTests: XCTestCase {
         let snapshots = [ProductSnapshot(
             name: "Hisense HRFD634BW Fridge", price: "1899", currency: "AUD",
             url: "https://retravision.example/p/1", host: "retravision.example",
-            day: "2026-08-01", capturedAt: "2026-08-01T00:00:00Z", gtin: "9337640009775")]
+            day: UTCDay(parsing: "2026-08-01")!, capturedAt: "2026-08-01T00:00:00Z",
+            gtin: "9337640009775")]
         let placeholder = store.add(urlString: "https://binglee.example/p/1")
         _ = ProductTrackerMerge.mergeIfPossible(
             product: product(gtin: "9337640009775"), url: URL(string: "https://binglee.example/p/1")!,

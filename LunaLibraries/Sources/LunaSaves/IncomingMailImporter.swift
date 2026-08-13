@@ -10,17 +10,17 @@ import LunaStorage
 import LunaModels
 import Foundation
 
-/// Opportunistically reads incoming mail (on launch/foreground/background) via
-/// the connected email account and:
+/// Opportunistically reads incoming mail on launch, foreground, and
+/// background, through the connected email account, and:
 ///  - imports **Luna shares** (messages carrying the `X-Luna-Share` marker),
-///    automatically adding recognized senders as contacts;
-///  - imports **Luna-prefixed shares whose marker couldn't be recovered** —
-///    resolves the embedded original-content URL silently (no CAPTCHA) first,
-///    falling back to the rendered email body (title prefix stripped) only if
-///    that URL is missing or can't be unlocked that way;
+///    adding each recognized sender as a contact;
+///  - imports **Luna-prefixed shares whose marker could not be recovered**.
+///    It resolves the embedded original-content URL silently first, with no
+///    CAPTCHA. It falls back to the rendered email body, with the title
+///    prefix stripped, only if that URL is missing or cannot unlock that way;
 ///  - imports **matched newsletters** (the existing sender/subject filters) as
 ///    articles.
-/// Luna mail is marked read as it's processed.
+/// Luna mail is marked read as it is processed.
 public final class IncomingMailImporter {
 
     public static let shared = IncomingMailImporter()
@@ -140,14 +140,14 @@ public final class IncomingMailImporter {
 
     // MARK: - Luna-prefixed shares without a recoverable marker
 
-    /// A Luna-prefixed share whose `X-Luna-Share` marker couldn't be recovered
-    /// (the header stripped by the provider, or — for a long article — the
-    /// hidden HTML marker block clipped by the mail fetch size cap). Tries the
-    /// embedded original-content URL first, through the same silent
-    /// (non-CAPTCHA) resolution every other save uses, so the reader gets the
-    /// real article rather than Luna's own rendered copy; only falls back to
-    /// the rendered email body when the URL is missing or the page can't be
-    /// unlocked without a CAPTCHA.
+    /// Handles a Luna-prefixed share whose `X-Luna-Share` marker could not be
+    /// recovered — the provider stripped the header, or, for a long article,
+    /// the mail fetch size cap clipped the hidden HTML marker block. Tries
+    /// the embedded original-content URL first, through the same silent,
+    /// non-CAPTCHA resolution every other save uses, so the reader gets the
+    /// real article instead of Luna's own rendered copy. Falls back to the
+    /// rendered email body only when the URL is missing or needs a CAPTCHA to
+    /// unlock.
     private func importUnmarkedLunaShare(_ message: FetchedMessage) async {
         let senderEmail = Self.address(from: message.from)
         guard Friend.isValidEmail(senderEmail) else { return }
@@ -192,12 +192,12 @@ public final class IncomingMailImporter {
         importFromBody(message, subjectOverride: nil, contact: nil)
     }
 
-    /// Saves an email using its own rendered body as the article content — the
-    /// generic newsletter path, and the Luna-prefix fallback when the
-    /// original-content URL is missing or couldn't be unlocked without user
-    /// interaction. `subjectOverride`, when set, replaces the raw subject
-    /// (with Luna's subject prefix already stripped) so the saved title
-    /// never carries it.
+    /// Saves an email using its own rendered body as the article content —
+    /// the generic newsletter path, and the Luna-prefix fallback when the
+    /// original-content URL is missing or needs user interaction to unlock.
+    /// When set, `subjectOverride` replaces the raw subject with one that has
+    /// Luna's subject prefix already stripped, so the saved title never
+    /// carries it.
     private func importFromBody(
         _ message: FetchedMessage, subjectOverride: String?, contact: Friend?
     ) {
@@ -211,8 +211,8 @@ public final class IncomingMailImporter {
             let item = store.add(urlString: "lunamail://\(message.id)", source: .email)
             recordSender(message, contact: contact, itemID: item.id)
             let ready = store.saveContent(content, for: item)
-            // Article-kind hook (Kindle/ereader auto-send) — a no-op in apps
-            // without article handling, which have no send destinations anyway.
+            // Article-kind hook for Kindle/ereader auto-send. A no-op in apps
+            // without article handling — they have no send destination.
             if ready.state == .ready { IngestorKindHandlers.article?.articleBecameReady(ready) }
         } else if let url = incoming.urls.first, let item = store.addIfAbsent(
             urlString: url.absoluteString, source: .email) {

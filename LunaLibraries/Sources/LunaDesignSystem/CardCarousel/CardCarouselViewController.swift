@@ -380,7 +380,7 @@ public final class CardCarouselViewController: UIViewController {
     var isSoundMuted: Bool { audioSession.isMuted }
     private lazy var audioSession: CarouselAudioSessionCoordinator = {
         let coordinator = CarouselAudioSessionCoordinator()
-        coordinator.onMuteStateChanged = { [weak self] in self?.applyMuteState() }
+        coordinator.delegate = self
         return coordinator
     }()
 
@@ -964,8 +964,8 @@ public final class CardCarouselViewController: UIViewController {
         let card = makeCardView(at: index)
         card.installContentView(content.view)
         content.setMuted(audioSession.isMuted)
-        content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
-        content.playbackStateChanged = { [weak self] in self?.updatePlaybackControls() }
+        content.audioAvailabilityObserver = self
+        content.playbackObserver = self
         cardArea.addSubview(card)
         return Slot(index: index, card: card, content: content)
     }
@@ -978,10 +978,7 @@ public final class CardCarouselViewController: UIViewController {
         card.setBorderEnabled(style.showsCardBorder)
         card.setContentEdgeFadeHeight(cardStyle(at: index).contentEdgeFadeHeight)
         card.setEdgeGlow(dataSource?.carousel(self, edgeGlowColorForCardAt: index))
-        card.onMuteToggle = { [weak self] in
-            guard let self else { return }
-            self.setSoundMuted(!self.audioSession.isMuted)
-        }
+        card.delegate = self
         card.setTopLeadingAccessory(dataSource?.carousel(
             self, topLeadingAccessoryForCardAt: index))
         return card
@@ -1002,7 +999,7 @@ public final class CardCarouselViewController: UIViewController {
 
     private func unmount(_ slot: Slot) {
         // A retiring card must not drive the deck's chrome on its way out.
-        slot.content.playbackStateChanged = nil
+        slot.content.playbackObserver = nil
         slot.content.setPlaying(false)
         slot.content.willMove(toParent: nil)
         slot.card.removeFromSuperview()
@@ -1120,7 +1117,7 @@ public final class CardCarouselViewController: UIViewController {
 
     /// Brings the paused card's controls up (or takes them down) to match the
     /// current state. Called from every point that can change it, including the
-    /// content's own `playbackStateChanged`.
+    /// content's own play-state report.
     private func updatePlaybackControls() {
         guard let content = pausedPlaybackContent() else {
             hidePlaybackControls()
@@ -1781,6 +1778,28 @@ public final class CardCarouselViewController: UIViewController {
 }
 
 // MARK: - Gesture disambiguation
+
+extension CardCarouselViewController: CarouselCardViewDelegate,
+    CarouselAudioSessionCoordinatorDelegate {
+    public func carouselCardDidToggleMute(_ card: CarouselCardView) {
+        setSoundMuted(!audioSession.isMuted)
+    }
+
+    func carouselAudioSessionDidChangeMuteState(_ coordinator: CarouselAudioSessionCoordinator) {
+        applyMuteState()
+    }
+}
+
+extension CardCarouselViewController: CardContentAudioAvailabilityObserving,
+    CardContentPlaybackObserving {
+    public func cardContentDidChangeAudioAvailability(_ content: CardContentViewController) {
+        updateMuteUI()
+    }
+
+    public func cardContentDidChangePlaybackState(_ content: CardContentViewController) {
+        updatePlaybackControls()
+    }
+}
 
 extension CardCarouselViewController: UIGestureRecognizerDelegate {
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

@@ -11,6 +11,21 @@
 
 import UIKit
 
+/// The mount that follows a card content's audio availability — the carousel,
+/// and the scrub strip's preview, which shows the same mute button.
+public protocol CardContentAudioAvailabilityObserving: AnyObject {
+    func cardContentDidChangeAudioAvailability(_ content: CardContentViewController)
+}
+
+/// The mount that follows a card content's play state. Kept separate from the
+/// audio observer because a retiring card stops driving the deck's playback
+/// controls while its audio availability still resolves the mute button, and a
+/// content promoted out of a scrub preview loses the preview's mute wiring
+/// before the carousel installs its own.
+public protocol CardContentPlaybackObserving: AnyObject {
+    func cardContentDidChangePlaybackState(_ content: CardContentViewController)
+}
+
 open class CardContentViewController: UIViewController {
 
     public init() {
@@ -25,18 +40,29 @@ open class CardContentViewController: UIViewController {
 
     /// Whether the content can produce audio — controls the card's mute button.
     /// Implementations that discover this asynchronously (e.g. a video's audio
-    /// track loading) should call `audioAvailabilityChanged` when it changes.
+    /// track loading) should call `reportAudioAvailabilityChange()` when it
+    /// changes.
     open var supportsAudio: Bool { false }
 
-    /// Set by the hosting card; invoke after `supportsAudio` changes.
-    public var audioAvailabilityChanged: (() -> Void)?
+    /// Set by the hosting card.
+    public weak var audioAvailabilityObserver: CardContentAudioAvailabilityObserving?
+
+    /// Tells the mount that `supportsAudio` has changed.
+    public func reportAudioAvailabilityChange() {
+        audioAvailabilityObserver?.cardContentDidChangeAudioAvailability(self)
+    }
 
     open var isPlaying: Bool { false }
 
-    /// Set by the hosting carousel; invoke whenever `isPlaying` changes for any
-    /// reason (including the carousel's own `setPlaying`), so the paused card's
-    /// playback controls follow the content rather than each call site.
-    public var playbackStateChanged: (() -> Void)?
+    /// Set by the hosting carousel.
+    public weak var playbackObserver: CardContentPlaybackObserving?
+
+    /// Tells the mount that `isPlaying` has changed, for any reason (including
+    /// the carousel's own `setPlaying`), so the paused card's playback controls
+    /// follow the content rather than each call site.
+    public func reportPlaybackStateChange() {
+        playbackObserver?.cardContentDidChangePlaybackState(self)
+    }
 
     /// Whether this content plays at a chooseable rate — the card's speed pill
     /// appears only for content that says yes.

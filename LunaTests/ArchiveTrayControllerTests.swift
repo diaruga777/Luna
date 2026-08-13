@@ -9,6 +9,20 @@ import XCTest
 
 final class ArchiveTrayControllerTests: XCTestCase {
 
+    /// The deck the arc is mounted in: settable answers for the two questions the
+    /// tray asks, and a record of the open states it reports.
+    private final class TrayHost: ArchiveTrayDelegate {
+        var shiftedViews: [UIView] = []
+        var canPull = false
+        var openStates: [Bool] = []
+
+        func archiveTrayShiftedViews(_ tray: ArchiveTrayController) -> [UIView] { shiftedViews }
+        func archiveTrayCanPull(_ tray: ArchiveTrayController) -> Bool { canPull }
+        func archiveTray(_ tray: ArchiveTrayController, openStateDidChange open: Bool) {
+            openStates.append(open)
+        }
+    }
+
     private func makeItem(title: String? = "Archived item", delete: (() -> Void)? = nil) -> ArchiveTrayItem {
         ArchiveTrayItem(
             id: UUID(), title: title, footer: nil, showsMetadata: title != nil,
@@ -21,22 +35,21 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        var isRightmost = false
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { isRightmost })
+        let deck = TrayHost()
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem()])
 
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
         XCTAssertFalse(tray.isPullAvailableForTesting)
         XCTAssertEqual(tray.trayFrameForTesting.minX, 390, accuracy: 0.5)
 
-        isRightmost = true
+        deck.canPull = true
         tray.refreshPullAvailability(animated: false)
 
         XCTAssertTrue(tray.isPullAvailableForTesting)
         XCTAssertEqual(tray.trayFrameForTesting.minX, 364, accuracy: 0.5)
 
-        isRightmost = false
+        deck.canPull = false
         tray.refreshPullAvailability(animated: false)
 
         XCTAssertFalse(tray.isPullAvailableForTesting)
@@ -48,8 +61,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
 
         // Available but empty: with no cells to peek (and no pull tab any
         // more), the closed arc stays fully offscreen.
@@ -68,8 +82,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
     func testCellContextMenuOffersUnarchiveAndShare() {
         let host = UIViewController()
         host.loadViewIfNeeded()
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem()])
 
         let titles = tray.contextMenuForTesting(itemAt: 0).children.compactMap {
@@ -83,8 +98,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         var receivedSource: UIView?
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([ArchiveTrayItem(
             id: UUID(), title: "Archived item", footer: nil, showsMetadata: true,
             isAvailable: true, loadImage: { $0(nil) }, tap: {}, share: { _ in },
@@ -102,8 +118,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         var didDelete = false
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem(title: nil, delete: { didDelete = true })])
 
         let menu = tray.contextMenuForTesting(itemAt: 0)
@@ -121,16 +138,16 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let isRightmost = true
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { isRightmost })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem()])
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
 
         XCTAssertTrue(tray.isPullAvailableForTesting)
         tray.setPullAvailable(false, animated: false)
 
-        XCTAssertTrue(isRightmost, "The carousel has not swapped its current index yet")
+        XCTAssertTrue(deck.canPull, "The carousel has not swapped its current index yet")
         XCTAssertFalse(tray.isPullAvailableForTesting)
         XCTAssertEqual(tray.trayFrameForTesting.minX, 390, accuracy: 0.5)
 
@@ -146,8 +163,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
 
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
 
@@ -163,22 +181,19 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        var openStates: [Bool] = []
-        let tray = ArchiveTrayController(
-            host: host,
-            shiftedViews: { [] },
-            canPull: { true },
-            openStateChanged: { openStates.append($0) })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
 
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
-        XCTAssertEqual(openStates.last, false)
+        XCTAssertEqual(deck.openStates.last, false)
 
         // Pulling even partially open immediately removes controls that would
         // otherwise remain visible over the revealed arc.
         tray.setOpenForTesting(true)
-        XCTAssertEqual(openStates.last, true)
+        XCTAssertEqual(deck.openStates.last, true)
         tray.setOpenForTesting(false)
-        XCTAssertEqual(openStates.last, false)
+        XCTAssertEqual(deck.openStates.last, false)
     }
 
     @MainActor
@@ -186,8 +201,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem()])
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
         XCTAssertEqual(tray.trayAlphaForTesting, 1, accuracy: 0.001)
@@ -205,8 +221,10 @@ final class ArchiveTrayControllerTests: XCTestCase {
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         let shifted = UIView()
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [shifted] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        deck.shiftedViews = [shifted]
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.setItems([makeItem()])
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
         tray.setOpenForTesting(true)
@@ -228,8 +246,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         let unavailable = makeItem(title: nil)
         tray.setItems([unavailable])
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
@@ -252,8 +271,9 @@ final class ArchiveTrayControllerTests: XCTestCase {
         let host = UIViewController()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         let item = makeItem(title: nil)
         tray.setItems([item])
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
@@ -272,8 +292,10 @@ final class ArchiveTrayControllerTests: XCTestCase {
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         let shifted = UIView()
-        let tray = ArchiveTrayController(
-            host: host, shiftedViews: { [shifted] }, canPull: { true })
+        let deck = TrayHost()
+        deck.canPull = true
+        deck.shiftedViews = [shifted]
+        let tray = ArchiveTrayController(host: host, delegate: deck)
         tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
 
         tray.setOpenForTesting(true)

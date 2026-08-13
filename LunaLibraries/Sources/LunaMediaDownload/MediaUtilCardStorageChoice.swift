@@ -7,6 +7,21 @@ import Foundation
 import LunaModels
 import Photos
 
+/// Where the current photo-library read/write status comes from, so a test can
+/// pin either answer without a real photo library behind it.
+public protocol PhotoLibraryAuthorizationProbing {
+    var readWriteStatus: PHAuthorizationStatus { get }
+}
+
+/// The production probe: the real library's status.
+public struct PhotoLibraryAuthorizationProbe: PhotoLibraryAuthorizationProbing {
+    public init() {}
+
+    public var readWriteStatus: PHAuthorizationStatus {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    }
+}
+
 /// The media module's answer to the util card's inline "Store downloads …" row
 /// (`DownloadStorageChoosing`). Installed by the `KindWiring` of the two apps
 /// that download — the other two never link this module, so their card never
@@ -20,18 +35,14 @@ import Photos
 public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
 
     private let saver: PhotoLibrarySaving
-    /// The current read/write status, injected so a test can pin either answer
-    /// without a real photo library behind it.
-    private let authorizationStatus: () -> PHAuthorizationStatus
+    private let authorization: PhotoLibraryAuthorizationProbing
 
     public init(
         saver: PhotoLibrarySaving = PhotoLibrarySaver(),
-        authorizationStatus: @escaping () -> PHAuthorizationStatus = {
-            PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        }
+        authorization: PhotoLibraryAuthorizationProbing = PhotoLibraryAuthorizationProbe()
     ) {
         self.saver = saver
-        self.authorizationStatus = authorizationStatus
+        self.authorization = authorization
     }
 
     public static func install() {
@@ -44,7 +55,7 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
 
     public var needsPhotosPermissionInThisApp: Bool {
         guard MediaStorageSettings.option == .photos else { return false }
-        switch authorizationStatus() {
+        switch authorization.readWriteStatus {
         case .authorized, .limited: return false
         default: return true
         }
@@ -65,7 +76,7 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
         // Already refused: iOS will not show the prompt a second time, so
         // nothing this process does can grant the access — the caller sends the
         // user to Luna's own page in Settings instead.
-        switch authorizationStatus() {
+        switch authorization.readWriteStatus {
         case .denied, .restricted:
             // The setting itself does not move — it is already off Photos —
             // but the row has been answered and does not come back.
@@ -94,7 +105,7 @@ public final class MediaUtilCardStorageChoice: DownloadStorageChoosing {
     public func requestPhotosPermissionRelay(
         completion: @escaping (DownloadStoragePhotosOutcome) -> Void
     ) {
-        switch authorizationStatus() {
+        switch authorization.readWriteStatus {
         case .authorized, .limited:
             completion(.granted)
             return

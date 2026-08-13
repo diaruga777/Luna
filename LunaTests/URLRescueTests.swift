@@ -848,7 +848,8 @@ final class URLRescueTests: XCTestCase {
     func testQueuedRescueRequestCarriesNoContentHint() {
         _ = PendingRescueRequestStore.shared.takeAll()   // start from a clean queue
         let host = FakeHost(isActionExtension: true)
-        let driver = ShareSurfaceDriver(host: host, store: store, surfaceDecision: { _ in .supported })
+        let driver = ShareSurfaceDriver(
+            host: host, store: store, surfaceGate: AlwaysSupportedSurfaceGate())
         let url = URL(string: "https://example.com/broken")!
         _ = store.add(urlString: url.absoluteString)
 

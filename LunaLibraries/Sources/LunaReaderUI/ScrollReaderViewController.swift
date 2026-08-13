@@ -21,11 +21,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public weak var completionDelegate: ReaderCompletionDelegate?
 
     /// When set, a tapped inline link (with the exact text range UIKit already resolved
-    /// for it) is handed to this closure instead of opening a new inline split overlay —
+    /// for it) is handed to this delegate instead of opening a new inline split overlay —
     /// used by the inline reader to push the link onto its own navigation stack rather
     /// than nesting another overlay. RabbitHole uses the range to avoid rescanning links
     /// on tap.
-    public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
+    public weak var linkActivationDelegate: ReaderLinkActivationDelegate?
 
     /// Center of UIKit's resolved link range in this reader's coordinate space.
     /// Wrapped links use the union of their glyph fragments, which is a close and
@@ -1483,8 +1483,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             }
             return UIAction { [weak self] _ in
                 guard let self else { return }
-                if let onLinkActivatedWithRange = self.onLinkActivatedWithRange {
-                    onLinkActivatedWithRange(url, textItem.range)
+                if let delegate = self.linkActivationDelegate {
+                    delegate.reader(self, didActivateLink: url, inRange: textItem.range)
                 } else {
                     self.openSplit(for: url, tappedRange: textItem.range)
                 }

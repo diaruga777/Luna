@@ -8,12 +8,17 @@
 //  never silences other apps' audio, while unmuted playback claims the
 //  session so it's audible even with the silent switch on. The carousel
 //  itself still owns applying the resulting mute state to its mounted slots —
-//  `onMuteStateChanged` is how it hears about a change, whether from its own
+//  The delegate is how it hears about a change, whether from its own
 //  mute button or from this object's own auto-unmute.
 //
 
 import AVFoundation
 import Foundation
+
+/// The carousel, which re-applies a changed mute state to its mounted slots.
+protocol CarouselAudioSessionCoordinatorDelegate: AnyObject {
+    func carouselAudioSessionDidChangeMuteState(_ coordinator: CarouselAudioSessionCoordinator)
+}
 
 final class CarouselAudioSessionCoordinator {
 
@@ -25,13 +30,13 @@ final class CarouselAudioSessionCoordinator {
     private(set) var isMuted = true
     private var volumeObservation: NSKeyValueObservation?
 
-    /// Fired after `isMuted` changes, so the carousel can re-apply mute state
-    /// to its mounted slots.
-    var onMuteStateChanged: (() -> Void)?
+    /// Told after `isMuted` changes, so the carousel can re-apply mute state to
+    /// its mounted slots.
+    weak var delegate: CarouselAudioSessionCoordinatorDelegate?
 
     func setMuted(_ muted: Bool) {
         isMuted = muted
-        onMuteStateChanged?()
+        delegate?.carouselAudioSessionDidChangeMuteState(self)
         updateAudioSession()
     }
 

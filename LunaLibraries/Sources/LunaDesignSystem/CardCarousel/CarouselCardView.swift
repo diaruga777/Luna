@@ -11,6 +11,12 @@
 import UIKit
 import LunaModels
 
+/// The deck a card reports its mute tap to. The carousel owns the actual mute
+/// state (it spans cards); the card only reports the tap.
+public protocol CarouselCardViewDelegate: AnyObject {
+    func carouselCardDidToggleMute(_ card: CarouselCardView)
+}
+
 public final class CarouselCardView: CardSurfaceView {
 
     /// The geometry shared by every card-local floating control. Hosts that
@@ -19,9 +25,7 @@ public final class CarouselCardView: CardSurfaceView {
     public static let muteButtonInset: CGFloat = 12
     public static let muteButtonDiameter: CGFloat = 36
 
-    /// Fired when the user taps the mute button. The carousel owns the actual
-    /// mute state (it spans cards); the card only reports the tap.
-    public var onMuteToggle: (() -> Void)?
+    public weak var delegate: CarouselCardViewDelegate?
 
     private let muteButton = UIButton(type: .system)
     private let dimOverlay = UIView()
@@ -129,6 +133,6 @@ public final class CarouselCardView: CardSurfaceView {
     }
 
     @objc private func muteTapped() {
-        onMuteToggle?()
+        delegate?.carouselCardDidToggleMute(self)
     }
 }

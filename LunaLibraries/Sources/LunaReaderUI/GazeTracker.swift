@@ -9,12 +9,17 @@ import CoreGraphics
 import Foundation
 import UIKit
 
+/// The reader of a gaze source's samples.
+public protocol GazeTrackingDelegate: AnyObject {
+    /// Called on the main queue for every usable camera frame. Points are in
+    /// `UIScreen.fixedCoordinateSpace` (portrait-origin) coordinates.
+    func gazeTracker(_ tracker: GazeTracking, didProduce sample: GazeSample)
+}
+
 /// A source of gaze estimates. The RSVP reader talks to this rather than to
 /// ARKit directly, so its wiring can be exercised with a stub.
 public protocol GazeTracking: AnyObject {
-    /// Called on the main queue for every usable camera frame. Points are in
-    /// `UIScreen.fixedCoordinateSpace` (portrait-origin) coordinates.
-    var onSample: ((GazeSample) -> Void)? { get set }
+    var delegate: GazeTrackingDelegate? { get set }
     var isRunning: Bool { get }
     func start()
     func stop()
@@ -86,7 +91,7 @@ public enum GazeTrackingPermission {
 /// no view — and publishes one `GazeSample` per frame.
 public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate {
 
-    public var onSample: ((GazeSample) -> Void)?
+    public weak var delegate: GazeTrackingDelegate?
     public private(set) var isRunning = false
 
     private lazy var session: ARSession = {
@@ -176,11 +181,14 @@ public final class ARFaceGazeTracker: NSObject, GazeTracking, ARSessionDelegate 
     }
 
     private func emit(_ sample: GazeSample) {
-        guard let onSample else { return }
+        guard let delegate else { return }
         if Thread.isMainThread {
-            onSample(sample)
+            delegate.gazeTracker(self, didProduce: sample)
         } else {
-            DispatchQueue.main.async { onSample(sample) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                delegate.gazeTracker(self, didProduce: sample)
+            }
         }
     }
 }

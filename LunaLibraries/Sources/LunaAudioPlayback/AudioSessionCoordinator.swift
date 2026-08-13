@@ -17,8 +17,8 @@ import AVFoundation
 public final class AudioSessionCoordinator {
     /// What the session should do in response to an interruption/route-change
     /// event — a pure decision, unit-testable independent of a real
-    /// `AVAudioSession`/`NotificationCenter`. `AudioPlaybackCenter` installs
-    /// `actionHandler` to translate this into its own pause()/resume().
+    /// `AVAudioSession`/`NotificationCenter`. `AudioPlaybackCenter` is the
+    /// delegate that translates this into its own pause()/resume().
     public enum Action: Equatable {
         case pause
         case resume
@@ -35,7 +35,7 @@ public final class AudioSessionCoordinator {
     /// is what keeps AirPods-press-to-resume working minutes later.
     public var deactivationGrace: TimeInterval = 5
 
-    public var actionHandler: ((Action) -> Void)?
+    public weak var delegate: AudioSessionCoordinatorDelegate?
 
     public init() {}
 
@@ -95,11 +95,13 @@ public final class AudioSessionCoordinator {
             // Pause WITHOUT deactivating — the interruption itself already
             // took the session; deactivating on top only complicates the
             // `.ended`/`.shouldResume` bookkeeping for no benefit.
-            actionHandler?(.pause)
+            delegate?.audioSession(self, didRequest: .pause)
         case .ended:
             let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-            if options.contains(.shouldResume) { actionHandler?(.resume) }
+            if options.contains(.shouldResume) {
+                delegate?.audioSession(self, didRequest: .resume)
+            }
         @unknown default:
             break
         }
@@ -115,7 +117,7 @@ public final class AudioSessionCoordinator {
         // `.newDeviceAvailable` (e.g. AirPods connecting), is a deliberate
         // no-op: we never auto-resume just because a new route appeared.
         if reason == .oldDeviceUnavailable {
-            actionHandler?(.pause)
+            delegate?.audioSession(self, didRequest: .pause)
         }
     }
 }

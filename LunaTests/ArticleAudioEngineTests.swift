@@ -20,6 +20,17 @@ import XCTest
 /// here is deleted — it just doesn't ride along on every run. Run it with:
 /// `RUN_AUDIO_ENGINE_TESTS=1 xcodebuild test … -only-testing:LunaTests/ArticleAudioEngineTests`
 /// (the `TEST_RUNNER_`-prefixed form when passing it as a build setting).
+/// Records the engine's low-water signal for the two tests that assert it.
+private final class RecordingEngineDelegate: ArticleAudioEngineDelegate {
+    var signalCount = 0
+    var onSignal: (() -> Void)?
+
+    func articleAudioEngineNeedsMoreAudio(_ engine: ArticleAudioEngineControlling) {
+        signalCount += 1
+        onSignal?()
+    }
+}
+
 final class ArticleAudioEngineTests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -163,7 +174,9 @@ final class ArticleAudioEngineTests: XCTestCase {
         engine.lowWaterMark = 5 // seconds
 
         let expectation = expectation(description: "low water mark signal")
-        engine.needsMoreAudioHandler = { expectation.fulfill() }
+        let recorder = RecordingEngineDelegate()
+        recorder.onSignal = { expectation.fulfill() }
+        engine.delegate = recorder
 
         // Schedule ~1s total — below the 5s mark as soon as it's consumed.
         let segment = makeSegment(blockIndex: 0, totalFrames: Int(sampleRate))
@@ -177,14 +190,14 @@ final class ArticleAudioEngineTests: XCTestCase {
         let engine = try makeEngine()
         engine.lowWaterMark = 1 // second
 
-        var fired = false
-        engine.needsMoreAudioHandler = { fired = true }
+        let recorder = RecordingEngineDelegate()
+        engine.delegate = recorder
 
         // Scheduling ~10s keeps queued duration well above the 1s mark.
         let segment = makeSegment(blockIndex: 0, totalFrames: Int(sampleRate * 10))
         engine.schedule(segment)
 
-        XCTAssertFalse(fired)
+        XCTAssertEqual(recorder.signalCount, 0)
     }
 
     // MARK: - Tones

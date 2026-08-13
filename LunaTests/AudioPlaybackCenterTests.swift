@@ -133,11 +133,11 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testInterruptionPausesWithoutSessionDeactivationAndShouldResumeResumes() {
         let (item, _) = startPlayback()
-        session.actionHandler?(.pause)
+        session.request(.pause)
         XCTAssertEqual(center.state, .paused(itemID: item.id))
         XCTAssertEqual(session.deactivationsScheduled, 0, "interruption pause must NOT deactivate the session")
 
-        session.actionHandler?(.resume)
+        session.request(.resume)
         XCTAssertEqual(center.state, .playing(itemID: item.id))
     }
 
@@ -159,7 +159,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         waitUntil(self.engine.scheduledSegments.count == 2)
         // A completion frees the window; the low-water signal alone must also
         // be able to trigger a pump attempt without erroring.
-        engine.needsMoreAudioHandler?()
+        engine.signalNeedsMoreAudio()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertEqual(engine.scheduledSegments.count, 2, "window cap still respected on low-water signal")
     }

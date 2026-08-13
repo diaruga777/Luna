@@ -31,16 +31,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     public weak var completionDelegate: ReaderCompletionDelegate?
 
     /// When set, the link pill hands the tapped link (and the pill's center, in this
-    /// reader's coordinates) to this closure instead of presenting a new inline split
+    /// reader's coordinates) to this delegate instead of presenting a new inline split
     /// overlay — used by the inline reader to push the link onto its own navigation
     /// stack rather than nesting another overlay.
-    public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
+    public weak var linkActivationDelegate: ReaderLinkActivationDelegate?
 
-    /// Fired whenever playback starts (true) or stops (false) — every path:
-    /// tap, controls, scrubbing, read-aloud via the playback center. The
-    /// Reader card carousel fades its chrome away while RSVP is playing and
-    /// back in when it pauses.
-    public var onPlaybackStateChanged: ((Bool) -> Void)?
+    /// The host that follows this reader's play state, for chrome that fades
+    /// while RSVP plays.
+    public weak var playbackObserver: RSVPPlaybackObserving?
 
     private var item: ReadingListItem
     private var engine: RSVPEngine
@@ -59,7 +57,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         didSet {
             updatePlayPauseGlyph()
             gazeCoordinator?.setPlaying(isPlaying)
-            if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
+            if isPlaying != oldValue {
+                playbackObserver?.rsvpReader(self, didChangePlaybackState: isPlaying)
+            }
         }
     }
     /// The Phrases sub-mode's chunk timer (`scheduleNextChunk`/`advanceChunk`),
@@ -1036,8 +1036,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func activateLink(_ url: URL) {
         pause()
-        if let onLinkActivatedAtPoint {
-            onLinkActivatedAtPoint(url, linkPill.center)
+        if let linkActivationDelegate {
+            linkActivationDelegate.reader(self, didActivateLink: url, at: linkPill.center)
             return
         }
         InlineReaderOpener.open(

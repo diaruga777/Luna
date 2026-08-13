@@ -34,6 +34,13 @@ import UIKit
 
 // MARK: - What is per-app about a deck
 
+/// The deck that supplies a card for a save whose kind returned none — the
+/// generic link card only the central app and Reader have.
+@MainActor
+protocol CardDeckFallbackContentProviding: AnyObject {
+    func fallbackCardContent(for item: ReadingListItem) -> CardContentViewController
+}
+
 struct CardDeckConfiguration {
 
     /// Whether a save whose kind holds nothing to draw yet still earns a card.
@@ -45,15 +52,10 @@ struct CardDeckConfiguration {
     /// a slot at all rather than an empty rectangle.
     var showsSavesWithoutKindContent = false
 
-    /// The card for a save whose kind returned none. Only ever reached when
-    /// `showsSavesWithoutKindContent` is true.
-    var fallbackContent: (ReadingListItem) -> CardContentViewController = { _ in
-        CardContentViewController()
-    }
-
-    /// What a tap on a card the resolved presenter declined does. Reader toggles
-    /// immersion / runs the unlock flow from its own subclass, so it passes nil.
-    var fallbackTap: ((ReadingListItem, CardContentViewController?) -> Void)?
+    /// The deck that builds the card for a save whose kind returned none. Only
+    /// ever consulted when `showsSavesWithoutKindContent` is true; without one
+    /// such a save gets an empty card.
+    weak var fallbackContentProvider: CardDeckFallbackContentProviding?
 
     /// The trailing bottom circle, or nil for a deck that dresses it itself
     /// (Reader hangs the focused reader's share ladder there).
@@ -260,7 +262,8 @@ final class KindDeckProvider: CardDeckProviding {
                 for: item, host: host, onChanged: { [weak host] in host?.reload() })
         }
         return presenter.cardContent(for: item, host: host)
-            ?? configuration.fallbackContent(item)
+            ?? configuration.fallbackContentProvider?.fallbackCardContent(for: item)
+            ?? CardContentViewController()
     }
 
     func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
@@ -442,13 +445,13 @@ final class KindDeckProvider: CardDeckProviding {
         for presenter in CardKindPresenters.installed { presenter.utilCardDidCenter() }
     }
 
+    /// A tap the resolved presenter declined does nothing here. Reader's own
+    /// cards consume their taps (immersion, the unlock flow) inside the card
+    /// itself, so no deck has a fallback of its own.
     func deckSlotWasTapped(_ slot: Int) {
         guard let item = item(atSlot: slot) else { return }
         let content = host.carousel.contentController(at: host.carouselIndex(forSlot: slot))
-        if presenter(for: item)?.itemWasTapped(item, cardContent: content, host: host) == true {
-            return
-        }
-        configuration.fallbackTap?(item, content)
+        presenter(for: item)?.itemWasTapped(item, cardContent: content, host: host)
     }
 
     // MARK: - The archive tray

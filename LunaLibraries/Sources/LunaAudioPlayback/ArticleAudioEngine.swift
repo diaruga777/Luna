@@ -55,15 +55,15 @@ public final class ArticleAudioEngine {
         set { timePitch.rate = newValue }
     }
 
-    /// Below this many seconds of scheduled-but-not-yet-consumed audio,
-    /// `needsMoreAudioHandler` fires once (until more is scheduled). Phase 2
-    /// wires this to "render the next block and schedule it".
+    /// Below this many seconds of scheduled-but-not-yet-consumed audio, the
+    /// delegate is told once (until more is scheduled) to render the next block
+    /// and schedule it.
     public var lowWaterMark: TimeInterval = 12
 
-    /// Invoked (on the main queue) when queued audio drops below
-    /// `lowWaterMark`. Fires at most once per drop below the mark — scheduling
-    /// more audio resets the latch.
-    public var needsMoreAudioHandler: (() -> Void)?
+    /// Told (on the main queue) when queued audio drops below `lowWaterMark`.
+    /// Fires at most once per drop below the mark — scheduling more audio resets
+    /// the latch.
+    public weak var delegate: ArticleAudioEngineDelegate?
 
     public var isPlaying: Bool { playerNode.isPlaying }
 
@@ -167,8 +167,8 @@ public final class ArticleAudioEngine {
     ///   listener has truly heard the end of the segment, not merely once
     ///   it's been handed to the render graph.
     /// - Earlier buffers use `.dataConsumed` (pipeline-ahead scheduling): each
-    ///   one firing decrements `queuedDuration` and may trip
-    ///   `needsMoreAudioHandler`.
+    ///   one firing decrements `queuedDuration` and may trip the low-water
+    ///   signal to the delegate.
     /// - `rateMode == .pinnedToNatural` pins `rate` to 1.0 synchronously, right
     ///   here, before any of this segment's buffers are scheduled, and
     ///   restores the prior rate in the same last-buffer callback that also
@@ -247,7 +247,7 @@ public final class ArticleAudioEngine {
     private func checkLowWaterMark() {
         guard !hasSignaledLowWater, queuedDuration < lowWaterMark else { return }
         hasSignaledLowWater = true
-        needsMoreAudioHandler?()
+        delegate?.articleAudioEngineNeedsMoreAudio(self)
     }
 
     // MARK: - Test-only manual rendering

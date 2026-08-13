@@ -132,7 +132,7 @@ public final class VideoCardContentViewController: CardContentViewController {
             await MainActor.run {
                 guard let self else { return }
                 self.hasAudioTrack = !audioTracks.isEmpty
-                self.audioAvailabilityChanged?()
+                self.reportAudioAvailabilityChange()
             }
         }
         if wantsPlaying, UIApplication.shared.applicationState == .active {
@@ -184,7 +184,7 @@ public final class VideoCardContentViewController: CardContentViewController {
         } else {
             player.pause()
         }
-        if changed { playbackStateChanged?() }
+        if changed { reportPlaybackStateChange() }
     }
 
     public override func seek(toFraction fraction: Double) {

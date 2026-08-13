@@ -83,8 +83,8 @@ final class AudioMiniPlayerView: UIView {
     private var display: Display?
     /// Guards async thumbnail decodes against landing on a newer article.
     private var thumbnailToken: UInt64 = 0
-    /// Already-decoded, downsampled thumbnails, keyed by file path (the same
-    /// pattern as `ReadingListItemCell.decodedCache`; NSCache is thread-safe).
+    /// Already-decoded, downsampled thumbnails, keyed by file path (NSCache is
+    /// thread-safe).
     nonisolated(unsafe) private static let decodedThumbnails: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.countLimit = 8

@@ -2,6 +2,16 @@ import LunaReaderUI
 import UIKit
 import XCTest
 
+/// Stands in for the reader that opened the overlay — the leg that restores its own
+/// scroll offset once the split closes.
+private final class RecordingInlineReaderOpener: InlineReaderDismissalDelegate {
+    var dismissalCount = 0
+
+    func inlineReaderDidFinishDismissing(_ overlay: SplitWebOverlayViewController) {
+        dismissalCount += 1
+    }
+}
+
 final class InlineReaderTabMetricsTests: XCTestCase {
     func testNoTabsHasNoScrollableContent() {
         let metrics = InlineReaderTabMetrics(
@@ -46,18 +56,18 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         let url = try XCTUnwrap(URL(string: "https://example.com/linked"))
         let overlay = SplitWebOverlayViewController(
             url: url, shareProvider: nil, sourcePoint: CGPoint(x: 80, y: 300))
-        var dismissalCount = 0
-        overlay.onDismiss = { dismissalCount += 1 }
+        let opener = RecordingInlineReaderOpener()
+        overlay.dismissalDelegate = opener
         let presenter = UIViewController()
         let presentation = try XCTUnwrap(overlay.presentationController(
             forPresented: overlay, presenting: presenter, source: presenter))
 
         presentation.dismissalTransitionDidEnd(false)
-        XCTAssertEqual(dismissalCount, 0)
+        XCTAssertEqual(opener.dismissalCount, 0)
 
         presentation.dismissalTransitionDidEnd(true)
         presentation.dismissalTransitionDidEnd(true)
-        XCTAssertEqual(dismissalCount, 1)
+        XCTAssertEqual(opener.dismissalCount, 1)
     }
 
     func testTabsHugTheirContentWhenThereIsRoom() {

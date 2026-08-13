@@ -9,13 +9,13 @@ import Foundation
 /// A preference store on the shared App-Group suite that still answers with a
 /// value an earlier build left in the process's own `standard` defaults.
 ///
-/// A setting kept in `standard` is per-app: the central Luna app and Luna Reader
-/// each hold their own copy even when both describe the ONE connected email
-/// account. Reading through the group suite converges them. A read finds the
-/// group value when there is one; otherwise it takes the legacy value, copies it
-/// into the group, and returns it — so whichever app wrote first supplies the
-/// starting value and later reads never consult `standard` again. Writes only
-/// ever go to the group.
+/// A setting kept in `standard` is per-app: the central Luna app and Luna
+/// Reader each hold their own copy even when both describe the ONE
+/// connected email account. Reading through the group suite converges
+/// them. A read finds the group value when there is one; otherwise it
+/// takes the legacy value, copies it into the group, and returns it.
+/// Whichever app wrote first supplies the starting value, and later reads
+/// never consult `standard` again. Writes only ever go to the group.
 ///
 /// When the group suite cannot be opened (no entitlement), group and legacy are
 /// the same store and every access lands in `standard`.

@@ -10,13 +10,14 @@ import Foundation
 /// Whether the notification permission prompt has EVER been put in front of the
 /// user — i.e. whether the system authorization status has left `.notDetermined`.
 ///
-/// The system's own answer (`UNUserNotificationCenter.notificationSettings()`) is
-/// asynchronous and lives in a higher tier (`LunaSocial.NotificationManager`, which
-/// keeps this cache honest). This latch exists because several callers must decide
-/// SYNCHRONOUSLY — a tracker being created inside a share/action extension, a view
-/// configuring its first layout — and because an `.appex` cannot ask for
-/// authorization at all, only read what the host app already recorded. Hence one
-/// shared App-Group flag, written by whoever asks and by the periodic refresh.
+/// The system's own answer (`UNUserNotificationCenter.notificationSettings()`)
+/// is asynchronous and lives in a higher tier (`LunaSocial.NotificationManager`,
+/// which keeps this cache honest). This latch exists because several callers
+/// must decide SYNCHRONOUSLY — a tracker being created inside a share/action
+/// extension, a view configuring its first layout — and because an `.appex`
+/// cannot ask for authorization at all; it can only read what the host app
+/// already recorded. So this is one shared App-Group flag, written by
+/// whoever asks and by the periodic refresh.
 ///
 /// It only ever latches ON: once asked, always asked (a user revoking permission in
 /// Settings has still answered the question). `reset()` exists for tests and for the

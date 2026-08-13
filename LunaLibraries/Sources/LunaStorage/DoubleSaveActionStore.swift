@@ -7,17 +7,18 @@ import LunaAppConfig
 import Foundation
 import LunaModels
 
-/// What a double save of an ARTICLE (the same URL saved twice within 7 seconds
-/// via the Action Button's Save App Intent — no other save surface) should do.
-/// Chosen in Settings → Shortcut & Safari, in the two apps that can build
-/// article files (Luna and Luna Reader). See claudedocs/double-save.md.
+/// What a double save of an ARTICLE should do: the same URL saved twice
+/// within 7 seconds via the Action Button's Save App Intent, with no other
+/// save surface involved. Chosen in Settings → Shortcut & Safari, in the two
+/// apps that can build article files, Luna and Luna Reader. See
+/// claudedocs/double-save.md.
 ///
 /// `allCases` is the picker's order.
 public enum DoubleSaveAction: String, CaseIterable {
-    /// The second press does nothing. The default — a double save is easy to
-    /// trigger by accident, so it stays inert until the user opts in. Spelled
-    /// `nothing`, not `none`, so it never collides with `Optional.none` at a
-    /// call site.
+    /// The second press does nothing. This is the default: a double save is
+    /// easy to trigger by accident, so it stays inert until the user opts
+    /// in. Named `nothing`, not `none`, so it never collides with
+    /// `Optional.none` at a call site.
     case nothing
     /// Emails the article's EPUB to the configured Kindle address, through the
     /// send-to-Kindle pipeline.
@@ -44,17 +45,18 @@ public enum DoubleSaveAction: String, CaseIterable {
     }
 }
 
-/// App-Group-backed, per-surface settings for the double-save action, plus the
-/// one-shot "friend prompt pending" hand-off the Save App Intent writes right
-/// before it asks the Shortcut to open Luna: the foregrounding scene consumes
-/// it and presents the friend selector.
+/// App-Group-backed, per-surface settings for the double-save action, plus
+/// the one-shot "friend prompt pending" hand-off. The Save App Intent writes
+/// this right before it asks the Shortcut to open Luna; the foregrounding
+/// scene consumes it and presents the friend selector.
 public final class DoubleSaveActionStore {
 
     public static let shared = DoubleSaveActionStore()
 
     /// How long a written friend prompt stays valid. Foregrounding usually
-    /// happens within a second or two of the intent; anything older is a stale
-    /// leftover (e.g. the user dismissed the shortcut's open) and is dropped.
+    /// happens within a second or two of the intent. Anything older is a
+    /// stale leftover, for example when the user dismissed the shortcut's
+    /// open, and gets dropped.
     public static let friendPromptLifetime: TimeInterval = 5 * 60
 
     private let defaults: UserDefaults
@@ -67,7 +69,7 @@ public final class DoubleSaveActionStore {
         self.now = now
     }
 
-    // `.rawValue` is used ONLY here, at the four defaults-key builders — every
+    // `.rawValue` is used ONLY here, in the four defaults-key builders. Every
     // caller above this file works with `DoubleSaveSurface` itself, never a
     // bare surface string.
     private func actionKey(forSurface surface: DoubleSaveSurface) -> String {
@@ -88,9 +90,10 @@ public final class DoubleSaveActionStore {
 
     // MARK: - Settings
 
-    /// Defaults to `.nothing`. The retired PDF/Markdown choices migrate to the
-    /// single document action; any other retired value (such as the old
-    /// `sendToFriend`) lands on the inert default.
+    /// Defaults to `.nothing`. The retired `openPDF`/`openMarkdown` raw
+    /// values map to the single document action. Any other unrecognized
+    /// value, including a retired `sendToFriend`, lands on the inert
+    /// default.
     public func action(forSurface surface: DoubleSaveSurface) -> DoubleSaveAction {
         guard let rawValue = defaults.string(forKey: actionKey(forSurface: surface))
         else { return .nothing }
@@ -115,16 +118,16 @@ public final class DoubleSaveActionStore {
 
     // MARK: - Ask-every-time hand-off
 
-    /// Records that the app, once foregrounded, should present the friend
-    /// selector for `urlString`.
+    /// Records that this app should present the friend selector for
+    /// `urlString` once it is foregrounded.
     public func setPendingFriendPrompt(urlString: String, forSurface surface: DoubleSaveSurface) {
         defaults.set(urlString, forKey: promptURLKey(forSurface: surface))
         defaults.set(now().timeIntervalSinceReferenceDate,
                      forKey: promptDateKey(forSurface: surface))
     }
 
-    /// One-shot consume: returns the pending prompt's URL (clearing it), or nil
-    /// when there is none or it has gone stale.
+    /// One-shot consume: returns the pending prompt's URL, clearing it, or
+    /// nil when there is none or it has gone stale.
     public func takePendingFriendPrompt(forSurface surface: DoubleSaveSurface) -> String? {
         defer {
             defaults.removeObject(forKey: promptURLKey(forSurface: surface))

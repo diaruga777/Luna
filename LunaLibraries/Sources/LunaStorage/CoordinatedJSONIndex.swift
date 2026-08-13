@@ -5,13 +5,13 @@
 
 import Foundation
 
-/// The shared `NSLock` + `NSFileCoordinator` "load → mutate → save" wrapper for a
-/// JSON index file mutated from multiple processes — the app and its extensions
-/// all touch `preloads.json`. An uncoordinated load→save would let the last
-/// writer clobber another process's concurrent change: `lock` serializes
-/// callers within this process, and `fileCoordinator` serializes callers
-/// across processes. `load` and `save` do the caller's own JSON (de)coding, so
-/// this function stays index-type-agnostic.
+/// The shared `NSLock` + `NSFileCoordinator` "load → mutate → save" wrapper
+/// for a JSON index file mutated from multiple processes — the app and its
+/// extensions all touch `preloads.json`. An uncoordinated load→save would
+/// let the last writer clobber another process's concurrent change: `lock`
+/// serializes callers within this process, and `fileCoordinator` serializes
+/// callers across processes. `load` and `save` do the caller's own JSON
+/// (de)coding, so this function stays index-type-agnostic.
 @discardableResult
 func coordinatedMutateJSONIndex<Index, T>(
     lock: NSLock, fileCoordinator: NSFileCoordinator, indexURL: URL,
@@ -24,9 +24,9 @@ func coordinatedMutateJSONIndex<Index, T>(
         save(index, url)
         return result
     }
-    // `T` may itself be Optional, so `CoordinatedAccessorResult` rather than a
-    // `?? fallback`: a legitimate `nil` value and an accessor that never ran are
-    // different answers.
+    // `T` may itself be Optional, so this uses `CoordinatedAccessorResult`
+    // rather than a `?? fallback`: a legitimate `nil` value and an accessor
+    // that never ran are different answers.
     var coordinatedResult = CoordinatedAccessorResult<T>.notRun
     var coordError: NSError?
     fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in

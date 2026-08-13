@@ -16,9 +16,10 @@ import LunaURLClassification
 /// for a directive, validates it, and applies it by re-entering the RAW pipeline
 /// at most once. NEVER throws — every failure folds into a `RescueOutcome`.
 ///
-/// The "no second LLM pass" guarantee is structural: the applier's `runPipeline`
-/// closure defaults to the raw `IngestPipeline.processResolved`, so a
-/// rescue-triggered re-run can never recurse into rescue.
+/// The "no second LLM pass" guarantee is structural: the applier's re-entry
+/// witness defaults to `RawIngestPipelineReentry`, which calls the raw
+/// `IngestPipeline.processResolved`, so a rescue-triggered re-run can never
+/// recurse into rescue.
 ///
 /// Model rounds are bounded in CODE, never by asking the prompt to behave: the
 /// plan call gets one digest-halving retry on overflow, and at most ONE
@@ -43,7 +44,7 @@ public final class URLRescueEngine {
     private let fetcher: HTMLFetching
     private let traceStore: RescueTraceStoring
     private let stats: RescueStatsStore
-    private let search: (String) async -> [RescueSearchResult]
+    private let search: any RescueSearching
     private let now: () -> Date
 
     public init(
@@ -54,9 +55,8 @@ public final class URLRescueEngine {
         mediaResolver: SocialMediaResolving = NoMediaResolver(),
         traceStore: RescueTraceStoring = SaveDiagnosticsStore.shared,
         stats: RescueStatsStore = .shared,
-        search: @escaping (String) async -> [RescueSearchResult] = RescueSearchProvider.duckDuckGo,
-        runPipeline: @escaping (IngestInput) async -> IngestResult
-            = { await IngestPipeline.processResolved($0) },
+        search: any RescueSearching = DuckDuckGoRescueSearch(),
+        runPipeline: any RescuePipelineReentering = RawIngestPipelineReentry(),
         now: @escaping () -> Date = Date.init
     ) {
         self.session = session
@@ -282,7 +282,7 @@ public final class URLRescueEngine {
         query: String, request: RescueRequest, host: String,
         supportsArticle: Bool, onProgress: @escaping (RescueStage) -> Void
     ) async -> RescueDirective? {
-        let results = await search(query)
+        let results = await search.searchResults(forQuery: query)
         let candidates = RescueSearchCandidates.filter(
             results, request: request, registrableDomain: { validator.registrableDomain($0) })
         log("search results=\(results.count) candidates=\(candidates.count) host=\(host)", request)

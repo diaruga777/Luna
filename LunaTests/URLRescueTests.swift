@@ -59,8 +59,7 @@ final class URLRescueTests: XCTestCase {
             session: session, scriptRunner: scriptRunner, ruleStore: ruleStore,
             fetcher: fetcher, mediaResolver: media,
             traceStore: traceStore, stats: stats ?? RescueStatsStore(containerURL: scratch),
-            search: { await search.run($0) },
-            runPipeline: { await pipeline.run($0) })
+            search: search, runPipeline: pipeline)
         return (engine, pipeline)
     }
 

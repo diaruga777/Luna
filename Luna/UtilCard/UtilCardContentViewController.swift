@@ -141,6 +141,10 @@ final class UtilCardContentViewController: CardContentViewController {
     /// for the next setup-label cycle boundary before showing the weekly row.
     private var weeklyAppearanceReady = false
     private var introHeadlineHasYieldedToWeekly = false
+    /// Whether the card is the one in front of the user. The setup labels only
+    /// keep a clock of their own while it is — the weekly row's own pacer
+    /// answers this separately for the row.
+    private var isCardCentered = false
     private var weeklyRevealWorkItem: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
 
@@ -362,7 +366,32 @@ final class UtilCardContentViewController: CardContentViewController {
     /// matching the weekly row's initial article slot.
     private func beginSetupTextCycling() {
         guard app == .luna, weeklyAppearanceDeferred else { return }
-        setupTextCycler?.startCycling()
+        updateSetupLabelClock()
+    }
+
+    /// Which clock advances the central card's setup labels. Exactly one ever
+    /// runs, and the weekly row is the preferred one: its turn and the labels
+    /// are then the same app's by construction, whether an auto-advance or a
+    /// swipe moved it.
+    ///
+    /// A card with no live pick has no row to hand the job to, though — the row
+    /// is not on screen at all — and the labels used to freeze on whichever turn
+    /// the intro hand-off left them at, forever. The cycler keeps its own clock
+    /// in that case. It is also the whole answer on the COMPLETED card, which
+    /// keeps these buttons (and, in central Luna, keeps them stretched edge to
+    /// edge for exactly this cycling) long after the first run is answered.
+    private func updateSetupLabelClock() {
+        guard let setupTextCycler else { return }
+        let rowWillCycle = !weeklyHost.isEmpty && !weeklyHost.isHidden
+        // Nothing to carry the labels, or nobody looking at them.
+        let hasCyclingButton =
+            safariButton.superview != nil || saveSetupButton.superview != nil
+        let canKeepOwnClock = isCardCentered && !awaitingIntroReveal && hasCyclingButton
+        if rowWillCycle || !canKeepOwnClock {
+            setupTextCycler.stopCycling()
+        } else {
+            setupTextCycler.startCycling()
+        }
     }
 
     private func revealWeeklyAtCycleBoundaryIfReady() {
@@ -385,13 +414,15 @@ final class UtilCardContentViewController: CardContentViewController {
         weeklyRevealWorkItem = nil
         weeklyAppearanceDeferred = false
         weeklyAppearanceReady = false
-        // The just-started label transition is the hand-off point. From here
-        // the weekly row's cycle is the single source of future label changes.
-        setupTextCycler?.stopCycling()
         introHeadlineHasYieldedToWeekly = true
         let hasWeekly = !weeklyHost.isEmpty
         weeklyHost.isHidden = !hasWeekly
         weeklyHost.alpha = hasWeekly ? 0 : 1
+        // The just-started label transition is the hand-off point: from here the
+        // weekly row's cycle is the single source of future label changes —
+        // when there IS a row. With no live pick the labels keep their own clock
+        // rather than standing on the one turn this hand-off gave them.
+        updateSetupLabelClock()
         view.setNeedsLayout()
         // Put the invisible row in its finished-card seat before the fade
         // begins. Animating this layout change would make its first appearance
@@ -429,6 +460,9 @@ final class UtilCardContentViewController: CardContentViewController {
         let wasHidden = weeklyHost.isHidden
         weeklyHost.reload(animated: !UIAccessibility.isReduceMotionEnabled)
         let shouldHide = weeklyHost.isEmpty
+        // A pick arriving hands the labels to the row; the last one expiring
+        // hands them back. Every path below is one of those two, or neither.
+        defer { updateSetupLabelClock() }
         guard wasHidden != shouldHide else { return }
         if awaitingIntroReveal || weeklyAppearanceDeferred {
             // The headline is still speaking. Take the slot (or give it up)
@@ -590,7 +624,9 @@ final class UtilCardContentViewController: CardContentViewController {
 
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
+        isCardCentered = true
         weeklyHost.cardDidBecomeCentered()
+        updateSetupLabelClock()
         guard let headline, !didSettleHeadline else { return }
         didSettleHeadline = true
         view.layoutIfNeeded()
@@ -618,7 +654,9 @@ final class UtilCardContentViewController: CardContentViewController {
 
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
+        isCardCentered = false
         weeklyHost.cardDidLeaveCenter()
+        // Also stops the clock, whichever one was running.
         setupTextCycler?.reset()
     }
 
@@ -689,7 +727,11 @@ final class UtilCardContentViewController: CardContentViewController {
             symbol: "envelope.fill",
             action: #selector(emailSetupTapped))
 
-        if app == .luna, showsOnboarding {
+        // Central Luna only — and in BOTH states. The cycling is what earns
+        // these two buttons their full width (`compactSetupButtonWidth`), which
+        // the completed card keeps; gating the cycler on the first run left that
+        // card holding edge-to-edge buttons for phrasing that never arrived.
+        if app == .luna {
             setupTextCycler = UtilCardSetupTextCycler(
                 safariButton: safariButton,
                 shortcutButton: saveSetupButton)
@@ -793,6 +835,9 @@ final class UtilCardContentViewController: CardContentViewController {
         }
         guard offers != setupOffers else { return }
         setupOffers = offers
+        // A retirement can take the last cycling button off the card, and the
+        // email nudge that replaces it never cycles.
+        updateSetupLabelClock()
         view.setNeedsLayout()
     }
 

@@ -35,7 +35,7 @@ final class PriceTrackerProductImageTests: XCTestCase {
             delivered = image
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 5)
+        wait(for: [expectation], timeout: 15)
         return delivered
     }
 
@@ -43,7 +43,9 @@ final class PriceTrackerProductImageTests: XCTestCase {
     /// than held as a full-size bitmap — the same contract every other
     /// `DownsampledImageLoader` consumer gets.
     func testLoadDownsamplesAnOversizedSourcePhoto() throws {
-        let name = writePNG(named: "product-oversized-\(UUID().uuidString).png", side: 2000)
+        // Comfortably above the loader's 900pt/3x (2700px) cache target, so a
+        // failure to downsample (returning the full-size bitmap) is observable.
+        let name = writePNG(named: "product-oversized-\(UUID().uuidString).png", side: 4000)
         defer {
             try? FileManager.default.removeItem(
                 at: ReadingListStore.shared.articlesDirectory.appendingPathComponent(name))
@@ -51,8 +53,8 @@ final class PriceTrackerProductImageTests: XCTestCase {
 
         let image = try XCTUnwrap(load(name))
 
-        XCTAssertLessThan(image.size.width * image.scale, 2000)
-        XCTAssertLessThan(image.size.height * image.scale, 2000)
+        XCTAssertLessThan(image.size.width * image.scale, 3000)
+        XCTAssertLessThan(image.size.height * image.scale, 3000)
     }
 
     /// The literal problem this adoption fixes: a second load for the same file

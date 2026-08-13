@@ -40,7 +40,28 @@ public enum LunaShareSheet {
         applicationActivities: [UIActivity]? = nil,
         completion: UIActivityViewController.CompletionWithItemsHandler? = nil
     ) {
-        guard presenter.isViewLoaded else { return }
+        guard let activity = makeActivityViewController(
+            items: items, from: presenter, anchor: anchor,
+            applicationActivities: applicationActivities, completion: completion)
+        else { return }
+        presenter.present(activity, animated: true)
+    }
+
+    /// Builds and configures the activity controller without presenting it —
+    /// the seam `LunaShareSheetTests` uses to verify anchor configuration
+    /// directly. (`UIActivityViewController` finishes attaching to its window
+    /// asynchronously — well after `present(animated:)` returns — which makes
+    /// asserting on a genuinely PRESENTED instance unreliable off a real
+    /// device/window.) Returns nil when `presenter`'s view isn't loaded, the
+    /// same guard `present(items:from:anchor:completion:)` applies.
+    static func makeActivityViewController(
+        items: [Any],
+        from presenter: UIViewController,
+        anchor: LunaShareSheetAnchor?,
+        applicationActivities: [UIActivity]?,
+        completion: UIActivityViewController.CompletionWithItemsHandler?
+    ) -> UIActivityViewController? {
+        guard presenter.isViewLoaded else { return nil }
         let activity = UIActivityViewController(
             activityItems: items, applicationActivities: applicationActivities)
         if let completion {
@@ -65,6 +86,6 @@ public enum LunaShareSheet {
                     x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
             }
         }
-        presenter.present(activity, animated: true)
+        return activity
     }
 }

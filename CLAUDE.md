@@ -367,15 +367,33 @@ that used to live in `LunaSafari/Shared*.swift` are gone — `LunaSafari/SharedP
 now just reduces a "Was $X on <date>" answer over the real `LunaPriceCompare.ProductPageMatching`
 the app links too. `AppConfig.appGroupID` reads the App Group id from the extension's own
 Info.plist, the same `LunaAppGroupID` key every other target reads (`Bundle.main` always
-resolves to the calling process's own bundle). Cross-tier wiring uses injected
-closures/protocols installed at launch in AppDelegate or KindWiring (e.g.
-`AudioPlaybackCenter.dataSource`, `SavesIngestor.unsupportedSavePresenter`,
-`DiagnosticLog.exportIdentityProvider`,
-`ProductPriceRescue.resolver`). Component-boundary communication
-inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
-`ReaderCompletionDelegate`, `InlineReaderPresentationCoordinating`,
-`CarouselScrubberViewDelegate`), not stored closures. The package is pinned to Swift
+resolves to the calling process's own bundle). **Wiring is protocol contracts,
+never stored closures** (owner standard, 2026-08): a stored closure property or a
+closure parameter stored from `init` is not an acceptable seam. Cross-tier launch
+seams are named protocol witnesses installed in AppDelegate, a ShellWiring leg, or
+a kind pack (`*Providing` / `*Presenting` / `*Handling` / `*Making`; strong
+references — e.g. `AudioPlaybackCenter.dataSource`,
+`SavesIngestor.unsupportedSavePresenter`, `DiagnosticLog.exportIdentityProvider`,
+`ProductPriceRescue.resolver`). Component boundaries inside the UI use `*Delegate`
+/ `*DataSource` protocols with weak references (e.g. `RabbitHoleLayerDelegate`,
+`ReaderCompletionDelegate`, `CarouselScrubberViewDelegate`). Closures remain ONLY
+as call arguments: one-shot completions, async continuations, per-operation
+callbacks stored for one in-flight task, and pure-value parameters (clocks,
+comparators, formatters). Single-method protocols are fine; do not merge unrelated
+seams to reduce protocol count. The package is pinned to Swift
 5 language mode. Reusable modules need `public` API + explicit `public init`s.
+
+**Comments follow ASD-STE100 and exist only where code cannot speak** (owner
+standard, 2026-08): a comment states what the code does and how it interacts with
+other code — active voice, short sentences, one idea each. Never describe what
+the code isn't, a deleted feature, or an old design; never restate a spec or
+narrate the next line. Keep: constraints the code cannot show, why esoteric code
+exists, cross-artifact/parity contracts naming their pinning test or mirrored
+artifact. **Prefer a compiler-enforced invariant to a comment**: when a processor
+establishes a property its consumers must trust across a boundary, wrap the
+result in a type only the processor can construct (worked examples:
+`OwnedFilePath`, `UTCDay`, `CapturedPage`) instead of writing prose. Do not mint
+NonEmptyString-grade wrappers for local trivia.
 
 **Per-app SwiftPM link groups.** Every app links the universal set — Models / Storage /
 DesignSystem / Transitions / Fetch / Ingest / URLClassification / HTMLClassification /

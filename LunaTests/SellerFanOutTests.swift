@@ -36,11 +36,10 @@ final class SellerFanOutTests: XCTestCase {
 
         var fetch: SellerFanOut.Fetch {
             { [self] url in
-                lock.lock()
-                requested.append(url.absoluteString)
-                let page = pages[url.absoluteString]
-                lock.unlock()
-                return page
+                return lock.withLock {
+                    requested.append(url.absoluteString)
+                    return pages[url.absoluteString]
+                }
             }
         }
     }

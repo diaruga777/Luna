@@ -131,8 +131,8 @@ final class IntentProgressReporterTests: XCTestCase {
         XCTAssertFalse(LiveMediaDownloadManager.systemProvidesProgressUI)
     }
 
-    func testSystemProgressOwnershipIsScopedToTheBoundOperation() async {
-        await LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(true) {
+    func testSystemProgressOwnershipIsScopedToTheBoundOperation() {
+        LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(true) {
             XCTAssertTrue(LiveMediaDownloadManager.systemProvidesProgressUI)
         }
         // Outside the binding an in-app save still gets Luna's own activity.

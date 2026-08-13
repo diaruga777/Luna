@@ -415,10 +415,10 @@ public final class SavedMediaStore {
         return item
     }
 
-    @discardableResult
     /// `async` because the video thumbnail's first-frame read is: iOS 18
     /// deprecated the synchronous `copyCGImage` in favour of `image(at:)`.
     /// Every caller was already in an async context.
+    @discardableResult
     public func addDownloadedFile(
         _ fileURL: URL,
         kind: MediaAsset.Kind,

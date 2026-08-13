@@ -20,7 +20,7 @@ final class SafariMediaPillTests: XCTestCase {
     private lazy var js = SafariJSTestHarness(self)
 
     /// A post page whose subject is a video — the signal the auto-open waits for.
-    private static let videoPost = """
+    nonisolated private static let videoPost = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <meta property="og:video" content="https://cdn.example.com/v.mp4">
         </head><body style="margin:0"><p>fixture</p></body></html>

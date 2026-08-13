@@ -57,13 +57,13 @@ final class TimeLimitTests: XCTestCase {
         let answered: String?? = await TimeLimit.run(5) {
             await self.uncancellable(after: 0.05, returning: String?.none)
         }
-        XCTAssertNotNil(answered, "the work answered — in time")
+        XCTAssertTrue(answered != nil, "the work answered — in time")
         XCTAssertNil(answered ?? "flattened", "and its answer was nil")
 
         let timedOut: String?? = await TimeLimit.run(0.1) {
             await self.uncancellable(after: 3, returning: String?.some("too late"))
         }
-        XCTAssertNil(timedOut, "the deadline's nil is the outer one")
+        XCTAssertTrue(timedOut == nil, "the deadline's nil is the outer one")
     }
 
     /// A caller that gives up must not be held by work that will not stop — this

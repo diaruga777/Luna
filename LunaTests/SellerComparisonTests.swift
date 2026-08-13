@@ -245,13 +245,25 @@ final class SellerComparisonTests: XCTestCase {
     }
 
     /// Sellers arrive one at a time, so the list fills in front of the user
+    /// Collects the per-landing store counts from inside the runner's
+    /// `@Sendable` closure.
+    private final class CountsBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [Int] = []
+        var values: [Int] { lock.withLock { storage } }
+        func append(_ count: Int) { lock.withLock { storage.append(count) } }
+    }
+
     /// rather than appearing all at once when the run ends.
     func testEachSellerIsPersistedAsItLandsRatherThanAtTheEnd() async {
         let item = store.add(urlString: "https://source.example/p/1")
         store.savePriceTracker(tracker(), for: item.id)
         let results = [result(domain: "a.example", price: "80"),
                        result(domain: "b.example", price: "120")]
-        var countsSeenDuringTheRun: [Int] = []
+        // A box rather than a captured `var`: the runner's closure is
+        // `@Sendable`, so the counts have to live somewhere that can be shared
+        // across the boundary rather than mutated through the capture.
+        let countsSeenDuringTheRun = CountsBox()
         SellerComparisonRunner.installed = { [store] _, onResult in
             for found in results {
                 await onResult?(found)
@@ -263,7 +275,7 @@ final class SellerComparisonTests: XCTestCase {
         }
         _ = await runAndAttach(
             itemID: item.id, sourceURL: URL(string: "https://source.example/p/1")!, store: store)
-        XCTAssertEqual(countsSeenDuringTheRun, [2, 3], "persisted as each one landed")
+        XCTAssertEqual(countsSeenDuringTheRun.values, [2, 3], "persisted as each one landed")
     }
 
     // MARK: - The baseline, and whose decision it is

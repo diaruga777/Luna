@@ -96,10 +96,11 @@ final class ArticleSendCoordinatorTests: XCTestCase {
     /// turn), so the assertions that follow read settled state.
     private func drainDeliveries() async {
         while true {
-            taskLock.lock()
-            let pending = deliveryTasks
-            deliveryTasks.removeAll()
-            taskLock.unlock()
+            let pending = taskLock.withLock {
+                let pending = deliveryTasks
+                deliveryTasks.removeAll()
+                return pending
+            }
             if pending.isEmpty { return }
             for task in pending { await task.value }
         }

@@ -734,11 +734,11 @@ final class UtilCardTests: XCTestCase {
         seedWeekly(.article, url: "https://example.com/weekly", title: "A Read")
         var savedURL: String?
         var savedSource: CaptureSource?
-        let card = makeCard(showsOnboarding: true) { url, source, _, completion in
+        let card = makeCard(showsOnboarding: true, saveHandler: { url, source, _, completion in
             savedURL = url
             savedSource = source
             completion(true)
-        }
+        })
         card.loadViewIfNeeded()
 
         let row = try XCTUnwrap(

@@ -77,7 +77,7 @@ final class SellerComparisonDocumentTests: XCTestCase {
         let heading = try? XCTUnwrap(html.range(of: "<h1>"))
         XCTAssertNotNil(hero)
         XCTAssertNotNil(heading)
-        if let hero = hero as? Range<String.Index>, let heading = heading as? Range<String.Index> {
+        if let hero, let heading {
             XCTAssertLessThan(hero.lowerBound, heading.lowerBound)
         }
         XCTAssertTrue(html.contains("src=\"data:image/jpeg;base64,BBBB\""))
@@ -277,7 +277,7 @@ final class SellerComparisonDocumentTests: XCTestCase {
         let ys = Self.pathYValues(in: svg)
         let lowestDrawn = try? XCTUnwrap(ys.max())
         XCTAssertNotNil(lowestDrawn)
-        if let lowestDrawn = lowestDrawn as? Double {
+        if let lowestDrawn {
             XCTAssertLessThan(lowestDrawn, plotFloor, "the minimum must not touch the floor")
             XCTAssertGreaterThan(lowestDrawn, plotFloor - 40, "…but it is still near it")
         }

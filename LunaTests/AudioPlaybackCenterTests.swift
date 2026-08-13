@@ -60,19 +60,6 @@ final class AudioPlaybackCenterTests: XCTestCase {
             sessionCoordinator: session, engineFactory: { [engine] _ in engine! })
     }
 
-    /// Spins the main run loop until `condition` holds (the center's render
-    /// pipeline hops through a `Task` + a main-queue dispatch).
-    private func waitUntil(
-        timeout: TimeInterval = 2, _ message: String = "condition not met in time",
-        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertTrue(condition(), message, file: file, line: line)
-    }
-
     /// Starts playback of a fixture article and waits for the first block to
     /// be rendered + scheduled.
     @discardableResult
@@ -83,7 +70,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         let content = AudioPlaybackFixtures.content(blockCount: blockCount, wordsPerBlock: wordsPerBlock)
         store.seed(item, content: content)
         center.play(item: item, content: content, fromWordIndex: fromWordIndex)
-        waitUntil("first segment never scheduled") { self.engine.scheduledSegments.count >= 1 }
+        waitUntil(self.engine.scheduledSegments.count >= 1, message: "first segment never scheduled")
         return (item, content)
     }
 
@@ -92,9 +79,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
     private func finishArticle(totalBlocks: Int) {
         var completed = 0
         while completed < totalBlocks {
-            waitUntil("segment \(completed) never scheduled") {
-                self.engine.scheduledSegments.count > completed
-            }
+            waitUntil(self.engine.scheduledSegments.count > completed, message: "segment \(completed) never scheduled")
             engine.completeSegment(at: completed)
             completed += 1
             // Let the completion's follow-on pump run.
@@ -160,18 +145,18 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testLookAheadSchedulesAtMostTwoBlocksAhead() {
         startPlayback(blockCount: 5)
-        waitUntil("look-ahead never filled") { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2, message: "look-ahead never filled")
         // Give the pipeline a moment to (incorrectly) over-schedule.
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertEqual(engine.scheduledSegments.count, 2, "render window is ~2 blocks ahead")
 
         engine.completeSegment(at: 0)
-        waitUntil("window never advanced after completion") { self.engine.scheduledSegments.count == 3 }
+        waitUntil(self.engine.scheduledSegments.count == 3, message: "window never advanced after completion")
     }
 
     func testNeedsMoreAudioSignalPumpsTheWindow() {
         startPlayback(blockCount: 5)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         // A completion frees the window; the low-water signal alone must also
         // be able to trigger a pump attempt without erroring.
         engine.needsMoreAudioHandler?()
@@ -226,7 +211,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         engine.completeTone(at: 0)
 
         // The announcement renders async, then schedules rate-PINNED.
-        waitUntil("announcement never scheduled") { self.engine.scheduledSegments.count == 3 }
+        waitUntil(self.engine.scheduledSegments.count == 3, message: "announcement never scheduled")
         let announcement = engine.scheduledSegments[2]
         XCTAssertEqual(announcement.rateMode, .pinnedToNatural,
                        "announcements always play at 1.0x regardless of the user rate")
@@ -237,11 +222,11 @@ final class AudioPlaybackCenterTests: XCTestCase {
         XCTAssertEqual(engine.scheduledTones.map(\.asset), [.transition, .transition])
         engine.completeTone(at: 1)
 
-        waitUntil("next article never started") { self.center.state == .playing(itemID: nextItem.id) }
+        waitUntil(self.center.state == .playing(itemID: nextItem.id), message: "next article never started")
         XCTAssertTrue(store.markedReadStates.contains { $0.itemID == nextItem.id && $0.state == .opened })
         // 2 body segments + 1 announcement + the next article's 2-block
         // look-ahead = 5 scheduled segments in total.
-        waitUntil("next article's look-ahead never rendered") { self.engine.scheduledSegments.count == 5 }
+        waitUntil(self.engine.scheduledSegments.count == 5, message: "next article's look-ahead never rendered")
         XCTAssertEqual(engine.scheduledSegments[3].segment.blockIndex, 0)
         XCTAssertEqual(engine.scheduledSegments[3].rateMode, .followsUserRate)
     }
@@ -256,7 +241,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         startPlayback(blockCount: 1)
         finishArticle(totalBlocks: 1)
         engine.completeTone(at: 0) // transition chime
-        waitUntil("announcement never scheduled") { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2, message: "announcement never scheduled")
 
         // The user turns autoplay off while the announcement is playing:
         // the boundary re-check must abort the chain.
@@ -279,7 +264,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         positionStore.save(.init(itemID: item.id, wordIndex: 6, elapsed: 2, title: "x"))
 
         center.play(item: item, content: content, fromWordIndex: nil)
-        waitUntil { !self.renderer.renderedBlocks.isEmpty }
+        waitUntil(!self.renderer.renderedBlocks.isEmpty)
         XCTAssertEqual(renderer.renderedBlocks.first?.blockIndex, 1,
                        "resume snaps to the start of the block containing the saved word")
     }
@@ -297,7 +282,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
         positionStore.save(.init(itemID: item.id, wordIndex: 6, elapsed: 2, title: "x"))
 
         center.play(item: item, content: content, fromWordIndex: 0)
-        waitUntil { !self.renderer.renderedBlocks.isEmpty }
+        waitUntil(!self.renderer.renderedBlocks.isEmpty)
         XCTAssertEqual(renderer.renderedBlocks.first?.blockIndex, 0)
     }
 
@@ -319,7 +304,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
         XCTAssertTrue(center.restorePersistedSessionIfAvailable())
         XCTAssertEqual(center.state, .playing(itemID: item.id))
-        waitUntil { !self.renderer.renderedBlocks.isEmpty }
+        waitUntil(!self.renderer.renderedBlocks.isEmpty)
         XCTAssertEqual(renderer.renderedBlocks.first?.blockIndex, 2,
                        "restored playback resumes from the persisted word's block (word 9 -> block 2)")
     }
@@ -347,19 +332,19 @@ final class AudioPlaybackCenterTests: XCTestCase {
         // 4 words per block at 0.25 s/word -> after the first two blocks are
         // rendered the running average is exactly 0.25 s/word.
         startPlayback(blockCount: 5, wordsPerBlock: 4)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
 
         // +2s at 0.25 s/word = +8 words from word 0 -> word 8 = block 2 start.
         center.skip(bySeconds: 2)
         XCTAssertEqual(positionStore.load()?.wordIndex, 8)
-        waitUntil("post-skip render never happened") {
-            self.renderer.renderedBlocks.contains { $0.blockIndex == 2 }
-        }
+        waitUntil(
+            self.renderer.renderedBlocks.contains { $0.blockIndex == 2 },
+            message: "post-skip render never happened")
     }
 
     func testSkipBySecondsUsesLiveEngineClockWhenWordMarkersAreStale() {
         startPlayback(blockCount: 5, wordsPerBlock: 4)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 1.0 // word 4, even though no marker event updated lastKnownWordIndex
 
         // +1.25s at 0.25 s/word = +5 words from live word 4 -> word 9,
@@ -371,7 +356,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testSkipBackwardBySecondsClampsAtZero() {
         startPlayback(blockCount: 3)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         center.skip(bySeconds: -300)
         XCTAssertEqual(positionStore.load()?.wordIndex, 0)
     }
@@ -384,7 +369,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testSkipForwardParagraphUsesLiveEngineClockWhenWordMarkersAreStale() {
         startPlayback(blockCount: 5, wordsPerBlock: 4)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 2.0 // word 8 / block 2
 
         center.skipForwardParagraph()
@@ -394,7 +379,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
 
     func testSkipBackwardParagraphUsesLiveEngineClockWhenWordMarkersAreStale() {
         startPlayback(blockCount: 5, wordsPerBlock: 4)
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 2.25 // word 9, inside block 2
 
         center.skipBackwardParagraph()

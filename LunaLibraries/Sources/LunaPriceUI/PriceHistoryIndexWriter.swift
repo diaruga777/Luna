@@ -5,6 +5,7 @@
 
 import LunaAppConfig
 import LunaModels
+import LunaPriceCompare
 import LunaStorage
 import Foundation
 
@@ -74,14 +75,6 @@ public enum PriceHistoryIndexWriter {
             .appendingPathComponent(fileName)
     }
 
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
-
     /// Builds the index entries from the given trackers (pure — testable
     /// without touching the App Group container).
     public static func makeEntries(
@@ -98,7 +91,7 @@ public enum PriceHistoryIndexWriter {
                     .filter { $0.dayStart >= cutoff }
                     .map {
                         PriceHistoryIndexEntry.Point(
-                            day: dayFormatter.string(from: $0.dayStart),
+                            day: ProductSnapshotStore.dayString(for: $0.dayStart),
                             price: NSDecimalNumber(decimal: $0.lowestPrice).stringValue,
                             currency: $0.currency)
                     }

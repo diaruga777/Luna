@@ -17,7 +17,7 @@ public enum LunaInstallationMarkers {
     public static let downloaderKey = "lunaInstalled.downloader"
 
     private static var defaults: UserDefaults {
-        UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
+        resolvedAppGroupDefaults(appGroupID: AppConfig.appGroupID, testOverride: nil) ?? .standard
     }
 
     public static var downloaderWasInstalled: Bool {

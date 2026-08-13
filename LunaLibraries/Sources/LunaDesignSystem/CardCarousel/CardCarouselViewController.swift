@@ -227,6 +227,20 @@ public struct CardCarouselStyle {
     static let playbackControlsCardInset: CGFloat = 12
 
     public init() {}
+
+    /// The shared look for a deck whose every card is one kind — the
+    /// Downloader's media deck and the Price Tracker's product deck: a
+    /// slightly faster page swipe, the wider scrub-strip inset with its own
+    /// edge fade (room for the flanking circles beside it), and a card
+    /// border.
+    public static var singleKindDeck: CardCarouselStyle {
+        var style = CardCarouselStyle()
+        style.pageSwipeMovementMultiplier = 1.5
+        style.scrubberHorizontalInset = 56
+        style.scrubberEdgeFadeWidth = 28
+        style.showsCardBorder = true
+        return style
+    }
 }
 
 public protocol CardCarouselDelegate: AnyObject {

@@ -72,11 +72,7 @@ enum ProductCardDeck {
     @MainActor
     static func makeRoot() -> CardCarouselHostViewController {
         let deck = CardCarouselHostViewController()
-        var style = CardCarouselStyle()
-        style.pageSwipeMovementMultiplier = 1.5
-        style.scrubberHorizontalInset = 56
-        style.scrubberEdgeFadeWidth = 28
-        style.showsCardBorder = true
+        let style = CardCarouselStyle.singleKindDeck
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
             // This app has no generic link card: a product row with no tracker

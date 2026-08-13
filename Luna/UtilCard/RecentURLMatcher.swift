@@ -90,8 +90,7 @@ final class RecentURLMatcher {
     static var testDefaultsOverride: UserDefaults?
 
     private var defaults: UserDefaults {
-        Self.testDefaultsOverride
-            ?? UserDefaults(suiteName: AppConfig.appGroupID)
+        resolvedAppGroupDefaults(appGroupID: AppConfig.appGroupID, testOverride: Self.testDefaultsOverride)
             ?? .standard
     }
 

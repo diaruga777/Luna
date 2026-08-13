@@ -292,15 +292,6 @@ final class ReaderOnboardingTests: XCTestCase {
             window.isHidden = true
         }
 
-        func pollUntil(
-            _ timeout: TimeInterval = 5, _ condition: () -> Bool
-        ) {
-            let deadline = Date(timeIntervalSinceNow: timeout)
-            while Date() < deadline, !condition() {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            }
-        }
-
         func assertExactlyOneLiveScrim(
             _ label: String, file: StaticString = #filePath, line: UInt = #line
         ) throws {
@@ -347,19 +338,19 @@ final class ReaderOnboardingTests: XCTestCase {
         // Walk the first full cycle with nothing over it yet — a
         // demonstration, not an ask — then close it on the third ending.
         onboarding.finishSafariLessonForTesting()
-        pollUntil { onboarding.safariDemonstrationAppForTesting == .downloader }
+        waitUntil(onboarding.safariDemonstrationAppForTesting == .downloader, timeout: 5)
         onboarding.finishSafariLessonForTesting()
-        pollUntil { onboarding.safariDemonstrationAppForTesting == .priceTracker }
+        waitUntil(onboarding.safariDemonstrationAppForTesting == .priceTracker, timeout: 5)
         onboarding.finishSafariLessonForTesting()
-        pollUntil { onboarding.hasSafariInstructionsForTesting }
+        waitUntil(onboarding.hasSafariInstructionsForTesting, timeout: 5)
         try assertExactlyOneLiveScrim("popup just raised, before any swap")
 
         // First cross-sibling swap under the live popup: priceTracker wraps
         // to reader. No new `finishSafariLessonForTesting()` call is needed —
         // the popup's own raise already scheduled this swap.
-        pollUntil(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3) {
-            onboarding.safariDemonstrationAppForTesting == .reader
-        }
+        waitUntil(
+            onboarding.safariDemonstrationAppForTesting == .reader,
+            timeout: OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3)
         XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .reader)
         try assertExactlyOneLiveScrim("one swap in")
 
@@ -367,9 +358,9 @@ final class ReaderOnboardingTests: XCTestCase {
         // specifically needed "one or two swaps in," so this is the swap that
         // matters most.
         onboarding.finishSafariLessonForTesting()
-        pollUntil(OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3) {
-            onboarding.safariDemonstrationAppForTesting == .downloader
-        }
+        waitUntil(
+            onboarding.safariDemonstrationAppForTesting == .downloader,
+            timeout: OnboardingDemoLoopTiming.siblingLessonHoldDuration + 3)
         XCTAssertEqual(onboarding.safariDemonstrationAppForTesting, .downloader)
         try assertExactlyOneLiveScrim("two swaps in")
     }
@@ -454,21 +445,11 @@ final class ReaderOnboardingTests: XCTestCase {
         let speed = OnboardingDemoLoopTiming.repeatedSafariLessonSpeedMultiplier
         let hold = OnboardingVideoDownloadTiming.pageHoldDuration * speed
 
-        /// Runs the loop until the panel is up, or the deadline passes.
-        func waitForPanel(
-            _ overlay: OnboardingVideoDownloadOverlayView, timeout: TimeInterval
-        ) {
-            let deadline = Date(timeIntervalSinceNow: timeout)
-            while Date() < deadline, overlay.backdropBlurWeightForTesting <= 0 {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            }
-        }
-
         safari.beginDemonstration(
             showsExtensionSheet: false, animationSpeedMultiplier: speed)
         let overlay = try XCTUnwrap(
             window.descendants(of: OnboardingVideoDownloadOverlayView.self).first)
-        waitForPanel(overlay, timeout: hold + 4)
+        waitUntil(overlay.backdropBlurWeightForTesting > 0, timeout: hold + 4)
         XCTAssertGreaterThan(
             overlay.backdropBlurWeightForTesting, 0,
             "panel never reached the playing state on the first pass")
@@ -485,7 +466,7 @@ final class ReaderOnboardingTests: XCTestCase {
             overlay.backdropBlurWeightForTesting, 0,
             "the blocked post must hold before the panel answers it")
 
-        waitForPanel(overlay, timeout: hold + 4)
+        waitUntil(overlay.backdropBlurWeightForTesting > 0, timeout: hold + 4)
         XCTAssertGreaterThan(
             overlay.backdropBlurWeightForTesting, 0,
             "the replay never reached the player")

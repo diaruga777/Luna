@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaURLClassification
 import UIKit
 
 /// A compact price-history chart. Points can be tapped for detail; alert editing
@@ -315,8 +316,8 @@ public final class PriceGraphView: UIView {
 
     private func updateCalloutText(for index: Int) {
         let point = points[index]
-        let host = URL(string: point.storeURLString)?.host?
-            .replacingOccurrences(of: "www.", with: "") ?? point.storeURLString
+        let host = URL(string: point.storeURLString)?.host.map(HostMatching.normalizedHost)
+            ?? point.storeURLString
         calloutLabel.text =
             "\(PriceFormatting.string(amount: point.price, currency: point.currency))\n"
             + "\(Self.calloutDate(point.date))\n\(host)"

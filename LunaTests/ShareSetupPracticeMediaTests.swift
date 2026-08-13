@@ -140,9 +140,7 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
         let layer = try XCTUnwrap(
             Self.playerLayers(in: controller.view).first,
             "the rehearsal has no player on screen at all")
-        try Self.waitUntil("the rehearsal's clip never loaded") {
-            layer.player != nil
-        }
+        waitUntil(layer.player != nil, timeout: 5, message: "the rehearsal's clip never loaded")
         XCTAssertGreaterThan(layer.bounds.width, 100)
         XCTAssertGreaterThan(layer.bounds.height, 100)
     }
@@ -170,9 +168,7 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
         XCTAssertLessThan(
             bar.progress, 1, "the bar finished before the beat began")
 
-        try Self.waitUntil("the rehearsal never resolved its clip") {
-            layer.player != nil
-        }
+        waitUntil(layer.player != nil, timeout: 5, message: "the rehearsal never resolved its clip")
         XCTAssertEqual(
             bar.progress, 1, accuracy: 0.001,
             "the result arrived over an unfinished bar")
@@ -186,19 +182,6 @@ final class ShareSetupPracticeMediaTests: XCTestCase {
         controller.view.frame = CGRect(x: 0, y: 0, width: 393, height: 760)
         controller.view.layoutIfNeeded()
         return controller
-    }
-
-    /// Polls rather than pumping a fixed duration: the beat is a chain of main-queue
-    /// steps, and a fixed wait is not a wait.
-    private static func waitUntil(
-        _ message: String, timeout: TimeInterval = 5,
-        _ condition: () -> Bool
-    ) throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        }
-        XCTAssertTrue(condition(), message)
     }
 
     private static func progressBars(in view: UIView) -> [MoonHorizonProgressBar] {

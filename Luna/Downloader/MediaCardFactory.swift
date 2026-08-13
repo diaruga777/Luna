@@ -699,15 +699,11 @@ enum MediaCardDeck {
     @MainActor
     static func makeRoot() -> CardCarouselHostViewController {
         let deck = CardCarouselHostViewController()
-        var style = CardCarouselStyle()
-        style.pageSwipeMovementMultiplier = 1.5
         // The same strip geometry as every other app: the viewport begins and
         // ends at the inner edges of the flanking 44pt circles, and chips
         // alpha-fade before they reach them. This app used 64/0 — a wider inset
         // and no fade — purely because its strip was a different implementation.
-        style.scrubberHorizontalInset = 56
-        style.scrubberEdgeFadeWidth = 28
-        style.showsCardBorder = true
+        let style = CardCarouselStyle.singleKindDeck
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
             // This app has no generic link card, so a platform save with nothing

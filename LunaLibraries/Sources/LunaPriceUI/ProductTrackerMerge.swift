@@ -139,7 +139,7 @@ public enum ProductTrackerMerge {
                           // one they made it on. `capturedAt` is the real
                           // moment; the day string stays the record's identity.
                           let day = snapshot.capturedInstant
-                            ?? utcDayDate(fromDayString: snapshot.day)
+                            ?? ProductSnapshotStore.date(forDay: snapshot.day)
                     else { return nil }
                     return (day, amount, snapshot.currency)
                 }
@@ -147,15 +147,5 @@ public enum ProductTrackerMerge {
             tracker.mergeHistorySamples(
                 samples, forHost: host, newStoreURLString: hostSnapshots[0].url)
         }
-    }
-
-    /// Parses a `yyyy-MM-dd` UTC day string (the snapshot file's bucketing) to
-    /// a `Date` at that day's UTC midnight.
-    static func utcDayDate(fromDayString day: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.date(from: day)
     }
 }

@@ -12,8 +12,7 @@ public enum AppIntentSettings {
     static var testDefaultsOverride: UserDefaults?
 
     private static var defaults: UserDefaults {
-        testDefaultsOverride
-            ?? UserDefaults(suiteName: AppConfig.appGroupID)
+        resolvedAppGroupDefaults(appGroupID: AppConfig.appGroupID, testOverride: testDefaultsOverride)
             ?? .standard
     }
 

@@ -178,24 +178,13 @@ final class AudioPlaybackSupportTests: XCTestCase {
 
     // MARK: - AudioPlaybackHandoffTests helpers
 
-    private func waitUntil(
-        timeout: TimeInterval = 2, _ message: String = "condition not met in time",
-        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertTrue(condition(), message, file: file, line: line)
-    }
-
     @discardableResult
     private func startPlayback() -> ReadingListItem {
         let item = AudioPlaybackFixtures.item(seed: "np-item", title: "Playing Title")
         let content = AudioPlaybackFixtures.content(title: "Playing Title", blockCount: 3)
         store.seed(item, content: content)
         center.play(item: item, content: content, fromWordIndex: 0)
-        waitUntil { self.engine.scheduledSegments.count >= 1 }
+        waitUntil(self.engine.scheduledSegments.count >= 1)
         return item
     }
 
@@ -690,7 +679,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
 
         // Drive the article to completion -> final chime -> idle.
         for index in 0..<3 {
-            waitUntil { self.engine.scheduledSegments.count > index }
+            waitUntil(self.engine.scheduledSegments.count > index)
             engine.completeSegment(at: index)
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
@@ -750,7 +739,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
     func testSkipCommandsMapToSecondsSkips() {
         coordinator.registerAtLaunch(center: center)
         startPlayback()
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         // 0.25 s/word fixture: +30s = +120 words, clamped to the last word,
         // which snaps to the last block's start (block 2 of 3, word 8).
         XCTAssertEqual(binding.handler?(.skipForward(seconds: 30)), true)
@@ -763,7 +752,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
     func testSkipCommandsUseLiveEngineClockWhenWordMarkersAreStale() {
         coordinator.registerAtLaunch(center: center)
         startPlayback()
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         engine.currentTime = 1.0 // word 4, even with no word-marker tick
 
         // +1.25s at 0.25 s/word = +5 words from live word 4 -> word 9,
@@ -783,7 +772,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
     func testChangePlaybackPositionSeeksProportionally() {
         coordinator.registerAtLaunch(center: center)
         startPlayback()
-        waitUntil { self.engine.scheduledSegments.count == 2 }
+        waitUntil(self.engine.scheduledSegments.count == 2)
         // Fixture estimate: 12 words x 0.25s = 3s total. Seeking to the very
         // end lands on the last word -> snaps to block 2's start (word 8).
         XCTAssertEqual(binding.handler?(.changePlaybackPosition(seconds: 3)), true)
@@ -799,7 +788,7 @@ final class AudioPlaybackSupportTests: XCTestCase {
         coordinator.registerAtLaunch(center: center)
         XCTAssertEqual(binding.handler?(.play), true)
         XCTAssertEqual(center.state, .playing(itemID: item.id))
-        waitUntil { !self.renderer.renderedBlocks.isEmpty }
+        waitUntil(!self.renderer.renderedBlocks.isEmpty)
         XCTAssertEqual(renderer.renderedBlocks.first?.blockIndex, 1,
                        "restored from the persisted word index (word 5 -> block 1)")
     }

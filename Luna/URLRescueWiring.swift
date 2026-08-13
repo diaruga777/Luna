@@ -11,13 +11,6 @@ import LunaSavesUI
 import LunaStorage
 import LunaURLRescue
 
-/// The ONLY place the app links `LunaURLRescue`. Installs the engine bridge into
-/// `URLRescueCoordinator`, plus the rescue trigger the ingestor calls. Runs in
-/// all four apps (rescue is universal); no surface supplies a content hint any
-/// more — the model classifies the page — and the media/product LEGS are per-kind seams filled by the `KindWiring`
-/// variants (`mediaRescueStarter`; `rescueProductInfo` consumed by product
-/// wirings for the price editor's "Ask Apple Intelligence" resolver). See
-/// `claudedocs/url-rescue.md`.
 /// Downloads the engine-resolved assets of a media rescue without re-running
 /// platform resolution (the source page already failed to resolve normally).
 /// Installed by media apps' `KindWiring` (Downloader + central Luna); left
@@ -29,6 +22,14 @@ protocol MediaRescueStarting {
     ) async -> Bool
 }
 
+/// The ONLY place the app links `LunaURLRescue`. Installs the engine bridge
+/// into `URLRescueCoordinator`, plus the rescue trigger the ingestor calls.
+/// Runs in all four apps — rescue is universal. The model classifies the
+/// page itself; no surface supplies a content hint. The media and product
+/// legs are per-kind seams the `KindWiring` variants fill
+/// (`mediaRescueStarter`; `rescueProductInfo`, consumed by product wirings
+/// for the price editor's "Ask Apple Intelligence" resolver). See
+/// `claudedocs/url-rescue.md`.
 enum URLRescueWiring {
 
     /// The engine's social-media asset resolver, installed by media-handling

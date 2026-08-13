@@ -692,7 +692,7 @@ final class AppOnboardingViewController: UIViewController {
     /// The Safari action hands off with the same mock app-switcher hop
     /// the Safari-setup return uses: the intro deck slides out as a rounded
     /// card while the browser, snapshotted at rest, slides in and fills the
-    /// screen. (It used to grow the intro card itself to the display edges.)
+    /// screen.
     private func expandSafariCard() {
         guard !didExpandSafari, appSwitcher == nil else { return }
         preloadDemonstrationIfNeeded()
@@ -987,8 +987,8 @@ final class AppOnboardingViewController: UIViewController {
     /// showing one of its OWN instruction overlays (the Safari prompt, the
     /// shortcut/Action Button ask, the external-open failure — asks that
     /// belong to a single lesson rather than to the cycle as a whole). The
-    /// popup itself is this controller's own state now, not any replica's, so
-    /// it no longer matters which replica is currently on screen.
+    /// popup itself is this controller's own state, not any replica's, so
+    /// which replica is currently on screen does not matter.
     private var hasSafariInstructions: Bool {
         safariSetupPopup != nil
             || safariReplicas.values.contains { $0.hasInstructions }
@@ -1268,11 +1268,10 @@ final class AppOnboardingViewController: UIViewController {
     ///
     /// A demonstration is mounted full screen at the SIZE of the screen, so
     /// while it is attached it is the topmost thing in the window under the
-    /// app-switcher hop. Every ending used to leave it there: the hop came down,
-    /// or the window's root was swapped, or the replay was dismissed, with the
-    /// mock still live underneath — and whichever of those needed a frame of its
-    /// own showed the lesson flashing back over the card deck it had just handed
-    /// off to. Nothing may outlive the hop that covered it.
+    /// app-switcher hop. Leaving it mounted through an ending — the hop
+    /// coming down, the window's root being swapped, or the replay being
+    /// dismissed — risks a frame where the mock flashes back over the card
+    /// deck it just handed off to. Nothing may outlive the hop that covered it.
     private func hideDemonstrationSources() {
         for kind in OnboardingDemoSource.allCases {
             guard let sourceView = sourceController(for: kind)?.view else { continue }
@@ -1408,10 +1407,10 @@ final class AppOnboardingViewController: UIViewController {
         // in-page confirmation pairs this with its own first run, and both halves
         // have to be on disk before Safari is anywhere near the foreground.
         LunaSetupStatusStore.shared.recordSafariSetupTap(for: configuration.app)
-        // The page IS the instructions now: the enabling steps that used to be
-        // narrated in-app live on the RUNNING app's own hosted setup page, so
-        // the hop lands the user on the very page that tells them what to tap
-        // next. `configuration.app` (not the sibling the cycle happens to be
+        // The page IS the instructions: the enabling steps live on the
+        // RUNNING app's own hosted setup page, so the hop lands the user on
+        // the very page that tells them what to tap next.
+        // `configuration.app` (not the sibling the cycle happens to be
         // showing) matches `recordSafariSetupTap(for:)` above — in central Luna
         // the cycle walks through sibling lessons, but the extension being
         // enabled is always central Luna's own.
@@ -1594,7 +1593,7 @@ final class AppOnboardingViewController: UIViewController {
                     }
                     // The spinner answers before the deck arrives: the
                     // checkmark IS the save, and the eclipse follows it. The
-                    // paste stays "in flight" across that beat — our own save
+                    // paste stays "in flight" across that beat — this save
                     // reaches the store during it, and `contentStoreDidChange`
                     // would otherwise read it as an external one and finish
                     // onboarding without the transition.

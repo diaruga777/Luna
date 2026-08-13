@@ -9,8 +9,8 @@ import UIKit
 ///
 /// There is NO public API to deep-link into Safari → Extensions or into the
 /// Action Button page, and `UIApplication.openSettingsURLString` only opens the
-/// app's OWN settings page (unhelpful here). As a best effort we try the
-/// `App-Prefs:` scheme (Apps list, then root Settings) and fall back to the
+/// app's OWN settings page (unhelpful here). As a best effort, this tries the
+/// `App-Prefs:` scheme (Apps list, then root Settings) and falls back to the
 /// app's settings page if those are blocked on the device.
 enum SystemSettingsLink {
 

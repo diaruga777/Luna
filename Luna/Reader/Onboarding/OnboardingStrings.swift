@@ -218,12 +218,11 @@ enum OnboardingStrings {
     enum Safari {
         /// **Retired from the app, kept in the strings file.** `title`,
         /// `bylineTemplate`, `explainerChunks`, `stepsHeading`, `pageMenuStep`,
-        /// `manageExtensionsStepTemplate` and `appStepTemplate` printed the
-        /// step-by-step instructions the explainer page, the video panel and
-        /// the price lesson's setup card used to end on. That copy now lives on
-        /// the hosted setup web page instead, and `scripts/build_site.py` reads
-        /// these exact keys out of `Localizable.strings` to build it — so the
-        /// definitions stay here, unreferenced by any Swift call site (except
+        /// `manageExtensionsStepTemplate` and `appStepTemplate` hold the
+        /// step-by-step instructions now shown on the hosted setup web page.
+        /// `scripts/build_site.py` reads these exact keys out of
+        /// `Localizable.strings` to build that page, so the definitions stay
+        /// here, unreferenced by any Swift call site (except
         /// `manageExtensionsTitle`, still read by the Manage Extensions sheet
         /// mock every lesson plays before its own ask), never renamed.
         static let title = Definition(key: "Onboarding_Safari_title")
@@ -455,12 +454,9 @@ struct OnboardingIntroCopy: Equatable {
 }
 
 /// Compatibility façade for the Manage Extensions sheet mock — the one piece
-/// of the old Safari explainer copy still read by Swift. `title`, `byline`,
-/// `explainerChunks`/`explainerPrefix`/`explainer`, `stepsHeading` and `steps`
-/// used to live here too, printing the step-by-step instructions the
-/// explainer page, the video panel and the price lesson's setup card ended
-/// on; all three are gone, and that copy now lives on the hosted setup web
-/// page instead (see `OnboardingStrings.Safari`'s note on the retired keys).
+/// of Safari explainer copy still read by Swift. The rest of that copy now
+/// lives on the hosted setup web page; see `OnboardingStrings.Safari`'s note
+/// on the retired keys.
 enum OnboardingSafariExtensionCopy {
     static var manageExtensionsTitle: String {
         OnboardingStrings.Safari.manageExtensionsTitle.value()

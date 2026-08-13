@@ -10,11 +10,10 @@ import LunaWeekly
 /// The link the save lesson rehearses with, decided at the moment the user taps
 /// into it.
 ///
-/// The lesson used to be a picture: a bundled article rendered by a mock sheet
-/// over a mock conversation. It now runs the REAL share surface, which means it
-/// needs a REAL link — and the best one available is this app's live Save of the
-/// Week, because it is a genuine page of the kind this app is for, chosen this
-/// week, that the user has not seen. Failing that (no signed entry yet, or the
+/// The lesson runs the REAL share surface, which means it needs a REAL link —
+/// and the best one available is this app's live Save of the Week, because it
+/// is a genuine page of the kind this app is for, chosen this week, that the
+/// user has not seen. Failing that (no signed entry yet, or the
 /// weekly feature undeployed) the bundled practice link stands in: the extensions
 /// recognize it, short-circuit before the network, and show the same bundled
 /// preview they always did — which is the real code path, not a mock of it.

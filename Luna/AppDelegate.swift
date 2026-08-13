@@ -110,8 +110,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaSaves can't present UI, so the app shell installs the
-        // presenter (same cross-tier protocol witness as
-        // `ProductPriceRescue.resolver` above).
+        // presenter. This is the same cross-tier protocol-witness pattern as
+        // `ProductPriceRescue.resolver`.
         SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
 
         // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
@@ -208,12 +208,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         savesObserver = NotificationCenter.default.addObserver(
             forName: .savesChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            // Deliberately bundles two unrelated follow-ups on one notification: neither
+            // This bundles two unrelated follow-ups on one notification. Neither
             // has its own natural trigger, and "the saves list just changed" is a
-            // good-enough proxy for both "some activity happened, take out the trash"
-            // (purge expired saved media) and "prices may be worth checking again soon"
-            // (reschedule the price refresh) — not a sign this observer needs splitting.
-            //
+            // good-enough proxy for both: take out the trash (purge expired saved
+            // media) and check whether prices are worth rechecking (reschedule the
+            // price refresh). That overlap is not a reason to split the observer.
             KindWiring.savesDidChange()
             self?.schedulePriceRefresh(reason: "saves list changed")
         }
@@ -342,14 +341,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
             return
         }
-        // IDEMPOTENT scheduling. We are called on many events (launch, foreground,
-        // EVERY saves list change, after a run); the old code cancelled and
-        // resubmitted the request each time. Repeatedly cancelling+resubmitting a
-        // BGTask churns it so iOS never lets it mature/run — the "never fires" bug.
-        // So if a request is ALREADY pending, leave it untouched; only submit when
-        // nothing is pending (the first tracker, or after a run/expiration consumed
-        // it). The earliest date is derived from the oldest actual refresh (not now),
-        // so a never-refreshed tracker still fires ASAP. The next run reschedules.
+        // Scheduling is idempotent. This runs on many events (launch, foreground,
+        // every saves list change, after a run), but repeatedly cancelling and
+        // resubmitting a BGTask churns it so iOS never lets it mature — it never
+        // fires. So a pending request is left untouched, and a new one is
+        // submitted only when none is pending (the first tracker, or after a
+        // run or expiration clears it). The earliest date comes from the oldest
+        // actual refresh, not now, so a never-refreshed tracker still fires as
+        // soon as possible. The next run reschedules from there.
         BGTaskScheduler.shared.getPendingTaskRequests { [weak self] pending in
             guard let self else { return }
             if pending.contains(where: { $0.identifier == Self.priceRefreshTaskID }) {

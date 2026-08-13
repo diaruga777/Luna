@@ -15,7 +15,7 @@ import LunaModels
 /// CloudKit delivery on devices where Console.app can't read the log archive.
 final class DiagnosticsViewController: UIViewController {
 
-    private let log: DiagnosticLogging
+    private let log: DiagnosticLog
     /// Internal (not private) so the layout-sanity test can assert it's on-screen —
     /// the log content itself (live timestamps) isn't pixel-stable, so this screen is
     /// covered by a layout assertion rather than a snapshot.
@@ -34,7 +34,7 @@ final class DiagnosticsViewController: UIViewController {
     /// Keeps left-edge swipe-back alive while the real nav bar is hidden.
     private let popGestureClaim = InteractivePopGestureClaim()
 
-    init(log: DiagnosticLogging = DiagnosticLog.shared,
+    init(log: DiagnosticLog = DiagnosticLog.shared,
          rescueStats: RescueStatsStore = .shared) {
         self.log = log
         self.rescueStats = rescueStats

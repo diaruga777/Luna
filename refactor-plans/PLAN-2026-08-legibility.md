@@ -433,7 +433,41 @@ with relationships and indexes — not a JSON payload column.
    same Swift structs. NSFileCoordinator and the stat-token cache are deleted
    on this path (SQLite owns cross-process consistency); other-process change
    detection via `PRAGMA data_version`. The Darwin-notification change fan-out
-   stays exactly as is.
+   stays exactly as is. NO JSON blob column anywhere — every field is a typed
+   column; fault tolerance (unknown enum raw value → safe default) lives in
+   the Swift row-mapping layer.
+3b. **File ownership and ref counting move into SQL, enforced by triggers,
+   with double-commit deletion.** Owner directive (2026-08-13). The on-disk
+   artifacts a save owns (article content files, original archives,
+   refcounted images, preload subtrees — executor maps the full set from
+   `ReadingListStore.saveContent`/`removeFiles` and `ImageReferenceStore`)
+   are represented relationally:
+   - `files(id INTEGER PK, relative_path TEXT UNIQUE NOT NULL, kind TEXT)` —
+     one row per owned on-disk artifact.
+   - `file_refs(file_id REFERENCES files ON DELETE CASCADE,
+     save_id REFERENCES saves ON DELETE CASCADE, PRIMARY KEY(file_id, save_id))`
+     — the ownership edges. The ref COUNT is the edge count; no stored
+     counter to drift.
+   - Invariant "a file row never sits at zero refs", enforced in SQL: an
+     `AFTER DELETE ON file_refs` trigger checks for remaining edges and, when
+     none remain, deletes the `files` row and inserts its path into
+     `pending_deletes`. Deleting a save cascades through `file_refs` and the
+     trigger fires per released file. An `AFTER INSERT ON file_refs` trigger
+     rescues a path back OUT of `pending_deletes` if it is re-referenced
+     before the reaper runs (re-share of the same image).
+   - `pending_deletes(relative_path TEXT PK, enqueued_at REAL NOT NULL,
+     attempts INTEGER NOT NULL DEFAULT 0)` — the double-commit half for
+     non-transactional (filesystem) state: the TRANSACTION records the intent;
+     a separate opportunistic reaper job (debounced after mutations, on
+     launch, on background — any process may run it, it is idempotent)
+     unlinks the file and deletes the row ONLY after the unlink is confirmed
+     or the file is already absent. A crash between commit and unlink leaves
+     the intent row, so the delete is retried; `attempts` caps runaway
+     retries for a path that keeps failing (log and keep the row).
+   - Indexes: `file_refs(save_id)` (the FK covering index; `file_id` is
+     covered by the PK's leading column), `pending_deletes(enqueued_at)`.
+   - `ImageReferenceStore` is deleted; its callers use the edges. The same
+     pending-deletes queue replaces the ad-hoc cleanup in `removeFiles`.
 4. No migration. First open creates the schema. Nothing reads, writes, names,
    or documents `readingList.json` afterward — delete the constant, the
    decoder's legacy-key migrations (the hand-written tolerant decoder itself

@@ -227,7 +227,7 @@ affordance.
   `hasPrefix("http")` input gate would drop it before the pipeline runs.
   `URLUnwrapper.unwrapOffline(_:)` (sync/pure — resolves the offline handlers:
   Facebook deep link/shim + classic Google News) applies it up front at
-  `ShareViewController.handleURL` / `handleJavaScriptResult` / `handleFriendShare`,
+  `ShareViewController.handleURL` / `handleJavaScriptResult`,
   the in-app Save-a-Link alert (via `normalizedTypedURL`, which ALSO validates the
   scheme), and every app intent via `IntentIngestHelper.handleSavePressWithTimeout`.
 - **Platform items**: the pipeline's `Classifier` recognizes a platform URL

@@ -103,7 +103,7 @@ public final class EmailShareCenter {
         try await transport.send(OutgoingEmail(
             recipients: recipients, subject: body.subject, rawMIME: raw))
 
-        // Record every recipient as a friend (accepted — the user chose them).
+        // Records each recipient as a friend, accepted — the user chose them.
         for email in recipients { friends.add(email: email) }
         recentRecipients.recordSent(to: recipients)
     }

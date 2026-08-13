@@ -96,12 +96,11 @@ public final class ProductTrackerIngestor {
 
         // The alternative-seller fan-out, on the NEW-tracker path only (a merge
         // has already been compared once, and re-running would just re-find the
-        // stores it is excluding). It is STARTED here and finishes in the
-        // background: the save is the user's, and half a minute of other
-        // people's web servers is not something to make them watch. The card
-        // appears now with the one seller they were looking at, carries a
-        // "checking for other sellers" row while the run is out, and grows as
-        // the sellers land.
+        // stores it is excluding). It starts here and finishes in the
+        // background, so the user's save does not wait on half a minute of
+        // other people's web servers. The card appears now with the one
+        // seller they were looking at, carries a "checking for other
+        // sellers" row while the run is out, and grows as the sellers land.
         comparisonStarter.startComparison(itemID: item.id, sourceURL: url, store: store)
 
         PriceTrackerSaveAnnouncement.post(

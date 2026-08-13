@@ -10,29 +10,27 @@ import UIKit
 
 /// The media sibling of `ShareSetupPracticePreviewViewController`.
 ///
-/// A rehearsal has to rehearse the thing the app is FOR. The article preview is
-/// the right answer for a practice link that stands for an article — and it was
-/// the answer for all four apps, so the Downloader's save lesson ended on a page
-/// of prose about a video the app had just been asked to fetch. What the
-/// Downloader does with a saved link is download the video and hand it to you;
-/// that is what this screen shows.
+/// A rehearsal has to rehearse the thing the app is for. For the Downloader,
+/// that is downloading a video and handing it to the user, so its save
+/// lesson needs this screen rather than the article preview.
 ///
-/// It is a REHEARSAL, deliberately, and not the media kind's own
-/// `SavedNonTextualViewController`: the practice URL names no real post, so there
-/// is nothing to resolve, nothing to transfer, and nothing that may be written
-/// into the user's media library. It keeps that screen's grammar — the "Saved to
-/// Luna" badge, the square preview with the progress bar drawn inside it, the
-/// full-width Done — over a bundled clip and a fixed beat:
+/// This screen is deliberately a rehearsal, not the media kind's own
+/// `SavedNonTextualViewController`: the practice URL names no real post, so
+/// there is nothing to resolve, nothing to transfer, and nothing that could
+/// be written into the user's media library. It keeps that screen's
+/// grammar — the "Saved to Luna" badge, the square preview with the
+/// progress bar drawn inside it, the full-width Done — over a bundled clip
+/// and a fixed beat:
 ///
 /// 1. `PracticeDownloadRamp.duration` of the progress bar filling under the
 ///    media glyph;
 /// 2. the clip's own first frame with a play badge over it.
 ///
-/// Hosted (the onboarding save lesson), it also hands the clip to the session, so
-/// the SAME video the Safari lesson taught plays over the sheet — the delegate's
-/// `hostedShareSession(mediaFileReadyAt:)`, which the real media screen uses for
-/// a real file. In a real extension there is no session and the screen simply
-/// rests on step 2.
+/// When hosted (the onboarding save lesson), it also hands the clip to the
+/// session, so the same video the Safari lesson taught plays over the
+/// sheet, through the delegate's `hostedShareSession(mediaFileReadyAt:)`,
+/// which the real media screen uses for a real file. In a real extension
+/// there is no session, and the screen simply rests on step 2.
 @MainActor
 final class ShareSetupPracticeDownloadViewController: UIViewController,
     ShareSetupPracticePresenting, HostedShareBeatReplaying {
@@ -50,10 +48,10 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
     private let status = UILabel()
     private let doneButton = UIButton(type: .system)
 
-    /// The bar's own clock, shared with the media kind's practice screen so the
-    /// two rehearsals fill at the same rate. It also owns the cancellation the
-    /// looping lesson needs, so a stale step cannot put the finished state up
-    /// while a newer pass's bar is still filling.
+    /// The bar's own clock, shared with the media kind's practice screen so
+    /// the two rehearsals fill at the same rate. It also owns the
+    /// cancellation the looping lesson needs, so a stale step cannot show
+    /// the finished state while a newer pass's bar is still filling.
     private lazy var ramp = PracticeDownloadRamp(bar: progress)
 
     init(app: LunaApp, videoURL: URL) {
@@ -66,8 +64,8 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
     required init?(coder: NSCoder) { nil }
 
     /// This screen carries its own badge and its own Done, so the host's
-    /// navigation bar would be an empty strip above them — the same reason the
-    /// media screen hides it.
+    /// navigation bar would be an empty strip above them. The media screen
+    /// hides its bar for the same reason.
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
@@ -140,8 +138,9 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
         previewContainer.backgroundColor = LunaColors.secondaryBackground
         previewContainer.layer.cornerRadius = 12
         previewContainer.clipsToBounds = true
-        // Nothing on this screen answers a tap but Done. The preview is a
-        // picture of a preview; the video it stands for plays over the sheet.
+        // Nothing on this screen answers a tap except Done. This preview is
+        // a picture of a preview; the video it stands for plays over the
+        // sheet.
         previewContainer.isUserInteractionEnabled = false
 
         posterView.contentMode = .scaleAspectFit
@@ -159,9 +158,9 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
         pendingIcon.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(pendingIcon)
 
-        // Drawn INSIDE the placeholder, where the media will appear — the media
-        // screen's own arrangement, for the same reason: progress belongs to the
-        // thing being fetched, not to a strip of chrome.
+        // Drawn inside the placeholder, where the media will appear. This
+        // matches the media screen's own arrangement: progress belongs to
+        // the thing being fetched, not to a strip of chrome.
         progress.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(progress)
 
@@ -218,15 +217,16 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
         ramp.start { [weak self] in self?.finishDownloadBeat() }
     }
 
-    /// The file is "on disk": the clip's own first frame under a play badge, and
-    /// — hosted — the clip itself, for the host to play over the sheet.
+    /// The file is "on disk": the clip's own first frame appears under a
+    /// play badge, and when hosted, the clip itself goes to the host to
+    /// play over the sheet.
     private func finishDownloadBeat() {
         progress.isHidden = true
         status.isHidden = true
         playBadge.isHidden = false
-        // The first frame is decoded off the main thread now (the synchronous
-        // read of it was deprecated in iOS 18), so the pending icon holds the
-        // slot until it lands — and keeps it if the clip has no readable frame.
+        // Decodes the first frame off the main thread (its synchronous read
+        // is deprecated on iOS 18). The pending icon holds the slot until
+        // the frame lands, and keeps it if the clip has no readable frame.
         Task { @MainActor [weak self] in
             guard let self else { return }
             let poster = await Self.posterFrame(of: self.videoURL)

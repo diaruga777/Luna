@@ -17,39 +17,40 @@ public protocol LinkImportMediaHandling: Sendable {
     /// running.
     func downloadState(forURLString urlString: String) -> LinkImportRunner.MediaDownloadState?
 
-    /// Silences the media Live Activity's start/finish ALERTS — banner, sound and
-    /// **haptic** — for the length of a run, called with `true` when it begins
-    /// and `false` when it ends. An import of a few hundred social links
-    /// otherwise buzzes the device twice per link while the user is watching this
-    /// sheet's own progress bar report the same thing.
+    /// Silences the media Live Activity's start/finish alerts — banner, sound,
+    /// and **haptic** — for the length of a run. Call with `true` when the
+    /// run begins and `false` when it ends. Without this, an import of a few
+    /// hundred social links buzzes the device twice per link while the user
+    /// watches this sheet's own progress bar report the same thing.
     func setAlertsSuspended(_ suspended: Bool)
 
-    /// Asks for whatever system permission this batch's downloads will need,
-    /// ONCE, before the run starts (Photos access, when downloads are set to land
-    /// there and the file holds at least one downloadable link).
+    /// Asks once, before the run starts, for whatever system permission this
+    /// batch's downloads will need — Photos access, when downloads are set to
+    /// land there and the file holds at least one downloadable link.
     ///
-    /// It belongs at the top of the run rather than in the pipeline: the media
-    /// path's own prompts arrive either at a transfer's start gate or — in the
-    /// Downloader — when the FIRST transfer finishes, i.e. a system alert over
-    /// the progress bar minutes in, with a queue behind it that fails as
-    /// `.photosPermission` while the user reads it.
+    /// This belongs at the top of the run, not in the pipeline. The media
+    /// path's own prompts otherwise arrive either at a transfer's start gate
+    /// or, in the Downloader, when the first transfer finishes — a system
+    /// alert over the progress bar minutes in, with a queue behind it that
+    /// fails as `.photosPermission` while the user is still reading the
+    /// prompt.
     func preflightStorage(forURLStrings urlStrings: [String]) async
 }
 
 /// The import's pass over the saves that came back hard-paywalled. Installed by
 /// the article `KindWiring`s.
 public protocol LinkImportArticleUnlocking: Sendable {
-    /// Tries to unlock a hard-paywalled save in a real (off-screen) `WKWebView`,
-    /// answering whether the article's content ended up saved.
+    /// Tries to unlock a hard-paywalled save in a real, off-screen `WKWebView`,
+    /// and answers whether the article's content ended up saved.
     ///
-    /// The silent tier can't pass a JS paywall or a bot gate, so those saves land
-    /// `.needsCaptcha` — titled, tappable, and unread. Doing that pass HERE,
-    /// while the user is already waiting on the import, is worth a lot more than
-    /// leaving two hundred of them to be tapped one at a time later. It gives up
-    /// the moment it meets a CAPTCHA: an unattended flow cannot solve one, and
-    /// stopping for it would mean either a stalled bar or a modal thrown over the
-    /// top of it. The save stays exactly as it was, for the user to open when
-    /// they choose.
+    /// The silent tier cannot pass a JS paywall or a bot gate, so those saves
+    /// land as `.needsCaptcha` — titled, tappable, and unread. Trying again
+    /// here, while the user is already waiting on the import, saves them from
+    /// tapping two hundred saves open one at a time later. This gives up the
+    /// moment it meets a CAPTCHA: an unattended flow cannot solve one, and
+    /// stopping for it would mean either a stalled progress bar or a modal
+    /// thrown over the top of it. The save stays exactly as it was, for the
+    /// user to open when they choose.
     func unlockArticle(itemID: UUID, urlString: String) async -> Bool
 }
 
@@ -191,13 +192,14 @@ public final class LinkImportRunner {
 
     /// How many links are ingested at once.
     ///
-    /// Each is a full page fetch plus an extraction, so this is bounded by the
-    /// device rather than by politeness: `activeProcessorCount` halved leaves
-    /// extraction headroom, with a floor of 2 (most of the time is network wait,
-    /// so even a small device should overlap) and a ceiling of 6, past which
-    /// `URLSession`'s own per-host limit and the extractor's memory cost make it
-    /// pure contention. Low Power Mode halves it again — the user has asked for
-    /// less work and an import is not urgent.
+    /// Each ingest is a full page fetch plus an extraction, so this bounds by
+    /// the device rather than by politeness. `activeProcessorCount` halved
+    /// leaves extraction headroom. The floor is 2, since most of the time is
+    /// network wait, so even a small device should overlap. The ceiling is 6:
+    /// past that, `URLSession`'s own per-host limit and the extractor's
+    /// memory cost make more concurrency pure contention. Low Power Mode
+    /// halves it again — the user has asked for less work, and an import is
+    /// not urgent.
     public static func defaultConcurrency(
         processorCount: Int = ProcessInfo.processInfo.activeProcessorCount,
         isLowPowerMode: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -211,10 +213,10 @@ public final class LinkImportRunner {
     private let store: SavesStore
     /// The two operations a link goes through, injected rather than reached for.
     ///
-    /// Both defaults are the real thing; the seams exist so the ORCHESTRATION —
-    /// order, concurrency, scoring, the progress arithmetic, cancellation — is
-    /// testable without a network or a language model, which is where this type's
-    /// risk actually lives.
+    /// Both defaults are the real thing. The seams exist so the
+    /// orchestration — order, concurrency, scoring, the progress arithmetic,
+    /// cancellation — is testable without a network or a language model,
+    /// which is where this type's real risk lives.
     private let ingest: (SavedItem) async -> SurfaceSupport.Decision
     private let rescue: (UUID) async -> Bool
     private let rescueFraction: (UUID) -> Double?
@@ -277,10 +279,10 @@ public final class LinkImportRunner {
 
     /// The current overall fraction.
     ///
-    /// PULLED by the progress sheet on a display cadence rather than pushed: a
-    /// push per byte of several concurrent downloads would post thousands of
-    /// notifications a second, and the two legs that advance on a clock (a page
-    /// fetch, a model call) have nothing to push anyway.
+    /// The progress sheet pulls this on a display cadence rather than being
+    /// pushed to: a push per byte of several concurrent downloads would post
+    /// thousands of notifications a second, and the two legs that advance on
+    /// a clock — a page fetch, a model call — have nothing to push anyway.
     public func currentProgress() -> Progress {
         lock.lock()
         let total = slices.count
@@ -311,12 +313,12 @@ public final class LinkImportRunner {
             finished: finished, total: total, phase: phase)
     }
 
-    /// The clock-based estimate for a slice whose current leg reports nothing until
-    /// it lands — an ingest's page fetch and extraction, or a web unlock. A frozen
-    /// bar reads as a hung import, so an open slice eases toward the end of that
-    /// leg's stretch. Easing, never linear: an overrunning fetch slows down instead
-    /// of stalling at a wall or claiming ground it hasn't earned. Caller holds
-    /// `lock`.
+    /// The clock-based estimate for a slice whose current leg reports nothing
+    /// until it lands — an ingest's page fetch and extraction, or a web
+    /// unlock. A frozen bar reads as a hung import, so an open slice eases
+    /// toward the end of that leg's stretch. The ease is never linear: an
+    /// overrunning fetch slows down instead of stalling at a wall or claiming
+    /// ground it has not earned. The caller holds `lock`.
     private func estimate(forSlice index: Int, floor: Double) -> Double {
         guard let creep = creeps[index] else { return floor }
         let elapsed = max(0, clock().timeIntervalSince(creep.started))
@@ -339,14 +341,15 @@ public final class LinkImportRunner {
 
     // MARK: - Run
 
-    /// Saves every candidate in order, ingests them `concurrency`-at-a-time, then
-    /// retries the failures with Apple Intelligence one at a time.
+    /// Saves every candidate in order, ingests them `concurrency` at a time,
+    /// then retries the failures with Apple Intelligence one at a time.
     ///
-    /// The two phases are separate on purpose. Ingests are IO-bound and parallel;
-    /// a rescue is a model call — the one resource on the device that gains
-    /// nothing from being asked twice at once, which is why the coordinator's own
-    /// background sweep serializes too. Splitting them also keeps the arithmetic
-    /// honest: a link that never failed is simply finished at the end of phase one.
+    /// The two phases are separate on purpose. Ingests are IO-bound and run
+    /// in parallel. A rescue is a model call — the one resource on the device
+    /// that gains nothing from being asked twice at once, which is also why
+    /// the coordinator's own background sweep serializes. Splitting the
+    /// phases also keeps the arithmetic honest: a link that never failed is
+    /// simply finished at the end of phase one.
     public func run(_ candidates: [Candidate]) async -> Summary {
         var summary = Summary()
         guard !candidates.isEmpty else {
@@ -354,16 +357,17 @@ public final class LinkImportRunner {
             return summary
         }
 
-        // Quiet for the whole run, restored however it ends (finished, stopped, or
-        // the caller's task cancelled). An import is one operation with one
-        // progress bar; it does not need a system alert per link.
+        // Quiet for the whole run, restored however it ends — finished,
+        // stopped, or the caller's task cancelled. An import is one operation
+        // with one progress bar; it does not need a system alert per link.
         Self.media?.setAlertsSuspended(true)
         defer { Self.media?.setAlertsSuspended(false) }
 
-        // Every permission this batch could need, asked for here and nowhere else.
-        // Before the first write, so the answer is in hand by the time a transfer
-        // wants it — and before the progress bar starts moving, so the alert isn't
-        // an interruption of something already underway.
+        // Asks for every permission this batch could need, here and nowhere
+        // else — before the first write, so the answer is in hand by the
+        // time a transfer wants it, and before the progress bar starts
+        // moving, so the prompt is not an interruption of something already
+        // underway.
         await Self.media?.preflightStorage(forURLStrings: candidates.map(\.urlString))
 
         // 1. One coordinated write for the whole batch, in the file's order.
@@ -581,15 +585,15 @@ public final class LinkImportRunner {
         }
     }
 
-    /// Watches this link's media transfer so real bytes drive its slice, instead
-    /// of the item reading as done the moment its metadata landed.
+    /// Watches this link's media transfer so real bytes drive its slice,
+    /// instead of the item reading as done the moment its metadata landed.
     ///
-    /// The FIRST look is decisive: the media ingest handler awaits
-    /// `LiveMediaDownloadManager.start` before returning, so by the time this
-    /// runs the job either exists or was never going to. That is why there's no
-    /// grace period here — one would cost every social save that isn't
-    /// downloadable a pointless pause, and with a few hundred of them that adds
-    /// up to minutes. If that handler ever becomes fire-and-forget the only
+    /// The first look is decisive: the media ingest handler awaits
+    /// `LiveMediaDownloadManager.start` before returning, so by the time
+    /// this runs the job either exists or was never going to. That is why
+    /// there is no grace period here — one would cost every social save that
+    /// is not downloadable a pointless pause, and a few hundred of them add
+    /// up to minutes. If that handler ever becomes fire-and-forget, the only
     /// consequence is a coarser bar, not a wrong result.
     private func awaitDownload(for item: SavedItem, slice: Int) async {
         guard let media = Self.media,

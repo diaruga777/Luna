@@ -157,16 +157,12 @@ public extension CardCarouselDataSource {
 /// How ONE card PRESENTS what it shows — the properties that are a fact about
 /// the content rather than about the screen it is on.
 ///
-/// These used to be deck-level `CardCarouselStyle` fields, which is why the same
-/// media save behaved differently in the Downloader (hard-clipped, autoplaying
-/// under the finger) than in the central app (its video edges dissolved by a
-/// 28pt reader fade, previewing as a still). Nothing about a downloaded video
+/// A save presents the same way in every app: nothing about a downloaded video
 /// changes when you open a different app, so nothing about its card does either.
 ///
-/// **Card GEOMETRY is deliberately not in here.** `fit` and `topOverflow` were,
-/// and that is what made paging between kinds resize and re-center the card
-/// mid-transition. Every card in every deck is the one rectangle
-/// `CardCarouselMetrics.resolve` returns.
+/// **Card GEOMETRY is deliberately not in here.** Every card in every deck is
+/// the one rectangle `CardCarouselMetrics.resolve` returns, so paging between
+/// kinds never resizes or re-centers the card mid-transition.
 public struct CardCarouselCardStyle: Hashable {
     /// Content dissolves over this many points at the card's top and bottom
     /// edges instead of hitting a hard clip — scrolled reader text fades away
@@ -190,11 +186,8 @@ public struct CardCarouselCardStyle: Hashable {
 /// Per-surface tuning, set BEFORE the carousel's view loads.
 ///
 /// **Nothing that decides the card's frame is per-surface.** `peek`, `edgeGap`,
-/// `sideScale` and `verticalPadding` were fields here, and three of the four
-/// decks overrode `edgeGap` to the same value while the fourth kept the default
-/// — so the same video card was 40pt narrower in the Downloader than in the
-/// central app. They are constants on `CardCarouselMetrics` now, so one card
-/// frame serves every deck, every app, and the launch splash.
+/// `sideScale` and `verticalPadding` are constants on `CardCarouselMetrics`, so
+/// one card frame serves every deck, every app, and the launch splash.
 public struct CardCarouselStyle {
     /// The presentation EVERY card takes unless its own kind says otherwise. A
     /// deck whose cards are all one kind sets this and nothing else; a deck that
@@ -393,11 +386,9 @@ public final class CardCarouselViewController: UIViewController {
     private var slots: [Int: Slot] = [:]
     private var count = 0
     /// ONE resolved geometry for the current container size, shared by every
-    /// card in the deck. There used to be one per card SHAPE, because a card's
-    /// size came from its kind — so paging from an article to a video resized
-    /// and re-centered the card underneath the transition. Every card is now the
-    /// same rectangle (`CardCarouselMetrics.resolve`), which is also the
-    /// rectangle the launch splash is drawn at (`CardDeckGeometry`).
+    /// card in the deck. Every card is the same rectangle
+    /// (`CardCarouselMetrics.resolve`), which is also the rectangle the launch
+    /// splash is drawn at (`CardDeckGeometry`).
     private var resolvedMetrics: CardCarouselMetrics?
     private var metricsContainerSize: CGSize = .zero
 

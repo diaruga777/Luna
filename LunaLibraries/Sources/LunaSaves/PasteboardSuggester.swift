@@ -6,23 +6,19 @@
 import LunaModels
 import UIKit
 
-/// Namespace holding the pasteboard preview art seam. The candidate-evaluation
-/// flow this type used to carry (dedupe against the saves list, confirm
-/// readable or recognized-platform content, resolve a preview thumbnail) was
-/// dead — nothing called it — and was deleted; only the injection point below
-/// is still live, kept under this name because its installers
-/// (`KindWiring+Luna`, `KindWiring+Downloader`) and reader
-/// (`Luna/UtilCard/RecentURLMatcher.swift`) all address it as
-/// `PasteboardSuggester.platformPreviewArt`.
+/// Namespace holding the pasteboard preview art seam. Its installers
+/// (`KindWiring+Luna`, `KindWiring+Downloader`) and its reader
+/// (`Luna/UtilCard/RecentURLMatcher.swift`) all address the injection point
+/// below as `PasteboardSuggester.platformPreviewArt`.
 ///
-/// Deliberately a non-instantiable `final class`, not a case-less `enum`: an
-/// enum namespace here reproducibly failed the app's link step with an
-/// "unsafeMutableAddressor … not found" undefined symbol for exactly this
-/// static var back when it held a 3-parameter `async` closure wrapped in
-/// `Optional` — verified by swapping just this declaration between
-/// `enum`/`final class` with everything else held constant. The seam is a
-/// protocol witness now, but `final class` is the form proven to link, so it
-/// stays.
+/// This is a non-instantiable `final class`, not a case-less `enum`: an enum
+/// namespace here reproducibly failed the app's link step with an
+/// "unsafeMutableAddressor … not found" undefined symbol for this exact
+/// static var, back when it held a 3-parameter `async` closure wrapped in
+/// `Optional`. Swapping only this declaration between `enum` and `final
+/// class`, with everything else held constant, confirmed the cause. The seam
+/// is a protocol witness now, but `final class` is the form proven to link,
+/// so it stays.
 /// Preview art for a recognized social/video URL, drawn from the platform's own
 /// metadata. Installed by the media apps' shell over `PlatformRegistry`.
 @MainActor

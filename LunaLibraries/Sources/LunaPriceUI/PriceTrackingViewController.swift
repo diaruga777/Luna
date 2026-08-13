@@ -13,11 +13,6 @@ import UIKit
 /// everything between them — the one `ProductDetailViewController` the in-deck
 /// product card is also made of.
 ///
-/// This class used to be the other half of a split: its own product title, its
-/// own grouped `UITableView` of sellers, its own graph slot and its own
-/// threshold footer, none of which matched the card's. What survives here is
-/// only what a screen has and a card does not.
-///
 /// The exit is decided by an explicit `PriceTrackingExitContext` (host + entry),
 /// so the right control lands in the right context regardless of the view
 /// hierarchy (see `LunaModels/PriceTrackingExitContext.swift`): in-app, a back
@@ -110,11 +105,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         detail.didMove(toParent: self)
 
         // Every band sits in one centred column rather than stretching: a
-        // threshold slider a thousand points wide, or a seller name that far
-        // from its price, is not a form any more. `ReadableColumn` also makes the
-        // container a HARD ceiling — a long marketplace product title used to
-        // out-argue a merely preferred full width and hang every band off both
-        // edges of the share sheet.
+        // threshold slider a thousand points wide, or a seller name far from
+        // its price, reads poorly. `ReadableColumn` also makes the container
+        // a HARD ceiling, so a long marketplace product title cannot stretch
+        // a band past the share sheet's edges.
         let column = ReadableColumn.install(in: view)
         let bottom = detail.view.bottomAnchor.constraint(
             equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16)

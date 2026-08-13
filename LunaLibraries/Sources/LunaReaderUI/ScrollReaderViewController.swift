@@ -1312,7 +1312,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// (no app-wide center, no mini-player, no background audio session).
     private func startSpeechViaLegacyController() {
         if speech == nil {
-            // Phase 6: the legacy extension-only path now speaks the TRIMMED
+            // Phase 6: the legacy extension-only path speaks the TRIMMED
             // script (best available: cached refined > cached heuristic >
             // freshly-built heuristic — never blocks on the LLM). The VISUAL
             // reader (`content`/`rendered`/`wordMap` below) stays untrimmed;

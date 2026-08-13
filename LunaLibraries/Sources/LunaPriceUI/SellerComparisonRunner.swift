@@ -132,26 +132,20 @@ public enum SellerComparisonRunner {
     }
 
     /// Everything the fan-out does goes to the app's shareable diagnostic log
-    /// under one category, because the question a failing comparison raises —
-    /// "it found nothing, why?" — is only answerable from the whole run: which
-    /// retailers were chosen, what each answered, and what became of every link.
-    /// Before this, twelve candidates and zero results left no trace at all.
+    /// under one category, because answering "it found nothing, why?" needs
+    /// the whole run: which retailers were chosen, what each answered, and
+    /// what became of every link.
     public static let logCategory = "SellerComparison"
 
     /// Returns `operation`'s value, or nil at `seconds`. Never throws, because
     /// every caller treats "no comparison" and "a comparison that found nothing"
     /// the same way at the surface — the save still lands.
     ///
-    /// This used to be a task group with a sleeping second child, which is not a
-    /// deadline at all: a group awaits every child when its scope exits, so the
-    /// call returned when the WORK returned and the sleep leg only decided what
-    /// the answer was called. Both caps here sat on top of work that ignores
-    /// cancellation — a WKWebView render, `IngestPipeline`'s own (identically
-    /// shaped, identically soft) 28 s timeout — so neither ever fired. A live
-    /// AU run logged candidates 39 s in, past a 40 s hard cap it would never
-    /// reach, and the intent that started it had long since handed off.
-    /// `TimeLimit.run` is the same race with the work made unstructured, so the
-    /// deadline can stop waiting without needing to stop the work.
+    /// `TimeLimit.run` races `operation` directly instead of through a task
+    /// group, so the deadline can stop WAITING on it without needing to
+    /// cancel it. A WKWebView render and `IngestPipeline`'s own 28s timeout
+    /// both ignore cancellation, so a group-based deadline would still block
+    /// on the full operation before returning.
     static func withDeadline<T: Sendable>(
         _ seconds: TimeInterval, _ operation: @escaping @Sendable () async -> T
     ) async -> T? {

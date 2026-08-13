@@ -27,18 +27,18 @@ public protocol URLRescueEngineBridging {
 /// (shared with `AudioScriptPipeline`); this class keeps its own NSLock'd
 /// in-flight set.
 ///
-/// The rescue ENGINE lives in `LunaURLRescue`, which this module must not link
-/// (it's main-app-only). The app shell (`URLRescueWiring`) injects it as `engine`
-/// and does the actual work — this coordinator only decides WHEN, tracks
-/// bookkeeping, and posts `.savesChanged` so rows refresh.
+/// The rescue engine lives in `LunaURLRescue`, which this module must not
+/// link — it is main-app-only. The app shell (`URLRescueWiring`) injects it
+/// as `engine` and does the actual work. This coordinator only decides when,
+/// tracks bookkeeping, and posts `.savesChanged` so rows refresh.
 public final class URLRescueCoordinator {
     public static let shared = URLRescueCoordinator()
 
-    /// How one rescue attempt ended, as much as this module needs to know. The
-    /// bridge used to return a bare Bool, which conflated three different
-    /// not-recovered endings with one another: a real verdict on the page (spend
-    /// the user's one visible attempt), a model that never got to look (don't),
-    /// and a safety guardrail (never ask again).
+    /// How one rescue attempt ended, as much as this module needs to know.
+    /// The three not-recovered endings are distinct, and only one should
+    /// spend the user's one visible attempt: a real verdict on the page
+    /// spends it, a model that never got to look should not, and a safety
+    /// guardrail should never be asked again.
     public enum RescueRunResult: Equatable {
         /// The item left `.failed` — content recovered, media downloading, or
         /// handed to the interactive unlock tier.
@@ -49,12 +49,13 @@ public final class URLRescueCoordinator {
         /// holding the session, no model at all, a quota wall. Must not spend the
         /// per-version attempt.
         case transient
-        /// A content-safety guardrail (or a flat refusal) rejected the prompt.
-        /// PERMANENT for this item: the prompt is derived from the page.
+        /// A content-safety guardrail (or a flat refusal) rejected the
+        /// prompt. This is permanent for this item, since the prompt is
+        /// derived from the page.
         case guardrailed
-        /// The rescue DID recover content, but this app's surface doesn't show
-        /// that kind, so the save was dropped on the way in. Not the user's
-        /// attempt to lose.
+        /// The rescue did recover content, but this app's surface does not
+        /// show that kind, so the save was dropped on the way in. Not the
+        /// user's attempt to lose.
         case surfaceDropped
     }
 
@@ -122,12 +123,12 @@ public final class URLRescueCoordinator {
         drainPendingRequests()
     }
 
-    /// One free retry per shipped version. A failed save whose Apple Intelligence
-    /// attempt was spent under an EARLIER version has its ledger budget cleared
-    /// here, so this launch's sweep tries it again — and because
-    /// `SavesIngestor.ingestAllPending` already re-runs ordinary ingestion
-    /// for every `.failed` item on launch, the item gets both paths without any
-    /// extra scheduling.
+    /// One free retry per shipped version. A failed save whose Apple
+    /// Intelligence attempt was spent under an earlier version has its
+    /// ledger budget cleared here, so this launch's sweep tries it again.
+    /// Because `SavesIngestor.ingestAllPending` already re-runs ordinary
+    /// ingestion for every `.failed` item on launch, the item gets both
+    /// paths without any extra scheduling.
     ///
     /// Nothing needs to clear `aiAttemptVersion` itself: the card compares it to
     /// the running version, so an update makes every stale mark non-terminal at
@@ -142,9 +143,10 @@ public final class URLRescueCoordinator {
 
     // MARK: - Inline trigger (from SavesIngestor)
 
-    /// Called when a first-pass ingest ended `.failed`. Re-reads the item and, if
-    /// still `.failed` and eligible, runs an INLINE rescue (interactive) or leaves
-    /// it for the background sweep. Never blocks the caller.
+    /// Called when a first-pass ingest ended `.failed`. Re-reads the item
+    /// and, if it is still `.failed` and eligible, runs an inline,
+    /// interactive rescue, or leaves it for the background sweep. Never
+    /// blocks the caller.
     public func itemJustFailed(_ itemID: UUID, source: CaptureSource, interactive: Bool) {
         guard let engine = Self.engine, engine.isRescueAvailable else { return }
         guard interactive, ledger.shouldAutoRescue(itemID) else {
@@ -155,10 +157,11 @@ public final class URLRescueCoordinator {
         Task { [weak self] in await self?.runRescue(itemID: itemID, hint: nil, interactive: true, countsAgainstBudget: true) }
     }
 
-    /// A user-consented one-shot rescue (the failed card's button, a failed-row
-    /// tap, the extension hand-off). Bypasses the auto-attempt budget — the tap
-    /// IS consent — and spends the item's one Apple Intelligence attempt for this
-    /// app version, so a card that comes back still failed goes terminal.
+    /// A user-consented one-shot rescue (the failed card's button, a
+    /// failed-row tap, the extension hand-off). Bypasses the auto-attempt
+    /// budget — the tap is itself consent — and spends the item's one Apple
+    /// Intelligence attempt for this app version, so a card that comes back
+    /// still failed goes terminal.
     public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
         guard let engine = Self.engine, engine.isRescueAvailable else { return }
         // A guardrailed item is permanently out of reach; the tap must not spend
@@ -173,8 +176,8 @@ public final class URLRescueCoordinator {
         }
     }
 
-    /// The same consented one-shot rescue as `requestManualRescue`, AWAITED, and
-    /// reporting whether the item recovered.
+    /// The same consented one-shot rescue as `requestManualRescue`, but
+    /// awaited, and reporting whether the item recovered.
     ///
     /// For the bulk file import (`claudedocs/import-export.md`), which cannot use
     /// the fire-and-forget form: it has to know each item's fate before it can
@@ -204,11 +207,11 @@ public final class URLRescueCoordinator {
 
     // MARK: - Progress
 
-    /// Called by the app shell's engine bridge as the rescue crosses each stage.
-    /// Cheap and lock-scoped: it stores the stage and posts
-    /// `.rescueProgressChanged` for the one card that cares, NOT
-    /// `.savesChanged` (which would reload every deck several times per
-    /// rescue).
+    /// Called by the app shell's engine bridge as the rescue crosses each
+    /// stage. Cheap and lock-scoped: it stores the stage and posts
+    /// `.rescueProgressChanged` for the one card that cares, not
+    /// `.savesChanged`, which would reload every deck several times per
+    /// rescue.
     public func reportProgress(_ itemID: UUID, stage: RescueStage) {
         inFlightLock.lock()
         stages[itemID] = (stage, now())
@@ -311,10 +314,11 @@ public final class URLRescueCoordinator {
         countsAgainstBudget: Bool, spendsVersionAttempt: Bool = false
     ) async -> RescueRunResult {
         guard let engine = Self.engine else { return .notRecovered }
-        // Re-read: the item may have advanced or been deleted since we scheduled.
-        // Rescue anything not-yet-ready — the "only .failed" gating for AUTOMATIC
-        // rescue is enforced at the call sites (itemJustFailed / the sweep); a
-        // manual or drained request may target a still-.pending item.
+        // Re-reads: the item may have advanced or been deleted since it was
+        // scheduled. This rescues anything not yet ready — the "only
+        // .failed" gating for automatic rescue is enforced at the call
+        // sites (itemJustFailed, the sweep) — since a manual or drained
+        // request may target a still-`.pending` item.
         guard let item = store.item(withID: itemID), item.state != .ready else { return .notRecovered }
         guard beginInFlight(itemID) else { return .notRecovered }
         defer {
@@ -323,28 +327,29 @@ public final class URLRescueCoordinator {
         }
 
         if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
-        postSavesChanged() // flip row to "trying harder…"
+        postSavesChanged() // Flips the row to "trying harder…".
 
         let result = await engine.performRescue(for: item, hint: hint, interactive: interactive)
         switch result {
         case .advanced:
             ledger.recordSuccess(itemID, hint: hint)
         case .guardrailed:
-            // Permanent, and the ledger is what makes it permanent: no sweep and
-            // no tap will reach this item again, so nothing is gained by also
-            // marking the version attempt spent.
+            // Permanent, and the ledger is what makes it permanent: no sweep
+            // and no tap will reach this item again, so nothing is gained by
+            // also marking the version attempt spent.
             ledger.recordGuardrail(itemID)
         case .notRecovered:
             if spendsVersionAttempt {
-                // The user asked for AI and AI didn't recover it. Record WHICH
-                // version spent the attempt, so the card can say so plainly now
-                // and offer itself again after the next update.
+                // The user asked for AI, and AI did not recover it. This
+                // records which version spent the attempt, so the card can
+                // say so plainly now and offer itself again after the next
+                // update.
                 failures.recordAIAttempt(itemID)
             }
         case .transient, .surfaceDropped:
-            // The model never saw the page, or it DID recover the content and
-            // this app's surface dropped it. Neither is a verdict the user's one
-            // visible attempt should pay for.
+            // Either the model never saw the page, or it did recover the
+            // content and this app's surface dropped it. Neither is a
+            // verdict the user's one visible attempt should pay for.
             break
         }
         return result

@@ -8,12 +8,13 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Article-kind ingestion/persistence behavior behind `SavesIngestor` —
-/// everything the ingestor needs that would otherwise drag article-only modules
-/// (LunaReaderUI, LunaArchiveReader, LunaDocuments, LunaSend) into every app.
-/// The heavy lifting lives in `LunaReaderUI.ArticleIngestHandler`; the send
-/// methods are bridged to `ArticleSendCoordinator` by the app shell's adapter,
-/// since LunaReaderUI must not depend on LunaSend.
+/// Article-kind ingestion and persistence behavior behind `SavesIngestor`.
+/// It covers everything the ingestor needs that would otherwise drag
+/// article-only modules (LunaReaderUI, LunaArchiveReader, LunaDocuments,
+/// LunaSend) into every app. The heavy lifting lives in
+/// `LunaReaderUI.ArticleIngestHandler`. The app shell's adapter bridges the
+/// send methods to `ArticleSendCoordinator`, since LunaReaderUI must not
+/// depend on LunaSend.
 public protocol IngestorArticleHandling {
     /// Persists a readable article: downloads its images + cover art, saves the
     /// content, and flips ready (then finishes non-critical artifacts async).
@@ -32,10 +33,10 @@ public protocol IngestorArticleHandling {
     /// A saved item just flipped `.ready` — kicks the auto-send pipeline
     /// (Kindle/ereaders). Bridged to `ArticleSendCoordinator.articleBecameReady`.
     func articleBecameReady(_ item: SavedItem)
-    /// Eagerly preloads the CURRENT pasteboard candidate's links (see
+    /// Eagerly preloads the current pasteboard candidate's links (see
     /// `PreloadCoordinator.preloadPasteboard`).
     func preloadPasteboard(content: ArticleContent, sourceURL: URL)
-    /// Destinations that are configured AND in double-save mode right now.
+    /// Destinations that are configured and in double-save mode right now.
     func doubleSaveDestinationIDs() -> [String]
     /// Sends an article to one ereader destination (by id).
     func sendToDestination(_ item: SavedItem, destinationID: String) async
@@ -62,14 +63,15 @@ public protocol IngestorProductHandling {
         store: SavesStore) async
 }
 
-/// The per-kind INGESTOR handler registry — the store-writing counterpart of
+/// The per-kind ingestor handler registry — the store-writing counterpart of
 /// `LunaIngest.IngestKindProcessors`. Each app's composition root (its
 /// `KindWiring` variant) registers exactly the handlers for the kinds it
-/// handles (Reader: article; Downloader: media; Price Tracker: product; the
-/// central Luna app: all three), so `LunaSaves` itself carries no
-/// foreign-kind dependencies. A classified outcome only ever reaches the
-/// presenter AFTER the `SurfaceSupport` gate, so a missing handler for a
-/// presented case is a programming error, not a user-reachable state.
+/// handles: Reader registers article, Downloader registers media, Price
+/// Tracker registers product, and the central Luna app registers all three.
+/// So `LunaSaves` itself carries no foreign-kind dependencies. A classified
+/// outcome only ever reaches the presenter after the `SurfaceSupport` gate, so
+/// a missing handler for a presented case is a programming error, not a
+/// user-reachable state.
 public enum IngestorKindHandlers {
     public static var article: IngestorArticleHandling?
     public static var media: IngestorMediaHandling?

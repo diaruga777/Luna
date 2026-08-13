@@ -32,20 +32,19 @@ struct PipelineSellerNetworking: SellerFanOutNetworking {
     /// One page, through the app's ordinary fetcher, under the profile's
     /// per-fetch allowance.
     ///
-    /// A refusal is a RESULT here, not an error: the engine's bot-wall rule is
-    /// the reason candidates are over-provisioned, and it can only apply that
-    /// rule if the status code survives the throw.
+    /// A refusal is a RESULT here, not an error: the engine over-provisions
+    /// candidates to work around bot walls, and can apply that rule only if
+    /// the status code survives the throw.
     ///
-    /// **The cap is this leg's job, and it was missing.** `perFetchTimeout`
-    /// is advisory on the profile precisely because the engine makes no request
-    /// of its own — the Safari appex honours it by building its `URLSession`
-    /// around it, and this side simply did not, so a candidate fetch was bounded
-    /// only by `URLRequest.timeoutInterval` (20 s). That interval measures the
-    /// gap between packets, not the transfer, and `URLSession.shared` leaves
-    /// `timeoutIntervalForResource` at its 7-day default: a retailer that dribbles
-    /// a multi-megabyte search page never trips either. One such page could
-    /// outlast the whole run's 35 s budget, which the engine checks only BETWEEN
-    /// candidates.
+    /// This leg enforces `perFetchTimeout` itself, with `TimeLimit.run` below.
+    /// The profile only advises the timeout, because the engine makes no
+    /// request of its own — the Safari appex honours it by building its
+    /// `URLSession` around it, but `ArticleFetcher` uses `URLSession.shared`,
+    /// whose `URLRequest.timeoutInterval` (20 s) measures the gap between
+    /// packets, not the whole transfer, and whose `timeoutIntervalForResource`
+    /// stays at its 7-day default. A retailer that dribbles a multi-megabyte
+    /// search page trips neither, and could outlast the run's whole 35 s
+    /// budget, which the engine checks only BETWEEN candidates.
     func fetch(_ url: URL) async -> FetchedPage? {
         await TimeLimit.run(profile.perFetchTimeout) { await Self.uncappedFetch(url) } ?? nil
     }

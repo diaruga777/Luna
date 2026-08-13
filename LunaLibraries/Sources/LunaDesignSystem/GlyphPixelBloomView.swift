@@ -42,15 +42,13 @@ public final class GlyphPixelBloomView: UIView {
     /// glyph's brighten-and-cool takes the same TIME at any front speed.
     public static let referenceFrontSpeed: CGFloat = 46
 
-    /// Where a frame is composited. The work itself is unchanged; the main
-    /// thread simply no longer waits for it.
+    /// Where a frame is composited, off the main thread.
     ///
     /// Concurrent, and deliberately without a pool of its own: a view never has
     /// more than one frame in flight, so the tasks in the queue are at most one
     /// per blooming view, none of them ever blocks, and the parallelism settles
     /// wherever the cores put it. The mock Safari page's wave — a dozen elements
-    /// lit in one pass — then renders as fast as the machine allows instead of
-    /// queueing a dozen composites onto the main thread the way it used to.
+    /// lit in one pass — renders as fast as the machine allows.
     private static let renderQueue = DispatchQueue(
         label: "app.luna.onboarding.glyph-bloom",
         qos: .userInitiated,
@@ -341,14 +339,13 @@ public final class GlyphPixelBloomView: UIView {
     /// state. The two bitmaps are built once and reused: at display cadence a
     /// fresh backing store per frame is pure allocation.
     ///
-    /// **Core Graphics, not UIKit, and that is not a preference.** The obvious
-    /// port kept `UIGraphicsImageRenderer` and `UIImage.draw(in:)`, and off the
-    /// main thread they composite NOTHING — no error, no warning, an entirely
-    /// empty buffer every frame, with a light that simply never appeared. So the
-    /// emitter and the composite are `CGContext`s with the UIKit y-down flip
-    /// applied by hand, and rasters are drawn as `CGImage`s (which is why
-    /// `draw(_:in:blendMode:alpha:)` below re-flips around each rect the way
-    /// `UIImage.draw(in:)` used to).
+    /// **Core Graphics, not UIKit, and that is not a preference.** Off the main
+    /// thread, `UIGraphicsImageRenderer` and `UIImage.draw(in:)` composite
+    /// NOTHING — no error, no warning, an empty buffer every frame, with a light
+    /// that never appears. So the emitter and the composite are `CGContext`s
+    /// with the UIKit y-down flip applied by hand, and rasters are drawn as
+    /// `CGImage`s: `draw(_:in:blendMode:alpha:)` below re-flips around each rect
+    /// to match `UIImage.draw(in:)`'s convention.
     private final class Pass {
         struct Frame {
             let image: CGImage
@@ -371,23 +368,22 @@ public final class GlyphPixelBloomView: UIView {
         /// How far past the strip the widest halo can still put light. A shadow's
         /// blur is in the USER SPACE it was set in — points here, as in the view
         /// context this drawing came from — so the reach is the widest radius
-        /// itself, plus a little. (This is the same 34 the old invalidation rect
-        /// grew by, for the same reason.)
+        /// itself, plus a little.
         private let glowReach: CGFloat
         /// The halo stack with its gain already folded in, so a frame does no
         /// colour arithmetic.
         private let halos: [(blur: CGFloat, color: CGColor)]
         private let drawAlpha: CGFloat
         /// The rect the emitter image is drawn back into. Deliberately the
-        /// UNROUNDED strip size, as the old renderer's was.
+        /// UNROUNDED strip size.
         private let emitterSize: CGSize
         private let compositeSize: CGSize
         private let emitterContext: CGContext
         private let compositeContext: CGContext
         /// Each bitmap's own size in points, which is a whole number of device
         /// pixels and so is not always its logical size. The flip is applied
-        /// against THIS, so user-space (0, 0) is the bitmap's top-left corner —
-        /// exactly where `UIGraphicsImageRenderer` used to put it.
+        /// against THIS, so user-space (0, 0) is the bitmap's top-left corner,
+        /// matching `UIGraphicsImageRenderer`'s convention.
         private let emitterBitmapSize: CGSize
         private let compositeBitmapSize: CGSize
 

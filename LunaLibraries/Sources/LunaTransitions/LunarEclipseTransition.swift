@@ -2,18 +2,18 @@
 //  LunarEclipseTransition.swift
 //  LunaTransitions
 //
-//  A deliberately local navigation transition for opening a Reader item from a
-//  save row. It uses a rendered copy of the tapped row, so the eclipse has
-//  the source's real silhouette rather than an approximation.
+//  A local navigation transition for opening a Reader item from a save row.
+//  It renders a copy of the tapped row, so the eclipse follows the row's real
+//  silhouette instead of an approximation.
 //
-//  Two other transitions stage the same "solar eclipse" motif for card-shaped
+//  Two other transitions use the same solar-eclipse motif for card-shaped
 //  scenes: `CardEclipseAnimator` (LunaDesignSystem) for the root carousel's
 //  paging, and `InlineReaderEclipseTransition` (LunaReaderUI), which reuses
-//  that file's corona and flare drawing directly. This file shares the
-//  `EclipseCorona` renderer with them but adds a silhouette-shadow layer and its
-//  own radial-light point, because it eclipses an arbitrary snapshot shape — a
-//  save row, not a rounded card — and needs the glow to follow that
-//  outline as well as its bounding rounded rect.
+//  that file's corona and flare drawing. This file shares the `EclipseCorona`
+//  renderer with them but adds a silhouette-shadow layer and its own
+//  radial-light point: it eclipses an arbitrary snapshot shape, not a rounded
+//  card, so the glow must follow the row's outline as well as its bounding
+//  rect.
 
 import LunaDesignSystem
 import ObjectiveC
@@ -56,8 +56,8 @@ public enum LunarEclipseTransitionCenter {
 private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTransitioning {
     enum Direction { case push, pop }
 
-    // Keep simulator tuning deliberately slow. This is a compile-time branch so frame
-    // inspection does not depend on a scheme argument surviving a Blitz/Xcode launch.
+    // The simulator stays slow on purpose. A compile-time branch keeps this true
+    // without depending on a scheme argument surviving a Blitz or Xcode launch.
     private static var durationScale: TimeInterval {
         #if targetEnvironment(simulator)
         return 12
@@ -84,8 +84,8 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         }
         let container = context.containerView
         let isPush = direction == .push
-        // Hide the destination before it enters the hierarchy. Adding it first leaves
-        // UIKit one commit in which the fully laid-out reader can appear above the list.
+        // Hide the destination before it joins the hierarchy. Adding it first would let
+        // UIKit render the fully laid-out reader above the list for one commit.
         UIView.performWithoutAnimation {
             to.alpha = 0
             to.frame = context.finalFrame(for: context.viewController(forKey: .to)!)
@@ -127,9 +127,9 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         let ingressDuration = duration * 0.68
         let egressDuration = duration - ingressDuration
 
-        // Ingress ends at a genuinely opaque zenith. Keeping ingress and egress as
-        // separate animators gives the view swap a real boundary instead of relying
-        // on a zero-duration keyframe, which Core Animation may interpolate across.
+        // Ingress ends at a fully opaque zenith. Splitting ingress and egress into
+        // separate animators gives the view swap a real boundary — a zero-duration
+        // keyframe risks Core Animation interpolating across it.
         UIView.animateKeyframes(
             withDuration: ingressDuration,
             delay: 0,
@@ -200,8 +200,8 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         host.clipsToBounds = false
         let silhouette = image?.withRenderingMode(.alwaysTemplate)
 
-        // The flare is directional, but the corona belongs to the source silhouette:
-        // outside compact views and inside views that fill the transition container.
+        // The flare points one way, but the corona follows the source's shape: it
+        // sits outside a compact view and inside one that fills the transition container.
         let lightCenter = CGPoint(
             x: sourceIsFullScreen ? min(42, host.bounds.width * 0.1) : host.bounds.maxX,
             y: host.bounds.midY
@@ -259,12 +259,11 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             return EclipseInteriorCoronaView(cornerRadius: cornerRadius, frame: bounds)
         }
 
-        // Two layers. `EclipseCorona` supplies the photographic structure —
+        // Two layers. `EclipseCorona` draws the photographic structure —
         // chromosphere hairline, power-law halo, uneven streamers — against the
-        // source's bounding rounded rect. Under it, the white silhouette rendered
-        // beneath the black body contributes a tight shadow that follows the row's
-        // *actual* outline, so a non-rectangular source still glows along its own
-        // edges instead of only along the rectangle.
+        // source's bounding rounded rect. Below it, the white silhouette under the
+        // black body casts a tight shadow that follows the row's actual outline, so
+        // a non-rectangular source glows along its own edges, not just the rectangle.
         let host = UIView(frame: bounds)
         host.isUserInteractionEnabled = false
         host.clipsToBounds = false
@@ -346,9 +345,9 @@ private final class EclipseRadialLightView: UIView {
 }
 
 /// A source that already fills the transition container has nowhere outward to
-/// glow, so its corona falls inward from every edge. `EclipseCorona` renders the
-/// same profile as the exterior case — chromosphere hairline on the limb, then a
-/// power-law falloff — mirrored inward, into a cached image.
+/// glow, so its corona falls inward from every edge. `EclipseCorona` mirrors the
+/// same profile inward — chromosphere hairline on the limb, then a power-law
+/// falloff — into a cached image.
 private final class EclipseInteriorCoronaView: UIImageView {
     private let cornerRadius: CGFloat
 

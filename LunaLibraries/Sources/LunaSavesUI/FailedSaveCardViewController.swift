@@ -14,11 +14,9 @@ import WebKit
 /// app draws the SAME error card instead of each inventing one.
 public struct FailedSaveCardModel {
 
-    /// The card's one rescue-related state, replacing what used to be four
-    /// independently-settable fields (`isRescuing`/`progress`/`canRescue`/
-    /// `hasSpentAIAttempt`) — a shape that could claim a running rescue AND a
-    /// spent/unavailable terminal state at once, which nothing in the UI ever
-    /// meant to show simultaneously.
+    /// The card's one rescue-related state. The enum stops the UI from
+    /// claiming a running rescue and a spent/unavailable terminal state at
+    /// the same time.
     public enum RescueState: Equatable {
         /// Nothing has been tried, or a previous attempt failed but the button
         /// is still offered.
@@ -101,10 +99,10 @@ public struct FailedSaveCardActions {
 /// near-full-bleed web view, a URL bar with reload and share under it, and in the
 /// chin the one thing worth trying — "Retry with AI".
 ///
-/// Deliberately NOT playable and NOT tappable-through: a failed card's only
-/// interactions are its own controls, so the carousel's tap/scrub gestures don't
-/// fight them. Link taps inside the web view are also refused and re-presented
-/// full screen, so the URL bar never lies about which page this card is.
+/// The card accepts taps only on its own controls, so the carousel's tap and
+/// scrub gestures never fire over it. A link tap inside the web view opens full
+/// screen instead of navigating in place, so the URL bar always names the page
+/// the card shows.
 public final class FailedSaveCardViewController: CardContentViewController {
 
     /// The web view is inset by just enough to clear the card's 22pt corner
@@ -469,10 +467,9 @@ public final class FailedSaveCardViewController: CardContentViewController {
                 pendingRescueStart = nil
                 sawRescueInFlight = false
             } else {
-                // Still waiting for the coordinator to pick the attempt up; hold
-                // the overlay the tap put there rather than flickering it away
-                // (replacing whatever terminal/idle state the fresh read found —
-                // there is nothing to show alongside a rescue we know is starting).
+                // The coordinator has not picked up the attempt yet. Keep the
+                // overlay the tap raised instead of flickering it away for
+                // whatever terminal or idle state the fresh read just found.
                 let currentProgress: Double
                 if case .running(let progress) = model.rescueState {
                     currentProgress = progress

@@ -28,17 +28,15 @@ public final class PriceRefreshCoordinator {
     @discardableResult
     public func refreshAndNotify() async -> [PriceRefreshOutcome] {
         DiagnosticLog.shared.record("price refresh: runner started", category: "price")
-        // No snapshot work happens here. Product snapshots are read exactly
-        // once, synchronously, at the moment a tracker is CREATED — a refresh
-        // cycle fetches live prices and has nothing to learn from a record of
-        // what a page cost before the tracker existed.
+        // Product snapshots are read once, synchronously, when a tracker is
+        // created, so a refresh cycle fetches only live prices.
         //
-        // Finish any seller fan-out a dead process left mid-run, BEFORE the
-        // refresh: the sellers it attaches are priced as it attaches them, so
-        // running it first spares the refresh from re-fetching them, and the
-        // baseline it settles is what this cycle's alert decisions are made
-        // against. A refresh cycle is exactly the right moment — the app is
-        // already awake with the network, on the same 12 h rhythm.
+        // Finish any seller fan-out a dead process left mid-run before the
+        // refresh. It attaches sellers with their own fresh prices, so
+        // finishing it first spares the refresh from re-fetching them, and it
+        // settles the baseline this cycle's alert decisions use. A refresh
+        // cycle is the right moment: the app is already awake with the
+        // network, on the same 12h rhythm.
         let finished = await SellerComparison.completePending(store: SavesStore.shared)
         if finished > 0 {
             DiagnosticLog.shared.record(

@@ -331,10 +331,10 @@ public final class CardEclipseTransition {
         oppositeVeil?.removeFromSuperview()
     }
 
-    /// The corona around the sun's card-shaped silhouette. `EclipseCorona` does
-    /// the drawing — a chromosphere hairline on the limb, a power-law halo, and
-    /// uneven equatorial streamers — rather than the layer shadows this used to
-    /// stack, whose Gaussian profile read as a lamp behind the card.
+    /// The corona around the sun's card-shaped silhouette. `EclipseCorona` draws
+    /// a chromosphere hairline on the limb, a power-law halo, and uneven
+    /// equatorial streamers, so the light reads as a corona rather than a lamp
+    /// behind the card.
     public static func makeCorona(frame: CGRect) -> UIView {
         let corona = EclipseCoronaView(
             bodySize: frame.size,

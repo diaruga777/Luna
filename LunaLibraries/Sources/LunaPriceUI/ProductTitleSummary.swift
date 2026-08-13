@@ -9,18 +9,17 @@ import Foundation
 /// the **headline** — a word or three that names the thing — and the **detail**,
 /// the full title underneath in small type.
 ///
-/// A retailer's `<title>` is not a product name. It is a product name followed by
-/// the marketplace, the category path, and often a variant list:
-/// "Panasonic spare blade men's shaver 6-blade ES9600 : Amazon.com.au: Health,
-/// Household & Personal Care". Rendered at `title3` across three lines, that
-/// pushed the graph and the seller list off the bottom of the card and told the
-/// reader nothing the first three words hadn't. So the card leads with the three
-/// words and keeps the rest, smaller, below — nothing is hidden, it is just
-/// ranked.
+/// A retailer's `<title>` follows the product name with the marketplace, the
+/// category path, and often a variant list: "Panasonic spare blade men's
+/// shaver 6-blade ES9600 : Amazon.com.au: Health, Household & Personal Care".
+/// Rendered at `title3` across three lines, that pushed the graph and the
+/// seller list off the bottom of the card while telling the reader nothing
+/// the first three words hadn't. So the card leads with the three words and
+/// keeps the rest, smaller, below — ranked, not hidden.
 ///
-/// Pure and heuristic, in that order: every rule below is about SHAPE (separators,
-/// brackets, digits), never about a vocabulary of brands or nouns, so it degrades
-/// to "the first few words" rather than to a wrong guess.
+/// Pure and heuristic, in that order: every rule below judges SHAPE
+/// (separators, brackets, digits), not a vocabulary of brands or nouns, so it
+/// degrades to "the first few words" rather than to a wrong guess.
 public enum ProductTitleSummary {
 
     /// The most words a headline may carry. Three is the point where a

@@ -20,27 +20,31 @@ struct SharedDiagnosticsMirror: SaveDiagnosticsMirroring {
     }
 }
 
-/// The HOST-AGNOSTIC ingest+present flow for the share/action extension surfaces.
+/// The host-agnostic ingest-and-present flow for the share/action extension
+/// surfaces.
 ///
-/// It runs the ONE shared `IngestPipeline` for an appended URL and presents the
-/// resulting `Outcome` through an injected `ExtensionHost`, so the WHOLE flow is
-/// testable with a fake host (the real `NSExtensionContext` harness is not — a
-/// simulator can't drive the share sheet and `completeRequest`/`inputItems` have no
-/// test seam). The real `ShareViewController` is a thin adapter that conforms to
-/// `ExtensionHost` and owns only attachment loading + the live UIKit chrome; this
-/// driver owns the decision/persistence/presentation that must stay IDENTICAL to
-/// every other surface.
+/// It runs the one shared `IngestPipeline` for an appended URL and presents
+/// the resulting `Outcome` through an injected `ExtensionHost`, so the whole
+/// flow is testable with a fake host. The real `NSExtensionContext` harness
+/// is not testable this way — a simulator cannot drive the share sheet, and
+/// `completeRequest`/`inputItems` have no test seam. The real
+/// `ShareViewController` is a thin adapter that conforms to `ExtensionHost`
+/// and owns only attachment loading and the live UIKit chrome; this driver
+/// owns the decision, persistence, and presentation logic that must stay
+/// identical across every surface.
 ///
-/// Differences between the share extension and the action extension are pure DATA
-/// (`host.isActionExtension` / `host.readerMode`), never divergent processing logic
-/// — both call the same pipeline and exhaustive `Outcome` switch here. Every case
-/// persists the classified metadata to the shared store (so an extension save is
-/// shaped identically to a main-app save. Presentation policy is narrow: the action extension shows its
-/// reader/saved UI, while the share extension only presents media, price, and
-/// archive-bypass UI.
-/// The ingest pipeline, as a share surface calls it. Production runs the ONE
-/// shared `IngestPipeline`; a test substitutes fixtures with a mock fetcher and
-/// no render tier (extension-safe).
+/// The share extension and the action extension differ only in data
+/// (`host.isActionExtension` / `host.readerMode`), never in processing
+/// logic — both call the same pipeline and the same exhaustive `Outcome`
+/// switch here. Every case persists the classified metadata to the shared
+/// store, so an extension save is shaped identically to a main-app save.
+/// Presentation policy stays narrow: the action extension shows its
+/// reader/saved UI, while the share extension only presents media, price,
+/// and archive-bypass UI.
+
+/// The ingest pipeline, as a share surface calls it. Production runs the
+/// one shared `IngestPipeline`; a test substitutes fixtures with a mock
+/// fetcher and no render tier, keeping it extension-safe.
 public protocol ShareIngestProcessing {
     func process(_ input: IngestInput) async -> IngestResult
 }
@@ -78,10 +82,11 @@ public final class ShareSurfaceDriver {
     private let surfaceGate: ShareSurfaceGating
     /// The app the extension is running in, for the error copy + deep links.
     private let currentApp: LunaApp
-    /// This request's diagnostic trace, created in `ingestAndPresent` and read
-    /// back by `present`'s failure leg. Held rather than passed because
-    /// `present` is also the fixture's direct entry point (a driver built for a
-    /// single Outcome simply has none, and records nothing).
+    /// This request's diagnostic trace, created in `ingestAndPresent` and
+    /// read back by `present`'s failure leg. This is held as a property,
+    /// not passed as a parameter, because `present` is also the fixture's
+    /// direct entry point: a driver built for a single `Outcome` simply has
+    /// none, and records nothing.
     private var recorder: SaveDiagnosticsRecorder?
 
     public init(
@@ -102,14 +107,15 @@ public final class ShareSurfaceDriver {
     /// item to the pipeline's resolved URL, then presents + persists the `Outcome` via
     /// this surface's host.
     public func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
-        // Keep the identity of THIS extension request's placeholder. Resolution
-        // can discover that its canonical URL is already saved and delete the
-        // placeholder; a later blocked decision must never then delete that
-        // pre-existing canonical item merely because it has the resolved URL.
+        // Keeps the identity of this extension request's placeholder.
+        // Resolution can discover that its canonical URL is already saved
+        // and delete the placeholder; a later blocked decision must never
+        // then delete that pre-existing canonical item merely because it
+        // has the resolved URL.
         let pendingItemID = store.item(forURLString: originalURL.absoluteString)?.id
-        // Same per-save trace the app records, mirrored through the SYNCHRONOUS
-        // logger: an extension can be jetsammed the instant it finishes, so an
-        // async queue hop would lose the tail of the story
+        // The same per-save trace the app records, mirrored through the
+        // synchronous logger. An extension can be jetsammed the instant it
+        // finishes, so an async queue hop would lose the tail of the story
         // (`claudedocs/save-diagnostics.md`).
         let recorder = pendingItemID.map { itemID in
             SaveDiagnosticsRecorder(itemID: itemID, mirror: SharedDiagnosticsMirror())
@@ -126,11 +132,13 @@ public final class ShareSurfaceDriver {
 
         let url = result.url
         if url != originalURL, let item = store.item(forURLString: originalURL.absoluteString) {
-            // The item was saved keyed on the pre-resolve (wrapper/shortener) URL, but
-            // the pipeline resolved it to the publisher URL. If that publisher URL is
-            // ALREADY saved (e.g. shared once directly, once via apple.news), repointing
-            // would create two items at the same URL — instead drop the wrapper item and
-            // keep the existing one, so the same article never duplicates.
+            // The item was saved keyed on the pre-resolve (wrapper or
+            // shortener) URL, but the pipeline resolved it to the publisher
+            // URL. If that publisher URL is already saved (shared once
+            // directly, once via apple.news), repointing would create two
+            // items at the same URL. Instead this drops the wrapper item
+            // and keeps the existing one, so the same article never
+            // duplicates.
             if let existing = store.item(forURLString: url.absoluteString), existing.id != item.id {
                 store.delete(item)
             } else {
@@ -140,16 +148,17 @@ public final class ShareSurfaceDriver {
         present(result.outcome, url: url, blockedItemID: pendingItemID)
     }
 
-    /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
-    /// compiler-checked). Public so the fixture can drive it directly with any Outcome.
+    /// The exhaustive per-surface presenter over the unified `Outcome` (no
+    /// `default`, so the compiler checks every case). Public so the fixture
+    /// can drive it directly with any `Outcome`.
     ///
-    /// The per-app content gate runs FIRST, before any persist: a foreign-kind
-    /// outcome deletes the pending row `ShareViewController` appended before
-    /// classification (with its copied document file, via `store.delete`'s
-    /// `removeFiles`) so NOTHING remains in the store, and the generic
-    /// unsupported-kind error is presented instead of any save UI (never a
-    /// "Saved" checkmark). A supported outcome (or `.failed`'s nil owner)
-    /// persists and presents exactly as before.
+    /// The per-app content gate runs first, before any persist. A
+    /// foreign-kind outcome deletes the pending row `ShareViewController`
+    /// appended before classification — including its copied document
+    /// file, through `store.delete`'s `removeFiles` — so nothing remains in
+    /// the store, and the generic unsupported-kind error is presented
+    /// instead of any save UI, never a "Saved" checkmark. A supported
+    /// outcome, or `.failed`'s nil owner, persists and presents normally.
     public func present(_ outcome: Outcome, url: URL, blockedItemID: UUID? = nil) {
         guard let host else { return }
 
@@ -160,9 +169,9 @@ public final class ShareSurfaceDriver {
             return
         }
 
-        // Anything that isn't a failure sheds its trace here — including a save
-        // that succeeded on a retry of an item that had failed before, which is
-        // the case that would otherwise keep exporting a stale story.
+        // Anything that isn't a failure sheds its trace here, including a
+        // save that succeeded on a retry of an item that had failed
+        // before — otherwise that case would keep exporting a stale story.
         if case .failed = outcome {} else { discardDiagnostics(url: url) }
 
         switch outcome {
@@ -176,8 +185,9 @@ public final class ShareSurfaceDriver {
             }
 
         case let .product(product, _):
-            // Persist the tracker, then present the SAME price-tracking editor the
-            // main app shows (the extension host wraps it in Done chrome).
+            // Persists the tracker, then presents the same price-tracking
+            // editor the main app shows, wrapped in the extension host's
+            // Done chrome.
             guard let productPresenter = Self.requireProductPresenter(host: host) else { return }
             productPresenter.presentPriceEditor(product: product, url: url, store: store, host: host)
 
@@ -203,17 +213,14 @@ public final class ShareSurfaceDriver {
             presentArchive(url: url, title: title, presenter: article)
 
         case let .failed(reason):
-            // NEVER a misleading "Saved". Mark the row failed so the main app's list
-            // shows it, then offer the Apple-Intelligence rescue hand-off: the action
-            // extension (which has UI) presents the rescue card; the zero-UI share
-            // extension completes quietly (the main app's background sweep still
-            // rescues it if auto-rescue is on).
-            //
-            // `markFailed` alone used to be the whole of it, which left extension
-            // failures as the ONE path with no reason and no count — so the card
-            // couldn't explain itself and the rescue's failure-kind mapping had
-            // nothing to read. Every other failure path pairs the two; so does
-            // this one now.
+            // Never shows a misleading "Saved". Marks the row failed so the
+            // main app's list shows it, records the failure reason and
+            // count so the card and the rescue's failure-kind mapping can
+            // read them, then offers the Apple-Intelligence rescue
+            // hand-off: the action extension (which has UI) presents the
+            // rescue card, while the zero-UI share extension completes
+            // quietly (the main app's background sweep still rescues it if
+            // auto-rescue is on).
             if let item = store.item(forURLString: url.absoluteString) {
                 store.markFailed(item.id)
                 SaveFailureStore.shared.recordFailure(item.id, reason: reason)
@@ -226,13 +233,14 @@ public final class ShareSurfaceDriver {
             }
 
         case let .unsupported(owner):
-            // The surface gate above discards an unsupported outcome before this
-            // switch runs, so reaching here is a programming error: loud in debug,
-            // and in release the row is marked failed rather than left pending
-            // forever. Its trace is already gone — the shed above covers every
-            // non-failure outcome — so the shared log carries the reason instead.
-            // The assertion stands down under XCTest so the suite can drive the
-            // recovery it guards.
+            // The surface gate above discards an unsupported outcome
+            // before this switch runs, so reaching here is a programming
+            // error. This is loud in debug; in release, the row is marked
+            // failed instead of left pending forever. Its trace is already
+            // gone (the shed above covers every non-failure outcome), so
+            // the shared log carries the reason instead. The assertion
+            // stands down under XCTest so the suite can drive the recovery
+            // it guards.
             if !LiveNetworkPolicy.isRunningUnderXCTest {
                 assertionFailure("unsupported outcome reached the share presenter")
             }
@@ -248,13 +256,13 @@ public final class ShareSurfaceDriver {
         }
     }
 
-    /// The action-extension failure card: show the page, write a pending-rescue
-    /// record, best-effort open the containing app. The extension links NO rescue
-    /// engine — only the pending-record store + the deep link.
+    /// The action-extension failure card: shows the page, writes a
+    /// pending-rescue record, and best-effort opens the containing app. The
+    /// extension links no rescue engine — only the pending-record store
+    /// and the deep link.
     ///
-    /// The record carries NO hint: the model classifies the page when the app
-    /// drains the queue, so there is nothing for this card to ask (it used to show
-    /// a three-way content-type picker).
+    /// The record carries no hint. The model classifies the page when the
+    /// app drains the queue, so this card asks the user nothing.
     private func presentRescueFailure(url: URL) {
         guard let host else { return }
         let app = currentApp
@@ -267,11 +275,11 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Diagnostics
 
-    /// Writes this request's buffered trace into the item's sidecar under an
-    /// attempt separator, so the failed card in the main app can share it. The
-    /// same shape `SavesIngestor.flushDiagnostics` writes — an item that
-    /// failed in the extension and again on the app's launch sweep ends up with
-    /// both attempts in one file.
+    /// Writes this request's buffered trace into the item's sidecar under
+    /// an attempt separator, so the failed card in the main app can show
+    /// it. This matches the shape `SavesIngestor.flushDiagnostics` writes,
+    /// so an item that failed in the extension and again on the app's
+    /// launch sweep ends up with both attempts in one file.
     private func flushDiagnostics(itemID: UUID, reason: SaveFailureReason?) {
         guard let recorder else { return }
         let lines = recorder.drainLines()
@@ -282,8 +290,8 @@ public final class ShareSurfaceDriver {
         SaveDiagnosticsStore.shared.appendLines([separator] + lines, for: itemID)
     }
 
-    /// Drops the buffer and any file an earlier attempt left, for every outcome
-    /// that isn't a failure.
+    /// Drops the buffer and any file an earlier attempt left, for every
+    /// outcome that isn't a failure.
     private func discardDiagnostics(url: URL) {
         _ = recorder?.drainLines()
         let itemID = store.item(forURLString: url.absoluteString)?.id ?? recorder?.itemID
@@ -293,11 +301,12 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Per-kind presenter lookup
 
-    /// The per-kind presenters, required AFTER the surface gate has admitted the
-    /// outcome: an admitted kind whose presenter isn't registered is a
-    /// composition-root programming error (the entry class registers presenters
-    /// for exactly the kinds `SurfaceSupport` admits), so this asserts and
-    /// completes silently rather than presenting a wrong surface.
+    /// The per-kind presenters, required after the surface gate has
+    /// admitted the outcome. An admitted kind whose presenter isn't
+    /// registered is a composition-root programming error, since the entry
+    /// class registers presenters for exactly the kinds `SurfaceSupport`
+    /// admits, so this asserts and completes silently instead of
+    /// presenting the wrong surface.
     private static func requireArticlePresenter(host: ExtensionHost?) -> ShareArticlePresenting? {
         guard let presenter = ShareKindPresenters.article else {
             assertionFailure("article outcome admitted with no ShareKindPresenters.article")
@@ -327,15 +336,16 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Surface gate (per-app content kinds)
 
-    /// Deletes the pending placeholder row appended before classification, so a
-    /// dropped foreign-kind save leaves NOTHING behind. `store.delete` also
-    /// removes every on-disk artifact the row owns — including an imported
-    /// document's copied `Articles/<id>-source.<ext>` file.
+    /// Deletes the pending placeholder row appended before classification,
+    /// so a dropped foreign-kind save leaves nothing behind. `store.delete`
+    /// also removes every on-disk artifact the row owns, including an
+    /// imported document's copied `Articles/<id>-source.<ext>` file.
     private func discardUnsupportedSave(url: URL, itemID: UUID?) {
         if let itemID {
-            // If wrapper dedup already removed this request's placeholder, the
-            // correct blocked cleanup is a no-op. Do not fall back to URL lookup:
-            // that URL belongs to the older, legitimate save.
+            // If wrapper dedup already removed this request's placeholder,
+            // the correct blocked cleanup is a no-op. This must not fall
+            // back to a URL lookup: that URL belongs to the older,
+            // legitimate save.
             guard let item = store.item(withID: itemID) else { return }
             store.delete(item)
             return
@@ -344,9 +354,9 @@ public final class ShareSurfaceDriver {
         store.delete(item)
     }
 
-    /// Presents the shared unsupported-kind card — the same one the app shows —
-    /// in the host's modal chrome. Done completes silently: nothing was saved,
-    /// so never a "Saved" checkmark.
+    /// Presents the shared unsupported-kind card, the same one the app
+    /// shows, in the host's modal chrome. Done completes silently: nothing
+    /// was saved, so no "Saved" checkmark ever appears.
     private func presentUnsupportedError(owner: LunaApp) {
         guard let host else { return }
         let error = UnsupportedSaveCardViewController(owner: owner, currentApp: currentApp)
@@ -361,10 +371,11 @@ public final class ShareSurfaceDriver {
     ) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
         let savedWithContent = store.saveContent(content, for: saved)
-        // The article-kind extras — heuristics-only audio script, best-effort web
-        // archive of the SAME unlocked HTML, and the cover thumbnail — live in the
-        // article presenter (LunaReaderUI/LunaArchiveReader/LunaAudioPlayback code
-        // this kind-neutral module no longer links).
+        // The article-kind extras — a heuristics-only audio script, a
+        // best-effort web archive of the same unlocked HTML, and the cover
+        // thumbnail — live in the article presenter. This kind-neutral
+        // module links none of that LunaReaderUI/LunaArchiveReader/
+        // LunaAudioPlayback code.
         presenter.persistArticleExtras(
             item: savedWithContent, content: content, html: html, url: url, store: store)
     }
@@ -388,11 +399,11 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Presentation
 
-    /// A paywalled article: EVERY surface opens the same archive-CAPTCHA reader
-    /// (URL pre-filled), identically to the main app, so the presentation intent
-    /// matches across surfaces. The store markings stay here; the reader UI (and
-    /// the on-extract swap to the in-sheet native reader) is the article
-    /// presenter's.
+    /// A paywalled article: every surface opens the same archive-CAPTCHA
+    /// reader, URL pre-filled, identically to the main app, so the
+    /// presentation intent matches across surfaces. The store markings
+    /// stay here; the reader UI, and the on-extract swap to the in-sheet
+    /// native reader, belong to the article presenter.
     private func presentArchive(url: URL, title: String, presenter: ShareArticlePresenting) {
         guard let host else { return }
         guard let saved = store.item(forURLString: url.absoluteString) else {
@@ -404,12 +415,13 @@ public final class ShareSurfaceDriver {
     }
 }
 
-/// The failure card's three host legs, kept together for the life of the card.
+/// The failure card's three host legs, kept together for the life of the
+/// card.
 ///
-/// A small coordinator rather than the driver itself: `ShareSurfaceDriver` is a
-/// temporary the save flow awaits and drops, while the card stays on screen until
-/// the user answers it. The card retains this; this holds the host weakly, so
-/// nothing cycles — the same shape the three closures it replaces had.
+/// This is a small coordinator, not the driver itself: `ShareSurfaceDriver`
+/// is a temporary object the save flow awaits and drops, while the card
+/// stays on screen until the user answers it. The card retains this
+/// coordinator, which holds the host weakly, so nothing cycles.
 @MainActor
 private final class RescueFailureCardLegs: RescueFailureCardDelegate {
     private weak var host: (any ExtensionHost)?

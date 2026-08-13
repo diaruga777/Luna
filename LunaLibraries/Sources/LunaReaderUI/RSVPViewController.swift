@@ -65,13 +65,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// The Phrases sub-mode's chunk timer (`scheduleNextChunk`/`advanceChunk`),
     /// bundled with the wall-clock start/length it was scheduled with — a
     /// hold/release mid-word rescales the REMAINING time
-    /// (`rescaleRunningInterval`), which needs both. One optional so a
-    /// cancellation can never invalidate the timer while leaving a stale
-    /// start/duration behind (the three used to be cleared inconsistently
-    /// across call sites — `cancelChunkTimer()` is now the only place that
-    /// does it). The Words sub-mode's timer is `wordClock` below — the two
-    /// stay separate low-level timers because only the words-mode one is
-    /// shared with the link preview.
+    /// (`rescaleRunningInterval`), which needs both. One optional keeps the
+    /// timer and its start/duration from going stale independently:
+    /// `cancelChunkTimer()` is the only place that clears any of the three.
+    /// The Words sub-mode's timer is `wordClock` below — the two stay separate
+    /// low-level timers because only the words-mode one is shared with the
+    /// link preview.
     private struct ChunkTimer {
         let timer: Timer
         let start: Date
@@ -269,17 +268,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
     }
     /// Vertical center of the focal word / phrase: the MIDPOINT of the reading
-    /// band — the space actually between the host chrome and the playback
-    /// controls — so a tall title header can never cover the reticule and the
-    /// controls can never be overrun.
+    /// band — the space between the host chrome and the playback controls — so
+    /// a tall title header can never cover the reticule and the controls can
+    /// never be overrun.
     ///
-    /// It used to rest at the VIEW's midpoint, which is only the band's midpoint
-    /// when the chrome above and the controls below happen to be equally tall.
-    /// They rarely are: in the action extension the navigation bar takes ~140pt
-    /// off the top, and the word sat ~100pt below the middle of its own space
-    /// with a void above it. `focalCenterBias` keeps the small downward lean the
-    /// view-midpoint target used to give for free — the preceding-context lane
-    /// grows taller than the trailing one, so the room above is worth more.
+    /// This differs from the VIEW's own midpoint whenever the chrome above and
+    /// the controls below are not equally tall — the action extension's
+    /// navigation bar alone takes ~140pt off the top. `focalCenterBias` adds a
+    /// small downward lean, because the preceding-context lane runs taller than
+    /// the trailing one, so the room above the word is worth more.
     private var focalCenterY: CGFloat {
         let top = readingBandTop
         let controlsTop = readingBandBottom
@@ -806,9 +803,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             : chromeFloor
 
         let lanes = focalLanes
-        // Words mode: the removed sub-mode switcher freed the top of the screen,
-        // so the preceding-context label grows upward into it (its bottom stays
-        // anchored to the focal band — the word and everything below don't move).
+        // Words mode: the preceding-context label grows upward into the free
+        // top of the screen. Its bottom stays anchored to the focal band, so
+        // the word and everything below it don't move.
         let upperHeight: CGFloat = displayMode == .phrases ? 120 : 220
         let upperBottom = lanes.precedingBottom
         // Each lane is sized to the PROSE it holds, not to the lane it may grow
@@ -876,19 +873,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     /// The prose lanes and the pill row, all measured off the focal display's
-    /// own half-height rather than a fixed band.
+    /// own half-height rather than a fixed band (see `focalProseGaps`).
     ///
-    /// The gaps used to be a flat 84pt above the centre and 116pt below it —
-    /// ~60pt and ~92pt of air around a 30pt word, which read as the word
-    /// floating alone between two paragraphs. They are now a third of that
-    /// (`focalProseGaps`).
-    ///
-    /// **The pill row is only reserved while something occupies it.** Holding an
-    /// empty 36pt row open under every word is what made the lower gap so large,
-    /// and the row is nearly always empty: a link pill shows only on a linkified
-    /// word, and the completion badge only at the end of the article — where the
-    /// trailing prose is empty anyway. When a pill does appear the trailing prose
-    /// steps down for it (animated with the pill's own fade, see `updateLinkPill`).
+    /// **The pill row is only reserved while something occupies it.** Reserving
+    /// an empty 36pt row under every word would hold the lower gap open for
+    /// nothing, since the row is nearly always empty: a link pill shows only on
+    /// a linkified word, and the completion badge only at the end of the
+    /// article, where the trailing prose is empty anyway. When a pill does
+    /// appear, the trailing prose steps down for it, animated with the pill's
+    /// own fade (see `updateLinkPill`).
     private var focalLanes: FocalLanes {
         let centerY = focalCenterY
         let half = focalHalfHeight
@@ -902,11 +895,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     /// Air between the focal display and the prose above / below it. Words mode
-    /// keeps a third of the gap it used to leave, still roomier below because the
-    /// pill row lands there. Phrases keeps its own tighter pair unchanged — the
-    /// glass panel already separates the phrase from the prose, so 14pt was never
-    /// the problem there; it only gains a matching bottom (it was holding the
-    /// empty pill row open too, at 56).
+    /// keeps a small gap, roomier below because the pill row lands there.
+    /// Phrases keeps a tighter, even pair — its glass panel already separates
+    /// the phrase from the prose above and below.
     private var focalProseGaps: (above: CGFloat, below: CGFloat) {
         displayMode == .phrases ? (14, 14) : (20, 31)
     }
@@ -2054,10 +2045,10 @@ extension RSVPViewController {
 
 extension RSVPViewController: UIGestureRecognizerDelegate {
     /// The full-screen play/pause tap must ignore touches that land on any
-    /// interactive control — the sub-mode switcher, the skip ±25-word buttons,
-    /// the ±25 speed buttons, the play/pause button, the scrubber, and the link
-    /// pill — so those taps reach the control instead of being cancelled by the
-    /// full-screen tap (which `cancelsTouchesInView`).
+    /// interactive control — the skip ±25-word buttons, the ±25 speed buttons,
+    /// the play/pause button, the scrubber, and the link pill — so those taps
+    /// reach the control instead of being cancelled by the full-screen tap
+    /// (which `cancelsTouchesInView`).
     public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
     ) -> Bool {

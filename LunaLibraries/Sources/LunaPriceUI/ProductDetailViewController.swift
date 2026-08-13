@@ -56,16 +56,7 @@ public protocol AddSellerHandoffHandling {
 /// sellers being watched — one screen, used by every app and every surface that
 /// shows a tracked product.
 ///
-/// It exists because there were two of these and they disagreed about
-/// everything. The in-deck card scrolled a column of a `title3` product title, a
-/// 246pt graph and grey seller buttons captioned with a Safari compass; the
-/// share/action extension's editor showed the same tracker as a grouped
-/// `UITableView` of hostnames with a 130pt alert pill bolted to the bottom. A
-/// seller row was a different height, a different label and a different tap
-/// target depending on which one you were looking at, and a fix to either was a
-/// fix to one.
-///
-/// So the hosts keep only what is genuinely theirs — the card frame on one side,
+/// Each host keeps only what is genuinely its own — the card frame on one side,
 /// the header bar and the extension's exit button on the other — and everything
 /// between the two is this:
 ///
@@ -377,11 +368,10 @@ public final class ProductDetailViewController: UIViewController {
         sellersStack.translatesAutoresizingMaskIntoConstraints = false
         sellersScrollView.addSubview(sellersStack)
 
-        // The viewport is exactly as tall as its rows, until they no longer fit —
-        // then it stops at whatever is left and scrolls. That is the fix for a
-        // list that used to be cut off just past its first row with nothing to
-        // say it continued: the cut now lands mid-row, because the height is a
-        // remainder rather than a guess.
+        // The viewport is exactly as tall as its rows, until they no longer fit
+        // — then it stops at whatever height is left and scrolls, so the cut
+        // lands mid-row rather than right after the first one. A mid-row cut
+        // signals that the list continues; a cut at a row boundary would not.
         let fitsContent = sellersScrollView.heightAnchor.constraint(
             equalTo: sellersStack.heightAnchor)
         fitsContent.priority = UILayoutPriority(751)
@@ -574,9 +564,8 @@ public final class ProductDetailViewController: UIViewController {
         InAppBrowser.present(urlString: row.urlString, from: self)
     }
 
-    /// The two ways to add one, offered together in both apps: browse to a page,
-    /// or paste its link. The card only ever offered the first and the editor
-    /// only ever offered the second.
+    /// The two ways to add a seller, offered together in both apps: browse to
+    /// a page, or paste its link.
     private func addSellerMenu() -> UIMenu {
         UIMenu(children: [
             UIAction(
@@ -776,11 +765,11 @@ public extension Notification.Name {
 
 // MARK: - Removing a seller
 
-/// A seller comes off the list through the row's own context menu. The card used
-/// to carry a permanent minus button beside every row (a destructive action one
-/// mis-tap away, on a card whose whole point is the prices next to it) and the
-/// editor hid the same action behind a table swipe. A long press is the one
-/// gesture that works in both hosts and costs the layout nothing.
+/// A seller comes off the list through the row's own context menu (long
+/// press), not a visible button: a permanent minus button beside every row
+/// would put a destructive action one mis-tap away, on a card whose whole
+/// point is the prices next to it. The long press works in both hosts and
+/// costs the layout nothing.
 extension ProductDetailViewController: UIContextMenuInteractionDelegate {
 
     public func contextMenuInteraction(

@@ -21,9 +21,7 @@
 //  save is a PICTURE rather than text shows that still full-bleed instead.
 //  Which of the two a chip is, is the CARD's answer (`prefersThumbnailChip`),
 //  never the deck's: the Downloader's strip is this strip, with every chip
-//  happening to be a still. There used to be a second, deck-level `.thumbnails`
-//  style, and it is why the same video was a 46pt image chip in one app and a
-//  64pt mini card in another.
+//  happening to be a still.
 //
 
 import UIKit

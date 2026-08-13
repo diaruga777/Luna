@@ -10,13 +10,9 @@ import UIKit
 /// The alert control every product surface shows: **one row**, 46pt tall —
 /// a large bell, a compact two-line "Alert at" + value block, and the slider.
 ///
-/// It replaces a 130pt pill that spent four stacked lines saying what the last
-/// one says on its own. The percent-and-absolute readout ("25% off — alert below
-/// $150.00") and the explanatory sentence under it were both restatements of the
-/// slider's position; the price at the end of the row IS the threshold, and the
-/// number moves as the thumb does. A card has a fixed height and four things to
-/// fit in it, so a control that costs a third of it has to earn that, and this
-/// one did not.
+/// A card has a fixed height and four things to fit into it, so this row
+/// keeps the alert control to one line: the price at the end of the row IS
+/// the threshold, and the number moves as the thumb does.
 ///
 /// **Two states, one shape.** A tracker with no alert yet parks the slider where
 /// an alert would begin, dims the track and thumb, and puts a **Set** button

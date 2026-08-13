@@ -13,12 +13,11 @@ import LunaStorage
 /// alert baseline.
 ///
 /// **Nobody waits for it.** A fan-out is up to 35 s of other people's web
-/// servers, and it used to sit between the save and the card — a share sheet
-/// that looked stuck, and an editor that opened half a minute after the tap.
-/// The save now lands immediately with the one seller the user was actually
-/// looking at, the run is marked PENDING on the tracker, and the sellers arrive
-/// in the list as they are found. The one caller that still waits is the Action
-/// Button intent, because its whole answer is a document comparing them.
+/// servers. The save lands immediately with the one seller the user was
+/// actually looking at, the run is marked PENDING on the tracker, and the
+/// sellers arrive in the list as they are found. The one caller that still
+/// waits is the Action Button intent, because its whole answer is a document
+/// comparing them.
 ///
 /// **The ORDER within a run is the other half of the design**, and it is not the
 /// obvious one. A tracker is created from the SOURCE page alone and only then

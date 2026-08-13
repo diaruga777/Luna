@@ -74,13 +74,6 @@ public enum WebJunkBlocker {
     """
 
     /// A web view configuration with the cleanup script pre-installed.
-    ///
-    /// This used to also hand every junk-blocking web view one shared
-    /// `WKProcessPool`, so a second web view (a cache-miss inline link, the
-    /// Original mode switch) reused the already-warm web process. Since iOS 15
-    /// that pool is documented to have no effect — process sharing follows the
-    /// `websiteDataStore` instead, and these configurations all take the
-    /// default one — so the pool bought nothing and is gone.
     public static func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         addCleanupScript(to: configuration.userContentController)

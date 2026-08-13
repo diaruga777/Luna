@@ -20,8 +20,8 @@ private struct AppDiagnosticsMirror: SaveDiagnosticsMirroring {
     }
 }
 
-/// Presents the unsupported-kind error for a dropped INTERACTIVE in-app save.
-/// Installed by the app shell at launch (AppDelegate) — LunaSaves can't
+/// Presents the unsupported-kind error for a dropped interactive in-app save.
+/// The app shell installs this at launch (AppDelegate) — LunaSaves cannot
 /// know how the app presents modals.
 public protocol UnsupportedSavePresenting {
     @MainActor
@@ -48,10 +48,10 @@ public protocol PriceTrackerComparisonKicking {
 /// The per-app content gate over a classified outcome (`SurfaceSupport`): a
 /// single-content app drops foreign kinds before any store write.
 ///
-/// The same shape as `LunaShareSurface`'s `ShareSurfaceGating`, declared again
-/// here because this module sits BELOW LunaShareSurface and cannot see it — the
-/// two are deliberately independent one-method contracts rather than a shared
-/// one hoisted into a module neither needs.
+/// This has the same shape as `LunaShareSurface`'s `ShareSurfaceGating`,
+/// declared again here because this module sits below LunaShareSurface and
+/// cannot see it. The two are deliberately independent one-method contracts
+/// rather than a shared one hoisted into a module neither needs.
 public protocol IngestSurfaceGating {
     func decision(for outcome: Outcome) -> SurfaceSupport.Decision
 }
@@ -77,9 +77,9 @@ public final class SavesIngestor {
     /// `Bundle.main`; the production default reads the running process's app.
     private let surfaceGate: any IngestSurfaceGating
 
-    /// The unsupported-kind error for a dropped INTERACTIVE in-app save
-    /// (`.paste`/`.manual` sources only — App Intents get a dialog from the
-    /// intent layer, background sweeps have no UI).
+    /// The unsupported-kind error for a dropped interactive in-app save —
+    /// `.paste`/`.manual` sources only. App Intents get a dialog from the
+    /// intent layer, and background sweeps have no UI.
     public static var unsupportedSavePresenter: (any UnsupportedSavePresenting)?
 
     /// Where a `.failed` first pass goes for a rescue attempt.
@@ -113,10 +113,9 @@ public final class SavesIngestor {
         return inFlight.contains(id)
     }
 
-    /// Runs `ingestAllPending()`'s enumeration (a full list read)
-    /// and backfill scans off the caller's thread — it's called synchronously
-    /// from launch, foreground, and pull-to-refresh, none of which should block
-    /// on it.
+    /// Runs `ingestAllPending()`'s enumeration (a full list read) and backfill
+    /// scans off the caller's thread. Launch, foreground, and pull-to-refresh
+    /// all call it synchronously, and none of them should block on it.
     private let sweepQueue = DispatchQueue(
         label: "com.hsanabria.luna.savesIngestor.sweep", qos: .utility)
 
@@ -127,10 +126,10 @@ public final class SavesIngestor {
     /// tracker. Used when a rescue directive's hint is `.article` (`RescueDirectiveApplier`).
     ///
     /// The per-app content gate (`SurfaceSupport`) runs on the classified
-    /// outcome before ANY store write: a foreign-kind save is discarded (item
-    /// deleted, nothing remains) and the returned decision says so — for EVERY
-    /// source, including `.email`/`.friendShare` (the owning app's own import
-    /// picks the same message up when it's installed).
+    /// outcome before any store write: a foreign-kind save is discarded (item
+    /// deleted, nothing remains) and the returned decision says so, for every
+    /// source including `.email`/`.friendShare` — the owning app's own import
+    /// picks up the same message when it is installed.
     /// `allowsInteractivePrompt` is false for the background `ingestAllPending`
     /// sweep, which discards dropped leftovers silently; interactive saves
     /// (`.paste`/`.manual`) surface the error via `unsupportedSavePresenter`.
@@ -151,11 +150,12 @@ public final class SavesIngestor {
 
         let url = initialURL
 
-        // Everything this save's legs observe goes into ONE buffered trace,
-        // correlated by the item's id and mirrored line-by-line into the general
-        // diagnostics stream. Bound as a task-local, so the fetcher, the bypass
-        // runner, the classifier and the resolvers record without threading an
-        // argument through six modules (`claudedocs/save-diagnostics.md`).
+        // Everything this save's legs observe goes into one buffered trace,
+        // correlated by the item's id and mirrored line-by-line into the
+        // general diagnostics stream. It is bound as a task-local, so the
+        // fetcher, the bypass runner, the classifier, and the resolvers
+        // record without threading an argument through six modules
+        // (`claudedocs/save-diagnostics.md`).
         let recorder = SaveDiagnosticsRecorder(
             itemID: item.id, mirror: AppDiagnosticsMirror())
         recorder.record(
@@ -164,9 +164,9 @@ public final class SavesIngestor {
                 + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
             category: "ingest")
 
-        // The ONE shared pipeline resolves wrappers, classifies, and processes every
-        // URL. Its result carries the exact final URL, so this store is repointed
-        // without independently repeating the unwrap work.
+        // The one shared pipeline resolves wrappers, classifies, and
+        // processes every URL. Its result carries the exact final URL, so
+        // this store is repointed without repeating the unwrap work.
         let result = await SaveDiagnostics.$recorder.withValue(recorder) {
             await IngestPipeline.processResolved(
                 IngestInput(url: url, source: item.effectiveCaptureSource,
@@ -194,14 +194,15 @@ public final class SavesIngestor {
         flushDiagnostics(recorder, outcome: result.outcome, decision: decision,
                          source: item.effectiveCaptureSource)
 
-        // URL-Rescue hook: a genuine `.failed` first pass is the one place a
-        // rescue may help. `itemJustFailed` re-reads the item from the store and
-        // no-ops unless it's still `.failed` and rescue is eligible — so a
-        // surface-dropped or already-existing item never triggers one. The rescue
-        // engine re-enters the RAW pipeline (not this method), so it can't recurse.
-        // `.notContent` is the one failure a rescue cannot help with — there is no
-        // article on a search-results or index page for the model to find, and the
-        // attempt is rationed per app version (`claudedocs/failed-saves.md`).
+        // URL Rescue hook: a genuine `.failed` first pass is the one place a
+        // rescue may help. `itemJustFailed` re-reads the item from the store
+        // and no-ops unless it is still `.failed` and rescue is eligible, so
+        // a surface-dropped or already-existing item never triggers one. The
+        // rescue engine re-enters the raw pipeline, not this method, so it
+        // cannot recurse. `.notContent` is the one failure a rescue cannot
+        // help with — there is no article on a search-results or index page
+        // for the model to find, and the attempt is rationed per app version
+        // (`claudedocs/failed-saves.md`).
         if case let .failed(reason) = result.outcome,
            reason?.isWorthRescuing ?? true {
             let interactive = allowsInteractivePrompt && isInteractivePromptSource(item.effectiveCaptureSource)
@@ -235,9 +236,9 @@ public final class SavesIngestor {
             item = updated
         }
 
-        // Per-app content gate — BEFORE the tracker-merge dedup below and before
-        // the presenter, so a dropped outcome can neither merge into an existing
-        // tracker nor write anything else. Every source is gated.
+        // Per-app content gate, before the tracker-merge dedup below and
+        // before the presenter, so a dropped outcome can neither merge into
+        // an existing tracker nor write anything else. Every source is gated.
         let source = item.effectiveCaptureSource
         let decision = surfaceGate.decision(for: result.outcome)
         if case let .unsupported(owner) = decision {
@@ -249,10 +250,10 @@ public final class SavesIngestor {
             return decision
         }
 
-        // Re-save dedup AFTER resolution: if this exact URL is already a store
-        // inside an existing price tracker, it was already classified as
-        // price-tracking on a previous save. The merge path deletes the placeholder,
-        // so a re-save arrives as a fresh placeholder here.
+        // Re-save dedup after resolution: if this exact URL is already a
+        // store inside an existing price tracker, it was already classified
+        // as price-tracking on a previous save. The merge path deletes the
+        // placeholder, so a re-save arrives as a fresh placeholder here.
         if !forceArticle,
            let (existingTrackerItemID, existingTracker) = store.priceTracker(
                containingStoreURL: resolvedURL.absoluteString),
@@ -262,9 +263,9 @@ public final class SavesIngestor {
                 itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
                 isMerge: true, highlightedURL: resolvedURL.absoluteString)
             // A tracker that has never been through a fan-out and still has
-            // fewer than two stores has effectively never been compared —
-            // this is the repeat-save case that used to leave an Amazon-style
-            // product with no seller row and no spinner, forever.
+            // fewer than two stores has effectively never been compared. A
+            // repeat save is the trigger that gives an Amazon-style product
+            // its seller row and comparison spinner.
             if existingTracker.pendingComparison == nil, existingTracker.stores.count < 2 {
                 Self.priceTrackerComparisonKicker?.kickComparison(
                     itemID: existingTrackerItemID, url: resolvedURL, store: store)
@@ -292,18 +293,18 @@ public final class SavesIngestor {
         return true
     }
 
-    /// Commits or discards a save's buffered trace, which is the whole point of
-    /// buffering it: a save that worked leaves nothing behind (and sheds any
-    /// trace an EARLIER failed attempt left, so a recovered item stops carrying
-    /// a stale story), while a save that failed writes its complete attempt to
-    /// the item's sidecar under an attempt separator.
+    /// Commits or discards a save's buffered trace, which is the whole point
+    /// of buffering it. A save that worked leaves nothing behind, and sheds
+    /// any trace an earlier failed attempt left, so a recovered item stops
+    /// carrying a stale story. A save that failed writes its complete
+    /// attempt to the item's sidecar under an attempt separator.
     ///
     /// Retries append rather than replace — the launch sweep re-enters `ingest`
     /// for every `.failed` item, so the file accumulates "attempt 1 …, attempt
     /// 2 …" and the shared export shows whether the failure is stable.
     ///
-    /// A surface-DROPPED save (another app's kind) is not a failure of this app
-    /// and its item no longer exists, so it discards like a success.
+    /// A surface-dropped save (another app's kind) is not a failure of this
+    /// app, and its item no longer exists, so it discards like a success.
     private func flushDiagnostics(
         _ recorder: SaveDiagnosticsRecorder, outcome: Outcome,
         decision: SurfaceSupport.Decision, source: CaptureSource
@@ -376,8 +377,9 @@ public final class SavesIngestor {
         store.markNeedsCaptcha(item.id, title: title)
     }
 
-    /// Marks a genuine failure, and files WHY in the sidecar so the failed card
-    /// can explain itself instead of showing one generic sentence.
+    /// Marks a genuine failure, and files the reason in the sidecar so the
+    /// failed card can explain itself instead of showing one generic
+    /// sentence.
     fileprivate func markFailed(for item: SavedItem, reason: SaveFailureReason? = nil) async {
         store.markFailed(item.id)
         SaveFailureStore.shared.recordFailure(item.id, reason: reason)
@@ -425,11 +427,12 @@ public final class SavesIngestor {
             item, platform: platform, platformItemID: itemID, store: store)
     }
 
-    /// A kind reached the presenter without its handler registered. That's a
-    /// programming error — the `SurfaceSupport` gate runs BEFORE presentation, so
-    /// an app only ever presents kinds it declared, and its composition root
-    /// (`KindWiring`) must have installed the matching handler. Fail loudly in
-    /// debug; in release, mark the item failed rather than leaving it pending.
+    /// A kind reached the presenter without its handler registered. That is a
+    /// programming error: the `SurfaceSupport` gate runs before presentation,
+    /// so an app only ever presents kinds it declared, and its composition
+    /// root (`KindWiring`) must have installed the matching handler. This
+    /// fails loudly in debug; in release, it marks the item failed rather
+    /// than leaving it pending.
     private func missingHandlerFallback(kind: String, for item: SavedItem) {
         assertionFailure("no IngestorKindHandlers handler registered for \(kind)")
         SharedDiagnosticLog.record(
@@ -439,10 +442,11 @@ public final class SavesIngestor {
         SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
     }
 
-    /// An `.unsupported` outcome reached the presenter of a process whose surface
-    /// gate ACCEPTS that kind — the same class of programming error as a missing
-    /// handler, and given the same release behavior: the row is marked failed so
-    /// the list shows it, instead of spinning as `.pending` forever.
+    /// An `.unsupported` outcome reached the presenter of a process whose
+    /// surface gate accepts that kind — the same class of programming error
+    /// as a missing handler, with the same release behavior: the row is
+    /// marked failed so the list shows it, instead of spinning as `.pending`
+    /// forever.
     fileprivate func markUnsupportedFailed(
         owner: LunaApp, for item: SavedItem
     ) async {
@@ -454,29 +458,31 @@ public final class SavesIngestor {
         SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
     }
 
-    /// Kicks off ingestion for everything not yet ready (app launch / foreground).
-    /// The enumeration (`store.items()` decode) and the two backfill scans run off
-    /// the caller's thread on `sweepQueue`; per-item ingestion was already async
-    /// (`Task { await self.ingest(item) }`) and the backfills already hop to
-    /// `@MainActor` internally for their own store reads, so this only changes
-    /// which thread performs the initial decode + candidate scan.
-    /// `completion` is a test seam: it fires once the sweep body (not the
-    /// fire-and-forget per-item/backfill work it spawns) has run.
+    /// Kicks off ingestion for everything not yet ready (app launch or
+    /// foreground). The enumeration (`store.items()` decode) and the two
+    /// backfill scans run off the caller's thread on `sweepQueue`. Per-item
+    /// ingestion is already async (`Task { await self.ingest(item) }`), and
+    /// the backfills already hop to `@MainActor` internally for their own
+    /// store reads, so this only changes which thread performs the initial
+    /// decode and candidate scan.
+    /// `completion` is a test seam: it fires once the sweep body has run, not
+    /// the fire-and-forget per-item and backfill work it spawns.
     public func ingestAllPending(completion: (() -> Void)? = nil) {
         sweepQueue.async {
             // `.needsCaptcha` items can only advance when the user solves the
-            // archive CAPTCHA, so a background re-fetch can't help them — retry
-            // only the states that an automated pass can actually move forward.
-            // The sweep has no UI: blocked non-exempt leftovers are discarded
-            // silently, while email/friend-share items remain exempt.
+            // archive CAPTCHA, so a background re-fetch cannot help them —
+            // this retries only the states an automated pass can actually
+            // move forward. The sweep has no UI: blocked non-exempt
+            // leftovers are discarded silently, while email/friend-share
+            // items stay exempt.
             let items = self.store.items()
             for item in items where item.state == .pending || item.state == .failed {
                 Task { await self.ingest(item, allowsInteractivePrompt: false) }
             }
-            // The sweep already holds the whole list, which is the one thing a
-            // trace-file prune needs: a `saveDiagnostics/<uuid>.log` whose item
-            // was deleted from another app (or wiped by a reinstall of a
-            // sibling) has nothing left to explain.
+            // The sweep already holds the whole list, which is the one thing
+            // a trace-file prune needs: a `saveDiagnostics/<uuid>.log` whose
+            // item was deleted from another app, or wiped by a reinstall of
+            // a sibling, has nothing left to explain.
             SaveDiagnosticsStore.shared.prune(keeping: Set(items.map(\.id)))
             self.backfillMissingWebArchives()
             self.backfillMissingThumbnails()
@@ -484,21 +490,23 @@ public final class SavesIngestor {
         }
     }
 
-    /// Repairs ready and locked web articles that have no row thumbnail — the
-    /// action/share extension persists article content WITHOUT fetching the page's
-    /// cover image (it's short-lived and sandbox-limited), and locked rows can often
-    /// still expose `og:image` before unlock. Delegates to the article handler
-    /// (which owns the cover-fetch machinery and the per-session attempt state);
-    /// a silent no-op in apps that don't handle articles, whose stores can't
-    /// contain thumbnail-less article rows in the first place.
+    /// Repairs ready and locked web articles that have no row thumbnail. The
+    /// action/share extension persists article content without fetching the
+    /// page's cover image — it is short-lived and sandbox-limited — and
+    /// locked rows can often still expose `og:image` before unlock. This
+    /// delegates to the article handler, which owns the cover-fetch
+    /// machinery and the per-session attempt state, and is a silent no-op in
+    /// apps that do not handle articles, whose stores cannot contain
+    /// thumbnail-less article rows in the first place.
     public func backfillMissingThumbnails() {
         IngestorKindHandlers.article?.backfillMissingThumbnails(store: store)
     }
 
-    /// `.webarchive` capture was added after many items were saved, and several save
-    /// surfaces (extensions, paste, friend-share) don't capture inline. Delegates to
-    /// the article handler (which owns the WebKit capture machinery and the
-    /// per-session attempt state); a silent no-op in apps that don't handle articles.
+    /// Backfills `.webarchive` capture for older items, and for saves from
+    /// surfaces (extensions, paste, friend-share) that do not capture inline.
+    /// This delegates to the article handler, which owns the WebKit capture
+    /// machinery and the per-session attempt state, and is a silent no-op in
+    /// apps that do not handle articles.
     public func backfillMissingWebArchives() {
         IngestorKindHandlers.article?.backfillMissingWebArchives(store: store)
     }
@@ -507,11 +515,11 @@ public final class SavesIngestor {
     public enum SavePressResult {
         /// New URL — saved; ingestion may still be running.
         case saved(SavedItem)
-        /// New URL whose classified outcome belongs to a kind this app doesn't
-        /// handle: the item was DISCARDED — nothing remains in the store.
-        /// Interactive in-app saves have already shown the unsupported-kind
-        /// error by the time this returns; the Save App Intent turns it into
-        /// an error dialog.
+        /// New URL whose classified outcome belongs to a kind this app does
+        /// not handle: the item was discarded, and nothing remains in the
+        /// store. Interactive in-app saves have already shown the
+        /// unsupported-kind error by the time this returns; the Save App
+        /// Intent turns it into an error dialog.
         case unsupportedKind(owner: LunaApp)
         /// Double press — the article was (re)sent to one or more ereaders.
         case sentToEreaders(SavedItem)
@@ -522,19 +530,19 @@ public final class SavesIngestor {
         /// the open-Luna token so the Shortcut foregrounds the app).
         case friendPromptRequested(SavedItem)
         /// Double press — the caller should build this item in this format and
-        /// return the file as the App Intent's media. The file itself is NOT
+        /// return the file as the App Intent's media. The file itself is not
         /// built here: serialization lives in LunaSend, an article-kind module
-        /// this universal one can't link, so the intent layer does it through
-        /// an injected seam.
+        /// this universal one cannot link, so the intent layer does it
+        /// through an injected seam.
         case exportRequested(SavedItem, ArticleExportFormat)
         /// Duplicate press — nothing happened.
         case ignored
 
-        /// The item this press acted on, when it produced one. Callers that need
-        /// the item's CURRENT state (the App Intents verify a save actually
-        /// landed) must re-read the store by this id: the copy carried here is
-        /// the pre-ingest placeholder, and its URL may still be an unresolved
-        /// wrapper.
+        /// The item this press acted on, when it produced one. A caller that
+        /// needs the item's current state — the App Intents verify a save
+        /// actually landed — must re-read the store by this id: the copy
+        /// carried here is the pre-ingest placeholder, and its URL may still
+        /// be an unresolved wrapper.
         public var item: SavedItem? {
             switch self {
             case let .saved(item), let .sentToEreaders(item),
@@ -693,11 +701,11 @@ public final class SavesIngestor {
     /// existing URL is ignored. Awaits the resulting work (callers bound it
     /// with a timeout).
     ///
-    /// `doubleSaveActionSurface`: non-nil ONLY for saves arriving through the
-    /// Action Button's Save App Intent on a surface that can act on a double
-    /// save (the two article-file apps: Luna and Reader). It switches a repeat
-    /// press into the 7 s `DoubleSaveAction` regime instead of the legacy
-    /// ereader double save.
+    /// `doubleSaveActionSurface` is non-nil only for saves arriving through
+    /// the Action Button's Save App Intent, on a surface that can act on a
+    /// double save (the two article-file apps: Luna and Reader). It switches
+    /// a repeat press into the 7 s `DoubleSaveAction` regime instead of the
+    /// legacy ereader double save.
     @discardableResult
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
@@ -749,13 +757,14 @@ public final class SavesIngestor {
         }
     }
 
-    /// Saves a NEW URL whose article content was already fetched (the pasteboard
-    /// preview), persisting it directly so we skip a redundant network fetch.
+    /// Saves a new URL whose article content was already fetched (the
+    /// pasteboard preview), persisting it directly to skip a redundant
+    /// network fetch.
     ///
-    /// The direct-persist fast path bypasses `ingest`, so the surface gate runs
-    /// here explicitly: the pre-fetched content IS the classified outcome (an
-    /// article — Reader-owned), so a foreign-kind paste is refused before
-    /// anything is added, with the same interactive error.
+    /// The direct-persist fast path bypasses `ingest`, so the surface gate
+    /// runs here explicitly: the pre-fetched content is the classified
+    /// outcome, an article, Reader-owned, so a foreign-kind paste is refused
+    /// before anything is added, with the same interactive error.
     @discardableResult
     public func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual
@@ -772,11 +781,12 @@ public final class SavesIngestor {
         }
 
         let item = store.add(urlString: urlString, source: source)
-        // The pre-fetched content was extracted from `urlString` as given. If that
-        // URL is a wrapper (Facebook deep link / Apple-Google News / shortener), the
-        // pre-fetched content is the wrapper shell, not the article — so unwrap and
-        // run the full pipeline on the real URL instead of persisting the stale shell.
-        // A non-wrapper URL keeps the fast path (persist the content directly).
+        // The pre-fetched content was extracted from `urlString` as given. If
+        // that URL is a wrapper (Facebook deep link, Apple/Google News,
+        // shortener), the pre-fetched content is the wrapper shell, not the
+        // article — so this unwraps and runs the full pipeline on the real
+        // URL instead of persisting the stale shell. A non-wrapper URL keeps
+        // the fast path and persists the content directly.
         if await URLUnwrapper.unwrap(url).didUnwrap {
             await ingest(item)
             return store.item(withID: item.id) ?? item
@@ -790,11 +800,11 @@ public final class SavesIngestor {
 }
 
 /// The main-app (foreground saves list) presenter: maps each `Outcome` to the
-/// ingestor's store-writing helpers. Exhaustive — every case is handled, so a new
-/// `Outcome` kind can't be silently dropped. This is the headless persistence
-/// presenter shared by interactive saves (paste/manual), app intents, and incoming
-/// friend shares; the card deck opens the saved item through its kind's
-/// `CardKindPresenting` when tapped.
+/// ingestor's store-writing helpers. It is exhaustive — every case is
+/// handled, so a new `Outcome` kind cannot be silently dropped. This is the
+/// headless persistence presenter shared by interactive saves (paste,
+/// manual), app intents, and incoming friend shares. The card deck opens the
+/// saved item through its kind's `CardKindPresenting` when tapped.
 public struct IngestorOutcomePresenter: OutcomePresenter {
     public let ingestor: SavesIngestor
     public let url: URL

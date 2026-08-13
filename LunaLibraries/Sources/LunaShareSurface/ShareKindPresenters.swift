@@ -120,13 +120,14 @@ public protocol ShareProductPresenting {
     func presentPriceEditor(product: ProductInfo, url: URL, store: SavesStore, host: ExtensionHost)
 }
 
-/// The per-kind EXTENSION-PRESENTER registry, mirror of `IngestKindProcessors`
-/// (LunaIngest) and `IngestorKindHandlers` (LunaSaves): each extension
-/// target's principal class (`ShareEntry+*` / `ActionEntry+*`) registers
-/// exactly the presenters its host app's kinds need, so LunaShareSurface
-/// itself links NO kind-specific module. `ShareSurfaceDriver.present` consults
-/// it AFTER the `SurfaceSupport` gate — a registered kind reached without a
-/// presenter is a programming error (the gate dropped foreign kinds first).
+/// The per-kind extension-presenter registry, a mirror of
+/// `IngestKindProcessors` (LunaIngest) and `IngestorKindHandlers` (LunaSaves).
+/// Each extension target's principal class (`ShareEntry+*` / `ActionEntry+*`)
+/// registers exactly the presenters its host app's kinds need, so
+/// LunaShareSurface itself links no kind-specific module.
+/// `ShareSurfaceDriver.present` consults this registry after the
+/// `SurfaceSupport` gate. Reaching a registered kind with no presenter set is
+/// a programming error, since the gate already dropped foreign kinds.
 @MainActor
 public enum ShareKindPresenters {
     public static var article: ShareArticlePresenting?
@@ -134,18 +135,18 @@ public enum ShareKindPresenters {
     public static var product: ShareProductPresenting?
 }
 
-/// The media-kind side effects the shared APP SHELL needs, addressed without
+/// The media-kind side effects the shared app shell needs, reached without
 /// naming the registry.
 ///
-/// The shell compiles into all four apps, three of which link no media module, so
-/// it can only reach media through `ShareKindPresenters.media`. But every
-/// mention of that registry inside a composition-root directory is what
-/// `KindCompositionRootTests` forbids — the rule that keeps a kind from being
-/// wired on some surfaces and not others — and "no root says the word" is a
-/// sharper rule than "no root says the word in an assignment". So the two asks
-/// the shell makes get a name of their own, here, in the module that owns the
-/// registry. No-ops wherever no media presenter is registered, which is exactly
-/// the apps that have no media to preload or delete.
+/// The shell compiles into all four apps, three of which link no media
+/// module, so it can only reach media through `ShareKindPresenters.media`.
+/// But `KindCompositionRootTests` forbids any mention of that registry
+/// inside a composition-root directory — the rule that keeps a kind from
+/// being wired on some surfaces and not others. So the two asks the shell
+/// makes get a name of their own, here, in the module that owns the
+/// registry. Each call is a no-op wherever no media presenter is
+/// registered, which is exactly the apps that have no media to preload or
+/// delete.
 @MainActor
 public enum ShareMediaSideEffects {
 

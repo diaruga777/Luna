@@ -14,22 +14,23 @@ public protocol ExtensionSwipeDismissDelegate: AnyObject {
         _ navigationController: ExtensionNavigationController)
 }
 
-/// The navigation container the extension surfaces put their screens in — and the
-/// one place that decides how much of the sheet the header bar owns.
+/// The navigation container the extension surfaces put their screens in, and
+/// the one place that decides how much of the sheet the header bar owns.
 ///
-/// It cannot be left to the automatic content-inset adjustment. This container is
-/// a CHILD view controller living in someone else's window (the extension host's),
-/// and a modern navigation bar draws OVER the content it titles rather than
-/// standing above it. Between those two, the screen underneath can be handed a
-/// safe area that its own bar still covers, and everything measured from that safe
-/// area then starts too high: a reader opens with its title tucked up under the
-/// bar, and a scroll indicator begins its track behind it.
+/// Automatic content-inset adjustment cannot handle this on its own. This
+/// container is a child view controller living in someone else's window (the
+/// extension host's), and a modern navigation bar draws over the content it
+/// titles rather than standing above it. As a result, the screen underneath
+/// can receive a safe area that its own bar still covers: a reader can open
+/// with its title tucked under the bar, and a scroll indicator can begin its
+/// track behind it.
 ///
-/// So the bar is MEASURED after every layout and whatever it still overlaps is
-/// added to the visible screen's safe area. The correction is zero on a runtime
-/// that already accounted for the bar, and zero while the bar is hidden (the
-/// extension reader's own loading / saved / failure states hide it), so it can
-/// only ever move content out from under a bar that is really there.
+/// To fix this, the controller measures the bar after every layout and adds
+/// whatever it still overlaps to the visible screen's safe area. The
+/// correction is zero when the runtime already accounted for the bar, and
+/// zero while the bar is hidden (the extension reader's loading, saved, and
+/// failure states hide it). So it only ever moves content out from under a
+/// bar that is actually there.
 public final class ExtensionNavigationController: UINavigationController,
     UIGestureRecognizerDelegate {
 

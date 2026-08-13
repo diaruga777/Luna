@@ -85,8 +85,7 @@ public final class WebPageViewController: UIViewController {
     ///
     /// The bar buttons need no seam of their own: `dismiss(animated:)` on a
     /// pushed controller forwards to whoever presented the navigation
-    /// controller, which is exactly what the two closures this used to install
-    /// spelled out by hand.
+    /// controller.
     public static func present(url: URL, from presenter: UIViewController) {
         let controller = WebPageViewController(url: url)
         let navigation = UINavigationController(rootViewController: controller)

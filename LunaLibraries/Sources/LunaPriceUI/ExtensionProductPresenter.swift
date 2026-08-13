@@ -33,24 +33,20 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
     /// plain save confirmation when the row is gone).
     ///
     /// The editor opens IMMEDIATELY, on the one seller the user was actually
-    /// looking at. The alternative-seller fan-out is started at the same moment
+    /// looking at. The alternative-seller fan-out starts at the same moment
     /// and runs behind it: its "checking for other sellers" row is already in
-    /// the list, and each retailer it verifies appears there as it lands.
+    /// the list, and each retailer it verifies appears there as it lands. A
+    /// share extension can be killed at any point, so what survives is not
+    /// the Task but the PENDING MARKER on the tracker — the app finishes the
+    /// run at its next launch or its next refresh cycle.
     ///
-    /// It used to hold a full-screen wait between the save and the editor — up
-    /// to half a minute of other people's web servers, in a share sheet, for a
-    /// tap the user had already made. What survives a share extension's early
-    /// death is not the Task but the PENDING MARKER on the tracker: the app
-    /// finishes the run at its next launch or its next refresh cycle.
-    ///
-    /// **Merges, rather than always creating.** Before this asked
-    /// `ProductTrackerMerge` (shared with the in-app path — see
-    /// `claudedocs/price-comparison.md`'s "Extension saves merge and seed"),
-    /// a share-sheet save of a product already being tracked created a
-    /// second, unrelated tracker even when both pages declared the SAME GTIN.
-    /// On a merge the editor opens on the MATCHED tracker's item, in
-    /// `.merge` mode, instead of duplicating — synchronously, with no image
-    /// download or other await the extension cannot afford.
+    /// **Merges, rather than always creating.** `ProductTrackerMerge` is
+    /// shared with the in-app path (`claudedocs/price-comparison.md`'s
+    /// "Extension saves merge and seed"), so a share-sheet save of a product
+    /// already being tracked merges into the existing tracker instead of
+    /// creating a second one for the same GTIN. On a merge the editor opens
+    /// on the MATCHED tracker's item, in `.merge` mode, synchronously, with
+    /// no image download or other await the extension cannot afford.
     public func presentPriceEditor(product: ProductInfo, url: URL, store: SavesStore, host: ExtensionHost) {
         let addSellerHandoff = ExtensionAddSellerHandoff(host: host)
         guard let placeholder = store.item(forURLString: url.absoluteString) else {
@@ -84,10 +80,9 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
             var tracker = product.makeTracker(
                 fallbackURL: url,
                 alertThresholdFraction: PriceAlertThresholdPolicy.initialThresholdFraction)
-            // The same blocking read the in-app save makes. A share-sheet save
-            // of a product Luna has already priced must be born with that
-            // history too — this path used to seed only on the MERGE branch,
-            // so a brand-new tracker from an extension started blank.
+            // The same blocking read the in-app save makes, so a share-sheet
+            // save of a product Luna has already priced is born with that
+            // history too.
             ProductTrackerMerge.seedHistoryFromSnapshots(
                 into: &tracker, candidate: product, candidateURL: url, store: snapshotStore)
             seedPracticeHistoryIfNeeded(into: &tracker, url: url)
@@ -130,13 +125,13 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
     /// The onboarding rehearsal's product arrives with a QUARTER of price
     /// history behind it (`ShareSetupPractice.practicePriceHistory`).
     ///
-    /// Every other product this presenter opens is genuinely new, and an empty
-    /// graph is the truth for it — the tracker starts watching now. The lesson
-    /// is the one case where that truth teaches the wrong thing: the save lesson
-    /// exists to show what tracking a price gets you, and it was showing an
-    /// empty box captioned "no price history yet". Asked by URL, like every
-    /// other practice decision (`ShareSetupPractice.matchesProductPractice`), so
-    /// a real Amayzon-shaped save cannot pick this up by resembling it.
+    /// Every other product this presenter opens is genuinely new, so an empty
+    /// graph is the truth for it — the tracker starts watching now. The
+    /// onboarding rehearsal is the one exception: it exists to show what
+    /// tracking a price gets you, so it seeds a quarter of history instead of
+    /// an empty graph. Asked by URL, like every other practice decision
+    /// (`ShareSetupPractice.matchesProductPractice`), so a real
+    /// Amayzon-shaped save cannot pick this up by resembling it.
     private func seedPracticeHistoryIfNeeded(into tracker: inout PriceTracker, url: URL) {
         guard ShareSetupPractice.matchesProductPractice(url),
               let host = url.host

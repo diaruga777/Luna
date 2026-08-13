@@ -11,15 +11,14 @@ import LunaStorage
 import LunaURLClassification
 import SafariServices
 
-/// Receives native messages from the extension's JavaScript: persists the active
-/// Safari URL (for the SaveLink intent), answers the "Read in Luna" button-visibility
-/// and paywall-unlock settings the scripts ask for, stashes the already-unlocked
-/// article HTML so the app can render it without re-fetching, and — for the two
-/// media-handling hosts — resolves a social post's playable video for the in-page
-/// player.
+/// Receives native messages from the extension's JavaScript. It stores the active
+/// Safari URL for the SaveLink intent, answers the button-visibility and
+/// paywall-unlock questions the scripts ask, stores already-unlocked article HTML
+/// so the app can render it without a re-fetch, and — for the two media-handling
+/// hosts — resolves a social post's playable video for the in-page player.
 ///
 /// Every branch here is an ADAPTER: parse the message, call shared package code,
-/// serialize the answer. No extraction, classification or parsing logic lives in
+/// serialize the answer. No extraction, classification, or parsing logic lives in
 /// this file — see the "Where the work runs" section of
 /// `claudedocs/safari-extension.md`.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
@@ -64,14 +63,13 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         switch message?["type"] as? String {
         case "buttonMode", "buttonContext":
-            // The app stores SafariSuggestionMode's rawValue here (default "all"),
-            // in the App-Group-shared defaults every host reads — so a non-article
-            // host must not receive it: its own "never"/"onlyLocked" would
-            // otherwise silence the Downloader/Price Tracker pills too. The
-            // setting itself is exposed only in Reader and the central app's
-            // Settings (`ShortcutSettingsScreen.visibleSections`), and its mode
-            // only ever gates the article branch of `offerLunaButton` — this
-            // mirrors that here, on the native side.
+            // The app writes SafariSuggestionMode's rawValue (default "all") into
+            // the App-Group defaults every host reads. A non-article host must not
+            // receive it: its own "never"/"onlyLocked" would silence the
+            // Downloader's and Price Tracker's pills too. Only Reader and the
+            // central app expose the setting (`ShortcutSettingsScreen
+            // .visibleSections`), and it gates only the article branch of
+            // `offerLunaButton` — this mirrors that gate on the native side.
             if Self.hostHandlesArticles {
                 payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
                     .string(forKey: Self.suggestionModeKey) ?? "all"
@@ -80,40 +78,40 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // and only for the content kinds that app handles: the central Luna
             // app handles everything; each single-content app handles one kind.
             payload["scheme"] = scheme
-            // Which app's chrome the page is rendering — the setup confirmation
-            // is the app's, not any page kind's, so it takes this app's own
-            // identity colour. A PILL never asks: it is coloured by the kind it
+            // Which app's chrome the page renders. The setup confirmation belongs
+            // to the app, not to any page kind, so it takes the app's own identity
+            // colour. A pill never asks this — it takes the colour of the kind it
             // saves (see `KIND_TINTS` in content.js).
             payload["surface"] = surface
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
             payload["supportsProducts"] = Self.hostHandlesProducts
-            // Whether a media page opens the in-page player at all. Rides the
-            // context the page already asks for; a non-media host never sends it
-            // (its pages have no player to suppress), and an absent key is ON.
+            // Whether a media page opens the in-page player. It rides the context
+            // the page already asks for; a non-media host never sends it, since its
+            // pages have no player to suppress. An absent key means ON.
             if Self.hostHandlesMedia {
                 payload["videoPlayer"] = UserDefaults(suiteName: Self.appGroupID)?
                     .object(forKey: Self.videoPlayerKey) as? Bool ?? true
             }
-            // Rides the context the content script already asks for, so deciding
-            // whether to congratulate the user costs no extra round trip. The
-            // script suppresses its pill for the confirmation's lifetime.
+            // Rides the context the content script already asks for, so the
+            // celebration decision costs no extra round trip. The script
+            // suppresses its pill for the confirmation's lifetime.
             payload["celebrateSetup"] = LunaSetupStatusStore.shared
                 .shouldCelebrateSafariSetup(for: Self.host)
             payload["appName"] = LunaSetupStatusStore.shared
                 .safariSetupTapAppName(for: Self.host) ?? Self.hostDisplayName
         case "annoyanceSettings":
             // The document_start annoyance script's one gate, asked through
-            // background.js before it touches a cookie dialog. It is a SEPARATE
-            // message rather than a rider on `buttonContext` because that one is
-            // sent by content.js at document_idle — a whole page load too late to
-            // decide whether a banner may be clicked.
+            // background.js before it touches a cookie dialog. This is a separate
+            // message, not a rider on `buttonContext`, because content.js sends
+            // that one at document_idle — a whole page load too late to decide
+            // whether a banner may be clicked.
             //
-            // The key lives in the App-Group suite all four apps share, and only
-            // the two article apps expose the control: a non-article host must
-            // therefore not read it at all, or a Reader "off" would silence the
-            // Downloader's and Price Tracker's always-on suppression too. Same
-            // shape as the `mode` gate above.
+            // The key lives in the App-Group suite all four apps share. Only the
+            // two article apps expose the control: a non-article host must not
+            // read it at all, or a Reader "off" would silence the Downloader's and
+            // Price Tracker's always-on suppression too. Same shape as the `mode`
+            // gate above.
             payload["cookieAutoDecline"] = Self.hostHandlesArticles
                 ? (UserDefaults(suiteName: Self.appGroupID)?
                     .object(forKey: Self.cookieAutoDeclineKey) as? Bool ?? true)
@@ -123,38 +121,39 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // context request whose page never showed one must stay eligible.
             LunaSetupStatusStore.shared.recordSafariCelebrationShown(for: Self.host)
         case "bypassEnabled":
-            // On-device unlocking is article handling, so only article-capable
-            // hosts (Reader and the central Luna app) enable the Referer
-            // ruleset + in-page reveal; the receiving Luna surface decides how
-            // to present the captured article.
+            // On-device unlocking is article handling. Only article-capable hosts
+            // (Reader and the central app) enable the Referer ruleset and the
+            // in-page reveal; the receiving Luna surface decides how to present
+            // the captured article.
             payload["enabled"] = Self.hostHandlesArticles
         case "saveContent":
-            // The content script hands over the already-unlocked article HTML so the
-            // app can render it as prefetched content (never re-fetching a page that
-            // would re-lock outside Safari).
+            // The content script hands over the already-unlocked article HTML. The
+            // app renders it as prefetched content instead of re-fetching a page
+            // that would re-lock outside Safari.
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
                let html = message?["html"] as? String {
                 SafariContentStore.record(urlString, html: html)
             }
         case "resolveMedia":
-            // The in-page player's one round trip: resolve this post to a direct
-            // CDN asset with the SAME `SocialMediaResolver` the app and the
-            // share/action extensions run, cache the full result for a possible
-            // download, and answer with just the URL a `<video>` can stream.
+            // The in-page player's one round trip. It resolves this post to a
+            // direct CDN asset with the same `SocialMediaResolver` the app and the
+            // share/action extensions run, caches the full result for a possible
+            // download, and answers with just the URL a `<video>` can stream.
             // Completes from a Task — see `resolveMedia(…)`.
             resolveMedia(message: message, context: context)
             return
         case "queueResolvedDownload":
             // "Download what you resolved for this page." The assets never left
-            // Swift (`ResolvedMediaCache`), so the page hands back nothing but
-            // its own URL; the app drains the queue on the deep link that follows.
+            // Swift (`ResolvedMediaCache`), so the page hands back only its own
+            // URL. The app drains the queue on the deep link that follows.
             payload["queued"] = queueResolvedDownload(message: message)
         case "productSnapshot":
-            // Passive product-page data: persisted (Feature 1, seeds a tracker's
-            // history at save time) and answered against the app-written tracked
-            // index + the snapshot file (Feature 3, the "Was $X" history pill) in
-            // the SAME round trip — one page-side extraction, one message. Never a
-            // save: nothing here schedules a refresh or writes a save row.
+            // Passive product-page data. It is persisted (Feature 1: seeds a
+            // tracker's history at save time) and answered against the
+            // app-written tracked index and the snapshot file (Feature 3: the
+            // "Was $X" history pill) in the same round trip — one page-side
+            // extraction, one message. This never saves anything: nothing here
+            // schedules a refresh or writes a save row.
             if Self.hostHandlesProducts, let snapshot = message?["snapshot"] as? [String: Any] {
                 let now = Date()
                 ProductSnapshotStore.shared.record(payload: snapshot, now: now)
@@ -168,12 +167,12 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 }
             }
         case "comparableSellers":
-            // "Is this cheaper somewhere else, right now?" — asked once per
-            // product page, after `productSnapshot` has already recorded it.
-            // A second round trip rather than a rider on the first because the
-            // answer may take seconds (a live fan-out) while the history pill's
-            // does not, and a page should not wait to learn what it already
-            // knows. Completes from a Task — see `comparableSellers(…)`.
+            // "Is this cheaper somewhere else, right now?" Asked once per product
+            // page, after `productSnapshot` has already recorded it. This is a
+            // second round trip, not a rider on the first, because the answer may
+            // take seconds (a live fan-out) while the history pill's does not — a
+            // page should not wait to learn what it already knows. Completes from
+            // a Task — see `comparableSellers(…)`.
             comparableSellers(message: message, context: context)
             return
         default:
@@ -196,10 +195,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     /// Resolves the post at `url` and answers the page with a streamable URL.
     ///
-    /// The ONE asynchronous branch: it retains `self` and the context in the Task
-    /// (an `NSExtensionContext` outliving `beginRequest` is legal as long as it is
-    /// completed exactly once), and every path below completes exactly once —
-    /// including the timeout, so the page's promise always settles.
+    /// The one asynchronous branch. It retains `self` and the context in the Task
+    /// — an `NSExtensionContext` may outlive `beginRequest` as long as it
+    /// completes exactly once. Every path below completes exactly once, including
+    /// the timeout, so the page's promise always settles.
     private func resolveMedia(message: [String: Any]?, context: NSExtensionContext) {
         guard Self.hostHandlesMedia else {
             complete(context, with: ["unsupported": true])
@@ -225,28 +224,29 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                     dateWritten: Date()))
             }
             // Only what the page can actually stream. `isDirectlyPlayable` is
-            // LunaMediaResolve's rule (no separate audio track to mux, not a
-            // still) rather than a platform list — which is why Reddit's split
-            // DASH streams answer empty here without this file naming Reddit.
+            // LunaMediaResolve's rule — no separate audio track to mux, not a
+            // still — rather than a platform list. That is why Reddit's split
+            // DASH streams answer empty here, with no need to name Reddit in
+            // this file.
             let playable = assets.filter(\.isDirectlyPlayable)
             self.complete(context, with: ["assets": playable.map(Self.messageDictionary(for:))])
         }
     }
 
     /// JSON-safe projection of an asset for the page: what to play, and what to
-    /// show while it loads. Deliberately NOT the whole `MediaAsset` — the page
-    /// has no use for a byte estimate or a DASH manifest, and anything it does
-    /// not receive it cannot corrupt on the way back.
+    /// show while it loads. It carries only what the page needs, not the whole
+    /// `MediaAsset` — the page has no use for a byte estimate or a DASH
+    /// manifest, and anything it never receives cannot corrupt on the way back.
     private static func messageDictionary(for asset: MediaAsset) -> [String: Any] {
         var dictionary: [String: Any] = [
             "url": asset.url.absoluteString,
             "kind": asset.kind.rawValue,
         ]
         if let thumbnail = asset.thumbnailURL { dictionary["thumbnailURL"] = thumbnail.absoluteString }
-        // The clip's shape as far as the resolve knows it (LunaMediaResolve
+        // The clip's shape, as far as the resolve knows it (LunaMediaResolve
         // reads it; nothing is parsed here). It arrives a whole network round
-        // trip before the element's own metadata, so the panel can open at the
-        // right height instead of re-shaping itself once the stream does.
+        // trip before the element's own metadata, so the panel opens at the
+        // right height instead of reshaping itself once the stream loads.
         if let size = asset.declaredPixelSize {
             dictionary["width"] = size.width
             dictionary["height"] = size.height
@@ -255,8 +255,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     /// `SocialMediaResolver` under a wall-clock budget. A resolve that overruns
-    /// is abandoned (the page falls back to handing the link to the app) rather
-    /// than leaving the request — and the page — hanging.
+    /// is abandoned — the page falls back to handing the link to the app —
+    /// instead of leaving the request, and the page, hanging.
     private static func resolveWithinBudget(_ url: URL) async -> [MediaAsset] {
         await TimeLimit.run(resolveTimeout) {
             await SocialMediaResolver().resolveAssets(for: url)
@@ -265,13 +265,13 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     // MARK: - Alternative sellers (product hosts only)
 
-    /// Answers the page with the lowest CURRENT price for this product on
+    /// Answers the page with the lowest current price for this product on
     /// another retailer, or with nothing.
     ///
-    /// The second asynchronous branch, and the same contract as `resolveMedia`:
-    /// the context outlives `beginRequest` and every path completes it exactly
-    /// once — `ComparableSellerFinder` carries its own wall-clock budget, so
-    /// even a fan-out that never lands settles the page's promise.
+    /// The second asynchronous branch, with the same contract as `resolveMedia`:
+    /// the context outlives `beginRequest`, and every path completes it exactly
+    /// once. `ComparableSellerFinder` carries its own wall-clock budget, so even
+    /// a fan-out that never lands settles the page's promise.
     private func comparableSellers(message: [String: Any]?, context: NSExtensionContext) {
         guard Self.hostHandlesProducts,
               let snapshot = message?["snapshot"] as? [String: Any],
@@ -287,10 +287,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     /// Promotes this page's cached resolve into the app's download queue.
-    /// Returns whether anything was queued — a resolve that expired, or a page
-    /// that was never resolved, leaves the page to fall back to the plain
-    /// hand-off. The FULL asset set is queued, including a split audio stream
-    /// the in-page player could not use: the app can mux, the browser can't.
+    /// Returns whether anything was queued: an expired resolve, or a page that
+    /// was never resolved, leaves the page to fall back to the plain hand-off.
+    /// It queues the full asset set, including a split audio stream the in-page
+    /// player could not use — the app can mux; the browser can't.
     private func queueResolvedDownload(message: [String: Any]?) -> Bool {
         guard Self.hostHandlesMedia,
               let urlString = message?["url"] as? String, urlString.hasPrefix("http"),
@@ -304,10 +304,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return !record.assets.isEmpty
     }
 
-    /// Fallback name for the "Return to …" button when no app stamped one with its
+    /// Fallback name for the "Return to …" button when no app stamped one at its
     /// setup tap. `scripts/update_safari_extension_branding.sh` rewrites this
-    /// extension's OWN display name to its host app's at build time, so it already
-    /// reads "Luna Reader" / "Luna Price Tracker" / …
+    /// extension's own display name to its host app's at build time, so it
+    /// already reads "Luna Reader", "Luna Price Tracker", and so on.
     private static var hostDisplayName: String {
         let name = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
             ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
@@ -316,15 +316,15 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     /// This extension's containing app. An extension's bundle id is its host
-    /// app's plus `.safari`, which `LunaApp` resolves the same way it does from
-    /// inside any other Luna extension — and its `storageIdentifier` is the
-    /// surface name the App-Group setup keys are built from, so the two halves
-    /// of the Safari hand-off meet by construction.
+    /// app's id plus `.safari`, which `LunaApp` resolves the same way from
+    /// inside any other Luna extension. Its `storageIdentifier` is the surface
+    /// name the App-Group setup keys are built from, so the two halves of the
+    /// Safari hand-off meet by construction.
     private static let host = LunaApp.detect(bundleIdentifier: Bundle.main.bundleIdentifier)
 
-    /// The URL scheme this extension's page buttons deep-link into. Always its
-    /// OWN containing app's — an extension may only ever hand content to the app
-    /// it is embedded in.
+    /// The URL scheme this extension's page buttons deep-link into. Always the
+    /// containing app's own scheme — an extension may only hand content to the
+    /// app it is embedded in.
     private static let hostScheme = LunaDeepLink.appScheme(
         forBundleIdentifier: Bundle.main.bundleIdentifier) ?? LunaDeepLink.lunaScheme
 

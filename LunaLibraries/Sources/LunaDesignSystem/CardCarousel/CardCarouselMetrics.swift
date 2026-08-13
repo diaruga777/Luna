@@ -53,15 +53,12 @@ public struct CardCarouselMetrics: Equatable {
     /// width for paging swipes. Small containers degrade gracefully (never a
     /// negative/zero size).
     ///
-    /// **There is exactly one card shape, and this is it.** A card used to get
-    /// its shape from its KIND — a reader card took every point of width and
-    /// grew UP out of the container through an overflow allowance, a product
-    /// card ignored the aspect and filled the room, only a media card was this
-    /// centered 9:16 — so paging between two kinds resized and re-centered the
-    /// card mid-transition, and the launch splash could only ever match the one
-    /// kind whose geometry it had been hand-copied from. Nothing about a save
-    /// justifies a different frame: the frame is the deck's, and the deck's
-    /// frame is a function of the screen (`CardDeckGeometry`).
+    /// **There is exactly one card shape, and this is it.** Every kind of save
+    /// gets the same centered 9:16 rectangle, so paging between kinds never
+    /// resizes or re-centers the card mid-transition, and the launch splash can
+    /// match every kind's geometry at once. Nothing about a save justifies a
+    /// different frame: the frame is the deck's, and the deck's frame is a
+    /// function of the screen (`CardDeckGeometry`).
     ///
     /// This is deliberately an aspect-fit calculation, not a wide-screen width
     /// cap. The card area has already reserved the deck's top controls and
@@ -109,9 +106,7 @@ public struct CardCarouselMetrics: Equatable {
     }
 
     /// Vertical center shared by every slot: the container's midpoint. Every
-    /// card is the same rectangle, so there is nothing else it could be — a
-    /// bottom-anchored reader card used to sit lower than the video card beside
-    /// it, which is half of what jumped when paging between kinds.
+    /// card is the same rectangle, so there is nothing else it could be.
     public func centerY() -> CGFloat {
         containerSize.height / 2
     }

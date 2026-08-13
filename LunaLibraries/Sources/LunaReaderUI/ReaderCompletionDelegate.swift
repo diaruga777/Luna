@@ -9,8 +9,7 @@ import UIKit
 /// moves away from, the end of the article. Both `RSVPViewController` and
 /// `ScrollReaderViewController` conform; `ReaderViewController` and
 /// `RabbitHoleLayerViewController` each wire one delegate to whichever of the
-/// two is currently embedded, rather than the closure pair each used to set on
-/// both reader types.
+/// two is currently embedded.
 public protocol ReaderCompletionDelegate: AnyObject {
     /// Fired once when playback/scrolling reaches the end of the article.
     func readerDidFinishReading(_ reader: UIViewController)

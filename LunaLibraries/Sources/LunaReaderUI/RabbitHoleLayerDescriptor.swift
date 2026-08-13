@@ -39,7 +39,8 @@ public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     public var bottomLipText: String?
 
     /// `url`'s string form — empty for the blank shell, matching the pre-parse
-    /// shape this type used to persist directly.
+    /// shape this type persists directly, via the custom `Codable` conformance
+    /// below.
     public var urlString: String { url?.absoluteString ?? "" }
 
     public init(urlString: String,

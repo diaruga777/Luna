@@ -6,6 +6,19 @@
 import Foundation
 import LunaModels
 
+/// Fetches the article images an export needs and that aren't on disk yet.
+///
+/// The one conformer wraps LunaReaderUI's `ArticleImageDownloader`, which this
+/// module cannot see; it is installed on `ArticleExportImages.preparer` by the
+/// app's `KindWiring`.
+public protocol ArticleExportImagePreparing {
+    /// Returns `content` with the previously-missing images' `imageFileName`s
+    /// filled in. Returning `content` unchanged means nothing was fetchable.
+    func preparedContent(
+        _ content: ArticleContent, for item: ReadingListItem
+    ) async -> ArticleContent
+}
+
 /// The seam that lets an export FETCH the article images that aren't on disk
 /// yet, instead of shipping whatever a reader happened to have downloaded.
 ///
@@ -19,14 +32,14 @@ import LunaModels
 /// rest of the gap.
 ///
 /// The downloader lives in LunaReaderUI, which this module can't see, so the app
-/// installs the closure from its `KindWiring` — the one place allowed to see
+/// installs a witness from its `KindWiring` — the one place allowed to see
 /// both tiers. Extensions leave it nil and export from local files only.
 public enum ArticleExportImages {
 
     /// Downloads any of the article's images that aren't local yet and returns
     /// the content with `imageFileName` filled in. Installed by the app's
-    /// `KindWiring`.
-    public static var preparer: ((ArticleContent, ReadingListItem) async -> ArticleContent)?
+    /// `KindWiring`; nil in extensions.
+    public static var preparer: ArticleExportImagePreparing?
 
     /// How long an export waits for missing images before building anyway.
     ///
@@ -47,7 +60,7 @@ public enum ArticleExportImages {
         else { return nil }
 
         let prepared = await withTimeout(preparationTimeout) {
-            await preparer(content, item)
+            await preparer.preparedContent(content, for: item)
         }
         guard let prepared, prepared.blocks != content.blocks else { return nil }
         return prepared

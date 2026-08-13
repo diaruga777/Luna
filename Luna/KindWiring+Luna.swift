@@ -180,7 +180,8 @@ enum KindWiring {
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.
-    static let priceRefreshRunner: (() async -> Int)? = ProductShellWiring.priceRefreshRunner
+    static let priceRefreshRunner: (any PriceRefreshRunning)? =
+        ProductShellWiring.priceRefreshRunner
 
     #if DEBUG
     /// `-openArchive <url>` debug root: the interactive archive reader.

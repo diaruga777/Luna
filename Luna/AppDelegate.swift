@@ -18,6 +18,20 @@ import UserNotifications
 import os
 import LunaModels
 
+/// One pass over every tracked product's seller prices, the body of the
+/// price-refresh background job.
+///
+/// Kind-neutral by construction (a count, no price-module types), so it lives in
+/// the universal app shell; the answer comes from `KindWiring.priceRefreshRunner`,
+/// which only the two product-handling apps fill. Its presence is also the gate:
+/// an app with no runner never registers or schedules the job, so the other two
+/// don't redundantly refresh the shared store's trackers.
+protocol PriceRefreshRunning {
+    /// Refreshes every non-archived tracker, notifies on a first drop past
+    /// threshold, and returns how many trackers were processed.
+    func runPriceRefresh() async -> Int
+}
+
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
@@ -376,7 +390,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             "price refresh: launch fallback started for \(trackers.count) overdue active tracker(s)",
             category: "price")
         Task { [weak self] in
-            let processed = await runner()
+            let processed = await runner.runPriceRefresh()
             DiagnosticLog.shared.record(
                 "price refresh: launch fallback completed, processed=\(processed)",
                 category: "price")
@@ -404,7 +418,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         work = Task { [weak self] in
             // The handler is only registered when a runner exists (see
             // schedulesPriceRefresh), so the fallback 0 is unreachable.
-            let processed = await KindWiring.priceRefreshRunner?() ?? 0
+            let processed = await KindWiring.priceRefreshRunner?.runPriceRefresh() ?? 0
             KindWiring.retryPendingArticleSends()
             let completed = !Task.isCancelled
             task.setTaskCompleted(success: completed)

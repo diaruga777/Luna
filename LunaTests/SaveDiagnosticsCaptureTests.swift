@@ -62,7 +62,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// the reason. A search-results URL is vetoed before any fetch, so the trace
     /// is produced entirely offline.
     func testAFailedSaveFlushesItsTraceWithTheDecisionsThatProducedIt() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceDecision: { _ in .supported })
+        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
         let item = store.add(
             urlString: "https://www.google.com/search?q=luna+reader", source: .manual)
         _ = track(item.id)
@@ -86,7 +86,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// attempt's lines. Both are what make a shared export show whether the
     /// failure is stable.
     func testARetryAppendsASecondAttemptRatherThanRewritingTheFirst() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceDecision: { _ in .supported })
+        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
         let item = store.add(urlString: "https://duckduckgo.com/?q=luna", source: .manual)
         _ = track(item.id)
 
@@ -107,10 +107,7 @@ final class SaveDiagnosticsCaptureTests: XCTestCase {
     /// deleted outright — so the buffer is dropped and any earlier file goes
     /// with it, rather than orphaning a trace nothing can ever export.
     func testASurfaceDroppedSaveLeavesNoTraceBehind() async {
-        let ingestor = ReadingListIngestor(store: store, surfaceDecision: { outcome in
-            guard let owner = outcome.owningApp else { return .supported }
-            return .unsupported(owner: owner)
-        })
+        let ingestor = ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.foreign)
         let item = store.add(
             urlString: "https://bsky.app/profile/a.bsky.social/post/1", source: .paste)
         _ = track(item.id)

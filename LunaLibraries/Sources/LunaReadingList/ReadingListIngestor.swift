@@ -45,6 +45,26 @@ public protocol PriceTrackerComparisonKicking {
     func kickComparison(itemID: UUID, url: URL, store: ReadingListStore)
 }
 
+/// The per-app content gate over a classified outcome (`SurfaceSupport`): a
+/// single-content app drops foreign kinds before any store write.
+///
+/// The same shape as `LunaShareSurface`'s `ShareSurfaceGating`, declared again
+/// here because this module sits BELOW LunaShareSurface and cannot see it — the
+/// two are deliberately independent one-method contracts rather than a shared
+/// one hoisted into a module neither needs.
+public protocol IngestSurfaceGating {
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision
+}
+
+/// The production gate: the app this process is actually running in.
+public struct CurrentProcessIngestGate: IngestSurfaceGating {
+    public init() {}
+
+    public func decision(for outcome: Outcome) -> SurfaceSupport.Decision {
+        SurfaceSupport.evaluateForCurrentProcess(owner: outcome.owningApp)
+    }
+}
+
 /// Downloads and extracts content for reading-list items: the immediate step
 /// after a link is saved, plus a retry pass for anything still pending.
 public final class ReadingListIngestor {
@@ -55,7 +75,7 @@ public final class ReadingListIngestor {
     /// The per-app content gate over a classified outcome (`SurfaceSupport`).
     /// Injectable so tests can pin the running app without touching
     /// `Bundle.main`; the production default reads the running process's app.
-    private let surfaceDecision: (Outcome) -> SurfaceSupport.Decision
+    private let surfaceGate: any IngestSurfaceGating
 
     /// The unsupported-kind error for a dropped INTERACTIVE in-app save
     /// (`.paste`/`.manual` sources only — App Intents get a dialog from the
@@ -76,12 +96,10 @@ public final class ReadingListIngestor {
 
     public init(
         store: ReadingListStore = .shared,
-        surfaceDecision: @escaping (Outcome) -> SurfaceSupport.Decision = {
-            SurfaceSupport.evaluateForCurrentProcess(owner: $0.owningApp)
-        }
+        surfaceGate: any IngestSurfaceGating = CurrentProcessIngestGate()
     ) {
         self.store = store
-        self.surfaceDecision = surfaceDecision
+        self.surfaceGate = surfaceGate
     }
 
     /// IDs currently being ingested, to avoid duplicate concurrent work.
@@ -221,7 +239,7 @@ public final class ReadingListIngestor {
         // the presenter, so a dropped outcome can neither merge into an existing
         // tracker nor write anything else. Every source is gated.
         let source = item.effectiveCaptureSource
-        let decision = surfaceDecision(result.outcome)
+        let decision = surfaceGate.decision(for: result.outcome)
         if case let .unsupported(owner) = decision {
             await presentUnsupportedSave(
                 owner: owner, source: source,
@@ -745,7 +763,7 @@ public final class ReadingListIngestor {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
 
-        if case let .unsupported(owner) = surfaceDecision(.article(content, html: "")) {
+        if case let .unsupported(owner) = surfaceGate.decision(for: .article(content, html: "")) {
             await presentUnsupportedSave(
                 owner: owner, source: source, allowsInteractivePrompt: true,
                 logMessage: "surface: dropped reader-owned paste save — refused",

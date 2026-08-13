@@ -137,7 +137,7 @@ enum KindWiring {
 
     /// Reader handles no products — no runner ⇒ AppDelegate never registers or
     /// schedules the price-refresh BGTask.
-    static let priceRefreshRunner: (() async -> Int)? = nil
+    static let priceRefreshRunner: (any PriceRefreshRunning)? = nil
 
     #if DEBUG
     /// `-openArchive <url>` debug root: the interactive archive reader.

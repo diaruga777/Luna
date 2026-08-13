@@ -20,8 +20,8 @@ import Foundation
 /// the legacy self-contained `SpeechController` path (no audio controls).
 ///
 /// This is the injected-composition pattern the app shell already uses
-/// elsewhere (`SendToFriendSheet.accountSetupLauncher`,
-/// `DiagnosticLog.export*`, `ProductPriceRescue.resolver`):
+/// elsewhere (`SendToFriendSheet.accountSetupPresenter`,
+/// `DiagnosticLog.exportIdentityProvider`, `ProductPriceRescue.resolver`):
 /// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {

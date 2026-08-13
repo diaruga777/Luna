@@ -67,13 +67,7 @@ enum ArticleShellWiring {
         // Exports fetch the article images that haven't landed yet rather than
         // shipping a file with none. The downloader is LunaReaderUI's and the
         // exporters are LunaSend's, so the composition root joins them.
-        ArticleExportImages.preparer = { content, item in
-            guard let referer = ArticleImageReferer.url(for: item, content: content) else {
-                return content
-            }
-            return await ArticleImageDownloader.download(
-                content, itemID: item.id, store: .shared, refererURL: referer)
-        }
+        ArticleExportImages.preparer = ArticleExportImageDownloader()
         DoubleSaveSettingsSupport.kindleSetupLauncher = KindleSetupPresenter()
 
         // A bulk import's pass over the saves that came back hard-paywalled:
@@ -83,15 +77,7 @@ enum ArticleShellWiring {
         LinkImportRunner.articleUnlocker = ImportArticleUnlocker()
 
         // Voice status and installation live on the Audio settings page.
-        VoiceFirstRunPrompt.openVoiceSettings = { presenter in
-            let audio = AudioSettingsScreen()
-            if let nav = presenter.navigationController {
-                nav.pushViewController(audio, animated: true)
-            } else {
-                let nav = UINavigationController(rootViewController: audio)
-                presenter.present(nav, animated: true)
-            }
-        }
+        VoiceFirstRunPrompt.voiceSettings = AudioSettingsRoute()
 
         // Sending needs a connected email account: an attempted send without one
         // redirects to the screen that connects it (its Sharing Account section is
@@ -168,6 +154,35 @@ private struct KindleSetupPresenter: KindleSetupPresenting {
 private struct EmailSetupPresenter: EmailSetupPresenting {
     func presentEmailSetup(from presenter: UIViewController) {
         EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+    }
+}
+
+/// The export's image fetch: LunaReaderUI's downloader, joined to LunaSend's
+/// exporters here because neither module can see the other.
+private struct ArticleExportImageDownloader: ArticleExportImagePreparing {
+    func preparedContent(
+        _ content: ArticleContent, for item: ReadingListItem
+    ) async -> ArticleContent {
+        guard let referer = ArticleImageReferer.url(for: item, content: content) else {
+            return content
+        }
+        return await ArticleImageDownloader.download(
+            content, itemID: item.id, store: .shared, refererURL: referer)
+    }
+}
+
+/// The read-aloud voice nudge's "Open Settings": the Audio settings page, which
+/// only the app compiles.
+@MainActor
+private struct AudioSettingsRoute: VoiceSettingsPresenting {
+    func presentVoiceSettings(from presenter: UIViewController) {
+        let audio = AudioSettingsScreen()
+        if let nav = presenter.navigationController {
+            nav.pushViewController(audio, animated: true)
+        } else {
+            let nav = UINavigationController(rootViewController: audio)
+            presenter.present(nav, animated: true)
+        }
     }
 }
 

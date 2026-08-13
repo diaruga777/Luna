@@ -9,6 +9,24 @@ import LunaStorage
 import XCTest
 @testable import LunaReadingList
 
+/// A gate that answers from a scripted rule, so a test can pin the running app
+/// without touching the App Group. Shared with the other ingestor suites.
+struct ScriptedIngestGate: IngestSurfaceGating {
+    /// Every kind is this app's.
+    static let supported = ScriptedIngestGate { _ in .supported }
+    /// Nothing with an owner is this app's — the single-content-app drop.
+    static let foreign = ScriptedIngestGate { outcome in
+        guard let owner = outcome.owningApp else { return .supported }
+        return .unsupported(owner: owner)
+    }
+
+    private let rule: (Outcome) -> SurfaceSupport.Decision
+
+    init(rule: @escaping (Outcome) -> SurfaceSupport.Decision) { self.rule = rule }
+
+    func decision(for outcome: Outcome) -> SurfaceSupport.Decision { rule(outcome) }
+}
+
 /// The per-app content gate inside `ReadingListIngestor.ingest`
 /// (`SurfaceSupport`): a foreign-kind save is discarded (nothing remains in the
 /// store) for EVERY source, `.email`/`.friendShare` included, and the background
@@ -49,15 +67,8 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeIngestor(
-        decision: @escaping (LunaIngest.Outcome) -> SurfaceSupport.Decision
-    ) -> ReadingListIngestor {
-        ReadingListIngestor(store: store, surfaceDecision: decision)
-    }
-
-    private func unsupportedDecision(_ outcome: LunaIngest.Outcome) -> SurfaceSupport.Decision {
-        guard let owner = outcome.owningApp else { return .supported }
-        return .unsupported(owner: owner)
+    private func makeIngestor(gate: ScriptedIngestGate) -> ReadingListIngestor {
+        ReadingListIngestor(store: store, surfaceGate: gate)
     }
 
     /// A pending document item (deterministic `.document` outcome, no network).
@@ -76,7 +87,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     /// file — while the interactive presenter names the owning app. Which
     /// (app, kind) pairs are dropped is `SurfaceSupportTests`' matrix.
     func testUnsupportedSaveIsDiscardedWholeAndPresented() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
+        let ingestor = makeIngestor(gate: .foreign)
         let pasted = store.add(urlString: "https://bsky.app/profile/a/post/1", source: .paste)
 
         let decision = await ingestor.ingest(pasted)
@@ -105,7 +116,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     /// Not a kind question, so not the matrix's: EVERY capture source is gated,
     /// including the two that used to be exempt.
     func testNoCaptureSourceIsExemptFromTheGate() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
+        let ingestor = makeIngestor(gate: .foreign)
 
         for source in [CaptureSource.email, .friendShare, .manual, .shareSheet] {
             var item = pendingDocumentItem(seed: "src-\(source)")
@@ -124,7 +135,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     /// The presenter is for a save the user is watching: the background sweep and
     /// a `.shareSheet` leftover discard silently.
     func testOnlyInteractiveSavesPresentTheDrop() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
+        let ingestor = makeIngestor(gate: .foreign)
         let sweptItem = store.add(urlString: "https://bsky.app/profile/a/post/2", source: .shareSheet)
 
         let decision = await ingestor.ingest(sweptItem, allowsInteractivePrompt: false)
@@ -146,7 +157,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     // MARK: - handleSavePress surfaces the gate result
 
     func testHandleSavePressReturnsUnsupportedKind() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
+        let ingestor = makeIngestor(gate: .foreign)
 
         let result = await ingestor.handleSavePress(
             urlString: "https://bsky.app/profile/a/post/4", source: .manual)
@@ -161,7 +172,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     // MARK: - saveNewWithContent (pasteboard fast path)
 
     func testSaveNewWithContentUnsupportedIsRefusedBeforeAdding() async {
-        let ingestor = makeIngestor(decision: unsupportedDecision)
+        let ingestor = makeIngestor(gate: .foreign)
         let content = ArticleContent(title: "T", blocks: [
             .init(kind: .paragraph, text: "Body.", links: []),
         ])
@@ -196,7 +207,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     /// with no card, no reason and nothing a retry can move.
     func testUnsupportedOutcomeReachingThePresenterMarksTheRowFailed() async {
         let urlString = "https://bsky.app/profile/a/post/7"
-        let ingestor = makeIngestor(decision: { _ in .supported })
+        let ingestor = makeIngestor(gate: .supported)
         let item = store.add(urlString: urlString, source: .paste)
         touchedFailureIDs.append(item.id)
         let presenter = IngestorOutcomePresenter(

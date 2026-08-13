@@ -53,7 +53,7 @@ final class ReadingListIngestorTrackerDedupTests: XCTestCase {
     }
 
     private func makeIngestor() -> ReadingListIngestor {
-        ReadingListIngestor(store: store, surfaceDecision: { _ in .supported })
+        ReadingListIngestor(store: store, surfaceGate: ScriptedIngestGate.supported)
     }
 
     private func articleResult(url: URL) -> IngestResult {

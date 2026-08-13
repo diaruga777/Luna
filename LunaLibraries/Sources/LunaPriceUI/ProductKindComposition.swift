@@ -10,7 +10,6 @@ import LunaPriceCompare
 import LunaPriceIngest
 import LunaShareSurface
 import LunaStorage
-import LunaURLClassification
 import Foundation
 
 /// THE single definition of what registering the **product kind** (price
@@ -37,28 +36,7 @@ public enum ProductKindComposition {
         IngestKindProcessors.product = ProductIngestProcessor(fallback: { url in
             ProductSnapshotStore.shared.productInfo(forPageURL: url)
         })
-        ShareKindPresenters.product = ProductSharePresenter()
+        ShareKindPresenters.product = ExtensionProductPresenter()
         SellerComparisonRunner.install()
-    }
-}
-
-/// Adapts the protocol-free `ExtensionProductPresenter` to the kind-neutral
-/// `ShareProductPresenting` surface protocol. Previously copy-pasted into four
-/// composition roots; `LunaShareSurface` is kind-agnostic, so the kind module
-/// owns its own conformance.
-struct ProductSharePresenter: ShareProductPresenting {
-    private let presenter = ExtensionProductPresenter()
-
-    func presentPriceEditor(
-        product: ProductInfo, url: URL, store: ReadingListStore, host: ExtensionHost
-    ) {
-        presenter.presentPriceEditor(
-            product: product, url: url, store: store,
-            presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() },
-            openContainingAppForAddSeller: { [weak host] itemID in
-                guard let link = LunaDeepLink.priceTrackerAddSellerLink(itemID: itemID) else { return }
-                host?.openURL(link)
-            })
     }
 }

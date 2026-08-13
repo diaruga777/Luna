@@ -6,19 +6,18 @@
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaShareSurface
 import LunaStorage
+import LunaURLClassification
 import UIKit
 
 /// The product-kind side of the extension surfaces: persist the tracker for a
 /// classified product page, then present the SAME price-tracking editor the
-/// main app shows (the extension host wraps it in Done chrome). Protocol-free —
-/// each extension target's composition root (`ShareEntry+*` / `ActionEntry+*`)
-/// wraps it in a small adapter conforming to `ShareProductPresenting`
-/// (LunaShareSurface), the same shape as the `IngestKindProcessors` /
-/// `IngestorKindHandlers` wiring. Host side effects arrive as closures so this
-/// module never sees the surface's `ExtensionHost`.
+/// main app shows (the extension host wraps it in Done chrome). Conforms to
+/// `ShareProductPresenting` (LunaShareSurface) directly, so
+/// `ProductKindComposition.install()` registers it as-is.
 @MainActor
-public final class ExtensionProductPresenter {
+public final class ExtensionProductPresenter: ShareProductPresenting {
 
     /// Test seam: which snapshot store history-seeding reads. Production reads
     /// the shared App Group one.
@@ -54,14 +53,13 @@ public final class ExtensionProductPresenter {
     /// On a merge the editor opens on the MATCHED tracker's item, in
     /// `.merge` mode, instead of duplicating — synchronously, with no image
     /// download or other await the extension cannot afford.
-    public func presentPriceEditor(
-        product: ProductInfo, url: URL, store: ReadingListStore,
-        presentModally: @escaping (UIViewController) -> Void,
-        complete: @escaping () -> Void,
-        openContainingAppForAddSeller: ((UUID) -> Void)? = nil
-    ) {
+    public func presentPriceEditor(product: ProductInfo, url: URL, store: ReadingListStore, host: ExtensionHost) {
+        let openContainingAppForAddSeller: (UUID) -> Void = { [weak host] itemID in
+            guard let link = LunaDeepLink.priceTrackerAddSellerLink(itemID: itemID) else { return }
+            host?.openURL(link)
+        }
         guard let placeholder = store.item(forURLString: url.absoluteString) else {
-            complete()
+            host.confirmSavedThenComplete()
             return
         }
 
@@ -103,7 +101,7 @@ public final class ExtensionProductPresenter {
             guard let itemID = store.savePriceTracker(
                 tracker, forURLString: url.absoluteString)
             else {
-                complete()
+                host.confirmSavedThenComplete()
                 return
             }
             SellerComparison.beginAndRunInBackground(
@@ -114,8 +112,8 @@ public final class ExtensionProductPresenter {
                 mode: .creation(itemID: itemID, host: .extension),
                 openContainingAppForAddSeller: openContainingAppForAddSeller)
         }
-        editor.onDone = complete
-        presentModally(editor)
+        editor.onDone = { [weak host] in host?.confirmSavedThenComplete() }
+        host.presentModally(editor)
     }
 
     private func backfillArtwork(

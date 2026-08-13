@@ -5,9 +5,7 @@
 
 import LunaArticleIngest
 import LunaIngest
-import LunaModels
 import LunaShareSurface
-import LunaStorage
 import Foundation
 
 /// THE single definition of what registering the **article kind** means, for
@@ -52,55 +50,6 @@ public enum ArticleKindComposition {
         IngestKindProcessors.article = ArticleIngestProcessor()
         IngestKindProcessors.socialText = XPostIngestProcessor()
         // Extension presentation — the reader / archive screens.
-        ShareKindPresenters.article = ArticleSharePresenter()
-    }
-}
-
-/// Adapts the protocol-free `ExtensionArticlePresenter` to the kind-neutral
-/// `ShareArticlePresenting` surface protocol. Host side effects are handed down
-/// as weak-host closures, matching the driver's lifetime rules.
-///
-/// Previously this exact type was copy-pasted into four composition roots
-/// (`ShareEntry+Luna`, `ShareEntry+Reader`, `ActionEntry+Luna`,
-/// `ActionEntry+Reader`) because a root was "the one place allowed to see the
-/// surface protocol and the kind module at once". That is no longer true:
-/// `LunaShareSurface` is kind-agnostic and depends on no kind module, so the
-/// kind module can see the protocol directly and own its own conformance.
-struct ArticleSharePresenter: ShareArticlePresenting {
-    private let presenter = ExtensionArticlePresenter()
-
-    func persistArticleExtras(
-        item: ReadingListItem, content: ArticleContent, html: String, url: URL,
-        store: ReadingListStore
-    ) {
-        presenter.persistArticleExtras(
-            item: item, content: content, html: html, url: url, store: store)
-    }
-
-    func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost) {
-        presenter.presentReader(
-            url: url, mode: Self.readerMode(mode), outcome: outcome,
-            onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
-            presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() })
-    }
-
-    func presentArchive(url: URL, itemID: UUID, store: ReadingListStore, host: ExtensionHost) {
-        presenter.presentArchive(
-            url: url, itemID: itemID, readerMode: host.readerMode.map(Self.readerMode),
-            store: store,
-            onModeChange: { ActionReaderMode.last = Self.extensionMode($0) },
-            presentModally: { [weak host] in host?.presentModally($0) },
-            complete: { [weak host] in host?.confirmSavedThenComplete() })
-    }
-
-    /// `ExtensionReaderMode` (surface) ↔ `ShareReaderViewController.Mode`
-    /// (article kind) share raw values by design.
-    private static func readerMode(_ mode: ExtensionReaderMode) -> ShareReaderViewController.Mode {
-        ShareReaderViewController.Mode(rawValue: mode.rawValue) ?? .reader
-    }
-
-    private static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
-        ExtensionReaderMode(rawValue: mode.rawValue) ?? .reader
+        ShareKindPresenters.article = ExtensionArticlePresenter()
     }
 }

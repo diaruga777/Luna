@@ -378,6 +378,107 @@ Process:
    standard stated as above (protocol contracts for wiring; the closure
    boundary list). This lands with the final doc pass.
 
+### Wave 5 — SQLite saves store + the "saves" rename (after Wave 4 merges)
+
+Owner directive (2026-08-13): replace `readingList.json` with SQLite as the
+backing store for the reading list, which is renamed "saves". Standard SQLite
+configuration and practices for cross-process (app + extension) access.
+
+Owner amendments (2026-08-13): **blank slate** — no migration from
+`readingList.json`, and NO code, comment, or test may reference the old file
+format afterward; a fresh database is simply created on first open. And the
+schema is **genuinely relational**: the Swift types are backed by real tables
+with relationships and indexes — not a JSON payload column.
+
+**5A — the engine (behavior-identical behind the existing store API):**
+1. `SavesDatabase` in LunaStorage on the system `libsqlite3` (no new package
+   dependency; the Safari appexes must stay under their memory ceiling).
+   Configuration: WAL journal mode; `busy_timeout` ~5000 ms; `synchronous =
+   NORMAL`; `PRAGMA foreign_keys = ON` per connection; ONE connection per
+   process behind a serial queue; file protection
+   `completeUntilFirstUserAuthentication` (extensions and the mail-fetch
+   BGTask write while the device is locked). WAL's `-wal`/`-shm` siblings live
+   beside the db in the App Group container — the standard cross-process
+   arrangement on iOS. Db file: `saves.sqlite`.
+2. Schema — DERIVE FROM THE REAL TYPES at execution time (read
+   `ReadingListItem` and its nested types field by field), designed around the
+   actual query patterns: deck ordering (date-added), per-app kind filtering
+   (`LunaApp.includes` shape fields), ingest dedup (URL / tracker-merge /
+   platform-item lookups), resume-position updates (hot, fire-and-forget),
+   send bookkeeping, price-tracker reads. Expected shape (executor refines):
+   - `saves` — one row per item: id (TEXT PK), url, canonical/original url,
+     title, author, dates, the four state enums as their raw values, reader
+     positions, document type, platform + platform_item_id, flags. Scalars
+     only; every column NOT NULL where the Swift type is non-optional.
+   - `send_states` — the per-destination send dictionaries normalized:
+     (save_id FK ON DELETE CASCADE, destination TEXT, field/date columns),
+     PK (save_id, destination).
+   - `price_trackers` (save_id PK FK CASCADE, tracker scalars),
+     `tracker_stores` (id PK, save_id FK CASCADE, store identity/URL),
+     `tracker_price_points` (store rowid FK CASCADE, day TEXT, price TEXT,
+     PK/unique (store, day)) — matching the nested tracker → stores → points
+     structure.
+   - Indexes: `saves(date_added DESC)`; partial indexes for the pending/failed
+     states the launch sweep scans; `saves(platform, platform_item_id)` and
+     the URL lookups the ingest dedup runs; `tracker_price_points(store, day)`.
+     Every FK gets a covering index (SQLite does not index FKs automatically).
+   - Enum raw values get CHECK constraints only where the value set is closed
+     today and additive growth is expected to come with a schema bump
+     (`PRAGMA user_version`); otherwise store raw TEXT and keep the tolerant
+     mapping in Swift (unknown → safe default), which is how four
+     independently-updated apps keep sharing one db.
+3. Reads/writes become SQL: per-row insert/update/delete in transactions;
+   multi-item mutations (`coordinatedMutate` bodies) become one transaction.
+   `ReadingListStore`'s public API is UNCHANGED in 5A — it maps rows ↔ the
+   same Swift structs. NSFileCoordinator and the stat-token cache are deleted
+   on this path (SQLite owns cross-process consistency); other-process change
+   detection via `PRAGMA data_version`. The Darwin-notification change fan-out
+   stays exactly as is.
+4. No migration. First open creates the schema. Nothing reads, writes, names,
+   or documents `readingList.json` afterward — delete the constant, the
+   decoder's legacy-key migrations (the hand-written tolerant decoder itself
+   survives only if still used for import/export payloads — check
+   import-export before deciding), and every comment that narrates the old
+   format. A leftover on-disk JSON from earlier installs is ignored (dev-only
+   state; FactoryReset's sweep still deletes by directory).
+5. `SharedReadingListAppender` is deleted — extensions insert through the same
+   store. Its dedup-by-URL semantics move into the insert path.
+6. Audit every direct toucher of the store file and container layout:
+   UITestSeeder/StageFixtures seeding, import/export, FactoryReset (must
+   remove `saves.sqlite` + `-wal`/`-shm`), BackupPolicy (`includeInBackups`
+   on the db), diagnostics, and any test that seeds the JSON directly — each
+   moves to the store API.
+7. Tests: two-connection cross-"process" visibility (two store instances,
+   separate connections, one file, interleaved writers); busy-timeout
+   contention; crash-safety smoke (a killed writer leaves a readable db);
+   FK-cascade integrity (deleting a save removes its send states, tracker,
+   stores, points); enum round-trip incl. unknown-raw-value tolerance;
+   performance sanity on a few-hundred-item list. Existing ReadingListStore
+   suites must pass unchanged — they are the behavior contract; any suite
+   that seeded the JSON file directly is rewritten to the store API in the
+   same commit.
+
+**5B — the rename (after 5A is green):**
+1. Swift symbols and modules: `ReadingListStore`→`SavesStore`,
+   `ReadingListItem`→`SavedItem` (or `Save` — pick one, apply everywhere),
+   `ReadingListIngestor`→`SavesIngestor`, `LunaReadingList`→`LunaSaves`,
+   `LunaReadingListUI`→`LunaSavesUI`, `KindWiring.readingListDidChange()`→
+   `savesDidChange()`, `ReadingListSweepDriver`→`SavesSweepDriver`, etc.
+   Mechanical, whole-repo, compile-enforced.
+2. RAW cross-process contract strings KEEP THEIR VALUES: Darwin notification
+   names, App Group defaults keys, file names other processes probe. Installed
+   app versions upgrade independently; renaming a Darwin name splits old and
+   new binaries silently. A comment at each site names the Swift symbol it
+   backs. The new db file is named `saves.sqlite` (new artifact, no legacy
+   constraint).
+3. User-visible strings: audit the strings file for "Reading List" wording;
+   align to "Saves" ONLY where the current UI already says reading-list —
+   flag, don't silently rewrite, if wording is ambiguous.
+4. Docs: `claudedocs/reading-list.md`→`saves.md`, CLAUDE.md's store references,
+   module tables, and the url-pipeline/surface-support mentions.
+5. `scripts/select_changed_tests.py`'s path table and any script naming the
+   module/file paths get the rename in the same commit.
+
 ## Explicitly deferred (documented, not executed — report only)
 
 - Moving JS heuristics into the Safari handler (sync→async round-trip risk;

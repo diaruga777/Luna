@@ -28,9 +28,9 @@ public enum DoubleSaveAction: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .nothing: return L10n.string("ReadingList_doubleSave_actionNothingTitle")
+        case .nothing: return L10n.string("Saves_doubleSave_actionNothingTitle")
         case .sendToKindle: return L10n.string("Common_sendToKindle")
-        case .openDocument: return L10n.string("ReadingList_doubleSave_actionViewImmediatelyTitle")
+        case .openDocument: return L10n.string("Saves_doubleSave_actionViewImmediatelyTitle")
         }
     }
 

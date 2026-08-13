@@ -1117,19 +1117,19 @@
 "Intents_resumeLiveDownload_description_Luna" = "Resumes a paused Luna download.";
 "Intents_resumeLiveDownload_jobIDParam_title_Luna" = "Download ID";
 
-/* ===== ReadingList_emailShare — EmailShareCenter.swift ===== */
-"ReadingList_emailShare_setupNeededMessage_Luna" = "Set up your email account first.";
-"ReadingList_emailShare_noRecipientsMessage_Luna" = "Choose at least one recipient.";
-"ReadingList_emailShare_buildFailedMessage_Luna" = "Couldn't compose the email. Try again later.";
-"ReadingList_emailShare_bestPriceLine_Luna" = "Best price: %@";
+/* ===== Saves_emailShare — EmailShareCenter.swift ===== */
+"Saves_emailShare_setupNeededMessage_Luna" = "Set up your email account first.";
+"Saves_emailShare_noRecipientsMessage_Luna" = "Choose at least one recipient.";
+"Saves_emailShare_buildFailedMessage_Luna" = "Couldn't compose the email. Try again later.";
+"Saves_emailShare_bestPriceLine_Luna" = "Best price: %@";
 
-/* ===== ReadingList_doubleSave — double-save action picker labels
+/* ===== Saves_doubleSave — double-save action picker labels
    (DoubleSaveActionStore.swift) ===== */
-"ReadingList_doubleSave_actionNothingTitle_Luna" = "Do nothing";
-"ReadingList_doubleSave_actionViewImmediatelyTitle_Luna" = "View immediately";
+"Saves_doubleSave_actionNothingTitle_Luna" = "Do nothing";
+"Saves_doubleSave_actionViewImmediatelyTitle_Luna" = "View immediately";
 
-/* ===== ReadingList_store — ReadingListStore.swift ===== */
-"ReadingList_store_unknownSendErrorMessage_Luna" = "Unknown error";
+/* ===== Saves_store — SavesStore.swift ===== */
+"Saves_store_unknownSendErrorMessage_Luna" = "Unknown error";
 
 /* ===== ShareExtension_share — ShareViewController.swift ===== */
 "ShareExtension_share_noAttachmentsMessage_Luna" = "Nothing to read was shared.";

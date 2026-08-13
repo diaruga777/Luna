@@ -401,26 +401,38 @@ final class EmailAccountTests: XCTestCase {
         XCTAssertEqual(mode(.manual), .off)
     }
 
-    // MARK: - SourceSendSettings: captureSource round-trips through the reading-list item codec
+    // MARK: - SourceSendSettings: captureSource round-trips through the store
 
-    func testLegacyItemWithoutSourceDefaultsToManual() throws {
-        let json = """
-        {"id":"\(UUID().uuidString)","urlString":"https://example.com",
-         "dateAdded":0,"state":"ready","readState":"unopened",
-         "sendStates":{},"datesSent":{}}
-        """
-        let item = try JSONDecoder().decode(ReadingListItem.self, from: Data(json.utf8))
-        XCTAssertNil(item.captureSource)
-        XCTAssertEqual(item.effectiveCaptureSource, .manual)
+    /// A save with no recorded source — an unset column — reads back as unset and
+    /// routes as `.manual`, which is what the per-source send settings ask.
+    func testStoredItemWithoutSourceDefaultsToManual() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capture-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ReadingListStore(containerURL: directory)
+
+        var item = ReadingListItem(urlString: "https://example.com/no-source")
+        item.captureSource = nil
+        store.seedForTesting(items: [item], contents: [:])
+
+        let stored = try XCTUnwrap(store.item(withID: item.id))
+        XCTAssertNil(stored.captureSource)
+        XCTAssertEqual(stored.effectiveCaptureSource, .manual)
     }
 
-    func testSourceSurvivesEncodeDecode() throws {
-        var item = ReadingListItem(urlString: "https://example.com")
-        item.captureSource = .friendShare
-        let data = try JSONEncoder().encode(item)
-        let decoded = try JSONDecoder().decode(ReadingListItem.self, from: data)
-        XCTAssertEqual(decoded.captureSource, .friendShare)
-        XCTAssertEqual(decoded.effectiveCaptureSource, .friendShare)
+    func testSourceSurvivesAStoreRoundTrip() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capture-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ReadingListStore(containerURL: directory)
+
+        let saved = store.add(urlString: "https://example.com", source: .friendShare)
+
+        let stored = try XCTUnwrap(store.item(withID: saved.id))
+        XCTAssertEqual(stored.captureSource, .friendShare)
+        XCTAssertEqual(stored.effectiveCaptureSource, .friendShare)
     }
 
     // MARK: - EmailEntryAutoFill

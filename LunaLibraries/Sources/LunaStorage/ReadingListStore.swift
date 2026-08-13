@@ -105,7 +105,12 @@ public final class ReadingListStore {
     private func database() -> SavesDatabase? {
         openLock.lock()
         defer { openLock.unlock() }
-        if let openedDatabase { return openedDatabase }
+        // Compared by path, not just held: staged mode repoints the whole
+        // container (`StageContainer`), and a connection to where the container
+        // used to be would keep writing there.
+        if let openedDatabase, openedDatabase.fileURL == databaseFileURL {
+            return openedDatabase
+        }
         do {
             let database = try SavesDatabase(fileURL: databaseFileURL)
             BackupPolicy.includeInBackups(database.fileURL)
@@ -178,7 +183,9 @@ public final class ReadingListStore {
             }
             let previous = stored.item
             stored.item.urlString = urlString
-            try self.writeSave(stored, previous: previous, in: db)
+            if stored.item != previous {
+                try self.writeSave(stored, previous: previous, in: db)
+            }
             return stored.item
         } ?? nil
         if let removedDuplicate { removeFiles(for: removedDuplicate) }
@@ -238,7 +245,9 @@ public final class ReadingListStore {
                 // Overlapping intents can reach this store in the opposite order
                 // from when they started. Never move the durable marker backward.
                 stored.item.lastSaveAttemptDate = max(previous, date)
-                try self.writeSave(stored, previous: previousItem, in: db)
+                if stored.item != previousItem {
+                    try self.writeSave(stored, previous: previousItem, in: db)
+                }
                 return SaveAttemptReservation(
                     item: stored.item, wasAdded: false, previousPressDate: previous)
             }

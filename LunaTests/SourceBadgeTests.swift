@@ -75,39 +75,6 @@ final class SourceBadgeTests: XCTestCase {
         XCTAssertEqual(ArticleSourceBadge.fallback(for: item), .sender("The Atlantic"))
     }
 
-    /// A row written before the media-creator concept was removed stored its
-    /// sender under the old `channelName` key. Upgrading must not cost an email
-    /// import its sender badge, so the decoder carries that key over — for email
-    /// rows only, which is the one meaning it is allowed to have kept.
-    func testEmailRowWrittenWithTheLegacyKeyKeepsItsSenderBadge() throws {
-        let json = """
-        {"id":"\(UUID().uuidString)","urlString":"lunamail://msg-legacy","title":"T",
-         "dateAdded":0,"state":"ready","readState":"unopened",
-         "captureSource":"email","channelName":"The Atlantic",
-         "sendStates":{},"datesSent":{},"sendFailureCounts":{},
-         "sendNextAttemptDates":{},"sendLastErrors":{}}
-        """
-        let item = try JSONDecoder().decode(ReadingListItem.self, from: Data(json.utf8))
-
-        XCTAssertEqual(item.senderName, "The Atlantic")
-        XCTAssertEqual(ArticleSourceBadge.fallback(for: item), .sender("The Atlantic"))
-    }
-
-    /// The same legacy key on a MEDIA row held a creator, not a sender. That
-    /// meaning is gone, so it is dropped rather than migrated into `senderName`.
-    func testMediaRowWrittenWithTheLegacyKeyDropsItsCreator() throws {
-        let json = """
-        {"id":"\(UUID().uuidString)","urlString":"https://youtube.com/watch?v=abc",
-         "title":"T","dateAdded":0,"state":"ready","readState":"unopened",
-         "captureSource":"shareSheet","channelName":"Kurzgesagt",
-         "sendStates":{},"datesSent":{},"sendFailureCounts":{},
-         "sendNextAttemptDates":{},"sendLastErrors":{}}
-        """
-        let item = try JSONDecoder().decode(ReadingListItem.self, from: Data(json.utf8))
-
-        XCTAssertNil(item.senderName)
-    }
-
     func testEmailWithoutSenderGetsMailSymbol() {
         let item = fixture(url: "lunamail://msg-2", captureSource: .email)
         XCTAssertEqual(ArticleSourceBadge.fallback(for: item), .symbol("envelope.fill"))

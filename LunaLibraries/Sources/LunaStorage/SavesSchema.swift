@@ -162,25 +162,18 @@ enum SavesSchema {
         ) WITHOUT ROWID;
         """
 
+    /// One index per query that exists, and no others: an index nothing reads is
+    /// paid for on every insert and update. The scans that still run in Swift over
+    /// the whole list — the launch sweep's pending/failed re-ingest, the deck's
+    /// date sort, the platform-item and tracker-merge checks — get their index the
+    /// day they become a query.
     private static let indexes = """
         -- items(): the whole list in its own order, newest first.
         CREATE INDEX IF NOT EXISTS saves_seq ON saves(seq DESC);
 
-        -- The date order every deck sorts by, and the intent matcher's
-        -- "saves from the last N days" filter.
-        CREATE INDEX IF NOT EXISTS saves_date_added ON saves(date_added DESC);
-
-        -- item(forURLString:) — the ingest dedup, and the insert paths' own
-        -- "is this URL already saved?" check.
+        -- item(forURLString:) and the insert paths' own "is this URL already
+        -- saved?" check — the URL dedup every save from every surface runs.
         CREATE INDEX IF NOT EXISTS saves_url_string ON saves(url_string);
-
-        -- Platform-item lookups (a tweet id / post shortcode already saved).
-        CREATE INDEX IF NOT EXISTS saves_platform_item
-            ON saves(platform, platform_item_id) WHERE platform IS NOT NULL;
-
-        -- The launch sweep's re-ingest scan: every save still pending or failed.
-        CREATE INDEX IF NOT EXISTS saves_unfinished
-            ON saves(date_added) WHERE state IN ('pending', 'failed');
 
         -- archivePendingFinishedItems(): the reader-completed saves waiting for
         -- the next lifecycle boundary.

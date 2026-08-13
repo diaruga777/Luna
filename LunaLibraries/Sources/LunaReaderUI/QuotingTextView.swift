@@ -14,16 +14,27 @@
 
 import UIKit
 
+/// The reader that owns a `QuotingTextView` and knows the article behind it.
+@MainActor
+public protocol QuotingTextViewDelegate: AnyObject {
+    /// Copy the selected range in the reader's own quote-plus-URL format.
+    /// Returning true means it handled the copy; false (or no delegate at all)
+    /// falls back to UIKit's plain-text copy.
+    func quotingTextView(
+        _ textView: QuotingTextView, copySelectionIn range: NSRange) -> Bool
+}
+
 public final class QuotingTextView: UITextView {
 
-    /// Asked to copy the selected range in the reader's own format. Returning
-    /// true means it handled the copy; false (or no handler at all) falls back
-    /// to UIKit's plain-text copy.
-    public var copySelectionAsQuote: ((NSRange) -> Bool)?
+    /// The reader hosting this text view — it owns the view, hence weak.
+    public weak var quotingDelegate: (any QuotingTextViewDelegate)?
 
     public override func copy(_ sender: Any?) {
         let range = selectedRange
-        if range.length > 0, copySelectionAsQuote?(range) == true { return }
+        if range.length > 0,
+           quotingDelegate?.quotingTextView(self, copySelectionIn: range) == true {
+            return
+        }
         super.copy(sender)
     }
 }

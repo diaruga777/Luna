@@ -147,8 +147,7 @@ enum SharedStageCatalog {
                 make: {
                     let onboarding = AppOnboardingViewController(
                         completion: AppOnboardingCompletion(
-                            makeCompletedRootViewController:
-                                KindWiring.makeRootViewController))
+                            root: KindWiringOnboardingRoot()))
                     // Same cue as the stage above: the sequence starts once the
                     // screen has been laid out at its full size.
                     DispatchQueue.main.asyncAfter(
@@ -348,7 +347,7 @@ enum SharedStageCatalog {
         let onboarding = AppOnboardingStore(
             app: .current, defaults: scratchDefaults("utilCard"),
             saveSetupMode: .actionButtonShortcut,
-            newestSaveDate: { _ in saveDates.max() })
+            newestSave: StagedNewestSave(date: saveDates.max()))
         if !showsOnboarding { onboarding.markCompleted() }
 
         let weekly = WeeklySaveStore(
@@ -434,9 +433,9 @@ enum SharedStageCatalog {
                 kind: .shared,
                 make: {
                     let owner: LunaApp = LunaApp.current == .downloader ? .reader : .downloader
-                    let card = UnsupportedSaveCardViewController(owner: owner)
-                    card.onDone = {}
-                    return card
+                    // No delegate: on a staged card Done is inert, exactly as
+                    // the empty closure it replaces was.
+                    return UnsupportedSaveCardViewController(owner: owner)
                 }),
             StageDescriptor(
                 id: "card.rescue-failure", screen: "Extension failure card",
@@ -448,8 +447,11 @@ enum SharedStageCatalog {
                     guard let url = URL(string: "https://example.com/broken") else { return nil }
                     return UINavigationController(
                         rootViewController: RescueFailureViewController(
+                            // No delegate: a staged card records nothing, opens
+                            // nothing and completes nothing, exactly as the three
+                            // empty closures it replaces did.
                             url: url, rescueURL: URL(string: "luna://rescue"),
-                            openApp: { _ in }, onFinish: {}, onDone: {}))
+                            delegate: nil))
                 }),
         ]
     }
@@ -654,6 +656,13 @@ final class StageCardHostViewController: UIViewController {
             inScreenSize: view.bounds.size, safeAreaInsets: view.safeAreaInsets)
         card.view.frame = surface.contentContainer.bounds
     }
+}
+
+/// A staged deck's newest save: one fixture date, or none for an empty deck.
+private struct StagedNewestSave: OnboardingNewestSaveProviding {
+    let date: Date?
+
+    func newestSaveDate(excluding excludedID: UUID?) -> Date? { date }
 }
 
 #endif

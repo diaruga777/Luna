@@ -117,13 +117,13 @@ final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelega
         positionStore = AudioPlaybackPositionStore(defaults: positionDefaults)
         center = AudioPlaybackCenter(
             store: store, renderer: renderer, positionStore: positionStore,
-            sessionCoordinator: session, engineFactory: { [engine] _ in engine! })
+            sessionCoordinator: session, engines: FixedAudioEngineMaker(engine!))
 
         // NowPlayingCoordinatorTests
         infoSink = FakeInfoSink()
         binding = FakeCommandBinding()
         coordinator = NowPlayingCoordinator(
-            infoSink: infoSink, commandBinding: binding, artworkFileURL: { _ in nil })
+            infoSink: infoSink, commandBinding: binding, artwork: NoStoredArtwork())
         savedAutoplay = AudioSettings.isAutoplayEnabled
         savedRate = AudioSettings.preferredRate
         AudioSettings.isAutoplayEnabled = true

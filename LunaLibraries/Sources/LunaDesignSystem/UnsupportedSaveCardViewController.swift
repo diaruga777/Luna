@@ -6,6 +6,15 @@
 import LunaModels
 import UIKit
 
+/// Whoever put an `UnsupportedSaveCardViewController` on screen, told when the
+/// user is done with it. Each host answers differently — the app dismisses the
+/// presentation, an extension completes its request silently — so the card
+/// itself takes no action.
+@MainActor
+public protocol UnsupportedSaveCardDelegate: AnyObject {
+    func unsupportedSaveCardDidFinish(_ card: UnsupportedSaveCardViewController)
+}
+
 /// The ONE screen every Luna surface shows when a link is classified into a
 /// content kind the running app doesn't handle: the main app's interactive
 /// saves, the share extension, and the action extension all present THIS,
@@ -28,14 +37,17 @@ import UIKit
 /// never shows a checkmark and its only action is dismissal.
 public final class UnsupportedSaveCardViewController: UIViewController {
 
+    /// Told when the user dismisses the card. The extensions complete their
+    /// request silently; the app dismisses the presentation. Held weakly (the
+    /// conformer presents the card, so a strong reference would be a cycle), and
+    /// an unset delegate simply makes Done inert — which is what the stage
+    /// catalog's standalone card wants.
+    public weak var delegate: (any UnsupportedSaveCardDelegate)?
+
     /// The Luna app that DOES handle the dropped link, or nil when the link
     /// belongs to no sibling app (header only).
     private let owner: LunaApp?
     private let currentApp: LunaApp
-
-    /// Runs when the user dismisses the card. The extensions complete their
-    /// request silently here; the app dismisses the presentation.
-    public var onDone: (() -> Void)?
 
     private let cardView = CardSurfaceView()
     private let contentStack = UIStackView()
@@ -135,7 +147,10 @@ public final class UnsupportedSaveCardViewController: UIViewController {
         doneButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Common_done"), symbol: "checkmark", prominent: true)
         doneButton.addAction(
-            UIAction { [weak self] _ in self?.onDone?() }, for: .touchUpInside)
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                delegate?.unsupportedSaveCardDidFinish(self)
+            }, for: .touchUpInside)
         doneButton.translatesAutoresizingMaskIntoConstraints = false
 
         // The message sits in the card's optical middle; Done rides the chin,

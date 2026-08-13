@@ -7,6 +7,13 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// The popup's two answers, reported to whichever controller raised it.
+@MainActor
+protocol OnboardingSafariSetupPopupDelegate: AnyObject {
+    func safariSetupPopupDidChooseSetUp()
+    func safariSetupPopupDidSkip()
+}
+
 /// The ONE ending every Safari lesson shares now, in all four apps: a minimal
 /// card — "Set up in Safari" and "Skip", nothing else — over a dark scrim,
 /// with whatever lesson raised it still visible (and, after a short freeze,
@@ -54,8 +61,8 @@ final class OnboardingSafariSetupPopupView: UIView {
     private static let interActionGap: CGFloat = 16
     private static let pulseKey = "onboarding.safariSetupPopup.pulse"
 
-    var onActivate: (() -> Void)?
-    var onSkip: (() -> Void)?
+    /// The controller that raised the popup — it owns the view, hence weak.
+    weak var delegate: (any OnboardingSafariSetupPopupDelegate)?
 
     private let card = UIView()
     private let activateButton: OnboardingSafariSetupActionButton
@@ -290,13 +297,13 @@ final class OnboardingSafariSetupPopupView: UIView {
     @objc private func activateTapped() {
         endPulse()
         setActionsEnabled(false)
-        onActivate?()
+        delegate?.safariSetupPopupDidChooseSetUp()
     }
 
     @objc private func skipTapped() {
         endPulse()
         setActionsEnabled(false)
-        onSkip?()
+        delegate?.safariSetupPopupDidSkip()
     }
 
     #if DEBUG

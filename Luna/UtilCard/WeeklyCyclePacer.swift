@@ -7,6 +7,12 @@ import Foundation
 import LunaModels
 import UIKit
 
+/// Told to move the weekly row on, once the pacer's gates all agree.
+@MainActor
+protocol WeeklyCyclePacerDelegate: AnyObject {
+    func weeklyCyclePacerDidTick()
+}
+
 /// When the central app's weekly row is allowed to advance on its own.
 ///
 /// Pure gating, no views: every reason to stop is a stored flag, and the timer
@@ -23,11 +29,16 @@ final class WeeklyCyclePacer {
 
     /// Starts a repeating tick and returns its canceller. Injected so tests
     /// drive the cadence by hand instead of waiting two seconds a time.
+    ///
+    /// Stays a closure on purpose: this is the CLOCK, a pure-value parameter,
+    /// and what it hands back is a one-shot cancellation handle for the timer it
+    /// just made — neither is standing wiring between components.
     typealias Scheduler = (
         _ interval: TimeInterval, _ tick: @escaping () -> Void
     ) -> () -> Void
 
-    var onAdvance: (() -> Void)?
+    /// The row host that owns this pacer — hence weak.
+    weak var delegate: (any WeeklyCyclePacerDelegate)?
 
     private let interval: TimeInterval
     private let scheduler: Scheduler
@@ -92,7 +103,14 @@ final class WeeklyCyclePacer {
 
     private func update() {
         if canRun, cancel == nil {
-            cancel = scheduler(interval) { [weak self] in self?.onAdvance?() }
+            cancel = scheduler(interval) { [weak self] in
+                // The tick always arrives on the main thread — every gate that
+                // starts the timer is set from the row host's own (main-thread)
+                // code, and the timer is scheduled on that run loop. Stated
+                // rather than assumed, because this type is deliberately not
+                // `@MainActor` (see above) while its delegate is a view.
+                MainActor.assumeIsolated { self?.delegate?.weeklyCyclePacerDidTick() }
+            }
         } else if !canRun, let cancel {
             cancel()
             self.cancel = nil
@@ -108,6 +126,14 @@ final class WeeklyCyclePacer {
         timer.tolerance = interval * 0.25
         return { timer.invalidate() }
     }
+}
+
+/// Told at the start of each label transition. The util card uses that boundary
+/// to introduce the weekly row, so it never fades in halfway through a changing
+/// title.
+@MainActor
+protocol UtilCardSetupTextCyclerDelegate: AnyObject {
+    func setupTextCycler(_ cycler: UtilCardSetupTextCycler, willBeginCycleTo app: LunaApp)
 }
 
 /// The central util card's setup labels advance *with* the weekly row. Only
@@ -137,10 +163,8 @@ final class UtilCardSetupTextCycler {
     private var cancel: (() -> Void)?
     private var nextAppIndex = 0
 
-    /// Fired at the start of each label transition. The util card uses this
-    /// boundary to introduce the weekly row, so it never fades in halfway
-    /// through a changing title.
-    var onCycleStart: ((LunaApp) -> Void)?
+    /// The util card, which owns this cycler — hence weak.
+    weak var delegate: (any UtilCardSetupTextCyclerDelegate)?
 
     /// Stands in for the real timer in the cycler the util card builds for
     /// itself, which a test cannot reach to inject. Nothing in the app writes
@@ -182,7 +206,7 @@ final class UtilCardSetupTextCycler {
         let apps: [LunaApp] = [.reader, .downloader, .priceTracker]
         let app = apps[nextAppIndex]
         nextAppIndex = (nextAppIndex + 1) % apps.count
-        onCycleStart?(app)
+        delegate?.setupTextCycler(self, willBeginCycleTo: app)
         show(app)
     }
 

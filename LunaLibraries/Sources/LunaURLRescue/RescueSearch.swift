@@ -21,10 +21,18 @@ public struct RescueSearchResult: Equatable {
     }
 }
 
+/// Runs the search leg's one web query. Injected so a test can hand the engine a
+/// fixed result list instead of reaching the live web.
+public protocol RescueSearching {
+    func searchResults(forQuery query: String) async -> [RescueSearchResult]
+}
+
 /// The default provider: the keyless DuckDuckGo HTML search LunaFetch already
 /// owns (the same primitive the seller fan-out and the post finder use).
-public enum RescueSearchProvider {
-    public static func duckDuckGo(_ query: String) async -> [RescueSearchResult] {
+public struct DuckDuckGoRescueSearch: RescueSearching {
+    public init() {}
+
+    public func searchResults(forQuery query: String) async -> [RescueSearchResult] {
         await DuckDuckGoSearch.entries(forQuery: query)
             .map { RescueSearchResult(url: $0.url, title: $0.title) }
     }

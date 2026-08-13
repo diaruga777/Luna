@@ -58,7 +58,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let session = FakeTrimModelSession()
         session.isAvailable = false // isolate: no refinement kick-off in this test
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "refined")
         let content = readableContent()
 
@@ -77,7 +77,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let session = FakeTrimModelSession()
         session.isAvailable = false
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "heuristic-cached")
         let content = readableContent()
 
@@ -94,7 +94,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let session = FakeTrimModelSession()
         session.isAvailable = false
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "fresh")
         let content = ArticleContent(title: "Title", blocks: [
             .init(kind: .paragraph, text: "By Jane Doe", links: []),
@@ -114,7 +114,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         let session = FakeTrimModelSession()
         session.isAvailable = false
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         var item = readableItem(seed: "no-file")
         item.contentFileName = nil
         let content = readableContent()
@@ -135,7 +135,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.responses = [.indices([1])]
         AudioSettings.isIntelligentTrimmingEnabled = true
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "opportunistic")
         let content = readableContent()
 
@@ -149,7 +149,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.responses = [.indices([])] // succeeds, finds nothing extra
         AudioSettings.isIntelligentTrimmingEnabled = true
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "upgrades")
         let content = readableContent()
 
@@ -166,7 +166,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.responses = [.indices([])]
         AudioSettings.isIntelligentTrimmingEnabled = false
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "disabled")
         let content = readableContent()
 
@@ -185,7 +185,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.isAvailable = false
         AudioSettings.isIntelligentTrimmingEnabled = true
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "unavailable")
         let content = readableContent()
 
@@ -202,7 +202,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.responses = [.indices([1])]
         AudioSettings.isIntelligentTrimmingEnabled = true
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "cancelled")
         let content = readableContent()
 
@@ -230,7 +230,7 @@ final class ExtensionAudioScriptResolverTests: XCTestCase {
         session.responses = [.indices([])] // would succeed if ever called
         AudioSettings.isIntelligentTrimmingEnabled = true
         let resolver = ExtensionAudioScriptResolver(
-            articlesDirectory: tempDirectory, modelSessionFactory: { session })
+            articlesDirectory: tempDirectory, modelSessions: FixedTrimModelSessionMaker(session))
 
         _ = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
         await resolver.awaitLastStartedRefinement()

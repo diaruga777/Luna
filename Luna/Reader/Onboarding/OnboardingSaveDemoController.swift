@@ -113,15 +113,7 @@ final class OnboardingSaveDemoController {
         }
 
         HostedShareSession.current = session
-        session.onDidAppendRow = { [weak self] id in
-            self?.claimTemporarySave(id)
-        }
-        session.onReachedTerminal = { [weak self] in
-            self?.surfaceDidReachTerminal()
-        }
-        session.onMediaFileReady = { [weak self] fileURL in
-            self?.pendingVideoFileURL = fileURL
-        }
+        session.delegate = self
 
         let surface = ShareViewController(
             hosted: hostedInput,
@@ -225,10 +217,8 @@ final class OnboardingSaveDemoController {
         surface = nil
         sheet?.removeFromSuperview()
         sheet = nil
-        session.onDidAppendRow = nil
-        session.onReachedTerminal = nil
-        session.onMediaFileReady = nil
-        session.onReplayBeat = nil
+        session.delegate = nil
+        session.beatReplayer = nil
         session.releaseArtifacts()
         ShareMediaSideEffects.deleteSavedContents(forURLString: link.urlString)
         if HostedShareSession.current === session {
@@ -378,5 +368,21 @@ final class OnboardingSaveDemoController {
             guard let self, generation == self.presentationGeneration else { return }
             work()
         }
+    }
+}
+
+/// What the real surface reports back as the rehearsal runs. The session holds
+/// this weakly; `tearDown` clears it so a stopped lesson hears nothing more.
+extension OnboardingSaveDemoController: HostedShareSessionDelegate {
+    func hostedShareSessionDidAppendRow(_ itemID: UUID) {
+        claimTemporarySave(itemID)
+    }
+
+    func hostedShareSessionReachedTerminal() {
+        surfaceDidReachTerminal()
+    }
+
+    func hostedShareSession(mediaFileReadyAt fileURL: URL) {
+        pendingVideoFileURL = fileURL
     }
 }

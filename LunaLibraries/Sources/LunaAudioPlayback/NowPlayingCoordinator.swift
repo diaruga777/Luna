@@ -9,6 +9,23 @@ import LunaStorage
 import MediaPlayer
 import UIKit
 
+/// Where the lock-screen artwork for a playing item comes from: the item's
+/// `thumbnailFileName` resolved to a decodable file URL, or nil when there is
+/// nothing on disk for it.
+public protocol NowPlayingArtworkProviding {
+    func artworkFileURL(forFileName fileName: String) -> URL?
+}
+
+/// The production answer: the shared store's Articles directory, where
+/// `ReadingListStore.setThumbnail` writes.
+public struct StoredThumbnailArtwork: NowPlayingArtworkProviding {
+    public init() {}
+
+    public func artworkFileURL(forFileName fileName: String) -> URL? {
+        ArticleThumbnailLocator.fileURL(fileName: fileName)
+    }
+}
+
 /// Thin seam over `MPNowPlayingInfoCenter` so `NowPlayingCoordinator`'s info
 /// assembly is unit-testable headless (a fake sink records what was pushed;
 /// the system sink below forwards to the real center).
@@ -87,7 +104,7 @@ public final class NowPlayingCoordinator {
     /// Resolves an item's `thumbnailFileName` to a decodable file URL —
     /// injectable for tests; defaults to the shared store's Articles
     /// directory (where `ReadingListStore.setThumbnail` writes).
-    private let artworkFileURL: (String) -> URL?
+    private let artwork: any NowPlayingArtworkProviding
 
     private weak var center: AudioPlaybackCenter?
     /// Artwork is decoded ONCE per item (keyed by file name) and reused for
@@ -98,13 +115,11 @@ public final class NowPlayingCoordinator {
     public init(
         infoSink: NowPlayingInfoSink = SystemNowPlayingInfoSink(),
         commandBinding: RemoteCommandBinding = SystemRemoteCommandBinding(),
-        artworkFileURL: @escaping (String) -> URL? = { fileName in
-            ArticleThumbnailLocator.fileURL(fileName: fileName)
-        }
+        artwork: any NowPlayingArtworkProviding = StoredThumbnailArtwork()
     ) {
         self.infoSink = infoSink
         self.commandBinding = commandBinding
-        self.artworkFileURL = artworkFileURL
+        self.artwork = artwork
     }
 
     /// Call once at app launch: binds the remote-command targets (required
@@ -215,7 +230,7 @@ public final class NowPlayingCoordinator {
     private func artwork(for itemInfo: AudioPlaybackItemInfo) -> MPMediaItemArtwork? {
         guard let fileName = itemInfo.thumbnailFileName else { return nil }
         if let cachedArtwork, cachedArtwork.fileName == fileName { return cachedArtwork.artwork }
-        guard let url = artworkFileURL(fileName),
+        guard let url = self.artwork.artworkFileURL(forFileName: fileName),
               let pixelSize = Self.imagePixelSize(at: url)
         else { return nil }
         let path = url.path

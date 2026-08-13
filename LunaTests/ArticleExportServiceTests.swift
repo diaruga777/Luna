@@ -11,6 +11,24 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// Stands in for the app's `ArticleImageDownloader` witness and records whether
+/// the export actually asked for a fetch.
+private final class FakeExportImagePreparer: ArticleExportImagePreparing {
+    private let download: (ArticleContent) -> ArticleContent
+    private(set) var ran = false
+
+    init(download: @escaping (ArticleContent) -> ArticleContent) {
+        self.download = download
+    }
+
+    func preparedContent(
+        _ content: ArticleContent, for item: ReadingListItem
+    ) async -> ArticleContent {
+        ran = true
+        return download(content)
+    }
+}
+
 final class ArticleExportServiceTests: XCTestCase {
 
     private var scratch: URL!
@@ -77,17 +95,14 @@ final class ArticleExportServiceTests: XCTestCase {
     /// work is done once.
     func testWritePreparingImagesFetchesMissingImagesAndPersistsThem() async throws {
         let item = itemWithUnfetchedImage(url: "https://example.com/illustrated")
-        var preparerRan = false
-        ArticleExportImages.preparer = { content, _ in
-            preparerRan = true
-            return self.fakeDownload(content)
-        }
+        let preparer = FakeExportImagePreparer(download: { self.fakeDownload($0) })
+        ArticleExportImages.preparer = preparer
         defer { ArticleExportImages.preparer = nil }
 
         let url = try await ArticleExportService(store: store)
             .writePreparingImages(.epub, for: item)
 
-        XCTAssertTrue(preparerRan)
+        XCTAssertTrue(preparer.ran)
         let stored = try XCTUnwrap(store.content(for: item))
         XCTAssertNotNil(
             stored.blocks.first(where: { $0.kind == .image })?.imageFileName,
@@ -101,15 +116,12 @@ final class ArticleExportServiceTests: XCTestCase {
     /// Nothing to fetch ⇒ no seam call and no pointless re-persist.
     func testWritePreparingImagesSkipsWhenEveryImageIsAlreadyLocal() async throws {
         let item = readyItem(title: "Plain", url: "https://example.com/plain")
-        var preparerRan = false
-        ArticleExportImages.preparer = { content, _ in
-            preparerRan = true
-            return content
-        }
+        let preparer = FakeExportImagePreparer(download: { $0 })
+        ArticleExportImages.preparer = preparer
         defer { ArticleExportImages.preparer = nil }
 
         _ = try await ArticleExportService(store: store).writePreparingImages(.pdf, for: item)
-        XCTAssertFalse(preparerRan, "an article with no image blocks has nothing to prepare")
+        XCTAssertFalse(preparer.ran, "an article with no image blocks has nothing to prepare")
     }
 
     /// Extensions install no preparer; the export still works from local files.

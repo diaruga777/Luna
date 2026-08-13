@@ -40,6 +40,10 @@ extension UITableViewController {
 /// pushes). The kind-specific leading rows come from each app's `KindWiring`
 /// variant (`KindWiring.settingsCategories()`); the universal tail is built
 /// here.
+///
+/// The three closures stay closures: this is a VALUE describing one row, written
+/// inline at its declaration site, and `detail`/`make`/`makePrerequisite` are
+/// that row's own text and screen — not wiring installed between components.
 struct SettingsCategory {
     let title: String
     let symbol: String
@@ -49,10 +53,23 @@ struct SettingsCategory {
     let make: () -> UIViewController
 }
 
+/// Whether a sending account is connected. The rows that need one are dimmed and
+/// redirect to the sign-in form until it is.
+protocol EmailAccountStatusProviding {
+    var isEmailAccountConnected: Bool { get }
+}
+
+/// The production answer: the shared account store.
+struct ConnectedEmailAccountStatus: EmailAccountStatusProviding {
+    var isEmailAccountConnected: Bool { EmailAccountStore.shared.isReady }
+}
+
 /// Top-level settings: a system-Settings-style menu that drills into a focused
 /// subpage per category.
 final class SettingsViewController: NavHeaderTableController, UIGestureRecognizerDelegate {
-    private let emailIsConfigured: () -> Bool
+    /// Whether a sending account is connected — the gate on the rows that need
+    /// one. Injected so a test can pin either answer without the App Group.
+    private let emailStatus: any EmailAccountStatusProviding
 
     private let categories: [SettingsCategory] =
         // Kind rows first (Reader/Audio/Reading List/Email for article apps,
@@ -86,10 +103,8 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
             ? [SettingsCategory(title: L10n.string("Settings_weeklyProposals_title"), symbol: "crown") { WeeklyProposalsScreen() }]
             : [])
 
-    init(emailIsConfigured: @escaping () -> Bool = {
-        EmailAccountStore.shared.isReady
-    }) {
-        self.emailIsConfigured = emailIsConfigured
+    init(emailStatus: any EmailAccountStatusProviding = ConnectedEmailAccountStatus()) {
+        self.emailStatus = emailStatus
         super.init(style: .insetGrouped)
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -128,7 +143,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         content.text = category.title
         content.secondaryText = category.detail?()
         content.image = UIImage(systemName: category.symbol)
-        let enabled = !category.requiresEmail || emailIsConfigured()
+        let enabled = !category.requiresEmail || emailStatus.isEmailAccountConnected
         content.textProperties.color = enabled ? LunaColors.primaryText : LunaColors.tertiaryText
         content.imageProperties.tintColor = enabled ? view.tintColor : LunaColors.tertiaryText
         cell.accessoryType = .disclosureIndicator
@@ -140,7 +155,7 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         tableView.deselectRow(at: indexPath, animated: true)
         guard categories.indices.contains(indexPath.row) else { return }
         let category = categories[indexPath.row]
-        guard !category.requiresEmail || emailIsConfigured() else {
+        guard !category.requiresEmail || emailStatus.isEmailAccountConnected else {
             presentEmailRequiredAlert(for: category)
             return
         }

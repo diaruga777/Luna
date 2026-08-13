@@ -19,6 +19,34 @@ public enum HostedShareInput {
     case offlineFailure(URL)
 }
 
+/// What the in-app host of a `HostedShareSession` is told as the real surface
+/// works: everything the onboarding save lesson needs to pace itself against
+/// actual progress rather than a fixed hold.
+@MainActor
+public protocol HostedShareSessionDelegate: AnyObject {
+    /// The reading-list row the hosted flow created, reported so the host can
+    /// mark it as its temporary save and take it back out afterwards.
+    func hostedShareSessionDidAppendRow(_ itemID: UUID)
+
+    /// The surface has something FINAL on screen: a reader, a saved-media
+    /// screen, a price editor, an error, or a completed request. The host waits
+    /// for this instead of counting out a fixed hold, so the sheet is up for
+    /// exactly as long as the real work took.
+    func hostedShareSessionReachedTerminal()
+
+    /// The local file a downloaded VIDEO landed in. The host plays it, muted and
+    /// looping, over the sheet: the point of the media lesson is that the thing
+    /// you saved is now yours, and a still poster does not say that.
+    func hostedShareSession(mediaFileReadyAt fileURL: URL)
+}
+
+/// A kind screen that can play its own beat AGAIN from what it already has.
+/// Installed on `HostedShareSession.beatReplayer` by the screen itself.
+@MainActor
+public protocol HostedShareBeatReplaying: AnyObject {
+    func replayHostedShareBeat()
+}
+
 /// The rendezvous between an in-app host of `ShareViewController` and the kind
 /// modules the surface presents through.
 ///
@@ -88,32 +116,23 @@ public final class HostedShareSession {
     /// mid-fetch.
     public var awaitsMediaPlayback = false
 
-    /// The local file a downloaded VIDEO landed in. The host plays it, muted and
-    /// looping, over the sheet: the point of the media lesson is that the thing
-    /// you saved is now yours, and a still poster does not say that.
-    public var onMediaFileReady: ((URL) -> Void)?
+    // MARK: - Reporting back to the host
 
-    // MARK: - Terminal state
-
-    /// Fired the moment the surface has something FINAL on screen: a reader, a
-    /// saved-media screen, a price editor, an error, or a completed request. The
-    /// host waits for this instead of counting out a fixed hold, so the sheet is
-    /// up for exactly as long as the real work took.
-    public var onReachedTerminal: (() -> Void)?
-
-    /// The reading-list row the hosted flow created, reported so the host can
-    /// mark it as its temporary save and take it back out afterwards.
-    public var onDidAppendRow: ((UUID) -> Void)?
+    /// The onboarding controller hosting this session, held weakly — it owns the
+    /// session. Nil in the share/action extensions, where nothing is hosted and
+    /// every report below is simply not made.
+    public weak var delegate: (any HostedShareSessionDelegate)?
 
     /// Set by whichever kind screen can play its own beat AGAIN from what it
     /// already has — the media screen re-running its download indication and its
     /// playback off the retained file. The host calls `replayBeat()` on each pass
     /// of the looping demonstration, so a second showing costs no network at all.
     /// Kind-neutral by construction: the host never learns which screen answered.
-    public var onReplayBeat: (() -> Void)?
+    /// Weak: the screen is owned by the view hierarchy, not by the session.
+    public weak var beatReplayer: (any HostedShareBeatReplaying)?
 
     public func replayBeat() {
-        onReplayBeat?()
+        beatReplayer?.replayHostedShareBeat()
     }
 
     // MARK: - Retained artifacts

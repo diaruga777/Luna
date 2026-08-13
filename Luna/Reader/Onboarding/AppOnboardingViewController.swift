@@ -263,7 +263,7 @@ final class AppOnboardingViewController: UIViewController {
     static func presentSetupReplay(
         _ source: OnboardingDemoSource,
         from presenter: UIViewController,
-        makeCompletedRootViewController: @escaping () -> UIViewController
+        root: any CompletedOnboardingRootMaking
     ) {
         guard let window = presenter.view.window else { return }
         let snapshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -272,8 +272,7 @@ final class AppOnboardingViewController: UIViewController {
         let replay = AppOnboardingViewController(
             setupReplaySource: source,
             setupReplayOriginSnapshot: snapshot,
-            completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: makeCompletedRootViewController))
+            completion: AppOnboardingCompletion(root: root))
         replay.modalPresentationStyle = .fullScreen
         presenter.present(replay, animated: false)
     }
@@ -360,12 +359,7 @@ final class AppOnboardingViewController: UIViewController {
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        intro.onSafari = { [weak self] in self?.showSafariCard() }
-        intro.onShortcut = { [weak self] in self?.showMessagesCard() }
-        intro.onPaste = { [weak self] value in self?.pasteArticleURL(value) }
-        intro.onFirstLineRevealed = { [weak self] in
-            self?.firstIntroLineDidReveal()
-        }
+        intro.delegate = self
         safariSetupState = LunaSetupStatusStore.shared.safariRunApplies(
             to: configuration.app) ? .completed : .pending
         shortcutSetupState = saveSetupHasRun ? .completed : .pending
@@ -446,7 +440,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func configureLifecycleObservers() {
-        knownContentIdentifiers = completion.contentWatch.storedIdentifiers()
+        knownContentIdentifiers = completion.contentWatch.content.storedIdentifiers()
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
@@ -924,8 +918,7 @@ final class AppOnboardingViewController: UIViewController {
 
         let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
         popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        popup.onActivate = { [weak self] in self?.openSafariSetup() }
-        popup.onSkip = { [weak self] in self?.skipSafariSetupAndContinue() }
+        popup.delegate = self
         safariSetupPopup = popup
         host.addSubview(popup)
         popup.layoutIfNeeded()
@@ -1637,7 +1630,7 @@ final class AppOnboardingViewController: UIViewController {
         else { return }
         // Onboarding never writes, so every unseen id here is a save the user
         // really made — through a share/action extension or an App Intent.
-        let current = completion.contentWatch.storedIdentifiers()
+        let current = completion.contentWatch.content.storedIdentifiers()
         guard !current.subtracting(knownContentIdentifiers).isEmpty else { return }
         completeOnboardingWithRealSave(animated: false)
     }
@@ -1683,7 +1676,7 @@ final class AppOnboardingViewController: UIViewController {
             oldRoot.removeFromParent()
         }
         savedCardWaveSnapshot = nil
-        let root = completion.makeCompletedRootViewController()
+        let root = completion.root.makeCompletedRootViewController()
         savedRootViewController = root
         addChild(root)
         root.view.frame = view.bounds
@@ -1814,7 +1807,7 @@ final class AppOnboardingViewController: UIViewController {
             self.externalReturn = .none
             self.intro.setActionsEnabled(true)
             self.knownContentIdentifiers =
-                self.completion.contentWatch.storedIdentifiers()
+                self.completion.contentWatch.content.storedIdentifiers()
             switcher.removeFromSuperview()
             self.appSwitcher = nil
             self.setNeedsStatusBarAppearanceUpdate()
@@ -1905,7 +1898,7 @@ final class AppOnboardingViewController: UIViewController {
 
     private func mountCompletedRootIfNeeded() {
         guard savedRootViewController == nil else { return }
-        let root = completion.makeCompletedRootViewController()
+        let root = completion.root.makeCompletedRootViewController()
         savedRootViewController = root
         addChild(root)
         root.view.frame = view.bounds
@@ -2139,5 +2132,41 @@ extension AppOnboardingViewController: OnboardingSaveSourceDelegate {
         _ source: OnboardingSaveSourceViewController
     ) {
         actionButtonWaveDidFinish(from: .safari)
+    }
+}
+
+// MARK: - The intro card's delegate
+
+// The card offers two lessons, a paste, and one timing report; every one of them
+// lands on the method the host already had for it.
+extension AppOnboardingViewController: OnboardingIntroCardDelegate {
+    func introCardDidChooseSafariLesson() {
+        showSafariCard()
+    }
+
+    func introCardDidChooseSaveLesson() {
+        showMessagesCard()
+    }
+
+    func introCard(didPasteURLString urlString: String) {
+        pasteArticleURL(urlString)
+    }
+
+    func introCardDidRevealFirstLine() {
+        firstIntroLineDidReveal()
+    }
+}
+
+// MARK: - The shared Safari setup popup's delegate
+
+// Both answers land on the method the host already had; "Set up" opens the
+// hosted setup page, Skip records the skip and continues the lesson cycle.
+extension AppOnboardingViewController: OnboardingSafariSetupPopupDelegate {
+    func safariSetupPopupDidChooseSetUp() {
+        openSafariSetup()
+    }
+
+    func safariSetupPopupDidSkip() {
+        skipSafariSetupAndContinue()
     }
 }

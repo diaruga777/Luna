@@ -21,9 +21,10 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
-    private static let legacyOnboardingDemoSave = OnboardingLegacyDemoSave(
-        cleanup: { BundledLunaArticle.cleanupLegacyTemporarySave() })
+    /// Migration only — onboarding stores nothing (see
+    /// `OnboardingLegacyDemoSweeping`).
+    private static let legacyOnboardingDemoSave: any OnboardingLegacyDemoSweeping =
+        BundledLunaArticle.LegacySweep()
 
     @MainActor
     static func install() {
@@ -136,7 +137,7 @@ enum KindWiring {
     }
 
     static func appDidLaunch() {
-        legacyOnboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
         MediaShellWiring.appDidLaunch()
         ProductShellWiring.appDidLaunch()
@@ -180,7 +181,8 @@ enum KindWiring {
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.
-    static let priceRefreshRunner: (() async -> Int)? = ProductShellWiring.priceRefreshRunner
+    static let priceRefreshRunner: (any PriceRefreshRunning)? =
+        ProductShellWiring.priceRefreshRunner
 
     #if DEBUG
     /// `-openArchive <url>` debug root: the interactive archive reader.

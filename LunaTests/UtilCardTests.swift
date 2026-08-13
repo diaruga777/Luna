@@ -12,6 +12,37 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// A scripted "when was the newest save made", for the onboarding latch.
+final class ScriptedNewestSave: OnboardingNewestSaveProviding {
+    /// Which save was made when. The latch excludes onboarding's own rehearsal
+    /// row, so a test can prove that row never answers the first run.
+    var saves: [UUID: Date] = [:]
+
+    /// One anonymous save, replacing whatever was there — the shape most of
+    /// these tests want. Nil means an empty deck.
+    var soleSaveDate: Date? {
+        didSet { saves = soleSaveDate.map { [Self.anySaveID: $0] } ?? [:] }
+    }
+
+    private static let anySaveID = UUID()
+
+    func newestSaveDate(excluding excludedID: UUID?) -> Date? {
+        saves.filter { $0.key != excludedID }.values.max()
+    }
+}
+
+/// Stands in for the util card the setup-label cycler reports to.
+@MainActor
+final class RecordingSetupTextCyclerDelegate: UtilCardSetupTextCyclerDelegate {
+    private(set) var startedApps: [LunaApp] = []
+
+    func setupTextCycler(
+        _ cycler: UtilCardSetupTextCycler, willBeginCycleTo app: LunaApp
+    ) {
+        startedApps.append(app)
+    }
+}
+
 @MainActor
 final class UtilCardTests: XCTestCase {
     private var suiteName: String!
@@ -388,7 +419,7 @@ final class UtilCardTests: XCTestCase {
         let shortcut = try XCTUnwrap(buttons.last)
         var scheduledInterval: TimeInterval?
         var tick: (() -> Void)?
-        var startedApps: [LunaApp] = []
+        let host = RecordingSetupTextCyclerDelegate()
         let cycler = UtilCardSetupTextCycler(
             safariButton: safari,
             shortcutButton: shortcut,
@@ -397,14 +428,14 @@ final class UtilCardTests: XCTestCase {
                 tick = callback
                 return {}
             })
-        cycler.onCycleStart = { startedApps.append($0) }
+        cycler.delegate = host
 
         cycler.startCycling()
         XCTAssertEqual(scheduledInterval, WeeklyCyclePacer.interval)
-        XCTAssertTrue(startedApps.isEmpty)
+        XCTAssertTrue(host.startedApps.isEmpty)
 
         tick?()
-        XCTAssertEqual(startedApps, [.reader])
+        XCTAssertEqual(host.startedApps, [.reader])
     }
 
     /// The cycling belongs to central Luna, not to its first run. The completed
@@ -1250,18 +1281,20 @@ final class UtilCardTests: XCTestCase {
     // MARK: - A save answers the first run
 
     func testASaveMadeSinceOnboardingBeganCompletesIt() {
-        var newestSave: Date?
-        let store = makeStore(newestSaveDate: { newestSave })
+        let newestSave = ScriptedNewestSave()
+        let store = makeStore(newestSave: newestSave)
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
         XCTAssertFalse(store.isCompleted)
 
-        newestSave = Date(timeIntervalSince1970: 1_100)
+        newestSave.soleSaveDate = Date(timeIntervalSince1970: 1_100)
         XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
         XCTAssertTrue(store.isCompleted)
     }
 
     func testSavesOlderThanTheJourneyDoNotAnswerIt() {
-        let store = makeStore(newestSaveDate: { Date(timeIntervalSince1970: 900) })
+        let newestSave = ScriptedNewestSave()
+        newestSave.soleSaveDate = Date(timeIntervalSince1970: 900)
+        let store = makeStore(newestSave: newestSave)
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
 
         XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
@@ -1272,8 +1305,9 @@ final class UtilCardTests: XCTestCase {
     /// launch — the saves already there belong to the previous journey — and
     /// stays until a NEW save arrives.
     func testResettingWithSavesPresentShowsTheFirstRunCardUntilTheNextSave() {
-        var newestSave: Date? = Date(timeIntervalSince1970: 1_500)
-        let store = makeStore(newestSaveDate: { newestSave })
+        let newestSave = ScriptedNewestSave()
+        newestSave.soleSaveDate = Date(timeIntervalSince1970: 1_500)
+        let store = makeStore(newestSave: newestSave)
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
         store.markCompletedIfSavedSinceOnboardingStart()
         XCTAssertTrue(store.isCompleted)
@@ -1282,7 +1316,7 @@ final class UtilCardTests: XCTestCase {
         XCTAssertFalse(store.isCompleted)
         XCTAssertFalse(store.markCompletedIfSavedSinceOnboardingStart())
 
-        newestSave = Date(timeIntervalSince1970: 2_100)
+        newestSave.soleSaveDate = Date(timeIntervalSince1970: 2_100)
         XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
         XCTAssertTrue(store.isCompleted)
     }
@@ -1290,12 +1324,13 @@ final class UtilCardTests: XCTestCase {
     /// The verdict is latched, not derived: deleting the save that answered the
     /// first run does not bring it back.
     func testDeletingTheAnsweringSaveDoesNotReopenOnboarding() {
-        var newestSave: Date? = Date(timeIntervalSince1970: 1_100)
-        let store = makeStore(newestSaveDate: { newestSave })
+        let newestSave = ScriptedNewestSave()
+        newestSave.soleSaveDate = Date(timeIntervalSince1970: 1_100)
+        let store = makeStore(newestSave: newestSave)
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
         store.markCompletedIfSavedSinceOnboardingStart()
 
-        newestSave = nil
+        newestSave.soleSaveDate = nil
         XCTAssertTrue(store.isCompleted)
     }
 
@@ -1305,12 +1340,9 @@ final class UtilCardTests: XCTestCase {
     func testTheSaveLessonsOwnRehearsalNeverAnswersTheFirstRun() {
         let rehearsal = UUID()
         let other = UUID()
-        var saves: [UUID: Date] = [
-            rehearsal: Date(timeIntervalSince1970: 1_100),
-        ]
-        let store = makeStore { excluded in
-            saves.filter { $0.key != excluded }.values.max()
-        }
+        let newestSave = ScriptedNewestSave()
+        newestSave.saves = [rehearsal: Date(timeIntervalSince1970: 1_100)]
+        let store = makeStore(newestSave: newestSave)
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
 
         store.recordTemporarySave(identifier: rehearsal)
@@ -1320,7 +1352,7 @@ final class UtilCardTests: XCTestCase {
 
         // A save from anywhere ELSE, while the rehearsal is still on disk, still
         // answers it.
-        saves[other] = Date(timeIntervalSince1970: 1_200)
+        newestSave.saves[other] = Date(timeIntervalSince1970: 1_200)
         XCTAssertTrue(store.markCompletedIfSavedSinceOnboardingStart())
         XCTAssertTrue(store.isCompleted)
 
@@ -1329,7 +1361,7 @@ final class UtilCardTests: XCTestCase {
     }
 
     func testOnboardingStartIsStampedOnlyOnce() {
-        let store = makeStore(newestSaveDate: { nil })
+        let store = makeStore(newestSave: ScriptedNewestSave())
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 1_000))
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 5_000))
 
@@ -1337,7 +1369,7 @@ final class UtilCardTests: XCTestCase {
     }
 
     func testAnAlreadyCompletedAppNeverStartsAJourney() {
-        let store = makeStore(newestSaveDate: { nil })
+        let store = makeStore(newestSave: ScriptedNewestSave())
         store.markCompleted()
 
         store.beginOnboardingIfNeeded(now: Date(timeIntervalSince1970: 9_000))
@@ -1345,20 +1377,12 @@ final class UtilCardTests: XCTestCase {
         XCTAssertNil(store.onboardingStartDate)
     }
 
-    private func makeStore(
-        newestSaveDate: @escaping () -> Date?
-    ) -> AppOnboardingStore {
-        makeStore { _ in newestSaveDate() }
-    }
-
-    private func makeStore(
-        newestSaveDate: @escaping (UUID?) -> Date?
-    ) -> AppOnboardingStore {
+    private func makeStore(newestSave: ScriptedNewestSave) -> AppOnboardingStore {
         AppOnboardingStore(
             app: .reader,
             defaults: defaults,
             setupStatusStore: LunaSetupStatusStore(defaults: defaults),
-            newestSaveDate: newestSaveDate)
+            newestSave: newestSave)
     }
 
     private func makeStore(

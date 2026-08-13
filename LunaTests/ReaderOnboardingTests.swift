@@ -25,6 +25,24 @@ import LunaShareSurface
 import XCTest
 @testable import Luna
 
+/// Stands in for a target's post-onboarding root: one fixed controller.
+@MainActor
+struct StubOnboardingRoot: CompletedOnboardingRootMaking {
+    let root: UIViewController
+
+    func makeCompletedRootViewController() -> UIViewController { root }
+}
+
+/// A scripted answer to "what is stored right now", so a test can make a save
+/// appear behind the journey without writing the App Group.
+final class ScriptedStoredContent: OnboardingStoredContentProviding {
+    var identifiers: Set<UUID>
+
+    init(identifiers: Set<UUID> = []) { self.identifiers = identifiers }
+
+    func storedIdentifiers() -> Set<UUID> { identifiers }
+}
+
 final class ReaderOnboardingTests: XCTestCase {
 
     func testPriceSpotlightStartsBeyondEveryScreenEdge() {
@@ -94,7 +112,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 demonstrationApp: .reader),
             onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -157,7 +175,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 demonstrationApp: .reader),
             onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -218,7 +236,7 @@ final class ReaderOnboardingTests: XCTestCase {
             onboardingStore: AppOnboardingStore(
                 app: .downloader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -280,7 +298,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 demonstrationApp: .reader),
             onboardingStore: AppOnboardingStore(app: .luna, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -384,7 +402,7 @@ final class ReaderOnboardingTests: XCTestCase {
             onboardingStore: AppOnboardingStore(
                 app: .downloader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -494,7 +512,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 for: .downloader, saveSetupMode: .unavailable),
             onboardingStore: AppOnboardingStore(app: .downloader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -838,7 +856,7 @@ final class ReaderOnboardingTests: XCTestCase {
             configuration: .configuration(for: .reader),
             onboardingStore: registry,
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { productionRoot }))
+                root: StubOnboardingRoot(root: productionRoot)))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -878,7 +896,7 @@ final class ReaderOnboardingTests: XCTestCase {
 
         let registry = AppOnboardingStore(app: .reader, defaults: defaults)
         let changed = Notification.Name("onboarding.externalSave.\(UUID())")
-        var identifiers: Set<UUID> = [UUID()]
+        let content = ScriptedStoredContent(identifiers: [UUID()])
         let productionRoot = UIViewController()
         productionRoot.view.backgroundColor = .black
         let onboarding = AppOnboardingViewController(
@@ -886,9 +904,8 @@ final class ReaderOnboardingTests: XCTestCase {
             onboardingStore: registry,
             completion: AppOnboardingCompletion(
                 contentWatch: OnboardingContentWatch(
-                    changeNotifications: [changed],
-                    storedIdentifiers: { identifiers }),
-                makeCompletedRootViewController: { productionRoot }))
+                    changeNotifications: [changed], content: content),
+                root: StubOnboardingRoot(root: productionRoot)))
         let window = UIWindow(frame: CGRect(
             origin: .zero, size: AppLaunchGeometry.referenceSize))
         window.rootViewController = onboarding
@@ -896,7 +913,7 @@ final class ReaderOnboardingTests: XCTestCase {
         onboarding.view.layoutIfNeeded()
         defer { window.isHidden = true }
 
-        identifiers.insert(UUID())
+        content.identifiers.insert(UUID())
         NotificationCenter.default.post(name: changed, object: nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
@@ -1016,7 +1033,7 @@ final class ReaderOnboardingTests: XCTestCase {
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { productionRoot }))
+                root: StubOnboardingRoot(root: productionRoot)))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: AppLaunchGeometry.referenceSize))
@@ -1157,7 +1174,7 @@ final class ReaderOnboardingTests: XCTestCase {
                 for: .priceTracker, saveSetupMode: .unavailable),
             onboardingStore: AppOnboardingStore(app: .priceTracker, defaults: defaults),
             completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: { UIViewController() }))
+                root: StubOnboardingRoot(root: UIViewController())))
         let window = UIWindow(frame: CGRect(
             origin: .zero,
             size: AppLaunchGeometry.referenceSize))

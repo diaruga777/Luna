@@ -23,3 +23,21 @@ public enum AudioTrimModelSessionFactory {
         }
     }
 }
+
+/// Makes the session an article's refinement pass runs against. ONE protocol for
+/// both callers — `AudioScriptPipeline` (main app) and
+/// `ExtensionAudioScriptResolver` (share/action extensions) — because both want
+/// exactly the same thing: a FRESH session per article, so no conversation
+/// context accumulates across a sweep.
+public protocol AudioTrimModelSessionMaking {
+    func makeSession() -> AudioTrimModelSession
+}
+
+/// The production maker: `makeDefault`, and so the one `#available` gate.
+public struct DefaultAudioTrimModelSessionMaker: AudioTrimModelSessionMaking {
+    public init() {}
+
+    public func makeSession() -> AudioTrimModelSession {
+        AudioTrimModelSessionFactory.makeDefault()
+    }
+}

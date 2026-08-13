@@ -26,15 +26,19 @@ enum ArticleSpotlightIndexWiring {
     private static let domainIdentifier = "articles"
     private static let lastIndexedIDsKey = "articleSpotlightIndex.lastIndexedIDs"
 
+    /// The driver holds its sweeper weakly, so this indexer's stands-in object
+    /// is a `static let` of its own rather than a temporary. Both live for the
+    /// process, matching the enum they belong to.
+    private static let sweeper = SpotlightIndexSweeper()
     private static let sweepDriver = ReadingListSweepDriver(
         queueLabel: "com.hsanabria.luna.articleSpotlightIndex",
-        runSweep: { runSweep() })
+        sweeper: ArticleSpotlightIndexWiring.sweeper)
 
     static func install() {
         sweepDriver.install(immediateLaunchSweep: false)
     }
 
-    private static func runSweep() {
+    fileprivate static func runSweep() {
         guard CSSearchableIndex.isIndexingAvailable() else { return }
         let entities = indexableEntities(from: ReadingListStore.shared.items())
 
@@ -75,4 +79,11 @@ enum ArticleSpotlightIndexWiring {
     static func removedIdentifiers(previousIDs: Set<String>, currentIDs: Set<String>) -> [String] {
         Array(previousIDs.subtracting(currentIDs))
     }
+}
+
+/// Carries `ArticleSpotlightIndexWiring`'s sweep to the driver — the indexer is
+/// an enum of statics, so the delegate is this one small object. It tracks no
+/// foreground state on purpose: the index is rebuilt regardless of app state.
+private final class SpotlightIndexSweeper: ReadingListSweeping {
+    func runReadingListSweep() { ArticleSpotlightIndexWiring.runSweep() }
 }

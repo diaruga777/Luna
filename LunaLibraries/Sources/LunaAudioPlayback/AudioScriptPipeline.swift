@@ -27,7 +27,7 @@ public final class AudioScriptPipeline {
     /// shared instance reused across every article) — keeps each article's
     /// on-device conversation/context isolated and small, rather than
     /// accumulating turns across an entire sweep.
-    private let modelSessionFactory: () -> AudioTrimModelSession
+    private let modelSessions: any AudioTrimModelSessionMaking
 
     /// Debounces bursts of `.readingListChanged` (e.g. a multi-item import)
     /// into one sweep.
@@ -37,8 +37,7 @@ public final class AudioScriptPipeline {
     private lazy var sweepDriver = ReadingListSweepDriver(
         queueLabel: "com.hsanabria.luna.audioScriptPipeline",
         debounceInterval: debounceInterval,
-        onForegroundChange: { [weak self] isForeground in self?.isForeground = isForeground },
-        runSweep: { [weak self] in self?.runSweep() })
+        sweeper: self)
     private var isSweeping = false
     /// Guards against kicking off a second concurrent refinement pass for the
     /// same item while an earlier one (from `script(for:content:)` or a
@@ -61,12 +60,12 @@ public final class AudioScriptPipeline {
 
     public init(
         store: ReadingListScriptSource = ReadingListStore.shared,
-        modelSessionFactory: @escaping () -> AudioTrimModelSession = AudioTrimModelSessionFactory.makeDefault,
+        modelSessions: any AudioTrimModelSessionMaking = DefaultAudioTrimModelSessionMaker(),
         debounceInterval: TimeInterval = 1.5
     ) {
         self.store = store
         self.scriptStore = AudioScriptStore(articlesDirectory: store.articlesDirectory)
-        self.modelSessionFactory = modelSessionFactory
+        self.modelSessions = modelSessions
         self.debounceInterval = debounceInterval
     }
 
@@ -151,7 +150,7 @@ public final class AudioScriptPipeline {
         item: ReadingListItem, content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
     ) {
         guard AudioSettings.isIntelligentTrimmingEnabled, isForeground, !isInFlight(item.id) else { return }
-        let session = modelSessionFactory()
+        let session = modelSessions.makeSession()
         guard session.isAvailable else { return }
 
         markInFlight(item.id)
@@ -218,6 +217,17 @@ public final class AudioScriptPipeline {
         let wordCount = spokenBlocks.reduce(0) { $0 + AudioTrimHeuristics.wordCount(text: $1.text) }
         return AudioScript(
             spokenBlocks: spokenBlocks, totalWordCount: wordCount, builderVersion: AudioScript.heuristicBuilderVersion)
+    }
+}
+
+/// The sweep body and the foreground tracking `ReadingListSweepDriver` drives.
+/// Only the scheduling lives in the driver; the reentrancy guard is this
+/// class's own.
+extension AudioScriptPipeline: ReadingListSweepForegroundTracking {
+    public func runReadingListSweep() { runSweep() }
+
+    public func readingListSweepForegroundChanged(to isForeground: Bool) {
+        self.isForeground = isForeground
     }
 }
 

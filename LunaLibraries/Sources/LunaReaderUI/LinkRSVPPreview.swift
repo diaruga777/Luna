@@ -134,6 +134,14 @@ private enum LinkPreviewLoader {
     }
 }
 
+/// The reader hosting a link preview. Told when the preview takes read-aloud over
+/// so the reader stands its own playback down, and again when it hands it back.
+@MainActor
+protocol LinkRSVPPreviewInteractionDelegate: AnyObject {
+    func linkPreviewInteraction(
+        _ interaction: LinkRSVPPreviewInteraction, sourcePlaybackIsSuspended: Bool)
+}
+
 /// Owns one recognizer and one preview. The recognizer remains attached to the source
 /// view, so it continues receiving changes even while the noninteractive overlay is up.
 final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
@@ -142,7 +150,8 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
     private weak var host: UIViewController?
     private weak var sourceView: UIView?
     private let resolveURL: URLResolver
-    private let sourcePlaybackChanged: (Bool) -> Void
+    /// The reader hosting this interaction — hence weak.
+    private weak var delegate: (any LinkRSVPPreviewInteractionDelegate)?
     private let gesture = UILongPressGestureRecognizer()
     private var startPoint = CGPoint.zero
     private var loadTask: Task<Void, Never>?
@@ -159,12 +168,12 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         host: UIViewController,
         sourceView: UIView,
         resolveURL: @escaping URLResolver,
-        sourcePlaybackChanged: @escaping (Bool) -> Void = { _ in }
+        delegate: (any LinkRSVPPreviewInteractionDelegate)? = nil
     ) {
         self.host = host
         self.sourceView = sourceView
         self.resolveURL = resolveURL
-        self.sourcePlaybackChanged = sourcePlaybackChanged
+        self.delegate = delegate
         super.init()
         // The preview begins only after a short STATIONARY hold on the link:
         // `allowableMovement` is deliberately tight, so a touch that starts
@@ -225,7 +234,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
             resetDirectionalHaptics()
             initialHaptic.impactOccurred(intensity: 0.7)
             rampHaptic.prepare()
-            sourcePlaybackChanged(true)
+            delegate?.linkPreviewInteraction(self, sourcePlaybackIsSuspended: true)
             let anchorPoint = sourceView.convert(point, to: host.view)
             showLoading(in: host, touchPoint: anchorPoint)
             loadTask?.cancel()
@@ -240,8 +249,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
                 self.loadingOverlay?.removeFromSuperview()
                 let preview = LinkRSVPPreviewViewController(
                     article: article, url: url, anchorPoint: anchorPoint)
-                preview.onDismiss = { [weak self] in self?.finishPreview() }
-                preview.onAction = { [weak self] action in self?.perform(action, url: url) }
+                preview.delegate = self
                 self.preview = preview
                 host.addChild(preview)
                 preview.view.frame = host.view.bounds
@@ -291,7 +299,7 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
     private func finishPreview() {
         loadingOverlay?.removeFromSuperview()
         preview = nil
-        sourcePlaybackChanged(false)
+        delegate?.linkPreviewInteraction(self, sourcePlaybackIsSuspended: false)
     }
 
     private func showLoading(in host: UIViewController, touchPoint: CGPoint) {
@@ -365,6 +373,16 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
     }
 }
 
+/// What the mounted preview reports back to the interaction that mounted it.
+/// File-scoped: the controller itself is private to this file.
+@MainActor
+private protocol LinkRSVPPreviewDelegate: AnyObject {
+    func linkPreviewDidDismiss(_ preview: LinkRSVPPreviewViewController)
+    func linkPreview(
+        _ preview: LinkRSVPPreviewViewController,
+        didChoose action: LinkPreviewAction, for url: URL)
+}
+
 private final class LinkRSVPPreviewViewController: UIViewController, AudioPlaybackObserver {
     private let article: LinkPreviewArticle
     private let url: URL
@@ -389,8 +407,8 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private var currentWPM = ReaderSettings.baseWPM
     private var selectedAction: LinkPreviewAction?
 
-    var onDismiss: (() -> Void)?
-    var onAction: ((LinkPreviewAction) -> Void)?
+    /// The interaction that mounted this preview — it owns the controller, so weak.
+    weak var delegate: (any LinkRSVPPreviewDelegate)?
 
     private let dimView = UIView()
     private let card = UIVisualEffectView(effect: GlassStyle.barEffect())
@@ -616,7 +634,10 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     func releaseFinger() {
         if let selectedAction {
             let action = selectedAction
-            dismissPreview { [weak self] in self?.onAction?(action) }
+            dismissPreview { [weak self] in
+                guard let self else { return }
+                delegate?.linkPreview(self, didChoose: action, for: url)
+            }
         } else if isLockArmed {
             isLocked = true
             isLockArmed = false
@@ -644,7 +665,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             self.willMove(toParent: nil)
             self.view.removeFromSuperview()
             self.removeFromParent()
-            self.onDismiss?()
+            self.delegate?.linkPreviewDidDismiss(self)
             completion?()
         }
     }
@@ -1009,5 +1030,20 @@ extension LinkRSVPPreviewViewController: RSVPPlaybackClockDelegate {
         index += 1
         showCurrentWord()
         scheduleNext()
+    }
+}
+
+/// The mounted preview's two reports. Both land on the method the interaction
+/// already had for them.
+extension LinkRSVPPreviewInteraction: LinkRSVPPreviewDelegate {
+    fileprivate func linkPreviewDidDismiss(_ preview: LinkRSVPPreviewViewController) {
+        finishPreview()
+    }
+
+    fileprivate func linkPreview(
+        _ preview: LinkRSVPPreviewViewController,
+        didChoose action: LinkPreviewAction, for url: URL
+    ) {
+        perform(action, url: url)
     }
 }

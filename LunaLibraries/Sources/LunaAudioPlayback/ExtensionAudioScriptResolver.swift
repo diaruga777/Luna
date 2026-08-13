@@ -29,7 +29,7 @@ import Foundation
 /// build, and either can upgrade the other's cache entry in place.
 public final class ExtensionAudioScriptResolver {
     private let scriptStore: AudioScriptStore
-    private let modelSessionFactory: () -> AudioTrimModelSession
+    private let modelSessions: any AudioTrimModelSessionMaking
 
     /// The in-flight opportunistic refinement, if any — cancelled by
     /// `cancelInFlightRefinement()` when the extension is tearing down (the
@@ -55,14 +55,14 @@ public final class ExtensionAudioScriptResolver {
     ///   - articlesDirectory: `ReadingListStore.articlesDirectory` in
     ///     production (App-Group-backed, readable from an extension); tests
     ///     pass a scratch directory.
-    ///   - modelSessionFactory: defaults to the same iOS-26-gated factory
+    ///   - modelSessions: defaults to the same iOS-26-gated maker
     ///     `AudioScriptPipeline` uses; tests inject a `FakeTrimModelSession`.
     public init(
         articlesDirectory: URL,
-        modelSessionFactory: @escaping () -> AudioTrimModelSession = AudioTrimModelSessionFactory.makeDefault
+        modelSessions: any AudioTrimModelSessionMaking = DefaultAudioTrimModelSessionMaker()
     ) {
         self.scriptStore = AudioScriptStore(articlesDirectory: articlesDirectory)
-        self.modelSessionFactory = modelSessionFactory
+        self.modelSessions = modelSessions
     }
 
     deinit {
@@ -116,7 +116,7 @@ public final class ExtensionAudioScriptResolver {
         content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
     ) {
         guard AudioSettings.isIntelligentTrimmingEnabled else { return }
-        let session = modelSessionFactory()
+        let session = modelSessions.makeSession()
         // The availability check is exactly what already folds "unavailable
         // for any reason" (Apple Intelligence off, unsupported language,
         // model not ready, pre-iOS-26) into a silent no-op — including

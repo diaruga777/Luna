@@ -29,12 +29,13 @@ import UIKit
 /// 2. the clip's own first frame with a play badge over it.
 ///
 /// Hosted (the onboarding save lesson), it also hands the clip to the session, so
-/// the SAME video the Safari lesson taught plays over the sheet — the host's
-/// `onMediaFileReady` path, which the real media screen uses for a real file.
-/// In a real extension there is no session and the screen simply rests on step 2.
+/// the SAME video the Safari lesson taught plays over the sheet — the delegate's
+/// `hostedShareSession(mediaFileReadyAt:)`, which the real media screen uses for
+/// a real file. In a real extension there is no session and the screen simply
+/// rests on step 2.
 @MainActor
 final class ShareSetupPracticeDownloadViewController: UIViewController,
-    ShareSetupPracticePresenting {
+    ShareSetupPracticePresenting, HostedShareBeatReplaying {
     var onDone: (() -> Void)?
 
     private let app: LunaApp
@@ -126,9 +127,7 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
                 lessThanOrEqualTo: doneButton.topAnchor, constant: -16),
         ])
 
-        HostedShareSession.current?.onReplayBeat = { [weak self] in
-            self?.beginDownloadBeat()
-        }
+        HostedShareSession.current?.beatReplayer = self
         beginDownloadBeat()
     }
 
@@ -197,6 +196,11 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
 
     // MARK: - The beat
 
+    /// The looping lesson's next pass, played off the clip already on disk.
+    func replayHostedShareBeat() {
+        beginDownloadBeat()
+    }
+
     /// Back to the top: the bar at zero under the media glyph, then filling on
     /// the rehearsal's clock. Re-entered on every pass of a looping lesson.
     private func beginDownloadBeat() {
@@ -228,7 +232,7 @@ final class ShareSetupPracticeDownloadViewController: UIViewController,
         }
 
         guard let session = HostedShareSession.current else { return }
-        session.onMediaFileReady?(videoURL)
+        session.delegate?.hostedShareSession(mediaFileReadyAt: videoURL)
     }
 
     // MARK: -

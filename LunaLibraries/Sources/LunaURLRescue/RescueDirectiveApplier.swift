@@ -9,17 +9,41 @@ import LunaIngest
 import LunaModels
 import LunaURLClassification
 
-/// Executes a validated `RescueDirective`. Re-entry into the pipeline uses the
-/// injected `runPipeline` closure whose default is the RAW
+/// Re-enters the ingest pipeline once, on behalf of a rescue directive.
+///
+/// **The no-recursion invariant lives here.** The only conformer that may ever
+/// be installed in the app is `RawIngestPipelineReentry`, which calls the RAW
+/// `IngestPipeline.processResolved` — NEVER the rescuing wrapper. That is the
+/// structural guarantee that a rescue can never trigger a second LLM pass:
+/// there is no path from a re-entry back into rescue. A conformer that reached
+/// the rescuing wrapper would break it, which is exactly why the type is named
+/// for the raw pipeline rather than for "the pipeline".
+public protocol RescuePipelineReentering {
+    func reprocess(_ input: IngestInput) async -> IngestResult
+}
+
+/// The shipped conformer, and the whole of the invariant above: the RAW
+/// pipeline, exactly as the default closure it replaces was.
+public struct RawIngestPipelineReentry: RescuePipelineReentering {
+    public init() {}
+
+    public func reprocess(_ input: IngestInput) async -> IngestResult {
+        await IngestPipeline.processResolved(input)
+    }
+}
+
+/// Executes a validated `RescueDirective`. Re-entry into the pipeline goes
+/// through `RescuePipelineReentering`, whose shipped conformer is the RAW
 /// `IngestPipeline.processResolved` — never a rescuing wrapper — which is the
 /// structural guarantee that a rescue can never trigger a second LLM pass.
 struct RescueDirectiveApplier {
     let fetcher: HTMLFetching
     let scriptRunner: RescueScriptRunning
     let mediaResolver: SocialMediaResolving
-    /// MUST be the raw pipeline; the integration layer injects
-    /// `IngestPipeline.processResolved`, never its rescuing wrapper.
-    let runPipeline: (IngestInput) async -> IngestResult
+    /// MUST be the raw pipeline; the integration layer installs
+    /// `RawIngestPipelineReentry`, never anything that reaches the rescuing
+    /// wrapper.
+    let runPipeline: any RescuePipelineReentering
 
     /// `method` overrides how a successful outcome is LABELLED — the search leg
     /// applies an ordinary reroute directive but wants it counted as `.search`,
@@ -64,7 +88,7 @@ struct RescueDirectiveApplier {
         let forceArticle = request.hint == .article
         if reroute.headers.isEmpty {
             let input = IngestInput(url: reroute.url, source: request.source, forceArticle: forceArticle)
-            return classify(await runPipeline(input), request: request, method: method)
+            return classify(await runPipeline.reprocess(input), request: request, method: method)
         }
         // Custom headers → fetch ourselves and hand the pipeline the HTML. Use the
         // existing HTMLFetching variants when they fit, else the header fetch.
@@ -73,7 +97,7 @@ struct RescueDirectiveApplier {
         let input = IngestInput(
             url: reroute.url, source: request.source, prefetchedHTML: html,
             forceArticle: forceArticle, trustsPrefetchedHTML: false)
-        return classify(await runPipeline(input), request: request, method: method)
+        return classify(await runPipeline.reprocess(input), request: request, method: method)
     }
 
     private func fetchWithHeaders(url: URL, headers: RescueHeaders) async -> String? {
@@ -102,7 +126,7 @@ struct RescueDirectiveApplier {
             let input = IngestInput(
                 url: script.pageURL, source: request.source, prefetchedHTML: html,
                 forceArticle: forceArticle, trustsPrefetchedHTML: false)
-            return classify(await runPipeline(input), request: request, method: .webJS)
+            return classify(await runPipeline.reprocess(input), request: request, method: .webJS)
         case .mediaURL:
             guard let url = URL(string: result.trimmingCharacters(in: .whitespacesAndNewlines)),
                   let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {

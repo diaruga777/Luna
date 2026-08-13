@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import LunaDesignSystem
 import LunaIngest
 import UIKit
 
@@ -20,8 +21,12 @@ import UIKit
 ///
 /// Extension-safe: lives in ShareKit (compiled into both extension targets), depends
 /// only on UIKit + ReaderKit value types.
+/// Every host is also the drop card's delegate: the card is presented in the
+/// host's own chrome, and Done on it means the same thing to all of them (see the
+/// default below). Declaring it here is what lets the driver hand the card
+/// `host` directly instead of an adapter per call site.
 @MainActor
-public protocol ExtensionHost: AnyObject {
+public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate {
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
     /// reader-vs-save-silently fork in the unified presenter. Kind-neutral
@@ -56,5 +61,13 @@ public protocol ExtensionHost: AnyObject {
     /// the rescue-failure card's "Finish in Luna" step; a silent failure is fine
     /// because the card always shows manual fallback instructions too.
     func openURL(_ url: URL)
+}
+
+public extension ExtensionHost {
+    /// Nothing was saved, so the drop card's Done completes the request without
+    /// a "Saved" checkmark — the same answer for every extension host.
+    func unsupportedSaveCardDidFinish(_ card: UnsupportedSaveCardViewController) {
+        completeSilently()
+    }
 }
 

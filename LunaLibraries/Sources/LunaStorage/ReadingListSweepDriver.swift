@@ -6,26 +6,44 @@
 import Foundation
 import UIKit
 
+/// What a `ReadingListSweepDriver` drives: the consumer's own sweep body.
+///
+/// The driver holds this WEAKLY — the two instance consumers own their driver as
+/// a `lazy var`, so a strong reference would be a cycle; the Spotlight indexer's
+/// sweeper and driver are both `static let`s and live for the process.
+public protocol ReadingListSweeping: AnyObject {
+    /// One sweep pass, called on the driver's own utility queue. The consumer
+    /// owns its reentrancy guard where it wants one — not everybody needs one;
+    /// the Spotlight indexer's sweep is fully synchronous and never overlaps.
+    func runReadingListSweep()
+}
+
+/// A sweeper that also wants foreground/background transitions.
+///
+/// Conforming is what makes the driver install the two `UIApplication`
+/// observers at all: a plain `ReadingListSweeping` gets none, which is how the
+/// Spotlight indexer sweeps regardless of app state.
+public protocol ReadingListSweepForegroundTracking: ReadingListSweeping {
+    /// `true` on `didBecomeActiveNotification`, `false` on
+    /// `didEnterBackgroundNotification`. Called BEFORE the driver's own
+    /// foreground-transition sweep is scheduled.
+    func readingListSweepForegroundChanged(to isForeground: Bool)
+}
+
 /// The debounced `.readingListChanged` sweep scaffolding shared by
 /// `AudioScriptPipeline` (LunaAudioPlayback), `URLRescueCoordinator`
 /// (LunaReadingList), and the Spotlight indexer (`Luna/ArticleSpotlightIndexWiring`):
 /// a burst of `.readingListChanged` posts coalesces into one sweep after
 /// `debounceInterval`, on a dedicated utility queue.
 ///
-/// This type owns only the SCHEDULING. Each consumer supplies its own sweep
-/// body (`runSweep`) and, where it wants one, its own reentrancy guard — not
-/// every consumer needs one; the Spotlight indexer's sweep is fully
-/// synchronous and never overlaps itself.
+/// This type owns only the SCHEDULING; the sweep body belongs to the delegate.
 public final class ReadingListSweepDriver {
     private let debounceInterval: TimeInterval
     private let workQueue: DispatchQueue
-    private let runSweep: () -> Void
-    /// Nil (the default) installs no foreground/background observers at all —
-    /// the Spotlight indexer sweeps regardless of app state. Non-nil is told
-    /// `true` on `didBecomeActiveNotification` and `false` on
-    /// `didEnterBackgroundNotification`, BEFORE the driver's own
-    /// foreground-transition sweep runs.
-    private let onForegroundChange: ((Bool) -> Void)?
+    private weak var sweeper: (any ReadingListSweeping)?
+    /// The same object when it tracks foreground state, else nil — and nil is
+    /// what suppresses the foreground/background observers entirely.
+    private weak var foregroundTracker: (any ReadingListSweepForegroundTracking)?
 
     private var installed = false
     private var notificationObserver: NSObjectProtocol?
@@ -39,17 +57,17 @@ public final class ReadingListSweepDriver {
     ///   - debounceInterval: seconds to coalesce a burst of
     ///     `.readingListChanged` into one sweep. Every current consumer uses
     ///     the default.
-    ///   - onForegroundChange: see the property doc above.
-    ///   - runSweep: the consumer's sweep body, called on `queueLabel`'s queue.
+    ///   - sweeper: the consumer, held weakly. Conform it to
+    ///     `ReadingListSweepForegroundTracking` to also get foreground
+    ///     transitions.
     public init(
         queueLabel: String, debounceInterval: TimeInterval = 1.5,
-        onForegroundChange: ((Bool) -> Void)? = nil,
-        runSweep: @escaping () -> Void
+        sweeper: any ReadingListSweeping
     ) {
         self.debounceInterval = debounceInterval
         self.workQueue = DispatchQueue(label: queueLabel, qos: .utility)
-        self.onForegroundChange = onForegroundChange
-        self.runSweep = runSweep
+        self.sweeper = sweeper
+        self.foregroundTracker = sweeper as? any ReadingListSweepForegroundTracking
     }
 
     deinit {
@@ -59,7 +77,7 @@ public final class ReadingListSweepDriver {
     }
 
     /// Idempotent. Observes debounced `.readingListChanged`, plus
-    /// foreground/background when `onForegroundChange` was given, and runs
+    /// foreground/background when the sweeper tracks it, and runs
     /// one launch sweep — `immediateLaunchSweep` true (the default) schedules
     /// it at once; false schedules it debounced, exactly like an ordinary
     /// burst (the Spotlight indexer's launch sweep waits the same interval).
@@ -69,16 +87,18 @@ public final class ReadingListSweepDriver {
         notificationObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
         ) { [weak self] _ in self?.scheduleSweep(debounced: true) }
-        if onForegroundChange != nil {
+        if foregroundTracker != nil {
             foregroundObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                self?.onForegroundChange?(true)
+                self?.foregroundTracker?.readingListSweepForegroundChanged(to: true)
                 self?.scheduleSweep(debounced: false)
             }
             backgroundObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-            ) { [weak self] _ in self?.onForegroundChange?(false) }
+            ) { [weak self] _ in
+                self?.foregroundTracker?.readingListSweepForegroundChanged(to: false)
+            }
         }
         scheduleSweep(debounced: !immediateLaunchSweep)
     }
@@ -87,7 +107,7 @@ public final class ReadingListSweepDriver {
     /// (`debounced: false`) or after `debounceInterval`.
     public func scheduleSweep(debounced: Bool) {
         debounceWorkItem?.cancel()
-        let work = DispatchWorkItem { [runSweep] in runSweep() }
+        let work = DispatchWorkItem { [weak sweeper] in sweeper?.runReadingListSweep() }
         debounceWorkItem = work
         workQueue.asyncAfter(deadline: .now() + (debounced ? debounceInterval : 0), execute: work)
     }

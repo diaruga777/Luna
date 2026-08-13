@@ -1055,21 +1055,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             host: self,
             sourceView: linkPill,
             resolveURL: { [weak self] _ in self?.linkPillURL },
-            sourcePlaybackChanged: { [weak self] previewIsActive in
-                guard let self else { return }
-                if previewIsActive {
-                    self.wasPlayingBeforeLinkPreview = self.isPlaying
-                    if let center = self.speechCenter, self.centerOwnsItem,
-                       center.isAudiblyPlaying {
-                        center.pause()
-                    } else if self.isPlaying {
-                        self.pause()
-                    }
-                } else if self.wasPlayingBeforeLinkPreview {
-                    self.wasPlayingBeforeLinkPreview = false
-                    self.play()
-                }
-            })
+            delegate: self)
     }
 
     private func configureControls() {
@@ -2081,5 +2067,26 @@ extension RSVPViewController: UIGestureRecognizerDelegate {
             hitView = candidate.superview
         }
         return true
+    }
+}
+
+/// A link preview owns read-aloud while it is up: the speed read stands down
+/// (through the center when the center owns this item) and resumes afterwards
+/// only if it was actually running.
+extension RSVPViewController: LinkRSVPPreviewInteractionDelegate {
+    func linkPreviewInteraction(
+        _ interaction: LinkRSVPPreviewInteraction, sourcePlaybackIsSuspended: Bool
+    ) {
+        if sourcePlaybackIsSuspended {
+            wasPlayingBeforeLinkPreview = isPlaying
+            if let center = speechCenter, centerOwnsItem, center.isAudiblyPlaying {
+                center.pause()
+            } else if isPlaying {
+                pause()
+            }
+        } else if wasPlayingBeforeLinkPreview {
+            wasPlayingBeforeLinkPreview = false
+            play()
+        }
     }
 }

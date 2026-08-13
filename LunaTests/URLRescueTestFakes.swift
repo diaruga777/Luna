@@ -99,11 +99,11 @@ final class FakeRescueScriptRunner: RescueScriptRunning {
 
 /// Records every re-entered IngestInput and returns scripted results in order
 /// (last result repeats).
-final class RecordingPipeline {
+final class RecordingPipeline: RescuePipelineReentering {
     private(set) var inputs: [IngestInput] = []
     private var results: [IngestResult]
     init(results: [IngestResult]) { self.results = results }
-    func run(_ input: IngestInput) async -> IngestResult {
+    func reprocess(_ input: IngestInput) async -> IngestResult {
         inputs.append(input)
         if results.count > 1 { return results.removeFirst() }
         return results.first ?? IngestResult(url: input.url, outcome: .failed(nil))
@@ -134,11 +134,11 @@ final class FakeRescueTraceStore: RescueTraceStoring {
 }
 
 /// A search provider returning canned results and recording each query.
-final class FakeRescueSearch {
+final class FakeRescueSearch: RescueSearching {
     var results: [RescueSearchResult]
     private(set) var queries: [String] = []
     init(results: [RescueSearchResult] = []) { self.results = results }
-    func run(_ query: String) async -> [RescueSearchResult] {
+    func searchResults(forQuery query: String) async -> [RescueSearchResult] {
         queries.append(query)
         return results
     }

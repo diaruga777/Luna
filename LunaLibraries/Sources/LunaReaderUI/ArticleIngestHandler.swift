@@ -9,21 +9,30 @@ import LunaModels
 import LunaStorage
 import Foundation
 
+/// Told when a saved item flips `.ready`.
+///
+/// The one production conformer wraps `ArticleSendCoordinator` (LunaSend), which
+/// sits outside LunaReaderUI's dependency tier — so it is installed by the app
+/// shell rather than reached directly.
+public protocol ArticleReadinessObserving {
+    func articleBecameReady(_ item: ReadingListItem)
+}
+
 /// Article-kind ingestion persistence, extracted from `ReadingListIngestor` so
 /// only article-handling apps carry the reader/archive/document machinery. The
 /// app shell installs this behind `IngestorKindHandlers.article` (via a thin
-/// adapter in its `KindWiring` variant); `articleBecameReady` is injected
+/// adapter in its `KindWiring` variant); the readiness observer is injected
 /// because the send pipeline (`ArticleSendCoordinator`, LunaSend) sits outside
 /// LunaReaderUI's dependency tier.
 public final class ArticleIngestHandler {
 
-    /// Hook run when a saved item flips `.ready` — the app shell wires it to
-    /// `ArticleSendCoordinator.articleBecameReady` so Kindle/ereader auto-sends
-    /// keep firing exactly as before the extraction.
-    private let articleBecameReady: (ReadingListItem) -> Void
+    /// Told when a saved item flips `.ready` — the app shell wires this to
+    /// `ArticleSendCoordinator` so Kindle/ereader auto-sends keep firing exactly
+    /// as before the extraction.
+    private let readinessObserver: any ArticleReadinessObserving
 
-    public init(articleBecameReady: @escaping (ReadingListItem) -> Void) {
-        self.articleBecameReady = articleBecameReady
+    public init(readinessObserver: any ArticleReadinessObserving) {
+        self.readinessObserver = readinessObserver
     }
 
     // MARK: - Articles
@@ -44,7 +53,7 @@ public final class ArticleIngestHandler {
         // images get stable placeholders and load later.
         let updated = store.saveContent(initialContent, for: item)
         if updated.state == .ready {
-            articleBecameReady(updated)
+            readinessObserver.articleBecameReady(updated)
             // Background-preload this article's links so the inline link viewer opens
             // instantly. Non-blocking; no-op when the depth setting is 0.
             PreloadCoordinator.shared.preload(rootID: updated.id)
@@ -102,7 +111,7 @@ public final class ArticleIngestHandler {
         }
         let updated = store.saveContent(content, for: item)
         if updated.state == .ready {
-            articleBecameReady(updated)
+            readinessObserver.articleBecameReady(updated)
         }
     }
 

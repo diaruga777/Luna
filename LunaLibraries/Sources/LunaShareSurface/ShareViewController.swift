@@ -180,8 +180,7 @@ open class ShareViewController: UIViewController {
     private func setUpStatusUI() {
         view.backgroundColor = LunaColors.background
         let loading = ExtensionLoadingViewController(
-            initialText: L10n.string("Common_openingInLuna")
-        ) { [weak self] in self?.complete() }
+            initialText: L10n.string("Common_openingInLuna"), exitDelegate: self)
         loadingScreen = loading
         hostInNavigation(loading)
     }
@@ -221,7 +220,7 @@ open class ShareViewController: UIViewController {
             // happen until somebody taps Close, and an in-app host has no
             // finger to do it with.
             if self.isHosted {
-                HostedShareSession.current?.onReachedTerminal?()
+                HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
             }
         }
     }
@@ -383,7 +382,7 @@ open class ShareViewController: UIViewController {
         SharedDiagnosticLog.record(
             "hosted surface saved url \(url.absoluteString)", category: "share")
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
-            HostedShareSession.current?.onDidAppendRow?(row.id)
+            HostedShareSession.current?.delegate?.hostedShareSessionDidAppendRow(row.id)
         }
         presentSavedOrReader(url: url)
     }
@@ -564,7 +563,7 @@ open class ShareViewController: UIViewController {
     private func presentProductSetupPractice(_ url: URL) {
         SharedReadingListAppender.append(urlString: url.absoluteString)
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
-            HostedShareSession.current?.onDidAppendRow?(row.id)
+            HostedShareSession.current?.delegate?.hostedShareSessionDidAppendRow(row.id)
         }
         recordShareSurfaceRun()
         guard let presenter = ShareKindPresenters.product else {
@@ -676,7 +675,7 @@ open class ShareViewController: UIViewController {
                 guard let self else { return }
                 let error = UnsupportedSaveCardViewController(
                     owner: owner, currentApp: .current)
-                error.onDone = { [weak self] in self?.completeSilently() }
+                error.delegate = self
                 self.presentModally(error)
             }
         }
@@ -698,7 +697,7 @@ open class ShareViewController: UIViewController {
         // so the old line would have been a silent no-op that never ended the
         // flow. Same chokepoint, so it still happens at most once.
         if let hostedFinish {
-            HostedShareSession.current?.onReachedTerminal?()
+            HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
             hostedFinish()
             return
         }
@@ -838,11 +837,7 @@ open class ShareViewController: UIViewController {
     ) {
         guard supportsSwipeDownDismissal else { return }
         navigationController.allowsSwipeDownToDismiss = true
-        navigationController.onSwipeDownToDismiss = { [weak self] in
-            // Use the same completion path as Done/Close, including cancelling
-            // any attachment-load watchdog before the request is finished.
-            self?.completeSilently()
-        }
+        navigationController.swipeDismissDelegate = self
     }
 
     private func showSavedBadge() {
@@ -913,7 +908,7 @@ extension ShareViewController: ExtensionHost {
         // route out of one is a tap. An in-app host is told so it can hold the
         // sheet on it and then take it away itself.
         if isHosted {
-            HostedShareSession.current?.onReachedTerminal?()
+            HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
         }
         if isActionExtension {
             // The wait screen is being replaced, so retire it rather than leaving its
@@ -953,5 +948,25 @@ extension ShareViewController: ExtensionHost {
         ])
         navigationController.didMove(toParent: self)
         actionNavigationController = navigationController
+    }
+}
+
+/// The wait screen's header exit completes the request, same as Done.
+extension ShareViewController: ExtensionLoadingExitDelegate {
+    public func extensionLoadingViewControllerDidExit(
+        _ screen: ExtensionLoadingViewController
+    ) {
+        complete()
+    }
+}
+
+/// A sheet-wide swipe down exits on the same completion path as Done/Close,
+/// including cancelling any attachment-load watchdog before the request is
+/// finished.
+extension ShareViewController: ExtensionSwipeDismissDelegate {
+    public func extensionNavigationControllerDidSwipeToDismiss(
+        _ navigationController: ExtensionNavigationController
+    ) {
+        completeSilently()
     }
 }

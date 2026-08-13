@@ -8,6 +8,21 @@ import LunaModels
 import UIKit
 import WebKit
 
+/// The three host legs the extension's failure card needs.
+@MainActor
+public protocol RescueFailureCardDelegate: AnyObject {
+    /// Records the pending rescue, so the app's foreground drain picks it up.
+    func rescueFailureCardDidRequestRescue(_ card: RescueFailureViewController)
+
+    /// Best-effort deep-link open. An extension cannot observe whether it
+    /// succeeded, which is why the card always then leaves the manual "Open Luna
+    /// to finish saving" reassurance up.
+    func rescueFailureCard(_ card: RescueFailureViewController, openApp url: URL)
+
+    /// The user is done with the card.
+    func rescueFailureCardDidFinish(_ card: RescueFailureViewController)
+}
+
 /// The extension failure card shown when a share/action save can't be loaded.
 ///
 /// Deliberately the SAME card as the in-app failed save
@@ -25,9 +40,11 @@ import WebKit
 public final class RescueFailureViewController: UIViewController {
     private let url: URL?
     private let rescueURL: URL?
-    private let openApp: (URL) -> Void
-    private let onFinish: () -> Void
-    private let onDone: () -> Void
+    /// Held STRONGLY, and deliberately: the conformer is a small coordinator the
+    /// save flow makes for this card, not the card's owner, so nothing cycles —
+    /// and it has to outlive the driver that raised the card, which is a
+    /// temporary. Nil in a staged card, where every leg is a no-op.
+    private let delegate: (any RescueFailureCardDelegate)?
 
     /// Matches the in-app card's geometry so the two read as one design.
     private static let webInset: CGFloat = 8
@@ -47,23 +64,16 @@ public final class RescueFailureViewController: UIViewController {
     /// - url: the page that failed. Nil ⇒ the card shows its chrome with no page.
     /// - rescueURL: this app's `<scheme>://rescue` deep link (built by the driver);
     ///   nil ⇒ only the manual "Open Luna" instruction is shown.
-    /// - openApp: best-effort deep-link open (host.openURL — extensions can't
-    ///   observe whether it succeeded, so the card always then shows the manual
-    ///   "Open Luna to finish saving" reassurance; the app's foreground drain
-    ///   picks the record up regardless).
-    /// - onFinish: records the pending rescue.
+    /// - delegate: the host legs — the deep-link open, the pending-rescue record,
+    ///   and completion.
     public init(
         url: URL?,
         rescueURL: URL?,
-        openApp: @escaping (URL) -> Void,
-        onFinish: @escaping () -> Void,
-        onDone: @escaping () -> Void
+        delegate: (any RescueFailureCardDelegate)?
     ) {
         self.url = url
         self.rescueURL = rescueURL
-        self.openApp = openApp
-        self.onFinish = onFinish
-        self.onDone = onDone
+        self.delegate = delegate
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -247,8 +257,9 @@ public final class RescueFailureViewController: UIViewController {
     }
 
     @objc private func finishTapped() {
-        onFinish()   // record the pending request first — so the open never loses it
-        if let url = rescueURL { openApp(url) }
+        // Record the pending request first — so the open never loses it.
+        delegate?.rescueFailureCardDidRequestRescue(self)
+        if let url = rescueURL { delegate?.rescueFailureCard(self, openApp: url) }
         // We can't observe whether the deep-link open succeeded from an extension,
         // so always leave the manual instruction (the app's foreground drain is the
         // real guarantee).
@@ -257,12 +268,16 @@ public final class RescueFailureViewController: UIViewController {
         doneButton.isHidden = false
     }
 
-    @objc private func cancelTapped() { onDone() }
+    @objc private func cancelTapped() {
+        delegate?.rescueFailureCardDidFinish(self)
+    }
 
     #if DEBUG
     /// Test seam: fires the same record-the-request path the button does, without
     /// synthesizing a touch on a card that was never put in a window.
-    public func recordPendingRescueForTesting() { onFinish() }
+    public func recordPendingRescueForTesting() {
+        delegate?.rescueFailureCardDidRequestRescue(self)
+    }
     #endif
 }
 

@@ -57,7 +57,7 @@ final class AudioPlaybackCenterTests: XCTestCase {
     private func makeCenter() -> AudioPlaybackCenter {
         AudioPlaybackCenter(
             store: store, renderer: renderer, positionStore: positionStore,
-            sessionCoordinator: session, engineFactory: { [engine] _ in engine! })
+            sessionCoordinator: session, engines: FixedAudioEngineMaker(engine!))
     }
 
     /// Starts playback of a fixture article and waits for the first block to

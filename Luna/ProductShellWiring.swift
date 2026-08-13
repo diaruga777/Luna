@@ -62,8 +62,13 @@ enum ProductShellWiring {
     /// Runs one price-refresh pass and returns the processed-tracker count. Its
     /// presence on `KindWiring` is what arms the price-refresh BGTask
     /// registration/scheduling in AppDelegate.
-    static let priceRefreshRunner: (() async -> Int) = {
-        await PriceRefreshCoordinator.shared.refreshAndNotify().count
+    static let priceRefreshRunner: any PriceRefreshRunning = PriceRefreshPass()
+
+    /// The installed product leg of the price-refresh background job.
+    private struct PriceRefreshPass: PriceRefreshRunning {
+        func runPriceRefresh() async -> Int {
+            await PriceRefreshCoordinator.shared.refreshAndNotify().count
+        }
     }
 
     /// Brings the tracker's card to the centre of the deck and opens its

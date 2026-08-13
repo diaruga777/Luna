@@ -6,7 +6,7 @@
 //  compiled only into product-handling app targets (Price Tracker + the central
 //  Luna app; excluded from the others via the synchronized group's membership
 //  exceptions). Their `KindWiring` variants call `install()`, which fills
-//  `ActionButtonIntentSupport.productComparisonDocument`; in article/media-only
+//  `ActionButtonIntentSupport.productComparison`; in article/media-only
 //  apps the seam stays nil and the intents never look for a comparison, exactly
 //  as `MediaIntentHandoff` works for downloads.
 //
@@ -28,8 +28,13 @@ enum ProductIntentHandoff {
     static let freshnessInterval: TimeInterval = 24 * 60 * 60
 
     static func install() {
-        ActionButtonIntentSupport.productComparisonDocument = { urlString in
-            await document(forURLString: urlString)
+        ActionButtonIntentSupport.productComparison = ProductComparisonLeg()
+    }
+
+    /// The installed product leg: the intents' one question over `document`.
+    private struct ProductComparisonLeg: IntentProductComparisonProviding {
+        func comparisonDocumentURL(forURLString urlString: String) async -> URL? {
+            await ProductIntentHandoff.document(forURLString: urlString)
         }
     }
 

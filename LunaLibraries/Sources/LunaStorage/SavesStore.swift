@@ -434,10 +434,9 @@ public final class SavesStore {
         }
     }
 
-    /// What `saveReaderExitPosition` should do with `lastScrollOffset` — the old
-    /// `scrollOffset: Double?` + `clearScrollOffset: Bool` pair let a caller pass
-    /// both a value AND clear at the same time (meaningless, and one caller had
-    /// to derive the bool from the same optional it was already passing).
+    /// What `saveReaderExitPosition` should do with `lastScrollOffset`: leave it
+    /// alone, clear it, or set it to a new value. A plain optional double can't
+    /// tell "clear" from "leave alone", so this is its own type instead.
     public enum ScrollOffsetEdit: Equatable {
         case unchanged
         case clear

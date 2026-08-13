@@ -5,6 +5,14 @@
 
 import Foundation
 
+/// Who this install is, for the export header. The mail layer lives above
+/// LunaStorage, so the app shell installs the answer at launch
+/// (`DiagnosticLog.exportIdentityProvider`).
+public protocol DiagnosticExportIdentityProviding {
+    /// The connected sending account, or a placeholder when there is none.
+    var exportIdentity: String { get }
+}
+
 /// Persistent, shareable diagnostic log.
 ///
 /// Mirrors key runtime events (push registration, CloudKit subscription, inbox
@@ -97,18 +105,18 @@ public final class DiagnosticLog: @unchecked Sendable {
         }
     }
 
-    /// Messaging-identity context for the export header, injected by the main
+    /// Messaging-identity context for the export header, installed by the main
     /// app at launch (the mail layer lives above storage, so it's threaded in
-    /// rather than referenced directly). Defaults to a placeholder in contexts
-    /// that don't set it (extensions, tests).
-    public static var exportIdentityProvider: () -> String = { "none" }
+    /// rather than referenced directly). Nil in contexts that don't install one
+    /// (extensions, tests), where the header prints the placeholder below.
+    public static var exportIdentityProvider: (any DiagnosticExportIdentityProviding)?
 
     /// Device, build, and identity context, prepended to exports.
     private func header() -> String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        let identity = Self.exportIdentityProvider()
+        let identity = Self.exportIdentityProvider?.exportIdentity ?? "none"
         let exportedAt = ISO8601DateFormatter().string(from: Date())
         return """
         Luna diagnostics

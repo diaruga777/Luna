@@ -13,7 +13,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     private var store: ReadingListStore!
     private var ledger: RescueLedgerStore!
     private var pending: PendingRescueRequestStore!
-    private var savedEngine: URLRescueCoordinator.Engine?
+    private var savedEngine: (any URLRescueEngineBridging)?
 
     override func setUp() {
         super.setUp()
@@ -32,7 +32,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     }
 
     /// A fake engine recording each perform call; returns a configurable result.
-    private final class RecordingEngine {
+    private final class RecordingEngine: URLRescueEngineBridging {
         var result: URLRescueCoordinator.RescueRunResult
         var available: Bool
         private(set) var performedIDs: [UUID] = []
@@ -47,16 +47,16 @@ final class URLRescueCoordinatorTests: XCTestCase {
             self.init(result: succeed ? .advanced : .notRecovered,
                       available: available, expectation: expectation)
         }
-        func engine() -> URLRescueCoordinator.Engine {
-            URLRescueCoordinator.Engine(
-                isAvailable: { self.available },
-                perform: { item, hint, interactive in
-                    self.performedIDs.append(item.id)
-                    self.performedHints.append(hint)
-                    self.performedInteractive.append(interactive)
-                    self.expectation?.fulfill()
-                    return self.result
-                })
+        var isRescueAvailable: Bool { available }
+
+        func performRescue(
+            for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+        ) async -> URLRescueCoordinator.RescueRunResult {
+            performedIDs.append(item.id)
+            performedHints.append(hint)
+            performedInteractive.append(interactive)
+            expectation?.fulfill()
+            return result
         }
     }
 
@@ -73,7 +73,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     func testManualRescueRunsForATappedItem() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: true, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
@@ -87,7 +87,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     func testInlineFailureTriggersOneAttempt() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: false, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
@@ -101,7 +101,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     /// the debounced sweep rather than rescued inline.
     func testNonInteractiveInlineFailureDoesNotTrigger() {
         let fake = RecordingEngine(succeed: false)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
@@ -115,7 +115,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
 
     func testEngineUnavailableSkips() {
         let fake = RecordingEngine(succeed: true, available: false)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
         coordinator.requestManualRescue(itemID: item.id, hint: .article)
@@ -128,7 +128,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     func testDrainPendingFindsOrAddsAndPassesHint() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: true, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
 
         pending.append(PendingRescueRequest(urlString: "https://new.example.com/x",
@@ -245,7 +245,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: false, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = URLRescueCoordinator(
             store: store, ledger: ledger, pending: pending, failures: failures)
         let item = failedItem()
@@ -259,7 +259,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: true, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = URLRescueCoordinator(
             store: store, ledger: ledger, pending: pending, failures: failures)
         let item = failedItem()
@@ -278,7 +278,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(result: .transient, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = URLRescueCoordinator(
             store: store, ledger: ledger, pending: pending, failures: failures)
         let item = failedItem()
@@ -295,7 +295,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(result: .surfaceDropped, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = URLRescueCoordinator(
             store: store, ledger: ledger, pending: pending, failures: failures)
         let item = failedItem()
@@ -314,7 +314,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     func testAGuardrailedRescueMarksTheItemPermanentlyBlocked() {
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(result: .guardrailed, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
 
@@ -328,7 +328,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
     func testAGuardrailedItemIsNeverAttemptedAgain() {
         ledger.recordGuardrail(UUID())   // an unrelated row must not matter
         let fake = RecordingEngine(succeed: false)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = makeCoordinator()
         let item = failedItem()
         ledger.recordGuardrail(item.id)
@@ -363,7 +363,7 @@ final class URLRescueCoordinatorTests: XCTestCase {
         let failures = SaveFailureStore(containerURL: tempDir)
         let exp = expectation(description: "perform")
         let fake = RecordingEngine(succeed: false, expectation: exp)
-        URLRescueCoordinator.engine = fake.engine()
+        URLRescueCoordinator.engine = fake
         let coordinator = URLRescueCoordinator(
             store: store, ledger: ledger, pending: pending, failures: failures)
         let item = failedItem()

@@ -18,12 +18,19 @@ import LunaURLRescue
 /// variants (`mediaRescueStarter`; `rescueProductInfo` consumed by product
 /// wirings for the price editor's "Ask Apple Intelligence" resolver). See
 /// `claudedocs/url-rescue.md`.
+/// Downloads the engine-resolved assets of a media rescue without re-running
+/// platform resolution (the source page already failed to resolve normally).
+/// Installed by media apps' `KindWiring` (Downloader + central Luna); left
+/// uninstalled ⇒ a `.rescuedMedia` outcome stays unrescued.
+protocol MediaRescueStarting {
+    /// Whether the download really started.
+    func startMediaRescue(
+        sourceURLString: String, title: String?, assets: [MediaAsset]
+    ) async -> Bool
+}
+
 enum URLRescueWiring {
 
-    /// Media-kind rescue application: downloads the engine-resolved assets
-    /// without re-running platform resolution. Installed by media apps'
-    /// `KindWiring` (Downloader + central Luna); nil ⇒ a `.rescuedMedia`
-    /// outcome stays unrescued (false).
     /// The engine's social-media asset resolver, installed by media-handling
     /// apps' KindWiring (`LunaMediaDownload.SocialMediaResolver`); nil (Reader,
     /// Price Tracker) leaves the engine's media directives asset-less, so a
@@ -31,9 +38,7 @@ enum URLRescueWiring {
     /// `install()` runs, so it's read exactly once, there.
     static var mediaResolver: SocialMediaResolving?
 
-    static var mediaRescueStarter: ((
-        _ sourceURLString: String, _ title: String?, _ assets: [MediaAsset]
-    ) async -> Bool)?
+    static var mediaRescueStarter: (any MediaRescueStarting)?
 
     /// The engine installed by `install()`, kept for the product-kind price
     /// resolver below (KindWiring runs before `install()`, so product wirings
@@ -49,18 +54,38 @@ enum URLRescueWiring {
         }
         Self.engine = engine
 
-        URLRescueCoordinator.engine = URLRescueCoordinator.Engine(
-            isAvailable: { engine.isAvailable },
-            perform: { item, hint, interactive in
-                await perform(engine: engine, item: item, hint: hint, interactive: interactive)
-            })
+        URLRescueCoordinator.engine = EngineBridge(engine: engine)
         URLRescueCoordinator.shared.install()
 
         // Reader/Downloader failures are handed to the coordinator by the ingestor
-        // (rescueTrigger). Extensions never set this, so a failure just stays failed.
-        ReadingListIngestor.rescueTrigger = { itemID, url, source, interactive in
-            _ = url // the coordinator re-reads the item from the store by id
-            URLRescueCoordinator.shared.itemJustFailed(itemID, source: source, interactive: interactive)
+        // (rescueTrigger). Extensions never install this, so a failure just stays
+        // failed.
+        ReadingListIngestor.rescueTrigger = CoordinatorRescueTrigger()
+    }
+
+    /// The coordinator's half of the bridge: the availability gate and one
+    /// rescue run over the app-shell `perform` below.
+    private struct EngineBridge: URLRescueEngineBridging {
+        let engine: URLRescueEngine
+
+        var isRescueAvailable: Bool { engine.isAvailable }
+
+        func performRescue(
+            for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+        ) async -> URLRescueCoordinator.RescueRunResult {
+            await URLRescueWiring.perform(
+                engine: engine, item: item, hint: hint, interactive: interactive)
+        }
+    }
+
+    /// A failed first pass reaches the coordinator, which re-reads the item from
+    /// the store by id.
+    private struct CoordinatorRescueTrigger: IngestRescueTriggering {
+        func itemFailedIngest(
+            itemID: UUID, url: URL, source: CaptureSource, interactive: Bool
+        ) {
+            URLRescueCoordinator.shared.itemJustFailed(
+                itemID, source: source, interactive: interactive)
         }
     }
 
@@ -118,7 +143,8 @@ enum URLRescueWiring {
             // resolution (the source page already failed to resolve normally).
             // Media-kind apps install the starter; elsewhere the save stays failed.
             guard let mediaRescueStarter else { return .surfaceDropped }
-            return await mediaRescueStarter(url.absoluteString, item.title, assets)
+            return await mediaRescueStarter.startMediaRescue(
+                sourceURLString: url.absoluteString, title: item.title, assets: assets)
                 ? .advanced : .notRecovered
         case .needsBrowser:
             // Not a recovery, but not a dead end either: the item moves to the

@@ -7,6 +7,19 @@ import Foundation
 import LunaModels
 import LunaStorage
 
+/// The app-shell-installed bridge to the `LunaURLRescue` engine + persistence.
+/// Left uninstalled ⇒ rescue is inert (extensions, tests, or the engine
+/// unavailable).
+public protocol URLRescueEngineBridging {
+    /// Cheap "is a model usable" gate; drives whether affordances appear.
+    var isRescueAvailable: Bool { get }
+    /// Runs a rescue for `item` with `hint`; `interactive` picks the budget. The
+    /// conformer itself applies the outcome and persists.
+    func performRescue(
+        for item: ReadingListItem, hint: RescueHint?, interactive: Bool
+    ) async -> URLRescueCoordinator.RescueRunResult
+}
+
 /// Drives URL rescue for the main app: an inline attempt when a foreground save
 /// fails, a debounced background sweep of `.failed` items, one-shot manual
 /// rescues, and the extension→app pending-request hand-off. The debounced
@@ -45,23 +58,9 @@ public final class URLRescueCoordinator {
         case surfaceDropped
     }
 
-    /// The app-shell-installed bridge to the `LunaURLRescue` engine + persistence.
-    /// nil ⇒ rescue is inert (extensions, tests, or the engine unavailable).
-    public struct Engine {
-        /// Cheap "is a model usable" gate; drives whether affordances appear.
-        public var isAvailable: () -> Bool
-        /// Runs a rescue for `item` with `hint`; `interactive` picks the budget.
-        /// The closure itself applies the outcome and persists.
-        public var perform: (ReadingListItem, RescueHint?, _ interactive: Bool) async -> RescueRunResult
-
-        public init(isAvailable: @escaping () -> Bool,
-                    perform: @escaping (ReadingListItem, RescueHint?, _ interactive: Bool) async -> RescueRunResult) {
-            self.isAvailable = isAvailable
-            self.perform = perform
-        }
-    }
-
-    public static var engine: Engine?
+    /// The bridge installed by the app shell, or nil ⇒ rescue is inert
+    /// (extensions, tests, or the engine unavailable).
+    public static var engine: (any URLRescueEngineBridging)?
 
     private let store: ReadingListStore
     private let ledger: RescueLedgerStore
@@ -151,7 +150,7 @@ public final class URLRescueCoordinator {
     /// still `.failed` and eligible, runs an INLINE rescue (interactive) or leaves
     /// it for the background sweep. Never blocks the caller.
     public func itemJustFailed(_ itemID: UUID, source: CaptureSource, interactive: Bool) {
-        guard let engine = Self.engine, engine.isAvailable() else { return }
+        guard let engine = Self.engine, engine.isRescueAvailable else { return }
         guard interactive, ledger.shouldAutoRescue(itemID) else {
             // Non-interactive failures (background sweeps, extension saves) are
             // picked up by the debounced sweep, not rescued inline.
@@ -165,7 +164,7 @@ public final class URLRescueCoordinator {
     /// IS consent — and spends the item's one Apple Intelligence attempt for this
     /// app version, so a card that comes back still failed goes terminal.
     public func requestManualRescue(itemID: UUID, hint: RescueHint?) {
-        guard let engine = Self.engine, engine.isAvailable() else { return }
+        guard let engine = Self.engine, engine.isRescueAvailable else { return }
         // A guardrailed item is permanently out of reach; the tap must not spend
         // 90 seconds re-proving it. The card doesn't offer the button either
         // (`FailedSaveCardFactory.rescueState`), so this is belt-and-braces for
@@ -194,7 +193,7 @@ public final class URLRescueCoordinator {
     /// ordinary failure rather than pretending an attempt happened.
     @discardableResult
     public func rescueAndWait(itemID: UUID, hint: RescueHint? = nil) async -> Bool {
-        guard let engine = Self.engine, engine.isAvailable() else { return false }
+        guard let engine = Self.engine, engine.isRescueAvailable else { return false }
         guard !ledger.isGuardrailed(itemID) else { return false }
         return await runRescue(
             itemID: itemID, hint: hint, interactive: true,
@@ -278,7 +277,7 @@ public final class URLRescueCoordinator {
     // MARK: - Sweep
 
     private func runSweep() {
-        guard let engine = Self.engine, engine.isAvailable() else { return }
+        guard let engine = Self.engine, engine.isRescueAvailable else { return }
         guard isForeground, !isSweeping else { return }
         isSweeping = true
         defer { isSweeping = false }
@@ -330,7 +329,7 @@ public final class URLRescueCoordinator {
         if countsAgainstBudget { ledger.recordAttempt(itemID, hint: hint) }
         postReadingListChanged() // flip row to "trying harder…"
 
-        let result = await engine.perform(item, hint, interactive)
+        let result = await engine.performRescue(for: item, hint: hint, interactive: interactive)
         switch result {
         case .advanced:
             ledger.recordSuccess(itemID, hint: hint)

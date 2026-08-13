@@ -10,8 +10,55 @@ import UserNotifications
 /// What a fetched entry needs before it can be drawn: a title, a host, and an
 /// already-downscaled thumbnail. Installed by the app shell (which owns the
 /// ingest pipeline this module cannot see).
-public typealias WeeklyMetadataFetcher =
-    @Sendable (String) async -> (title: String, host: String, imageData: Data?)?
+public protocol WeeklyMetadataFetching: Sendable {
+    func fetchMetadata(
+        forURLString urlString: String
+    ) async -> (title: String, host: String, imageData: Data?)?
+}
+
+/// Whether a fetched entry really was signed by the curator. The shipped
+/// verifier checks the bundled public key; a test hands in the public half of
+/// whichever pair it minted.
+public protocol WeeklySignatureVerifying {
+    func isSignatureValid(_ save: WeeklySave) -> Bool
+}
+
+/// The shipped verifier: the bundled curator public key.
+public struct WeeklyBundledKeyVerifier: WeeklySignatureVerifying {
+    public init() {}
+
+    public func isSignatureValid(_ save: WeeklySave) -> Bool {
+        WeeklySigning.verify(save)
+    }
+}
+
+/// Whether this device holds the curator's private key, and so may promote and
+/// read the proposal inbox.
+public protocol WeeklyKeyHolding {
+    var isKeyHolder: Bool { get }
+}
+
+/// The shipped answer: a private key in this install's keychain.
+public struct WeeklyKeychainKeyHolder: WeeklyKeyHolding {
+    public init() {}
+
+    public var isKeyHolder: Bool { WeeklyPromotionKeyStore.isKeyHolder }
+}
+
+/// The key-holder's "someone proposed something" banner, so the inbox check can
+/// be exercised without a real notification centre.
+public protocol WeeklyProposalNotifying {
+    func notifyProposals(count: Int, host: String?)
+}
+
+/// The shipped notifier: one local notification per batch.
+public struct WeeklyLocalProposalNotifier: WeeklyProposalNotifying {
+    public init() {}
+
+    public func notifyProposals(count: Int, host: String?) {
+        WeeklyProposalNotifier.post(count: count, host: host)
+    }
+}
 
 /// The launch/foreground orchestration: fetch this app's kinds, verify the
 /// signatures, drop what has aged out, and update the local store — resolving
@@ -24,7 +71,7 @@ public final class WeeklySaveRefresher {
     /// Installed once at launch by the app shell. Without it a newly-arrived
     /// entry falls back to the URL's host for both title and subtitle rather
     /// than being dropped.
-    public static var metadataFetcher: WeeklyMetadataFetcher?
+    public static var metadataFetcher: (any WeeklyMetadataFetching)?
 
     private let database: WeeklyCloudDatabase
     private let store: WeeklySaveStore
@@ -33,9 +80,9 @@ public final class WeeklySaveRefresher {
     /// Seams so the whole path is testable without the curator's private key
     /// (which lives outside this repository), a Keychain item, or a real
     /// notification centre.
-    private let verify: (WeeklySave) -> Bool
-    private let isKeyHolder: () -> Bool
-    private let notifyProposals: (Int, String?) -> Void
+    private let verifier: any WeeklySignatureVerifying
+    private let keyHolder: any WeeklyKeyHolding
+    private let proposalNotifier: any WeeklyProposalNotifying
     /// Foreground spam guard: at most one refresh a minute, one in flight.
     private var isRefreshing = false
     private var lastRefresh: Date?
@@ -46,17 +93,17 @@ public final class WeeklySaveRefresher {
         store: WeeklySaveStore = .shared,
         app: LunaApp = .current,
         now: @escaping () -> Date = Date.init,
-        verify: @escaping (WeeklySave) -> Bool = WeeklySigning.verify,
-        isKeyHolder: @escaping () -> Bool = { WeeklyPromotionKeyStore.isKeyHolder },
-        notifyProposals: @escaping (Int, String?) -> Void = WeeklyProposalNotifier.post
+        verifier: any WeeklySignatureVerifying = WeeklyBundledKeyVerifier(),
+        keyHolder: any WeeklyKeyHolding = WeeklyKeychainKeyHolder(),
+        proposalNotifier: any WeeklyProposalNotifying = WeeklyLocalProposalNotifier()
     ) {
         self.database = database
         self.store = store
         self.app = app
         self.now = now
-        self.verify = verify
-        self.isKeyHolder = isKeyHolder
-        self.notifyProposals = notifyProposals
+        self.verifier = verifier
+        self.keyHolder = keyHolder
+        self.proposalNotifier = proposalNotifier
     }
 
     /// The kinds this app is allowed to show — the only ones it ever asks for.
@@ -83,7 +130,7 @@ public final class WeeklySaveRefresher {
 
         let live = Dictionary(
             fetched
-                .filter { verify($0) && !$0.isExpired(now: now()) }
+                .filter { verifier.isSignatureValid($0) && !$0.isExpired(now: now()) }
                 .map { ($0.kind, $0) },
             uniquingKeysWith: { first, _ in first })
 
@@ -137,7 +184,7 @@ public final class WeeklySaveRefresher {
     /// failed metadata read is recorded as unresolved (and retried) whichever
     /// one wrote it.
     private static func display(for save: WeeklySave) async -> WeeklySaveDisplay {
-        let metadata = await metadataFetcher?(save.urlString)
+        let metadata = await metadataFetcher?.fetchMetadata(forURLString: save.urlString)
         let host = metadata?.host ?? URL(string: save.urlString)?.host ?? save.urlString
         return WeeklySaveDisplay(
             save: save,
@@ -175,7 +222,7 @@ public final class WeeklySaveRefresher {
     /// notification per batch.
     @discardableResult
     public func checkProposalsIfKeyHolder() async -> Int {
-        guard isKeyHolder(), !isCheckingProposals else { return 0 }
+        guard keyHolder.isKeyHolder, !isCheckingProposals else { return 0 }
         isCheckingProposals = true
         defer { isCheckingProposals = false }
 
@@ -191,7 +238,8 @@ public final class WeeklySaveRefresher {
         store.markProposalsSeen(names)
         guard !unseen.isEmpty else { return 0 }
         let newest = proposals.first { unseen.contains($0.recordName) }
-        notifyProposals(unseen.count, newest.flatMap { URL(string: $0.urlString)?.host })
+        proposalNotifier.notifyProposals(
+            count: unseen.count, host: newest.flatMap { URL(string: $0.urlString)?.host })
         weeklyCloudLog("\(unseen.count) new proposal(s)")
         return unseen.count
     }

@@ -96,31 +96,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
         // LunaReadingList can't present UI, so the app shell installs the
-        // presenter (same injected-closure pattern as
-        // ProductPriceRescue.resolver above). Presents
-        // over whatever is frontmost — the SAME card the share/action extensions
-        // show, full screen so it reads as one of the deck's own cards rather
-        // than a system alert.
-        ReadingListIngestor.unsupportedSavePresenter = { owner in
-            guard let presenter = Self.frontmostViewController() else { return }
-            let card = UnsupportedSaveCardViewController(owner: owner)
-            card.modalPresentationStyle = .fullScreen
-            card.onDone = { [weak card] in card?.dismiss(animated: true) }
-            presenter.present(card, animated: true)
-        }
+        // presenter (same cross-tier protocol witness as
+        // `ProductPriceRescue.resolver` above).
+        ReadingListIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
 
         // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
         // the ingest pipeline, so the shell hands it the one metadata read the
-        // row needs. `.luna` deliberately — a faceted app must be able to render
-        // whichever kind it fetched, and it only ever fetches its own.
-        WeeklySaveRefresher.metadataFetcher = { urlString in
-            guard let preview = await RecentURLMatcher.evaluate(
-                urlString: urlString, surface: .luna)
-            else { return nil }
-            let host = URL(string: preview.urlString)?.host
-                ?? preview.subtitle ?? preview.urlString
-            return (title: preview.title, host: host, imageData: preview.imageData)
-        }
+        // row needs.
+        WeeklySaveRefresher.metadataFetcher = WeeklyRowMetadataFetcher()
 
         // The weekly pull starts NOW, not with the end-of-launch housekeeping:
         // the util card wants its Save of the Week row the moment the deck
@@ -135,9 +118,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Diagnostics export header shows the connected email account (which lives
         // above LunaStorage), injected here.
-        DiagnosticLog.exportIdentityProvider = {
-            EmailAccountStore.shared.account?.address ?? "none"
-        }
+        DiagnosticLog.exportIdentityProvider = ConnectedAccountExportIdentity()
 
         // URL Rescue (claudedocs/url-rescue.md): install the LLM-fallback engine
         // bridge + coordinator (all three apps; main-app only — extensions never
@@ -478,5 +459,42 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         var top = window?.rootViewController
         while let presented = top?.presentedViewController { top = presented }
         return top
+    }
+}
+
+/// The unsupported-kind card for a dropped interactive save, presented over
+/// whatever is frontmost — the SAME card the share/action extensions show, full
+/// screen so it reads as one of the deck's own cards rather than a system alert.
+private struct UnsupportedSaveCardPresenter: UnsupportedSavePresenting {
+    @MainActor
+    func presentUnsupportedSave(owner: LunaApp) {
+        guard let presenter = AppDelegate.frontmostViewController() else { return }
+        let card = UnsupportedSaveCardViewController(owner: owner)
+        card.modalPresentationStyle = .fullScreen
+        card.onDone = { [weak card] in card?.dismiss(animated: true) }
+        presenter.present(card, animated: true)
+    }
+}
+
+/// The one metadata read the Save of the Week row needs. `.luna` deliberately —
+/// a faceted app must be able to render whichever kind it fetched, and it only
+/// ever fetches its own.
+private struct WeeklyRowMetadataFetcher: WeeklyMetadataFetching {
+    func fetchMetadata(
+        forURLString urlString: String
+    ) async -> (title: String, host: String, imageData: Data?)? {
+        guard let preview = await RecentURLMatcher.evaluate(
+            urlString: urlString, surface: .luna)
+        else { return nil }
+        let host = URL(string: preview.urlString)?.host
+            ?? preview.subtitle ?? preview.urlString
+        return (title: preview.title, host: host, imageData: preview.imageData)
+    }
+}
+
+/// The connected sending account, for the diagnostics export header.
+private struct ConnectedAccountExportIdentity: DiagnosticExportIdentityProviding {
+    var exportIdentity: String {
+        EmailAccountStore.shared.account?.address ?? "none"
     }
 }

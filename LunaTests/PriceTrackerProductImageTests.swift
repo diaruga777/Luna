@@ -19,7 +19,12 @@ final class PriceTrackerProductImageTests: XCTestCase {
         let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(name)
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
+        // Pin the renderer to 1x: the default format uses the device scale, and a
+        // 4000pt canvas at 3x is a 12000px bitmap — slow enough under full-suite
+        // load to blow the wait timeout before the loader is even involved.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
         let image = renderer.image { context in
             UIColor.systemGreen.setFill()
             context.fill(CGRect(x: 0, y: 0, width: side, height: side))

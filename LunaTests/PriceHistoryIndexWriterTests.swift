@@ -80,10 +80,16 @@ final class PriceHistoryIndexWriterTests: XCTestCase {
     }
 
     func testBothProductAppsRegenerateOnBackground() {
+        // The regenerate call lives once, in the shared product shell leg; each
+        // product app's root reaches it through ProductShellWiring.appDidEnterBackground().
+        XCTAssertTrue(
+            Self.source("Luna/ProductShellWiring.swift")
+                .contains("PriceHistoryIndexWriter.regenerate()"),
+            "the product shell leg does not regenerate the history index on background")
         for file in ["Luna/KindWiring+Luna.swift", "Luna/KindWiring+PriceTracker.swift"] {
             XCTAssertTrue(
-                Self.source(file).contains("PriceHistoryIndexWriter.regenerate()"),
-                "\(file) does not regenerate the history index on background")
+                Self.source(file).contains("ProductShellWiring.appDidEnterBackground()"),
+                "\(file) does not run the product leg's background work")
         }
     }
 }

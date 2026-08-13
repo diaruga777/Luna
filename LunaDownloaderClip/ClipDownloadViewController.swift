@@ -61,7 +61,8 @@ final class ClipDownloadViewController: UIViewController {
         progressView.setProgress(0, animated: false)
         update(.downloading(sourceURL))
 
-        task = Task { [service] in
+        task = Task { [service, weak self] in
+            guard let self else { return }
             do {
                 let media = try await service.downloadFirstMediaToFile(from: sourceURL) { [weak self] progress in
                     Task { @MainActor in

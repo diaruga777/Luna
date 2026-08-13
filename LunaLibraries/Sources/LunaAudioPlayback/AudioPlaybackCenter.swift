@@ -764,8 +764,9 @@ public final class AudioPlaybackCenter {
                     blockIndex: -1, buffers: [], wordMarkers: [], duration: 0,
                     format: self.renderer.canonicalFormat ?? Self.fallbackFormat)
             }
-            await MainActor.run {
-                guard token == self.sessionToken, let engine = self.engine else { return }
+            await MainActor.run { [weak self] in
+                guard let self, token == self.sessionToken, let engine = self.engine
+                else { return }
                 engine.schedule(segment, rateMode: .pinnedToNatural) { [weak self] in
                     guard let self, token == self.sessionToken else { return }
                     self.playTransitionChime { [weak self] in

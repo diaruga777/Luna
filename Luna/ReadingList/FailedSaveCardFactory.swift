@@ -140,10 +140,10 @@ enum FailedSaveCardFactory {
         for item: ReadingListItem, from host: UIViewController, sourceView: UIView
     ) {
         let header = diagnosticsHeader(for: item)
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak host, weak sourceView] in
             let fileURL = try? SaveDiagnosticsStore.shared.exportFile(
                 for: item.id, header: header)
-            DispatchQueue.main.async { [weak host, weak sourceView] in
+            DispatchQueue.main.async {
                 guard let host, let fileURL else { return }
                 let activity = UIActivityViewController(
                     activityItems: [fileURL], applicationActivities: nil)

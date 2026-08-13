@@ -56,7 +56,8 @@ public final class BackgroundExecutionLease: @unchecked Sendable {
             hasEnded = true
             return
         }
-        let begin = {
+        let begin = { [weak self] in
+            guard let self else { return }
             let taskIdentifier = UIApplication.shared.beginBackgroundTask(
                 withName: name
             ) { [weak self] in

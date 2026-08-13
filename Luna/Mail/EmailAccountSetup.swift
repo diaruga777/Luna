@@ -70,7 +70,8 @@ final class EmailAccountSetup {
         // App-password providers (and generic, resolved below).
         isResolving = true
         onBusyChange(true)
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             defer {
                 isResolving = false
                 onBusyChange(false)

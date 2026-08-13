@@ -775,8 +775,8 @@ public final class SavedNonTextualViewController: UIViewController {
                 if let preloaded {
                     media = try await preloaded.value
                 } else {
-                    media = try await downloadService.downloadFirstMediaToFile(from: url) { progress in
-                        Task { @MainActor [weak self] in
+                    media = try await downloadService.downloadFirstMediaToFile(from: url) { [weak self] progress in
+                        Task { @MainActor in
                             self?.downloadProgress.setProgress(Float(progress), animated: true)
                         }
                     }
@@ -833,12 +833,12 @@ public final class SavedNonTextualViewController: UIViewController {
                         saved = item
                         try? FileManager.default.removeItem(at: copy)
                     } catch {
-                        saved = try store.addDownloadedFile(
+                        saved = try await store.addDownloadedFile(
                             copy, kind: kind, sourceURLString: sourceURLString, title: title,
                             requiringItemID: pending.id)
                     }
                 } else {
-                    saved = try store.addDownloadedFile(
+                    saved = try await store.addDownloadedFile(
                         copy, kind: kind, sourceURLString: sourceURLString, title: title,
                         requiringItemID: pending.id)
                 }

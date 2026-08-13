@@ -394,7 +394,8 @@ final class SafariReplicaViewController:
         afterEnableDelay(
             OnboardingExtensionEnableTiming.pageHoldDuration,
             generation: generation
-        ) {
+        ) { [weak self] in
+            guard let self else { return }
             let sheet = OnboardingManageExtensionsSheetView(
                 frame: self.view.bounds, configuration: self.onboardingConfiguration)
             self.extensionsSheet = sheet
@@ -404,7 +405,8 @@ final class SafariReplicaViewController:
                 self.afterEnableDelay(
                     OnboardingExtensionEnableTiming.toggleDelay,
                     generation: generation
-                ) {
+                ) { [weak self] in
+                    guard let self else { return }
                     sheet.turnOnToggle { [weak self] in
                         guard let self,
                               generation == self.enableDemoGeneration
@@ -464,7 +466,8 @@ final class SafariReplicaViewController:
             self.afterEnableDelay(
                 OnboardingExtensionEnableTiming.toggleDelay,
                 generation: generation
-            ) {
+            ) { [weak self] in
+                guard let self else { return }
                 sheet.turnOnToggle { [weak self] in
                     guard let self,
                           generation == self.enableDemoGeneration

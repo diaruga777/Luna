@@ -179,9 +179,9 @@ public struct ArticleExportService {
         _ format: ArticleExportFormat, for item: ReadingListItem,
         from presenter: UIViewController, sourceView: UIView
     ) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak presenter] in
             let fileURL = try? self.write(format, for: item)
-            DispatchQueue.main.async { [weak presenter] in
+            DispatchQueue.main.async {
                 guard let presenter else { return }
                 guard let fileURL else {
                     let alert = UIAlertController(

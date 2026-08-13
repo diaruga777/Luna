@@ -69,8 +69,7 @@ final class PriceTrackingExitContextTests: XCTestCase {
              PriceTrackingExitContext(host: .inApp, entry: .existing), .back),
             ("extension host shows Done",
              PriceTrackingExitContext(host: .extension, entry: .creation), .done),
-            // The entry never speaks here — it used to decide a "Read instead"
-            // button, which is gone; only the host does.
+            // The entry never decides the left button; only the host does.
             ("the entry does not change the in-app answer",
              PriceTrackingExitContext(host: .inApp, entry: .merge(addedStoreURLString: "x")), .back),
             ("the entry does not change the extension answer",

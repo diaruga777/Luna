@@ -284,10 +284,11 @@ final class ProductPageDetectorTests: XCTestCase {
 
     // MARK: - Multi-product listing veto (search / category grids)
 
-    /// The bug report: an Amazon search-results page (`/s?k=…`) showing several
-    /// products, each with its own "Add to cart" button and star rating. Those
-    /// per-card signals used to score ≥2 in Tier 2 and mint a "Track in Luna" pill on
-    /// a page with no single primary product. The listing-URL veto must reject it.
+    /// The bug report: an Amazon search-results page (`/s?k=…`) shows several
+    /// products, each with its own "Add to cart" button and star rating.
+    /// Without the listing-URL veto, those per-card signals score ≥2 in Tier
+    /// 2 and mint a "Track in Luna" pill on a page with no single primary
+    /// product.
     func testAmazonSearchResultsPageIsNotAProduct() {
         let html = BypassFixtures.html("Products/amazon-search.html")
         XCTAssertNil(detector.detect(urlString: "https://www.amazon.com/s?k=wireless+headphones", html: html),

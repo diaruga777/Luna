@@ -20,7 +20,7 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
         return urlString
     }
 
-    /// `resolve`, flattened the same way `collapse` used to.
+    /// Flattens `resolve`'s `.single` case to a plain string.
     private func collapse(_ values: [String]?, isSafari: Bool) -> String? {
         guard case let .single(urlString) = ProvideContextOnScreenURL.resolve(
             values, isSafari: isSafari)

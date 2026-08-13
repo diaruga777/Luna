@@ -2,10 +2,10 @@
 //  PriceTrackerProductImageTests.swift
 //  LunaTests
 //
-//  `PriceTrackerProductImage.load` used to decode the persisted product picture
-//  fresh on every call — every deck reload re-read and re-decoded the same file.
-//  It now goes through the shared `DownsampledImageLoader`, so a repeat load for
-//  the same file name is served from cache rather than the disk.
+//  `PriceTrackerProductImage.load` goes through the shared
+//  `DownsampledImageLoader`, so a repeat load for the same file name is
+//  served from cache rather than re-reading and re-decoding the file from
+//  disk on every deck reload.
 //
 
 import LunaStorage
@@ -62,9 +62,9 @@ final class PriceTrackerProductImageTests: XCTestCase {
         XCTAssertLessThan(image.size.height * image.scale, 3000)
     }
 
-    /// The literal problem this adoption fixes: a second load for the same file
-    /// name is answered from the shared cache, not a re-read of the (now deleted)
-    /// file.
+    /// A second load for the same file name is answered from the shared
+    /// cache, not a re-read of the file — which may already be gone by the
+    /// time of the second call.
     func testRepeatedLoadIsServedFromCacheNotDisk() throws {
         let name = writePNG(named: "product-cache-\(UUID().uuidString).png", side: 40)
         let fileURL = SavesStore.shared.articlesDirectory.appendingPathComponent(name)

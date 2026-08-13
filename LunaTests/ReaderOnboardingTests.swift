@@ -838,10 +838,10 @@ final class ReaderOnboardingTests: XCTestCase {
             try XCTUnwrap(URL(string: "https://example.com/about"))))
     }
 
-    /// The save demonstration is no longer a picture — it runs the REAL share
-    /// surface over a real link — so "entering a lesson writes nothing" is now an
-    /// invariant with teeth rather than a tautology. Entering leaves the deck
-    /// exactly as empty as the user left it, and claims no temporary save.
+    /// The save demonstration runs the REAL share surface over a real link,
+    /// not a picture, so "entering a lesson writes nothing" is an invariant
+    /// with teeth rather than a tautology. Entering leaves the deck exactly
+    /// as empty as the user left it, and claims no temporary save.
     @MainActor
     func testEnteringALessonWritesNothingToTheStore() throws {
         let suite = "ReaderOnboardingTests.\(UUID().uuidString)"
@@ -874,8 +874,7 @@ final class ReaderOnboardingTests: XCTestCase {
             window.isHidden = true
         }
         button.sendActions(for: .touchUpInside)
-        // The preload — where the demonstration item used to be installed —
-        // runs one stage per run-loop turn.
+        // The preload runs one stage per run-loop turn.
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
         XCTAssertEqual(Set(SavesStore.shared.items().map(\.id)), before)

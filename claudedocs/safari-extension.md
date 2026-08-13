@@ -37,7 +37,7 @@ model for anything with logic in it. The extension now links the package, so:
 
 | linked product | what it buys the appex |
 | --- | --- |
-| `LunaAppConfig` | the App Group id (`SafariAppGroup` reads the Info.plist key) |
+| `LunaAppConfig` | the App Group id (`AppConfig` reads the Info.plist key) |
 | `LunaModels` | `ProductIdentifiers` / `ProductIdentityMatching`, the shared identity primitives |
 | `LunaStorage` | the App Group containers the app also writes |
 | `LunaURLClassification` | URL shape rules + `WebFetchConstants` (the Safari UA and byte cap) |

@@ -3,6 +3,7 @@
 //  LunaSafari
 //
 
+import LunaAppConfig
 import LunaMediaResolve
 import LunaModels
 import LunaPriceCompare
@@ -22,7 +23,7 @@ import SafariServices
 /// `claudedocs/safari-extension.md`.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
-    private static let appGroupID = SafariAppGroup.id
+    private static let appGroupID = AppConfig.appGroupID
     private static let suggestionModeKey = "safariSuggestionMode"
     /// The in-page player's off switch, written by the two media apps' Settings
     /// (`SafariSuggestionSettings.videoPlayerKey`, pinned by

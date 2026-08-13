@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import LunaPriceCompare
 
 /// Answers the "Was $X on <date>" history-pill query entirely inside the
@@ -49,7 +50,7 @@ enum SharedProductMatching {
 
     private static func indexFileURL() -> URL? {
         FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: SafariAppGroup.id)?
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)?
             .appendingPathComponent(indexRelativeDirectory, isDirectory: true)
             .appendingPathComponent(indexFileName)
     }

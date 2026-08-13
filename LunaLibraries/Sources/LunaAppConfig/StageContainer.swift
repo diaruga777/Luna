@@ -126,10 +126,10 @@ public enum StageContainer {
 /// controllers directly.
 ///
 /// It lives in `LunaAppConfig` because the three call sites are in three
-/// different layers — the app shell and two reader view controllers in
-/// LunaReaderUI — and the argument list was previously hand-copied into each.
-/// It had drifted: adding `-LunaStage` to the app's copy left both readers
-/// still drawing their debug pills over every staged capture.
+/// different layers: the app shell and two reader view controllers in
+/// LunaReaderUI. A shared definition here stops the argument list from
+/// drifting between hand-kept copies — a drift bug once left a reader still
+/// drawing its debug pills during a staged capture.
 public enum CaptureLaunch {
     private static let argumentKeys = ["-uiTestState", "-LunaStage"]
 

@@ -4,12 +4,12 @@
 //
 //  THE `CardDeckProviding` implementation — one, for every app.
 //
-//  A deck used to be its own provider (`deckProvider` returned `self`), so the
-//  three roots each carried a copy of "read the store, order it, split off the
-//  archive, fingerprint it, build the cards, offer the verbs". The copies drifted
-//  in every direction the refactor plan lists. This file is that algorithm once;
-//  everything in it that is a statement about a KIND is asked of
-//  `CardKindPresenters.presenter(for:)` instead of switched on here.
+//  This file is the one algorithm every deck runs: read the store, order it,
+//  split off the archive, fingerprint it, build the cards, offer the verbs.
+//  Everything in it that is a statement about a KIND is asked of
+//  `CardKindPresenters.presenter(for:)` instead of switched on here — a
+//  per-app copy of this algorithm is exactly what would let three app roots
+//  drift apart on ordering, archiving, and fingerprinting.
 //
 //  What stays per-app is genuinely per-app and lives in `CardDeckConfiguration`:
 //  whether the app has a generic link card for a save its kind holds nothing
@@ -207,14 +207,13 @@ final class KindDeckProvider: CardDeckProviding {
     /// broken by id so the result is stable.
     ///
     /// There is deliberately no read/unread grouping and no per-kind sort key.
-    /// The Reader used to file finished articles after unopened ones, which the
-    /// central app could not adopt — "read" is an article-only notion and would
-    /// have shuffled a just-watched video behind everything else — so the two
-    /// decks ordered differently and the same save moved when you switched apps.
-    /// Finished reads leave the deck on their own anyway, via
-    /// `SavesStore.archivePendingFinishedItems()` at launch/background, so
-    /// the grouping was buying an ordering divergence for something already
-    /// handled.
+    /// "Read" is an article-only notion: filing finished articles after
+    /// unopened ones would shuffle a just-watched video behind everything
+    /// else in the central app, so the same save would order differently
+    /// depending on which app shows it. Finished reads leave the deck on
+    /// their own anyway, via `SavesStore.archivePendingFinishedItems()` at
+    /// launch and at background, so a per-kind grouping would only buy an
+    /// ordering divergence for something already handled.
     ///
     /// The sort date is `bumpDate ?? dateAdded`, and exactly three things set a
     /// bump: unarchiving any save, a price alert firing, and the existing
@@ -388,9 +387,9 @@ final class KindDeckProvider: CardDeckProviding {
         ])
     }
 
-    /// ONE archive per kind, writing every store that kind owns. The three decks
-    /// used to write three different flags, so a save archived in one app stayed
-    /// live in another.
+    /// ONE archive per kind, writing every store that kind owns — so a save
+    /// archived in one app is archived in every app that shows it, rather
+    /// than staying live wherever a different flag went unwritten.
     private func archive(_ item: SavedItem) {
         // The successor is resolved BEFORE the write, so a deck that animates
         // the swap knows where it is going. Persist inside the choreography:

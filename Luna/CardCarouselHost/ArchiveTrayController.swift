@@ -171,8 +171,8 @@ final class ArchiveTrayController: NSObject {
     private var chromeHidden = false
 
     /// How far the apex cells poke past the screen edge while closed-but-
-    /// available. Wider than the old pull tab's 13pt because what peeks now is
-    /// the cells themselves.
+    /// available. Wide enough that what peeks through reads as the cells
+    /// themselves, not a narrow pull affordance.
     private static let peek: CGFloat = 26
 
     /// The drawer takes the right two thirds of a phone screen. On a wide one
@@ -298,9 +298,9 @@ final class ArchiveTrayController: NSObject {
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
         tray.center.y = top + tray.bounds.height / 2
         collection.frame = tray.bounds
-        // Narrower than the old full-width rows: the trailing slack is what
-        // lets off-apex cells drift rightward along the arc without leaving
-        // the screen immediately.
+        // The 56pt margin leaves trailing slack, which is what lets
+        // off-apex cells drift rightward along the arc without leaving the
+        // screen immediately.
         arcLayout.itemSize = CGSize(width: max(0, floor(width) - 56), height: 128)
         arcLayout.radius = max(tray.bounds.height, 400) * 1.4
         arcLayout.invalidateLayout()
@@ -344,7 +344,7 @@ final class ArchiveTrayController: NSObject {
         let width = Self.openWidth(forHostWidth: laidOutSize.width)
         // Closed, the arc is wholly offscreen — unless the rightmost card is
         // centered AND the archive has items, when the apex cells peek in
-        // where the old pull tab used to.
+        // at the tray's pull affordance.
         let closedX = pullAvailable && !items.isEmpty
             ? laidOutSize.width - Self.peek
             : laidOutSize.width

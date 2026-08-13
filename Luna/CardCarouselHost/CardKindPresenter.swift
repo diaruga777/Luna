@@ -73,8 +73,8 @@ protocol CardPresenterHost: AnyObject, Sendable {
 
     /// Delete this save WHOLE: the kind's companion storage — a downloaded file,
     /// its Photos asset, its auto-download bookkeeping — and then the row.
-    /// Reachable from a card's menu and from an archive-tray cell, which is the
-    /// point: the tray's delete used to skip the companion half.
+    /// Reachable from a card's menu and from an archive-tray cell, so neither
+    /// route may skip the companion storage and leak a file or asset.
     func deleteSave(_ item: SavedItem)
 
     /// A presenter's archive-tray download bars changed. Progress ticks arrive
@@ -167,15 +167,15 @@ protocol CardKindPresenting: AnyObject {
     /// it pages the deck.
     ///
     /// A property of what the card SHOWS, not of the screen it is on: a
-    /// downloaded video has hard edges whether you opened it in the Downloader
-    /// or in the central app. It used to be a deck-level style, and the central
-    /// app consequently dissolved every media card's video edges with the
-    /// reader's 28pt fade.
+    /// downloaded video has hard edges whether you open it in the Downloader
+    /// or in the central app. Keeping edge style per kind, not per deck, is
+    /// what keeps every media card's video edges hard rather than dissolved
+    /// with the reader's 28pt fade.
     ///
-    /// Its SIZE is deliberately NOT here. A kind used to state that too, so an
-    /// article, a video and a product in one deck were three different
-    /// rectangles and paging between them relayouted the card. Every card is the
-    /// one frame `CardDeckGeometry` describes.
+    /// Its SIZE is deliberately not here. Every card is the one frame
+    /// `CardDeckGeometry` describes, so an article, a video, and a product in
+    /// one deck are never three different rectangles that relayout the card
+    /// when paging between kinds.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle
     /// Whether the scrub strip may build this card's real content ahead of the
     /// finger. A card backed by a video player answers false — sweeping the
@@ -335,8 +335,8 @@ extension CardKindPresenting {
 ///
 /// Resolution order is fixed and lives here, not at call sites: the deck asks
 /// `presenter(for:)` and never asks what kind of save it is holding. That is
-/// the invariant `CardKindPresenterCompositionTests` enforces by reading the
-/// deck's own source.
+/// the invariant `KindCompositionRootTests.testTheDeckNeverBranchesOnKind`
+/// enforces by reading the deck's own source.
 @MainActor
 enum CardKindPresenters {
 

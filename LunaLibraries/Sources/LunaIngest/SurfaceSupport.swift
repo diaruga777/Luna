@@ -6,12 +6,12 @@
 import LunaModels
 
 public extension Outcome {
-    /// Which standalone Luna app OWNS this classified outcome. `nil` for
-    /// `.failed` — a genuine failure belongs to nobody and is never dropped.
+    /// Which standalone Luna app owns this classified outcome. Nil for
+    /// `.failed`: a genuine failure belongs to nobody and is never dropped.
     ///
-    /// Lives here (an extension on `Outcome`, in the module that already owns
-    /// the type) so low-tier modules never depend upward on `LunaIngest` just
-    /// to know about `Outcome`.
+    /// This extension lives on `Outcome` itself, in the module that already
+    /// owns the type, so low-tier modules never depend upward on `LunaIngest`
+    /// just to know about `Outcome`.
     var owningApp: LunaApp? {
         switch self {
         case .article, .needsArchive, .document:
@@ -28,29 +28,29 @@ public extension Outcome {
     }
 }
 
-/// The per-app content gate. Every Luna app runs the SAME classification
+/// The per-app content gate. Every Luna app runs the same classification
 /// pipeline on any incoming URL, then keeps only the kinds it handles:
 ///
 /// - the central **Luna** app processes every kind;
-/// - a single-content app (Reader / Downloader / Price Tracker) processes its
-///   own kind and DROPS the rest with a generic error (blocked means nothing
-///   remains in the store).
+/// - a single-content app (Reader, Downloader, or Price Tracker) processes
+///   its own kind and drops the rest with a generic error, so a blocked kind
+///   leaves nothing in the store.
 ///
 /// Which kinds an app handles is fixed at build time by which per-kind
-/// packages its target links; this type is the runtime mirror of that static
+/// packages its target links. This type is the runtime mirror of that static
 /// fact, keyed off `LunaApp.current`. There is no purchase and no per-source
 /// exemption: email and friend-share ingestion drop foreign kinds too (the
-/// owning app's own import picks the same message up when it's installed).
+/// owning app's own import picks up the same message once it is installed).
 public enum SurfaceSupport {
     public enum Decision: Equatable, Sendable {
-        /// The running app processes this outcome — save normally.
+        /// The running app processes this outcome. Save normally.
         case supported
-        /// The outcome belongs to `owner`, which this app doesn't handle:
-        /// save nothing and show the generic unsupported-kind error.
+        /// The outcome belongs to `owner`, which this app does not handle.
+        /// Save nothing and show the generic unsupported-kind error.
         case unsupported(owner: LunaApp)
     }
 
-    /// Pure decision: `owner == nil` (failures) and the central Luna app are
+    /// Pure decision: `owner == nil` (a failure) and the central Luna app are
     /// always supported; otherwise the outcome must belong to the running app.
     public static func evaluate(owner: LunaApp?, current: LunaApp) -> Decision {
         guard let owner, current != .luna, owner != current else { return .supported }
@@ -61,11 +61,11 @@ public enum SurfaceSupport {
         evaluate(owner: owner, current: .current)
     }
 
-    /// The drop explanation for surfaces that can only speak one string (the
+    /// The drop explanation for surfaces that can speak only one string (the
     /// App Intents' thrown dialog). It says the same two things
-    /// `UnsupportedSaveCardViewController` shows — the header naming this app,
-    /// then the sibling app that does handle the link — flattened into a
-    /// sentence, from the one copy source in LunaModels.
+    /// `UnsupportedSaveCardViewController` shows — the header naming this
+    /// app, then the sibling app that does handle the link — flattened into
+    /// a sentence, from the one copy source in LunaModels.
     public static func unsupportedMessage(owner: LunaApp, current: LunaApp = .current) -> String {
         UnsupportedSaveCopy.sentence(owner: owner, current: current)
     }

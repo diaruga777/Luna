@@ -302,7 +302,8 @@ final class OnboardingPriceComparisonOverlayView: UIView {
     /// The lesson has said everything it has to say: the comparison is on the
     /// page and the closed spotlight is holding it there. The host raises the
     /// shared popup the instant this fires.
-    var onDidReachSetupOffer: (() -> Void)?
+    /// The replica hosting this lesson.
+    weak var setupOfferDelegate: (any OnboardingLessonSetupOfferDelegate)?
 
     /// Where the pill floats, measured up from the page's bottom edge: clear of
     /// the mock browser bar, with the same air over it the extension's own
@@ -475,7 +476,7 @@ final class OnboardingPriceComparisonOverlayView: UIView {
         // The shared popup owns the interaction from here; the page behind it
         // is a finished demonstration, closed spotlight and all.
         accessibilityViewIsModal = true
-        onDidReachSetupOffer?()
+        setupOfferDelegate?.lessonDidReachSetupOffer()
     }
 
     /// A generation-guarded, clock-scaled main-queue delay: anything scheduled

@@ -37,6 +37,29 @@ enum OnboardingMessagesReplicaTiming {
 
 }
 
+/// What the Messages replica reports to the onboarding host that owns it: the
+/// three setup hops its pills carry, the skip-out, and the moment its setup
+/// messages land. Every method has an empty default, so a surface that cares
+/// about one of them answers only that one.
+@MainActor
+protocol MessagesReplicaDelegate: AnyObject {
+    func messagesReplicaDidRequestShortcutInstall(_ replica: MessagesReplicaViewController)
+    func messagesReplicaDidRequestLunaAppStore(_ replica: MessagesReplicaViewController)
+    func messagesReplicaDidRequestActionButtonSettings(_ replica: MessagesReplicaViewController)
+    /// The shortcut-install message is on screen: the demonstration is over and
+    /// the pill (or the skip-out) owns what's next.
+    func messagesReplicaDidShowSetupMessages(_ replica: MessagesReplicaViewController)
+    func messagesReplicaDidSkipSetup(_ replica: MessagesReplicaViewController)
+}
+
+extension MessagesReplicaDelegate {
+    func messagesReplicaDidRequestShortcutInstall(_ replica: MessagesReplicaViewController) {}
+    func messagesReplicaDidRequestLunaAppStore(_ replica: MessagesReplicaViewController) {}
+    func messagesReplicaDidRequestActionButtonSettings(_ replica: MessagesReplicaViewController) {}
+    func messagesReplicaDidShowSetupMessages(_ replica: MessagesReplicaViewController) {}
+    func messagesReplicaDidSkipSetup(_ replica: MessagesReplicaViewController) {}
+}
+
 /// A noninteractive iMessage conversation used as the second source in the
 /// onboarding save loop. A friend opens with "Yoooooo", asks what your Action
 /// Button is doing, hears that it's dead, and offers what theirs does —
@@ -46,13 +69,8 @@ enum OnboardingMessagesReplicaTiming {
 /// install the shortcut and open Settings.
 @MainActor
 final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
-    var onInstallShortcut: (() -> Void)?
-    var onOpenLunaAppStore: (() -> Void)?
-    var onSetActionButton: (() -> Void)?
-    /// Fired once the shortcut-install message is on screen: the
-    /// demonstration is over and the pill (or the skip-out) owns what's next.
-    var onShortcutSetupMessagesShown: (() -> Void)?
-    var onSkipSetup: (() -> Void)?
+    /// The onboarding host, which owns this replica.
+    weak var delegate: (any MessagesReplicaDelegate)?
 
     /// The thread in the order it reads top to bottom — which is NOT the order
     /// it arrives in. The Settings message lands ABOVE the skip-out, which is
@@ -149,14 +167,20 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             if self.usesPreviousSetupConversation {
                 self.reveal(.skip)
             }
-            self.onInstallShortcut?()
+            self.delegate?.messagesReplicaDidRequestShortcutInstall(self)
         }
-        settingsPill.onActivate = { [weak self] in self?.onSetActionButton?() }
-        coreAppPill.onActivate = { [weak self] in self?.onOpenLunaAppStore?() }
+        settingsPill.onActivate = { [weak self] in
+            guard let self else { return }
+            delegate?.messagesReplicaDidRequestActionButtonSettings(self)
+        }
+        coreAppPill.onActivate = { [weak self] in
+            guard let self else { return }
+            delegate?.messagesReplicaDidRequestLunaAppStore(self)
+        }
         skipPill.onActivate = { [weak self] in
             guard let self else { return }
             self.skipPill.isUserInteractionEnabled = false
-            self.onSkipSetup?()
+            self.delegate?.messagesReplicaDidSkipSetup(self)
         }
     }
 
@@ -288,7 +312,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
         guard row == .shortcut else { return }
         shortcutPill.beginAttentionPulse()
         isShowingSetupMessages = true
-        onShortcutSetupMessagesShown?()
+        delegate?.messagesReplicaDidShowSetupMessages(self)
     }
 
     // MARK: - Message arrival
@@ -632,7 +656,7 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
             self.reveal(.shortcut)
             self.shortcutPill.beginAttentionPulse()
             self.isShowingSetupMessages = true
-            self.onShortcutSetupMessagesShown?()
+            self.delegate?.messagesReplicaDidShowSetupMessages(self)
             self.afterDelay(
                 OnboardingShortcutRunTiming.skipMessageDelay,
                 generation: generation

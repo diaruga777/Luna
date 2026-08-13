@@ -561,24 +561,8 @@ final class AppOnboardingViewController: UIViewController {
                 saveSetupMode: configuration.saveSetupMode,
                 demonstrationApp: demonstrationApp)
             let safari = SafariReplicaViewController(configuration: safariConfiguration)
-            safari.onSetUpSafari = { [weak self] in self?.openSafariSetup() }
-            safari.onSkipSafariSetup = { [weak self] in
-                self?.skipSafariSetupAndContinue()
-            }
-            safari.onInstallShortcut = { [weak self] in self?.installShortcut() }
-            safari.onSetActionButton = { [weak self] in self?.openActionButtonSettings() }
-            safari.onSetUpLater = { [weak self] in
-                self?.completeSetupFlow(.messages, outcome: .skipped)
-            }
-            safari.makeActionButtonDestinationSnapshot = { [weak self] in
-                self?.makeSavedCardSnapshot()
-            }
-            safari.onActionButtonWaveFinished = { [weak self] in
-                self?.actionButtonWaveDidFinish(from: .safari)
-            }
-            safari.onDidReachSetupOffer = { [weak self] in
-                self?.safariLessonDidReachSetupOffer(demonstrationApp)
-            }
+            safari.delegate = self
+            safari.saveSourceDelegate = self
             safariReplicas[demonstrationApp] = safari
             if offset == 0 {
                 safariReplica = safari
@@ -603,17 +587,7 @@ final class AppOnboardingViewController: UIViewController {
             previouslyConfiguredApp: previouslyConfiguredShortcutApp)
         // The Messages demonstration finishes in place: its mock shortcut run
         // ends on the setup messages whose pills carry the setup hops.
-        messages.onInstallShortcut = { [weak self] in self?.installShortcut() }
-        messages.onOpenLunaAppStore = { [weak self] in self?.openLunaAppStore() }
-        messages.onSetActionButton = { [weak self] in
-            self?.openActionButtonSettings()
-        }
-        messages.onShortcutSetupMessagesShown = { [weak self] in
-            self?.messagesDemonstrationDidPresentSetup()
-        }
-        messages.onSkipSetup = { [weak self] in
-            self?.completeSetupFlow(.messages, outcome: .skipped)
-        }
+        messages.delegate = self
         messagesReplica = messages
         addChild(messages)
         messages.view.frame = view.bounds
@@ -2090,5 +2064,80 @@ extension AppOnboardingViewController: AppLaunchTransitionTarget {
     /// instant the app is up instead of waiting out the crossfade.
     func appLaunchTransitionWillReveal() {
         startAfterLaunchTransition()
+    }
+}
+
+// MARK: - The mock sources' delegates
+
+// Every setup hop the two replicas offer lands on the one method the host
+// already had for it; the lesson ending is matched back to the replica that
+// reported it, so a stale ending from a replica the cycle has left behind
+// cannot advance the current one.
+extension AppOnboardingViewController: SafariReplicaDelegate {
+    func safariReplicaDidRequestSafariSetup(_ replica: SafariReplicaViewController) {
+        openSafariSetup()
+    }
+
+    func safariReplicaDidRequestShortcutInstall(_ replica: SafariReplicaViewController) {
+        installShortcut()
+    }
+
+    func safariReplicaDidRequestActionButtonSettings(
+        _ replica: SafariReplicaViewController
+    ) {
+        openActionButtonSettings()
+    }
+
+    func safariReplicaDidChooseSetUpLater(_ replica: SafariReplicaViewController) {
+        completeSetupFlow(.messages, outcome: .skipped)
+    }
+
+    func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController) {
+        guard let demonstrationApp = safariReplicas
+            .first(where: { $0.value === replica })?.key else { return }
+        safariLessonDidReachSetupOffer(demonstrationApp)
+    }
+}
+
+extension AppOnboardingViewController: MessagesReplicaDelegate {
+    func messagesReplicaDidRequestShortcutInstall(
+        _ replica: MessagesReplicaViewController
+    ) {
+        installShortcut()
+    }
+
+    func messagesReplicaDidRequestLunaAppStore(_ replica: MessagesReplicaViewController) {
+        openLunaAppStore()
+    }
+
+    func messagesReplicaDidRequestActionButtonSettings(
+        _ replica: MessagesReplicaViewController
+    ) {
+        openActionButtonSettings()
+    }
+
+    func messagesReplicaDidShowSetupMessages(_ replica: MessagesReplicaViewController) {
+        messagesDemonstrationDidPresentSetup()
+    }
+
+    func messagesReplicaDidSkipSetup(_ replica: MessagesReplicaViewController) {
+        completeSetupFlow(.messages, outcome: .skipped)
+    }
+}
+
+// The Safari replica's Action Button wave crosses into the saved card this host
+// draws, and reports its own end here. Messages plays the ripple only, so it is
+// mounted without this.
+extension AppOnboardingViewController: OnboardingSaveSourceDelegate {
+    func onboardingSaveSourceDestinationSnapshot(
+        _ source: OnboardingSaveSourceViewController
+    ) -> UIImage? {
+        makeSavedCardSnapshot()
+    }
+
+    func onboardingSaveSourceDidFinishActionButtonWave(
+        _ source: OnboardingSaveSourceViewController
+    ) {
+        actionButtonWaveDidFinish(from: .safari)
     }
 }

@@ -23,6 +23,11 @@ import UIKit
 /// beside it are the ones that are per-target.
 enum SharedStageCatalog {
 
+    /// Delegates a staged surface needs kept alive: a replica or a card holds
+    /// its delegate weakly, and a stage has no host to own one.
+    @MainActor
+    private static var stageRetained: [AnyObject] = []
+
     @MainActor
     static func install() {
         StageRegistry.register(
@@ -117,22 +122,9 @@ enum SharedStageCatalog {
                     // `showSafariSetupPopup()`. This stage reviews the bare
                     // replica with no such host, so it mounts an equivalent
                     // pair directly instead.
-                    safari.onDidReachSetupOffer = { [weak safari] in
-                        guard let safari,
-                              let host = safari.view.window ?? safari.view
-                        else { return }
-                        let scrim = SafariSetupScrimView(frame: host.bounds)
-                        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                        scrim.backgroundColor = UIColor.black.withAlphaComponent(
-                            OnboardingSafariSetupPopupView.scrimAlpha)
-                        scrim.isUserInteractionEnabled = false
-                        host.addSubview(scrim)
-                        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
-                        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                        host.addSubview(popup)
-                        popup.layoutIfNeeded()
-                        popup.present(fadingInAlongside: scrim)
-                    }
+                    let popupRaiser = StageSafariSetupPopupRaiser()
+                    safari.delegate = popupRaiser
+                    SharedStageCatalog.stageRetained.append(popupRaiser)
                     // The real entry starts the sequence once the incoming card
                     // has finished expanding; here, once the browser has been
                     // laid out at its full size.
@@ -574,6 +566,27 @@ enum SharedStageCatalog {
         try? FileManager.default.removeItem(at: url)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+}
+
+/// A staged Safari lesson has no onboarding host, so this stands in for the one
+/// thing that host does at the lesson's end: raising the shared setup popup, and
+/// its scrim, over the replica.
+@MainActor
+final class StageSafariSetupPopupRaiser: SafariReplicaDelegate {
+    func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController) {
+        let host: UIView = replica.view.window ?? replica.view
+        let scrim = SafariSetupScrimView(frame: host.bounds)
+        scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(
+            OnboardingSafariSetupPopupView.scrimAlpha)
+        scrim.isUserInteractionEnabled = false
+        host.addSubview(scrim)
+        let popup = OnboardingSafariSetupPopupView(frame: host.bounds)
+        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(popup)
+        popup.layoutIfNeeded()
+        popup.present(fadingInAlongside: scrim)
     }
 }
 

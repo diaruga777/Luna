@@ -22,6 +22,37 @@ enum OnboardingExternalDestination {
     }
 }
 
+/// What the Safari replica reports to the onboarding host that owns it: the four
+/// setup routes its offer sheet can take, the skip, and the one end-of-lesson
+/// signal. Every method has an empty default, so a surface that cares about one
+/// of them (a stage, a test) answers only that one.
+@MainActor
+protocol SafariReplicaDelegate: AnyObject {
+    func safariReplicaDidRequestSafariSetup(_ replica: SafariReplicaViewController)
+    func safariReplicaDidRequestShortcutInstall(_ replica: SafariReplicaViewController)
+    func safariReplicaDidRequestActionButtonSettings(_ replica: SafariReplicaViewController)
+    func safariReplicaDidChooseSetUpLater(_ replica: SafariReplicaViewController)
+    /// This app's lesson has reached its own setup ask — the explainer's page
+    /// clean, the video panel's steps, the product card — whichever of the three
+    /// this replica plays. It is the ONE end-of-lesson signal, so a host that
+    /// plays several of them in a row does not have to know which is which.
+    func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController)
+}
+
+extension SafariReplicaDelegate {
+    func safariReplicaDidRequestSafariSetup(_ replica: SafariReplicaViewController) {}
+    func safariReplicaDidRequestShortcutInstall(_ replica: SafariReplicaViewController) {}
+    func safariReplicaDidRequestActionButtonSettings(_ replica: SafariReplicaViewController) {}
+    func safariReplicaDidChooseSetUpLater(_ replica: SafariReplicaViewController) {}
+    func safariReplicaDidReachSetupOffer(_ replica: SafariReplicaViewController) {}
+}
+
+/// A lesson overlay's one end-of-lesson signal, heard by the replica hosting it.
+@MainActor
+protocol OnboardingLessonSetupOfferDelegate: AnyObject {
+    func lessonDidReachSetupOffer()
+}
+
 /// A deliberately noninteractive Safari facsimile used by each app's
 /// onboarding. The page bytes are local; the browser chrome remains native
 /// UIKit so it has the current OS's typography, glass, safe-area and status-bar
@@ -29,18 +60,11 @@ enum OnboardingExternalDestination {
 @MainActor
 final class SafariReplicaViewController:
     OnboardingSaveSourceViewController,
+    OnboardingLessonSetupOfferDelegate,
     WKNavigationDelegate
 {
-    var onSetUpSafari: (() -> Void)?
-    var onSkipSafariSetup: (() -> Void)?
-    var onInstallShortcut: (() -> Void)?
-    var onSetActionButton: (() -> Void)?
-    var onSetUpLater: (() -> Void)?
-    /// This app's lesson has reached its own setup ask — the explainer's page
-    /// clean, the video panel's steps, the product card — whichever of the three
-    /// this replica plays. It is the ONE end-of-lesson signal, so a host that
-    /// plays several of them in a row does not have to know which is which.
-    var onDidReachSetupOffer: (() -> Void)?
+    /// The onboarding host, which owns this replica.
+    weak var delegate: (any SafariReplicaDelegate)?
 
     private let onboardingConfiguration: OnboardingSurfaceConfiguration
     private let webView: WKWebView = {
@@ -193,9 +217,7 @@ final class SafariReplicaViewController:
         }
         let lesson = OnboardingPriceComparisonOverlayView(
             configuration: onboardingConfiguration)
-        lesson.onDidReachSetupOffer = { [weak self] in
-            self?.lessonDidReachSetupOffer()
-        }
+        lesson.setupOfferDelegate = self
         lesson.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(lesson)
         priceLesson = lesson
@@ -219,9 +241,7 @@ final class SafariReplicaViewController:
         }
         let lesson = OnboardingVideoDownloadOverlayView(
             configuration: onboardingConfiguration)
-        lesson.onDidReachSetupOffer = { [weak self] in
-            self?.lessonDidReachSetupOffer()
-        }
+        lesson.setupOfferDelegate = self
         lesson.translatesAutoresizingMaskIntoConstraints = false
         view.insertSubview(lesson, belowSubview: browserBar)
         videoLesson = lesson
@@ -365,13 +385,31 @@ final class SafariReplicaViewController:
         }
     }
 
+    // MARK: - The offer sheet's buttons
+
+    private func requestSafariSetup() {
+        delegate?.safariReplicaDidRequestSafariSetup(self)
+    }
+
+    private func requestShortcutInstall() {
+        delegate?.safariReplicaDidRequestShortcutInstall(self)
+    }
+
+    private func requestActionButtonSettings() {
+        delegate?.safariReplicaDidRequestActionButtonSettings(self)
+    }
+
+    private func chooseSetUpLater() {
+        delegate?.safariReplicaDidChooseSetUpLater(self)
+    }
+
     /// Whichever of the three lessons this replica plays, it ends by asking for
     /// the same thing. Reported once per run, and only for a run that is still
     /// the current one.
-    private func lessonDidReachSetupOffer() {
+    func lessonDidReachSetupOffer() {
         guard didBeginDemonstration, !didReportSetupOffer else { return }
         didReportSetupOffer = true
-        onDidReachSetupOffer?()
+        delegate?.safariReplicaDidReachSetupOffer(self)
     }
 
     /// Price Tracker starts by showing the same Safari-owned permission
@@ -587,7 +625,7 @@ final class SafariReplicaViewController:
                     title: OnboardingStrings.Instruction.setUpSafari.value(),
                     image: UIImage(systemName: "safari.fill"),
                     prominent: true,
-                    action: { [weak self] in self?.onSetUpSafari?() }),
+                    action: { [weak self] in self?.requestSafariSetup() }),
             ])
     }
 
@@ -609,12 +647,12 @@ final class SafariReplicaViewController:
                     title: OnboardingStrings.Instruction.installShortcut.value(),
                     image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: true,
-                    action: { [weak self] in self?.onInstallShortcut?() }),
+                    action: { [weak self] in self?.requestShortcutInstall() }),
                 .init(
                     title: OnboardingStrings.Instruction.setActionButton.value(),
                     image: OnboardingSystemIcons.actionButton,
                     prominent: false,
-                    action: { [weak self] in self?.onSetActionButton?() }),
+                    action: { [weak self] in self?.requestActionButtonSettings() }),
             ])
     }
 
@@ -626,7 +664,7 @@ final class SafariReplicaViewController:
                     title: OnboardingStrings.Instruction.setUpLater.value(),
                     image: UIImage(systemName: "clock"),
                     prominent: false,
-                    action: { [weak self] in self?.onSetUpLater?() }),
+                    action: { [weak self] in self?.chooseSetUpLater() }),
             ])
     }
 
@@ -639,17 +677,17 @@ final class SafariReplicaViewController:
                     title: OnboardingStrings.Instruction.setUpSafari.value(),
                     image: UIImage(systemName: "safari.fill"),
                     prominent: destination == .safari,
-                    action: { [weak self] in self?.onSetUpSafari?() }),
+                    action: { [weak self] in self?.requestSafariSetup() }),
                 .init(
                     title: OnboardingStrings.Instruction.installShortcut.value(),
                     image: OnboardingSystemIcons.shortcutsAppIcon,
                     prominent: destination == .shortcuts,
-                    action: { [weak self] in self?.onInstallShortcut?() }),
+                    action: { [weak self] in self?.requestShortcutInstall() }),
                 .init(
                     title: OnboardingStrings.Instruction.setActionButton.value(),
                     image: OnboardingSystemIcons.actionButton,
                     prominent: destination == .settings,
-                    action: { [weak self] in self?.onSetActionButton?() }),
+                    action: { [weak self] in self?.requestActionButtonSettings() }),
             ])
     }
 

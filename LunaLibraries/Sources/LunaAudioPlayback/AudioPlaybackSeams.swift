@@ -11,9 +11,9 @@ import LunaStorage
 /// plus its already-loaded `ArticleContent`, bundled together so
 /// `AudioPlaybackCenter` never has to re-hit the store to start playing it.
 /// Built by the app shell's `AudioPlaybackCenterDataSource.nextCandidate()`
-/// conformer, which reuses the exact ordering `SavesSectioning`/
-/// `ReadingListViewController` display for the Reader surface — see
-/// `claudedocs/audio-playback-plan.md`.
+/// conformer, which reuses the exact ordering `SavesSectioning` and the article
+/// card deck display for the Reader surface — see
+/// `claudedocs/audio-playback.md`.
 public struct QueueCandidate {
     public var item: SavedItem
     public var content: ArticleContent

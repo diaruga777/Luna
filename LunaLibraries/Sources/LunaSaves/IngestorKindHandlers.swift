@@ -1,6 +1,6 @@
 //
 //  IngestorKindHandlers.swift
-//  LunaReadingList
+//  LunaSaves
 //
 
 import LunaHTMLClassification
@@ -66,7 +66,7 @@ public protocol IngestorProductHandling {
 /// `LunaIngest.IngestKindProcessors`. Each app's composition root (its
 /// `KindWiring` variant) registers exactly the handlers for the kinds it
 /// handles (Reader: article; Downloader: media; Price Tracker: product; the
-/// central Luna app: all three), so `LunaReadingList` itself carries no
+/// central Luna app: all three), so `LunaSaves` itself carries no
 /// foreign-kind dependencies. A classified outcome only ever reaches the
 /// presenter AFTER the `SurfaceSupport` gate, so a missing handler for a
 /// presented case is a programming error, not a user-reachable state.

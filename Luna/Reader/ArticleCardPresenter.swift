@@ -21,7 +21,7 @@ import LunaDesignSystem
 import LunaFetch
 import LunaModels
 import LunaReaderUI
-import LunaReadingListUI
+import LunaSavesUI
 import LunaSocial
 import LunaStorage
 import UIKit

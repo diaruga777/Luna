@@ -7,8 +7,8 @@ import LunaAppConfig
 import LunaDesignSystem
 import LunaFetch
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaSocialUI
 import LunaStorage
 import UIKit

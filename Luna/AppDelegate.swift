@@ -3,7 +3,7 @@
 //  Luna
 //
 
-import LunaReadingList
+import LunaSaves
 import LunaIngest
 import LunaSocial
 import LunaSocialUI
@@ -109,7 +109,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
 
         // Unsupported-kind error for dropped INTERACTIVE in-app saves:
-        // LunaReadingList can't present UI, so the app shell installs the
+        // LunaSaves can't present UI, so the app shell installs the
         // presenter (same cross-tier protocol witness as
         // `ProductPriceRescue.resolver` above).
         SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()

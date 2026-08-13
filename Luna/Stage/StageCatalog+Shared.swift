@@ -7,7 +7,7 @@
 
 import LunaDesignSystem
 import LunaModels
-import LunaReadingListUI
+import LunaSavesUI
 import LunaShareSurface
 import LunaURLClassification
 import LunaStorage

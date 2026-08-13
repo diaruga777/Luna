@@ -7,7 +7,7 @@ import LunaIngest
 import LunaModels
 import LunaStorage
 import XCTest
-@testable import LunaReadingList
+@testable import LunaSaves
 
 /// The re-save dedup: a URL that is already a store inside an existing price
 /// tracker merges into it instead of creating a second row. Fix 8 adds a

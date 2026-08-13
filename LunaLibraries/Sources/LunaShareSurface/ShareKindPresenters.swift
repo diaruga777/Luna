@@ -121,7 +121,7 @@ public protocol ShareProductPresenting {
 }
 
 /// The per-kind EXTENSION-PRESENTER registry, mirror of `IngestKindProcessors`
-/// (LunaIngest) and `IngestorKindHandlers` (LunaReadingList): each extension
+/// (LunaIngest) and `IngestorKindHandlers` (LunaSaves): each extension
 /// target's principal class (`ShareEntry+*` / `ActionEntry+*`) registers
 /// exactly the presenters its host app's kinds need, so LunaShareSurface
 /// itself links NO kind-specific module. `ShareSurfaceDriver.present` consults

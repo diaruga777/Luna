@@ -154,7 +154,7 @@ public final class ProductTrackerIngestor {
 
 /// Renders a tracker's price history graph to a JPEG for inline email embedding —
 /// the product-handling apps' `KindWiring` installs this behind
-/// `EmailShareCenter.priceGraphSnapshot` (LunaReadingList must not depend on
+/// `EmailShareCenter.priceGraphSnapshot` (LunaSaves must not depend on
 /// LunaPriceUI's graph view).
 public enum PriceGraphEmailSnapshot {
     @MainActor

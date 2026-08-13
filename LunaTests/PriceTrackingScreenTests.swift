@@ -5,7 +5,7 @@
 //  Navigation/layout coverage for the price-tracking editor.
 //
 
-import LunaReadingListUI
+import LunaSavesUI
 @testable import LunaPriceUI
 import LunaShareSurface
 import LunaStorage

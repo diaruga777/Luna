@@ -7,7 +7,7 @@ import LunaIngest
 import LunaModels
 import LunaStorage
 import XCTest
-@testable import LunaReadingList
+@testable import LunaSaves
 
 /// A gate that answers from a scripted rule, so a test can pin the running app
 /// without touching the App Group. Shared with the other ingestor suites.

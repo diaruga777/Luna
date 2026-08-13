@@ -3,7 +3,7 @@
 //  LunaTests
 //
 
-import LunaReadingList
+import LunaSaves
 @testable import LunaSend
 import LunaStorage
 import LunaModels

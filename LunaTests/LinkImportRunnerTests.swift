@@ -7,7 +7,7 @@ import LunaIngest
 import LunaModels
 import LunaStorage
 import XCTest
-@testable import LunaReadingList
+@testable import LunaSaves
 
 /// The bulk import's orchestration — order, scoring, progress, cancellation —
 /// with both of its real operations stubbed (`claudedocs/import-export.md`).

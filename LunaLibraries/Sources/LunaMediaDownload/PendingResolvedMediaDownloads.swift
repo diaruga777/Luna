@@ -96,7 +96,7 @@ public enum PendingResolvedMediaDownloads {
             // owed. The user is already on their way back to Safari, so it runs
             // HERE, under a background lease, rather than waiting for someone to
             // open the app again (`BackgroundIngestCompletion` in
-            // LunaReadingList — this module cannot name it, and does not need
+            // LunaSaves — this module cannot name it, and does not need
             // to; an empty queue makes this a no-op).
             PendingIngestCompletions.shared.requestRun()
         }

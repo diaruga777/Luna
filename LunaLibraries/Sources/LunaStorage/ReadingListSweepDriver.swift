@@ -32,7 +32,7 @@ public protocol SavesSweepForegroundTracking: SavesSweeping {
 
 /// The debounced `.savesChanged` sweep scaffolding shared by
 /// `AudioScriptPipeline` (LunaAudioPlayback), `URLRescueCoordinator`
-/// (LunaReadingList), and the Spotlight indexer (`Luna/ArticleSpotlightIndexWiring`):
+/// (LunaSaves), and the Spotlight indexer (`Luna/ArticleSpotlightIndexWiring`):
 /// a burst of `.savesChanged` posts coalesces into one sweep after
 /// `debounceInterval`, on a dedicated utility queue.
 ///

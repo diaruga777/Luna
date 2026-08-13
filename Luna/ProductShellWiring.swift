@@ -17,7 +17,7 @@
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceUI
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import UIKit
 
@@ -28,7 +28,7 @@ enum ProductShellWiring {
         IngestorKindHandlers.product = ProductKindHandler()
         // A re-save that merges into a tracker which has never been through
         // a fan-out (still fewer than two stores) kicks a comparison instead
-        // of showing nothing forever — `LunaReadingList` cannot link
+        // of showing nothing forever — `LunaSaves` cannot link
         // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
         SavesIngestor.priceTrackerComparisonKicker = ResaveComparisonKicker()
         // Action Button intents hand a saved product back as its comparison
@@ -99,7 +99,7 @@ private struct URLRescuePriceResolver: ProductPriceResolving {
 }
 
 /// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
-/// The re-save bridge: `LunaReadingList` cannot link `LunaPriceUI`, so the
+/// The re-save bridge: `LunaSaves` cannot link `LunaPriceUI`, so the
 /// composition root carries the fan-out call.
 private struct ResaveComparisonKicker: PriceTrackerComparisonKicking {
     func kickComparison(itemID: UUID, url: URL, store: SavesStore) {

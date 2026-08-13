@@ -28,8 +28,8 @@ import LunaDesignSystem
 import LunaFetch
 import LunaModels
 import LunaReaderUI
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaSocialUI
 import LunaSocial
 import LunaStorage

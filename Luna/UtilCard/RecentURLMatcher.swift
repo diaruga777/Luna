@@ -8,8 +8,8 @@ import LunaFetch
 import LunaHTMLClassification
 import LunaIngest
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaStorage
 import LunaURLClassification
 import UIKit

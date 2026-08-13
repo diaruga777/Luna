@@ -13,7 +13,7 @@ public extension Notification.Name {
     ///
     /// Lives in LunaModels so both posters can see it without re-coupling: the
     /// product ingest handler (LunaPriceUI) posts it for created/merged trackers,
-    /// and `SavesIngestor`'s re-save dedup (LunaReadingList) posts it when a
+    /// and `SavesIngestor`'s re-save dedup (LunaSaves) posts it when a
     /// re-saved URL merges into an existing tracker.
     static let priceTrackerSavedInteractively =
         Notification.Name("priceTrackerSavedInteractively")

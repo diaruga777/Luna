@@ -4,7 +4,7 @@
 //
 
 import LunaReaderUI
-import LunaReadingListUI
+import LunaSavesUI
 import LunaModels
 import XCTest
 @testable import Luna

@@ -21,7 +21,7 @@ private struct AppDiagnosticsMirror: SaveDiagnosticsMirroring {
 }
 
 /// Presents the unsupported-kind error for a dropped INTERACTIVE in-app save.
-/// Installed by the app shell at launch (AppDelegate) — LunaReadingList can't
+/// Installed by the app shell at launch (AppDelegate) — LunaSaves can't
 /// know how the app presents modals.
 public protocol UnsupportedSavePresenting {
     @MainActor
@@ -38,7 +38,7 @@ public protocol IngestRescueTriggering {
 }
 
 /// Starts an alternative-seller fan-out for a re-saved product URL. Installed by
-/// a product-handling app's `KindWiring` (`LunaReadingList` cannot link
+/// a product-handling app's `KindWiring` (`LunaSaves` cannot link
 /// `LunaPriceUI`); uninstalled in a process that hasn't composed the product
 /// kind, where nothing runs anyway.
 public protocol PriceTrackerComparisonKicking {
@@ -793,8 +793,8 @@ public final class SavesIngestor {
 /// ingestor's store-writing helpers. Exhaustive — every case is handled, so a new
 /// `Outcome` kind can't be silently dropped. This is the headless persistence
 /// presenter shared by interactive saves (paste/manual), app intents, and incoming
-/// friend shares; the foreground list opens the saved item via
-/// `ReadingListViewController.open(_:presenter:)` when tapped.
+/// friend shares; the card deck opens the saved item through its kind's
+/// `CardKindPresenting` when tapped.
 public struct IngestorOutcomePresenter: OutcomePresenter {
     public let ingestor: SavesIngestor
     public let url: URL

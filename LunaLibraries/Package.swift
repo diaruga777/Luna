@@ -42,10 +42,10 @@ let package = Package(
         .library(name: "LunaPriceUI", targets: ["LunaPriceUI"]),
         .library(name: "LunaShareSurface", targets: ["LunaShareSurface"]),
         .library(name: "LunaURLRescue", targets: ["LunaURLRescue"]),
-        .library(name: "LunaReadingList", targets: ["LunaReadingList"]),
+        .library(name: "LunaSaves", targets: ["LunaSaves"]),
         .library(name: "LunaSocialUI", targets: ["LunaSocialUI"]),
         .library(name: "LunaIntents", targets: ["LunaIntents"]),
-        .library(name: "LunaReadingListUI", targets: ["LunaReadingListUI"]),
+        .library(name: "LunaSavesUI", targets: ["LunaSavesUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -202,17 +202,17 @@ let package = Package(
             "LunaFetch", "LunaPaywallBypass", "LunaIngest", "LunaStorage",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
-        .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReadingList", "LunaSocial"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaHTMLClassification", "LunaIngest", "LunaFetch", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaSaves", "LunaSocial"]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaHTMLClassification", "LunaIngest", "LunaFetch", "LunaSaves", "LunaSocial"]),
         // Kind-neutral list UI (cells, sectioning, diff, subtitle assembly,
         // status pill): no per-kind modules — the kind-specific list behavior
         // lives behind the app shells' `ListKindSupport` seams.
-        .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaDesignSystem"]),
+        .target(name: "LunaSavesUI", dependencies: ["LunaModels", "LunaDesignSystem"]),
         // Universal ingest orchestration linked by EVERY app: no kind-specific
         // modules here. Per-kind persistence lives behind `IngestorKindHandlers`
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
-        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
+        .target(name: "LunaSaves", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

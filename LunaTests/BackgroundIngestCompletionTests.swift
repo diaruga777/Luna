@@ -5,7 +5,7 @@
 
 @testable import LunaMediaDownload
 import LunaModels
-import LunaReadingList
+import LunaSaves
 import LunaStorage
 import XCTest
 

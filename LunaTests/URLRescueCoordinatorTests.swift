@@ -6,7 +6,7 @@
 import XCTest
 import LunaModels
 import LunaStorage
-@testable import LunaReadingList
+@testable import LunaSaves
 
 final class URLRescueCoordinatorTests: XCTestCase {
     private var tempDir: URL!

@@ -8,7 +8,7 @@
 //  list these screens through `settingsCategories()`.
 //
 
-import LunaReadingListUI
+import LunaSavesUI
 import LunaReaderUI
 import LunaDesignSystem
 import LunaStorage

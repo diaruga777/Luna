@@ -38,7 +38,7 @@ public final class PasteboardSuggester {
 
     /// Best-effort preview art for a recognized platform URL, installed by the
     /// media-handling apps' shell (it needs `PlatformRegistry`'s metadata
-    /// fetchers, which LunaReadingList must not depend on). Left uninstalled ⇒
+    /// fetchers, which LunaSaves must not depend on). Left uninstalled ⇒
     /// no art.
     public static var platformPreviewArt: (any PlatformPreviewArtProviding)?
 }

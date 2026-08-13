@@ -6,8 +6,8 @@
 import Foundation
 import LunaHTMLClassification
 import LunaModels
-import LunaReadingList
-import LunaReadingListUI
+import LunaSaves
+import LunaSavesUI
 import LunaStorage
 import LunaURLRescue
 

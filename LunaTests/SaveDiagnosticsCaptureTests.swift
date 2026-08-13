@@ -20,8 +20,8 @@ import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
-@testable import LunaReadingList
-@testable import LunaReadingListUI
+@testable import LunaSaves
+@testable import LunaSavesUI
 
 @MainActor
 final class SaveDiagnosticsCaptureTests: XCTestCase {

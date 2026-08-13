@@ -1,6 +1,6 @@
 //
 //  EmailShareCenter.swift
-//  LunaReadingList
+//  LunaSaves
 //
 
 import LunaModels
@@ -12,7 +12,7 @@ import UIKit
 
 /// Renders a tracker's price graph as the hero image of a shared-tracker email.
 /// Installed by the composition root of an app that both sends email and holds
-/// trackers — the graph view lives in LunaPriceUI, which LunaReadingList must
+/// trackers — the graph view lives in LunaPriceUI, which LunaSaves must
 /// not depend on.
 public protocol PriceGraphEmailRendering {
     /// JPEG data for the graph, or nil when it cannot be drawn.

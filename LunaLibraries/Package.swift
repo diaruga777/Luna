@@ -27,7 +27,6 @@ let package = Package(
         .library(name: "LunaDocuments", targets: ["LunaDocuments"]),
         .library(name: "LunaEpub", targets: ["LunaEpub"]),
         .library(name: "LunaSend", targets: ["LunaSend"]),
-        .library(name: "LunaMail", targets: ["LunaMail"]),
         .library(name: "LunaMailAccount", targets: ["LunaMailAccount"]),
         .library(name: "LunaMailTransport", targets: ["LunaMailTransport"]),
         .library(name: "LunaDesignSystem", targets: ["LunaDesignSystem"]),
@@ -114,12 +113,13 @@ let package = Package(
         .target(name: "LunaDocuments", dependencies: ["LunaModels", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount", "LunaAppConfig", "LunaURLClassification"]),
-        .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", "LunaMailAccount", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         // IMAP/SMTP engine for the multi-provider email account, built on
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external
-        // deps. Reuses LunaMail's MIME parsers. Linked by the app, not extensions.
-        .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // deps. Also holds the MIME/RFC822 parsers (`IMAPParsing`, `MIMEBody`),
+        // the mail→article builder and `IncomingMailSettings`. Linked by the app,
+        // not extensions.
+        .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // Resources: every Luna app's icon artwork (`LunaAppIconImage`). A target
         // only gets its OWN appiconset at runtime, and the unsupported-save card
         // has to show whichever SIBLING app owns a dropped link — so the four
@@ -212,7 +212,7 @@ let package = Package(
         // modules here. Per-kind persistence lives behind `IngestorKindHandlers`
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
-        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
+        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

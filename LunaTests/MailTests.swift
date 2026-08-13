@@ -6,7 +6,7 @@
 //  GmailIMAPClientTests, and IncomingMailImporterTests.
 //
 
-import LunaMail
+import LunaMailTransport
 import LunaEpub
 import LunaMailAccount
 import LunaSend

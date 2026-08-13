@@ -3,7 +3,6 @@
 //  LunaReadingList
 //
 
-import LunaMail
 import LunaMailAccount
 import LunaMailTransport
 import LunaSocial

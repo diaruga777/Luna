@@ -56,28 +56,27 @@ public struct SaveFailureRecord: Codable, Equatable, Sendable {
 }
 
 /// App-Group-backed failure detail, written to `saveFailures.json` beside the
-/// reading list. Cheap lock + atomic write (like `RescueLedgerStore`): the
-/// records are display metadata, so a lost race costs a detail line, never a
-/// save.
+/// reading list. Every read and every mutation goes through the file: the share
+/// and action extensions record failures while the app is suspended, so a
+/// mutation applied to a snapshot from launch would drop whatever they wrote
+/// (see `CoordinatedJSONFile`).
 public final class SaveFailureStore {
     public static let shared = SaveFailureStore()
 
-    private let fileURL: URL?
     private let now: () -> Date
-    private let lock = NSLock()
-    private var records: [String: SaveFailureRecord]   // key = item UUID string
+    /// Keyed by item UUID string.
+    private let file: CoordinatedJSONFile<[String: SaveFailureRecord]>
 
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.now = now
         let base = containerURL ?? AppConfig.sharedContainerURL()
-        self.fileURL = base?.appendingPathComponent("saveFailures.json")
-        self.records = [:]
-        loadFromDisk()
+        self.file = CoordinatedJSONFile(
+            url: base?.appendingPathComponent("saveFailures.json"),
+            encoder: .sidecarISO8601, decoder: .sidecarISO8601, empty: { [:] })
     }
 
     public func record(for itemID: UUID) -> SaveFailureRecord? {
-        lock.lock(); defer { lock.unlock() }
-        return records[itemID.uuidString]
+        file.read()[itemID.uuidString]
     }
 
     /// Records a fresh failure, bumping the count and refreshing the reason.
@@ -119,8 +118,7 @@ public final class SaveFailureStore {
     /// the set an app update has just made eligible again. Read by the rescue
     /// coordinator at launch so it can clear their attempt budget.
     public func idsWithStaleAIAttempt(version: String = AppConfig.appVersion) -> Set<UUID> {
-        lock.lock(); defer { lock.unlock() }
-        return Set(records.compactMap { key, record in
+        Set(file.read().compactMap { key, record in
             guard let spent = record.aiAttemptVersion, spent != version else { return nil }
             return UUID(uuidString: key)
         })
@@ -129,52 +127,29 @@ public final class SaveFailureStore {
     /// Clears an item's record — called when it stops being failed (a rescue or
     /// a retry succeeded) so a later failure starts from a clean count.
     public func clear(_ itemID: UUID) {
-        lock.lock(); defer { lock.unlock() }
-        guard records.removeValue(forKey: itemID.uuidString) != nil else { return }
-        persistLocked()
+        file.mutateIfChanged { records in
+            (result: (), changed: records.removeValue(forKey: itemID.uuidString) != nil)
+        }
     }
 
     /// Drops rows for items no longer present (called from the rescue sweep).
     public func prune(keeping ids: Set<UUID>) {
-        lock.lock(); defer { lock.unlock() }
         let keys = Set(ids.map(\.uuidString))
-        let before = records.count
-        records = records.filter { keys.contains($0.key) }
-        if records.count != before { persistLocked() }
+        file.mutateIfChanged { records in
+            let before = records.count
+            records = records.filter { keys.contains($0.key) }
+            return (result: (), changed: records.count != before)
+        }
     }
 
     // MARK: - Private
 
     private func mutate(_ itemID: UUID, _ body: (inout SaveFailureRecord) -> Void) {
-        lock.lock(); defer { lock.unlock() }
-        var record = records[itemID.uuidString]
-            ?? SaveFailureRecord(lastFailureDate: now(), failureCount: 0)
-        body(&record)
-        records[itemID.uuidString] = record
-        persistLocked()
-    }
-
-    private func loadFromDisk() {
-        guard let fileURL, let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder.saveFailures
-                  .decode([String: SaveFailureRecord].self, from: data)
-        else { return }
-        records = decoded
-    }
-
-    private func persistLocked() {
-        guard let fileURL, let data = try? JSONEncoder.saveFailures.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
-    }
-}
-
-private extension JSONEncoder {
-    static var saveFailures: JSONEncoder {
-        let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; return e
-    }
-}
-private extension JSONDecoder {
-    static var saveFailures: JSONDecoder {
-        let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d
+        file.mutate { records in
+            var record = records[itemID.uuidString]
+                ?? SaveFailureRecord(lastFailureDate: self.now(), failureCount: 0)
+            body(&record)
+            records[itemID.uuidString] = record
+        }
     }
 }

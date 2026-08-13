@@ -5,11 +5,6 @@
 
 import Foundation
 
-private enum CoordinatedAccessorResult<Value> {
-    case notRun
-    case value(Value)
-}
-
 /// The shared `NSLock` + `NSFileCoordinator` "load → mutate → save" wrapper for a
 /// JSON index file mutated from multiple processes (the app and its extensions all
 /// touch `imageRefs.json`/`preloads.json`): an uncoordinated load→save would let the
@@ -28,8 +23,9 @@ func coordinatedMutateJSONIndex<Index, T>(
         save(index, url)
         return result
     }
-    // `T` may itself be Optional. A dedicated state distinguishes a legitimate
-    // `nil` value from an accessor that was never invoked.
+    // `T` may itself be Optional, so `CoordinatedAccessorResult` rather than a
+    // `?? fallback`: a legitimate `nil` value and an accessor that never ran are
+    // different answers.
     var coordinatedResult = CoordinatedAccessorResult<T>.notRun
     var coordError: NSError?
     fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in

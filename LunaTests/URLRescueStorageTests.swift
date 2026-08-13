@@ -74,6 +74,45 @@ final class URLRescueStorageTests: XCTestCase {
         XCTAssertTrue(b.wasRescued(id))
     }
 
+    /// Two live stores on one file — the app and an extension, in different
+    /// processes. Neither one's attempt may rewrite the other's row away, and
+    /// each has to see what the other recorded.
+    func testEitherLiveStoreSeesTheOthersWrites() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let a = RescueLedgerStore(containerURL: dir, now: { now })
+        let b = RescueLedgerStore(containerURL: dir, now: { now })
+        let fromA = UUID()
+        let fromB = UUID()
+        a.recordAttempt(fromA, hint: .article)
+        b.recordGuardrail(fromB)
+
+        XCTAssertTrue(a.isGuardrailed(fromB))
+        a.recordAttempt(fromA, hint: .article)
+        XCTAssertTrue(b.isGuardrailed(fromB), "A's attempt must not drop B's guardrail")
+        XCTAssertEqual(b.entry(fromA)?.attemptCount, 2)
+    }
+
+    /// The on-disk shape another process (or an older build) writes: item UUID
+    /// keys, ISO-8601 dates.
+    func testLedgerReadsTheFileFormatAnotherProcessWrites() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let id = UUID()
+        let json = """
+        {"\(id.uuidString)":{"attemptCount":2,"succeeded":false,\
+        "lastAttemptDate":"2026-08-13T04:05:06Z","guardrailedAt":"2026-08-13T04:05:06Z"}}
+        """
+        try Data(json.utf8).write(to: dir.appendingPathComponent("rescueLedger.json"))
+        let store = RescueLedgerStore(containerURL: dir, now: { Date() })
+        let entry = try XCTUnwrap(store.entry(id))
+        XCTAssertEqual(entry.attemptCount, 2)
+        XCTAssertEqual(entry.lastAttemptDate, Date(timeIntervalSince1970: 1_786_593_906))
+        XCTAssertTrue(store.isGuardrailed(id))
+        XCTAssertFalse(store.shouldAutoRescue(id))
+    }
+
     // MARK: - PendingRescueRequestStore
 
     private func makePendingStore(now: @escaping () -> Date = Date.init) -> (PendingRescueRequestStore, UserDefaults) {
@@ -220,6 +259,25 @@ final class URLRescueStorageTests: XCTestCase {
         XCTAssertEqual(reopened.snapshot().outcome(.rescued), 1)
         XCTAssertEqual(reopened.snapshot().methods["reroute"], 1)
         XCTAssertEqual(reopened.snapshot().cachedRuleHits, 1)
+    }
+
+    /// Two live stores counting into one file: every bump has to land, because
+    /// each mutation reads the file it is adding to.
+    func testCountersFromEitherLiveStoreAccumulate() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let a = RescueStatsStore(containerURL: dir)
+        let b = RescueStatsStore(containerURL: dir)
+        a.recordAttempt()
+        b.recordAttempt()
+        a.record(.rescued, method: "reroute")
+        b.record(.guardrailed)
+
+        XCTAssertEqual(a.snapshot().attempts, 2)
+        XCTAssertEqual(b.snapshot().attempts, 2)
+        XCTAssertEqual(a.snapshot().outcome(.rescued), 1)
+        XCTAssertEqual(a.snapshot().outcome(.guardrailed), 1)
+        XCTAssertEqual(b.snapshot().methods["reroute"], 1)
     }
 
     /// The summary line is what a sweep logs and what Diagnostics reads, so it

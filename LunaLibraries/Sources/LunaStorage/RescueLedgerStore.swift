@@ -45,9 +45,11 @@ public struct RescueLedgerEntry: Codable, Equatable {
 }
 
 /// App-Group-backed ledger, written to `rescueLedger.json` beside the reading
-/// list. The main app is the only LLM runner (this store's writers), so a lock +
-/// atomic write suffices. "In-flight" is deliberately NOT persisted (a crash must
-/// not strand an item) — the coordinator tracks that in process memory.
+/// list. Every read and every mutation goes through the file (see
+/// `CoordinatedJSONFile`), so a ledger row written from another process is not
+/// rewritten away by this one's next attempt. "In-flight" is deliberately NOT
+/// persisted (a crash must not strand an item) — the coordinator tracks that in
+/// process memory.
 public final class RescueLedgerStore {
     public static let shared = RescueLedgerStore()
 
@@ -56,24 +58,22 @@ public final class RescueLedgerStore {
     /// Minimum spacing between automatic attempts.
     public static let autoRetrySpacing: TimeInterval = 24 * 60 * 60
 
-    private let fileURL: URL?
     private let now: () -> Date
-    private let lock = NSLock()
-    private var entries: [String: RescueLedgerEntry]   // key = item UUID string
+    /// Keyed by item UUID string.
+    private let file: CoordinatedJSONFile<[String: RescueLedgerEntry]>
 
     public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.now = now
         let base = containerURL ?? AppConfig.sharedContainerURL()
-        self.fileURL = base?.appendingPathComponent("rescueLedger.json")
-        self.entries = [:]
-        loadFromDisk()
+        self.file = CoordinatedJSONFile(
+            url: base?.appendingPathComponent("rescueLedger.json"),
+            encoder: .sidecarISO8601, decoder: .sidecarISO8601, empty: { [:] })
     }
 
     /// Whether an automatic rescue is allowed for this item now — under the
     /// attempt cap and past the spacing window. Manual one-shots ignore this.
     public func shouldAutoRescue(_ itemID: UUID) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard let entry = entries[itemID.uuidString] else { return true }
+        guard let entry = file.read()[itemID.uuidString] else { return true }
         guard entry.guardrailedAt == nil else { return false }
         guard entry.attemptCount < Self.maxAutoAttempts else { return false }
         guard let last = entry.lastAttemptDate else { return true }
@@ -83,8 +83,7 @@ public final class RescueLedgerStore {
     /// Whether this item is permanently out of rescue's reach. Checked by BOTH
     /// the automatic sweep and the manual tap — a guardrail is not a budget.
     public func isGuardrailed(_ itemID: UUID) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return entries[itemID.uuidString]?.guardrailedAt != nil
+        file.read()[itemID.uuidString]?.guardrailedAt != nil
     }
 
     public func recordGuardrail(_ itemID: UUID) {
@@ -94,8 +93,7 @@ public final class RescueLedgerStore {
     /// Whether the interactive browser handoff has already been offered for this
     /// item — the once-only gate on the deterministic fast-path.
     public func hasHandedToBrowser(_ itemID: UUID) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return entries[itemID.uuidString]?.browserHandoffAt != nil
+        file.read()[itemID.uuidString]?.browserHandoffAt != nil
     }
 
     public func recordBrowserHandoff(_ itemID: UUID) {
@@ -118,13 +116,11 @@ public final class RescueLedgerStore {
     }
 
     public func wasRescued(_ itemID: UUID) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return entries[itemID.uuidString]?.succeeded ?? false
+        file.read()[itemID.uuidString]?.succeeded ?? false
     }
 
     public func entry(_ itemID: UUID) -> RescueLedgerEntry? {
-        lock.lock(); defer { lock.unlock() }
-        return entries[itemID.uuidString]
+        file.read()[itemID.uuidString]
     }
 
     /// Forgets these items' attempt history, so the automatic sweep may try them
@@ -133,57 +129,36 @@ public final class RescueLedgerStore {
     /// has changed, so the 2-attempts/24h budget shouldn't hold a stale verdict.
     public func resetAttempts(for ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
-        lock.lock(); defer { lock.unlock() }
-        var changed = false
-        for id in ids {
-            guard var entry = entries[id.uuidString], !entry.succeeded else { continue }
-            entry.attemptCount = 0
-            entry.lastAttemptDate = nil
-            entries[id.uuidString] = entry
-            changed = true
+        file.mutateIfChanged { entries in
+            var changed = false
+            for id in ids {
+                guard var entry = entries[id.uuidString], !entry.succeeded else { continue }
+                entry.attemptCount = 0
+                entry.lastAttemptDate = nil
+                entries[id.uuidString] = entry
+                changed = true
+            }
+            return (result: (), changed: changed)
         }
-        if changed { persistLocked() }
     }
 
     /// Drops ledger rows for items no longer present (called from the sweep).
     public func prune(keeping ids: Set<UUID>) {
-        lock.lock(); defer { lock.unlock() }
         let keys = Set(ids.map(\.uuidString))
-        let before = entries.count
-        entries = entries.filter { keys.contains($0.key) }
-        if entries.count != before { persistLocked() }
+        file.mutateIfChanged { entries in
+            let before = entries.count
+            entries = entries.filter { keys.contains($0.key) }
+            return (result: (), changed: entries.count != before)
+        }
     }
 
     // MARK: - Private
 
     private func mutate(_ itemID: UUID, _ body: (inout RescueLedgerEntry) -> Void) {
-        lock.lock(); defer { lock.unlock() }
-        var entry = entries[itemID.uuidString] ?? RescueLedgerEntry()
-        body(&entry)
-        entries[itemID.uuidString] = entry
-        persistLocked()
-    }
-
-    private func loadFromDisk() {
-        guard let fileURL, let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder.rescueLedger.decode([String: RescueLedgerEntry].self, from: data)
-        else { return }
-        entries = decoded
-    }
-
-    private func persistLocked() {
-        guard let fileURL, let data = try? JSONEncoder.rescueLedger.encode(entries) else { return }
-        try? data.write(to: fileURL, options: .atomic)
-    }
-}
-
-private extension JSONEncoder {
-    static var rescueLedger: JSONEncoder {
-        let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; return e
-    }
-}
-private extension JSONDecoder {
-    static var rescueLedger: JSONDecoder {
-        let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d
+        file.mutate { entries in
+            var entry = entries[itemID.uuidString] ?? RescueLedgerEntry()
+            body(&entry)
+            entries[itemID.uuidString] = entry
+        }
     }
 }

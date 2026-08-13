@@ -139,9 +139,12 @@ nothing queries it, so it is a diagnostic and gets no index.
 
 ## Surface presentation — decks, not a list
 
-Every app's home screen is a card deck: `ArticleCardsViewController` (central Luna
-and Reader), `SavedMediaCardsViewController` (Downloader),
-`PriceTrackerCardsViewController` (Price Tracker). Every deck permanently begins
+Every app's home screen is a card deck, built by its own
+`KindWiring.makeRootViewController()`: `ArticleCardsViewController` for central
+Luna and Reader, `MediaCardDeck.makeRoot()` for the Downloader,
+`ProductCardDeck.makeRoot()` for the Price Tracker — all of them the one
+`CardCarouselHostViewController` plus that kind's `CardDeckProviding` half (see
+`card-carousel.md`). Every deck permanently begins
 with the util card and has a right-edge archive tray. When there are no saves the
 util card is centered; otherwise the leftmost save is centered and the util card
 is one swipe to the left. See `util-card.md`.
@@ -422,8 +425,10 @@ save delete everything hanging off it.
 queue and the reaper, reading every assertion through a SECOND connection the way
 another process would. `LunaTests/SavesStoreCacheTests.swift` pins the
 `data_version` cache and the no-op-mutation skip.
-`LunaTests/ArticleExtractorTests.swift` and
-`LunaTests/PasteboardSuggesterTests.swift` cover extraction and the paste hook.
+`LunaTests/SavesIngestorSurfaceTests.swift` and
+`LunaTests/SavesIngestorTrackerDedupTests.swift` cover the ingestor's per-app drop
+gate and its re-save dedup; `LunaTests/ArticleExtractorTests.swift` covers
+extraction.
 
 ## Bulk import / export
 

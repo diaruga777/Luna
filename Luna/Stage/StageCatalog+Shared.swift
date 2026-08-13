@@ -147,8 +147,7 @@ enum SharedStageCatalog {
                 make: {
                     let onboarding = AppOnboardingViewController(
                         completion: AppOnboardingCompletion(
-                            makeCompletedRootViewController:
-                                KindWiring.makeRootViewController))
+                            root: KindWiringOnboardingRoot()))
                     // Same cue as the stage above: the sequence starts once the
                     // screen has been laid out at its full size.
                     DispatchQueue.main.asyncAfter(
@@ -348,7 +347,7 @@ enum SharedStageCatalog {
         let onboarding = AppOnboardingStore(
             app: .current, defaults: scratchDefaults("utilCard"),
             saveSetupMode: .actionButtonShortcut,
-            newestSaveDate: { _ in saveDates.max() })
+            newestSave: StagedNewestSave(date: saveDates.max()))
         if !showsOnboarding { onboarding.markCompleted() }
 
         let weekly = WeeklySaveStore(
@@ -654,6 +653,13 @@ final class StageCardHostViewController: UIViewController {
             inScreenSize: view.bounds.size, safeAreaInsets: view.safeAreaInsets)
         card.view.frame = surface.contentContainer.bounds
     }
+}
+
+/// A staged deck's newest save: one fixture date, or none for an empty deck.
+private struct StagedNewestSave: OnboardingNewestSaveProviding {
+    let date: Date?
+
+    func newestSaveDate(excluding excludedID: UUID?) -> Date? { date }
 }
 
 #endif

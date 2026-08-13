@@ -22,17 +22,31 @@ struct OnboardingContentWatch {
     /// change. Each app names its own: a foreign kind's notification lives in a
     /// module that app doesn't link.
     let changeNotifications: [Notification.Name]
-    /// The ids currently stored across every store this app saves into.
-    let storedIdentifiers: () -> Set<UUID>
+    /// What is stored across every store this app saves into. A protocol rather
+    /// than a closure because this is per-app composition — each app's stores are
+    /// a different set — not a value describing one row.
+    let content: any OnboardingStoredContentProviding
 
     init(
         changeNotifications: [Notification.Name] = [.readingListChanged],
-        storedIdentifiers: @escaping () -> Set<UUID> = {
-            Set(ReadingListStore.shared.items().map(\.id))
-        }
+        content: any OnboardingStoredContentProviding = ReadingListStoredContent()
     ) {
         self.changeNotifications = changeNotifications
-        self.storedIdentifiers = storedIdentifiers
+        self.content = content
+    }
+}
+
+/// The ids currently stored across every store an app saves into — how the
+/// journey notices a real save landing behind it.
+protocol OnboardingStoredContentProviding {
+    func storedIdentifiers() -> Set<UUID>
+}
+
+/// The universal answer: the shared reading list. Apps whose kinds live in a
+/// second store compose their own.
+struct ReadingListStoredContent: OnboardingStoredContentProviding {
+    func storedIdentifiers() -> Set<UUID> {
+        Set(ReadingListStore.shared.items().map(\.id))
     }
 }
 
@@ -44,11 +58,24 @@ struct OnboardingContentWatch {
 /// each app sweeps its own marker once at launch. Nothing writes one any more:
 /// this is migration only, and can be deleted once no install in the field
 /// predates the change.
-struct OnboardingLegacyDemoSave {
-    let cleanup: () -> Void
+protocol OnboardingLegacyDemoSweeping {
+    /// Deletes the demonstration item a previous build recorded, and clears the
+    /// marker either way. Ownership is by exact id, so a save the user made
+    /// themselves is never touched.
+    func sweepLegacyDemoSave()
+}
 
-    init(cleanup: @escaping () -> Void) {
-        self.cleanup = cleanup
+/// Builds this target's post-onboarding root — the card deck, per app.
+@MainActor
+protocol CompletedOnboardingRootMaking {
+    func makeCompletedRootViewController() -> UIViewController
+}
+
+/// The production root: whichever `KindWiring` variant this target compiles.
+@MainActor
+struct KindWiringOnboardingRoot: CompletedOnboardingRootMaking {
+    func makeCompletedRootViewController() -> UIViewController {
+        KindWiring.makeRootViewController()
     }
 }
 
@@ -56,14 +83,14 @@ struct OnboardingLegacyDemoSave {
 /// Keeping this immutable and injected avoids mutable process-wide closure slots.
 struct AppOnboardingCompletion {
     let contentWatch: OnboardingContentWatch
-    let makeCompletedRootViewController: () -> UIViewController
+    let root: any CompletedOnboardingRootMaking
 
     init(
         contentWatch: OnboardingContentWatch = OnboardingContentWatch(),
-        makeCompletedRootViewController: @escaping () -> UIViewController
+        root: any CompletedOnboardingRootMaking
     ) {
         self.contentWatch = contentWatch
-        self.makeCompletedRootViewController = makeCompletedRootViewController
+        self.root = root
     }
 }
 

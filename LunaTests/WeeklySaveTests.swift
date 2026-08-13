@@ -204,7 +204,7 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertNotNil(
             diagnostics.view.firstDescendant(identifier: "diagnostics.eraseAllData"))
 
-        let settings = SettingsViewController(emailIsConfigured: { true })
+        let settings = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: true))
         settings.loadViewIfNeeded()
         let titles = (0..<settings.tableView.numberOfRows(inSection: 0)).compactMap {
             settings.tableView(

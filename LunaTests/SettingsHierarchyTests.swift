@@ -9,6 +9,14 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// Pins whether Settings believes a sending account is connected, so the
+/// email-gated rows can be asserted either way without the App Group.
+struct StubEmailAccountStatus: EmailAccountStatusProviding {
+    let isConnected: Bool
+
+    var isEmailAccountConnected: Bool { isConnected }
+}
+
 @MainActor
 final class SettingsHierarchyTests: XCTestCase {
     private var window: UIWindow?
@@ -68,7 +76,7 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(rowTitle(screen, row: 1, section: 0), "Import Links")
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 2)
 
-        let top = SettingsViewController(emailIsConfigured: { true })
+        let top = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: true))
         window = UITestSupport.host(UINavigationController(rootViewController: top))
         let titles = (0..<top.tableView.numberOfRows(inSection: 0)).compactMap {
             rowTitle(top, row: $0, section: 0)
@@ -91,7 +99,7 @@ final class SettingsHierarchyTests: XCTestCase {
     }
 
     func testTopLevelHidesDiagnosticsAndRequiresEmailForKindle() {
-        let screen = SettingsViewController(emailIsConfigured: { false })
+        let screen = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: false))
         let nav = UINavigationController(rootViewController: screen)
         window = UITestSupport.host(nav)
 
@@ -187,7 +195,7 @@ final class SettingsHierarchyTests: XCTestCase {
     }
 
     func testSettingsHasFiveTapDiagnosticsGesture() {
-        let screen = SettingsViewController(emailIsConfigured: { false })
+        let screen = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: false))
         window = UITestSupport.host(screen)
 
         XCTAssertTrue(screen.tableView.gestureRecognizers?.contains {

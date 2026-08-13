@@ -33,4 +33,11 @@ enum BundledLunaArticle {
         else { return }
         store.delete(item)
     }
+
+    /// The article apps' leg of the launch sweep.
+    struct LegacySweep: OnboardingLegacyDemoSweeping {
+        func sweepLegacyDemoSave() {
+            BundledLunaArticle.cleanupLegacyTemporarySave()
+        }
+    }
 }

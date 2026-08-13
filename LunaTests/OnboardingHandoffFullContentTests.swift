@@ -15,6 +15,19 @@ import XCTest
 /// deck straight out of onboarding must reach that promotion exactly as a cold
 /// launch does — otherwise every card is stuck showing a few hundred characters
 /// of its save until the app is force-quit.
+/// The production root as this suite needs it: a FRESH article deck, kept so the
+/// test can assert what the handed-off deck did with its centered card.
+@MainActor
+final class ArticleDeckOnboardingRoot: CompletedOnboardingRootMaking {
+    private(set) var deck: ArticleCardsViewController?
+
+    func makeCompletedRootViewController() -> UIViewController {
+        let cards = ArticleCardsViewController()
+        deck = cards
+        return UINavigationController(rootViewController: cards)
+    }
+}
+
 final class OnboardingHandoffFullContentTests: XCTestCase {
 
     override func tearDown() {
@@ -50,20 +63,15 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
 
         let store = AppOnboardingStore(app: .reader, defaults: defaults)
         let changed = Notification.Name("onboarding.handoff.\(UUID())")
-        var identifiers: Set<UUID> = [UUID()]
-        var deck: ArticleCardsViewController?
+        let content = ScriptedStoredContent(identifiers: [UUID()])
+        let productionRoot = ArticleDeckOnboardingRoot()
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: store,
             completion: AppOnboardingCompletion(
                 contentWatch: OnboardingContentWatch(
-                    changeNotifications: [changed],
-                    storedIdentifiers: { identifiers }),
-                makeCompletedRootViewController: {
-                    let cards = ArticleCardsViewController()
-                    deck = cards
-                    return UINavigationController(rootViewController: cards)
-                }))
+                    changeNotifications: [changed], content: content),
+                root: productionRoot))
         let window = makeWindow(rootViewController: onboarding)
         defer { window.isHidden = true }
 
@@ -74,15 +82,15 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         // instead of assuming it lands inside a fixed pump: under full-suite
         // load that hop has been measured at ~360ms, which turned a passing
         // assertion into a race the suite lost as it grew.
-        identifiers.insert(UUID())
+        content.identifiers.insert(UUID())
         NotificationCenter.default.post(name: changed, object: nil)
 
         waitUntil(
-            store.isCompleted && deck != nil,
+            store.isCompleted && productionRoot.deck != nil,
             timeout: 5,
             message: "a save arriving while the intro is up must end onboarding and hand "
                 + "a freshly built production root to the window")
-        let cards = try XCTUnwrap(deck)
+        let cards = try XCTUnwrap(productionRoot.deck)
         waitUntil(
             firstScrollReader(in: cards)?.didLoadFullContentForTesting == true,
             timeout: 5,
@@ -102,16 +110,11 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        var deck: ArticleCardsViewController?
+        let productionRoot = ArticleDeckOnboardingRoot()
         let onboarding = AppOnboardingViewController(
             configuration: .configuration(for: .reader),
             onboardingStore: AppOnboardingStore(app: .reader, defaults: defaults),
-            completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: {
-                    let cards = ArticleCardsViewController()
-                    deck = cards
-                    return UINavigationController(rootViewController: cards)
-                }))
+            completion: AppOnboardingCompletion(root: productionRoot))
         let window = makeWindow(rootViewController: onboarding)
         defer { window.isHidden = true }
 
@@ -122,7 +125,7 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         let root = try XCTUnwrap(onboarding.savedRootViewControllerForTesting)
-        let cards = try XCTUnwrap(deck)
+        let cards = try XCTUnwrap(productionRoot.deck)
 
         // Finish: hand the preloaded root to the window.
         AppOnboardingCompletionTransition.run(in: window, to: root)

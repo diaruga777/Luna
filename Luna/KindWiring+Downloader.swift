@@ -16,7 +16,7 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSweeping`).
     private static let legacyOnboardingDemoSave =
         DownloaderOnboardingDemoSave.legacyCleanup
 
@@ -76,7 +76,7 @@ enum KindWiring {
     }
 
     static func appDidLaunch() {
-        legacyOnboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.sweepLegacyDemoSave()
         MediaShellWiring.appDidLaunch()
     }
 

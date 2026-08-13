@@ -8,6 +8,26 @@ import LunaStorage
 import LunaAppConfig
 import Foundation
 
+/// When the newest save in the shared store was made — the one reading the
+/// save-completes-onboarding latch needs.
+///
+/// Injected so the latch is assertable without writing the real App Group store,
+/// and so a staged launch can hand over fixture dates.
+protocol OnboardingNewestSaveProviding {
+    /// `excludedID` is onboarding's own demonstration row, which must never
+    /// count as the user's first save.
+    func newestSaveDate(excluding excludedID: UUID?) -> Date?
+}
+
+/// The production answer: the shared reading list.
+struct SharedStoreNewestSave: OnboardingNewestSaveProviding {
+    func newestSaveDate(excluding excludedID: UUID?) -> Date? {
+        ReadingListStore.shared.items()
+            .filter { $0.id != excludedID }
+            .map(\.dateAdded).max()
+    }
+}
+
 /// Per-install completion and exact temporary-save ownership for each Luna app.
 ///
 /// This deliberately uses standard defaults, not the App Group: all Luna apps
@@ -31,18 +51,14 @@ final class AppOnboardingStore {
     /// When the newest save in the shared store was made, ignoring one id.
     /// Injected so the save-completes-onboarding latch is assertable without
     /// writing the real App Group store.
-    private let newestSaveDate: (UUID?) -> Date?
+    private let newestSave: any OnboardingNewestSaveProviding
 
     init(
         app: LunaApp = .current,
         defaults: UserDefaults = .standard,
         setupStatusStore: LunaSetupStatusStore? = nil,
         saveSetupMode: OnboardingSaveSetupMode = .current,
-        newestSaveDate: @escaping (UUID?) -> Date? = { excluded in
-            ReadingListStore.shared.items()
-                .filter { $0.id != excluded }
-                .map(\.dateAdded).max()
-        }
+        newestSave: any OnboardingNewestSaveProviding = SharedStoreNewestSave()
     ) {
         self.app = app
         self.defaults = defaults
@@ -51,7 +67,7 @@ final class AppOnboardingStore {
             ?? (defaults === UserDefaults.standard
                 ? .shared
                 : LunaSetupStatusStore(defaults: defaults))
-        self.newestSaveDate = newestSaveDate
+        self.newestSave = newestSave
     }
 
     var isCompleted: Bool {
@@ -97,7 +113,7 @@ final class AppOnboardingStore {
     @discardableResult
     func markCompletedIfSavedSinceOnboardingStart() -> Bool {
         guard !isCompleted, let start = onboardingStartDate,
-              let newest = newestSaveDate(temporarySaveIdentifier),
+              let newest = newestSave.newestSaveDate(excluding: temporarySaveIdentifier),
               newest > start
         else { return false }
         markCompleted()

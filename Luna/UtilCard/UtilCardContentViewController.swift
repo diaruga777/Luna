@@ -955,8 +955,7 @@ final class UtilCardContentViewController: CardContentViewController {
     /// when it finishes. Every app compiles both ends, so the card names them.
     private func presentSetupReplay(_ source: OnboardingDemoSource) {
         AppOnboardingViewController.presentSetupReplay(
-            source, from: self,
-            makeCompletedRootViewController: KindWiring.makeRootViewController)
+            source, from: self, root: KindWiringOnboardingRoot())
     }
 
     @objc private func emailSetupTapped() {

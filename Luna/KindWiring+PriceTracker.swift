@@ -16,7 +16,7 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSave`).
+    /// Migration only — onboarding stores nothing (see `OnboardingLegacyDemoSweeping`).
     private static let legacyOnboardingDemoSave =
         PriceTrackerOnboardingDemoSave.legacyCleanup
 
@@ -69,7 +69,7 @@ enum KindWiring {
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
 
     static func appDidLaunch() {
-        legacyOnboardingDemoSave.cleanup()
+        legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ProductShellWiring.appDidLaunch()
     }
 

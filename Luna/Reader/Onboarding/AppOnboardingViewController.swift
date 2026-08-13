@@ -263,7 +263,7 @@ final class AppOnboardingViewController: UIViewController {
     static func presentSetupReplay(
         _ source: OnboardingDemoSource,
         from presenter: UIViewController,
-        makeCompletedRootViewController: @escaping () -> UIViewController
+        root: any CompletedOnboardingRootMaking
     ) {
         guard let window = presenter.view.window else { return }
         let snapshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -272,8 +272,7 @@ final class AppOnboardingViewController: UIViewController {
         let replay = AppOnboardingViewController(
             setupReplaySource: source,
             setupReplayOriginSnapshot: snapshot,
-            completion: AppOnboardingCompletion(
-                makeCompletedRootViewController: makeCompletedRootViewController))
+            completion: AppOnboardingCompletion(root: root))
         replay.modalPresentationStyle = .fullScreen
         presenter.present(replay, animated: false)
     }
@@ -441,7 +440,7 @@ final class AppOnboardingViewController: UIViewController {
     }
 
     private func configureLifecycleObservers() {
-        knownContentIdentifiers = completion.contentWatch.storedIdentifiers()
+        knownContentIdentifiers = completion.contentWatch.content.storedIdentifiers()
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
@@ -1631,7 +1630,7 @@ final class AppOnboardingViewController: UIViewController {
         else { return }
         // Onboarding never writes, so every unseen id here is a save the user
         // really made — through a share/action extension or an App Intent.
-        let current = completion.contentWatch.storedIdentifiers()
+        let current = completion.contentWatch.content.storedIdentifiers()
         guard !current.subtracting(knownContentIdentifiers).isEmpty else { return }
         completeOnboardingWithRealSave(animated: false)
     }
@@ -1677,7 +1676,7 @@ final class AppOnboardingViewController: UIViewController {
             oldRoot.removeFromParent()
         }
         savedCardWaveSnapshot = nil
-        let root = completion.makeCompletedRootViewController()
+        let root = completion.root.makeCompletedRootViewController()
         savedRootViewController = root
         addChild(root)
         root.view.frame = view.bounds
@@ -1808,7 +1807,7 @@ final class AppOnboardingViewController: UIViewController {
             self.externalReturn = .none
             self.intro.setActionsEnabled(true)
             self.knownContentIdentifiers =
-                self.completion.contentWatch.storedIdentifiers()
+                self.completion.contentWatch.content.storedIdentifiers()
             switcher.removeFromSuperview()
             self.appSwitcher = nil
             self.setNeedsStatusBarAppearanceUpdate()
@@ -1899,7 +1898,7 @@ final class AppOnboardingViewController: UIViewController {
 
     private func mountCompletedRootIfNeeded() {
         guard savedRootViewController == nil else { return }
-        let root = completion.makeCompletedRootViewController()
+        let root = completion.root.makeCompletedRootViewController()
         savedRootViewController = root
         addChild(root)
         root.view.frame = view.bounds

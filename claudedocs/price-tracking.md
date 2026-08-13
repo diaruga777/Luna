@@ -600,7 +600,14 @@ compiler; it is gone.)
 Library/ProductSnapshots/
   snapshotIndex.json          identifier key -> record ids, plus record id -> day
   records/<record id>.json    one observation each
+  priceHistoryIndex.json      the tracked products' compact history
 ```
+
+`priceHistoryIndex.json` is the same arrangement for the products the user
+actually tracks: `PriceHistoryIndexWriter` (LunaPriceUI) regenerates it, and
+`PriceHistoryIndex` reads it back for the Safari extensions. Deciding whether a
+page IS one of these products, or one of the observations above, is
+`ProductPageMatching` — also here, for the same reachability reason.
 
 A lookup decodes the index — a flat string map with no observation bodies — and
 then opens **only** the record files its candidate's identifiers point at. The

@@ -106,19 +106,6 @@ final class RSVPAudioSyncTests: XCTestCase {
     // word events are gated on `isPlaying`) and makes the play button's first
     // tap pause the audio instead of resuming. These tests pin that re-sync.
 
-    /// Spins the main run loop until `condition` holds (the center's render
-    /// pipeline hops through a `Task` + a main-queue dispatch).
-    private func waitUntil(
-        timeout: TimeInterval = 2, _ message: String = "condition not met in time",
-        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertTrue(condition(), message, file: file, line: line)
-    }
-
     private func makeRSVP(item: ReadingListItem, content: ArticleContent) -> RSVPViewController {
         let rsvp = RSVPViewController(item: item, content: content, audioEnabled: true)
         rsvp.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -136,7 +123,7 @@ final class RSVPAudioSyncTests: XCTestCase {
         store.seed(item, content: content)
 
         center.play(item: item, content: content)
-        waitUntil("center never reached playing") { self.center.state == .playing(itemID: item.id) }
+        waitUntil(self.center.state == .playing(itemID: item.id), message: "center never reached playing")
 
         let rsvp = makeRSVP(item: item, content: content)
         // Freshly built, the reader hasn't observed a state CHANGE (playback was
@@ -172,7 +159,7 @@ final class RSVPAudioSyncTests: XCTestCase {
         let playingContent = AudioPlaybackFixtures.content(blockCount: 4, wordsPerBlock: 6)
         store.seed(playing, content: playingContent)
         center.play(item: playing, content: playingContent)
-        waitUntil("center never reached playing") { self.center.state == .playing(itemID: playing.id) }
+        waitUntil(self.center.state == .playing(itemID: playing.id), message: "center never reached playing")
 
         let other = AudioPlaybackFixtures.item(seed: "rsvp-other-shown")
         let otherContent = AudioPlaybackFixtures.content(blockCount: 3, wordsPerBlock: 5)

@@ -31,9 +31,10 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         let window = makeWindow(rootViewController: UINavigationController(rootViewController: deck))
         defer { window.isHidden = true }
 
-        XCTAssertTrue(
-            waitForFullContent(in: deck),
-            "a cold-launched deck must expand its centered card to the full article")
+        waitUntil(
+            firstScrollReader(in: deck)?.didLoadFullContentForTesting == true,
+            timeout: 5,
+            message: "a cold-launched deck must expand its centered card to the full article")
     }
 
     /// The regression: onboarding builds the production root, hands it to the
@@ -76,14 +77,16 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         identifiers.insert(UUID())
         NotificationCenter.default.post(name: changed, object: nil)
 
-        XCTAssertTrue(
-            wait(until: { store.isCompleted && deck != nil }),
-            "a save arriving while the intro is up must end onboarding and hand "
+        waitUntil(
+            store.isCompleted && deck != nil,
+            timeout: 5,
+            message: "a save arriving while the intro is up must end onboarding and hand "
                 + "a freshly built production root to the window")
         let cards = try XCTUnwrap(deck)
-        XCTAssertTrue(
-            waitForFullContent(in: cards),
-            "the deck handed off from onboarding must expand its centered card "
+        waitUntil(
+            firstScrollReader(in: cards)?.didLoadFullContentForTesting == true,
+            timeout: 5,
+            message: "the deck handed off from onboarding must expand its centered card "
                 + "to the full article, not leave it on the Phase-1 prefix")
     }
 
@@ -124,9 +127,10 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         // Finish: hand the preloaded root to the window.
         AppOnboardingCompletionTransition.run(in: window, to: root)
 
-        XCTAssertTrue(
-            waitForFullContent(in: cards),
-            "the PRELOADED deck handed off at the end of onboarding must expand its "
+        waitUntil(
+            firstScrollReader(in: cards)?.didLoadFullContentForTesting == true,
+            timeout: 5,
+            message: "the PRELOADED deck handed off at the end of onboarding must expand its "
                 + "centered card to the full article, not leave it on the Phase-1 prefix")
     }
 
@@ -153,28 +157,6 @@ final class OnboardingHandoffFullContentTests: XCTestCase {
         window.makeKeyAndVisible()
         rootViewController.view.layoutIfNeeded()
         return window
-    }
-
-    /// Pumps the run loop until the deck's centered card carries a scroll reader
-    /// that finished the Phase-2 swap.
-    @MainActor
-    private func waitForFullContent(in deck: ArticleCardsViewController) -> Bool {
-        wait(until: {
-            firstScrollReader(in: deck)?.didLoadFullContentForTesting == true
-        })
-    }
-
-    /// Pumps the run loop until the condition holds, or the deadline passes.
-    @MainActor
-    private func wait(
-        until condition: () -> Bool, timeout: TimeInterval = 5
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        }
-        return condition()
     }
 
     @MainActor

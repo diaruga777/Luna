@@ -364,12 +364,12 @@ final class UtilCardTests: XCTestCase {
             (.reader, "A Read"),
         ] {
             host.advance(forward: true, velocity: 0)
-            waitUntil("\(app) never arrived") {
+            waitUntil(
                 self.visibleWeeklyRow(in: host)?.accessibilityLabel?
                     .contains(rowTitle) == true
                     && safari.configuration?.title
-                    == OnboardingStrings.Intro.safariAction.value(for: app)
-            }
+                    == OnboardingStrings.Intro.safariAction.value(for: app),
+                message: "\(app) never arrived")
             XCTAssertEqual(
                 shortcut.configuration?.title,
                 OnboardingStrings.Intro.shortcutAction.value(for: app))
@@ -430,12 +430,12 @@ final class UtilCardTests: XCTestCase {
             (.reader, "A Read"),
         ] {
             host.advance(forward: true, velocity: 0)
-            waitUntil("\(app)'s phrasing never reached the completed card") {
+            waitUntil(
                 self.visibleWeeklyRow(in: host)?.accessibilityLabel?
                     .contains(rowTitle) == true
                     && safari.configuration?.title
-                    == OnboardingStrings.Intro.safariAction.value(for: app)
-            }
+                    == OnboardingStrings.Intro.safariAction.value(for: app),
+                message: "\(app)'s phrasing never reached the completed card")
             XCTAssertEqual(
                 shortcut.configuration?.title,
                 OnboardingStrings.Intro.shortcutAction.value(for: app))
@@ -469,10 +469,10 @@ final class UtilCardTests: XCTestCase {
 
         for app in [LunaApp.reader, .downloader, .priceTracker] {
             advance()
-            waitUntil("\(app)'s phrasing never arrived") {
+            waitUntil(
                 safari.configuration?.title
-                    == OnboardingStrings.Intro.safariAction.value(for: app)
-            }
+                    == OnboardingStrings.Intro.safariAction.value(for: app),
+                message: "\(app)'s phrasing never arrived")
         }
 
         card.cardDidLeaveCenter()
@@ -506,11 +506,11 @@ final class UtilCardTests: XCTestCase {
             // A reflow mid-slide is ordinary — the weekly row appears, a save
             // lands — and must not move the label either.
             card.view.layoutIfNeeded()
-            waitUntil("\(app)'s label never settled") {
+            waitUntil(
                 button.configuration?.title
                     == OnboardingStrings.Intro.safariAction.value(for: app)
-                    && label.transform.isIdentity && label.alpha == 1
-            }
+                    && label.transform.isIdentity && label.alpha == 1,
+                message: "\(app)'s label never settled")
             XCTAssertEqual(label.frame.minX, restingX, accuracy: 0.5)
         }
     }
@@ -1369,19 +1369,6 @@ final class UtilCardTests: XCTestCase {
             defaults: defaults,
             setupStatusStore: LunaSetupStatusStore(defaults: defaults),
             saveSetupMode: saveSetupMode)
-    }
-
-    /// Spins the main run loop until `condition` holds. The label swap lands in
-    /// an animation completion, so a fixed pump would be a guess.
-    private func waitUntil(
-        _ message: String, timeout: TimeInterval = 3,
-        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertTrue(condition(), message, file: file, line: line)
     }
 
     /// The one weekly row on screen — mid-slide there are two, so this answers

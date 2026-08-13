@@ -2,9 +2,9 @@
 //  MIMEHeaderEncoding.swift
 //  LunaModels
 //
-//  Shared by the two MIME builders (LunaEpub's MIMEMessage for send-to-Kindle
-//  and LunaMailAccount's EmailMIMEBuilder for shares), which cannot import each
-//  other. Header text must respect RFC 5322's 998-octet line limit — strict
+//  Shared by LunaMailAccount's two MIME builders (MIMEMessage for send-to-Kindle
+//  and EmailMIMEBuilder for shares), and by anything else that assembles a mail
+//  header. Header text must respect RFC 5322's 998-octet line limit — strict
 //  servers reject or mangle over-long header lines — and RFC 2047's 75-char
 //  encoded-word limit for non-ASCII text.
 //

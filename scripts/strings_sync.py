@@ -91,7 +91,6 @@ SECTIONS = [
     ("LunaPriceIngest", "Price Tracker"),
     ("LunaMailAccount", "Email & Sending"),
     ("LunaMailTransport", "Email & Sending"),
-    ("LunaMail", "Email & Sending"),
     ("LunaSocialUI", "Sharing with Friends"),
     ("LunaSocial", "Sharing with Friends"),
     ("LunaWeekly", "Save of the Week"),

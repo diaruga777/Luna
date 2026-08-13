@@ -5,7 +5,7 @@
 
 import LunaReadingListUI
 import LunaReadingList
-import LunaMail
+import LunaMailTransport
 import LunaMailAccount
 import LunaSend
 import LunaModels

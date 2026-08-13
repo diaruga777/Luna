@@ -1,5 +1,5 @@
 //
-//  GmailIMAPClient.swift
+//  IMAPParsing.swift
 //  Luna
 //
 
@@ -33,10 +33,9 @@ public struct IncomingMessage: Equatable {
 }
 
 /// The pure IMAP/RFC822 parsing helpers shared by `StreamIMAPClient` (the live
-/// transport), `MIMEBody`, and the mail importer. The original hand-rolled
-/// NWConnection IMAP client that lived here was superseded by
-/// `StreamIMAPClient` and has been removed; only its unit-tested parsers (and
-/// `IncomingMessage`) remain.
+/// transport), `MIMEBody`, and the mail importer. Nothing here talks to a
+/// server, and nothing here is Gmail-specific — the name is kept because every
+/// call site spells it.
 public enum GmailIMAPClient {
 
     /// IMAP quoted string (wraps in quotes, escapes `\` and `"`).

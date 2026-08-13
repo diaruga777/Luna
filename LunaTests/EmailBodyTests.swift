@@ -7,7 +7,7 @@
 //
 
 import XCTest
-import LunaMail
+import LunaMailTransport
 import LunaModels
 @testable import LunaMailAccount
 

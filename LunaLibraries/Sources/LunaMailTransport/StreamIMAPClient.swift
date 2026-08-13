@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import LunaMail
 import LunaMailAccount
 
 /// Minimal IMAP4rev1 client over `MailStream` (implicit TLS on 993). Speaks just

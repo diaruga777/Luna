@@ -7,7 +7,6 @@
 //  message deleted: it is never searched for again.
 //
 
-import LunaMail
 import LunaMailAccount
 import XCTest
 @testable import LunaMailTransport

@@ -1,6 +1,6 @@
 //
 //  MIMEMessage.swift
-//  Luna
+//  LunaMailAccount
 //
 
 import Foundation

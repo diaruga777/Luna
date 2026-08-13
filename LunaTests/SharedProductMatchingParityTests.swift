@@ -51,7 +51,7 @@ final class SharedProductMatchingParityTests: XCTestCase {
     /// A single-snapshot pool: with only one candidate to consider, tier
     /// PRECEDENCE (which tier's matches get returned) can't change whether
     /// this one snapshot matches — so "non-empty result" here is exactly the
-    /// same question the extension's per-pair boolean answers.
+    /// same question `ProductPageMatching`'s per-pair boolean answers.
     private func matches(_ candidate: ProductInfo, url: URL, _ snapshot: ProductSnapshot) -> Bool {
         !SnapshotMatcher.matchingSnapshots(for: candidate, candidateURL: url, among: [snapshot]).isEmpty
     }

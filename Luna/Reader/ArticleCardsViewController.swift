@@ -755,14 +755,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             shareProvider: AppReaderShareProvider.shared)
     }
 
-    /// Deep-link / external open (SceneDelegate). WHERE it goes is the article
-    /// kind's answer, in `ArticleCardPresenter.openExternally`; this is the
-    /// entry point SceneDelegate already knows about.
-    func openExternally(_ item: ReadingListItem) {
-        guard let presenter = presenter(forItem: item) else { return }
-        _ = presenter.openExternally(item, host: self)
-    }
-
 }
 
 // MARK: - What an article card asks of the screen around it
@@ -1974,9 +1966,3 @@ private final class ReaderFooterContentFadeView: UIView {
         ]
     }
 }
-
-// MARK: - External open (deep link / notification route)
-
-/// `openExternally(_:)` itself is defined above; this just marks the deck as a
-/// root `SceneDelegate` can hand items to without a kind-specific downcast.
-extension ArticleCardsViewController: ExternalItemOpening {}

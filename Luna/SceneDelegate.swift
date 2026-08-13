@@ -220,7 +220,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         (deck as? CardCarouselHostViewController)?.centerCard(onItemID: item.id)
         Task { @MainActor in
             guard let fileURL = await exporter.export(item.id) else {
-                (deck as? ExternalItemOpening)?.openExternally(item)
+                (deck as? CardCarouselHostViewController)?.openExternally(item)
                 return
             }
             let activity = UIActivityViewController(

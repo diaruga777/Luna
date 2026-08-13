@@ -23,7 +23,7 @@ final class LinkImportSheetTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        LinkImportRunner.mediaDownloadProgress = nil
+        LinkImportRunner.media = nil
         tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(

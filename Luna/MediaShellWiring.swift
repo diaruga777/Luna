@@ -41,31 +41,13 @@ enum MediaShellWiring {
         MediaUtilCardStorageChoice.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
         URLRescueWiring.mediaResolver = SocialMediaResolver()
-        URLRescueWiring.mediaRescueStarter = { sourceURLString, title, assets in
-            await LiveMediaDownloadManager.shared.startWithResolvedAssets(
-                sourceURLString: sourceURLString, title: title, assets: assets)
-        }
+        URLRescueWiring.mediaRescueStarter = ResolvedAssetRescueStarter()
         // The factory reset's media leg: a Live Activity outlives the process
         // that started it, so the wipe has to end them itself.
-        FactoryReset.additionalErasers.append {
-            await LiveMediaDownloadManager.shared.endAllActivities()
-        }
-        LinkImportRunner.mediaDownloadProgress = MediaImportProgress.observe
-        // A bulk import runs its own progress bar; the per-transfer Live
-        // Activity alerts (banner + sound + haptic) would buzz twice per link
-        // over the top of it.
-        // Photos access asked for at the START of an import, not when the first
-        // transfer wants it (`claudedocs/import-export.md`).
-        LinkImportRunner.mediaStoragePreflight = { urlStrings in
-            await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
-        }
-        LinkImportRunner.mediaAlertSuspension = { suspended in
-            if suspended {
-                LiveMediaDownloadManager.suspendActivityAlerts()
-            } else {
-                LiveMediaDownloadManager.resumeActivityAlerts()
-            }
-        }
+        FactoryReset.register(eraser: LiveActivityEraser())
+        // A bulk import runs its own progress bar, and asks for Photos access at
+        // the START of the run (`claudedocs/import-export.md`).
+        LinkImportRunner.media = MediaImportLeg()
     }
 
     // MARK: - Lifecycle
@@ -157,6 +139,49 @@ enum MediaShellWiring {
             return await MediaAutoDownloader.exportFile(from: item)?.fileURL
         },
         discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+}
+
+/// URL Rescue's media leg: the engine already resolved the assets, so this
+/// downloads them without re-running platform resolution.
+private struct ResolvedAssetRescueStarter: MediaRescueStarting {
+    func startMediaRescue(
+        sourceURLString: String, title: String?, assets: [MediaAsset]
+    ) async -> Bool {
+        await LiveMediaDownloadManager.shared.startWithResolvedAssets(
+            sourceURLString: sourceURLString, title: title, assets: assets)
+    }
+}
+
+/// The factory reset's media leg: a Live Activity outlives the process that
+/// started it, so a wiped download would otherwise keep a lock-screen card
+/// describing itself.
+private struct LiveActivityEraser: FactoryResetErasing {
+    func erase() async {
+        await LiveMediaDownloadManager.shared.endAllActivities()
+    }
+}
+
+/// The bulk import's media leg: the transfer watcher, the Live Activity alert
+/// suspension that keeps an import from buzzing twice per link, and the one
+/// Photos prompt asked for before the run starts.
+private struct MediaImportLeg: LinkImportMediaHandling {
+    func downloadState(
+        forURLString urlString: String
+    ) -> LinkImportRunner.MediaDownloadState? {
+        MediaImportProgress.observe(urlString: urlString)
+    }
+
+    func setAlertsSuspended(_ suspended: Bool) {
+        if suspended {
+            LiveMediaDownloadManager.suspendActivityAlerts()
+        } else {
+            LiveMediaDownloadManager.resumeActivityAlerts()
+        }
+    }
+
+    func preflightStorage(forURLStrings urlStrings: [String]) async {
+        await MediaPhotosPreflight.requestAccessIfNeeded(for: urlStrings)
+    }
 }
 
 /// Bridges `IngestorMediaHandling` to LunaPlatforms' `PlatformItemIngestor`.

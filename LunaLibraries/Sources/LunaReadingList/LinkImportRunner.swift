@@ -8,13 +8,58 @@ import LunaIngest
 import LunaModels
 import LunaStorage
 
+/// The media leg of an import: watching a transfer, silencing its alerts for the
+/// length of the run, and asking for the storage permission the batch will need.
+/// Installed by the media `KindWiring`s so this module keeps linking no kind
+/// package.
+public protocol LinkImportMediaHandling: Sendable {
+    /// The live state of the media download for `urlString`, or nil when none is
+    /// running.
+    func downloadState(forURLString urlString: String) -> LinkImportRunner.MediaDownloadState?
+
+    /// Silences the media Live Activity's start/finish ALERTS — banner, sound and
+    /// **haptic** — for the length of a run, called with `true` when it begins
+    /// and `false` when it ends. An import of a few hundred social links
+    /// otherwise buzzes the device twice per link while the user is watching this
+    /// sheet's own progress bar report the same thing.
+    func setAlertsSuspended(_ suspended: Bool)
+
+    /// Asks for whatever system permission this batch's downloads will need,
+    /// ONCE, before the run starts (Photos access, when downloads are set to land
+    /// there and the file holds at least one downloadable link).
+    ///
+    /// It belongs at the top of the run rather than in the pipeline: the media
+    /// path's own prompts arrive either at a transfer's start gate or — in the
+    /// Downloader — when the FIRST transfer finishes, i.e. a system alert over
+    /// the progress bar minutes in, with a queue behind it that fails as
+    /// `.photosPermission` while the user reads it.
+    func preflightStorage(forURLStrings urlStrings: [String]) async
+}
+
+/// The import's pass over the saves that came back hard-paywalled. Installed by
+/// the article `KindWiring`s.
+public protocol LinkImportArticleUnlocking: Sendable {
+    /// Tries to unlock a hard-paywalled save in a real (off-screen) `WKWebView`,
+    /// answering whether the article's content ended up saved.
+    ///
+    /// The silent tier can't pass a JS paywall or a bot gate, so those saves land
+    /// `.needsCaptcha` — titled, tappable, and unread. Doing that pass HERE,
+    /// while the user is already waiting on the import, is worth a lot more than
+    /// leaving two hundred of them to be tapped one at a time later. It gives up
+    /// the moment it meets a CAPTCHA: an unattended flow cannot solve one, and
+    /// stopping for it would mean either a stalled bar or a modal thrown over the
+    /// top of it. The save stays exactly as it was, for the user to open when
+    /// they choose.
+    func unlockArticle(itemID: UUID, urlString: String) async -> Bool
+}
+
 /// Runs a reviewed batch of imported links through the ordinary save pipeline —
 /// one shared ingest per link, the per-app content gate, then the LLM rescue for
 /// anything that failed — while reporting one honest overall fraction.
 ///
 /// See `claudedocs/import-export.md`. Deliberately kind-neutral: a media
-/// download is observed through an injected seam (`mediaDownloadProgress`), so
-/// this module keeps linking no kind package.
+/// download is observed through an installed protocol witness (`media`), so this
+/// module keeps linking no kind package.
 public final class LinkImportRunner {
 
     // MARK: - Inputs
@@ -115,46 +160,16 @@ public final class LinkImportRunner {
         }
     }
 
-    /// Installed by the media `KindWiring`s over `LiveMediaDownloadManager`
-    /// (`Luna/KindWiring+Luna.swift`, `+Downloader.swift`). Left nil in Reader and
-    /// Price Tracker, where a media link can never pass the content gate, so
-    /// there is nothing to watch.
-    public static var mediaDownloadProgress: (@Sendable (String) -> MediaDownloadState?)?
+    /// The media leg of an import, installed by the media `KindWiring`s over
+    /// `LiveMediaDownloadManager` / `MediaPhotosPreflight`
+    /// (`Luna/MediaShellWiring.swift`). Left uninstalled in Reader and Price
+    /// Tracker, where a media link can never pass the content gate.
+    public static var media: (any LinkImportMediaHandling)?
 
-    /// Silences the media Live Activity's start/finish ALERTS — banner, sound and
-    /// **haptic** — for the length of a run, called with `true` when it begins and
-    /// `false` when it ends. An import of a few hundred social links otherwise
-    /// buzzes the device twice per link while the user is watching this sheet's own
-    /// progress bar report the same thing. Installed by the media `KindWiring`s
-    /// (nil elsewhere: no media link can pass those apps' content gate, so there
-    /// is no transfer to alert about).
-    public static var mediaAlertSuspension: (@Sendable (Bool) -> Void)?
-
-    /// Asks for whatever system permission this batch's downloads will need, ONCE,
-    /// before the run starts. Installed by the media `KindWiring`s over
-    /// `MediaPhotosPreflight` (Photos access, when downloads are set to land
-    /// there and the file holds at least one downloadable link).
-    ///
-    /// It belongs at the top of the run rather than in the pipeline: the media
-    /// path's own prompts arrive either at a transfer's start gate or — in the
-    /// Downloader — when the FIRST transfer finishes, i.e. a system alert over the
-    /// progress bar minutes in, with a queue behind it that fails as
-    /// `.photosPermission` while the user reads it.
-    public static var mediaStoragePreflight: (@Sendable ([String]) async -> Void)?
-
-    /// Tries to unlock a hard-paywalled save in a real (off-screen) `WKWebView`,
-    /// returning whether the article's content ended up saved. Installed by the
-    /// article `KindWiring`s over `UnattendedArticleUnlock` (nil in the Downloader
-    /// and Price Tracker, where no article save exists to unlock).
-    ///
-    /// The silent tier can't pass a JS paywall or a bot gate, so those saves land
-    /// `.needsCaptcha` — titled, tappable, and unread. Doing that pass HERE, while
-    /// the user is already waiting on the import, is worth a lot more than leaving
-    /// two hundred of them to be tapped one at a time later. It gives up the moment
-    /// it meets a CAPTCHA: an unattended flow cannot solve one, and stopping for it
-    /// would mean either a stalled bar or a modal thrown over the top of it. The
-    /// save stays exactly as it was, for the user to open when they choose.
-    public static var articleUnlocker: (@Sendable (UUID, String) async -> Bool)?
+    /// The article-unlock leg of an import, installed by the article
+    /// `KindWiring`s over `UnattendedArticleUnlock`. Left uninstalled in the
+    /// Downloader and Price Tracker, where no article save exists to unlock.
+    public static var articleUnlocker: (any LinkImportArticleUnlocking)?
 
     // MARK: - Tunables
 
@@ -342,14 +357,14 @@ public final class LinkImportRunner {
         // Quiet for the whole run, restored however it ends (finished, stopped, or
         // the caller's task cancelled). An import is one operation with one
         // progress bar; it does not need a system alert per link.
-        Self.mediaAlertSuspension?(true)
-        defer { Self.mediaAlertSuspension?(false) }
+        Self.media?.setAlertsSuspended(true)
+        defer { Self.media?.setAlertsSuspended(false) }
 
         // Every permission this batch could need, asked for here and nowhere else.
         // Before the first write, so the answer is in hand by the time a transfer
         // wants it — and before the progress bar starts moving, so the alert isn't
         // an interruption of something already underway.
-        await Self.mediaStoragePreflight?(candidates.map(\.urlString))
+        await Self.media?.preflightStorage(forURLStrings: candidates.map(\.urlString))
 
         // 1. One coordinated write for the whole batch, in the file's order.
         let placements = store.insertImported(
@@ -447,7 +462,7 @@ public final class LinkImportRunner {
         // 3. The locked articles, in a real browser, one at a time and out of
         // sight. Serial because it is a WKWebView per attempt, and because two of
         // them racing archive.today is the fastest way to be rate-limited.
-        if let unlock = Self.articleUnlocker, !locked.isEmpty {
+        if let unlocker = Self.articleUnlocker, !locked.isEmpty {
             setPhase(.unlocking)
             for unit in locked {
                 guard !isCancelled else {
@@ -459,7 +474,8 @@ public final class LinkImportRunner {
                 // The outcome doesn't change the score: a locked save counts as
                 // imported either way — it is titled and it opens. Unlocking now
                 // just means the user doesn't have to tap it later.
-                _ = await unlock(unit.item.id, unit.candidate.urlString)
+                _ = await unlocker.unlockArticle(
+                    itemID: unit.item.id, urlString: unit.candidate.urlString)
                 summary.imported += 1
                 complete(slice: unit.slice)
             }
@@ -576,12 +592,13 @@ public final class LinkImportRunner {
     /// up to minutes. If that handler ever becomes fire-and-forget the only
     /// consequence is a coarser bar, not a wrong result.
     private func awaitDownload(for item: ReadingListItem, slice: Int) async {
-        guard let observe = Self.mediaDownloadProgress,
-              observe(item.urlString) != nil else { return }
+        guard let media = Self.media,
+              media.downloadState(forURLString: item.urlString) != nil else { return }
         let started = clock()
         let span = Self.followUpShare - Self.ingestShare
         while clock().timeIntervalSince(started) < Self.downloadWait, !isCancelled {
-            guard let state = observe(item.urlString) else { return } // Finished and reaped.
+            // Finished and reaped.
+            guard let state = media.downloadState(forURLString: item.urlString) else { return }
             setSlice(slice, to: Self.ingestShare + span * min(1, max(0, state.fraction)))
             if state.isFinished { return }
             try? await Task.sleep(nanoseconds: UInt64(Self.downloadPoll * 1_000_000_000))

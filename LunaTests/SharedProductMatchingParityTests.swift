@@ -9,21 +9,18 @@ import LunaPriceCompare
 import LunaPriceUI
 import XCTest
 
-/// `LunaSafari/SharedProductMatching.swift` is a THIRD hand-written copy of
-/// `SnapshotMatcher`/`ProductMatcher`'s identifier precedence, living in a
-/// package-free appex — the same situation `SharedSafariURL` is in relative to
-/// `LunaSetupStatusStore`. `SafariSetupCelebrationTests` resolves that by
-/// pinning literal constants/keys against the extension's SOURCE TEXT rather
-/// than compiling it into the test target (LunaSafari isn't set up for dual
-/// target membership, and adding it would be exactly the kind of
-/// project.pbxproj surgery CLAUDE.md flags as fragile). This test follows the
-/// same convention:
-///  1. runs a fixture matrix through the REAL `SnapshotMatcher`/`ProductMatcher`
-///     pair to pin the EXPECTED per-tier outcomes (also covered directly by
-///     `SnapshotMatcherTests`);
-///  2. checks the extension's source literally implements the same tiers, in
-///     the same precedence order, with the same thresholds/constants, so a
-///     future edit to one side that isn't mirrored on the other fails loudly.
+/// "Is this the same product?" is decided in two places, because it is asked
+/// about two different things: `SnapshotMatcher` (LunaPriceUI) answers it for a
+/// product being SAVED, over `ProductInfo` and a retrieved pool of observations;
+/// `ProductPageMatching` (LunaPriceCompare) answers it for a Safari page's
+/// freshly extracted snapshot, against the tracked-product index and other
+/// observations. Both run the same identifier precedence, so this suite runs one
+/// fixture matrix through each and pins the tiers where they must agree — and
+/// the two places they deliberately differ (a page comparison has no fuzzy-name
+/// tier; a tracked-entry comparison does).
+///
+/// The extension's remaining Swift is the message plumbing around them, still a
+/// second artifact and still pinned by source text.
 final class SharedProductMatchingParityTests: XCTestCase {
 
     private static func extensionSource(_ relativePath: String) -> String {
@@ -33,9 +30,7 @@ final class SharedProductMatchingParityTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
     }
 
-    private static var matchingSource: String { extensionSource("LunaSafari/SharedProductMatching.swift") }
-
-    // MARK: - The fixture matrix, run through the REAL matcher
+    // MARK: - The fixture matrix, run through the save-side matcher
 
     private func snapshot(
         name: String = "Widget", url: String, gtin: String? = nil, mpn: String? = nil,
@@ -264,42 +259,56 @@ final class SharedProductMatchingParityTests: XCTestCase {
         }
     }
 
-    // MARK: - Structural parity with the extension's copy
+    // MARK: - The one artifact that cannot link Swift
 
-    func testTheExtensionImplementsEveryPrecedenceTier() {
-        let source = Self.matchingSource
-        XCTAssertFalse(source.isEmpty, "LunaSafari/SharedProductMatching.swift not found")
-        for marker in [
-            "normalizedGTIN", "hostFamilyMatches", "registrableDomain",
-            "brandsCompatible", "nameSimilarity", "strippedTrackingURL",
-        ] {
-            XCTAssertTrue(source.contains(marker), "the extension's matcher has no \"\(marker)\"")
+    /// `content.js` canonicalizes a page's URL before it sends the observation,
+    /// and Swift canonicalizes both sides again when it matches. A family the
+    /// page strips and Swift keeps would file an observation under a key no
+    /// later visit can ask for, so the JS list is read out of the script itself
+    /// and every family in it is required to survive a Swift round trip.
+    ///
+    /// Swift strips one more — Amazon's `tag` — which is why this is a one-way
+    /// check rather than an equality.
+    func testSwiftStripsEveryTrackingFamilyTheContentScriptDoes() throws {
+        let script = Self.extensionSource("LunaSafari/Resources/content.js")
+        XCTAssertFalse(script.isEmpty, "LunaSafari/Resources/content.js not found")
+
+        let names = try Self.jsStringArray(named: "TRACKING_QUERY_PARAM_NAMES", in: script)
+        let prefixes = try Self.jsStringArray(named: "TRACKING_QUERY_PARAM_PREFIXES", in: script)
+        XCTAssertFalse(names.isEmpty)
+        XCTAssertFalse(prefixes.isEmpty)
+
+        let page = "https://shop.example/products/widget"
+        for name in names {
+            XCTAssertEqual(
+                ProductSnapshotKeys.strippedTrackingURL("\(page)?\(name)=x"), page,
+                "content.js strips \(name) and Swift keeps it")
         }
+        for prefix in prefixes {
+            XCTAssertEqual(
+                ProductSnapshotKeys.strippedTrackingURL("\(page)?\(prefix)source=x"), page,
+                "content.js strips \(prefix)* and Swift keeps it")
+        }
+        // Amazon's affiliate tag, Swift's own addition, and only on Amazon.
+        XCTAssertEqual(
+            ProductSnapshotKeys.strippedTrackingURL(
+                "https://www.amazon.com/dp/B000TEST1?tag=aff"),
+            "https://www.amazon.com/dp/B000TEST1")
+        XCTAssertEqual(
+            ProductSnapshotKeys.strippedTrackingURL("\(page)?tag=aff"), "\(page)?tag=aff")
     }
 
-    func testTheExtensionUsesTheSameNameThreshold() {
-        XCTAssertTrue(
-            Self.matchingSource.contains("nameThreshold = \(ProductMatcher.nameThreshold)"),
-            "SharedProductMatching's fuzzy-name threshold has drifted from ProductMatcher.nameThreshold")
-    }
-
-    func testTheExtensionUsesTheSameTrackingParamNames() {
-        let source = Self.matchingSource
-        for token in ["srsltid", "gclid", "utm_", "\"tag\""] {
-            XCTAssertTrue(source.contains(token), "the extension's URL stripper has no \"\(token)\"")
-        }
-    }
-
-    func testTheExtensionUsesTheSameStopWords() {
-        // Mirrors ProductMatcher's private stopWords set by literal text --
-        // there is no public accessor to compare against directly.
-        let stopWords = ["\"the\"", "\"a\"", "\"an\"", "\"and\"", "\"with\"", "\"for\"",
-                          "\"new\"", "\"of\"", "\"in\"", "\"to\"", "\"buy\"", "\"shop\"",
-                          "\"online\"", "\"official\"", "\"store\""]
-        let source = Self.matchingSource
-        for word in stopWords {
-            XCTAssertTrue(source.contains(word), "the extension's stop-word list is missing \(word)")
-        }
+    /// The string literals of one `var NAME = ["a", "b"];` declaration.
+    private static func jsStringArray(named name: String, in script: String) throws -> [String] {
+        let pattern = "\(name)\\s*=\\s*\\[([^\\]]*)\\]"
+        let range = try XCTUnwrap(
+            script.range(of: pattern, options: .regularExpression),
+            "content.js declares no \(name)")
+        return script[range]
+            .split(separator: "\"", omittingEmptySubsequences: false)
+            .enumerated()
+            // Odd fragments are the quoted values; even ones are the commas.
+            .compactMap { $0.offset % 2 == 1 ? String($0.element) : nil }
     }
 
     func testTheHandlerAnswersHasHistoryIsTrackedAmountCurrencyDay() {

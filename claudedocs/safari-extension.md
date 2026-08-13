@@ -911,10 +911,12 @@ app-written compact index of tracked products — `PriceHistoryIndexWriter`,
 LunaPriceUI, regenerated after every save/refresh/background) and (b) the
 observations the store's index says share one of this page's identifiers, using the
 SAME precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family →
-mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier).
-`LunaSafari/SharedProductMatching.swift` is still a hand-written copy of the
-tracked-INDEX half of that logic, pinned by `SharedProductMatchingParityTests`; the
-snapshot half is no longer copied at all. The reply is
+mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier),
+through `LunaPriceCompare.ProductPageMatching`, which is also where
+`PriceHistoryIndexEntry` and the index's location live. `LunaSafari
+/SharedProductMatching.swift` is now only the reduction to a pill's one line;
+`SharedProductMatchingParityTests` runs one fixture matrix through both matchers.
+The reply is
 `{hasHistory, isTracked, amount, currency, day}`: `isTracked` skips the Track pill
 entirely (`renderProductPills`); `hasHistory` — the lowest matched price strictly
 BELOW the page's current price, same currency only, ties broken by earliest date —
@@ -957,8 +959,8 @@ Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`
 runs two legs in order:
 
 1. **What is already stored.** The app-written `priceHistoryIndex.json` and the
-   passive snapshot file, matched to this page by `SharedProductMatching`'s existing
-   tiers. Costs no network, and after one visit to a rival's page it is usually enough.
+   passive snapshot file, matched to this page by `ProductPageMatching`'s tiers.
+   Costs no network, and after one visit to a rival's page it is usually enough.
 2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with
    `.constrained` (6 candidate retailers, 3 results, no web-search layer, **no
    name-only matches**), fetched with a bare ephemeral `URLSession` carrying

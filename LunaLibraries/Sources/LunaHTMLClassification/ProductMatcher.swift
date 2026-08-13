@@ -108,7 +108,7 @@ public enum ProductMatcher {
 
 private extension String {
     /// Lowercased alphanumerics only — for brand equality comparisons.
-    public var normalizedForMatching: String {
+    var normalizedForMatching: String {
         lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }

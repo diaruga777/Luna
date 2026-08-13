@@ -140,12 +140,12 @@ public enum SocialPostFinder {
 
 private extension String {
     /// nil when the string is empty (after no further trimming).
-    public var nilIfEmpty: String? { isEmpty ? nil : self }
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private extension Array where Element == String {
     /// Drops empty strings and later duplicates, preserving order.
-    public func removingDuplicatesAndEmpties() -> [String] {
+    func removingDuplicatesAndEmpties() -> [String] {
         var seen = Set<String>()
         return filter { !$0.isEmpty && seen.insert($0).inserted }
     }

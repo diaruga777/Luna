@@ -28,7 +28,7 @@ public protocol SpeechEngine {
 public extension SpeechEngine {
     /// Default rate handling: apply the caller's rate unchanged. Engines that
     /// need a different default (e.g. a slower neural voice) override `configure`.
-    public func applyDefaultRate(_ utterance: AVSpeechUtterance, rate: Float) {
+    func applyDefaultRate(_ utterance: AVSpeechUtterance, rate: Float) {
         utterance.rate = min(rate, AVSpeechUtteranceMaximumSpeechRate)
     }
 }

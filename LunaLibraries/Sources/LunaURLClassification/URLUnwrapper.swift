@@ -207,7 +207,7 @@ public extension WrapperHandler {
     /// Facebook deep links (`fbrpc://…&target_url=…`) and `/l.php` link shims —
     /// both carry the target inline (offline). An `fbrpc://` link has no http host,
     /// so the matcher keys on scheme too.
-    public static let facebook = WrapperHandler(
+    static let facebook = WrapperHandler(
         matches: { scheme, host in
             if scheme == "fbrpc" { return true }
             guard scheme == "https" || scheme == "http", let host else { return false }
@@ -222,7 +222,7 @@ public extension WrapperHandler {
     /// decode succeeds and `.fetch` otherwise. Expressed as `.fetch` whose closure
     /// first tries the offline decode, with a synchronous `.immediate` shortcut so
     /// `unwrapOffline` resolves classic links without going async.
-    public static let googleNews = WrapperHandler(
+    static let googleNews = WrapperHandler(
         matches: { _, host in host == "news.google.com" || host == "news.url.google.com" },
         resolve: { url in
             guard let articleID = NewsAggregatorUnwrapper.googleNewsArticleID(from: url) else {
@@ -242,7 +242,7 @@ public extension WrapperHandler {
     /// (`stocks.apple.com`) — fetch the page and read the publisher URL from its
     /// `redirectToUrlAfterTimeout(...)` call. The apparent delay is browser-only;
     /// the target is already present in the initial HTML response.
-    public static let appleNews = WrapperHandler(
+    static let appleNews = WrapperHandler(
         matches: { _, host in
             guard let host else { return false }
             return NewsAggregatorUnwrapper.isAppleNews(host)
@@ -262,7 +262,7 @@ public extension WrapperHandler {
     /// product page (`…/search?ibp=oshop&…&prds=…`), which then classifies as a
     /// product. Matches the host generically (any `share.google` link), never a
     /// specific id.
-    public static let googleShare = WrapperHandler(
+    static let googleShare = WrapperHandler(
         matches: { _, host in
             guard let host else { return false }
             return HostMatching.hostSuffixMatches(host, "share.google")
@@ -281,13 +281,13 @@ public extension WrapperHandler {
     /// `interstitialTarget` does the real (path + same-site) gating, returning nil
     /// for the overwhelming majority of URLs. Registered LAST for that reason — see
     /// `URLUnwrapper.handlers`.
-    public static let interstitial = WrapperHandler(
+    static let interstitial = WrapperHandler(
         matches: { scheme, _ in scheme == "https" || scheme == "http" },
         resolve: { url in .immediate(NewsAggregatorUnwrapper.interstitialTarget(url)) })
 
     /// Link shorteners — follow HTTP redirects (HEAD) and return the final URL only
     /// if it left the shortener's host.
-    public static func shorteners(_ hosts: Set<String>) -> WrapperHandler {
+    static func shorteners(_ hosts: Set<String>) -> WrapperHandler {
         WrapperHandler(
             matches: { _, host in
                 guard let host else { return false }

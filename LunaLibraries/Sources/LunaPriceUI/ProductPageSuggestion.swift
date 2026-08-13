@@ -32,7 +32,7 @@ public extension ProductPageSuggestion {
 
     /// Processes `url` through the shared URL pipeline and returns a suggestion only
     /// for a price-tracking-eligible product result.
-    public static func resolve(
+    static func resolve(
         url: URL,
         html: String? = nil
     ) async -> ProductPageSuggestion? {

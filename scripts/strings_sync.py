@@ -72,7 +72,7 @@ SECTIONS = [
     ("Luna/Downloader", "Downloads & Media"),
     ("Luna/PriceTracker", "Price Tracker"),
     ("Luna/CardCarouselHost", "Card Deck"),
-    ("Luna/ReadingList", "Card Deck"),
+    ("Luna/Saves", "Card Deck"),
     ("LunaShare", "Share & Action Extensions"),
     ("LunaAction", "Share & Action Extensions"),
     ("LunaReaderClip", "App Clips"),

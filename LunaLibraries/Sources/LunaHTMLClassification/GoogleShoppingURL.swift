@@ -1,6 +1,6 @@
 //
 //  GoogleShoppingURL.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

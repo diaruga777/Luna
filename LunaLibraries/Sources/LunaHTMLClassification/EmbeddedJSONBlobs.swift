@@ -1,6 +1,6 @@
 //
 //  EmbeddedJSONBlobs.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

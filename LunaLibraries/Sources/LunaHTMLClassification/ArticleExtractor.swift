@@ -20,7 +20,7 @@ public struct ArticleExtractor {
 
     /// Extraction is layered, never failing while ANY text exists:
     /// 1. refined — aggressive junk stripping + trailing-boilerplate trimming
-    /// 2. basic   — structural-tags-only stripping (the original extractor)
+    /// 2. basic   — structural-tags-only stripping
     /// 3. raw     — every paragraph in the body, or the body's plain text
     /// The refined result is used only when it's substantial AND didn't eat
     /// most of what the basic pass found (junk classes sometimes match the
@@ -35,15 +35,15 @@ public struct ArticleExtractor {
         let refinedLength = totalTextLength(refined)
         let basicLength = totalTextLength(basic)
 
-        // Thresholds arbitrate BETWEEN layers; a short page keeps its
-        // structured (basic) extraction rather than degrading to raw text.
+        // Thresholds arbitrate between layers. A short page keeps its structured
+        // (basic) extraction rather than degrading to raw text.
         //
-        // A SUBSTANTIAL refined result (≥1200 chars) is trusted outright even when
-        // `basic` is larger — comment-heavy pages (e.g. an archived WSJ article)
-        // inflate `basic` with the comment thread + subscription promos that refined
-        // correctly strips. A MEDIUM refined result (350–600) additionally requires
-        // `refined*3 >= basic`, since a small refined result more likely means
-        // refined's junk-class stripping ate real content.
+        // A SUBSTANTIAL refined result (≥1200 chars) wins outright, even when
+        // `basic` is larger. Comment-heavy pages (e.g. an archived WSJ article)
+        // inflate `basic` with the comment thread and subscription promos that
+        // refined correctly strips. A MEDIUM refined result (350–600) additionally
+        // needs `refined*3 >= basic`: a small refined result more likely means
+        // refined's junk-class stripping removed real content.
         var chosen: [ArticleContent.Block]
         let substantialRefinedLength = ArticleContent.readableBodyThreshold   // 1200
         if refinedLength >= substantialRefinedLength
@@ -189,14 +189,16 @@ public struct ArticleExtractor {
         [class*=syndication], [id*=disqus_thread], #respond
         """
         // Class matching is by SUBSTRING, so a junk name also hits the layout
-        // wrapper that merely makes room for the rail it names. Two shapes of that:
-        // CMSs put layout-state classes on <body>/<html> (WordPress emits e.g.
-        // `sidebar-right has-sidebar`), and grid wrappers name their columns (NY
-        // Post lays an article out in `<div class="layout layout--sidebar">`, whose
-        // two columns are the story and the sidebar). Removing either takes the
-        // ENTIRE article with it — zeroing this refined layer and forcing the
-        // untrimmed `basic` layer (which keeps every ad label and recirc rail) to
-        // win. New Statesman hit the first; NY Post the second (13 chars survived).
+        // wrapper that merely makes room for the rail it names. Two shapes of
+        // this happen: CMSs put layout-state classes on <body>/<html>
+        // (WordPress emits e.g. `sidebar-right has-sidebar`), and grid
+        // wrappers name their columns (NY Post lays an article out in
+        // `<div class="layout layout--sidebar">`, whose two columns are the
+        // story and the sidebar). Removing either takes the ENTIRE article
+        // with it, zeroing this refined layer and forcing the untrimmed
+        // `basic` layer (which keeps every ad label and recirc rail) to win.
+        // New Statesman hit the first case; NY Post hit the second (13 chars
+        // survived).
         let wrappers = articleWrapperChain(in: document)
         for element in try document.select(strippedSelectors)
         where !isPageRoot(element) && !isArticleWrapper(element, chain: wrappers)
@@ -226,12 +228,13 @@ public struct ArticleExtractor {
     /// BEFORE any stripping: the chain of layout wrappers that a junk-class match
     /// must not delete wholesale, because deleting one deletes the article.
     ///
-    /// Strictness is what keeps this safe on a page whose junk outweighs its story.
-    /// When a comment thread is what scores highest pre-strip, its own container
-    /// still matches `[class*=comment]` and is still removed — only the shared
-    /// layout wrappers ABOVE it are spared, and every junk child of those is still
-    /// matched and removed individually. So the rule never keeps junk that used to
-    /// go; it only replaces "delete the wrapper" with "delete the wrapper's junk".
+    /// Strictness is what keeps this safe on a page whose junk outweighs its
+    /// story. When a comment thread is what scores highest pre-strip, its own
+    /// container still matches `[class*=comment]` and is still removed. Only
+    /// the shared layout wrappers ABOVE it are spared, and every junk child of
+    /// those is still matched and removed individually. So the rule never
+    /// keeps junk that would otherwise go — it only replaces "delete the
+    /// wrapper" with "delete the wrapper's junk".
     private func articleWrapperChain(in document: Document) -> Set<ObjectIdentifier> {
         guard let container = try? bestContainer(in: document) else { return [] }
         var chain: Set<ObjectIdentifier> = []
@@ -287,7 +290,7 @@ public struct ArticleExtractor {
         }
     }
 
-    /// Layer 2: the original conservative extraction — structural tags only.
+    /// Layer 2: conservative extraction — structural tags only.
     private func basicBlocks(html: String, baseURL: URL) throws -> [ArticleContent.Block] {
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
         let anchors = InPageAnchors.prepare(document: document, baseURL: baseURL)
@@ -386,27 +389,30 @@ public struct ArticleExtractor {
 
     // MARK: - Phase 1b: in-body recirc modules
 
-    /// A publisher's in-body ad for its OWN content — NY Post drops an "Explore More"
-    /// card rail between two body paragraphs — is recognised by SHAPE, not by the
-    /// wrapper's class (which is what the strip above already tries, and misses as
-    /// soon as a site names the module something new): a run of adjacent blocks whose
-    /// text is essentially nothing but hyperlink (card titles are never prose),
-    /// optionally introduced by a short label naming the rail.
+    /// A publisher's in-body ad for its OWN content is recognised by SHAPE,
+    /// not by the wrapper's class. NY Post drops an "Explore More" card rail
+    /// between two body paragraphs; the strip above already tries to match
+    /// its class, and misses as soon as a site names the module something
+    /// new. The shape is a run of adjacent blocks whose text is essentially
+    /// nothing but hyperlink (card titles are never prose), optionally
+    /// introduced by a short label naming the rail.
     ///
     /// Unlike the terminator below it removes the module IN PLACE, because the
     /// article continues underneath it.
     ///
-    /// Two independent gates keep a genuine link roundup — "the five posts to read
-    /// this week", where each item legitimately IS a linked heading — intact: a run
-    /// of TWO OR MORE adjacent fully-linked blocks is a rail on its own evidence,
-    /// while a LONE fully-linked block goes only when a recirc label introduces it.
-    /// In a roundup the linked headings are separated by the author's prose, so every
-    /// run is length 1 and unlabelled, and nothing is touched.
+    /// Two independent gates keep a genuine link roundup intact — "the five
+    /// posts to read this week", where each item legitimately IS a linked
+    /// heading. A run of TWO OR MORE adjacent fully-linked blocks is a rail on
+    /// its own evidence. A LONE fully-linked block goes only when a recirc
+    /// label introduces it. In a roundup the linked headings are separated by
+    /// the author's prose, so every run is length 1 and unlabelled, and
+    /// nothing is touched.
     ///
-    /// A dropped run takes its heading with it. For a multi-block run the heading
-    /// needs no recognised wording — a short heading whose entire body WAS a card
-    /// rail is that rail's heading, whatever the section is called ("More from
-    /// Business") — which is what stops an orphan label being left behind.
+    /// A dropped run takes its heading with it. For a multi-block run the
+    /// heading needs no recognised wording — a short heading whose entire body
+    /// WAS a card rail is that rail's heading, whatever the section is called
+    /// ("More from Business"). That is what stops an orphan label from being
+    /// left behind.
     private func removeInlineRecircModules(
         _ blocks: [ArticleContent.Block]
     ) -> [ArticleContent.Block] {

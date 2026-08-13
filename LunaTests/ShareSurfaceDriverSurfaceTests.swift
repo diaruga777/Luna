@@ -41,6 +41,9 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
     private var tempDirectory: URL!
     private var store: ReadingListStore!
     private var host: FakeExtensionHost!
+    /// Rows this test wrote into the SHARED `SaveFailureStore`, cleaned up in
+    /// `tearDown` so the App Group is left as it was found.
+    private var touchedFailureIDs: [UUID] = []
 
     override func setUp() {
         super.setUp()
@@ -53,9 +56,11 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         host = FakeExtensionHost()
+        touchedFailureIDs = []
     }
 
     override func tearDown() {
+        for id in touchedFailureIDs { SaveFailureStore.shared.clear(id) }
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
@@ -174,5 +179,26 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertEqual(store.item(withID: broken.id)?.state, .failed, "marked failed as today")
         XCTAssertEqual(host.completedSilently, 1)
         XCTAssertTrue(host.presented.isEmpty, "a genuine failure is nobody's kind — never dropped")
+    }
+
+    // MARK: - An unsupported outcome that gets past the gate
+
+    /// The central app's extensions accept every kind, so their gate returns
+    /// `.supported` for an `.unsupported` outcome and the switch's last case
+    /// becomes reachable. It must mark the row failed: leaving it `.pending` is a
+    /// row that spins forever with no card, no reason and nothing a retry can move.
+    func testUnsupportedOutcomePastTheGateMarksTheRowFailed() {
+        let item = store.add(urlString: socialURL.absoluteString, source: .shareSheet)
+        touchedFailureIDs.append(item.id)
+        let central = ShareSurfaceDriver(
+            host: host, store: store, surfaceDecision: { _ in .supported }, currentApp: .luna)
+
+        central.present(.unsupported(owner: .downloader), url: socialURL)
+
+        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
+        XCTAssertEqual(SaveFailureStore.shared.record(for: item.id)?.reason, .unknown,
+                       "a failed row needs a reason for the card to explain itself")
+        XCTAssertEqual(host.completedSilently, 1)
+        XCTAssertTrue(host.presented.isEmpty)
     }
 }

@@ -196,10 +196,25 @@ public final class ShareSurfaceDriver {
                 host.completeSilently()
             }
 
-        case .unsupported:
-            // Unreachable: the surface gate above discards an unsupported
-            // outcome before this switch runs.
-            assertionFailure("unsupported outcome reached the share presenter")
+        case let .unsupported(owner):
+            // The surface gate above discards an unsupported outcome before this
+            // switch runs, so reaching here is a programming error: loud in debug,
+            // and in release the row is marked failed rather than left pending
+            // forever. Its trace is already gone — the shed above covers every
+            // non-failure outcome — so the shared log carries the reason instead.
+            // The assertion stands down under XCTest so the suite can drive the
+            // recovery it guards.
+            if !LiveNetworkPolicy.isRunningUnderXCTest {
+                assertionFailure("unsupported outcome reached the share presenter")
+            }
+            if let item = store.item(forURLString: url.absoluteString) {
+                SharedDiagnosticLog.record(
+                    "share: unsupported outcome (owner \(owner.storageIdentifier)) reached the "
+                        + "presenter — marking \(item.id) failed",
+                    category: "ingest")
+                store.markFailed(item.id)
+                SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
+            }
             host.completeSilently()
         }
     }

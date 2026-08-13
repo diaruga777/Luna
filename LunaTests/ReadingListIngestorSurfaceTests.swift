@@ -25,6 +25,9 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
     private var store: ReadingListStore!
     /// Recorded unsupported-save presentations.
     private var presentedOwners: [LunaApp] = []
+    /// Rows this test wrote into the SHARED `SaveFailureStore`, cleaned up in
+    /// `tearDown` so the App Group is left as it was found.
+    private var touchedFailureIDs: [UUID] = []
 
     override func setUp() {
         super.setUp()
@@ -33,6 +36,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = ReadingListStore(containerURL: tempDirectory)
         presentedOwners = []
+        touchedFailureIDs = []
         ReadingListIngestor.unsupportedSavePresenter = { [weak self] owner in
             self?.presentedOwners.append(owner)
         }
@@ -40,6 +44,7 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
 
     override func tearDown() {
         ReadingListIngestor.unsupportedSavePresenter = nil
+        for id in touchedFailureIDs { SaveFailureStore.shared.clear(id) }
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
@@ -167,5 +172,26 @@ final class ReadingListIngestorSurfaceTests: XCTestCase {
         XCTAssertNil(saved)
         XCTAssertNil(store.item(forURLString: "https://example.com/article"))
         XCTAssertEqual(presentedOwners, [.reader])
+    }
+
+    // MARK: - An unsupported outcome that gets past the gate
+
+    /// The central app accepts every kind, so its gate returns `.supported` for an
+    /// `.unsupported` outcome and the presenter's last case becomes reachable. It
+    /// must mark the row failed: leaving it `.pending` is a row that spins forever
+    /// with no card, no reason and nothing a retry can move.
+    func testUnsupportedOutcomeReachingThePresenterMarksTheRowFailed() async {
+        let urlString = "https://bsky.app/profile/a/post/7"
+        let ingestor = makeIngestor(decision: { _ in .supported })
+        let item = store.add(urlString: urlString, source: .paste)
+        touchedFailureIDs.append(item.id)
+        let presenter = IngestorOutcomePresenter(
+            ingestor: ingestor, url: URL(string: urlString)!)
+
+        await presenter.present(.unsupported(owner: .downloader), for: item)
+
+        XCTAssertEqual(store.item(withID: item.id)?.state, .failed)
+        XCTAssertEqual(SaveFailureStore.shared.record(for: item.id)?.reason, .unknown,
+                       "a failed row needs a reason for the card to explain itself")
     }
 }

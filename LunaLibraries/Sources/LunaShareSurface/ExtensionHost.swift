@@ -7,6 +7,24 @@ import LunaDesignSystem
 import LunaIngest
 import UIKit
 
+/// What a hosted saved-media screen tells the surface that presented it: the user
+/// has left it, by Done or by deleting the save.
+///
+/// The sender is a bare `UIViewController` (as `ReaderCompletionDelegate`'s is) so
+/// this can sit here, below the media kind that owns the screen.
+@MainActor
+public protocol SavedMediaScreenDelegate: AnyObject {
+    func savedMediaScreenDidFinish(_ screen: UIViewController)
+}
+
+/// What a hosted price editor tells the surface that presented it: the user pressed
+/// its exit button. Here for the same reason `SavedMediaScreenDelegate` is. Nil in the
+/// app, where the editor's own back chevron pops instead.
+@MainActor
+public protocol PriceEditorScreenDelegate: AnyObject {
+    func priceEditorDidFinish(_ editor: UIViewController)
+}
+
 /// The host an extension surface ("share" zero-UI sheet or "action" Read-in-Luna
 /// sheet) provides to the shared `ShareSurfaceDriver`. It abstracts the ONLY parts
 /// of the real `NSExtensionContext`/UIKit harness the ingest+present flow touches —
@@ -21,31 +39,12 @@ import UIKit
 ///
 /// Extension-safe: lives in ShareKit (compiled into both extension targets), depends
 /// only on UIKit + ReaderKit value types.
-/// Every host is also the drop card's delegate: the card is presented in the
-/// host's own chrome, and Done on it means the same thing to all of them (see the
-/// default below). Declaring it here is what lets the driver hand the card
-/// `host` directly instead of an adapter per call site.
-/// What a hosted saved-media screen tells the surface that presented it: the user
-/// has left it, by Done or by deleting the save.
 ///
-/// The sender is a bare `UIViewController` (as `ReaderCompletionDelegate`'s is) so
-/// this can sit here, below the media kind: `ExtensionHost` refines it, which is what
-/// lets the media presenter hand the screen `host` directly instead of an adapter per
-/// call site.
-@MainActor
-public protocol SavedMediaScreenDelegate: AnyObject {
-    func savedMediaScreenDidFinish(_ screen: UIViewController)
-}
-
-/// What a hosted price editor tells the surface that presented it: the user pressed
-/// its exit button. Same reason for living here as `SavedMediaScreenDelegate` above —
-/// `ExtensionHost` refines it, so the product presenter hands the editor `host`
-/// directly. Nil in the app, where the editor's own back chevron pops instead.
-@MainActor
-public protocol PriceEditorScreenDelegate: AnyObject {
-    func priceEditorDidFinish(_ editor: UIViewController)
-}
-
+/// Every host is also the delegate of the three screens it puts up in its own chrome
+/// — the drop card, the saved-media screen, the price editor — because leaving each of
+/// them means the same thing to all hosts (see the defaults below). Declaring the
+/// three refinements here is what lets a presenter hand a screen `host` directly
+/// instead of an adapter per call site.
 @MainActor
 public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
     SavedMediaScreenDelegate, PriceEditorScreenDelegate {

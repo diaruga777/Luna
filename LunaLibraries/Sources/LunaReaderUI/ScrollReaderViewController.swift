@@ -1731,6 +1731,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return best
     }
 
+    /// Where this reader was when the split covered it, restored when the split
+    /// closes. One value rather than one per overlay because only one nested reader
+    /// can be open over a given reader at a time: `InlineReaderOpener` refuses a
+    /// second modal from the same host, and an already-open column takes the link
+    /// itself instead of making another overlay.
+    private var offsetBeforeSplit: CGFloat?
+
     /// Opens the tapped link as a full-size nested reader. The source point is the
     /// resolved glyph center, so the black-circle phase begins at the link itself.
     private func openSplit(for url: URL, tappedRange: NSRange) {
@@ -1746,13 +1753,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             outerTitle: content.title,
             dismissalDelegate: self)
     }
-
-    /// Where this reader was when the split covered it, restored when the split
-    /// closes. One value rather than one per overlay because only one nested reader
-    /// can be open over a given reader at a time: `InlineReaderOpener` refuses a
-    /// second modal from the same host, and an already-open column takes the link
-    /// itself instead of making another overlay.
-    private var offsetBeforeSplit: CGFloat?
 
     // MARK: - Simulator-only split hooks
 
@@ -1811,8 +1811,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 }
 
-// MARK: - SpeechControllerDelegate
-
 extension ScrollReaderViewController: InlineReaderDismissalDelegate {
     /// The nested reader is gone: put this reader back where the split found it.
     public func inlineReaderDidFinishDismissing(_ overlay: SplitWebOverlayViewController) {
@@ -1821,6 +1819,8 @@ extension ScrollReaderViewController: InlineReaderDismissalDelegate {
         self.offsetBeforeSplit = nil
     }
 }
+
+// MARK: - SpeechControllerDelegate
 
 extension ScrollReaderViewController: ReaderPlaybackPausable {
     /// The reader beside this one started. Silence whichever voice is running:

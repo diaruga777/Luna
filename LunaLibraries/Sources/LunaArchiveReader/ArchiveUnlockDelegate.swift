@@ -19,10 +19,11 @@ import UIKit
 /// unattended import wires the two outcomes and nothing else, and no extension can
 /// offer the system-browser escape.
 ///
-/// Conformers are small per-presentation coordinators (like
-/// `RescueFailureCardDelegate`'s), which is why the reader holds this STRONGLY: the
-/// flow that builds one drops it immediately, while the card stays up until the
-/// unlock resolves. Each coordinator holds its own host weakly, so nothing cycles.
+/// Conformers are small per-unlock objects in the shape `RescueFailureCardDelegate`'s
+/// take, which is why the reader holds this STRONGLY: whatever builds one drops it
+/// immediately (an enum with nothing to hold, a short-lived presenter, a continuation
+/// scope that has already returned), while the reader stays up until the unlock
+/// resolves. Each of them holds its own host weakly, so nothing cycles.
 @MainActor
 public protocol ArchiveUnlockDelegate: AnyObject {
     /// The article was extracted and saved. Whoever set this delegate now takes the

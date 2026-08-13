@@ -52,8 +52,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It
     /// comes off for a CAPTCHA — the one moment the user must see and touch the
-    /// page — and, at the end, only for a controller that is staying up (no
-    /// delegate to take it away). The web view stays un-hidden and full-size beneath it
+    /// page — and, at the end, only for a controller that is staying up (no delegate
+    /// to take it away). The web view stays un-hidden and full-size beneath it
     /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
     /// what keeps the automated flow running while it's visually concealed. When the
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover

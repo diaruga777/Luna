@@ -6,62 +6,64 @@
 import LunaModels
 import Foundation
 
-/// Turns a decoded `XPostPayload` into reader `ArticleContent` — or nil when the
-/// post isn't long enough to be worth reading. Pure: no network, no UIKit, so the
-/// whole policy is unit-testable from fixtures (`XPostExtractorTests`).
+/// Turns a decoded `XPostPayload` into reader `ArticleContent`, or nil when
+/// the post is not long enough to be worth reading. Pure: no network, no
+/// UIKit, so the whole policy is unit-testable from fixtures
+/// (`XPostExtractorTests`).
 ///
 /// ## Two long-form tiers, in order
 ///
-/// 1. **X Article** (`post.article`) — the premium long-form editor. It carries a
-///    real title and a Draft.js body, so its presence alone establishes long-form
-///    and the length threshold is not applied.
-/// 2. **Post text** (a single long post, or an unrolled self-thread) — accepted
-///    only when the assembled body reaches `minimumBodyTextLength`.
+/// 1. **X Article** (`post.article`): the premium long-form editor. It
+///    carries a real title and a Draft.js body, so its presence alone
+///    establishes long-form and the length threshold does not apply.
+/// 2. **Post text** (a single long post, or an unrolled self-thread):
+///    accepted only when the assembled body reaches `minimumBodyTextLength`.
 ///
 /// ## Why `is_note_tweet` is not the gate
 ///
-/// X does expose a long/short flag, and deferring to the platform's own
-/// distinction would be preferable to a length heuristic — but measured against
-/// live posts the flag does not carry that meaning. `is_note_tweet` marks "composed
-/// in the note editor", which X now sets for ordinary posts too: a 280-character
-/// one-liner comes back `is_note_tweet: true`, i.e. the flag is true at the exact
-/// length an ordinary tweet caps out at. It therefore cannot separate a readable
-/// essay from a quip, and a length threshold on the assembled body is the honest
-/// gate. The flag is left decoded (it is genuine platform signal) but is not read
-/// as a decision.
+/// X exposes a long/short flag, and deferring to the platform's own
+/// distinction would be preferable to a length heuristic. But measured
+/// against live posts, the flag does not carry that meaning. `is_note_tweet`
+/// marks "composed in the note editor", which X now sets for ordinary posts
+/// too: a 280-character one-liner comes back `is_note_tweet: true`, the exact
+/// length an ordinary tweet is capped at. It therefore cannot separate a
+/// readable essay from a quip, so a length threshold on the assembled body is
+/// the honest gate. The flag stays decoded, since it is genuine platform
+/// signal, but the extractor does not read it as a decision.
 public enum XPostExtractor {
 
     /// Minimum assembled body length for a text post to become a reader item.
     ///
-    /// Deliberately far above X's 280-character ordinary-post cap, so no
-    /// single normal tweet can clear it no matter how it was composed, while a
-    /// genuine long-form post or a short chained thread does. Image blocks
+    /// Set deliberately far above X's 280-character ordinary-post cap, so no
+    /// normal post can reach it however it was composed, while a genuine
+    /// long-form post or a short chained thread does. Image blocks
     /// contribute no text, so this measures prose only.
     ///
     /// Distinct from `ArticleContent.readableBodyThreshold` (1200), which
-    /// calibrates "did HTML extraction get a real article or a paywall stub" —
-    /// a different question about a different input. A 700-character standalone
-    /// essay post is a legitimate reader item; a 700-character *web page*
-    /// extraction is usually a stub.
+    /// calibrates whether HTML extraction got a real article or a paywall
+    /// stub — a different question about a different input. A
+    /// 700-character standalone essay post is a legitimate reader item; a
+    /// 700-character web page extraction is usually a stub.
     public static let minimumBodyTextLength = 600
 
-    /// Builds reader content for the post `url` names, or nil when the payload
-    /// carries nothing (long enough) to read.
+    /// Builds reader content for the post `url` names, or nil when the
+    /// payload carries nothing long enough to read.
     public static func article(from payload: XPostPayload, url: URL) -> ArticleContent? {
         let posts = authorThread(in: payload)
         guard !posts.isEmpty else { return nil }
 
-        // A post the user shared BECAUSE it holds a video stays media: turning it
-        // into a reader article would strip the download the save was for. Judged on
-        // the post the URL actually named, not the whole chain — a long essay thread
-        // that happens to contain one clip further down is still an essay, and its
-        // own video remains reachable from the post itself.
+        // A post the user shared because it holds a video stays media:
+        // turning it into a reader article would strip the download the save
+        // was for. This is judged on the post the URL actually named, not the
+        // whole chain, so a long essay thread that happens to contain one
+        // clip further down is still an essay, and its own video stays
+        // reachable from the post itself.
         if payload.sharedPost?.media?.hasMotionMedia == true { return nil }
 
         let byline = payload.rootAuthor?.byline ?? posts.first?.author?.byline
 
-        // Tier 1 — an X Article anywhere in the chain (the URL may name the post
-        // that introduces it). Its own title and body win outright.
+        // Tier 1: an X Article anywhere in the chain (the URL may name the
+        // post that introduces it). Its own title and body win outright.
         if let hosted = posts.compactMap(\.article).first,
            let content = draftBlocks(from: hosted.content), !content.isEmpty {
             let title = hosted.title?.trimmedNonEmptyValue
@@ -69,7 +71,7 @@ public enum XPostExtractor {
             return ArticleContent(title: title, author: byline, blocks: content)
         }
 
-        // Tier 2 — the post text / unrolled thread, gated on length.
+        // Tier 2: the post text or unrolled thread, gated on length.
         let texts = strippingThreadCounters(posts.map { $0.text ?? "" })
         var blocks: [ArticleContent.Block] = []
         for (post, text) in zip(posts, texts) {
@@ -87,12 +89,13 @@ public enum XPostExtractor {
     // MARK: - Thread assembly
 
     /// The chain to read: the payload's posts in order, de-duplicated by id and
-    /// limited to the ROOT AUTHOR's own posts.
+    /// limited to the root author's own posts.
     ///
-    /// `/2/thread` already unrolls author-only and in order, from any member of the
-    /// chain — but the author filter is kept as a guard so a payload that ever
-    /// includes other people's replies (a conversation response, a future shape
-    /// change) can't splice strangers' text into someone's saved article.
+    /// `/2/thread` already unrolls author-only and in order, from any member
+    /// of the chain, but the author filter stays as a guard so a payload that
+    /// ever includes other people's replies (a conversation response, a
+    /// future shape change) cannot splice strangers' text into someone's
+    /// saved article.
     static func authorThread(in payload: XPostPayload) -> [XPostPayload.Post] {
         let posts = payload.posts
         guard let root = payload.rootAuthor ?? posts.first?.author else { return posts }
@@ -119,22 +122,24 @@ public enum XPostExtractor {
 
     // MARK: - Thread counter stripping ("1/n", "3/5", 🧵)
 
-    /// Removes the poster's own position markers from each post of a chain, so an
-    /// assembled thread reads as continuous prose instead of "… 1/7" between every
-    /// paragraph. People without a long-form composer number threads by hand, in
-    /// the tweet body, which is the only place this information lives.
+    /// Removes the poster's own position markers from each post of a chain, so
+    /// an assembled thread reads as continuous prose instead of "… 1/7"
+    /// between every paragraph. People without a long-form composer number
+    /// threads by hand, in the tweet body, which is the only place this
+    /// information lives.
     ///
     /// Two shapes, with deliberately different confidence:
     ///
-    ///   • **Open-ended** (`1/`, `2/n`, `4/?`) — a numerator over no denominator is
-    ///     never prose, so it is always stripped.
-    ///   • **Closed** (`3/5`, `(2/7)`, `1.`) — indistinguishable from an ordinary
-    ///     fraction ("1/2 cup", "9/11"), so it is stripped ONLY when the chain
-    ///     shows a real scheme: at least two posts carry one AND their numerators
-    ///     strictly ascend. A lone "1/2" in one post is left as written.
+    ///   • **Open-ended** (`1/`, `2/n`, `4/?`): a numerator over no
+    ///     denominator is never prose, so it is always stripped.
+    ///   • **Closed** (`3/5`, `(2/7)`, `1.`): indistinguishable from an
+    ///     ordinary fraction ("1/2 cup", "9/11"), so it is stripped only when
+    ///     the chain shows a real scheme — at least two posts carry one and
+    ///     their numerators strictly ascend. A lone "1/2" in one post stays
+    ///     as written.
     ///
-    /// Only the very start and very end of a post are considered — a marker mid-
-    /// sentence is prose.
+    /// Only the very start and end of a post are considered; a marker
+    /// mid-sentence is prose.
     static func strippingThreadCounters(_ texts: [String]) -> [String] {
         var closedNumerators: [Int] = []
         for text in texts {
@@ -229,8 +234,9 @@ public enum XPostExtractor {
             }
     }
 
-    /// A bulleted line → `.listItem` with the marker removed. Numeric markers are
-    /// deliberately NOT treated as bullets: they overlap with thread counters.
+    /// A bulleted line → `.listItem` with the marker removed. Numeric markers
+    /// are deliberately not treated as bullets, since they overlap with
+    /// thread counters.
     private static func listItem(in line: String) -> (ArticleContent.Block.Kind, String) {
         for marker in ["- ", "– ", "— ", "• ", "* ", "‣ ", "· "] where line.hasPrefix(marker) {
             let stripped = String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
@@ -256,9 +262,9 @@ public enum XPostExtractor {
         }
     }
 
-    /// Bare URLs in a post's text, as inline links. fxtwitter has already expanded
-    /// every `t.co` in place, so the visible text IS the destination and the ranges
-    /// line up with what the reader renders.
+    /// Bare URLs in a post's text, as inline links. fxtwitter has already
+    /// expanded every `t.co` in place, so the visible text is the
+    /// destination, and the ranges line up with what the reader renders.
     static func inlineLinks(in text: String) -> [ArticleContent.Link] {
         guard let expression = try? NSRegularExpression(pattern: #"https?://[^\s<>"]+"#) else { return [] }
         let subject = text as NSString
@@ -290,8 +296,9 @@ public enum XPostExtractor {
             guard let raw = block.text else { return nil }
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
-            // Entity offsets are relative to the UNTRIMMED text, so trimming the
-            // leading whitespace shifts each of them by that prefix's UTF-16 width.
+            // Entity offsets are relative to the untrimmed text, so trimming
+            // the leading whitespace shifts each of them by that prefix's
+            // UTF-16 width.
             let shift = raw.prefix { $0.isWhitespace || $0.isNewline }
                 .unicodeScalars.reduce(0) { $0 + UTF16.width($1) }
             return ArticleContent.Block(

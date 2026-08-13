@@ -7,15 +7,15 @@ import LunaModels
 import Foundation
 
 /// Renders extracted post content back out as a small, self-contained HTML
-/// document — the `html` half of a `SocialTextArticle`.
+/// document: the `html` half of a `SocialTextArticle`.
 ///
 /// X gives an unauthenticated client no article markup at all, so there is no
-/// real source HTML to carry. But the article artifact stages downstream are
+/// real source HTML to carry. The article artifact stages downstream are
 /// written against source HTML, not content: the card thumbnail comes from an
-/// `og:image` (`ArticleCoverThumbnail`) and the offline copy comes from
-/// `WebArchiveCapturer`. Rendering the post we just extracted satisfies both
-/// with the post's own material — and keeps the archiver from navigating to
-/// x.com and capturing a login wall instead.
+/// `og:image` (`ArticleCoverThumbnail`), and the offline copy comes from
+/// `WebArchiveCapturer`. Rendering the post the extractor just read satisfies
+/// both stages with the post's own material, and keeps the archiver from
+/// navigating to x.com and capturing a login wall instead.
 ///
 /// Pure and dependency-free, so `XPostHTMLRendererTests` can assert the escaping.
 enum XPostHTMLRenderer {
@@ -84,10 +84,10 @@ enum XPostHTMLRenderer {
         }
     }
 
-    /// The block's text with its links wrapped in anchors. Links are applied from
-    /// the END backwards so each splice leaves the earlier offsets valid, and each
-    /// range is validated against the text — an out-of-range link is skipped
-    /// rather than allowed to corrupt the markup.
+    /// The block's text with its links wrapped in anchors. Links are applied
+    /// from the end backwards so each splice leaves the earlier offsets
+    /// valid. Each range is validated against the text; an out-of-range link
+    /// is skipped rather than allowed to corrupt the markup.
     private static func linked(_ block: ArticleContent.Block) -> String {
         let text = block.text as NSString
         let ordered = block.links

@@ -76,15 +76,6 @@ enum KindWiring {
         return MiniPlayerHostViewController(content: nav)
     }
 
-    private static func makeCompletedRootViewController() -> UIViewController {
-        let nav = UINavigationController(rootViewController: ArticleCardsViewController())
-        return MiniPlayerHostViewController(content: nav)
-    }
-
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
-    }
-
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         if let host = root as? MiniPlayerHostViewController {
             return host.contentNavigationController
@@ -165,10 +156,6 @@ enum KindWiring {
     static func retryPendingArticleSends() {
         ArticleShellWiring.retryPendingSends()
     }
-
-    /// Overnight mail-fetch backstop for unfinished media jobs — Downloader
-    /// only (matches the pre-split gate), so the central app is a no-op.
-    static func resumeUnfinishedMediaDownloads() async {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
         MediaShellWiring.attachBackgroundURLSessionHandler(completionHandler)

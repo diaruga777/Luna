@@ -156,7 +156,7 @@ enum SharedStageCatalog {
                     let onboarding = AppOnboardingViewController(
                         completion: AppOnboardingCompletion(
                             makeCompletedRootViewController:
-                                KindWiring.makeSetupReplayRootViewController))
+                                KindWiring.makeRootViewController))
                     // Same cue as the stage above: the sequence starts once the
                     // screen has been laid out at its full size.
                     DispatchQueue.main.asyncAfter(

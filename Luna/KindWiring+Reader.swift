@@ -56,15 +56,6 @@ enum KindWiring {
         return MiniPlayerHostViewController(content: nav)
     }
 
-    private static func makeCompletedRootViewController() -> UIViewController {
-        let nav = UINavigationController(rootViewController: ArticleCardsViewController())
-        return MiniPlayerHostViewController(content: nav)
-    }
-
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
-    }
-
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         if let host = root as? MiniPlayerHostViewController {
             return host.contentNavigationController
@@ -126,8 +117,6 @@ enum KindWiring {
     static func retryPendingArticleSends() {
         ArticleShellWiring.retryPendingSends()
     }
-
-    static func resumeUnfinishedMediaDownloads() async {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
         // No media kind → no background URLSession to reattach; complete the

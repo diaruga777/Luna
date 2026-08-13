@@ -51,16 +51,6 @@ enum KindWiring {
         UINavigationController(rootViewController: ProductCardDeck.makeRoot())
     }
 
-    @MainActor
-    private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: ProductCardDeck.makeRoot())
-    }
-
-    @MainActor
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
-    }
-
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         root as? UINavigationController
     }
@@ -95,8 +85,6 @@ enum KindWiring {
 
     /// Price Tracker handles no articles — ereader sends are never pending here.
     static func retryPendingArticleSends() {}
-
-    static func resumeUnfinishedMediaDownloads() async {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
         // No media kind → no background URLSession to reattach; complete the

@@ -84,8 +84,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             AppOnboardingViewController.presentSetupReplay(
                 source,
                 from: presenter,
-                makeCompletedRootViewController:
-                    KindWiring.makeSetupReplayRootViewController)
+                makeCompletedRootViewController: KindWiring.makeRootViewController)
         }
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
@@ -337,11 +336,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
             KindWiring.retryPendingArticleSends()
-            // Overnight backstop for every unfinished media job, including a
-            // transfer whose server supplied resume data after an interruption.
-            // The background URLSession continues after this processing task
-            // exits. (No-op outside the Downloader app.)
-            await KindWiring.resumeUnfinishedMediaDownloads()
             task.setTaskCompleted(success: !Task.isCancelled)
         }
     }

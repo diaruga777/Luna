@@ -53,16 +53,6 @@ enum KindWiring {
         UINavigationController(rootViewController: MediaCardDeck.makeRoot())
     }
 
-    @MainActor
-    private static func makeCompletedRootViewController() -> UIViewController {
-        UINavigationController(rootViewController: MediaCardDeck.makeRoot())
-    }
-
-    @MainActor
-    static func makeSetupReplayRootViewController() -> UIViewController {
-        makeCompletedRootViewController()
-    }
-
     static func mainNavigationController(of root: UIViewController) -> UINavigationController? {
         root as? UINavigationController
     }
@@ -112,12 +102,6 @@ enum KindWiring {
 
     /// Downloader handles no articles — ereader sends are never pending here.
     static func retryPendingArticleSends() {}
-
-    /// Overnight mail-fetch backstop for every unfinished media job, including
-    /// a transfer whose server supplied resume data after an interruption.
-    static func resumeUnfinishedMediaDownloads() async {
-        await LiveMediaDownloadManager.shared.resumeUnfinishedDownloads()
-    }
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
         MediaShellWiring.attachBackgroundURLSessionHandler(completionHandler)

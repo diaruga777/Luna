@@ -153,3 +153,32 @@ enum AudioPlaybackFixtures {
             dateAdded: Date(timeIntervalSince1970: 1_700_000_000))
     }
 }
+
+/// Hands out ONE prepared graph however many times the center asks. The fake
+/// engine is a class, so a test can drive and inspect the same instance the
+/// center is scheduling into.
+final class FixedAudioEngineMaker: ArticleAudioEngineMaking {
+    let engine: ArticleAudioEngineControlling
+
+    init(_ engine: ArticleAudioEngineControlling) { self.engine = engine }
+
+    func makeEngine(format: AVAudioFormat) throws -> ArticleAudioEngineControlling {
+        engine
+    }
+}
+
+/// Hands out ONE prepared trim session, so a test can script its responses and
+/// then read back what it was asked.
+final class FixedTrimModelSessionMaker: AudioTrimModelSessionMaking {
+    let session: AudioTrimModelSession
+
+    init(_ session: AudioTrimModelSession) { self.session = session }
+
+    func makeSession() -> AudioTrimModelSession { session }
+}
+
+/// No artwork on disk for anything — these tests are about the rest of the Now
+/// Playing info assembly.
+struct NoStoredArtwork: NowPlayingArtworkProviding {
+    func artworkFileURL(forFileName fileName: String) -> URL? { nil }
+}

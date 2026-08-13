@@ -66,7 +66,7 @@ final class AudioScriptPipelineTests: XCTestCase {
     func testScriptForCacheMissBuildsHeuristicScriptAndPersistsIt() {
         let session = FakeTrimModelSession()
         session.isAvailable = false // isolate: no LLM involvement in this test
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session })
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "a")
         let content = ArticleContent(title: "Title", blocks: [
             .init(kind: .paragraph, text: "By Jane Doe", links: []),
@@ -85,7 +85,7 @@ final class AudioScriptPipelineTests: XCTestCase {
     func testScriptForCacheHitReturnsTheStoredScriptWithoutRebuilding() {
         let session = FakeTrimModelSession()
         session.isAvailable = false
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session })
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session))
         let item = readableItem(seed: "b")
         let content = readableContent()
 
@@ -106,7 +106,7 @@ final class AudioScriptPipelineTests: XCTestCase {
     func testReadingListChangedBuildsAScriptForANewlyDiscoveredReadableItem() async throws {
         let session = FakeTrimModelSession()
         session.isAvailable = false
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
         pipeline.install()
 
         let item = readableItem(seed: "c")
@@ -121,7 +121,7 @@ final class AudioScriptPipelineTests: XCTestCase {
 
     func testUnreadableOrNotReadyItemsAreNeverBuilt() async throws {
         let session = FakeTrimModelSession()
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
         var pendingItem = readableItem(seed: "pending")
         pendingItem.state = .pending
@@ -155,7 +155,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         session.isAvailable = true
         session.responses = [.indices([])] // succeeds, finds nothing extra to remove
         AudioSettings.isIntelligentTrimmingEnabled = true
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
         source.itemsList = [item]
         source.contentByID[item.id] = content
@@ -180,7 +180,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         session.isAvailable = true
         session.responses = [.indices([])]
         AudioSettings.isIntelligentTrimmingEnabled = false
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
         source.itemsList = [item]
         source.contentByID[item.id] = content
@@ -211,7 +211,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         session.isAvailable = true
         session.responses = [.indices([])] // would succeed if ever called
         AudioSettings.isIntelligentTrimmingEnabled = true
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
         source.itemsList = [item]
         source.contentByID[item.id] = content
@@ -240,7 +240,7 @@ final class AudioScriptPipelineTests: XCTestCase {
         session.isAvailable = true
         session.responses = [.failure(.guardrailViolation)]
         AudioSettings.isIntelligentTrimmingEnabled = true
-        let pipeline = AudioScriptPipeline(store: source, modelSessionFactory: { session }, debounceInterval: 0.05)
+        let pipeline = AudioScriptPipeline(store: source, modelSessions: FixedTrimModelSessionMaker(session), debounceInterval: 0.05)
 
         source.itemsList = [item]
         source.contentByID[item.id] = content

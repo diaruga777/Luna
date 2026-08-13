@@ -234,7 +234,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
     private let renderer: SpeechRendering
     private let positionStore: AudioPlaybackPositionStore
     private let sessionCoordinator: AudioSessionControlling
-    private let engineFactory: (AVAudioFormat) throws -> ArticleAudioEngineControlling
+    private let engines: any ArticleAudioEngineMaking
     private var engine: ArticleAudioEngineControlling?
 
     // MARK: - Observers
@@ -311,15 +311,13 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         renderer: SpeechRendering = SpeechRenderer(),
         positionStore: AudioPlaybackPositionStore = AudioPlaybackPositionStore(),
         sessionCoordinator: AudioSessionControlling = AudioSessionCoordinator(),
-        engineFactory: @escaping (AVAudioFormat) throws -> ArticleAudioEngineControlling = {
-            try ArticleAudioEngine(format: $0)
-        }
+        engines: any ArticleAudioEngineMaking = DefaultArticleAudioEngineMaker()
     ) {
         self.store = store
         self.renderer = renderer
         self.positionStore = positionStore
         self.sessionCoordinator = sessionCoordinator
-        self.engineFactory = engineFactory
+        self.engines = engines
         self.sessionCoordinator.delegate = self
         self.sessionCoordinator.start()
     }
@@ -655,7 +653,7 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         guard currentScript != nil else { return }
         if engine == nil {
             do {
-                engine = try engineFactory(segment.format)
+                engine = try engines.makeEngine(format: segment.format)
                 engine?.delegate = self
             } catch {
                 setState(.idle)

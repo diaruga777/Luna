@@ -33,7 +33,7 @@ final class RSVPAudioSyncTests: XCTestCase {
         center = AudioPlaybackCenter(
             store: store, renderer: renderer,
             positionStore: AudioPlaybackPositionStore(defaults: positionDefaults),
-            sessionCoordinator: session, engineFactory: { [engine] _ in engine! })
+            sessionCoordinator: session, engines: FixedAudioEngineMaker(engine!))
         // RSVP reads the app-wide center through ReaderAudioLauncher; point it at
         // the fake-backed one for the duration of the test.
         savedLauncherCenter = ReaderAudioLauncher.center

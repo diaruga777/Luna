@@ -27,7 +27,7 @@ public final class AudioScriptPipeline {
     /// shared instance reused across every article) — keeps each article's
     /// on-device conversation/context isolated and small, rather than
     /// accumulating turns across an entire sweep.
-    private let modelSessionFactory: () -> AudioTrimModelSession
+    private let modelSessions: any AudioTrimModelSessionMaking
 
     /// Debounces bursts of `.readingListChanged` (e.g. a multi-item import)
     /// into one sweep.
@@ -60,12 +60,12 @@ public final class AudioScriptPipeline {
 
     public init(
         store: ReadingListScriptSource = ReadingListStore.shared,
-        modelSessionFactory: @escaping () -> AudioTrimModelSession = AudioTrimModelSessionFactory.makeDefault,
+        modelSessions: any AudioTrimModelSessionMaking = DefaultAudioTrimModelSessionMaker(),
         debounceInterval: TimeInterval = 1.5
     ) {
         self.store = store
         self.scriptStore = AudioScriptStore(articlesDirectory: store.articlesDirectory)
-        self.modelSessionFactory = modelSessionFactory
+        self.modelSessions = modelSessions
         self.debounceInterval = debounceInterval
     }
 
@@ -150,7 +150,7 @@ public final class AudioScriptPipeline {
         item: ReadingListItem, content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
     ) {
         guard AudioSettings.isIntelligentTrimmingEnabled, isForeground, !isInFlight(item.id) else { return }
-        let session = modelSessionFactory()
+        let session = modelSessions.makeSession()
         guard session.isAvailable else { return }
 
         markInFlight(item.id)

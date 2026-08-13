@@ -87,6 +87,21 @@ public protocol ArticleAudioEngineControlling: AnyObject {
 
 extension ArticleAudioEngine: ArticleAudioEngineControlling {}
 
+/// Builds the playback graph for one rendered segment's format. Injected so a
+/// test can substitute a fake graph for a real `AVAudioEngine`.
+public protocol ArticleAudioEngineMaking {
+    func makeEngine(format: AVAudioFormat) throws -> ArticleAudioEngineControlling
+}
+
+/// The production maker: a real `ArticleAudioEngine`.
+public struct DefaultArticleAudioEngineMaker: ArticleAudioEngineMaking {
+    public init() {}
+
+    public func makeEngine(format: AVAudioFormat) throws -> ArticleAudioEngineControlling {
+        try ArticleAudioEngine(format: format)
+    }
+}
+
 /// The session's host: translates an interruption/route-change decision into
 /// its own pause/resume.
 public protocol AudioSessionCoordinatorDelegate: AnyObject {

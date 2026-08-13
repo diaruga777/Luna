@@ -9,6 +9,16 @@ import LunaModels
 import LunaPriceCompare
 import Foundation
 
+/// Supplies product metadata for a page whose own markup gave none — the
+/// passive Safari snapshot of the page the user actually looked at. It is the
+/// ONLY thing standing between a bot-walled shop and a price-less save, so the
+/// product surfaces install `SnapshotProductInfoFallback` (LunaPriceUI, which is
+/// where the snapshot lookup lives); a surface that installs nothing simply has
+/// no recovery.
+public protocol ProductInfoFallbackProviding {
+    func productInfo(forPageURL url: URL) -> ProductInfo?
+}
+
 /// The product-kind pipeline processor: wraps `ProductMetadataExtractor`
 /// (mandatory price from one source). Registered into
 /// `IngestKindProcessors.product` by product-handling targets' composition
@@ -25,7 +35,7 @@ import Foundation
 /// an empty store and every tracker was born with a single point.
 public final class ProductIngestProcessor: ProductIngestProcessing {
     private let metadataExtractor: ProductMetadataExtractor
-    private let fallback: ((URL) -> ProductInfo?)?
+    private let fallback: (any ProductInfoFallbackProviding)?
     private let snapshotStore: ProductSnapshotStore?
 
     /// `metadataExtractor` and `fallback` are seams. Product surfaces install
@@ -35,7 +45,7 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
     /// test that does not want to touch the container).
     public init(
         metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
-        fallback: ((URL) -> ProductInfo?)? = nil,
+        fallback: (any ProductInfoFallbackProviding)? = nil,
         snapshotStore: ProductSnapshotStore? = .shared
     ) {
         self.metadataExtractor = metadataExtractor
@@ -62,7 +72,7 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
         // recorded by the extension. It is the ONLY thing standing between a
         // bot-walled shop and a price-less save, so a trace has to say whether
         // it was consulted and whether it answered.
-        let recovered = fallback?(url)
+        let recovered = fallback?.productInfo(forPageURL: url)
         SaveDiagnostics.record(
             "product: static extraction found no price for \(SaveDiagnostics.url(url)) — "
                 + "Safari snapshot fallback "

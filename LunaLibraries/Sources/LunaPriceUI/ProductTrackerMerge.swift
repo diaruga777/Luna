@@ -44,7 +44,7 @@ public enum ProductTrackerMerge {
     @discardableResult
     public static func mergeIfPossible(
         product: ProductInfo, url: URL, excludingItemID: UUID, store: ReadingListStore,
-        comparisonStarter: (UUID, URL, ReadingListStore) -> Void,
+        comparisonStarter: any SellerComparisonStarting,
         snapshotStore: ProductSnapshotStore = .shared
     ) -> Outcome {
         let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
@@ -83,7 +83,7 @@ public enum ProductTrackerMerge {
             // actually try — the comparison excludes every store the tracker
             // now holds (including the one just merged in), so it never
             // re-finds what this save already attached.
-            comparisonStarter(matchID, url, store)
+            comparisonStarter.startComparison(itemID: matchID, sourceURL: url, store: store)
         }
 
         let highlighted = (newStores.first ?? stores.first)?.urlString

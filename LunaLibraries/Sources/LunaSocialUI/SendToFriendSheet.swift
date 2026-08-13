@@ -9,17 +9,23 @@ import LunaModels
 import LunaDesignSystem
 import UIKit
 
+/// Shows the screen where a sending account gets connected (Settings → Email &
+/// Sending, whose Sharing Account section is the sign-in form until then). The
+/// screen is the app shell's, so the app installs a conformer.
+public protocol AccountSetupPresenting {
+    /// Navigates `presenter` to the account-setup screen.
+    func presentAccountSetup(from presenter: UIViewController)
+}
+
 /// The shared "share this" entry point used by the reading list and the reader:
 /// pick recipients and send a Luna email, or fall back to the system share sheet
 /// with the plain URL.
 public enum SendToFriendSheet {
 
-    /// Injected by the app so an attempted send with no account configured can
-    /// redirect to the screen where one gets connected (Settings → Email &
-    /// Sending, whose Sharing Account section is the sign-in form until then).
-    /// Installed only by the `KindWiring` variants of the apps that send email at
-    /// all — the others never reach this path.
-    public static var accountSetupLauncher: ((UIViewController) -> Void)?
+    /// The installed route to account setup, so an attempted send with no account
+    /// configured can redirect there. Installed only by the `KindWiring` variants
+    /// of the apps that send email at all — the others never reach this path.
+    public static var accountSetupPresenter: (any AccountSetupPresenting)?
 
     /// Presents the recipient picker for a reading-list item (preferred — sends
     /// the item's rich content), or a bare URL when no item is available.
@@ -142,7 +148,7 @@ public enum SendToFriendSheet {
     /// (an app extension, which can't navigate the app's settings) explains in an
     /// alert instead.
     private static func promptAccountSetup(from presenter: UIViewController) {
-        guard let launcher = accountSetupLauncher else {
+        guard let accountSetupPresenter else {
             let alert = UIAlertController(
                 title: L10n.string("Common_setUpEmailFirst"),
                 message: L10n.string("Sharing_sendToFriend_setupEmailMessage"),
@@ -151,7 +157,7 @@ public enum SendToFriendSheet {
             presenter.present(alert, animated: true)
             return
         }
-        launcher(presenter)
+        accountSetupPresenter.presentAccountSetup(from: presenter)
     }
 
     private static func presentError(_ error: Error, from presenter: UIViewController) {

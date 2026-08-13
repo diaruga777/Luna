@@ -16,10 +16,17 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private final class StubFetcher: @unchecked Sendable {
+    /// The stubbed networking: a page table for `fetch`, and an opt-in render
+    /// leg. Declaring `.renderedSearch` is what installs a renderer at all, so a
+    /// stub that is never handed one reproduces the appex exactly.
+    private final class StubFetcher: SellerFanOutNetworking, @unchecked Sendable {
         private let lock = NSLock()
         private var pages: [String: FetchedPage] = [:]
         private(set) var requested: [String] = []
+        private var renderedMarkup: String?
+        private var renders = 0
+
+        private(set) var availableLayers: SellerFanOutLayers = []
 
         func stub(_ urlString: String, html: String, statusCode: Int = 200) {
             lock.lock(); defer { lock.unlock() }
@@ -27,12 +34,30 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
                 url: URL(string: urlString)!, html: html, statusCode: statusCode)
         }
 
-        var fetch: SellerFanOut.Fetch {
-            { [self] url in
-                return lock.withLock {
-                    requested.append(url.absoluteString)
-                    return pages[url.absoluteString]
-                }
+        /// Installs the render leg. `markup` is what it answers — nil for a
+        /// renderer that is asked and finds nothing, which is how the render
+        /// budget is counted without a result to distract from it.
+        func stubRenderSearch(_ markup: String?) {
+            lock.withLock { renderedMarkup = markup }
+            availableLayers.insert(.renderedSearch)
+        }
+
+        /// How many times the render leg was actually asked.
+        var renderCount: Int {
+            lock.withLock { renders }
+        }
+
+        func fetch(_ url: URL) async -> FetchedPage? {
+            lock.withLock {
+                requested.append(url.absoluteString)
+                return pages[url.absoluteString]
+            }
+        }
+
+        func renderSearch(_ url: URL) async -> String? {
+            lock.withLock {
+                renders += 1
+                return renderedMarkup
             }
         }
     }
@@ -85,7 +110,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("stocks", domain: "stocks.example"),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         XCTAssertTrue(outcome.results.isEmpty)
@@ -108,7 +133,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("stocks", domain: "stocks.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         let attempt = try XCTUnwrap(outcome.attempts.first)
@@ -139,7 +164,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("unpriced", domain: "unpriced.example"),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         XCTAssertEqual(outcome.rejection(for: "wrong"), .noVerifiedMatch)
@@ -157,7 +182,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("a", domain: "a.example"), seller("b", domain: "b.example"),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
+            directory: directory, profile: profile, networking: fetcher,
             onAttempt: { await seen.add($0.sellerID) })
             .run(request())
 
@@ -171,7 +196,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("a", domain: "a.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         XCTAssertTrue(outcome.logSummary.contains("region=US"))
@@ -202,7 +227,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             allowsNameOnlyMatch: false, usesWebSearchLayer: false,
             skipsClientRenderedSearch: true, renderedSearchLimit: 0)
         let outcome = await SellerFanOut(
-            directory: directory, profile: constrained, fetch: fetcher.fetch)
+            directory: directory, profile: constrained, networking: fetcher)
             .run(request())
 
         XCTAssertTrue(outcome.attempts.isEmpty, "it is not even a candidate")
@@ -216,7 +241,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shell", domain: "shell.example", clientRendered: true),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertEqual(outcome.rejection(for: "shell"), .noProductLinks)
     }
@@ -262,9 +287,9 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(version: 1, sellers: [
             seller("shell", domain: "shell.example", clientRendered: true),
         ])
+        fetcher.stubRenderSearch(#"<a href="/products/xm5">XM5</a>"#)
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# })
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         XCTAssertEqual(outcome.results.count, 1)
@@ -279,15 +304,13 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         fetcher.stub(
             "https://ok.example/products/xm5",
             html: productPage(name: "Sony WH-1000XM5", gtin: "0194644090876", price: "329.99"))
-        let renders = Counter()
+        fetcher.stubRenderSearch(nil)
         let directory = SellerDirectory(
             version: 1, sellers: [seller("ok", domain: "ok.example")])
         _ = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil })
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
-        let count = await renders.value
-        XCTAssertEqual(count, 0)
+        XCTAssertEqual(fetcher.renderCount, 0)
     }
 
     /// A render is an off-screen WebView and seconds of wall clock; the run may
@@ -299,7 +322,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             fetcher.stub(
                 "https://\(candidate.domain)/search?q=0194644090876", html: "<html></html>")
         }
-        let renders = Counter()
+        fetcher.stubRenderSearch(nil)
         let wide = SellerFanOutProfile(
             candidateLimit: 5, resultTarget: 5, concurrency: 1, productURLsPerCandidate: 2,
             totalBudget: 60, perFetchTimeout: 5,
@@ -307,11 +330,10 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             skipsClientRenderedSearch: false, renderedSearchLimit: 2)
         _ = await SellerFanOut(
             directory: SellerDirectory(version: 1, sellers: sellers), profile: wide,
-            fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil })
+            networking: fetcher)
             .run(request())
-        let count = await renders.value
-        XCTAssertEqual(count, 2, "the profile's render budget, not one per candidate")
+        XCTAssertEqual(
+            fetcher.renderCount, 2, "the profile's render budget, not one per candidate")
     }
 
     /// No renderer injected (the appex, and every test that does not ask for
@@ -322,14 +344,9 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(
             version: 1, sellers: [seller("shell", domain: "shell.example")])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertFalse(outcome.attempts[0].usedRenderedSearch)
-    }
-
-    private actor Counter {
-        private(set) var value = 0
-        func bump() { value += 1 }
     }
 
     // MARK: - The second question
@@ -350,7 +367,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
 
         XCTAssertEqual(outcome.results.count, 1)
@@ -369,7 +386,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: true),
         ])
         _ = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertEqual(fetcher.requested, ["https://shop.example/search?q=0194644090876"])
     }
@@ -400,7 +417,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.confidence, .gtinInPage)
@@ -430,7 +447,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertEqual(outcome.results.first?.url.absoluteString, "https://shop.example/products/xm5")
@@ -466,7 +483,7 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
             seller("shop", domain: "shop.example", acceptsGTIN: nil),
         ])
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch)
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         // Two links already spent on the (wrong) GTIN query left no budget at
@@ -497,9 +514,9 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(version: 1, sellers: [
             seller("shop", domain: "shop.example"),
         ])
+        fetcher.stubRenderSearch(#"<a href="/products/xm5">XM5</a>"#)
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in #"<a href="/products/xm5">XM5</a>"# })
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertEqual(outcome.results.count, 1)
         XCTAssertTrue(try! XCTUnwrap(outcome.attempts.first).usedRenderedSearch)
@@ -511,16 +528,14 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let fetcher = StubFetcher()
         fetcher.stub(
             "https://shop.example/search?q=0194644090876", html: "refused", statusCode: 403)
-        let renders = Counter()
+        fetcher.stubRenderSearch(nil)
         let directory = SellerDirectory(version: 1, sellers: [
             seller("shop", domain: "shop.example"),
         ])
         _ = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in await renders.bump(); return nil })
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
-        let count = await renders.value
-        XCTAssertEqual(count, 0)
+        XCTAssertEqual(fetcher.renderCount, 0)
     }
 
     /// If the RENDERED markup still looks like a challenge, the host is
@@ -534,9 +549,9 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         let directory = SellerDirectory(version: 1, sellers: [
             seller("shop", domain: "shop.example"),
         ])
+        fetcher.stubRenderSearch("<html><body>Please complete the CAPTCHA</body></html>")
         let outcome = await SellerFanOut(
-            directory: directory, profile: profile, fetch: fetcher.fetch,
-            renderSearch: { _ in "<html><body>Please complete the CAPTCHA</body></html>" })
+            directory: directory, profile: profile, networking: fetcher)
             .run(request())
         XCTAssertTrue(outcome.results.isEmpty)
         XCTAssertEqual(outcome.rejection(for: "shop"), .searchBotWalled)

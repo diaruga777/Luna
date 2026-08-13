@@ -366,33 +366,20 @@ public struct ComparableResultMerger: Equatable, Sendable {
 /// own site, verify that what came back is the same product, and collect its
 /// price — with a keyless web search running alongside as a second opinion.
 ///
-/// Everything that touches the network is injected. That is not only for tests:
-/// the app fetches through `ArticleFetcher` and can route candidate
-/// verification through the whole shared ingest pipeline, while the Safari
-/// appex has neither and must use `URLSession` plus this module's regex parser.
-/// One orchestration, two very different environments.
+/// Everything that touches the network arrives as one `SellerFanOutNetworking`
+/// conformer. That is not only for tests: the app fetches through
+/// `ArticleFetcher` and can route candidate verification through the whole
+/// shared ingest pipeline, while the Safari appex has neither and must use
+/// `URLSession` plus this module's regex parser. One orchestration, two very
+/// different environments.
 public struct SellerFanOut {
 
-    /// Fetch one URL. Returning nil means "no answer" (transport failure);
-    /// returning a page with a blocked status is how a bot wall is reported.
-    public typealias Fetch = @Sendable (URL) async -> FetchedPage?
-    /// Layer 2: a keyless web search returning candidate result URLs in rank
-    /// order (`DuckDuckGoSearch.results`). Nil disables the layer.
-    public typealias WebSearch = @Sendable (String) async -> [URL]?
-    /// Optional richer candidate resolution — the full profile routes pages
-    /// through `ProductPageSuggestion.resolve` so a JS-rendered price still
-    /// counts. Absent ⇒ the lean regex parser.
-    public typealias RichResolve = @Sendable (URL) async -> ParsedProductPage?
     /// Called the moment a verified seller ENTERS the merged list, so a surface
     /// can show it before the run ends. A result that is later supplanted by a
     /// better-verified one for the same retailer is reported again — the
     /// callback is "this is the current answer for this domain", not "this is
     /// final".
     public typealias OnResult = @Sendable (ComparableSellerResult) async -> Void
-    /// Renders a search page's JS and returns the rendered markup. Injected
-    /// exactly like everything else that touches the network — the engine may
-    /// not link WebKit, and the Safari appex could not use it if it did.
-    public typealias RenderSearch = @Sendable (URL) async -> String?
     /// Called as each candidate finishes. The run's own summary arrives through
     /// the returned `SellerFanOutOutcome`; this is what makes a run watchable
     /// while it is still going.
@@ -400,31 +387,27 @@ public struct SellerFanOut {
 
     private let directory: SellerDirectory
     private let profile: SellerFanOutProfile
-    private let fetch: Fetch
-    private let webSearch: WebSearch?
-    private let richResolve: RichResolve?
-    private let renderSearch: RenderSearch?
+    private let networking: any SellerFanOutNetworking
     private let now: @Sendable () -> Date
     private let onResult: OnResult?
     private let onAttempt: OnAttempt?
 
+    /// Whether the network conformer runs `layer` at all.
+    private func runs(_ layer: SellerFanOutLayers) -> Bool {
+        networking.availableLayers.contains(layer)
+    }
+
     public init(
         directory: SellerDirectory,
         profile: SellerFanOutProfile,
-        fetch: @escaping Fetch,
-        webSearch: WebSearch? = nil,
-        richResolve: RichResolve? = nil,
-        renderSearch: RenderSearch? = nil,
+        networking: any SellerFanOutNetworking,
         onResult: OnResult? = nil,
         onAttempt: OnAttempt? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.directory = directory
         self.profile = profile
-        self.fetch = fetch
-        self.webSearch = webSearch
-        self.richResolve = richResolve
-        self.renderSearch = renderSearch
+        self.networking = networking
         self.now = now
         self.onResult = onResult
         self.onAttempt = onAttempt
@@ -506,13 +489,13 @@ public struct SellerFanOut {
                 .map(ProductIdentityMatching.registrableDomain))
         let state = State(
             target: profile.resultTarget,
-            renderBudget: renderSearch == nil ? 0 : profile.renderedSearchLimit)
+            renderBudget: runs(.renderedSearch) ? profile.renderedSearchLimit : 0)
 
         await withTaskGroup(of: Void.self) { layers in
-            if profile.usesWebSearchLayer, let webSearch {
+            if profile.usesWebSearchLayer, runs(.webSearch) {
                 layers.addTask {
                     await runWebSearchLayer(
-                        request, search: webSearch, excludedDomains: excludedDomains,
+                        request, excludedDomains: excludedDomains,
                         requiredCurrency: requiredCurrency, state: state, start: start)
                 }
             }
@@ -643,7 +626,7 @@ public struct SellerFanOut {
             record.query = query
             guard let searchURL = seller.searchRequestURL(forQuery: query) else { continue }
             record.searchURL = searchURL
-            guard let searchPage = await fetch(searchURL) else {
+            guard let searchPage = await networking.fetch(searchURL) else {
                 pendingRejection = .searchUnreachable
                 continue
             }
@@ -669,8 +652,8 @@ public struct SellerFanOut {
                 // serve a soft interstitial a render can see past, and a
                 // context that can render deserves the same one chance it
                 // gets for a structurally-empty page below.
-                guard let renderSearch, await state.claimRenderSlot(),
-                      let rendered = await renderSearch(searchURL)
+                guard runs(.renderedSearch), await state.claimRenderSlot(),
+                      let rendered = await networking.renderSearch(searchURL)
                 else {
                     await state.markBotWalled(sellerDomain)
                     record.reject(.searchBotWalled)
@@ -695,8 +678,9 @@ public struct SellerFanOut {
             // by JS this is not a miss, it is the entire page — so a context that
             // can render is given one chance to see what a browser would have seen
             // (unless it already rendered above for the challenge check).
-            if links.isEmpty, !renderedThisQuery, let renderSearch, await state.claimRenderSlot(),
-               let rendered = await renderSearch(searchURL) {
+            if links.isEmpty, !renderedThisQuery, runs(.renderedSearch),
+               await state.claimRenderSlot(),
+               let rendered = await networking.renderSearch(searchURL) {
                 record.usedRenderedSearch = true
                 record.searchBytes = rendered.count
                 links = LeanProductPageParser.productLinks(
@@ -793,7 +777,7 @@ public struct SellerFanOut {
               ComparisonMatching.requiresPageEvidence(
                 source: request.identifiers, sourceName: request.productName,
                 candidate: page.identifiers, candidateName: page.name),
-              let refetched = await fetch(page.url), (200..<300).contains(refetched.statusCode)
+              let refetched = await networking.fetch(page.url), (200..<300).contains(refetched.statusCode)
         else { return nil }
         evidence = CandidatePageEvidence(
             reachedByGTINSearch: true, html: refetched.html, url: page.url)
@@ -844,11 +828,11 @@ public struct SellerFanOut {
     /// retailer's own search buried — but it is a second opinion, not a
     /// replacement: the same verification and the same merge rule apply.
     private func runWebSearchLayer(
-        _ request: SellerFanOutRequest, search: WebSearch,
+        _ request: SellerFanOutRequest,
         excludedDomains: Set<String>, requiredCurrency: String?, state: State, start: Date
     ) async {
         let query = webSearchQuery(request)
-        guard !query.isEmpty, let urls = await search(query) else { return }
+        guard !query.isEmpty, let urls = await networking.webSearch(query: query) else { return }
         var seenDomains: Set<String> = []
         var examined = 0
         for url in urls {
@@ -917,10 +901,10 @@ public struct SellerFanOut {
     private func resolve(
         _ url: URL, state: State, domain: String, currencyHint: String? = nil
     ) async -> Resolved? {
-        if let richResolve, let resolved = await richResolve(url) {
+        if runs(.richResolve), let resolved = await networking.richResolve(url) {
             return Resolved(page: resolved, html: nil)
         }
-        guard let page = await fetch(url) else { return nil }
+        guard let page = await networking.fetch(url) else { return nil }
         if BotWallDetection.isBotWall(statusCode: page.statusCode, html: page.html) {
             await state.markBotWalled(domain)
             return nil

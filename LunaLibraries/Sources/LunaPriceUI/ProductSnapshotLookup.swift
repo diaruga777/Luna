@@ -7,6 +7,7 @@ import Foundation
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaPriceIngest
 import LunaPriceMetadata
 import LunaURLClassification
 
@@ -54,9 +55,10 @@ extension ProductSnapshotStore {
 
     /// The newest observation of exactly this page, mapped back into the same
     /// mandatory-price `ProductInfo` the HTML extractor produces. This is the
-    /// bot-wall fallback used by app/share/action saves: Safari already read
-    /// the rendered Amazon page, so a later blocked native refetch must not
-    /// throw that trustworthy metadata away.
+    /// bot-wall fallback used by app/share/action saves (installed through
+    /// `SnapshotProductInfoFallback`): Safari already read the rendered Amazon
+    /// page, so a later blocked native refetch must not throw that trustworthy
+    /// metadata away.
     public func productInfo(forPageURL url: URL) -> ProductInfo? {
         let canonical = URLClassification.canonicalURL(url)
         var keys = [ProductSnapshotKeys.urlKey(canonical.absoluteString)]
@@ -81,5 +83,20 @@ extension ProductSnapshotStore {
             identifiers: ProductIdentifiers(
                 gtin: snapshot.gtin, mpn: snapshot.mpn,
                 sku: snapshot.sku ?? snapshot.retailerItemID, brand: snapshot.brand))
+    }
+}
+
+/// The snapshot lookup above as the ingest pipeline's fallback seam
+/// (`ProductInfoFallbackProviding`). It lives here rather than in LunaPriceIngest
+/// because the lookup does — the protocol is one tier down, where it is asked.
+public struct SnapshotProductInfoFallback: ProductInfoFallbackProviding {
+    private let store: ProductSnapshotStore
+
+    public init(store: ProductSnapshotStore = .shared) {
+        self.store = store
+    }
+
+    public func productInfo(forPageURL url: URL) -> ProductInfo? {
+        store.productInfo(forPageURL: url)
     }
 }

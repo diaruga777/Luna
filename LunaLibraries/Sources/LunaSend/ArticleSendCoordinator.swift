@@ -33,11 +33,17 @@ public protocol ArticleDestination {
 }
 
 /// Supplies the `EmailTransport` for the connected account. LunaSend sits below
-/// LunaMailTransport (which builds the transport), so the app installs this at
-/// launch; it stays nil in contexts that never send (extensions), meaning email
-/// sends fail as not-configured until the app runs.
+/// LunaMailTransport (which builds the transport), so the conformer lives up
+/// there and the app installs it at launch.
+public protocol EmailTransportProviding {
+    /// The transport for the connected account, or nil when no account can send.
+    func makeTransport() -> EmailTransport?
+}
+
+/// Where that provider is installed. It stays nil in contexts that never send
+/// (extensions), meaning email sends fail as not-configured until the app runs.
 public enum ArticleEmailTransportProvider {
-    public static var make: () -> EmailTransport? = { nil }
+    public static var installed: (any EmailTransportProviding)?
 }
 
 /// Builds the article's MIME message and hands it to the connected email
@@ -50,7 +56,7 @@ public final class AccountEmailSender {
 
     public func sendArticle(epubData: Data, fileName: String, title: String) async throws {
         guard let account = EmailAccountStore.shared.account,
-              let transport = ArticleEmailTransportProvider.make()
+              let transport = ArticleEmailTransportProvider.installed?.makeTransport()
         else { throw NotConfiguredError() }
 
         let message = MIMEMessage(
@@ -91,6 +97,13 @@ public final class KindleDestination: ArticleDestination {
     public func send(epubData: Data, fileName: String, title: String) async throws {
         try await sender.sendArticle(epubData: epubData, fileName: fileName, title: title)
     }
+}
+
+/// Receives each detached delivery task the coordinator starts, so a test can
+/// await the work instead of sleeping. Nothing in the apps conforms.
+@_spi(Testing)
+public protocol ArticleDeliveryTaskObserving: AnyObject {
+    func coordinatorDidStartDeliveryTask(_ task: Task<Void, Never>)
 }
 
 /// Orchestrates ereader sends across destinations: gating, queueing while an
@@ -135,11 +148,13 @@ public final class ArticleSendCoordinator {
 
     /// Testing seam. `articleBecameReady`/`retryPendingSends` are synchronous
     /// entry points that fan delivery out into detached `Task`s; with nothing
-    /// to await, a test can only sleep and hope. When this is set, every task
-    /// they start is handed over so the test can await it instead. Nil in
-    /// production — nothing is retained and no behavior changes.
+    /// to await, a test can only sleep and hope. When an observer is attached,
+    /// every task they start is handed over so the test can await it instead.
+    /// Nil in production — nothing is retained and no behavior changes.
+    ///
+    /// Weak: the observer is the test case, which owns the coordinator.
     @_spi(Testing)
-    public var didStartDeliveryTask: ((Task<Void, Never>) -> Void)?
+    public weak var deliveryTaskObserver: (any ArticleDeliveryTaskObserving)?
 
     public init(
         store: ReadingListStore = .shared,
@@ -190,7 +205,7 @@ public final class ArticleSendCoordinator {
                 || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
             let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
-            didStartDeliveryTask?(task)
+            deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
         }
     }
 
@@ -204,7 +219,7 @@ public final class ArticleSendCoordinator {
                     continue
                 }
                 let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
-                didStartDeliveryTask?(task)
+                deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
             }
         }
     }

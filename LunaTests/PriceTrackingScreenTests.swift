@@ -285,17 +285,17 @@ final class PriceTrackingScreenTests: XCTestCase {
         UITestSupport.seedSharedStore(.priceTracking)
         let item = try XCTUnwrap(
             ReadingListStore.shared.items().first(where: { $0.isPriceTracker }))
-        var requestedItemID: UUID?
+        let handoff = RecordingAddSellerHandoff()
         let editor = PriceTrackingViewController(
             mode: .creation(itemID: item.id, host: .extension),
-            openContainingAppForAddSeller: { requestedItemID = $0 })
+            addSellerHandoff: handoff)
         let window = UITestSupport.host(editor)
         let button = try XCTUnwrap(
             editor.view.descendants(ofType: UIButton.self).first {
                 $0.accessibilityLabel == "Add seller"
             })
         button.sendActions(for: .touchUpInside)
-        XCTAssertEqual(requestedItemID, item.id)
+        XCTAssertEqual(handoff.requestedItemIDs, [item.id])
         XCTAssertNil(editor.presentedViewController, "the extension must not host the seller webview")
         _ = window
     }
@@ -478,5 +478,15 @@ private extension UIView {
         if let match = self as? T { found.append(match) }
         for subview in subviews { found += subview.descendants(ofType: type) }
         return found
+    }
+}
+
+/// Records the items the editor hands back to the containing app instead of
+/// opening a deep link.
+final class RecordingAddSellerHandoff: AddSellerHandoffHandling {
+    private(set) var requestedItemIDs: [UUID] = []
+
+    func openContainingApp(forAddingSellerTo itemID: UUID) {
+        requestedItemIDs.append(itemID)
     }
 }

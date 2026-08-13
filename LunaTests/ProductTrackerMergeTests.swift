@@ -59,7 +59,8 @@ final class ProductTrackerMergeTests: XCTestCase {
         let outcome = ProductTrackerMerge.mergeIfPossible(
             product: product(), url: URL(string: "https://a.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in XCTFail("must not start a comparison for a new tracker") },
+            comparisonStarter: ForbiddenComparisonStarter(
+                reason: "must not start a comparison for a new tracker"),
             snapshotStore: snapshotStore())
         XCTAssertEqual(outcome, .newTracker)
     }
@@ -78,7 +79,7 @@ final class ProductTrackerMergeTests: XCTestCase {
         let outcome = ProductTrackerMerge.mergeIfPossible(
             product: product(gtin: "9337640009775"), url: URL(string: "https://binglee.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in }, snapshotStore: snapshotStore())
+            comparisonStarter: RecordingComparisonStarter(), snapshotStore: snapshotStore())
 
         guard case let .merged(itemID, highlighted) = outcome else {
             return XCTFail("expected a merge, got \(outcome)")
@@ -105,7 +106,7 @@ final class ProductTrackerMergeTests: XCTestCase {
         let outcome = ProductTrackerMerge.mergeIfPossible(
             product: product(gtin: "9337640009775"), url: URL(string: "https://a.example/p/1")!,
             excludingItemID: onlyItem.id, store: store,
-            comparisonStarter: { _, _, _ in }, snapshotStore: snapshotStore())
+            comparisonStarter: RecordingComparisonStarter(), snapshotStore: snapshotStore())
         XCTAssertEqual(outcome, .newTracker)
     }
 
@@ -125,7 +126,7 @@ final class ProductTrackerMergeTests: XCTestCase {
             product: product(name: "Hisense HRFD634BW Fridge", mpn: "HRFD634BW", brand: "Hisense"),
             url: URL(string: "https://binglee.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in }, snapshotStore: snapshotStore())
+            comparisonStarter: RecordingComparisonStarter(), snapshotStore: snapshotStore())
 
         let merged = store.item(withID: existingItem.id)?.priceTracker
         XCTAssertEqual(merged?.identifiers.mpn, "HRFD634BW")
@@ -144,15 +145,15 @@ final class ProductTrackerMergeTests: XCTestCase {
         store.savePriceTracker(existing, for: existingItem.id)
 
         let placeholder = store.add(urlString: "https://b.example/p/1")
-        var kicked: (itemID: UUID, url: URL)?
+        let starter = RecordingComparisonStarter()
         _ = ProductTrackerMerge.mergeIfPossible(
             product: product(name: "Widget", gtin: "1111111111111"),
             url: URL(string: "https://b.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { itemID, url, _ in kicked = (itemID, url) }, snapshotStore: snapshotStore())
+            comparisonStarter: starter, snapshotStore: snapshotStore())
 
-        XCTAssertEqual(kicked?.itemID, existingItem.id)
-        XCTAssertEqual(kicked?.url.absoluteString, "https://b.example/p/1")
+        XCTAssertEqual(starter.kicks.first?.itemID, existingItem.id)
+        XCTAssertEqual(starter.kicks.first?.sourceURL.absoluteString, "https://b.example/p/1")
     }
 
     /// A tracker that already holds 2+ stores has already been through (or
@@ -170,7 +171,8 @@ final class ProductTrackerMergeTests: XCTestCase {
             product: product(name: "Widget", gtin: "1111111111111"),
             url: URL(string: "https://b.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in XCTFail("must not kick a comparison") }, snapshotStore: snapshotStore())
+            comparisonStarter: ForbiddenComparisonStarter(reason: "must not kick a comparison"),
+            snapshotStore: snapshotStore())
     }
 
     /// A tracker already mid-fan-out (a pending marker) is not double-kicked.
@@ -187,7 +189,9 @@ final class ProductTrackerMergeTests: XCTestCase {
             product: product(name: "Widget", gtin: "1111111111111"),
             url: URL(string: "https://b.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in XCTFail("must not kick a second comparison") }, snapshotStore: snapshotStore())
+            comparisonStarter: ForbiddenComparisonStarter(
+                reason: "must not kick a second comparison"),
+            snapshotStore: snapshotStore())
     }
 
     // MARK: - Snapshot seeding on merge (Fix 7)
@@ -211,7 +215,8 @@ final class ProductTrackerMergeTests: XCTestCase {
         _ = ProductTrackerMerge.mergeIfPossible(
             product: product(gtin: "9337640009775"), url: URL(string: "https://binglee.example/p/1")!,
             excludingItemID: placeholder.id, store: store,
-            comparisonStarter: { _, _, _ in }, snapshotStore: snapshotStore(snapshots))
+            comparisonStarter: RecordingComparisonStarter(),
+            snapshotStore: snapshotStore(snapshots))
 
         let merged = store.item(withID: existingItem.id)?.priceTracker
         let seededStore = merged?.stores.first { $0.urlString.contains("retravision") }

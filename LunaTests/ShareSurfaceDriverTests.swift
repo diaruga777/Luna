@@ -246,17 +246,15 @@ final class ShareSurfaceDriverTests: XCTestCase {
         _ = store.add(urlString: urlString)
         let (driver, host) = makeDriver(isActionExtension: true)
         let landed = expectation(description: "seller attached")
-        SellerComparisonRunner.installed = { _, onResult in
-            let found = ComparableSellerResult(
+        let runner = StubSellerFanOutRunner(results: [
+            ComparableSellerResult(
                 sellerID: "target", sellerName: "Target", domain: "target.example",
                 url: URL(string: "https://target.example/p/1")!, price: 38, currency: "USD",
                 productName: "Widget", identifiers: ProductIdentifiers(),
-                imageURL: nil, confidence: .gtin, source: .directory)
-            await onResult?(found)
-            landed.fulfill()
-            return SellerFanOutOutcome(
-                results: [found], attemptedSellerIDs: ["target"], stopReason: .reachedTarget)
-        }
+                imageURL: nil, confidence: .gtin, source: .directory),
+        ])
+        runner.afterEachResult = { landed.fulfill() }
+        SellerComparisonRunner.installed = runner
 
         driver.present(.product(sampleProduct(), html: "<html></html>"), url: url(urlString))
 

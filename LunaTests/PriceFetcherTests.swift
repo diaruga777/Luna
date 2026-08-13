@@ -30,20 +30,40 @@ final class PriceFetcherTests: XCTestCase {
     </head><body><button>Add to cart</button></body></html>
     """
 
+    /// The render tier, stubbed: it answers `html`, counts how often it was
+    /// asked, and can be made to hang so the overall timeout has something to
+    /// fire against.
+    private final class StubRenderer: PriceHTMLRendering, @unchecked Sendable {
+        private let html: String?
+        private let sleepNanoseconds: UInt64?
+        private(set) var renderCount = 0
+
+        init(html: String?, sleepNanoseconds: UInt64? = nil) {
+            self.html = html
+            self.sleepNanoseconds = sleepNanoseconds
+        }
+
+        func renderedHTML(for url: URL) async -> String? {
+            renderCount += 1
+            if let sleepNanoseconds { try? await Task.sleep(nanoseconds: sleepNanoseconds) }
+            return html
+        }
+    }
+
     // MARK: - Static path wins (no WebView)
 
     func testStaticEmbeddedPriceUsesPrefetchedHTMLNoRender() async {
-        var rendered = false
-        let fetcher = PriceFetcher(
-            fetcher: MockArticleFetcher(),
-            renderHTML: { _ in rendered = true; return nil })
+        let renderer = StubRenderer(html: nil)
+        let fetcher = PriceFetcher(fetcher: MockArticleFetcher(), renderer: renderer)
         let url = "https://www.bunnings.com.au/x_p0208315"
         let html = BypassFixtures.html("Products/bunnings-nextdata.html")
 
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: html)
         XCTAssertEqual(price?.amount, Decimal(99))
         XCTAssertEqual(price?.currency, "AUD")
-        XCTAssertFalse(rendered, "A statically-present price must never trigger the WebView fallback.")
+        XCTAssertEqual(
+            renderer.renderCount, 0,
+            "A statically-present price must never trigger the WebView fallback.")
     }
 
     func testStructuredPriceFetchedWhenNoPrefetchedHTML() async {
@@ -54,7 +74,7 @@ final class PriceFetcherTests: XCTestCase {
         {"@type":"Product","name":"Thing","offers":{"price":"12.50","priceCurrency":"GBP"}}
         </script></head><body></body></html>
         """
-        let fetcher = PriceFetcher(fetcher: mock, renderHTML: { _ in nil })
+        let fetcher = PriceFetcher(fetcher: mock, renderer: StubRenderer(html: nil))
 
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: nil)
         XCTAssertEqual(price?.amount, Decimal(string: "12.50"))
@@ -67,8 +87,8 @@ final class PriceFetcherTests: XCTestCase {
         let url = "https://shop.example/p/12345"
         let mock = MockArticleFetcher()
         mock.htmlByURL[url] = jsRenderedHTML   // static markup has no price
-        let captured = renderedWithPriceHTML
-        let fetcher = PriceFetcher(fetcher: mock, renderHTML: { _ in captured })
+        let fetcher = PriceFetcher(
+            fetcher: mock, renderer: StubRenderer(html: renderedWithPriceHTML))
 
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: jsRenderedHTML)
         XCTAssertEqual(price?.amount, Decimal(string: "149.00"))
@@ -82,7 +102,8 @@ final class PriceFetcherTests: XCTestCase {
         let mock = MockArticleFetcher()
         mock.htmlByURL[url] = jsRenderedHTML
         // The render also fails to surface a price (still loading / blocked).
-        let fetcher = PriceFetcher(fetcher: mock, renderHTML: { _ in self.jsRenderedHTML })
+        let fetcher = PriceFetcher(
+            fetcher: mock, renderer: StubRenderer(html: jsRenderedHTML))
 
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: jsRenderedHTML)
         XCTAssertNil(price, "No price by any method → nil, so the caller saves a plain article.")
@@ -98,11 +119,9 @@ final class PriceFetcherTests: XCTestCase {
         mock.htmlByURL[url] = jsRenderedHTML   // static path finds no price
         let fetcher = PriceFetcher(
             fetcher: mock,
-            renderHTML: { _ in
-                // Never completes on its own — only the overall timeout can end this.
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                return self.renderedWithPriceHTML
-            },
+            // Never completes on its own — only the overall timeout can end this.
+            renderer: StubRenderer(
+                html: renderedWithPriceHTML, sleepNanoseconds: 60_000_000_000),
             overallTimeoutSeconds: 1)
 
         let start = Date()
@@ -117,16 +136,16 @@ final class PriceFetcherTests: XCTestCase {
     /// The Amazon /dp/ page resolves its price via the FAST static path — the
     /// WebView render is never reached (the spin-forever bug was the render path).
     func testAmazonStaticPriceUsesNoRender() async {
-        var rendered = false
-        let fetcher = PriceFetcher(
-            fetcher: MockArticleFetcher(),
-            renderHTML: { _ in rendered = true; return nil })
+        let renderer = StubRenderer(html: nil)
+        let fetcher = PriceFetcher(fetcher: MockArticleFetcher(), renderer: renderer)
         let url = "https://www.amazon.com.au/Mrisata-Rotating-Electric-Machine-Conveyor/dp/B0CWRSYTTK"
         let html = BypassFixtures.html("Products/amazon-dp.html")
 
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: html)
         XCTAssertEqual(price?.amount, Decimal(string: "39.99"))
         XCTAssertEqual(price?.currency, "AUD")
-        XCTAssertFalse(rendered, "Amazon's static price must resolve without the WebView fallback.")
+        XCTAssertEqual(
+            renderer.renderCount, 0,
+            "Amazon's static price must resolve without the WebView fallback.")
     }
 }

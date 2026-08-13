@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaMailAccount
+import LunaSend
 
 /// Builds the right `EmailTransport` for the connected account: the app-password
 /// IMAP/SMTP backend for Gmail/iCloud/Yahoo/custom, or the Graph backend for
@@ -26,6 +27,22 @@ public enum MailTransportFactory {
             transport = GraphMailTransport(store: store)
         }
         return AuthenticationStateTrackingTransport(base: transport, store: store)
+    }
+}
+
+/// The factory as LunaSend's `EmailTransportProviding` seam: LunaSend can't see
+/// this module, so the app installs this witness into
+/// `ArticleEmailTransportProvider.installed` at launch and a send asks it for
+/// the connected account's transport.
+public struct MailFactoryTransportProvider: EmailTransportProviding {
+    private let store: EmailAccountStore
+
+    public init(store: EmailAccountStore = .shared) {
+        self.store = store
+    }
+
+    public func makeTransport() -> EmailTransport? {
+        MailTransportFactory.make(store: store)
     }
 }
 

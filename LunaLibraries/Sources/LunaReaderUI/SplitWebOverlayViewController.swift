@@ -734,11 +734,8 @@ public final class SplitWebOverlayViewController: UIViewController,
     /// bottom lane while reading.
     private func installColumnChrome() {
         let bar = InlineReaderColumnChromeBar()
-        bar.onClose = { [weak self] in self?.chromeBack() }
-        bar.onToggleAudio = { [weak self] in self?.chromeToggleAudio() }
-        bar.onSelectMode = { [weak self] mode in self?.chromeSetMode(mode) }
+        bar.delegate = self
         bar.shareMenu = { [weak self] source in self?.chromeShareMenu(from: source) }
-        bar.onShare = { [weak self] source in self?.chromeShare(from: source) }
         view.addSubview(bar)
         columnChrome = bar
         bar.apply(chromeState, providesShareMenu: providesShareMenu)
@@ -880,6 +877,24 @@ extension SplitWebOverlayViewController: InlineReaderPageDelegate {
     }
 }
 
+extension SplitWebOverlayViewController: InlineReaderColumnChromeBarDelegate {
+    fileprivate func chromeBarRequestedClose(_ bar: InlineReaderColumnChromeBar) {
+        chromeBack()
+    }
+
+    fileprivate func chromeBarRequestedAudioToggle(_ bar: InlineReaderColumnChromeBar) {
+        chromeToggleAudio()
+    }
+
+    fileprivate func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: ReadingListItem.ReaderMode) {
+        chromeSetMode(mode)
+    }
+
+    fileprivate func chromeBar(_ bar: InlineReaderColumnChromeBar, didRequestShareFrom source: UIView) {
+        chromeShare(from: source)
+    }
+}
+
 private final class InlineReaderPresentationController: UIPresentationController {
     private let cardFrameInWindow: CGRect
     private let presentationFrameInWindow: CGRect
@@ -995,6 +1010,17 @@ private final class InlineReaderPresentationController: UIPresentationController
     }
 }
 
+/// The column chrome bar's own control taps, delivered to whatever installed
+/// it (`SplitWebOverlayViewController`). `shareMenu` stays a build closure on
+/// the bar itself — `ShareButtonMenu.install` wants a menu-building query, not
+/// an event — so only the fire-and-forget taps go through the delegate.
+private protocol InlineReaderColumnChromeBarDelegate: AnyObject {
+    func chromeBarRequestedClose(_ bar: InlineReaderColumnChromeBar)
+    func chromeBarRequestedAudioToggle(_ bar: InlineReaderColumnChromeBar)
+    func chromeBar(_ bar: InlineReaderColumnChromeBar, didSelectMode mode: ReadingListItem.ReaderMode)
+    func chromeBar(_ bar: InlineReaderColumnChromeBar, didRequestShareFrom source: UIView)
+}
+
 /// The column's own controls, in one floating glass bar: close, mode switcher,
 /// read-aloud, share.
 ///
@@ -1003,11 +1029,8 @@ private final class InlineReaderPresentationController: UIPresentationController
 /// to be reachable on BOTH cards for the "playing one pauses the other" rule to
 /// mean anything.
 private final class InlineReaderColumnChromeBar: UIView {
-    var onClose: (() -> Void)?
-    var onToggleAudio: (() -> Void)?
-    var onSelectMode: ((ReadingListItem.ReaderMode) -> Void)?
+    weak var delegate: InlineReaderColumnChromeBarDelegate?
     var shareMenu: ((UIView) -> UIMenu?)?
-    var onShare: ((UIView) -> Void)?
 
     private let background = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let closeButton = UIButton(type: .system)
@@ -1030,10 +1053,17 @@ private final class InlineReaderColumnChromeBar: UIView {
         addSubview(background)
 
         configure(closeButton, symbol: "xmark", label: L10n.string("Common_close"))
-        closeButton.addAction(UIAction { [weak self] _ in self?.onClose?() }, for: .touchUpInside)
+        closeButton.addAction(
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.delegate?.chromeBarRequestedClose(self)
+            }, for: .touchUpInside)
         configure(audioButton, symbol: "speaker.slash", label: L10n.string("Reader_readAloudChromeAccessibilityLabel"))
         audioButton.addAction(
-            UIAction { [weak self] _ in self?.onToggleAudio?() }, for: .touchUpInside)
+            UIAction { [weak self] _ in
+                guard let self else { return }
+                self.delegate?.chromeBarRequestedAudioToggle(self)
+            }, for: .touchUpInside)
         configure(shareButton, symbol: "square.and.arrow.up", label: L10n.string("Common_share"))
 
         modeControl.addAction(
@@ -1041,7 +1071,7 @@ private final class InlineReaderColumnChromeBar: UIView {
                 guard let self,
                       self.modes.indices.contains(self.modeControl.selectedSegmentIndex)
                 else { return }
-                self.onSelectMode?(self.modes[self.modeControl.selectedSegmentIndex])
+                self.delegate?.chromeBar(self, didSelectMode: self.modes[self.modeControl.selectedSegmentIndex])
             },
             for: .valueChanged)
         addSubview(modeControl)
@@ -1072,7 +1102,7 @@ private final class InlineReaderColumnChromeBar: UIView {
                 },
                 fallback: { [weak self] in
                     guard let self else { return }
-                    self.onShare?(self.shareButton)
+                    self.delegate?.chromeBar(self, didRequestShareFrom: self.shareButton)
                 })
         }
         guard let state else {

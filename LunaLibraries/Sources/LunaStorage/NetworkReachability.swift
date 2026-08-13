@@ -12,10 +12,10 @@ import Network
 /// or tapping a page — never consult this; they load on any network.
 ///
 /// `NWPathMonitor` reports the path asynchronously, so `isOnWiFi` is a best-effort
-/// snapshot: before the first update arrives it returns `false` (conservative — we'd
-/// rather defer a background crawl and resume it on the next foreground than spend
-/// cellular data). Warm it at launch (touch `.shared`) so the path is known well
-/// before any save happens.
+/// snapshot: before the first update arrives it returns `false`, the conservative
+/// choice — deferring a background crawl to the next foreground costs less than
+/// spending cellular data. Warm it at launch (touch `.shared`) so the path is
+/// known well before any save happens.
 public final class NetworkReachability {
     public static let shared = NetworkReachability()
 

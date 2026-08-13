@@ -5,10 +5,10 @@
 
 import Foundation
 
-/// The result of an `NSFileCoordinator` accessor block, for the callers that
-/// have to tell "the accessor produced nil" from "the accessor never ran"
-/// (coordination can fail, in which case the work still has to happen). A
-/// `?? fallback` cannot make that distinction when the value is itself optional.
+/// The result of an `NSFileCoordinator` accessor block. Coordination can fail,
+/// and the work must still happen when it does, so a caller needs to tell "the
+/// accessor produced nil" from "the accessor never ran" — a distinction a
+/// plain `?? fallback` cannot make when the value itself is optional.
 enum CoordinatedAccessorResult<Value> {
     case notRun
     case value(Value)
@@ -17,19 +17,19 @@ enum CoordinatedAccessorResult<Value> {
 /// One App-Group JSON file, read and mutated safely from every process that
 /// shares it.
 ///
-/// The app, its share/action extensions and its intents all write these sidecar
-/// files, and they take turns rather than run together: an extension records a
-/// failure while the app is suspended, and the app's next mutation has to build
-/// on what the extension left behind. So a mutation is never applied to a
-/// snapshot taken earlier — it takes an `NSFileCoordinator` writing
-/// coordination, decodes the file inside it, applies the change, and writes the
-/// result back. `lock` serializes callers inside this process; the coordination
-/// serializes across processes.
+/// The app, its share/action extensions, and its intents all write these
+/// sidecar files, and they take turns rather than run together: an extension
+/// can record a failure while the app is suspended, and the app's next
+/// mutation has to build on what the extension left behind. So a mutation
+/// never applies to a snapshot taken earlier — it opens an `NSFileCoordinator`
+/// writing coordination, decodes the file inside it, applies the change, and
+/// writes the result back. `lock` serializes callers inside this process; the
+/// coordination serializes callers across processes.
 ///
-/// Reads decode the file too, skipping the coordination only while the file's
+/// Reads decode the file too, but skip the coordination while the file's
 /// (modification date, size) still matches the stat the cached value was
-/// decoded under — a cross-process writer does not share this cache, so a read
-/// re-stats before trusting it.
+/// decoded under. A cross-process writer does not share this cache, so a read
+/// re-stats before it trusts the cache.
 ///
 /// `Value` carries its own JSON shape, so one file's date format or key
 /// strategy stays that file's business: pass the coders the format needs.

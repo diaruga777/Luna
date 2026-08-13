@@ -10,17 +10,18 @@ import Security
 
 /// Shared keychain primitive for user-restorable Luna credentials.
 ///
-/// These secrets are user-created app credentials/tokens rather than
-/// device-bound keys. Use a migratable class so encrypted device backups can
-/// restore them, and mark them synchronizable so iCloud Keychain can carry them
-/// between the user's trusted devices when enabled.
+/// These secrets are user-created app credentials and tokens rather than
+/// device-bound keys, so items store under a migratable class, letting
+/// encrypted device backups restore them, and mark themselves synchronizable,
+/// letting iCloud Keychain carry them between the user's trusted devices when
+/// enabled.
 ///
 /// Items live in the shared App-Group keychain access group (on iOS the
 /// app-group entitlement doubles as a keychain access group), so a credential
-/// saved in any one Luna app is readable by the other apps in the suite —
-/// that's what lets a second app's onboarding skip the email sign-in. Items
-/// written before this sharing existed sit in each app's private access group;
-/// `readData` migrates such an item into the shared group when it's the only
+/// saved in one Luna app is readable by the other apps in the suite — that is
+/// what lets a second app's onboarding skip the email sign-in. An item written
+/// before this sharing existed sits in that app's private access group
+/// instead; `readData` migrates it into the shared group when it is the only
 /// copy found.
 public enum CredentialKeychain {
     private static let logger = Logger(subsystem: LunaLogging.subsystem, category: "keychain")

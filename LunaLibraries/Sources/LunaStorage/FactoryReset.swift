@@ -9,34 +9,35 @@ import LunaAppConfig
 import Security
 import UserNotifications
 
+/// Teardown a kind module owns, run as part of the wipe.
+public protocol FactoryResetErasing {
+    func erase() async
+}
+
 /// Erases everything this install has ever written: both containers (the app's
 /// own and the shared App Group), both defaults domains, every keychain item
 /// this process can reach, the notification queue, and the Spotlight index.
 /// Reached from Settings → Diagnostics, which is itself behind five taps.
 ///
-/// **It is a file sweep, not a list of stores.** Naming each store here would
-/// mean a new store silently surviving the wipe the day someone adds one — and
-/// the whole point of the button is that nothing survives. The two containers
-/// hold every file any Luna process writes, so emptying them covers the stores
-/// that exist today and the ones that don't yet.
+/// **This sweeps every file in the two containers, rather than naming each
+/// store.** Naming a store here would let a new store silently survive the
+/// wipe the day someone adds one, and the whole point of the button is that
+/// nothing survives. The two containers hold every file any Luna process
+/// writes, so emptying them covers the stores that exist today and the ones
+/// added later.
 ///
 /// **The other Luna apps are wiped too, and that is intended.** The App Group
 /// container and the shared keychain group are one thing shared by four apps;
 /// "start over from scratch" cannot mean leaving the sibling's copy of the
-/// saves list in place. What is NOT reachable: another app's or extension's
-/// *private* container (iOS gives each `.appex` its own, and nothing in Luna
-/// keeps state there — extensions write to the App Group precisely so they can
-/// be read back) and the Safari web extension's `browser.storage`, which lives
-/// inside Safari.
+/// saves list in place. Out of reach: another app's or extension's *private*
+/// container (iOS gives each `.appex` its own, and nothing in Luna keeps state
+/// there — extensions write to the App Group precisely so they can be read
+/// back) and the Safari web extension's `browser.storage`, which lives inside
+/// Safari.
 ///
-/// The caller is expected to TERMINATE the process straight afterwards. Every
-/// store in the app is a long-lived singleton holding a decoded cache, and a
-/// cache that outlives its file will write it back.
-/// Teardown one kind owns, run as part of the wipe.
-public protocol FactoryResetErasing {
-    func erase() async
-}
-
+/// The caller must terminate the process immediately afterward. Every store
+/// in the app is a long-lived singleton holding a decoded cache, and a cache
+/// that outlives its file writes itself back.
 public enum FactoryReset {
 
     /// Teardown a kind module owns and this one cannot name. The media apps

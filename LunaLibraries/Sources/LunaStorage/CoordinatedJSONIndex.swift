@@ -6,11 +6,12 @@
 import Foundation
 
 /// The shared `NSLock` + `NSFileCoordinator` "load → mutate → save" wrapper for a
-/// JSON index file mutated from multiple processes (the app and its extensions all
-/// touch `preloads.json`): an uncoordinated load→save would let the
-/// last writer clobber another process's concurrent change. `lock` serializes
-/// callers within this process; `fileCoordinator` serializes across processes.
-/// `load`/`save` do the caller's own JSON (de)coding, so this stays index-type-agnostic.
+/// JSON index file mutated from multiple processes — the app and its extensions
+/// all touch `preloads.json`. An uncoordinated load→save would let the last
+/// writer clobber another process's concurrent change: `lock` serializes
+/// callers within this process, and `fileCoordinator` serializes callers
+/// across processes. `load` and `save` do the caller's own JSON (de)coding, so
+/// this function stays index-type-agnostic.
 @discardableResult
 func coordinatedMutateJSONIndex<Index, T>(
     lock: NSLock, fileCoordinator: NSFileCoordinator, indexURL: URL,

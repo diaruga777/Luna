@@ -7,11 +7,11 @@ import Foundation
 import LunaAppConfig
 import os
 
-/// Applies Luna's backup policy to files in the app/group containers.
+/// Applies Luna's backup policy to files in the app and app-group containers.
 ///
-/// Durable, user-controlled data should remain eligible for iCloud/device backup.
-/// Rebuildable caches, diagnostics, and transient downloads should be explicitly
-/// excluded so backups stay useful without growing from data Luna can recreate.
+/// Durable, user-controlled data stays eligible for iCloud and device backup.
+/// Rebuildable caches, diagnostics, and transient downloads are excluded, so
+/// backups do not grow with data Luna can recreate.
 public enum BackupPolicy {
     private static let logger = Logger(subsystem: LunaLogging.subsystem, category: "backup")
 

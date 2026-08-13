@@ -10,8 +10,8 @@ import Foundation
 /// Shared "has ever worked" markers for the left setup tray.
 ///
 /// Shortcut import presses and App Intent runs are attributed to their exact
-/// containing app. Safari retains its original central/faceted keys because
-/// the three faceted Safari extensions have always shared completion evidence.
+/// containing app. Safari keeps its central/faceted keys because the three
+/// faceted Safari extensions share one pool of completion evidence.
 public final class LunaSetupStatusStore {
     public static let shared = LunaSetupStatusStore()
     public static let didChange = Notification.Name("LunaSetupStatusStore.didChange")
@@ -135,9 +135,9 @@ public final class LunaSetupStatusStore {
         Self.postChange()
     }
 
-    /// Exact per-app intent evidence. The old faceted aggregate remains a
-    /// compatibility fallback for UI completion, but cannot prove WHICH old
-    /// app ran and therefore cannot select the returning-user conversation.
+    /// Exact per-app intent evidence. The faceted aggregate remains a
+    /// compatibility fallback for UI completion, but it cannot prove which
+    /// app ran, so it cannot select the returning-user conversation.
     func shortcutHasRun(for app: LunaApp) -> Bool {
         hasPerAppShortcutRun(for: app)
             || (app != .luna && defaults.bool(forKey: Self.sharedShortcutKey))

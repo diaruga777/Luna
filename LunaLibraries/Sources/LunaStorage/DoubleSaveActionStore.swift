@@ -19,8 +19,8 @@ public enum DoubleSaveAction: String, CaseIterable {
     /// `nothing`, not `none`, so it never collides with `Optional.none` at a
     /// call site.
     case nothing
-    /// Email the article's EPUB to the configured Kindle address (the existing
-    /// send-to-Kindle pipeline).
+    /// Emails the article's EPUB to the configured Kindle address, through the
+    /// send-to-Kindle pipeline.
     case sendToKindle
     /// Return the article as a self-contained Word document for the
     /// Shortcut to display immediately or pass onward.

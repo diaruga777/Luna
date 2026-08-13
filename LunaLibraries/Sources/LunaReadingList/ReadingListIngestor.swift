@@ -395,6 +395,21 @@ public final class ReadingListIngestor {
         SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
     }
 
+    /// An `.unsupported` outcome reached the presenter of a process whose surface
+    /// gate ACCEPTS that kind — the same class of programming error as a missing
+    /// handler, and given the same release behavior: the row is marked failed so
+    /// the list shows it, instead of spinning as `.pending` forever.
+    fileprivate func markUnsupportedFailed(
+        owner: LunaApp, for item: ReadingListItem
+    ) async {
+        SharedDiagnosticLog.record(
+            "ingest: unsupported outcome (owner \(owner.storageIdentifier)) reached the "
+                + "presenter — marking \(item.id) failed",
+            category: "ingest")
+        store.markFailed(item.id)
+        SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
+    }
+
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
     /// The enumeration (`store.items()` decode) and the two backfill scans run off
     /// the caller's thread on `sweepQueue`; per-item ingestion was already async
@@ -754,10 +769,16 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.parkNeedsArchive(title: title, for: item)
         case let .failed(reason):
             await ingestor.markFailed(for: item, reason: reason)
-        case .unsupported:
-            // Unreachable: the surface gate in `applyResult` discards an
-            // unsupported outcome (and deletes the item) before presenting.
-            assertionFailure("unsupported outcome reached the presenter")
+        case let .unsupported(owner):
+            // The surface gate in `applyResult` discards an unsupported outcome
+            // (and deletes the item) before presenting, so reaching here is a
+            // programming error: loud in a debug app, and the row is marked failed
+            // rather than left pending forever. The assertion stands down under
+            // XCTest so the suite can drive the recovery it guards.
+            if !LiveNetworkPolicy.isRunningUnderXCTest {
+                assertionFailure("unsupported outcome reached the presenter")
+            }
+            await ingestor.markUnsupportedFailed(owner: owner, for: item)
         }
     }
 }

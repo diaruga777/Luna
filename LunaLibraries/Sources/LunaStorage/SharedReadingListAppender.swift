@@ -103,8 +103,19 @@ public enum SharedReadingListAppender {
         var coordError: NSError?
         coordinator.coordinate(writingItemAt: fileURL, options: [], error: &coordError) { url in
             var array: [[String: Any]] = []
-            if let data = try? Data(contentsOf: url),
-               let decoded = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            if let data = try? Data(contentsOf: url), !data.isEmpty {
+                // A NON-EMPTY file that won't parse is not an empty list: writing
+                // `[newItem]` over it would destroy every saved item. Refuse the
+                // append instead — the same rule `ReadingListStore.decodeList`
+                // applies to a mutation. A missing or empty file appends normally.
+                guard let decoded = try? JSONSerialization
+                    .jsonObject(with: data) as? [[String: Any]] else {
+                    SharedDiagnosticLog.record(
+                        "readingList.json unreadable — refusing to append, "
+                            + "which would wipe the list",
+                        category: "share")
+                    return
+                }
                 array = decoded
             }
             if let dedupeURLString,
@@ -114,6 +125,7 @@ public enum SharedReadingListAppender {
             array.insert(makeItem(), at: 0) // newest first
             if let data = try? JSONSerialization.data(withJSONObject: array) {
                 try? data.write(to: url, options: .atomic)
+                BackupPolicy.includeInBackups(url)
             }
         }
         if let coordError {

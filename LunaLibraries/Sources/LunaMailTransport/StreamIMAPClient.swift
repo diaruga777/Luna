@@ -94,13 +94,35 @@ struct StreamIMAPClient {
                 afterUID: afterUID))
         }
 
+        let read = try await Self.readMessages(uids: matched.sorted(), afterUID: afterUID) { uid in
+            try await session.run(
+                "UID FETCH \(uid) (UID BODY.PEEK[]<0.\(Self.maxFetchBytes)>)", step: "fetch")
+                .literals.first
+        }
+        _ = try? await session.run("LOGOUT", step: "logout")
+        return FetchResult(
+            messages: read.messages, cursor: .imap(uid: read.highestUID, uidValidity: uidValidity))
+    }
+
+    /// Reads each matched uid in ascending order and reports both the messages and
+    /// how far the cursor may move.
+    ///
+    /// The cursor tracks only messages this run actually READ. A uid whose body the
+    /// server didn't send stops the walk: moving the cursor past an unread message
+    /// hides it from every future poll, since the next search starts above the
+    /// cursor. Nothing is lost by stopping — a uid that still exists comes back in
+    /// the next poll's search, and one that was expunged between the search and the
+    /// fetch drops out of it, so the walk can't stall on a message that is gone.
+    ///
+    /// `fetchLiteral` is the network leg (one `UID FETCH`), injected so the walk's
+    /// cursor rule is testable without a live IMAP session.
+    static func readMessages(
+        uids: [Int], afterUID: Int, fetchLiteral: (Int) async throws -> Data?
+    ) async throws -> (messages: [FetchedMessage], highestUID: Int) {
         var messages: [FetchedMessage] = []
         var highestUID = afterUID
-        for uid in matched.sorted() {
-            let fetch = try await session.run(
-                "UID FETCH \(uid) (UID BODY.PEEK[]<0.\(Self.maxFetchBytes)>)", step: "fetch")
-            highestUID = max(highestUID, uid)
-            guard let raw = fetch.literals.first else { continue }
+        for uid in uids {
+            guard let raw = try await fetchLiteral(uid) else { break }
             let rawString = String(decoding: raw, as: UTF8.self)
             let (headerText, body) = GmailIMAPClient.splitMessage(rawString)
             let headers = GmailIMAPClient.parseHeaders(headerText)
@@ -109,10 +131,9 @@ struct StreamIMAPClient {
                 id: String(uid), uid: uid,
                 from: headers["from"] ?? "", subject: headers["subject"] ?? "",
                 date: headers["date"] ?? "", headers: headers, bodyText: body, marker: marker))
+            highestUID = max(highestUID, uid)
         }
-        _ = try? await session.run("LOGOUT", step: "logout")
-        return FetchResult(
-            messages: messages, cursor: .imap(uid: highestUID, uidValidity: uidValidity))
+        return (messages, highestUID)
     }
 
     /// Flags the given UIDs `\Seen` in INBOX (best-effort).

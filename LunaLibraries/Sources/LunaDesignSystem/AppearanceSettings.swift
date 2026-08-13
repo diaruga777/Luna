@@ -78,15 +78,22 @@ public enum AppearanceSettings {
     }
 
     /// Scenes whose system-style changes are already being watched.
-    nonisolated(unsafe) private static var observedScenes: Set<ObjectIdentifier> = []
+    ///
+    /// Held WEAKLY, so an entry lasts exactly as long as the scene it names. An
+    /// identifier that outlived its scene would match the next scene the allocator
+    /// puts at that address, and that scene would be taken for one already watched
+    /// — its windows would then never follow the device style in `.system` mode.
+    nonisolated(unsafe) private static let observedScenes =
+        NSHashTable<UIWindowScene>.weakObjects()
 
     /// In `.system` mode the sky has to follow the device, which the pinned window
-    /// can no longer tell us about — so watch the scene instead.
+    /// can no longer tell us about — so watch the scene instead. One registration
+    /// per scene: `apply(to:)` runs again for every window each time the preference
+    /// changes.
     @MainActor
     private static func followSystemStyle(of window: UIWindow) {
-        guard let scene = window.windowScene,
-              observedScenes.insert(ObjectIdentifier(scene)).inserted
-        else { return }
+        guard let scene = window.windowScene, !observedScenes.contains(scene) else { return }
+        observedScenes.add(scene)
         scene.registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
             (scene: UIWindowScene, _) in
             let resolved = sky(systemStyle: scene.traitCollection.userInterfaceStyle)

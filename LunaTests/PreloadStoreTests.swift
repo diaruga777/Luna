@@ -230,8 +230,9 @@ final class PreloadStoreTests: XCTestCase {
 
     // MARK: - Image reference counting via the preload lifecycle
 
-    /// `PreloadStore(containerURL:)` builds its `ImageReferenceStore` on the SAME
-    /// container, so a preloaded page's images live in `<dir>/Articles`.
+    /// `PreloadStore(containerURL:)` counts its image ownership in the saves
+    /// database in the SAME container, so a preloaded page's images live in
+    /// `<dir>/Articles` beside a save's.
     private var articlesDir: URL { dir.appendingPathComponent("Articles", isDirectory: true) }
 
     private func makeImageFile(_ name: String) {

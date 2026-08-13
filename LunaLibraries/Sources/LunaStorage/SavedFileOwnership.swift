@@ -148,18 +148,35 @@ enum SavedFileOwnership {
 
     /// Records that `saveID` holds `path`. `kind` is written only when the file
     /// row is new: a file already known as an image stays one.
+    ///
+    /// BOTH statements are conditional on the save existing, so a save that is not
+    /// there records nothing at all. `OR IGNORE` would not cover the edge — SQLite
+    /// raises a foreign-key violation through it — and a `files` row without the
+    /// edge that was meant to follow it would be exactly the zero-holder row the
+    /// schema's triggers exist to prevent.
     static func attach(
         path: String, kind: OwnedFileKind?, to saveID: UUID, in db: SavesDatabase
     ) throws {
-        try insertFile(path: path, kind: kind, in: db)
+        try db.run(
+            """
+            INSERT INTO files (relative_path, kind)
+                SELECT ?, ? WHERE EXISTS (SELECT 1 FROM saves WHERE id = ?)
+                ON CONFLICT (relative_path) DO NOTHING
+            """
+        ) {
+            try $0.bind(1, path)
+            try $0.bind(2, kind?.rawValue)
+            try $0.bind(3, uuid: saveID)
+        }
         try db.run(
             """
             INSERT OR IGNORE INTO file_refs (file_id, save_id)
-                SELECT id, ? FROM files WHERE relative_path = ?
+                SELECT files.id, saves.id FROM files, saves
+                WHERE files.relative_path = ? AND saves.id = ?
             """
         ) {
-            try $0.bind(1, uuid: saveID)
-            try $0.bind(2, path)
+            try $0.bind(1, path)
+            try $0.bind(2, uuid: saveID)
         }
     }
 

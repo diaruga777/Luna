@@ -559,22 +559,21 @@ class CardCarouselHostViewController: UIViewController {
 
     final func isUtilCard(_ index: Int) -> Bool { index == utilCardIndex }
 
-    /// - Parameter hasSaves: whether the deck holds any save of its own. It
-    ///   decides the “or” separator, and — because an empty store launches
-    ///   centered on the util card — whether this appearance is the one the
-    ///   intro headline's sweep belongs to.
-    final func makeUtilCardContentController(
-        hasSaves: @escaping () -> Bool,
-        saveHandler: @escaping UtilCardContentViewController.SaveHandler
-    ) -> CardContentViewController {
-        UtilCardContentViewController(
+    /// The deck is the card's own data source and delegate: it knows whether it
+    /// holds any save (which decides the “or” separator, and — because an empty
+    /// store launches centered on the util card — whether this appearance is the
+    /// one the intro headline's sweep belongs to), and it performs the saves the
+    /// card asks for.
+    final func makeUtilCardContentController() -> CardContentViewController {
+        let card = UtilCardContentViewController(
             showsOnboarding: utilCardShowsOnboardingAtLaunch,
-            animatesIntro: !hasSaves() && !AppLaunchTransition.hasFinished,
-            hasSaves: hasSaves,
+            animatesIntro: !utilCardHasSaves && !AppLaunchTransition.hasFinished,
             // Nil in the two apps that download nothing, so their card never
             // offers the storage line (`claudedocs/util-card.md`).
-            storageChoice: DownloadStorageChoice.installed,
-            saveHandler: saveHandler)
+            storageChoice: DownloadStorageChoice.installed)
+        card.dataSource = self
+        card.delegate = self
+        return card
     }
 
     final func loadUtilCardThumbnail(completion: @escaping (UIImage?) -> Void) {
@@ -1274,12 +1273,7 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
         if isUtilCard(index) {
-            return makeUtilCardContentController(
-                hasSaves: { [weak self] in self?.slots.isEmpty == false }
-            ) { [weak self] url, source, sourceView, completion in
-                self?.saveUtilCardURL(
-                    url, source: source, sourceView: sourceView, completion: completion)
-            }
+            return makeUtilCardContentController()
         }
         guard let slot = slotIndex(forCarouselIndex: index), let provider = deckProvider
         else { return CardContentViewController() }
@@ -1532,5 +1526,26 @@ extension CardCarouselHostViewController: AppLaunchTransitionTarget {
         view.layoutIfNeeded()
         guard let frame = carousel.restingCenteredCardFrame(in: view) else { return nil }
         return view.convert(frame, to: window)
+    }
+}
+
+// MARK: - The util card's data source and delegate
+
+// The deck answers the one question that is its own — whether it holds any save
+// of its own kinds — and performs the saves the card asks for. Everything else
+// the card reads comes from the protocol's live defaults over the shared stores.
+extension CardCarouselHostViewController: UtilCardDataSource {
+    var utilCardHasSaves: Bool { !slots.isEmpty }
+}
+
+extension CardCarouselHostViewController: UtilCardDelegate {
+    func utilCardSave(
+        urlString: String,
+        source: CaptureSource,
+        sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        saveUtilCardURL(
+            urlString, source: source, sourceView: sourceView, completion: completion)
     }
 }

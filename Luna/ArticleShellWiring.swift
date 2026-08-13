@@ -74,14 +74,7 @@ enum ArticleShellWiring {
             return await ArticleImageDownloader.download(
                 content, itemID: item.id, store: .shared, refererURL: referer)
         }
-        DoubleSaveSettingsSupport.kindleSetupLauncher = { presenter in
-            guard EmailAccountStore.shared.isConfigured else {
-                EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-                return
-            }
-            presenter.navigationController?.pushViewController(
-                KindleSettingsScreen(), animated: true)
-        }
+        DoubleSaveSettingsSupport.kindleSetupLauncher = KindleSetupPresenter()
 
         // A bulk import's pass over the saves that came back hard-paywalled:
         // the same web unlock a tap would run, off-screen and giving up on any
@@ -108,9 +101,7 @@ enum ArticleShellWiring {
             EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
         }
         // The util card's email nudge goes to the same one place.
-        UtilCardContentViewController.emailSetupLauncher = { presenter in
-            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
-        }
+        UtilCardContentViewController.emailSetupLauncher = EmailSetupPresenter()
     }
 
     // MARK: - Lifecycle
@@ -158,6 +149,28 @@ enum ArticleShellWiring {
         return UINavigationController(rootViewController: reader)
     }
     #endif
+}
+
+/// Whichever setup a repeat press is still missing: the sign-in form first, the
+/// Kindle address screen once an account is connected.
+@MainActor
+private struct KindleSetupPresenter: KindleSetupPresenting {
+    func presentKindleSetup(from presenter: UIViewController) {
+        guard EmailAccountStore.shared.isConfigured else {
+            EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+            return
+        }
+        presenter.navigationController?.pushViewController(
+            KindleSettingsScreen(), animated: true)
+    }
+}
+
+/// The one email sign-in surface, for the util card's nudge.
+@MainActor
+private struct EmailSetupPresenter: EmailSetupPresenting {
+    func presentEmailSetup(from presenter: UIViewController) {
+        EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+    }
 }
 
 /// A bulk import's off-screen web unlock, the same one a tap would run.

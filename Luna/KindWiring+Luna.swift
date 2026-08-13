@@ -62,7 +62,16 @@ enum KindWiring {
         // A Luna email carrying a price tracker shows its graph as an image —
         // the one seam that needs an article-app capability (email) and a
         // product-app one (the graph) at once, so it belongs to neither leg.
-        EmailShareCenter.priceGraphSnapshot = { PriceGraphEmailSnapshot.jpegData(for: $0) }
+        EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
+    }
+
+    /// The tracker email's hero image, drawn by the product module's snapshot
+    /// renderer.
+    private struct TrackerEmailGraphRenderer: PriceGraphEmailRendering {
+        @MainActor
+        func jpegData(for tracker: PriceTracker) -> Data? {
+            PriceGraphEmailSnapshot.jpegData(for: tracker)
+        }
     }
 
     // MARK: - Root UI shape

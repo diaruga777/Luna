@@ -10,6 +10,16 @@ import LunaMailTransport
 import LunaSocial
 import UIKit
 
+/// Renders a tracker's price graph as the hero image of a shared-tracker email.
+/// Installed by the composition root of an app that both sends email and holds
+/// trackers — the graph view lives in LunaPriceUI, which LunaReadingList must
+/// not depend on.
+public protocol PriceGraphEmailRendering {
+    /// JPEG data for the graph, or nil when it cannot be drawn.
+    @MainActor
+    func jpegData(for tracker: PriceTracker) -> Data?
+}
+
 /// Sends a reading-list item (or a bare URL) to one or more recipients as a
 /// nicely-formatted Luna email, and records each recipient in the friends list.
 /// The email carries the `X-Luna-Share` marker so a recipient's Luna app can
@@ -18,12 +28,10 @@ public final class EmailShareCenter {
 
     public static let shared = EmailShareCenter()
 
-    /// Renders a tracker's price graph to a JPEG hero image, installed by the
-    /// product-handling apps' `KindWiring` (the graph view lives in LunaPriceUI,
-    /// which LunaReadingList must not depend on). nil ⇒ the shared tracker email
-    /// falls back to the item's thumbnail — which is all a non-product app can
-    /// ever need, since its store holds no trackers.
-    public static var priceGraphSnapshot: (@MainActor (PriceTracker) -> Data?)?
+    /// The graph renderer, or nil ⇒ the shared tracker email falls back to the
+    /// item's thumbnail — which is all a non-product app can ever need, since its
+    /// store holds no trackers.
+    public static var priceGraphSnapshot: (any PriceGraphEmailRendering)?
 
     private let store: ReadingListStore
     private let accountStore: EmailAccountStore
@@ -121,7 +129,7 @@ public final class EmailShareCenter {
 
         if let tracker = item?.priceTracker {
             detailLines.append(priceSummary(for: tracker))
-            if let snapshot = Self.priceGraphSnapshot?(tracker) {
+            if let snapshot = Self.priceGraphSnapshot?.jpegData(for: tracker) {
                 heroImage = InlineImage(contentID: "hero", mimeType: "image/jpeg", data: snapshot)
             } else if let thumb = item?.thumbnailFileName {
                 heroImage = inlineImage(fileName: thumb, cid: "hero")

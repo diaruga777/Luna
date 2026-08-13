@@ -188,14 +188,21 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
 // (`ReaderSettingsScreen` lives in `ReaderSettingsScreens.swift` — article-kind,
 // per-target compiled.)
 
+/// Pushes the setup a repeat press still needs: the sign-in form when no email
+/// account is connected, otherwise the Kindle address screen.
+@MainActor
+protocol KindleSetupPresenting {
+    func presentKindleSetup(from presenter: UIViewController)
+}
+
 /// Article-kind seams the universal `ShortcutSettingsScreen` needs for its
-/// double-save picker. Installed by the two `KindWiring` variants that link
-/// LunaSend (Luna + Reader); nil in the other two apps, which don't show the
-/// section at all.
+/// double-save picker. Installed by the article shell of the two apps that link
+/// LunaSend (Luna + Reader); left uninstalled in the other two apps, which don't
+/// show the section at all.
 enum DoubleSaveSettingsSupport {
     /// Pushes whichever setup the user is missing — the sign-in form when no
     /// email account is connected, otherwise the Kindle address screen.
-    static var kindleSetupLauncher: ((UIViewController) -> Void)?
+    static var kindleSetupLauncher: (any KindleSetupPresenting)?
 
     /// Whether a repeat press could actually reach a Kindle right now.
     static var isKindleConfigured: Bool {
@@ -466,7 +473,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         alert.addAction(UIAlertAction(title: L10n.string("Settings_shortcut_kindleSetupPromptButton"), style: .default) {
             [weak self] _ in
             guard let self else { return }
-            DoubleSaveSettingsSupport.kindleSetupLauncher?(self)
+            DoubleSaveSettingsSupport.kindleSetupLauncher?.presentKindleSetup(from: self)
         })
         present(alert, animated: true)
     }

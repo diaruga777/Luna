@@ -380,14 +380,13 @@ enum SharedStageCatalog {
             onboardingStore: onboarding,
             weeklyStore: weekly,
             now: { StageFixtures.now },
-            hasSaves: { !saveDates.isEmpty },
-            savedURLStrings: { [] },
-            savedDates: { saveDates },
-            isEmailConnected: { emailConnected },
-            recentMatches: { recents },
-            storageChoice: storageChoice,
-            saveHandler: { _, _, _, completion in completion(true) })
-        return StageCardHostViewController(card: card)
+            storageChoice: storageChoice)
+        let environment = StageUtilCardEnvironment(
+            hasSaves: !saveDates.isEmpty, savedDates: saveDates,
+            isEmailConnected: emailConnected, recentMatches: recents)
+        card.dataSource = environment
+        card.delegate = environment
+        return StageCardHostViewController(card: card, retaining: environment)
     }
 
     private static func recentPreviews() -> [RecentURLPreview] {
@@ -578,15 +577,48 @@ enum SharedStageCatalog {
     }
 }
 
+/// The staged util card's environment: fixed values in place of the shared
+/// stores, and a save that always reports success.
+@MainActor
+final class StageUtilCardEnvironment: UtilCardDataSource, UtilCardDelegate {
+    let utilCardHasSaves: Bool
+    let utilCardSavedURLStrings: Set<String> = []
+    let utilCardSavedDates: [Date]
+    let utilCardIsEmailConnected: Bool
+    let utilCardRecentMatches: [RecentURLPreview]
+
+    init(
+        hasSaves: Bool, savedDates: [Date], isEmailConnected: Bool,
+        recentMatches: [RecentURLPreview]
+    ) {
+        utilCardHasSaves = hasSaves
+        utilCardSavedDates = savedDates
+        utilCardIsEmailConnected = isEmailConnected
+        utilCardRecentMatches = recentMatches
+    }
+
+    func utilCardSave(
+        urlString: String, source: CaptureSource, sourceView: UIView,
+        completion: @escaping (Bool) -> Void
+    ) {
+        completion(true)
+    }
+
+    func utilCardOpenSystemSettings() {}
+}
+
 /// Hosts one card in the deck's exact frame — `CardDeckGeometry.cardFrame` is
 /// pure arithmetic over the screen, so a staged card lands where the deck would
 /// have put it, in the same surface chrome (`claudedocs/card-carousel.md`).
 final class StageCardHostViewController: UIViewController {
     private let card: UIViewController
     private let surface = CardSurfaceView()
+    /// A staged card's environment, which the card itself only holds weakly.
+    private let retained: AnyObject?
 
-    init(card: UIViewController) {
+    init(card: UIViewController, retaining retained: AnyObject? = nil) {
         self.card = card
+        self.retained = retained
         super.init(nibName: nil, bundle: nil)
     }
 

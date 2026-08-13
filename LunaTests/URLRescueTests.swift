@@ -789,6 +789,33 @@ final class URLRescueTests: XCTestCase {
         XCTAssertNil(RescueDirectiveApplier.directAsset(from: URL(string: "https://x/y.html")!))
     }
 
+    /// Pins `directAsset` to `DirectMediaURL`'s own table (both directions), so
+    /// a rescued direct-media URL is never accepted or rejected differently
+    /// here than the download pipeline would accept or reject it.
+    func testDirectAssetMatchesDirectMediaURLTableBothWays() {
+        let accepted: [(String, MediaAsset.Kind)] = [
+            ("clip.mp4", .video), ("clip.m4v", .video), ("clip.mov", .video),
+            ("photo.jpg", .image), ("photo.jpeg", .image), ("photo.png", .image),
+            ("photo.webp", .image), ("photo.heic", .image), ("photo.heif", .image),
+            ("photo.avif", .image),
+            ("clip.gif", .gif),
+            ("track.mp3", .audio), ("track.m4a", .audio), ("track.aac", .audio),
+            ("track.aif", .audio), ("track.aiff", .audio), ("track.caf", .audio),
+            ("track.flac", .audio), ("track.wav", .audio),
+        ]
+        for (filename, expectedKind) in accepted {
+            let url = URL(string: "https://x/\(filename)")!
+            XCTAssertEqual(RescueDirectiveApplier.directAsset(from: url)?.kind, expectedKind, filename)
+        }
+
+        // The download pipeline can't handle either format; a hand-rolled table
+        // once accepted both anyway.
+        for filename in ["stream.m3u8", "clip.webm"] {
+            let url = URL(string: "https://x/\(filename)")!
+            XCTAssertNil(RescueDirectiveApplier.directAsset(from: url), filename)
+        }
+    }
+
     func testOpenGraphContentExtraction() {
         let html = "<meta property=\"og:video\" content=\"https://cdn/v.mp4\">"
         XCTAssertEqual(RescueDirectiveApplier.openGraphContent(named: "og:video", in: html), "https://cdn/v.mp4")

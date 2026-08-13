@@ -7,6 +7,7 @@ import Foundation
 import LunaFetch
 import LunaIngest
 import LunaModels
+import LunaURLClassification
 
 /// Executes a validated `RescueDirective`. Re-entry into the pipeline uses the
 /// injected `runPipeline` closure whose default is the RAW
@@ -157,17 +158,18 @@ struct RescueDirectiveApplier {
         return nil
     }
 
+    /// The same URL-extension table the download pipeline recognizes
+    /// (`DirectMediaURL`), so a rescued direct-media URL is never accepted or
+    /// rejected differently here than it would be anywhere else in Luna.
     static func directAsset(from url: URL) -> MediaAsset? {
-        let ext = url.pathExtension.lowercased()
-        let kind: MediaAsset.Kind?
-        switch ext {
-        case "mp4", "m3u8", "mov", "webm": kind = .video
-        case "gif": kind = .gif
-        case "jpg", "jpeg", "png", "webp": kind = .image
-        case "mp3", "m4a": kind = .audio
-        default: kind = nil
+        guard let directKind = DirectMediaURL.kind(for: url) else { return nil }
+        let kind: MediaAsset.Kind
+        switch directKind {
+        case .image: kind = .image
+        case .gif: kind = .gif
+        case .video: kind = .video
+        case .audio: kind = .audio
         }
-        guard let kind else { return nil }
         return MediaAsset(url: url, kind: kind)
     }
 

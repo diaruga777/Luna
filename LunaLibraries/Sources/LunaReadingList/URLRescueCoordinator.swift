@@ -76,11 +76,7 @@ public final class URLRescueCoordinator {
     private lazy var sweepDriver = ReadingListSweepDriver(
         queueLabel: "com.hsanabria.luna.urlRescueCoordinator",
         debounceInterval: debounceInterval,
-        onForegroundChange: { [weak self] isForeground in
-            self?.isForeground = isForeground
-            if isForeground { self?.drainPendingRequests() }
-        },
-        runSweep: { [weak self] in self?.runSweep() })
+        sweeper: self)
 
     private var installed = false
     private var isSweeping = false
@@ -378,5 +374,17 @@ public final class URLRescueCoordinator {
         inFlightLock.lock(); defer { inFlightLock.unlock() }
         inFlightItemIDs.remove(id)
         stages[id] = nil
+    }
+}
+
+/// The sweep body and the foreground tracking `ReadingListSweepDriver` drives.
+/// Only the scheduling lives in the driver; the reentrancy guard is this class's
+/// own, and a foreground transition also drains queued extension→app hand-offs.
+extension URLRescueCoordinator: ReadingListSweepForegroundTracking {
+    public func runReadingListSweep() { runSweep() }
+
+    public func readingListSweepForegroundChanged(to isForeground: Bool) {
+        self.isForeground = isForeground
+        if isForeground { drainPendingRequests() }
     }
 }

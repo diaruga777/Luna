@@ -37,8 +37,7 @@ public final class AudioScriptPipeline {
     private lazy var sweepDriver = ReadingListSweepDriver(
         queueLabel: "com.hsanabria.luna.audioScriptPipeline",
         debounceInterval: debounceInterval,
-        onForegroundChange: { [weak self] isForeground in self?.isForeground = isForeground },
-        runSweep: { [weak self] in self?.runSweep() })
+        sweeper: self)
     private var isSweeping = false
     /// Guards against kicking off a second concurrent refinement pass for the
     /// same item while an earlier one (from `script(for:content:)` or a
@@ -218,6 +217,17 @@ public final class AudioScriptPipeline {
         let wordCount = spokenBlocks.reduce(0) { $0 + AudioTrimHeuristics.wordCount(text: $1.text) }
         return AudioScript(
             spokenBlocks: spokenBlocks, totalWordCount: wordCount, builderVersion: AudioScript.heuristicBuilderVersion)
+    }
+}
+
+/// The sweep body and the foreground tracking `ReadingListSweepDriver` drives.
+/// Only the scheduling lives in the driver; the reentrancy guard is this
+/// class's own.
+extension AudioScriptPipeline: ReadingListSweepForegroundTracking {
+    public func runReadingListSweep() { runSweep() }
+
+    public func readingListSweepForegroundChanged(to isForeground: Bool) {
+        self.isForeground = isForeground
     }
 }
 

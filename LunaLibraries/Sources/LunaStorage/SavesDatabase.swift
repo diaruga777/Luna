@@ -160,12 +160,14 @@ final class SavesDatabase {
 
     /// Runs `body` inside one immediate transaction: everything it writes lands
     /// together or not at all, and a second process writing at the same moment
-    /// waits on `busy_timeout` rather than interleaving.
+    /// takes its turn rather than interleaving.
     ///
     /// `BEGIN IMMEDIATE` (not deferred) because every caller here intends to
-    /// write: taking the write lock up front turns a lost race into a wait
-    /// instead of a mid-transaction `SQLITE_BUSY` that would have to be retried
-    /// from the top.
+    /// write: taking the write lock up front means the wait happens before any
+    /// work, instead of a mid-transaction `SQLITE_BUSY`. `body` may therefore run
+    /// twice — once for a lock race it lost, once for the attempt that commits —
+    /// so anything it does outside SQL must be idempotent (the file writes inside
+    /// `saveContent` and `setThumbnail` are: same bytes, same path).
     func transaction<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
         try queue.sync {
             try retryingWhileBusy {

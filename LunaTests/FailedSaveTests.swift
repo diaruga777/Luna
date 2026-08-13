@@ -263,6 +263,45 @@ final class SaveFailureStoreTests: XCTestCase {
         XCTAssertEqual(reopened.record(for: id)?.reason, .httpStatus(429))
         XCTAssertEqual(reopened.record(for: id)?.resolvedTitle, "Persisted")
     }
+
+    /// The share/action extensions record failures while the app is suspended.
+    /// Two live stores on one file stand in for that: whatever one wrote has to
+    /// survive the other's next mutation, and be visible to its reads.
+    func testAWriteThroughOneStoreSurvivesTheOtherStoresNextMutation() {
+        let app = SaveFailureStore(containerURL: directory, now: { [unowned self] in self.clock })
+        let extensionSide = SaveFailureStore(containerURL: directory,
+                                             now: { [unowned self] in self.clock })
+        let fromApp = UUID()
+        let fromExtension = UUID()
+        app.recordFailure(fromApp, reason: .offline)
+        extensionSide.recordFailure(fromExtension, reason: .httpStatus(403))
+
+        XCTAssertEqual(app.record(for: fromExtension)?.reason, .httpStatus(403))
+        app.recordFailure(fromApp, reason: nil)
+        XCTAssertEqual(extensionSide.record(for: fromExtension)?.failureCount, 1,
+                       "the app's mutation must not rewrite the extension's records away")
+        XCTAssertEqual(extensionSide.record(for: fromApp)?.failureCount, 2)
+    }
+
+    /// The on-disk shape another process (or an older build) writes: item UUID
+    /// keys, ISO-8601 dates.
+    func testReadsTheFileFormatAnotherProcessWrites() throws {
+        let id = UUID()
+        let json = """
+        {"\(id.uuidString)":{"failureCount":3,"lastFailureDate":"2026-08-13T04:05:06Z",\
+        "resolvedTitle":"From another process","siteName":"Example","aiAttemptVersion":"1.4 (208)"}}
+        """
+        try Data(json.utf8).write(to: directory.appendingPathComponent("saveFailures.json"))
+        let reopened = SaveFailureStore(containerURL: directory)
+        let record = try XCTUnwrap(reopened.record(for: id))
+        XCTAssertEqual(record.failureCount, 3)
+        XCTAssertEqual(record.resolvedTitle, "From another process")
+        XCTAssertEqual(record.siteName, "Example")
+        XCTAssertEqual(record.aiAttemptVersion, "1.4 (208)")
+        XCTAssertEqual(record.lastFailureDate,
+                       Date(timeIntervalSince1970: 1_786_593_906))
+        XCTAssertTrue(reopened.hasSpentAIAttempt(id, version: "1.4 (208)"))
+    }
 }
 
 final class FailedSaveSurfacingTests: XCTestCase {

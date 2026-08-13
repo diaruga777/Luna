@@ -146,16 +146,20 @@ public final class ReadingListStore {
     /// removed (with its files) and nil is returned so the caller stops ingesting it.
     @discardableResult
     public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
-        coordinatedMutate { all in
+        // The duplicate's files are released after the list's coordination closes —
+        // `removeFiles` takes writing coordinations of its own (see `removeFiles`).
+        var removedDuplicate: ReadingListItem?
+        let result: ReadingListItem? = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             if all.contains(where: { $0.id != itemID && $0.urlString == urlString }) {
-                let removed = all.remove(at: index)
-                self.removeFiles(for: removed)
+                removedDuplicate = all.remove(at: index)
                 return nil
             }
             all[index].urlString = urlString
             return all[index]
         }
+        if let removedDuplicate { removeFiles(for: removedDuplicate) }
+        return result
     }
 
     @discardableResult
@@ -434,10 +438,15 @@ public final class ReadingListStore {
     }
 
     public func delete(_ item: ReadingListItem) {
+        // The row goes inside the list's coordination; its files go after it, because
+        // `removeFiles` releases two refcount indexes that each take a writing
+        // coordination of their own (see `removeFiles`).
+        var removed: ReadingListItem?
         coordinatedMutate { all in
-            if let found = all.first(where: { $0.id == item.id }) { self.removeFiles(for: found) }
+            removed = all.first { $0.id == item.id }
             all.removeAll { $0.id == item.id }
         }
+        if let removed { removeFiles(for: removed) }
         SaveDiagnosticsStore.shared.delete(for: item.id)
     }
 
@@ -769,6 +778,11 @@ public final class ReadingListStore {
 
     public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
+        // The images this save owns, applied to the refcount index after the list's
+        // own coordination closes. `ImageReferenceStore.mutate` takes a writing
+        // coordination of its own, on another file from another `NSFileCoordinator`,
+        // and nesting two coordinated writes risks a deadlock (see `removeFiles`).
+        var ownedImageFiles: [String]?
         let saved: ReadingListItem = coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
             // Both encode AND write must succeed before the item flips `.ready` —
@@ -781,9 +795,7 @@ public final class ReadingListStore {
                 all[index].title = content.title
                 // This save now owns the images its content references (so they survive
                 // until the item is deleted, and aren't deleted while it still needs them).
-                self.imageReferences.setReferences(
-                    contentKey: ImageReferenceStore.itemKey(item.id),
-                    files: ImageReferenceStore.imageFiles(in: content))
+                ownedImageFiles = ImageReferenceStore.imageFiles(in: content)
                 // Real content now exists (possibly after the user solved an archive
                 // CAPTCHA), so this is the terminal ready state regardless of how it got here.
                 all[index].state = .ready
@@ -794,6 +806,10 @@ public final class ReadingListStore {
                 all[index].state = .failed
             }
             return all[index]
+        }
+        if let ownedImageFiles {
+            imageReferences.setReferences(
+                contentKey: ImageReferenceStore.itemKey(item.id), files: ownedImageFiles)
         }
         // Keep the failure sidecar in step with the state this write landed on.
         if saved.state == .ready {
@@ -1140,6 +1156,11 @@ public final class ReadingListStore {
     /// Removes an item's on-disk artifacts (content JSON, imported source file,
     /// thumbnail). The source extension is the SANITIZED document type so a crafted
     /// `documentType` can't point the delete outside the Articles directory.
+    ///
+    /// Call this OUTSIDE `coordinatedMutate`/`coordinatedUpdate`: the two refcount
+    /// releases at the end each take an `NSFileCoordinator` writing coordination of
+    /// their own, on their own index file, and nesting one coordinated write inside
+    /// another is a deadlock risk.
     private func removeFiles(for item: ReadingListItem) {
         if let fileName = item.contentFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))

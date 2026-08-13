@@ -17,6 +17,14 @@ struct SavesDatabaseError: Error, CustomStringConvertible {
         let suffix = sql.map { " — \($0)" } ?? ""
         return "sqlite(\(code)): \(message)\(suffix)"
     }
+
+    /// Whether SQLite refused because someone else holds the file. The primary
+    /// code is the low byte — the extended codes (`SQLITE_BUSY_SNAPSHOT` and
+    /// friends) carry it in the same place.
+    var isBusy: Bool {
+        let primary = code & 0xFF
+        return primary == SQLITE_BUSY || primary == SQLITE_LOCKED
+    }
 }
 
 /// This process's one connection to the shared saves database.
@@ -98,9 +106,34 @@ final class SavesDatabase {
         // A second writer waits up to five seconds for the first to commit
         // instead of returning SQLITE_BUSY. Set before anything else can block.
         sqlite3_busy_timeout(handle, 5000)
-        try execute("PRAGMA journal_mode = WAL")
+        // Switching journal mode takes a lock the busy TIMEOUT does not cover, and
+        // every process racing to be the first to open a new file attempts the
+        // switch at once — so this one is retried by hand. A file already in WAL
+        // answers without locking anything.
+        try retryingWhileBusy { try execute("PRAGMA journal_mode = WAL") }
         try execute("PRAGMA synchronous = NORMAL")
         try execute("PRAGMA foreign_keys = ON")
+    }
+
+    /// Runs `body`, retrying while SQLite says the file is busy.
+    ///
+    /// `busy_timeout` covers a writer waiting for the write lock, which is the
+    /// common case and needs nothing here. It does NOT cover the two places this
+    /// wraps: the journal-mode switch above, and a transaction that loses its
+    /// lock race outright rather than being made to wait. A save must not
+    /// disappear because two processes reached the file in the same millisecond.
+    func retryingWhileBusy<T>(attempts: Int = 6, _ body: () throws -> T) throws -> T {
+        var attempt = 1
+        while true {
+            do {
+                return try body()
+            } catch let error as SavesDatabaseError where error.isBusy && attempt < attempts {
+                // Back off a little further each time, so a queue of writers
+                // spreads out instead of colliding again immediately.
+                Thread.sleep(forTimeInterval: 0.02 * Double(attempt))
+                attempt += 1
+            }
+        }
     }
 
     /// Marks the database — and, once WAL has made them, its siblings — as
@@ -135,14 +168,16 @@ final class SavesDatabase {
     /// from the top.
     func transaction<T>(_ body: (SavesDatabase) throws -> T) throws -> T {
         try queue.sync {
-            try execute("BEGIN IMMEDIATE")
-            do {
-                let result = try body(self)
-                try execute("COMMIT")
-                return result
-            } catch {
-                try? execute("ROLLBACK")
-                throw error
+            try retryingWhileBusy {
+                try execute("BEGIN IMMEDIATE")
+                do {
+                    let result = try body(self)
+                    try execute("COMMIT")
+                    return result
+                } catch {
+                    try? execute("ROLLBACK")
+                    throw error
+                }
             }
         }
     }

@@ -34,18 +34,23 @@ enum SavesSchema {
     /// a sibling app that has been updated first owns that stamp, and every table
     /// this binary needs is there (they only ever gain columns).
     static func create(in database: SavesDatabase) throws {
-        try database.execute("BEGIN IMMEDIATE")
-        do {
-            let existing = try userVersion(in: database)
-            try database.execute(tables)
-            try database.execute(indexes)
-            if existing < SavesDatabase.schemaVersion {
-                try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
+        // Every process runs this at open, so on a fresh file they all run it at
+        // once — the loser of that race is made to wait rather than left with no
+        // database (see `SavesDatabase.retryingWhileBusy`).
+        try database.retryingWhileBusy {
+            try database.execute("BEGIN IMMEDIATE")
+            do {
+                let existing = try userVersion(in: database)
+                try database.execute(tables)
+                try database.execute(indexes)
+                if existing < SavesDatabase.schemaVersion {
+                    try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
+                }
+                try database.execute("COMMIT")
+            } catch {
+                try? database.execute("ROLLBACK")
+                throw error
             }
-            try database.execute("COMMIT")
-        } catch {
-            try? database.execute("ROLLBACK")
-            throw error
         }
     }
 

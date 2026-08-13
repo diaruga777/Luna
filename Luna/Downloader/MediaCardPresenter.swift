@@ -2,23 +2,20 @@
 //  MediaCardPresenter.swift
 //  Luna
 //
-//  The media kind's card behavior, defined ONCE for every app that shows a
-//  Downloader save — the Downloader itself and the central Luna app. Compiled
+//  The media kind's card behavior, defined once for every app that shows a
+//  Downloader save: the Downloader itself and the central Luna app. Compiled
 //  into exactly those two targets (Reader and Price Tracker exclude it through
-//  the synchronized group's membership exceptions, the same mechanism that keeps
-//  `MediaCardFactory` out of them).
+//  the synchronized group's membership exceptions, the same mechanism that
+//  keeps `MediaCardFactory` out of them).
 //
-//  Before this existed, the Downloader's deck and the central app's all-kinds
-//  deck each answered these questions separately and disagreed about: the
-//  failed-download red rim (Downloader only), which store an archive wrote,
-//  whether deleting an archived save released its file, the display scale, the
-//  fingerprint's components, share prewarming, and the Photos reconciliation
-//  pass. Every one of those was the same save behaving differently depending on
-//  which icon you tapped.
+//  Both decks answer the same questions from here: the failed-download red
+//  rim, which store an archive writes, whether deleting an archived save
+//  releases its file, the display scale, the fingerprint's components, share
+//  prewarming, and the Photos reconciliation pass.
 //
-//  The verbs themselves, and the storage work behind two of them, stay where
-//  they already were: `MediaItemActions` in `MediaCardFactory.swift`. This file
-//  is the presenter that hands them to a deck.
+//  The verbs themselves, and the storage work behind two of them, live in
+//  `MediaItemActions` in `MediaCardFactory.swift`. This file is the presenter
+//  that hands them to a deck.
 //
 
 import AVFoundation
@@ -48,8 +45,6 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// One concrete export for the centered item. Photos-backed videos can be
     /// large, so superseded exports are cancelled and reclaimed immediately.
-    /// This used to exist only in the Downloader; the central app re-exported
-    /// from cold on every share.
     private var sharePreparationItemID: UUID?
     private var preparedShareFile: URL?
     private var sharePreparationTask: Task<URL?, Never>?
@@ -88,10 +83,10 @@ final class MediaCardPresenter: CardKindPresenting {
         return store.items()
             .filter { !backed.contains($0.sourceURLString) }
             .map { media in
-                // The stand-in carries the MEDIA store's id, so the slot, the
-                // centering ladder and the archive tray all key off the row the
-                // user actually has — exactly as the Downloader's deck always
-                // did — while everything else reads a normal item.
+                // The stand-in carries the media store's id, so the slot, the
+                // centering ladder, and the archive tray all key off the row
+                // the user actually has, while everything else reads a
+                // normal item.
                 var item = SavedItem(urlString: media.sourceURLString, id: media.id)
                 item.title = media.title
                 item.dateAdded = media.dateSaved
@@ -104,28 +99,24 @@ final class MediaCardPresenter: CardKindPresenting {
 
     // MARK: - Slot data
 
-    /// The media half of a card's identity: which still it shows and where its
-    /// file is. Both decks now carry both components — the central app's omitted
-    /// the thumbnail, so a download that produced a poster left the card showing
-    /// the old one until something else forced a rebuild.
+    /// The media half of a card's identity: which still it shows and where
+    /// its file is. Both components matter, so a download that produces a
+    /// new poster re-renders the card.
     func fingerprint(for item: SavedItem) -> String {
         guard let media = media(for: item) else { return "" }
         return "\(media.thumbnailFileName ?? "")|\(MediaItemActions.storageStateKey(media))"
     }
 
     /// A platform link Luna holds no media row for has no media card to draw.
-    /// The central app and Reader still show it as a link card; the Downloader,
-    /// which has no link card, gives it no slot — exactly as it did when it read
-    /// its own store instead of the saves list.
+    /// The central app and Reader still show it as a link card; the
+    /// Downloader, which has no link card, gives it no slot.
     func hasContent(for item: SavedItem) -> Bool {
         media(for: item) != nil
     }
 
-    /// Archived in EITHER store means archived. The two used to be written
-    /// separately — the Downloader archived the media row, the central deck
-    /// archived the save row — so a save archived in one app stayed live
-    /// in the other. `setArchived` now writes both; reading leniently is what
-    /// reconciles the rows written before it did.
+    /// Archived in either store means archived. `setArchived` writes both the
+    /// media row and the save row, and reading leniently here reconciles a
+    /// row that was archived in only one of the two stores.
     func isArchived(_ item: SavedItem) -> Bool {
         item.isArchived || media(for: item)?.isArchived == true
     }
@@ -134,9 +125,7 @@ final class MediaCardPresenter: CardKindPresenting {
 
     /// Darwin notifications are dropped while suspended, so also catch up on
     /// activation — which covers iPad multitasking, where the app can stay
-    /// foregrounded the whole time an extension runs alongside it. The central
-    /// app had no equivalent, so a download finished by an extension beside it
-    /// went unnoticed there.
+    /// foregrounded the whole time an extension runs alongside it.
     var activationNotificationNames: [Notification.Name] {
         [UIApplication.didBecomeActiveNotification]
     }
@@ -177,9 +166,9 @@ final class MediaCardPresenter: CardKindPresenting {
         SavesStore.shared.item(forURLString: media.sourceURLString)?.id ?? media.id
     }
 
-    /// A reload that changed NOTHING is exactly when a Photos asset deleted
-    /// behind Luna's back needs noticing, which is why this runs on the settle
-    /// path rather than the apply path. It used to run only from the Downloader.
+    /// A reload that changed nothing is exactly when a Photos asset deleted
+    /// behind Luna's back needs noticing, which is why this runs on the
+    /// settle path rather than the apply path.
     func didSettleReload(host: CardPresenterHost) {
         reconcilePhotosReferencesIfAuthorized(host: host)
     }
@@ -201,9 +190,9 @@ final class MediaCardPresenter: CardKindPresenting {
         media(for: item).flatMap(MediaCardFactory.photosBadge(for:))
     }
 
-    /// A media item whose DOWNLOAD failed wears the same soft red rim a failed
-    /// SAVE does. The central app drew no rim at all, so the two failures looked
-    /// nothing alike in the one deck that shows both.
+    /// A media item whose download failed wears the same soft red rim a
+    /// failed save does, so the two failures look alike in a deck that shows
+    /// both.
     func edgeGlowColor(for item: SavedItem) -> UIColor? {
         guard let media = media(for: item),
               LiveMediaDownloadManager.shared.currentDownloadSnapshot(
@@ -253,17 +242,14 @@ final class MediaCardPresenter: CardKindPresenting {
         return !media.isArchived
     }
 
-    /// Hard-clipped, and played by the scrub strip under the finger — in EVERY
-    /// app. The central app used to dissolve this card's video edges over the
-    /// reader's 28pt fade and preview it as a still. Its 9:16 frame is now the
-    /// whole deck's frame rather than this kind's answer: video is what that
-    /// shape was chosen FOR, and every other card matches it.
+    /// Hard-clipped, and played by the scrub strip under the finger, in every
+    /// app. The card's 9:16 frame is the whole deck's frame, since video is
+    /// what that shape was chosen for, and every other card matches it.
     ///
     /// `pagesOnInCardSwipes` stays false: a playable card's whole width is a
-    /// timeline, so a horizontal drag scrubs it. That was already true of a
-    /// PLAYING card everywhere (the carousel vetoes paging for playable
-    /// content), but a DOWNLOADING card is not playable yet, and it paged in
-    /// the central app while staying put in the Downloader.
+    /// timeline, so a horizontal drag scrubs it. The carousel already vetoes
+    /// paging for any playing card; this also holds while a card is still
+    /// downloading and not yet playable.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
         style.autoplaysScrubPreview = true
@@ -278,8 +264,8 @@ final class MediaCardPresenter: CardKindPresenting {
 
     // MARK: - Verbs
 
-    /// The Downloader's own verbs for this row — the same switch over where its
-    /// file is — offered above the deck's Archive/Delete.
+    /// The row's own verbs — the same switch over where its file is —
+    /// offered above the deck's Archive/Delete.
     func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
         guard let media = media(for: item) else { return [] }
         let anchor = host.cardView(forItemID: item.id)
@@ -297,19 +283,20 @@ final class MediaCardPresenter: CardKindPresenting {
             })
     }
 
-    /// The ladder the deck's trailing circle hangs on this row: Copy link /
+    /// The ladder the deck's trailing circle hangs on this row: Copy link and
     /// Share link over the original saved URL, then the file itself once one
-    /// exists. A platform save with NO media row still owes the user its link —
-    /// that card IS a link and nothing else — so it gets the two link verbs
-    /// alone, and only the file row ever shares a file (a video Luna holds just
-    /// a thumbnail for shares its link, never the thumbnail).
+    /// exists. A platform save with no media row still owes the user its
+    /// link — that card is a link and nothing else — so it gets the two link
+    /// verbs alone, and only the file row ever shares a file. A video Luna
+    /// holds just a thumbnail for shares its link, never the thumbnail.
     ///
-    /// Two ways to be this kind's, and it takes EITHER: a recognized platform,
-    /// or a media row Luna actually holds. A plain article is neither and gets
-    /// nil, which is what keeps its pill hidden. The second half matters because
-    /// an UNBACKED media row's stand-in carries whatever platform its media row
-    /// recorded, and that is nil for a row saved before platform capture — a
-    /// `contentPlatform`-only test cost those cards their entire share ladder.
+    /// Two ways to belong to this kind, and either is enough: a recognized
+    /// platform, or a media row Luna actually holds. A plain article is
+    /// neither and gets nil, which keeps its pill hidden. The second check
+    /// matters because an unbacked media row's stand-in carries whatever
+    /// platform its media row recorded, which is nil for a row saved before
+    /// platform capture — a `contentPlatform`-only test would cost those
+    /// cards their entire share ladder.
     func shareMenu(for item: SavedItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu?
     {
@@ -327,13 +314,12 @@ final class MediaCardPresenter: CardKindPresenting {
             })
     }
 
-    /// ONE archive write for this kind, covering BOTH stores the kind owns. The
-    /// Downloader used to archive only its media row and the central deck only
-    /// the save row, so archiving in one app left the save live (or
-    /// demoted to a link card) in the other.
-    /// Unarchiving also bumps the row's date, which is how the ONE ordering rule
-    /// resurfaces a restored save — the same thing `markUnread` does for an
-    /// article. It is the only date this kind ever writes.
+    /// One archive write for this kind, covering both stores it owns, so
+    /// archiving in one app never leaves the save live — or demoted to a
+    /// link card — in another. Unarchiving also bumps the row's date, the
+    /// one ordering rule's way of resurfacing a restored save, the same
+    /// thing `markUnread` does for an article. It is the only date this kind
+    /// ever writes.
     func setArchived(_ archived: Bool, for item: SavedItem) {
         if let media = media(for: item) {
             store.setArchived(archived, for: media.id)
@@ -342,11 +328,11 @@ final class MediaCardPresenter: CardKindPresenting {
         if !archived { SavesStore.shared.bump(item.id) }
     }
 
-    /// The whole save goes when the card does: the downloaded file, its Photos
-    /// asset, and the auto-download bookkeeping that would otherwise treat the
-    /// URL as already fetched. The save row itself is the deck's to
-    /// delete. This ran only from the ACTIVE deck centrally, so deleting an
-    /// archived media save from the tray left every one of those behind.
+    /// The whole save goes when the card does: the downloaded file, its
+    /// Photos asset, and the auto-download bookkeeping that would otherwise
+    /// treat the URL as already fetched. The save row itself is the deck's
+    /// to delete. Runs from the archive tray too, so deleting an archived
+    /// media save there cleans up all of those as well.
     func deleteCompanionStorage(for item: SavedItem, host: CardPresenterHost?) {
         guard let media = store.item(forURLString: item.urlString) else { return }
         MediaItemActions.release(
@@ -376,10 +362,10 @@ final class MediaCardPresenter: CardKindPresenting {
         discardPreparedShareFile()
     }
 
-    /// A media save rendered as a REAL card owns its own tap (play/pause, the
-    /// download button), exactly as in the Downloader. The native-app → embed →
-    /// in-app-browser ladder is only for the link-style card that stands in when
-    /// there is nothing downloaded to show.
+    /// A media save rendered as a real card owns its own tap: play/pause, the
+    /// download button. The native-app → embed → in-app-browser ladder is
+    /// only for the link-style card that stands in when there is nothing
+    /// downloaded to show.
     @discardableResult
     func itemWasTapped(
         _ item: SavedItem, cardContent: CardContentViewController?,
@@ -417,10 +403,8 @@ final class MediaCardPresenter: CardKindPresenting {
 
     // MARK: - The archive tray
 
-    /// The real media row in the tray — its thumbnail, whether the file is still
-    /// there, and a tap that plays it fullscreen. The central app's tray showed
-    /// a globe and a favicon fetch for these, and its tap went nowhere (it asked
-    /// for a reader, and there is no reader for a video).
+    /// The media row in the tray: its thumbnail, whether the file is still
+    /// there, and a tap that plays it fullscreen.
     func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {

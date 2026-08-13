@@ -9,11 +9,12 @@ import LunaSaves
 import LunaURLClassification
 import UIKit
 
-/// The import sheet: review what was found, watch it come in, read what landed.
+/// The import sheet: review what was found, watch it come in, read what
+/// landed.
 ///
-/// One controller for all three because they are one continuous act — the table
-/// stays put and its content is replaced, so the sheet never blinks out from
-/// under the user mid-import (`claudedocs/import-export.md`).
+/// One controller handles all three stages because they are one continuous
+/// act. The table stays put and its content is replaced, so the sheet never
+/// blinks out from under the user mid-import (`claudedocs/import-export.md`).
 final class LinkImportSheetViewController: UIViewController {
 
     // MARK: - Stage
@@ -29,7 +30,7 @@ final class LinkImportSheetViewController: UIViewController {
     /// pure functions of it, and the tests exercise them directly.
     struct Entry {
         let urlString: String
-        /// The title the FILE carried, when it did — a Luna markdown export writes
+        /// The title the file carried, when it did. A Luna markdown export writes
         /// `[Title](url)`, so a re-import can read the headline straight off the
         /// page it came from and never has to fetch it.
         let fileTitle: String?
@@ -68,8 +69,8 @@ final class LinkImportSheetViewController: UIViewController {
     private let secondaryButton = UIButton(type: .system)
     private let buttonRow = UIStackView()
     /// Holds the progress block above the buttons. A stack, so hiding the block
-    /// COLLAPSES it: `isHidden` on a plain subview leaves its frame (and the
-    /// progress bar's 20pt intrinsic height) behind as a gap above the buttons.
+    /// collapses it: `isHidden` on a plain subview leaves its frame — and the
+    /// progress bar's 20pt intrinsic height — behind as a gap above the buttons.
     private let footerStack = UIStackView()
     private let titleLabel = UILabel()
 
@@ -87,10 +88,10 @@ final class LinkImportSheetViewController: UIViewController {
     // MARK: - Init
 
     /// `previews` defaults to `nil` rather than to a fresh loader, and is
-    /// resolved in the body: a default argument is evaluated in the CALLER's
+    /// resolved in the body. A default argument is evaluated in the caller's
     /// context, which is not the main actor even though this initializer is,
-    /// and the loader owns main-actor UIKit state. The body is the first place
-    /// that isolation is guaranteed.
+    /// and the loader owns main-actor UIKit state. The body is the first
+    /// place that isolation is guaranteed.
     @MainActor
     init(
         document: LinkListDocument,

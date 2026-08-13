@@ -9,10 +9,10 @@ import LunaModels
 import LunaDesignSystem
 import UIKit
 
-/// Per-capture-source auto-send configuration for one ereader destination
-/// Lets the user choose which sources auto-send: App Intents
-/// (Shortcuts) and in-app saves via the send mode, plus on/off for email and
-/// the share sheet & paste.
+/// Per-capture-source auto-send configuration for one ereader destination.
+/// Lets the user choose which sources auto-send: App Intents (Shortcuts) and
+/// in-app saves through the send mode, plus on/off switches for email and the
+/// share sheet and paste.
 final class AutoSendBySourceScreen: NavHeaderTableController {
 
     private enum SourceRow: Int, CaseIterable { case appIntents, email, shareAndPaste }

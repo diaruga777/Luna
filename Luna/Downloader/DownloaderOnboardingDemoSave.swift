@@ -8,9 +8,9 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// The video the Downloader's onboarding mocks show is rendered by the replica
-/// views alone and is **never saved**. What remains here is the one-time sweep
-/// of the item an OLDER build installed — see `OnboardingLegacyDemoSave`.
+/// The video the Downloader's onboarding mocks show is rendered by the
+/// replica views alone and is never saved. This file only sweeps the demo
+/// item a previous app version installed — see `OnboardingLegacyDemoSave`.
 enum DownloaderOnboardingDemoSave {
     static let legacyCleanup: any OnboardingLegacyDemoSweeping = LegacySweep()
 

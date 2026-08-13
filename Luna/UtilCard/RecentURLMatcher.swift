@@ -310,18 +310,17 @@ final class RecentURLMatcher {
         }
     }
 
-    /// The site's icon, resolved the way every OTHER surface in Luna resolves
+    /// The site's icon, resolved the way every other surface in Luna resolves
     /// it — `FaviconFetcher`, which is what `SiteIconCache` puts behind a saved
     /// card's source badge.
     ///
-    /// This used to GET `<scheme>://<host>/favicon.ico` and nothing else, which
-    /// is the one candidate a site is least likely to have: a WordPress install
-    /// with no site icon set REDIRECTS that path to WordPress's own blue "W",
-    /// so the row wore a stranger's logo (and any site declaring its icon only
-    /// through `<link rel="icon">` got no artwork at all). The fetcher tries the
-    /// well-known apple-touch icon, then the icons the homepage declares, and
-    /// only then `/favicon.ico` — so a row now shows the same mark the card
-    /// shows once the link is saved.
+    /// Plain `<scheme>://<host>/favicon.ico` is the one candidate a site is
+    /// least likely to have: a WordPress install with no site icon set
+    /// redirects that path to WordPress's own blue "W", and a site declaring
+    /// its icon only through `<link rel="icon">` has no icon at that path at
+    /// all. The fetcher tries the well-known apple-touch icon first, then the
+    /// icons the homepage declares, and only then `/favicon.ico` — so a row
+    /// shows the same mark the card shows once the link is saved.
     private static func faviconData(for url: URL) async -> Data? {
         guard let data = await FaviconFetcher().fetchIconData(forPageURL: url) else { return nil }
         return compressedData(UIImage(data: data))

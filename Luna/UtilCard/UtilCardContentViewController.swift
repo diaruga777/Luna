@@ -395,11 +395,10 @@ final class UtilCardContentViewController: CardContentViewController {
     /// swipe moved it.
     ///
     /// A card with no live pick has no row to hand the job to, though — the row
-    /// is not on screen at all — and the labels used to freeze on whichever turn
-    /// the intro hand-off left them at, forever. The cycler keeps its own clock
-    /// in that case. It is also the whole answer on the COMPLETED card, which
-    /// keeps these buttons (and, in central Luna, keeps them stretched edge to
-    /// edge for exactly this cycling) long after the first run is answered.
+    /// is not on screen at all — so the cycler keeps its own clock in that
+    /// case. It is also the whole answer on the completed card, which keeps
+    /// these buttons (and, in central Luna, keeps them stretched edge to edge
+    /// for exactly this cycling) long after the first run is answered.
     private func updateSetupLabelClock() {
         guard let setupTextCycler else { return }
         let rowWillCycle = !weeklyHost.isEmpty && !weeklyHost.isHidden
@@ -1237,8 +1236,8 @@ final class UtilURLRow: UIControl {
 
     /// - Parameter weeklyLabel: The "… of the week/month" phrase, which is per
     ///   app and per age tier (`WeeklySaveLabels`). It goes in the corner flag,
-    ///   which is why the subtitle is the host and nothing else — the phrase used
-    ///   to sit beside it and truncate it. Ignored by history rows.
+    ///   which is why the subtitle is the host and nothing else. Ignored by
+    ///   history rows.
     func configure(
         _ preview: RecentURLPreview,
         weeklyLabel: String? = nil,

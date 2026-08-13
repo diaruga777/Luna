@@ -2,16 +2,16 @@
 //  ReadArticleIntent.swift
 //  Luna
 //
-//  App Intent definition (app target). Conforms to `AudioPlaybackIntent` (a
-//  marker refinement of `AppIntent`, iOS 17+, verified against the AppIntents
-//  swiftinterface: `public protocol AudioPlaybackIntent: SystemIntent`) so
-//  the system runs `perform()` in the app's own process and lets it start
-//  background audio without foregrounding — no extra protocol requirements
-//  beyond `AppIntent` itself. Selection logic (the nil-entity "latest unread"
-//  fallback) lives in LunaIntents.ArticleMatcher; playback goes through
-//  `AudioPlaybackCenter`, the same center the in-app mini-player uses. This
-//  file is scoped by membership exception to Luna and LunaReader only — the
-//  apps without read-aloud never compile the type at all.
+//  App Intent definition, in the app target. Conforms to `AudioPlaybackIntent`
+//  (a marker refinement of `AppIntent`, iOS 17+, verified against the
+//  AppIntents swiftinterface: `public protocol AudioPlaybackIntent:
+//  SystemIntent`), so the system runs `perform()` in the app's own process and
+//  lets it start background audio without foregrounding. It adds no
+//  requirements beyond `AppIntent` itself. Selection logic — the nil-entity
+//  "latest unread" fallback — lives in LunaIntents.ArticleMatcher; playback
+//  goes through `AudioPlaybackCenter`, the same center the in-app mini-player
+//  uses. This file is scoped by membership exception to Luna and LunaReader
+//  only: the apps without read-aloud never compile the type at all.
 //
 
 import AppIntents
@@ -21,9 +21,9 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Starts background read-aloud playback of a saved article. Parameter is
-/// optional: provided → play that article; nil → the latest unread readable
-/// article (newest saved).
+/// Starts background read-aloud playback of a saved article. The parameter
+/// is optional: when provided, it plays that article; when nil, it plays the
+/// latest unread readable article, the newest saved.
 struct ReadArticleIntent: AudioPlaybackIntent {
     init() {}
     static let title: LocalizedStringResource = "Intents_readArticle_title_Luna"

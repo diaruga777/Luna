@@ -53,7 +53,7 @@ enum WeeklyPromotionMenu {
         app: LunaApp = .current
     ) -> [UIAction] {
         // Resolved here rather than as a default argument: a default is
-        // evaluated in the CALLER's context, which is not the main actor even
+        // evaluated in the caller's context, which is not the main actor even
         // though this is, and `WeeklySaveRefresher` is main-actor isolated.
         let refresher = refresher ?? .shared
         var actions: [UIAction] = []

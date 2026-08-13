@@ -4,14 +4,14 @@
 //
 //  The persistent read-aloud mini-player bar (Phase 3 of
 //  claudedocs/audio-playback-plan.md): a floating glass bar hosted at window
-//  level by `MiniPlayerHostViewController`, showing the playing article's
-//  thumbnail + title, the same transport controls as the old in-reader footer
-//  (paragraph back / play-pause / paragraph forward / rate), an autoplay
-//  toggle, and a `MoonHorizonProgressBar`.
+//  level by `MiniPlayerHostViewController`. Shows the playing article's
+//  thumbnail and title, transport controls (paragraph back, play-pause,
+//  paragraph forward, rate), an autoplay toggle, and a
+//  `MoonHorizonProgressBar`.
 //
-//  The view is deliberately PASSIVE: it renders a `Display` value and exposes
-//  control closures — the host observes `AudioPlaybackCenter` and feeds it.
-//  That keeps it directly snapshot-testable (`AudioMiniPlayerTests`).
+//  The view is deliberately passive: it renders a `Display` value and exposes
+//  control closures, while the host observes `AudioPlaybackCenter` and feeds
+//  it. That keeps it directly snapshot-testable (`AudioMiniPlayerTests`).
 //
 
 import LunaAudioPlayback
@@ -36,10 +36,11 @@ final class AudioMiniPlayerView: UIView {
     // MARK: - Modes
 
     /// How the bar presents for a given playback state: gone when idle, the
-    /// full floating bar normally, and a slimmed strip (title + autoplay +
-    /// progress only) docked above RSVP's circular controls when RSVP is
-    /// frontmost in speech mode — RSVP's own glass circles already provide
-    /// the transport controls there. Pure so `AudioMiniPlayerTests` pins it.
+    /// full floating bar normally, and a slimmed strip — title, autoplay, and
+    /// progress only — docked above RSVP's circular controls when RSVP is
+    /// frontmost in speech mode, since RSVP's own glass circles already
+    /// provide the transport controls there. Pure, so `AudioMiniPlayerTests`
+    /// pins it.
     enum BarMode: Equatable {
         case hidden
         case full
@@ -56,8 +57,8 @@ final class AudioMiniPlayerView: UIView {
 
     // MARK: - Display value
 
-    /// Everything the bar shows, as plain values (buildable in tests without
-    /// a playback center). During `.announcing` the host passes the UPCOMING
+    /// Everything the bar shows, as plain values buildable in tests without a
+    /// playback center. During `.announcing`, the host passes the upcoming
     /// item's info with `isUpNext` set.
     struct Display: Equatable {
         var title: String
@@ -153,11 +154,11 @@ final class AudioMiniPlayerView: UIView {
         row.setCustomSpacing(2, after: skipBackButton)
         row.setCustomSpacing(2, after: playPauseButton)
         row.setCustomSpacing(6, after: skipForwardButton)
-        // Content is overlaid as SIBLINGS above the glass rather than inside
+        // Content is overlaid as siblings above the glass rather than inside
         // `glass.contentView`: no vibrancy is wanted here, and layers hosted
-        // inside `UIGlassEffect`'s content view don't rasterize through
-        // `layer.render(in:)` (verified empirically on the iOS 26 sim — the
-        // snapshot tests, and any layer-tree capture, would show an empty bar).
+        // inside `UIGlassEffect`'s content view do not rasterize through
+        // `layer.render(in:)` — verified empirically on the iOS 26 sim, where
+        // the snapshot tests, and any layer-tree capture, would show an empty bar.
         addSubview(row)
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false

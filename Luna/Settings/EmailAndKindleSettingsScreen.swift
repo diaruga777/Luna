@@ -13,9 +13,9 @@ import LunaModels
 import LunaDesignSystem
 import UIKit
 
-/// Email settings. This is also where an email account gets connected:
-/// until one is, the Sharing Account section IS the sign-in form (an inline
-/// address field + Connect). Everything that needs an account routes here.
+/// Email settings. This is also where an email account gets connected. Until
+/// one is, the Sharing Account section is the sign-in form: an inline
+/// address field plus Connect. Everything that needs an account routes here.
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
@@ -61,10 +61,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     #if DEBUG
     /// Staged mode's only seam into this screen (`claudedocs/staging.md`).
-    /// Connecting is otherwise a state only a live sign-in attempt can produce
-    /// — it is set from `EmailAccountSetup`'s busy callback and cleared when
-    /// the network answers — so there is no way to hold a capture on the
-    /// spinner without one. Nothing but a stage calls this.
+    /// Connecting is otherwise a state only a live sign-in attempt can
+    /// produce: it is set from `EmailAccountSetup`'s busy callback and
+    /// cleared when the network answers, so there is no way to hold a
+    /// capture on the spinner without one. Nothing but a stage calls this.
     func setConnectingForStaging(_ connecting: Bool) {
         isConnecting = connecting
     }
@@ -344,7 +344,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         field.textAlignment = .left
         field.textColor = LunaColors.primaryText
         field.translatesAutoresizingMaskIntoConstraints = false
-        // Keep the delegate nil — in particular, don't interpose on the iOS 26
+        // Keep the delegate nil. In particular, do not interpose on the iOS 26
         // input-suggestion/replacement path used by credential providers. The
         // return key needs only a control action.
         field.addTarget(self, action: #selector(connectAccount), for: .editingDidEndOnExit)
@@ -352,8 +352,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         return field
     }
 
-    /// The sign-in form's first row, matching the rounded field card in the
-    /// former tray email setup.
+    /// The sign-in form's first row: the rounded field card style used
+    /// elsewhere for a tappable field.
     private func addressEntryCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none

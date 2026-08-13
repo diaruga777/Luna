@@ -26,7 +26,7 @@ final class WeeklyProposalsScreen: NavHeaderTableController {
     }()
 
     /// Defaulted to `nil` and resolved here: a default argument is evaluated in
-    /// the CALLER's context, which is not the main actor even though this
+    /// the caller's context, which is not the main actor even though this
     /// initializer is, and `WeeklySaveRefresher` is main-actor isolated.
     init(refresher: WeeklySaveRefresher? = nil) {
         self.refresher = refresher ?? .shared

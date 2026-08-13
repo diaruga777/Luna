@@ -14,11 +14,12 @@ import UniformTypeIdentifiers
 
 /// Settings ▸ Import & Export: two buttons (`claudedocs/import-export.md`).
 ///
-/// Export shares every link this app shows as one markdown file — a titled
-/// bullet per link under a `## Links` and a `## Archive` heading, so it is
-/// readable as it stands and still comes back with its archive intact. Import
-/// opens the document picker, reads whatever was chosen (markdown, a foreign
-/// CSV, any text with links in it), and hands what it found to the review sheet.
+/// Export shares every link this app shows as one markdown file: a titled
+/// bullet per link under a `## Links` heading and a `## Archive` heading, so
+/// it reads on its own and still comes back with its archive intact. Import
+/// opens the document picker, reads whatever was chosen — markdown, a
+/// foreign CSV, any text with links in it — and hands what it found to the
+/// review sheet.
 final class ImportExportSettingsScreen: NavHeaderTableController {
 
     private enum Row: Int, CaseIterable {
@@ -132,10 +133,10 @@ final class ImportExportSettingsScreen: NavHeaderTableController {
 
     /// Presents once nothing else is up.
     ///
-    /// The document picker dismisses ITSELF after handing over its result, so a
-    /// plain `present` racing that animation is silently dropped — the user picks
-    /// a file and nothing happens. This makes the review sheet's appearance
-    /// unconditional.
+    /// The document picker dismisses itself after handing over its result, so
+    /// a plain `present` racing that animation is silently dropped: the user
+    /// picks a file and nothing happens. This makes the review sheet's
+    /// appearance unconditional.
     private func presentWhenClear(_ viewController: UIViewController) {
         guard let presented = presentedViewController else {
             present(viewController, animated: true)
@@ -183,28 +184,28 @@ extension ImportExportSettingsScreen: UIDocumentPickerDelegate {
 /// file is named, and how bytes of unknown encoding become text.
 enum LinkListExport {
 
-    /// What the document picker offers. Markdown first — that's what Luna writes —
-    /// then the two named foreign cases, then `text`, their common supertype,
-    /// which admits the `.opml`-ish files the scrape still reads. The explicit
-    /// markdown type matters on top of `.text`: a file that arrived from another
-    /// device tagged `net.daringfireball.markdown` is otherwise offered greyed out
-    /// on some hosts even though it conforms.
+    /// What the document picker offers. Markdown first, since that is what
+    /// Luna writes, then the two named foreign cases, then `text`, their
+    /// common supertype, which admits the `.opml`-ish files the scrape still
+    /// reads. The explicit markdown type matters on top of `.text`: a file
+    /// tagged `net.daringfireball.markdown` from another device is otherwise
+    /// offered greyed out on some hosts, even though it conforms.
     static var importableTypes: [UTType] {
         [markdownType, .commaSeparatedText, .plainText, .text]
     }
 
-    /// `net.daringfireball.markdown` when the system knows it (it has since iOS
-    /// 14), else plain text — never nil, so the picker always has a type list.
+    /// `net.daringfireball.markdown` when the system knows it — it has since
+    /// iOS 14 — else plain text. Never nil, so the picker always has a type list.
     static var markdownType: UTType {
         UTType("net.daringfireball.markdown") ?? .plainText
     }
 
-    /// Every link THIS app is responsible for, newest first, archive separated,
-    /// each with its title when it has one.
+    /// Every link this app is responsible for, newest first, archive
+    /// separated, each with its title when it has one.
     ///
-    /// Scoped by `LunaApp.includes` on purpose: the store is shared by all four
-    /// apps, and Luna Reader exporting the Downloader's videos would hand back a
-    /// file whose own re-import it would then reject.
+    /// Scoped by `LunaApp.includes` on purpose: the store is shared by all
+    /// four apps, and Luna Reader exporting the Downloader's videos would
+    /// hand back a file whose own re-import it would then reject.
     static func document(for items: [SavedItem]) -> LinkListDocument {
         let mine = items.filter { LunaApp.current.includes($0) }
         let exportable = mine.filter { SavedItem.isWebPageURL($0.urlString) }
@@ -223,12 +224,13 @@ enum LinkListExport {
 
     /// Writes the export as **markdown**, `.md`.
     ///
-    /// Markdown rather than the `section,url` CSV this used to write: AirDropping a
-    /// `.csv` routed it straight into Notes, and what came back out of Notes was
-    /// text with no CSV in it — every link re-imported as one flat list, archive
-    /// split gone. A markdown file is legible on arrival and its structure survives
-    /// that round trip, because a heading and a bullet are still a heading and a
-    /// bullet after a rich-text editor has had them (see `LinkListMarkdown`).
+    /// Markdown, not a `section,url` CSV: AirDropping a `.csv` routes it
+    /// straight into Notes, and what comes back out of Notes is text with no
+    /// CSV in it, so every link would re-import as one flat list with the
+    /// archive split gone. A markdown file is legible on arrival and its
+    /// structure survives that round trip, because a heading and a bullet
+    /// are still a heading and a bullet after a rich-text editor has had
+    /// them (see `LinkListMarkdown`).
     static func writeTemporaryFile(
         _ document: LinkListDocument, now: Date = Date()
     ) throws -> URL {
@@ -250,11 +252,11 @@ enum LinkListExport {
         return LinkListFile.parse(text)
     }
 
-    /// A file the user picked has no declared encoding. UTF-8 first (everything
-    /// Luna writes, and nearly everything else), then UTF-16 with either BOM,
-    /// which is what a spreadsheet saving "Unicode text" produces, then Latin-1,
-    /// which cannot fail and so guarantees a link-bearing file is never rejected
-    /// outright over one bad byte.
+    /// A file the user picked has no declared encoding. Tries UTF-8 first —
+    /// everything Luna writes, and nearly everything else — then UTF-16 with
+    /// either BOM, which is what a spreadsheet saving "Unicode text"
+    /// produces, then Latin-1, which cannot fail, so a link-bearing file is
+    /// never rejected outright over one bad byte.
     static func decodeText(_ data: Data) -> String? {
         if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
         if let utf16 = String(data: data, encoding: .utf16) { return utf16 }

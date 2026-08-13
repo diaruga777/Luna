@@ -17,9 +17,9 @@ struct IntentMediaCheckpoint: Codable, Equatable {
     let expectedByteCount: Int64?
 }
 
-/// The resumable capture state encoded into the result entity's opaque Metadata
-/// string. The schema is deliberately additive: a newer producer may add fields,
-/// while an older/invalid value simply makes Save run from the top.
+/// The resumable capture state, encoded into the result entity's opaque
+/// Metadata string. The schema is additive by design: a newer producer may add
+/// fields, while an older or invalid value simply makes Save start from the top.
 struct CaptureIntentMetadata: Codable, Equatable {
     enum Phase: String, Codable {
         /// Save/ingest work was prepared but did not finish inside the fast path.
@@ -28,8 +28,8 @@ struct CaptureIntentMetadata: Codable, Equatable {
         case download
         /// Save still needs the screenshot analysis route to resolve a URL.
         case screenshot
-        /// The product is saved and its alternative sellers are attached; only
-        /// the comparison SUMMARY remains — refreshing day-old seller prices and
+        /// The product is saved and its alternative sellers are attached. Only
+        /// the comparison summary remains: refreshing day-old seller prices and
         /// rendering the document (`claudedocs/price-comparison.md`). Added in
         /// schema v2.
         case comparison
@@ -78,12 +78,12 @@ struct CaptureIntentMetadata: Codable, Equatable {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        // Every schema up to the current one is accepted, because the schema is
-        // additive by rule: a v1 checkpoint held in a Shortcut across an app
-        // update describes a save that is genuinely still resumable, and
+        // Accepts every schema up to the current one, because the schema is
+        // additive by rule. A v1 checkpoint held in a Shortcut across an app
+        // update still describes a save that is genuinely resumable, and
         // rejecting it would silently restart work the user already waited for.
-        // A value from a FUTURE version is refused — its phase may be one this
-        // build cannot perform.
+        // A value from a future version is refused, since its phase may be one
+        // this build cannot perform.
         guard let value = try? decoder.decode(Self.self, from: data),
               (1...currentSchemaVersion).contains(value.schemaVersion)
         else { return nil }
@@ -115,10 +115,10 @@ private final class CaptureIntentFastPathState<T>: @unchecked Sendable {
     }
 }
 
-/// A timeout race that returns at the deadline instead of waiting for the losing
-/// child (Swift task groups wait for every child when their scope exits). The
-/// work task is cancelled immediately; the resumable save placeholder remains
-/// durable while the losing task cooperatively unwinds.
+/// A timeout race that returns at the deadline instead of waiting for the
+/// losing child. Swift task groups otherwise wait for every child when their
+/// scope exits. The work task is cancelled immediately; the resumable save
+/// placeholder stays durable while the losing task cooperatively unwinds.
 enum CaptureIntentFastPath {
     static func run<T>(
         timeout: TimeInterval,

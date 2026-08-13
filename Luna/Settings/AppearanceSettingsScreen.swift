@@ -32,8 +32,8 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         themeCell()
     }
 
-    /// A full-width segmented control (System / Light / Dark) — three options don't
-    /// fit beside a label, so it fills the cell like the Safari-suggestion control.
+    /// A full-width segmented control (System, Light, Dark). Three options do
+    /// not fit beside a label, so it fills the cell like the Safari-suggestion control.
     private func themeCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -44,7 +44,7 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         control.addTarget(self, action: #selector(interfaceStyleChanged(_:)), for: .valueChanged)
         control.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(control)
-        // Center at the control's natural height (pinning top+bottom would stretch it).
+        // Centers at the control's natural height; pinning top and bottom would stretch it.
         NSLayoutConstraint.activate([
             control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
             control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),

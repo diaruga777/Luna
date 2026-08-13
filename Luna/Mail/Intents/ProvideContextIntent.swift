@@ -14,12 +14,13 @@ import LunaStorage
 import Foundation
 import UniformTypeIdentifiers
 
-/// First step of the Action Button capture flow. Pass the current app (from
-/// Get Current App); the intent decides what the Shortcut should do next and
+/// First step of the Action Button capture flow. Pass the current app from
+/// Get Current App; the intent decides what the Shortcut should do next and
 /// returns a transient entity whose outcome is `.unhandled`, `.done`,
-/// `.screenshot`, or `.download`. It deliberately remains a normal AppIntent:
-/// fast saves finish here, while media transfers and work approaching the normal
-/// runtime limit hand a resumable opaque checkpoint to the LongRunning SaveIntent.
+/// `.screenshot`, or `.download`. It deliberately stays a normal AppIntent: a
+/// fast save finishes here, while a media transfer or work nearing the normal
+/// runtime limit hands a resumable, opaque checkpoint to the LongRunning
+/// SaveIntent.
 struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Intents_provideContext_title_Luna"
@@ -79,10 +80,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     private func provideContext(attemptDate: Date) async throws -> ProvideContextResultEntity {
-        // A sibling Luna app owns the screen: nothing here is ours to save, and
-        // that verdict outranks even a supplied on-screen URL (a link showing
+        // A sibling Luna app owns the screen, so nothing here is ours to save.
+        // That verdict outranks even a supplied on-screen URL: a link shown
         // inside another Luna app is already saved, in the app that owns its
-        // kind). Reported as plainly unhandled so the Shortcut just stops.
+        // kind. Reported as plainly unhandled, so the Shortcut just stops.
         if AppNamePlatform.isSiblingLunaApp(currentApp) {
             SharedDiagnosticLog.record(
                 "provide context: ignored — sibling Luna app frontmost "
@@ -94,13 +95,12 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         let isSafari = currentApp.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
 
         // A supplied URL this app can handle takes precedence over every
-        // app-based decision, including an otherwise unsupported current app —
-        // and, because pre-validation says
-        // the save SHOULD work, its failures are thrown rather than swallowed.
-        // A link owned by a sibling app (or no usable link at all) falls through
-        // in silence to the decision below. Safari uses the supplied URL too;
-        // its extension-backed URL store remains the fallback when Shortcuts
-        // supplies nothing usable.
+        // app-based decision, including an otherwise unsupported current app.
+        // Because pre-validation says the save should work, its failures are
+        // thrown rather than swallowed. A link owned by a sibling app, or no
+        // usable link at all, falls through in silence to the decision below.
+        // Safari uses the supplied URL too; its extension-backed URL store
+        // remains the fallback when Shortcuts supplies nothing usable.
         let trackedURLString = SafariURLStore.isFresh() ? SafariURLStore.lastURL : nil
         let safariURLFresh = !(trackedURLString ?? "").isEmpty
         let plan = ProvideContextOnScreenURL.plan(
@@ -116,7 +116,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
         let visionAvailable = ScreenCaptureModelSessionFactory.makeDefault().isAvailable
         // Opportunistic on purpose: the tracked URL lives in the one shared App
-        // Group, so ANY installed Luna app's extension having run is evidence
+        // Group, so any installed Luna app's extension having run is evidence
         // that this app should have had a page URL to read.
         let safariExtensionHasRun = LunaSetupStatusStore.shared.anySafariExtensionHasRun
         let decision = ProvideContextDecision.decide(
@@ -132,8 +132,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             visionModelAvailable: visionAvailable)
 
         // An `.unsupported` decision ends the intent instantly, having saved
-        // nothing — indistinguishable, from the outside, from a save that
-        // silently did nothing. Record which inputs produced it.
+        // nothing. From the outside, this looks the same as a save that
+        // silently did nothing, so record which inputs produced it.
         SharedDiagnosticLog.record(
             "provide context: decision=\(decision) app=\(currentApp ?? "nil") safari=\(isSafari) "
                 + "safariURLFresh=\(safariURLFresh) tracked=\(trackedURLString ?? "nil") "
@@ -154,8 +154,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 outcome: .screenshot, metadata: metadata)
         case .saveImmediately:
             guard let urlString = SafariURLStore.lastURL, !urlString.isEmpty else {
-                // Shouldn't happen (freshness implies a URL) — but never save
-                // nothing silently.
+                // Should not happen, since freshness implies a URL — but
+                // never fail silently with nothing saved.
                 throw ProvideContextError.noTrackedPage
             }
             return try await saveURL(urlString, attemptDate: attemptDate)
@@ -163,12 +163,13 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     /// The one immediate-URL path for both Safari-extension URLs and URLs
-    /// extracted from Shortcuts input. Every way it can end without content in
-    /// the app throws: a foreign kind, an empty store, a `.failed` item, or a
-    /// media download that never ran (thrown from the handoff). The complete
-    /// preparation path has one 20 s deadline. If it expires, the losing task is
-    /// cancelled and the durable prepared save is returned for SaveIntent to
-    /// resume without another reservation or duplicate work.
+    /// extracted from Shortcuts input. Every way it can end without content
+    /// in the app throws: a foreign kind, an empty store, a `.failed` item,
+    /// or a media download that never ran, thrown from the handoff. The
+    /// complete preparation path has one 20 second deadline. If it expires,
+    /// the losing task is cancelled, and the durable prepared save is
+    /// returned for SaveIntent to resume without another reservation or
+    /// duplicate work.
     private func saveURL(
         _ urlString: String, attemptDate: Date
     ) async throws -> ProvideContextResultEntity {
@@ -178,9 +179,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             attemptDate: attemptDate)
         else { throw ProvideContextError.saveFailed }
 
-        // A non-trivial double-save action is already decided atomically. Run it
-        // exactly once under SaveIntent rather than beginning a send/export here
-        // and risking duplication if the normal-runtime deadline wins the race.
+        // A non-trivial double-save action is already decided atomically. Run
+        // it exactly once under SaveIntent, rather than starting a send or
+        // export here and risking duplication if the normal-runtime deadline
+        // wins the race.
         if prepared.isDoubleSave, case .ignore = prepared.action {
             // The configured action is intentionally inert; verification below
             // is immediate and completes in the fast path.
@@ -207,9 +209,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         }
 
         let savedURLString: String
-        // A double save whose action is "View immediately": the article document IS
-        // this run's media, so it replaces the media download below (an article
-        // has none anyway).
+        // A double save whose action is "View immediately": the article
+        // document is this run's media, so it replaces the media download
+        // below — an article has none anyway.
         var exportedFile: IntentFile?
         switch outcome {
         case let .friendPromptRequested(savedURL):
@@ -233,12 +235,13 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             return ProvideContextResultEntity(outcome: .done, media: exportedFile)
         }
 
-        // A product save's OWN media is the comparison summary. The fan-out
-        // itself already ran inside the save above (it is part of ingesting a
-        // product), so what is left here is the document: refreshing any seller
-        // whose price is over a day old, fetching favicons, drawing the graph.
-        // That is minutes of network in the worst case, which is precisely what
-        // the checkpoint is for — the save is durable either way.
+        // A product save's own media is the comparison summary. The fan-out
+        // already ran inside the save above, since it is part of ingesting a
+        // product, so what is left here is building the document: refreshing
+        // any seller whose price is over a day old, fetching favicons,
+        // drawing the graph. That can take minutes of network in the worst
+        // case, which is exactly what the checkpoint is for — the save is
+        // durable either way.
         if ActionButtonIntentSupport.handlesProductComparison {
             do {
                 let file = try await CaptureIntentFastPath.run(
@@ -309,9 +312,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 }
 
 /// The media-kind leg of the two Action Button intents, installed by
-/// `MediaIntentHandoff.install()` (media apps only — Downloader + the central
-/// Luna app). Left uninstalled in article/product-only apps ⇒ the intents
-/// return no media, matching the gate that only media-handling apps hand off.
+/// `MediaIntentHandoff.install()` in media apps only (Downloader and the
+/// central Luna app). Left uninstalled in an article- or product-only app, so
+/// the intents return no media there, matching the gate that only
+/// media-handling apps hand off.
 protocol IntentMediaHandling {
     /// Resolves redirects/assets, validates storage, and obtains the expected
     /// byte count without starting a transfer.
@@ -319,9 +323,9 @@ protocol IntentMediaHandling {
         forURLString urlString: String
     ) async throws -> ActionButtonIntentSupport.MediaPreparation
 
-    /// Performs the transfer (or hands back an already-downloaded file).
-    /// `foreground` is invoked only when a first read/write Photos
-    /// authorization prompt needs a visible host.
+    /// Performs the transfer, or hands back an already-downloaded file.
+    /// `foreground` runs only when a first read/write Photos authorization
+    /// prompt needs a visible host.
     func downloadMedia(
         forURLString urlString: String,
         checkpoint: IntentMediaCheckpoint?,
@@ -330,20 +334,21 @@ protocol IntentMediaHandling {
 }
 
 /// The product-kind comparison summary, installed by
-/// `ProductIntentHandoff.install()` (product apps only — Price Tracker + the
-/// central Luna app). Left uninstalled elsewhere, so an article/media-only
-/// app's intents never look for one.
+/// `ProductIntentHandoff.install()` in product apps only (Price Tracker and
+/// the central Luna app). Left uninstalled elsewhere, so an article- or
+/// media-only app's intents never look for one.
 protocol IntentProductComparisonProviding {
-    /// Given a just-saved URL, the self-contained HTML document for the tracker
-    /// that URL belongs to, refreshing any seller whose price is over a day old
-    /// first — and nil when the URL is not a tracked product, or is a tracker
-    /// with a single store (one price is not a comparison).
+    /// Given a just-saved URL, returns the self-contained HTML document for
+    /// the tracker that URL belongs to, refreshing any seller whose price is
+    /// over a day old first. Returns nil when the URL is not a tracked
+    /// product, or is a tracker with a single store, since one price is not a
+    /// comparison.
     func comparisonDocumentURL(forURLString urlString: String) async -> URL?
 }
 
 /// Article-document export for a "View immediately" double save. Installed by
-/// the article shell of the two apps that link LunaSend (Luna + Reader); left
-/// uninstalled elsewhere, matching `doubleSaveSurface`.
+/// the article shell of the two apps that link LunaSend (Luna and Reader);
+/// left uninstalled elsewhere, matching `doubleSaveSurface`.
 protocol IntentArticleExporting {
     /// The written temp file's URL, or nil when the article has no content to
     /// export.
@@ -368,15 +373,15 @@ enum ActionButtonIntentSupport {
     /// The media leg, or nil in an app that handles no media.
     static var media: (any IntentMediaHandling)?
 
-    /// Set for the duration of an awaited media handoff so the transfer's real
-    /// `(received, expected)` byte counts reach the running intent's progress
-    /// reporter. A plain closure rather than a parameter because the handoff seam
-    /// is installed per-target and must stay kind-agnostic.
+    /// Set for the duration of an awaited media handoff, so the transfer's
+    /// real `(received, expected)` byte counts reach the running intent's
+    /// progress reporter. A plain closure rather than a parameter, because the
+    /// handoff seam is installed per target and must stay kind-agnostic.
     static var byteProgress: ((Int64, Int64?) -> Void)?
 
     /// SaveIntent's media handoff for prepared and from-scratch paths.
-    /// `foreground` is invoked only
-    /// when a first read/write Photos authorization prompt needs a visible host.
+    /// `foreground` runs only when a first read/write Photos authorization
+    /// prompt needs a visible host.
     static func downloadMediaIfNeeded(
         for urlString: String,
         checkpoint: IntentMediaCheckpoint? = nil,
@@ -400,7 +405,7 @@ enum ActionButtonIntentSupport {
     /// The product comparison leg, or nil in an app that tracks no prices.
     static var productComparison: (any IntentProductComparisonProviding)?
 
-    /// Whether this app can produce a comparison document at all. Read BEFORE
+    /// Whether this app can produce a comparison document at all. Read before
     /// spending any deadline on one.
     static var handlesProductComparison: Bool { productComparison != nil }
 
@@ -433,10 +438,10 @@ enum ActionButtonIntentSupport {
             type: UTType(filenameExtension: fileURL.pathExtension) ?? .data)
     }
 
-    /// The double-save action (Settings → Shortcut & Safari) is armed only for
-    /// the Action Button saves of the two apps that hold articles AND can build
-    /// article files — the central Luna app and Reader. Every other surface and
-    /// save path keeps the plain save behavior.
+    /// The double-save action (Settings → Shortcut & Safari) is armed only
+    /// for the Action Button saves of the two apps that hold articles and can
+    /// build article files: the central Luna app and Reader. Every other
+    /// surface and save path keeps the plain save behavior.
     static var doubleSaveSurface: DoubleSaveSurface? {
         LunaApp.current.doubleSaveSurface
     }

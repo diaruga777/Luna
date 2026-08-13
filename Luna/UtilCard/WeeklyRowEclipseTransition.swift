@@ -11,9 +11,9 @@ import UIKit
 ///
 /// The choreography is the card carousel's (`CardEclipseAnimator`): the
 /// incoming body crosses, the outgoing one whitens late, and the corona blooms
-/// exactly at totality. What is deliberately NOT borrowed is the dressing — no
-/// dimmer, no peek veils, no diamond-ring flare. At row scale the corona IS the
-/// effect; the rest would be noise around a strip that short.
+/// exactly at totality. What is deliberately not borrowed is the dressing — no
+/// dimmer, no peek veils, no diamond-ring flare. At row scale the corona is
+/// the effect; the rest would be noise around a strip that short.
 @MainActor
 final class WeeklyRowEclipseTransition {
     /// Matches `CardEclipseTransition.duration`, split 66/34 like the card's.

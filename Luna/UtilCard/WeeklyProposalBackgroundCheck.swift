@@ -12,8 +12,8 @@ import UIKit
 ///
 /// Registered by every app unconditionally (a `BGTaskScheduler` identifier must
 /// be claimed before `didFinishLaunching` returns, and whether this device
-/// holds the key can change afterwards), but both the SCHEDULER and the
-/// HANDLER no-op unless it actually does. Nothing here can fail loudly: with no
+/// holds the key can change afterwards), but both the scheduler and the
+/// handler no-op unless it actually does. Nothing here can fail loudly: with no
 /// container provisioned the fetch simply errors and the task completes.
 enum WeeklyProposalBackgroundCheck {
     static let taskID = "com.hsanabria.luna.weeklyProposalCheck"

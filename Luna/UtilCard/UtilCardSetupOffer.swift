@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// A setup lesson the util card can offer, in PRIORITY order — which is also
+/// A setup lesson the util card can offer, in priority order — which is also
 /// the order the buttons read top to bottom. The block stacks up from the paste
 /// row, so the last one present is the bottom-most.
 enum UtilCardSetupButton: CaseIterable, Equatable {

@@ -325,6 +325,59 @@ Order per hard rule 2 (swap → verify → retire pin, separate commits).
    `SharedReadingListAppender:16-20,73-76` stale rationale (file now imports
    LunaModels), plus stale headers left by Waves 1–2.
 
+### Wave 4 — closure seams become protocol contracts (after Wave 3 merges)
+
+Owner directive (2026-08-13): injected closures — public-settable closure member
+vars and closure parameters passed at init — are disallowed as a wiring style.
+The standard is a strongly-typed protocol contract: `*Delegate` for component
+boundaries, `*DataSource` for data provision, `*Providing` / `*Presenting` /
+`*Handling` for cross-tier seams installed at launch. Protocols may be generic
+and carry associated-type/type constraints where useful. Rationale: callers and
+implementers are traceable by type.
+
+Boundary — what stays a closure (do NOT convert):
+- One-shot completion parameters on a method call, async continuations,
+  `withX { }` scoped helpers.
+- Pure-value parameters: clocks (`now:`), comparators, formatters, small
+  transforms taken as function arguments.
+- `@escaping` callbacks that are stored only for the duration of one in-flight
+  operation (a download's progress handler), not as standing wiring.
+Test-only seams follow the existing seam rules; where kept, they are typed the
+same way (a protocol witness, not a bare closure).
+
+Process:
+1. Inventory the CURRENT tree (the earlier waves already converted several):
+   every stored closure property (`var x: (...) -> ...` / optional variants,
+   instance or static) and every init parameter of closure type that is stored.
+   Categorize: UI component boundary → delegate; cross-tier launch seam →
+   protocol witness on the same static slot; init injection → protocol param.
+2. Convert area by area, behavior-preserving, pixel-identical, one commit per
+   seam cluster. The install sites (KindWiring legs, AppDelegate, kind packs)
+   keep their shape — they install a conformer instead of a closure.
+   Single-method protocols are fine; do not merge unrelated seams into one
+   protocol just to reduce count. Weak delegate references where the conformer
+   owns the caller (UI); strong witnesses for launch-installed composition.
+3. Known clusters from the survey (re-verify against the tree): the
+   `UtilCardContentViewController` ten-closure init; `CardKindPresenting
+   .loadThumbnail`-adjacent completion plumbing (completion params stay, the
+   stored ones go); `SellerFanOut`'s injected `fetch`/`renderSearch`/
+   `richResolve` closure set → one networking protocol with the app conformer
+   and the appex conformer; `ActionButtonIntentSupport.*` statics;
+   `DiagnosticLog.exportIdentityProvider`; `ArticleEmailTransportProvider.make`;
+   `LinkImportRunner.articleUnlocker`/`mediaDownloadProgress`/
+   `mediaStoragePreflight`/`mediaAlertSuspension`; `URLRescueWiring
+   .rescueProductInfo`/`mediaRescueStarter`; `EmailShareCenter
+   .priceGraphSnapshot`; `FactoryReset.additionalErasers`;
+   `DownloadStorageChoice.installed`; `WeeklySaveRefresher`'s injected seams;
+   `ReadingListIngestor.unsupportedSavePresenter`/`rescueTrigger`/
+   `priceTrackerComparisonKicker`; onboarding lesson callbacks; reader
+   `onLinkActivated*` / `onPlaybackStateChanged` closures (unify the two link
+   shapes only if byte-equivalent behavior is provable — else keep two methods
+   on one delegate).
+4. Docs: CLAUDE.md's cross-tier wiring paragraph and `claudedocs/` get the
+   standard stated as above (protocol contracts for wiring; the closure
+   boundary list). This lands with the final doc pass.
+
 ## Explicitly deferred (documented, not executed — report only)
 
 - Moving JS heuristics into the Safari handler (sync→async round-trip risk;

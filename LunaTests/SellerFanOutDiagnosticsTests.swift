@@ -4,8 +4,8 @@
 //
 
 import LunaModels
-import LunaPriceCompare
 import XCTest
+@testable import LunaPriceCompare
 
 /// A failing fan-out used to be invisible: twelve candidates, zero results, and
 /// nothing in the diagnostic log to say which retailer refused, which served a

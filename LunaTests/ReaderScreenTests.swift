@@ -7,13 +7,13 @@
 //  and the inline split-web overlay.
 //
 
-import LunaReaderUI
 import LunaDesignSystem
 import LunaModels
 import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaReaderUI
 
 /// Records completion-delegate callbacks for tests that drive `RSVPViewController`/
 /// `ScrollReaderViewController` directly (outside a host that already conforms).

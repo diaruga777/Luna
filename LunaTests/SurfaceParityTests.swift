@@ -8,7 +8,6 @@ import LunaPriceIngest
 import LunaShareSurface
 import LunaMediaDownload
 import LunaPriceUI
-import LunaReaderUI
 import LunaArchiveReader
 import LunaStorage
 import LunaIngest
@@ -17,6 +16,7 @@ import LunaModels
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaReaderUI
 
 /// Fails every request instantly, so the pipeline's network-unwrap leg (apple.news /
 /// Google News new-style) resolves to a miss without touching the live network and

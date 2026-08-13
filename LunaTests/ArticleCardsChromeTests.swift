@@ -7,11 +7,11 @@
 import LunaArchiveReader
 import LunaDesignSystem
 import LunaModels
-import LunaReaderUI
 import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaReaderUI
 
 final class ArticleCardsChromeTests: XCTestCase {
 

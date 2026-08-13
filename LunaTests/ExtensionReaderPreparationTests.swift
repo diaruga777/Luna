@@ -8,10 +8,10 @@
 //
 
 import LunaModels
-import LunaReaderUI
 import LunaStorage
 import UIKit
 import XCTest
+@testable import LunaReaderUI
 
 @MainActor
 final class ExtensionReaderPreparationTests: XCTestCase {

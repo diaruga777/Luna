@@ -12,12 +12,11 @@ import XCTest
 /// ever runs after the app sent the user off to set it up.
 ///
 /// Three things are guarded here, because the feature is split across three
-/// processes that share only `UserDefaults` keys:
-///  1. the RULE (all three conditions, the 24h window, the one-shot latch) as the
-///     app-side `LunaSetupStatusStore` states it;
-///  2. PARITY between that statement and the extension's copy — `LunaSafari`
-///     links no package, so `SharedSafariURL` hand-rolls the same key formats and
-///     window, and a rename on one side would silently stop the two from meeting;
+/// processes:
+///  1. the RULE (all three conditions, the 24h window, the one-shot latch) as
+///     `LunaSetupStatusStore` states it;
+///  2. both halves of the hand-off through that one store — the app's setup tap
+///     and the extension's own first run, each keyed to the app it belongs to;
 ///  3. the OVERLAY `content.js` renders, which replaces the pill for five seconds.
 final class SafariSetupCelebrationTests: XCTestCase {
 
@@ -233,57 +232,13 @@ final class SafariSetupCelebrationTests: XCTestCase {
         XCTAssertTrue(store.shouldCelebrateSafariSetup(for: .reader, now: now))
     }
 
-    // MARK: - Parity with the extension's copy
+    // MARK: - Across the process boundary
 
     private static func source(_ relativePath: String) -> String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
         return (try? String(
             contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)) ?? ""
-    }
-
-    /// Every key format, as the literal prefix both sides interpolate the app's
-    /// storage identifier onto.
-    private func keyPrefixes() -> [String] {
-        [
-            LunaSetupStatusStore.safariSetupTapKey(for: .reader),
-            LunaSetupStatusStore.safariSetupTapAppNameKey(for: .reader),
-            LunaSetupStatusStore.safariFirstRunKey(for: .reader),
-            LunaSetupStatusStore.safariCelebrationShownKey(for: .reader),
-        ].map { String($0.dropLast(LunaApp.reader.storageIdentifier.count)) }
-    }
-
-    func testTheExtensionUsesTheSameAppGroupKeys() {
-        let extensionSource = Self.source("LunaSafari/SharedSafariURL.swift")
-        XCTAssertFalse(extensionSource.isEmpty, "LunaSafari/SharedSafariURL.swift not found")
-        for prefix in keyPrefixes() {
-            XCTAssertTrue(
-                extensionSource.contains("\"\(prefix)\\("),
-                "SharedSafariURL has no key built from \"\(prefix)\" -- the app writes a key "
-                    + "the extension never reads")
-        }
-    }
-
-    func testTheExtensionUsesTheSameWindow() {
-        XCTAssertEqual(LunaSetupStatusStore.safariCelebrationWindow, 24 * 60 * 60)
-        XCTAssertTrue(
-            Self.source("LunaSafari/SharedSafariURL.swift").contains("24 * 60 * 60"),
-            "SharedSafariURL.celebrationWindow has drifted from "
-                + "LunaSetupStatusStore.safariCelebrationWindow")
-    }
-
-    /// The extension keys on `SharedSurfaceScheme`'s surface string while the app
-    /// keys on `LunaApp.storageIdentifier`. They are the same four words, and the
-    /// whole hand-off silently stops working if they ever aren't.
-    func testTheExtensionsSurfaceNamesAreTheAppsStorageIdentifiers() {
-        let surfaceSource = Self.source("LunaSafari/SharedSurfaceScheme.swift")
-        XCTAssertFalse(surfaceSource.isEmpty, "LunaSafari/SharedSurfaceScheme.swift not found")
-        for app in LunaApp.allCases {
-            XCTAssertTrue(
-                surfaceSource.contains("\"\(app.storageIdentifier)\""),
-                "SharedSurfaceScheme names no surface \"\(app.storageIdentifier)\" -- its keys "
-                    + "cannot meet \(app)'s")
-        }
     }
 
     /// The handler answers the decision on the context request the content script

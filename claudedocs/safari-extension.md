@@ -19,8 +19,7 @@ background.js (tabs.onActivated / tabs.onUpdated)
 - `LunaSafari/Resources/annoyances.css` + `annoyances.js` — declarative, all-frame
   `document_start` suppression for cookie consent and intrusive popovers; intentionally
   leaves ordinary inline/display ads intact.
-- `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes via `SharedSafariURL`.
-- `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — see "Where the work runs" for when a hand-copy is acceptable and when it isn't).
+- `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes through the linked `SafariURLStore` / `SafariRecentHistoryStore` / `SafariContentStore` / `LunaSetupStatusStore`.
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root — that suits Safari (manifest.json must be at the bundle root on iOS) but it is Xcode's synchronized-group resource copy doing it, indiscriminately, to nested folders too. **`_locales/en/messages.json` must NOT be left flattened**: `browser.i18n.getMessage` reads only `_locales/<locale>/messages.json`, and a root-level copy makes every key resolve to `""` — which is what once rendered the in-page pill as a text-less indigo stub (its width is its label plus padding) and dropped the extension's own name. `scripts/update_safari_extension_branding.sh` (an `alwaysOutOfDate` build phase on all four Safari targets) re-copies the `_locales` tree from `$SRCROOT`, deletes the flattened stray, and only then rewrites `extensionName` per host app. `content.js` additionally carries an inline English default for every string it renders, so an empty lookup degrades to correct copy instead of an empty pill; `SafariPillLabelTests` covers both halves — the fallbacks (and their parity with `messages.json`) and the built appex's directory layout.
 
@@ -29,11 +28,10 @@ Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product 
 **Extraction runs in shared Swift, in every process. It is never re-implemented
 for Safari.**
 
-The four Safari appex targets used to link no package at all, and the
-`LunaSafari/Shared*.swift` files hand-copy the app's App-Group key formats
-because of it. That pattern is fine for what it covers — a handful of string
-constants and a 24h window, each pinned by a parity test — and it is **not** the
-model for anything with logic in it. The extension now links the package, so:
+The four Safari appex targets used to link no package at all, and a set of
+`LunaSafari/Shared*.swift` files hand-copied the app's App-Group key formats
+because of it. They are gone: the extension links the Foundation-only floor and
+writes through the same stores the app reads. What each product buys it:
 
 | linked product | what it buys the appex |
 | --- | --- |
@@ -117,11 +115,12 @@ the user to an app they never left.
 | `setup.safari.celebrationShown.<app>` | extension | as soon as the overlay is COMMITTED to, before its DOM is built |
 
 The rule — all three of: tap within 24h, first run within 24h, never shown — is
-stated by `LunaSetupStatusStore.shouldCelebrateSafariSetup` and mirrored by
-`SharedSafariURL.shouldCelebrateSetup`, because `LunaSafari` links no package.
-`SafariSetupCelebrationTests` owns the rule, the overlay, AND the parity between
-the two copies (key formats, the window, and that `SharedSurfaceScheme`'s surface
-strings really are `LunaApp.storageIdentifier`s — the keys only meet if they are).
+`LunaSetupStatusStore.shouldCelebrateSafariSetup`, which the extension asks
+directly; its own two writes are `recordSafariExtensionRun` and
+`recordSafariCelebrationShown` on that same store.
+`SafariSetupCelebrationTests` owns the rule, the overlay, and both halves of the
+hand-off (including that an appex bundle id resolves to its host app's surface
+and scheme — the keys only meet if it does).
 `resetAllRunEvidence` clears all four, including the extension's two: an extension
 first-runs exactly once, so a reset that left `firstRunAt` behind could never show
 the confirmation again.

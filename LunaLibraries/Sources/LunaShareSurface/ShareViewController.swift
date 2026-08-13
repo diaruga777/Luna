@@ -342,7 +342,8 @@ open class ShareViewController: UIViewController {
             category: "share")
         DispatchQueue.main.async {
             if let url {
-                SharedReadingListAppender.append(urlString: url.absoluteString)
+                ReadingListStore.shared.addIfAbsent(
+                    urlString: url.absoluteString, source: .shareSheet)
                 SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
             } else {
@@ -360,7 +361,8 @@ open class ShareViewController: UIViewController {
                 self.saveDocumentDirectly(sourceURL: raw)
             } else if let raw, let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
                 if self.presentShareSetupPracticeIfNeeded(url) { return }
-                SharedReadingListAppender.append(urlString: url.absoluteString)
+                ReadingListStore.shared.addIfAbsent(
+                    urlString: url.absoluteString, source: .shareSheet)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url)
             } else {
@@ -378,7 +380,8 @@ open class ShareViewController: UIViewController {
     /// before it opened the sheet.
     private func handleHostedURL(_ url: URL) {
         if presentShareSetupPracticeIfNeeded(url) { return }
-        SharedReadingListAppender.append(urlString: url.absoluteString)
+        ReadingListStore.shared.addIfAbsent(
+            urlString: url.absoluteString, source: .shareSheet)
         SharedDiagnosticLog.record(
             "hosted surface saved url \(url.absoluteString)", category: "share")
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
@@ -489,7 +492,8 @@ open class ShareViewController: UIViewController {
                 ?? ShareTextURL.firstLink(in: text),
                let url = URLUnwrapper.ingestURL(from: extracted.absoluteString) {
                 if self.presentShareSetupPracticeIfNeeded(url) { return }
-                SharedReadingListAppender.append(urlString: url.absoluteString)
+                ReadingListStore.shared.addIfAbsent(
+                    urlString: url.absoluteString, source: .shareSheet)
                 SharedDiagnosticLog.record(
                     "saved url (text) \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url)
@@ -561,7 +565,8 @@ open class ShareViewController: UIViewController {
     /// and the real Price Tracker action extension both render the production
     /// price editor (including its Done chrome and seller-comparison state).
     private func presentProductSetupPractice(_ url: URL) {
-        SharedReadingListAppender.append(urlString: url.absoluteString)
+        ReadingListStore.shared.addIfAbsent(
+            urlString: url.absoluteString, source: .shareSheet)
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
             HostedShareSession.current?.delegate?.hostedShareSessionDidAppendRow(row.id)
         }
@@ -606,7 +611,7 @@ open class ShareViewController: UIViewController {
     }
 
     /// The stored document's file name — and so its title, which
-    /// `SharedReadingListAppender.appendDocument` takes from the file name. The
+    /// `ReadingListStore.addImportedDocument` takes from the file name. The
     /// shared text's own first line beats the provider's generic "text".
     private static func documentFileName(forSharedText text: String) -> String {
         let firstLine = text.split(whereSeparator: \.isNewline).first
@@ -643,7 +648,8 @@ open class ShareViewController: UIViewController {
                let contents = try? String(contentsOf: url, encoding: .utf8),
                let extracted = ShareTextURL.extract(from: contents),
                let normalized = URLUnwrapper.ingestURL(from: extracted.absoluteString) {
-                SharedReadingListAppender.append(urlString: normalized.absoluteString)
+                ReadingListStore.shared.addIfAbsent(
+                    urlString: normalized.absoluteString, source: .shareSheet)
                 SharedDiagnosticLog.record(
                     "saved url (text file) \(normalized.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: normalized)
@@ -664,7 +670,7 @@ open class ShareViewController: UIViewController {
     private func saveDocumentDirectly(sourceURL: URL) {
         switch SurfaceSupport.evaluateForCurrentProcess(owner: .reader) {
         case .supported:
-            SharedReadingListAppender.appendDocument(sourceURL: sourceURL)
+            ReadingListStore.shared.addImportedDocument(sourceURL: sourceURL)
             SharedDiagnosticLog.record(
                 "saved document \(sourceURL.lastPathComponent)", category: "share")
             completeAfterDirectSave()

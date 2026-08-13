@@ -13,11 +13,11 @@ import LunaAppConfig
 /// than a Safari extension asking one question should need).
 public struct PriceHistoryIndexEntry: Codable, Equatable {
     public struct Point: Codable, Equatable {
-        public var day: String
+        public var day: UTCDay
         public var price: String
         public var currency: String
 
-        public init(day: String, price: String, currency: String) {
+        public init(day: UTCDay, price: String, currency: String) {
             self.day = day
             self.price = price
             self.currency = currency

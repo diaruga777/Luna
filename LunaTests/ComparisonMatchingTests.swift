@@ -114,7 +114,8 @@ final class ComparisonMatchingParityTests: XCTestCase {
         -> ProductSnapshot {
         ProductSnapshot(
             name: name, price: "10", currency: "USD", url: "https://a.example/p",
-            host: "a.example", day: "2026-01-01", capturedAt: "2026-01-01T00:00:00Z",
+            host: "a.example", day: UTCDay(parsing: "2026-01-01")!,
+            capturedAt: "2026-01-01T00:00:00Z",
             gtin: gtin, mpn: nil, sku: nil, retailerItemID: nil, brand: brand)
     }
 

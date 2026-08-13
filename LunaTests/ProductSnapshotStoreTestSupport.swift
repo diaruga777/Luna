@@ -23,7 +23,7 @@ extension ProductSnapshotStore {
         // Pruning is measured from the NEWEST fixture day rather than the wall
         // clock, so a suite whose fixtures are dated in the past keeps them all
         // and a suite dated in the future does not evict its own earlier rows.
-        let now = snapshots.compactMap { ProductSnapshotStore.date(forDay: $0.day) }.max() ?? Date()
+        let now = snapshots.compactMap { $0.day.startOfDayUTC }.max() ?? Date()
         for snapshot in snapshots { store.record(snapshot, now: now) }
         return store
     }

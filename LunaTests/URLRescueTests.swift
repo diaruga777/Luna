@@ -206,7 +206,7 @@ final class URLRescueTests: XCTestCase {
         XCTAssertEqual(method, .reroute)
         XCTAssertEqual(pipe.inputs.count, 1, "pipeline must be re-entered exactly once")
         XCTAssertTrue(pipe.inputs.first?.forceArticle == true)
-        XCTAssertFalse(pipe.inputs.first?.trustsPrefetchedHTML == true)
+        XCTAssertFalse(pipe.inputs.first?.page.isUnlockedCapture == true)
     }
 
     func testRerouteSecondPassStillFailedIsUnrescuable() async {
@@ -232,7 +232,7 @@ final class URLRescueTests: XCTestCase {
         let (engine, pipe) = makeEngine(session: session, scriptRunner: runner, pipeline: pipeline)
         let outcome = await engine.rescue(request(hint: .article))
         guard case .rescued(_, .webJS) = outcome else { return XCTFail("expected webJS rescue") }
-        XCTAssertEqual(pipe.inputs.first?.prefetchedHTML, "<html><body>rendered</body></html>")
+        XCTAssertEqual(pipe.inputs.first?.page.html, "<html><body>rendered</body></html>")
     }
 
     func testMediaJSResultProducesAssets() async {

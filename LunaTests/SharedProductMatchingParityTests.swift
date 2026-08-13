@@ -38,7 +38,7 @@ final class SharedProductMatchingParityTests: XCTestCase {
     ) -> ProductSnapshot {
         ProductSnapshot(
             name: name, price: "10", currency: "USD", url: url, host: URL(string: url)!.host!,
-            day: "2026-01-01", capturedAt: "2026-01-01T00:00:00Z",
+            day: UTCDay(parsing: "2026-01-01")!, capturedAt: "2026-01-01T00:00:00Z",
             gtin: gtin, mpn: mpn, sku: sku, retailerItemID: retailerItemID, brand: brand)
     }
 

@@ -15,11 +15,9 @@ import Foundation
 /// bypass code.
 public protocol ArticleIngestProcessing {
     /// Returns `.article`, `.needsArchive`, or `.failed` for a page the
-    /// classifier routed to the article path. `directHTML` is the pipeline's
-    /// single shared fetch, or the surface's prefetch.
-    func process(
-        url: URL, directHTML: String?, trustsPrefetchedHTML: Bool, fetcher: HTMLFetching
-    ) async -> Outcome
+    /// classifier routed to the article path. `page` is the pipeline's single
+    /// shared fetch, or the surface's own capture.
+    func process(url: URL, page: CapturedPage, fetcher: HTMLFetching) async -> Outcome
 }
 
 /// Product-kind processing: extracts the mandatory-price product metadata for

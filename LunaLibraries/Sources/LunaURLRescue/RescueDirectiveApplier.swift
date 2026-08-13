@@ -95,8 +95,8 @@ struct RescueDirectiveApplier {
         let html = await fetchWithHeaders(url: reroute.url, headers: reroute.headers)
         guard let html else { return .unrescuable }
         let input = IngestInput(
-            url: reroute.url, source: request.source, prefetchedHTML: html,
-            forceArticle: forceArticle, trustsPrefetchedHTML: false)
+            url: reroute.url, source: request.source, page: .fetched(html),
+            forceArticle: forceArticle)
         return classify(await runPipeline.reprocess(input), request: request, method: method)
     }
 
@@ -124,8 +124,8 @@ struct RescueDirectiveApplier {
             let html = script.resultKind == .json ? Self.wrapJSONAsHTML(result) : result
             let forceArticle = request.hint == .article
             let input = IngestInput(
-                url: script.pageURL, source: request.source, prefetchedHTML: html,
-                forceArticle: forceArticle, trustsPrefetchedHTML: false)
+                url: script.pageURL, source: request.source, page: .fetched(html),
+                forceArticle: forceArticle)
             return classify(await runPipeline.reprocess(input), request: request, method: .webJS)
         case .mediaURL:
             guard let url = URL(string: result.trimmingCharacters(in: .whitespacesAndNewlines)),

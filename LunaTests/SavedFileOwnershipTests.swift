@@ -53,6 +53,12 @@ final class SavedFileOwnershipTests: XCTestCase {
         try? Data("x".utf8).write(to: articlesDirectory.appendingPathComponent(name))
     }
 
+    /// A downloaded image's owned path, through the one constructor production
+    /// uses — a test cannot hand the ownership tables a raw string either.
+    private func image(_ name: String) -> OwnedFilePath {
+        SavedFileOwnership.imagePath(name)!
+    }
+
     private func exists(_ name: String) -> Bool {
         FileManager.default.fileExists(atPath: articlesDirectory.appendingPathComponent(name).path)
     }
@@ -115,19 +121,19 @@ final class SavedFileOwnershipTests: XCTestCase {
         let two = store.add(urlString: "https://example.com/two")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-shared.jpg", kind: .image, to: one.id, in: db)
+                path: image("img-shared.jpg"), kind: .image, to: one.id, in: db)
             try SavedFileOwnership.attach(
-                path: "Articles/img-shared.jpg", kind: .image, to: two.id, in: db)
+                path: image("img-shared.jpg"), kind: .image, to: two.id, in: db)
         }
 
         try database.transaction { db in
-            try SavedFileOwnership.detach(path: "Articles/img-shared.jpg", from: one.id, in: db)
+            try SavedFileOwnership.detach(path: image("img-shared.jpg"), from: one.id, in: db)
         }
         XCTAssertEqual(try knownPaths(), ["Articles/img-shared.jpg"], "one owner left")
         XCTAssertTrue(try pendingDeletes().isEmpty)
 
         try database.transaction { db in
-            try SavedFileOwnership.detach(path: "Articles/img-shared.jpg", from: two.id, in: db)
+            try SavedFileOwnership.detach(path: image("img-shared.jpg"), from: two.id, in: db)
         }
         XCTAssertTrue(try knownPaths().isEmpty, "no owners left, so no file row")
         XCTAssertEqual(Array(try pendingDeletes().keys), ["Articles/img-shared.jpg"])
@@ -143,14 +149,14 @@ final class SavedFileOwnershipTests: XCTestCase {
         let second = store.add(urlString: "https://example.com/second")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-rescued.jpg", kind: .image, to: first.id, in: db)
-            try SavedFileOwnership.detach(path: "Articles/img-rescued.jpg", from: first.id, in: db)
+                path: image("img-rescued.jpg"), kind: .image, to: first.id, in: db)
+            try SavedFileOwnership.detach(path: image("img-rescued.jpg"), from: first.id, in: db)
         }
         XCTAssertEqual(Array(try pendingDeletes().keys), ["Articles/img-rescued.jpg"])
 
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-rescued.jpg", kind: .image, to: second.id, in: db)
+                path: image("img-rescued.jpg"), kind: .image, to: second.id, in: db)
         }
 
         XCTAssertTrue(try pendingDeletes().isEmpty, "the new owner cancels the delete")
@@ -167,9 +173,10 @@ final class SavedFileOwnershipTests: XCTestCase {
         let item = store.add(urlString: "https://example.com/cascade")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/\(item.id.uuidString).json", kind: .content, to: item.id, in: db)
+                path: SavedFileOwnership.articlesPath("\(item.id.uuidString).json")!,
+                kind: .content, to: item.id, in: db)
             try SavedFileOwnership.attach(
-                path: "Articles/img-cascade.jpg", kind: .image, to: item.id, in: db)
+                path: image("img-cascade.jpg"), kind: .image, to: item.id, in: db)
         }
 
         // Straight through SQL, so nothing but the cascade and the trigger can be
@@ -350,8 +357,8 @@ final class SavedFileOwnershipTests: XCTestCase {
         let item = store.add(urlString: "https://example.com/ghost")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-ghost.jpg", kind: .image, to: item.id, in: db)
-            try SavedFileOwnership.detach(path: "Articles/img-ghost.jpg", from: item.id, in: db)
+                path: image("img-ghost.jpg"), kind: .image, to: item.id, in: db)
+            try SavedFileOwnership.detach(path: image("img-ghost.jpg"), from: item.id, in: db)
         }
         XCTAssertFalse(exists("img-ghost.jpg"), "the file was never written")
 
@@ -369,8 +376,8 @@ final class SavedFileOwnershipTests: XCTestCase {
         let item = store.add(urlString: "https://example.com/locked")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-locked.jpg", kind: .image, to: item.id, in: db)
-            try SavedFileOwnership.detach(path: "Articles/img-locked.jpg", from: item.id, in: db)
+                path: image("img-locked.jpg"), kind: .image, to: item.id, in: db)
+            try SavedFileOwnership.detach(path: image("img-locked.jpg"), from: item.id, in: db)
         }
         // A read-only directory is an unlink that cannot succeed.
         try FileManager.default.setAttributes(
@@ -399,7 +406,7 @@ final class SavedFileOwnershipTests: XCTestCase {
         let item = store.add(urlString: "https://example.com/reowned")
         try database.transaction { db in
             try SavedFileOwnership.attach(
-                path: "Articles/img-reowned.jpg", kind: .image, to: item.id, in: db)
+                path: image("img-reowned.jpg"), kind: .image, to: item.id, in: db)
             // The state a kill between the two commits leaves: the path is queued
             // AND owned.
             try db.run(

@@ -249,16 +249,17 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // the URL unwrapped to a different page: the extension captured the wrapper
         // it was sitting on — a publisher's subscribe interstitial holds the article
         // behind `?dest=` — so those bytes are the subscription pitch, not the article.
+        //
+        // The extension only captures the article body AFTER unlocking it on-screen,
+        // so the capture is trusted past the (now-stale) publisher paywall signal —
+        // this is the one place in the codebase that calls `safariHandoff`.
         let capturedHTML = SafariContentStore.take(for: articleURL)
-        let prefetchedHTML = URLUnwrapper.unwrapsToDifferentPage(articleURL)
-            ? nil
-            : capturedHTML
+        let page: CapturedPage = URLUnwrapper.unwrapsToDifferentPage(articleURL)
+            ? .none
+            : capturedHTML.map { .safariHandoff(html: $0) } ?? .none
         Task { @MainActor in
             let result = await SavesIngestor.shared.handleSavePress(
-                urlString: urlString, prefetchedHTML: prefetchedHTML,
-                // The Safari extension only captures the article body AFTER unlocking it
-                // on-screen, so trust it past the (now-stale) publisher paywall signal.
-                trustsPrefetchedHTML: prefetchedHTML != nil)
+                urlString: urlString, page: page)
             let itemID: UUID?
             var outcome: SafariReturnPolicy.Outcome = .handled
             switch result {

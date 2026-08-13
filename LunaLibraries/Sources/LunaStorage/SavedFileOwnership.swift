@@ -30,6 +30,14 @@ enum OwnedFileKind: String {
     case image
 }
 
+/// A path the ownership tables may hold, and only this file can make one — the
+/// queue at the far end of a released path unlinks whatever it is handed.
+struct OwnedFilePath: Hashable {
+    let relativePath: String
+
+    fileprivate init(_ relativePath: String) { self.relativePath = relativePath }
+}
+
 /// The writes to `files` / `file_refs` / `file_holders`: which saves and preloaded
 /// pages hold which files on disk.
 ///
@@ -38,38 +46,43 @@ enum OwnedFileKind: String {
 /// into SQL: a save's row and the files it holds commit together, so a crash
 /// cannot leave one without the other. Freeing a file is not done here at all —
 /// the schema's triggers do it, and `PendingDeleteReaper` performs the unlink.
-///
-/// A file name is only ever a name. Nothing here accepts a name carrying a path
-/// separator, and an `image` must additionally look like one the downloader wrote
-/// (`img-…`): the names for those come out of article content, which came off the
-/// web, and the queue at the far end of this deletes what it is handed.
 enum SavedFileOwnership {
 
     // MARK: - Paths
 
     /// The container-relative path of a file in `Articles/`, or nil when the name
     /// is not a plain file name.
-    static func articlesPath(_ fileName: String) -> String? {
+    static func articlesPath(_ fileName: String) -> OwnedFilePath? {
         path("Articles", fileName)
     }
 
     /// The container-relative path of a file in `OriginalArchives/`.
-    static func archivesPath(_ fileName: String) -> String? {
+    static func archivesPath(_ fileName: String) -> OwnedFilePath? {
         path("OriginalArchives", fileName)
     }
 
     /// The path of a downloaded article image, or nil for any name the image
-    /// downloader would not have produced.
-    static func imagePath(_ fileName: String) -> String? {
+    /// downloader would not have produced. Image names come out of article
+    /// content, which came off the web, so they must look like the downloader's
+    /// own (`img-…`).
+    static func imagePath(_ fileName: String) -> OwnedFilePath? {
         guard fileName.hasPrefix("img-") else { return nil }
         return articlesPath(fileName)
     }
 
-    private static func path(_ directory: String, _ fileName: String) -> String? {
+    /// A file name is only ever a name: one carrying a path separator produces
+    /// no path at all.
+    private static func path(_ directory: String, _ fileName: String) -> OwnedFilePath? {
         guard !fileName.isEmpty,
               fileName == URL(fileURLWithPath: fileName).lastPathComponent
         else { return nil }
-        return "\(directory)/\(fileName)"
+        return OwnedFilePath("\(directory)/\(fileName)")
+    }
+
+    /// A path read back out of `files`, which one of the constructors above put
+    /// there in the first place.
+    private static func recorded(_ relativePath: String) -> OwnedFilePath {
+        OwnedFilePath(relativePath)
     }
 
     /// The artifacts a save's own columns name, with the kind each one is.
@@ -78,8 +91,8 @@ enum SavedFileOwnership {
     /// a thumbnail the platform ingestor wrote, a product photo the price
     /// ingestor wrote — is owned from the moment the column points at it, without
     /// every writer having to remember.
-    static func columnDerivedPaths(of item: SavedItem) -> [(OwnedFileKind, String)] {
-        var paths: [(OwnedFileKind, String)] = []
+    static func columnDerivedPaths(of item: SavedItem) -> [(OwnedFileKind, OwnedFilePath)] {
+        var paths: [(OwnedFileKind, OwnedFilePath)] = []
         if let name = item.contentFileName, let path = articlesPath(name) {
             paths.append((.content, path))
         }
@@ -102,7 +115,7 @@ enum SavedFileOwnership {
     /// The path of the HTML an archive is captured from. Named from the id rather
     /// than a column, so `saveReaderSourceHTML` and `removeReaderSourceHTML` take
     /// and release this edge themselves.
-    static func readerSourcePath(for itemID: UUID) -> String? {
+    static func readerSourcePath(for itemID: UUID) -> OwnedFilePath? {
         archivesPath("\(itemID.uuidString)-reader-source.html")
     }
 
@@ -114,7 +127,7 @@ enum SavedFileOwnership {
     /// outside the set are left alone, so a thumbnail write does not touch the
     /// save's images.
     static func reconcile(
-        saveID: UUID, kinds: Set<OwnedFileKind>, artifacts: [(OwnedFileKind, String)],
+        saveID: UUID, kinds: Set<OwnedFileKind>, artifacts: [(OwnedFileKind, OwnedFilePath)],
         in db: SavesDatabase
     ) throws {
         let wanted = Set(artifacts.map(\.1))
@@ -130,9 +143,9 @@ enum SavedFileOwnership {
     /// The paths `saveID` holds in `kinds`.
     static func heldPaths(
         saveID: UUID, kinds: Set<OwnedFileKind>, in db: SavesDatabase
-    ) throws -> [String] {
+    ) throws -> [OwnedFilePath] {
         let list = kinds.map { "'\($0.rawValue)'" }.joined(separator: ", ")
-        var paths: [String] = []
+        var paths: [OwnedFilePath] = []
         try db.query(
             """
             SELECT files.relative_path FROM file_refs
@@ -141,7 +154,7 @@ enum SavedFileOwnership {
             """,
             { try $0.bind(1, uuid: saveID) }
         ) { row in
-            if let path = row.string(0) { paths.append(path) }
+            if let path = row.string(0) { paths.append(recorded(path)) }
         }
         return paths
     }
@@ -155,7 +168,7 @@ enum SavedFileOwnership {
     /// edge that was meant to follow it would be exactly the zero-holder row the
     /// schema's triggers exist to prevent.
     static func attach(
-        path: String, kind: OwnedFileKind, to saveID: UUID, in db: SavesDatabase
+        path: OwnedFilePath, kind: OwnedFileKind, to saveID: UUID, in db: SavesDatabase
     ) throws {
         try db.run(
             """
@@ -164,7 +177,7 @@ enum SavedFileOwnership {
                 ON CONFLICT (relative_path) DO NOTHING
             """
         ) {
-            try $0.bind(1, path)
+            try $0.bind(1, path.relativePath)
             try $0.bind(2, kind.rawValue)
             try $0.bind(3, uuid: saveID)
         }
@@ -175,14 +188,14 @@ enum SavedFileOwnership {
                 WHERE files.relative_path = ? AND saves.id = ?
             """
         ) {
-            try $0.bind(1, path)
+            try $0.bind(1, path.relativePath)
             try $0.bind(2, uuid: saveID)
         }
     }
 
     /// Drops one save's claim on `path`. When it was the last claim the schema's
     /// trigger queues the file for deletion.
-    static func detach(path: String, from saveID: UUID, in db: SavesDatabase) throws {
+    static func detach(path: OwnedFilePath, from saveID: UUID, in db: SavesDatabase) throws {
         try db.run(
             """
             DELETE FROM file_refs WHERE save_id = ?
@@ -190,7 +203,7 @@ enum SavedFileOwnership {
             """
         ) {
             try $0.bind(1, uuid: saveID)
-            try $0.bind(2, path)
+            try $0.bind(2, path.relativePath)
         }
     }
 
@@ -199,7 +212,7 @@ enum SavedFileOwnership {
     /// Makes `holderKey`'s holdings exactly `paths`. The holder is a preloaded
     /// page's URL hash; its files are always downloaded images.
     static func reconcileHolder(
-        holderKey: String, paths: [String], in db: SavesDatabase
+        holderKey: String, paths: [OwnedFilePath], in db: SavesDatabase
     ) throws {
         let wanted = Set(paths)
         for held in try holderPaths(holderKey: holderKey, in: db) where !wanted.contains(held) {
@@ -214,7 +227,7 @@ enum SavedFileOwnership {
                 """
             ) {
                 try $0.bind(1, holderKey)
-                try $0.bind(2, path)
+                try $0.bind(2, path.relativePath)
             }
         }
     }
@@ -224,8 +237,8 @@ enum SavedFileOwnership {
         try db.run("DELETE FROM file_holders WHERE holder_key = ?") { try $0.bind(1, holderKey) }
     }
 
-    static func holderPaths(holderKey: String, in db: SavesDatabase) throws -> [String] {
-        var paths: [String] = []
+    static func holderPaths(holderKey: String, in db: SavesDatabase) throws -> [OwnedFilePath] {
+        var paths: [OwnedFilePath] = []
         try db.query(
             """
             SELECT files.relative_path FROM file_holders
@@ -234,13 +247,13 @@ enum SavedFileOwnership {
             """,
             { try $0.bind(1, holderKey) }
         ) { row in
-            if let path = row.string(0) { paths.append(path) }
+            if let path = row.string(0) { paths.append(recorded(path)) }
         }
         return paths
     }
 
     private static func detachHolder(
-        path: String, holderKey: String, in db: SavesDatabase
+        path: OwnedFilePath, holderKey: String, in db: SavesDatabase
     ) throws {
         try db.run(
             """
@@ -249,14 +262,14 @@ enum SavedFileOwnership {
             """
         ) {
             try $0.bind(1, holderKey)
-            try $0.bind(2, path)
+            try $0.bind(2, path.relativePath)
         }
     }
 
     // MARK: - Files
 
     private static func insertFile(
-        path: String, kind: OwnedFileKind, in db: SavesDatabase
+        path: OwnedFilePath, kind: OwnedFileKind, in db: SavesDatabase
     ) throws {
         try db.run(
             """
@@ -264,7 +277,7 @@ enum SavedFileOwnership {
                 ON CONFLICT (relative_path) DO NOTHING
             """
         ) {
-            try $0.bind(1, path)
+            try $0.bind(1, path.relativePath)
             try $0.bind(2, kind.rawValue)
         }
     }

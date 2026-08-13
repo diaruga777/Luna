@@ -52,7 +52,7 @@ final class ProductSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(snapshot?.price, "49.99")
         XCTAssertEqual(snapshot?.currency, "USD")
         XCTAssertEqual(snapshot?.host, "shop.example")
-        XCTAssertEqual(snapshot?.day, ProductSnapshotStore.dayString(for: now))
+        XCTAssertEqual(snapshot?.day, UTCDay(now))
     }
 
     func testNumericPriceIsAccepted() {
@@ -162,20 +162,58 @@ final class ProductSnapshotStoreTests: XCTestCase {
     /// days, decided from the index alone.
     func testALimitedLookupKeepsTheNewestObservations() {
         for day in 1...5 {
-            let now = ProductSnapshotStore.date(forDay: "2026-01-0\(day)")!
+            let now = UTCDay(parsing: "2026-01-0\(day)")!.startOfDayUTC!
             store.record(
                 payload: payload(name: "Kestrel Kettle", url: "https://shop.example/p/\(day)"),
                 now: now)
         }
         let keys = ProductSnapshotKeys.nameKeys("Kestrel Kettle", brand: nil, host: "shop.example")
         let limited = store.snapshots(forKeys: keys, limit: 2)
-        XCTAssertEqual(limited.map(\.day), ["2026-01-04", "2026-01-05"])
+        XCTAssertEqual(limited.map(\.day.text), ["2026-01-04", "2026-01-05"])
         XCTAssertEqual(store.snapshots(forKeys: keys).count, 5)
     }
 
     func testAKeyNothingWasFiledUnderReturnsNothing() {
         store.record(payload: payload(gtin: "0012345678905"))
         XCTAssertTrue(store.snapshots(forKeys: ProductSnapshotKeys.gtinKeys("9999999999999")).isEmpty)
+    }
+
+    // MARK: - The persisted day representation
+
+    /// `UTCDay` is a Swift type over a string that four processes already have
+    /// records and an index full of. It must stay that bare string on disk, both
+    /// directions, or an installed app reads its own store as empty.
+    func testTheDayIsPersistedAndReadBackAsABareString() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        store.record(payload: payload(url: "https://shop.example/persisted"), now: now)
+
+        let records = try FileManager.default.contentsOfDirectory(
+            at: directory.appendingPathComponent("records"), includingPropertiesForKeys: nil)
+        let recordJSON = try XCTUnwrap(records.first.flatMap { try? String(contentsOf: $0, encoding: .utf8) })
+        XCTAssertTrue(
+            recordJSON.contains("\"day\":\"\(UTCDay(now).text)\""),
+            "the record encodes the day as the same string it always did: \(recordJSON)")
+        let indexJSON = try String(
+            contentsOf: directory.appendingPathComponent("snapshotIndex.json"), encoding: .utf8)
+        XCTAssertTrue(indexJSON.contains("\"\(UTCDay(now).text)\""), indexJSON)
+
+        // A record written before the type existed decodes unchanged.
+        let legacy = """
+            {"name":"Widget","price":"49.99","currency":"USD","url":"https://shop.example/p",\
+            "host":"shop.example","day":"2026-01-02","capturedAt":"2026-01-02T00:00:00Z"}
+            """
+        let decoded = try JSONDecoder().decode(ProductSnapshot.self, from: Data(legacy.utf8))
+        XCTAssertEqual(decoded.day, UTCDay(parsing: "2026-01-02"))
+        XCTAssertEqual(decoded.day.startOfDayUTC, ISO8601DateFormatter().date(from: "2026-01-02T00:00:00Z"))
+    }
+
+    /// The ordering every consumer relies on: a day compares as its text, so a
+    /// sort by day is a sort by date.
+    func testDaysOrderChronologically() {
+        let days = ["2026-01-02", "2025-12-31", "2026-01-10"].compactMap(UTCDay.init(parsing:))
+        XCTAssertEqual(days.sorted().map(\.text), ["2025-12-31", "2026-01-02", "2026-01-10"])
+        XCTAssertNil(UTCDay(parsing: "2026-1-2"), "an unpadded day would sort wrong")
+        XCTAssertNil(UTCDay(parsing: "yesterday"))
     }
 
     // MARK: - Same-day overwrite / dedupe

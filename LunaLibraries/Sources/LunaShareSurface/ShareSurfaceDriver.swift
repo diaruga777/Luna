@@ -106,7 +106,7 @@ public final class ShareSurfaceDriver {
     /// Runs the shared pipeline for the just-appended `originalURL`, repoints the saved
     /// item to the pipeline's resolved URL, then presents + persists the `Outcome` via
     /// this surface's host.
-    public func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
+    public func ingestAndPresent(originalURL: URL, page: CapturedPage = .none) async {
         // Keeps the identity of this extension request's placeholder.
         // Resolution can discover that its canonical URL is already saved
         // and delete the placeholder; a later blocked decision must never
@@ -123,11 +123,11 @@ public final class ShareSurfaceDriver {
         self.recorder = recorder
         recorder?.record(
             "ingest: begin \(SaveDiagnostics.url(originalURL)) source=shareSheet"
-                + (prefetchedHTML != nil ? " prefetchedHTML=\(prefetchedHTML?.count ?? 0)ch" : ""),
+                + (page.html.map { " prefetchedHTML=\($0.count)ch" } ?? ""),
             category: "ingest")
         let result = await SaveDiagnostics.$recorder.withValue(recorder) {
             await ingest.process(IngestInput(
-                url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
+                url: originalURL, source: .shareSheet, page: page))
         }
 
         let url = result.url

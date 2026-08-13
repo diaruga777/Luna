@@ -78,7 +78,7 @@ public final class ProductSnapshotStore: @unchecked Sendable {
         /// identifier key -> record ids filed under it.
         var keys: [String: [String]] = [:]
         /// record id -> its UTC day, for pruning and ordering.
-        var days: [String: String] = [:]
+        var days: [String: UTCDay] = [:]
     }
 
     func loadIndex() -> Index {
@@ -98,9 +98,9 @@ public final class ProductSnapshotStore: @unchecked Sendable {
     /// hash, so a record is one filename rather than an encoded URL that would
     /// blow past the filesystem's name limit. A read verifies the record's own
     /// `url`/`day`, so a collision degrades to a miss and never to wrong data.
-    public static func recordID(url: String, day: String) -> String {
+    public static func recordID(url: String, day: UTCDay) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in Array("\(url)|\(day)".utf8) {
+        for byte in Array("\(url)|\(day.text)".utf8) {
             hash ^= UInt64(byte)
             hash = hash &* 0x1000_0000_01b3
         }
@@ -156,13 +156,12 @@ public final class ProductSnapshotStore: @unchecked Sendable {
 
     /// Drops observations past `maxAgeDays`, then caps the total at `maxCount`
     /// evicting the oldest day first, deleting their record files and every
-    /// key entry that pointed at them. `day` strings sort lexicographically the
-    /// same as chronologically (`yyyy-MM-dd`), so no date parsing is needed.
+    /// key entry that pointed at them.
     func prune(_ index: Index, now: Date) -> Index {
         var utcCalendar = Calendar(identifier: .gregorian)
         utcCalendar.timeZone = TimeZone(identifier: "UTC") ?? .current
         let cutoffDate = utcCalendar.date(byAdding: .day, value: -Self.maxAgeDays, to: now) ?? now
-        let cutoff = Self.dayString(for: cutoffDate)
+        let cutoff = UTCDay(cutoffDate)
 
         var surviving = index.days.filter { $0.value >= cutoff }
         if surviving.count > maxCount {
@@ -212,8 +211,13 @@ public final class ProductSnapshotStore: @unchecked Sendable {
         if let limit, ids.count > limit {
             ids = ids
                 .sorted {
-                    let left = index.days[$0] ?? "", right = index.days[$1] ?? ""
-                    return left != right ? left > right : $0 < $1
+                    let left = index.days[$0], right = index.days[$1]
+                    guard left != right else { return $0 < $1 }
+                    // A record the index has no day for sorts last, so it is
+                    // the first thing a limit drops.
+                    guard let left else { return false }
+                    guard let right else { return true }
+                    return left > right
                 }
                 .prefix(limit)
                 .map { $0 }
@@ -243,19 +247,6 @@ public final class ProductSnapshotStore: @unchecked Sendable {
     public func count() -> Int { loadIndex().days.count }
 
     // MARK: - Payload validation
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
-
-    public static func dayString(for date: Date) -> String { dayFormatter.string(from: date) }
-
-    /// A `yyyy-MM-dd` UTC day string back to that day's UTC midnight.
-    public static func date(forDay day: String) -> Date? { dayFormatter.date(from: day) }
 
     /// Validates one snapshot payload, or nil when it is not a real product
     /// observation: no http(s) URL, no non-empty name, no positive decimal
@@ -287,7 +278,7 @@ public final class ProductSnapshotStore: @unchecked Sendable {
             name: name, price: priceString, currency: currency,
             locale: field("locale") ?? Locale.current.identifier,
             url: urlString, host: host,
-            day: dayString(for: now),
+            day: UTCDay(now),
             capturedAt: ISO8601DateFormatter().string(from: now),
             gtin: field("gtin"), mpn: field("mpn"), sku: field("sku"),
             productID: field("productID"), retailerItemID: field("retailerItemID"),

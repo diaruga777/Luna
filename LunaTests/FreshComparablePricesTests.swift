@@ -161,7 +161,7 @@ final class FreshComparablePricesTests: XCTestCase {
         XCTAssertEqual(snapshot?.currency, "USD")
         XCTAssertEqual(snapshot?.url, "https://acme.example/p/1")
         XCTAssertEqual(snapshot?.host, "acme.example")
-        XCTAssertEqual(snapshot?.day, ProductSnapshotStore.dayString(for: now))
+        XCTAssertEqual(snapshot?.day, UTCDay(now))
         XCTAssertEqual(snapshot?.gtin, "0012345678905")
         XCTAssertEqual(snapshot?.brand, "Widgets")
     }

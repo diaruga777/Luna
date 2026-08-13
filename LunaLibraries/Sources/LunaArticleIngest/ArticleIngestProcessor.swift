@@ -27,13 +27,9 @@ public final class ArticleIngestProcessor: ArticleIngestProcessing {
         self.runner = runner
     }
 
-    public func process(
-        url: URL, directHTML: String?, trustsPrefetchedHTML: Bool, fetcher: HTMLFetching
-    ) async -> Outcome {
+    public func process(url: URL, page: CapturedPage, fetcher: HTMLFetching) async -> Outcome {
         let resolution = await ArticleResolver.resolve(
-            url: url, prefetchedHTML: directHTML, fetcher: fetcher,
-            extractor: extractor, runner: runner,
-            trustsPrefetchedHTML: trustsPrefetchedHTML)
+            url: url, page: page, fetcher: fetcher, extractor: extractor, runner: runner)
 
         switch resolution {
         case let .readable(content, html):
@@ -55,7 +51,7 @@ public final class ArticleIngestProcessor: ArticleIngestProcessing {
             // anything about the page, and a WKWebView is a different
             // client. A plain unreachable page still fails.
             let hasBrowserRecovery = !BypassPlan.make(
-                for: url, directHTML: directHTML, directFailure: reason
+                for: url, directHTML: page.html, directFailure: reason
             ).webPreStages.isEmpty
             // A hard-paywall host or an already-archived URL is likewise
             // still readable behind a user-solved CAPTCHA. Only a truly

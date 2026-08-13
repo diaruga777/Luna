@@ -39,7 +39,7 @@ public struct RescueReroute: Equatable {
     public let url: URL
     public let headers: RescueHeaders
 
-    public init(url: URL, headers: RescueHeaders = RescueHeaders()) {
+    init(url: URL, headers: RescueHeaders = RescueHeaders()) {
         self.url = url
         self.headers = headers
     }
@@ -64,8 +64,8 @@ public struct RescueScript: Equatable {
     public let javascript: String
     public let resultKind: ResultKind
 
-    public init(pageURL: URL, headers: RescueHeaders = RescueHeaders(),
-                javascript: String, resultKind: ResultKind) {
+    init(pageURL: URL, headers: RescueHeaders = RescueHeaders(),
+         javascript: String, resultKind: ResultKind) {
         self.pageURL = pageURL
         self.headers = headers
         self.javascript = javascript
@@ -75,7 +75,10 @@ public struct RescueScript: Equatable {
 
 /// A model response that survived `RescueDirectiveValidator` — the only shape
 /// `RescueDirectiveApplier` ever executes.
-public enum RescueDirective: Equatable {
+///
+/// Internal to this module, with internal payload inits, so nothing outside
+/// LunaURLRescue can build one: the validator is the only producer.
+enum RescueDirective: Equatable {
     /// PCC-only: the article's full text, reproduced from the digest.
     case articlePayload(ArticleContent)
     /// Product name/price/currency read verbatim from the digest.

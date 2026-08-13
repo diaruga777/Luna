@@ -112,7 +112,7 @@ enum ComparableSellerFinder {
             for store in entry.stores {
                 for point in store.points {
                     guard let amount = Decimal(string: point.price),
-                          let day = dayStart(point.day) else { continue }
+                          let day = point.day.startOfDayUTC else { continue }
                     points.append(ComparablePricePoint(
                         sellerName: sellerName(forHost: store.host),
                         domain: ProductIdentityMatching.registrableDomain(store.host),
@@ -136,7 +136,7 @@ enum ComparableSellerFinder {
             .compactMap { snapshot in
                 guard let amount = Decimal(string: snapshot.price) else { return nil }
                 let captured = instant(snapshot.capturedAt)
-                    ?? dayStart(snapshot.day)
+                    ?? snapshot.day.startOfDayUTC
                     ?? Date(timeIntervalSince1970: 0)
                 return ComparablePricePoint(
                     sellerName: sellerName(forHost: snapshot.host),
@@ -222,16 +222,6 @@ enum ComparableSellerFinder {
     /// Decoded once: 218 sellers out of the bundled JSON is not work to repeat
     /// per stored price point.
     private static let directory: SellerDirectory? = try? SellerDirectory.bundled()
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
-
-    private static func dayStart(_ day: String) -> Date? { dayFormatter.date(from: day) }
 
     private static func instant(_ iso: String) -> Date? {
         ISO8601DateFormatter().date(from: iso)

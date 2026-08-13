@@ -43,7 +43,7 @@ public struct RescueDirectiveValidator {
     // MARK: - Plan validation
 
     /// What a validated plan tells the engine to do next.
-    public enum PlanResolution: Equatable {
+    enum PlanResolution: Equatable {
         /// A directive ready to apply immediately.
         case directive(RescueDirective)
         /// The plan chose "article" and the model can produce it — the engine
@@ -72,7 +72,7 @@ public struct RescueDirectiveValidator {
     ///   - allowsIntermediate: false on a follow-up round, which is what makes
     ///     "one search round, one inspect round" structural rather than a
     ///     promise the prompt asks the model to keep.
-    public func validate(
+    func validate(
         plan: RescuePlanResponse,
         request: RescueRequest,
         digest: String,
@@ -225,7 +225,7 @@ public struct RescueDirectiveValidator {
     /// threshold vs `ArticleContent.readableBodyThreshold` (LLM output is
     /// pre-cleaned) plus an anti-hallucination spot-check: a majority of block
     /// prefixes must actually appear in the digest.
-    public func validateArticlePayload(
+    func validateArticlePayload(
         _ response: RescueArticleResponse, digest: String
     ) -> Result<RescueDirective, Rejection> {
         let blocks: [ArticleContent.Block] = response.blocks.compactMap { dto in

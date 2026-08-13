@@ -137,7 +137,7 @@ public enum ProductTrackerMerge {
                           // one they made it on. `capturedAt` is the real
                           // moment; the day string stays the record's identity.
                           let day = snapshot.capturedInstant
-                            ?? ProductSnapshotStore.date(forDay: snapshot.day)
+                            ?? snapshot.day.startOfDayUTC
                     else { return nil }
                     return (day, amount, snapshot.currency)
                 }

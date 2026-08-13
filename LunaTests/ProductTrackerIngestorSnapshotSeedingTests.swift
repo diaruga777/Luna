@@ -118,7 +118,8 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
     ) -> ProductSnapshot {
         ProductSnapshot(
             name: name, price: price, currency: "USD", url: url,
-            host: URL(string: url)!.host!, day: day, capturedAt: "\(day)T12:00:00Z", gtin: gtin,
+            host: URL(string: url)!.host!, day: UTCDay(parsing: day)!,
+            capturedAt: "\(day)T12:00:00Z", gtin: gtin,
             brand: brand)
     }
 

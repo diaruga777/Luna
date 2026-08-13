@@ -21,7 +21,8 @@ final class SnapshotMatcherTests: XCTestCase {
     ) -> ProductSnapshot {
         ProductSnapshot(
             name: name, price: price, currency: currency, url: url,
-            host: URL(string: url)!.host!, day: day, capturedAt: "\(day)T00:00:00Z",
+            host: URL(string: url)!.host!, day: UTCDay(parsing: day)!,
+            capturedAt: "\(day)T00:00:00Z",
             gtin: gtin, mpn: mpn, sku: sku, productID: productID,
             retailerItemID: retailerItemID, brand: brand)
     }

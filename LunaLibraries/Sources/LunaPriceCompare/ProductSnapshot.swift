@@ -6,6 +6,55 @@
 import Foundation
 import LunaModels
 
+/// A UTC calendar day written `yyyy-MM-dd`, whose LEXICOGRAPHIC order is its
+/// chronological order — which is why sorting, pruning and dedup all compare
+/// the text rather than parse a date.
+///
+/// It encodes and decodes as that bare string, so a snapshot record or index
+/// written before this type existed reads back unchanged.
+public struct UTCDay: Codable, Comparable, Hashable, Sendable, CustomStringConvertible {
+    /// The persisted form, read at a JSON or SQL boundary and nowhere else.
+    public let text: String
+
+    private init(text: String) { self.text = text }
+
+    /// The UTC day `date` falls on.
+    public init(_ date: Date) { self.text = Self.formatter.string(from: date) }
+
+    /// nil for anything that is not already a zero-padded `yyyy-MM-dd` day —
+    /// the padding is what makes the text order the date order.
+    public init?(parsing text: String) {
+        guard let date = Self.formatter.date(from: text),
+              Self.formatter.string(from: date) == text
+        else { return nil }
+        self.text = text
+    }
+
+    /// This day's UTC midnight.
+    public var startOfDayUTC: Date? { Self.formatter.date(from: text) }
+
+    public var description: String { text }
+
+    public static func < (lhs: UTCDay, rhs: UTCDay) -> Bool { lhs.text < rhs.text }
+
+    public init(from decoder: Decoder) throws {
+        text = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(text)
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+}
+
 /// One product observation: what the product is, what it cost, and when.
 ///
 /// A snapshot is written for EVERY product page any Luna process observes and
@@ -39,9 +88,9 @@ public struct ProductSnapshot: Codable, Equatable, Sendable {
     public var url: String
     /// `url`'s host, stored alongside for cheap grouping/matching.
     public var host: String
-    /// UTC calendar day the capture happened on (`yyyy-MM-dd`) — the same
-    /// bucketing `PriceDaySnapshot` uses for tracker history.
-    public var day: String
+    /// UTC calendar day the capture happened on — the same bucketing
+    /// `PriceDaySnapshot` uses for tracker history.
+    public var day: UTCDay
     /// Full capture instant (ISO 8601).
     public var capturedAt: String
     /// GTIN/UPC/EAN/ISBN family identifier, if declared.
@@ -65,7 +114,7 @@ public struct ProductSnapshot: Codable, Equatable, Sendable {
 
     public init(
         name: String, price: String, currency: String, locale: String? = nil,
-        url: String, host: String, day: String, capturedAt: String,
+        url: String, host: String, day: UTCDay, capturedAt: String,
         gtin: String? = nil, mpn: String? = nil, sku: String? = nil,
         productID: String? = nil, retailerItemID: String? = nil,
         brand: String? = nil, imageURL: String? = nil
@@ -92,7 +141,7 @@ public struct ProductSnapshot: Codable, Equatable, Sendable {
 
     /// `capturedAt` as an instant, falling back to `day`'s UTC midnight.
     public var capturedInstant: Date? {
-        ISO8601DateFormatter().date(from: capturedAt) ?? ProductSnapshotStore.date(forDay: day)
+        ISO8601DateFormatter().date(from: capturedAt) ?? day.startOfDayUTC
     }
 
     /// The index keys this snapshot is filed under — one per identifier it

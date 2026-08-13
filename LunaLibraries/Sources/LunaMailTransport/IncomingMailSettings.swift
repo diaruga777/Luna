@@ -52,12 +52,11 @@ public enum IncomingMailSettings {
     }
 
     /// The dedupe cursor persisted between fetches, as one JSON blob under
-    /// `cursorKey`. Used to be shredded into three independent prefs (an IMAP
-    /// uid, its UIDVALIDITY, and a separate Graph token) that any reader had to
-    /// reassemble by hand into a `MailCursor` — reassembly that couldn't tell
-    /// which provider's half was meaningful. On first read after upgrading, a
-    /// pre-existing installation migrates those three legacy keys once (see
-    /// `migrateLegacyCursor`) and never looks at them again.
+    /// `cursorKey`. Earlier installs stored it as three separate prefs (an
+    /// IMAP uid, its UIDVALIDITY, and a separate Graph token), with nothing
+    /// recording which provider's half was meaningful. On first read after
+    /// upgrading, a pre-existing installation migrates those three legacy
+    /// keys once (see `migrateLegacyCursor`) and never looks at them again.
     public static var cursor: MailCursor {
         get {
             if let data = defaults.data(forKey: cursorKey),

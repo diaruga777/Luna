@@ -7,11 +7,18 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// How a rehearsal tells its host the user is done with it — the one thing every
+/// rehearsal owes. The host presents the rehearsal, so conformers hold this weakly.
+@MainActor
+protocol ShareSetupPracticeDelegate: AnyObject {
+    func shareSetupPracticeDidFinish(_ practice: UIViewController)
+}
+
 /// What every practice rehearsal owes its host: one way out. Which rehearsal a
 /// practice link gets is `ShareViewController.practicePreview`.
 @MainActor
 protocol ShareSetupPracticePresenting: AnyObject {
-    var onDone: (() -> Void)? { get set }
+    var completionDelegate: (any ShareSetupPracticeDelegate)? { get set }
 }
 
 /// The real extension-side counterpart of onboarding's mock preview. Practice
@@ -23,7 +30,7 @@ protocol ShareSetupPracticePresenting: AnyObject {
 @MainActor
 final class ShareSetupPracticePreviewViewController: UIViewController,
     ShareSetupPracticePresenting {
-    var onDone: (() -> Void)?
+    weak var completionDelegate: (any ShareSetupPracticeDelegate)?
 
     private let app: LunaApp
     private let scrollView = UIScrollView()
@@ -139,6 +146,6 @@ final class ShareSetupPracticePreviewViewController: UIViewController,
     }
 
     @objc private func doneTapped() {
-        onDone?()
+        completionDelegate?.shareSetupPracticeDidFinish(self)
     }
 }

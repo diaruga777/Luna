@@ -29,18 +29,13 @@ enum MediaDeepLinkAction: Equatable {
 /// media-module type.
 ///
 /// Kind-neutral by construction: plain Foundation types, and the answer comes
-/// from `KindWiring.mediaShareFileExporter` — non-nil only in the two apps that
+/// from `KindWiring.mediaShareFileExporter` — installed only in the two apps that
 /// link the media kind, so the share leg is simply unreachable in Reader and
 /// Price Tracker (which never run the download activity in the first place).
-struct MediaShareFileExporting {
+protocol MediaShareFileExporting {
     /// A concrete file URL for the saved item, or nil when there is nothing
     /// shareable — a Photos-backed save, a transfer still running, a file gone.
-    let export: (UUID) async -> URL?
-    /// Releases the temporary copy `export` made, once the sheet is done.
-    let discard: (URL) -> Void
-
-    init(export: @escaping (UUID) async -> URL?, discard: @escaping (URL) -> Void) {
-        self.export = export
-        self.discard = discard
-    }
+    func exportedFileURL(forItemID itemID: UUID) async -> URL?
+    /// Releases the temporary copy `exportedFileURL` made, once the sheet is done.
+    func discardExportedFile(at fileURL: URL)
 }

@@ -126,19 +126,25 @@ enum MediaShellWiring {
         }
     }
 
-    /// The finished activity's Share button (`&share=1`): a downloaded local
-    /// file becomes a concrete shareable copy with a human-readable name —
-    /// exactly the export the card's own share menu and the App Intent handoff
-    /// use. Anything else has no file to hand over and the route falls back to
-    /// the plain open.
-    static let shareFileExporter: MediaShareFileExporting? = MediaShareFileExporting(
-        export: { itemID in
-            guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
-                  case .localFile = item.storageState
-            else { return nil }
-            return await MediaAutoDownloader.exportFile(from: item)?.fileURL
-        },
-        discard: { MediaDownloadStorage.discardIntentExport(at: $0) })
+    /// The finished activity's Share button (`&share=1`). Anything with no file
+    /// to hand over falls the route back to the plain open.
+    static let shareFileExporter: (any MediaShareFileExporting)? = DownloadedFileExporter()
+}
+
+/// The finished activity's Share button (`&share=1`): a downloaded local file
+/// becomes a concrete shareable copy with a human-readable name — exactly the
+/// export the card's own share menu and the App Intent handoff use.
+private struct DownloadedFileExporter: MediaShareFileExporting {
+    func exportedFileURL(forItemID itemID: UUID) async -> URL? {
+        guard let item = SavedMediaStore.shared.items().first(where: { $0.id == itemID }),
+              case .localFile = item.storageState
+        else { return nil }
+        return await MediaAutoDownloader.exportFile(from: item)?.fileURL
+    }
+
+    func discardExportedFile(at fileURL: URL) {
+        MediaDownloadStorage.discardIntentExport(at: fileURL)
+    }
 }
 
 /// URL Rescue's media leg: the engine already resolved the assets, so this

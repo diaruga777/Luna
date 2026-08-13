@@ -151,9 +151,7 @@ final class LinkImportSheetViewController: UIViewController {
         // A row's picture arrives after the row does, so the table has to be able
         // to grow for it; a fixed estimate keeps the first layout cheap.
         table.estimatedRowHeight = Self.previewRowHeight
-        previews.onChange = { [weak self] urlString in
-            self?.refreshRows(showing: urlString)
-        }
+        previews.delegate = self
 
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.adjustsFontForContentSizeCategory = true
@@ -682,5 +680,14 @@ extension LinkImportSheetViewController: UISheetPresentationControllerDelegate {
 
     func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
         allowsInteractiveDismissal
+    }
+}
+
+
+// MARK: - The preview loader's delegate
+
+extension LinkImportSheetViewController: LinkImportPreviewLoaderDelegate {
+    func previewLoaderDidChangeRow(forURLString urlString: String) {
+        refreshRows(showing: urlString)
     }
 }

@@ -174,7 +174,7 @@ enum KindWiring {
         MediaShellWiring.deepLinkAction(forURLString: urlString)
     }
 
-    static let mediaShareFileExporter: MediaShareFileExporting? =
+    static let mediaShareFileExporter: (any MediaShareFileExporting)? =
         MediaShellWiring.shareFileExporter
 
     /// Runs one price-refresh pass and returns the processed-tracker count.

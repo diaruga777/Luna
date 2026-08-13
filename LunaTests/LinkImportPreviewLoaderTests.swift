@@ -29,6 +29,36 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         }
     }
 
+    /// The page reads a test drives by hand: each request parks on a
+    /// continuation the test resumes when it chooses.
+    private struct FakeNetwork: LinkImportPreviewNetworking {
+        let recorder: Recorder
+        let imageData: Data?
+        let isOnline: Bool
+
+        func fetchPreview(for url: URL) async throws -> LinkPreview {
+            try await withCheckedThrowingContinuation { continuation in
+                recorder.requested.append(url.absoluteString)
+                recorder.continuations[url.absoluteString] = continuation
+            }
+        }
+
+        func fetchImageData(from url: URL) async throws -> Data {
+            guard let imageData else { throw URLError(.badServerResponse) }
+            return imageData
+        }
+    }
+
+    /// Records which rows the loader reported as changed.
+    @MainActor
+    private final class ChangeWatch: LinkImportPreviewLoaderDelegate {
+        private(set) var changed: [String] = []
+
+        func previewLoaderDidChangeRow(forURLString urlString: String) {
+            changed.append(urlString)
+        }
+    }
+
     private var recorder: Recorder!
 
     override func setUp() {
@@ -39,20 +69,10 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     private func makeLoader(
         maximumConcurrent: Int = 2, online: Bool = true, imageData: Data? = nil
     ) -> LinkImportPreviewLoader {
-        let recorder = recorder!
         return LinkImportPreviewLoader(
             maximumConcurrent: maximumConcurrent,
-            fetchPreview: { url in
-                try await withCheckedThrowingContinuation { continuation in
-                    recorder.requested.append(url.absoluteString)
-                    recorder.continuations[url.absoluteString] = continuation
-                }
-            },
-            fetchImageData: { _ in
-                guard let imageData else { throw URLError(.badServerResponse) }
-                return imageData
-            },
-            isOnline: { online })
+            network: FakeNetwork(
+                recorder: recorder!, imageData: imageData, isOnline: online))
     }
 
     /// Lets the loader's own tasks run to their next suspension point.
@@ -229,8 +249,8 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
 
     func testTheTitleLandsBeforeTheThumbnailAndBothReportAChange() async {
         let loader = makeLoader(imageData: onePixelPNG())
-        var changes: [String] = []
-        loader.onChange = { changes.append($0) }
+        let changeWatch = ChangeWatch()
+        loader.delegate = changeWatch
 
         loader.enterWindow(["https://a.example/1"])
         await settle()
@@ -253,7 +273,8 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
         XCTAssertEqual(preview.siteName, "Example")
         XCTAssertNotNil(preview.image)
         // Entering the window, the text landing, then the picture landing.
-        XCTAssertEqual(changes, Array(repeating: "https://a.example/1", count: 3))
+        XCTAssertEqual(
+            changeWatch.changed, Array(repeating: "https://a.example/1", count: 3))
     }
 
     func testAThumbnailThatFailsToDownloadStillLeavesTheTitle() async {

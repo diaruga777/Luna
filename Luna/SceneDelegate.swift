@@ -207,19 +207,21 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// moved to Photos or vanished — in which case this degrades to the plain
     /// open the link would otherwise have done.
     private func shareDownloadedMedia(
-        _ item: ReadingListItem, using exporter: MediaShareFileExporting,
+        _ item: ReadingListItem, using exporter: any MediaShareFileExporting,
         in nav: UINavigationController
     ) {
         let deck = nav.viewControllers.first
         (deck as? CardCarouselHostViewController)?.centerCard(onItemID: item.id)
         Task { @MainActor in
-            guard let fileURL = await exporter.export(item.id) else {
+            guard let fileURL = await exporter.exportedFileURL(forItemID: item.id) else {
                 (deck as? CardCarouselHostViewController)?.openExternally(item)
                 return
             }
             let activity = UIActivityViewController(
                 activityItems: [fileURL], applicationActivities: nil)
-            activity.completionWithItemsHandler = { _, _, _, _ in exporter.discard(fileURL) }
+            activity.completionWithItemsHandler = { _, _, _, _ in
+                exporter.discardExportedFile(at: fileURL)
+            }
             // On iPad this presents as a popover, which needs an anchor; the
             // centered card is the only thing this launch pointed at.
             let anchor = deck?.view ?? nav.view

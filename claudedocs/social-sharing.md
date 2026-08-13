@@ -79,7 +79,12 @@ App-Group keychain access group.
 
 Local only (`UNUserNotificationCenter`, no APNs/remote push — the old CloudKit
 silent-push wake-up is gone). `NotificationManager.requestAuthorization()` is
-called at launch. Tapping a "share received" notification just opens the app;
+NOT called at launch — a fresh install has nothing to notify about yet. It's
+called at the moment the user opts into one of three features: pasting the
+Save of the Week key (Diagnostics), connecting a sending account (both the
+app-password and Outlook-OAuth paths), and committing a price alert threshold
+(either price editor); it's idempotent, so those call sites need no state of
+their own. Tapping a "share received" notification just opens the app;
 these are cleared once the user reaches the reading list
 (`CardCarouselHostViewController.viewDidAppear` → `NotificationManager.clearShareNotifications()`, so every app's deck root clears them).
 Tapping a "pending request" notification should route to

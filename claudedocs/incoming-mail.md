@@ -13,16 +13,21 @@ still KEEPS only its own kinds from what it imports.
 
 ## Key files (`Luna/Mail/`)
 
-- **`GmailIMAPClient`** (`IMAPFetching`): hand-rolled minimal IMAP4rev1 over
-  `NWConnection` TLS to `imap.gmail.com:993`. `LOGIN` (quoted account + app
-  password) → `SELECT INBOX` → per-sender `UID SEARCH UID <cursor+1>:* FROM
-  "<sender>"` AND per-filter `… SUBJECT "<phrase>"` (results unioned, deduped)
-  → `UID FETCH (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE
+- **`GmailIMAPClient`**: a pure IMAP/RFC822 parser bag now — the hand-rolled
+  `NWConnection` IMAP client that used to live here was superseded by
+  `StreamIMAPClient` (`LunaMailTransport`, over a `URLSessionStreamTask` with
+  implicit TLS + STARTTLS) and removed; only its unit-tested parsers and
+  `IncomingMessage` remain. **`StreamIMAPClient`** is the live transport:
+  `LOGIN` (quoted account + app password) → `SELECT INBOX` → per-sender
+  `UID SEARCH UID <cursor+1>:* FROM "<sender>"` AND per-filter `…
+  SUBJECT "<phrase>"` (results unioned, deduped) → `UID FETCH
+  (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE
   CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT])` → `UID STORE +FLAGS (\Seen)`
   (courtesy) → `LOGOUT`. Literal-aware command loop (`{n}` byte counts). First
-  run / UIDVALIDITY change skips the backlog (cursor = `UIDNEXT - 1`). Pure
-  parsers (`trailingLiteralCount`, `parseBracketValue`, `parseSearchUIDs`,
-  `newSearchUIDs`, `parseHeaders`, `extractURLs` incl. HTML `href`) are
+  run / UIDVALIDITY change skips the backlog (cursor = `UIDNEXT - 1`).
+  `GmailIMAPClient`'s pure parsers (`trailingLiteralCount`, `parseBracketValue`,
+  `parseSearchUIDs`, `newSearchUIDs`, `parseHeaders`, `extractURLs` incl.
+  HTML `href`) are
   unit-tested.
   - **`newSearchUIDs(lines, afterUID:)`** filters search results to UIDs
     strictly `> afterUID`. CRITICAL: `UID SEARCH UID N:*` returns the highest

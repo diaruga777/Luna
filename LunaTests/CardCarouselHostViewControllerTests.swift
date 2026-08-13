@@ -26,7 +26,11 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
         XCTAssertEqual(geometry.title.minX, geometry.thumbnail.maxX + 12)
     }
 
-    private final class TestHost: CardCarouselHostViewController {}
+    /// A bare host: no deck, so it answers the arc's pull question itself.
+    private final class TestHost: CardCarouselHostViewController {
+        var isRightmost = false
+        override func archiveTrayCanPull(_ tray: ArchiveTrayController) -> Bool { isRightmost }
+    }
 
     // MARK: - Only a row with artwork grows into a card
 
@@ -77,8 +81,7 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
         let host = TestHost()
         host.loadViewIfNeeded()
         host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        var isRightmost = false
-        host.mountArchiveTray(shifting: { [] }, canPull: { isRightmost })
+        host.mountArchiveTray()
         host.viewDidLayoutSubviews()
 
         XCTAssertFalse(host.archiveTray?.isPullAvailableForTesting ?? true)
@@ -87,7 +90,7 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
             host.archiveTray?.isPullAvailableForTesting ?? true,
             "Selecting the incoming last card must not reveal the tab at animation start")
 
-        isRightmost = true
+        host.isRightmost = true
         host.refreshArchivePullAvailability(animated: false)
         XCTAssertTrue(
             host.archiveTray?.isPullAvailableForTesting ?? false,

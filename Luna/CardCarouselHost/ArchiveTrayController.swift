@@ -27,6 +27,32 @@ struct ArchiveTrayItem {
     let delete: (() -> Void)?
 }
 
+/// What the arc asks of the deck it is mounted in: the views it shifts left as
+/// it opens, whether it may be pulled at all right now, whether the centered
+/// card's own content has claimed the drag, and where its open state has got to.
+protocol ArchiveTrayDelegate: AnyObject {
+    /// The views the arc translates left by exactly the width it takes.
+    func archiveTrayShiftedViews(_ tray: ArchiveTrayController) -> [UIView]
+
+    /// Whether a pull is allowed from where the deck currently rests.
+    func archiveTrayCanPull(_ tray: ArchiveTrayController) -> Bool
+
+    /// Whether the centered card's own content owns a horizontal drag beginning
+    /// at this host-space point (a video card scrubbing its timeline). Such a
+    /// drag must not also pull the arc out from under the finger.
+    func archiveTray(_ tray: ArchiveTrayController, cardClaimsDragAt point: CGPoint) -> Bool
+
+    /// The arc is open (even partially) or wholly closed.
+    func archiveTray(_ tray: ArchiveTrayController, openStateDidChange open: Bool)
+}
+
+extension ArchiveTrayDelegate {
+    func archiveTray(
+        _ tray: ArchiveTrayController, cardClaimsDragAt point: CGPoint
+    ) -> Bool { false }
+    func archiveTray(_ tray: ArchiveTrayController, openStateDidChange open: Bool) {}
+}
+
 /// Lays the archive cells (and the leading "archive" header cell) along a
 /// circular arc whose pivot sits far off the screen's right edge, so the
 /// column bows left. Scrolling stays ordinary vertical scrolling, but each
@@ -118,13 +144,8 @@ final class ArchiveArcLayout: UICollectionViewLayout {
 /// two thirds, ceding that space to the arc.
 final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
-    private let shiftContribution: TrayShiftContribution
-    private let canPull: () -> Bool
-    /// Whether the centered card's own content owns a horizontal drag beginning
-    /// at this host-space point (a video card scrubbing its timeline). Such a
-    /// drag must not also pull the arc out from under the finger.
-    private let cardClaimsDrag: (CGPoint) -> Bool
-    private let openStateChanged: (Bool) -> Void
+    private weak var delegate: ArchiveTrayDelegate?
+    private let shiftContribution = TrayShiftContribution()
     /// Invisible container that carries the arc's horizontal reveal. It still
     /// hit-tests, so an open arc blocks taps from reaching the shifted card.
     private let tray = UIView()
@@ -162,18 +183,9 @@ final class ArchiveTrayController: NSObject {
         LunaLayout.drawerWidth(forContainerWidth: width, fraction: 2.0 / 3.0)
     }
 
-    init(
-        host: UIViewController,
-        shiftedViews: @escaping () -> [UIView],
-        canPull: @escaping () -> Bool,
-        cardClaimsDrag: @escaping (CGPoint) -> Bool = { _ in false },
-        openStateChanged: @escaping (Bool) -> Void = { _ in }
-    ) {
+    init(host: UIViewController, delegate: ArchiveTrayDelegate) {
         self.host = host
-        shiftContribution = TrayShiftContribution(shiftedViews: shiftedViews)
-        self.canPull = canPull
-        self.cardClaimsDrag = cardClaimsDrag
-        self.openStateChanged = openStateChanged
+        self.delegate = delegate
         collection = UICollectionView(frame: .zero, collectionViewLayout: arcLayout)
         super.init()
         configure()
@@ -228,7 +240,7 @@ final class ArchiveTrayController: NSObject {
     /// animates the closed arc from fully offscreen to its cell peek; paging
     /// away retracts it and closes an open arc defensively.
     func refreshPullAvailability(animated: Bool) {
-        setPullAvailable(canPull(), animated: animated)
+        setPullAvailable(delegate?.archiveTrayCanPull(self) ?? false, animated: animated)
     }
 
     /// Closes an open arc. Surface-owned item transitions use this to keep the
@@ -278,7 +290,7 @@ final class ArchiveTrayController: NSObject {
         guard bounds.size.width > 0 else { return }
         let isFirstLayout = laidOutSize == .zero
         laidOutSize = bounds.size
-        if isFirstLayout { pullAvailable = canPull() }
+        if isFirstLayout { pullAvailable = delegate?.archiveTrayCanPull(self) ?? false }
         dismissControl.frame = bounds
         let width = Self.openWidth(forHostWidth: bounds.width)
         let top = safeAreaInsets.top + 8
@@ -340,8 +352,8 @@ final class ArchiveTrayController: NSObject {
         tray.frame.origin.x = closedX + (openX - closedX) * progress
         // The card clears the arc's full region.
         let shift = -width * progress
-        shiftContribution.apply(shift)
-        openStateChanged(progress > 0.001)
+        shiftContribution.apply(shift, to: delegate?.archiveTrayShiftedViews(self) ?? [])
+        delegate?.archiveTray(self, openStateDidChange: progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18
     }
@@ -375,8 +387,9 @@ extension ArchiveTrayController: UIGestureRecognizerDelegate {
             progress: progress,
             chromeHidden: chromeHidden,
             hasContent: !items.isEmpty,
-            canPull: canPull(),
-            cardClaimsDrag: cardClaimsDrag(pan.location(in: host?.view)),
+            canPull: delegate?.archiveTrayCanPull(self) ?? false,
+            cardClaimsDrag: delegate?.archiveTray(
+                self, cardClaimsDragAt: pan.location(in: host?.view)) ?? false,
             velocity: pan.velocity(in: host?.view))
     }
 

@@ -12,15 +12,11 @@ import UIKit
 
 /// Owns the archive tray's horizontal contribution to the card deck.
 final class TrayShiftContribution {
-    private let shiftedViews: () -> [UIView]
     private var appliedShiftByView: [ObjectIdentifier: CGFloat] = [:]
 
-    init(shiftedViews: @escaping () -> [UIView]) {
-        self.shiftedViews = shiftedViews
-    }
-
-    func apply(_ shift: CGFloat) {
-        let views = shiftedViews()
+    /// Moves each view to `shift`, tracking what it already applied so a view
+    /// that has left the set stops being counted.
+    func apply(_ shift: CGFloat, to views: [UIView]) {
         let liveIDs = Set(views.map { ObjectIdentifier($0) })
         for view in views {
             let id = ObjectIdentifier(view)
@@ -489,7 +485,7 @@ private extension UIView {
 /// through `deckProvider` (`CardDeckProviding`). A subclass exists only where a
 /// deck has genuine screen-level chrome of its own to add — which today is one
 /// deck, the Reader's, whose cards are live readers.
-class CardCarouselHostViewController: UIViewController {
+class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
 
     let carousel = CardCarouselViewController()
 
@@ -610,7 +606,7 @@ class CardCarouselHostViewController: UIViewController {
         deckWillMountBottomControls()
         mountDeckBottomControls()
         deckDidMountBottomControls()
-        mountDeckArchiveTray()
+        mountArchiveTray()
         deckProvider?.deckWillBeginObservingStores()
         observeStoreChanges()
         reload()
@@ -682,22 +678,10 @@ class CardCarouselHostViewController: UIViewController {
             sourceView: carousel.cardView(at: carousel.currentIndex) ?? trailingBottomButton)
     }
 
-    private func mountDeckArchiveTray() {
-        mountArchiveTray(
-            shifting: { [weak self] in
-                guard let self else { return [] }
-                return [self.carousel.view]
-            },
-            canPull: { [weak self] in
-                guard let self, self.deckAllowsArchivePull else { return false }
-                // The tray opens off the END of the deck, so every card counts —
-                // including a kind's own error cards, which sit after its saves.
-                let count = self.cardCount
-                return count == 0 || self.carousel.currentIndex == count - 1
-            },
-            openStateChanged: { [weak self] open in
-                self?.deckArchiveTrayOpenStateDidChange(open)
-            })
+    /// Brings up the arc drawer, which asks this host everything it needs
+    /// (`ArchiveTrayDelegate`).
+    final func mountArchiveTray() {
+        archiveTray = ArchiveTrayController(host: self, delegate: self)
     }
 
     /// The archive choreography, overridable because it is CHROME. The default
@@ -985,24 +969,29 @@ class CardCarouselHostViewController: UIViewController {
         }
     }
 
-    final func mountArchiveTray(
-        shifting views: @escaping () -> [UIView],
-        canPull: @escaping () -> Bool,
-        openStateChanged: @escaping (Bool) -> Void = { _ in }
-    ) {
-        archiveTray = ArchiveTrayController(
-            host: self,
-            shiftedViews: views,
-            canPull: canPull,
-            cardClaimsDrag: { [weak self] point in self?.centeredCardClaimsDrag(at: point) ?? false },
-            openStateChanged: openStateChanged)
+    // MARK: - ArchiveTrayDelegate
+
+    func archiveTrayShiftedViews(_ tray: ArchiveTrayController) -> [UIView] {
+        [carousel.view]
+    }
+
+    func archiveTrayCanPull(_ tray: ArchiveTrayController) -> Bool {
+        guard deckAllowsArchivePull else { return false }
+        // The tray opens off the END of the deck, so every card counts —
+        // including a kind's own error cards, which sit after its saves.
+        let count = cardCount
+        return count == 0 || carousel.currentIndex == count - 1
     }
 
     /// The archive arc defers to the centered card wherever its own content owns
     /// horizontal drags: a video card treats its full width as a timeline, so a
     /// swipe there scrubs and must not also pull the arc in behind it.
-    private func centeredCardClaimsDrag(at point: CGPoint) -> Bool {
+    func archiveTray(_ tray: ArchiveTrayController, cardClaimsDragAt point: CGPoint) -> Bool {
         carousel.centeredCardConsumesHorizontalDrag(at: point, in: view)
+    }
+
+    func archiveTray(_ tray: ArchiveTrayController, openStateDidChange open: Bool) {
+        deckArchiveTrayOpenStateDidChange(open)
     }
 
     final func refreshArchivePullAvailability(animated: Bool) {

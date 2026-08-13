@@ -447,8 +447,11 @@ enum SharedStageCatalog {
                     guard let url = URL(string: "https://example.com/broken") else { return nil }
                     return UINavigationController(
                         rootViewController: RescueFailureViewController(
+                            // No delegate: a staged card records nothing, opens
+                            // nothing and completes nothing, exactly as the three
+                            // empty closures it replaces did.
                             url: url, rescueURL: URL(string: "luna://rescue"),
-                            openApp: { _ in }, onFinish: {}, onDone: {}))
+                            delegate: nil))
                 }),
         ]
     }

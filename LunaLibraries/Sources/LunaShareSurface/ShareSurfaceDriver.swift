@@ -261,13 +261,7 @@ public final class ShareSurfaceDriver {
         let card = RescueFailureViewController(
             url: url,
             rescueURL: LunaDeepLink.rescueLink(scheme: app.deepLinkScheme),
-            openApp: { [weak host] in host?.openURL($0) },
-            onFinish: {
-                PendingRescueRequestStore.shared.append(PendingRescueRequest(
-                    urlString: url.absoluteString, hint: nil, dateWritten: Date(),
-                    sourceSurface: app.storageIdentifier))
-            },
-            onDone: { [weak host] in host?.completeSilently() })
+            delegate: RescueFailureCardLegs(host: host, url: url, app: app))
         host.presentModally(card)
     }
 
@@ -407,5 +401,38 @@ public final class ShareSurfaceDriver {
         }
         store.markNeedsCaptcha(saved.id, title: title)
         presenter.presentArchive(url: url, itemID: saved.id, store: store, host: host)
+    }
+}
+
+/// The failure card's three host legs, kept together for the life of the card.
+///
+/// A small coordinator rather than the driver itself: `ShareSurfaceDriver` is a
+/// temporary the save flow awaits and drops, while the card stays on screen until
+/// the user answers it. The card retains this; this holds the host weakly, so
+/// nothing cycles — the same shape the three closures it replaces had.
+@MainActor
+private final class RescueFailureCardLegs: RescueFailureCardDelegate {
+    private weak var host: (any ExtensionHost)?
+    private let url: URL
+    private let app: LunaApp
+
+    init(host: any ExtensionHost, url: URL, app: LunaApp) {
+        self.host = host
+        self.url = url
+        self.app = app
+    }
+
+    func rescueFailureCardDidRequestRescue(_ card: RescueFailureViewController) {
+        PendingRescueRequestStore.shared.append(PendingRescueRequest(
+            urlString: url.absoluteString, hint: nil, dateWritten: Date(),
+            sourceSurface: app.storageIdentifier))
+    }
+
+    func rescueFailureCard(_ card: RescueFailureViewController, openApp url: URL) {
+        host?.openURL(url)
+    }
+
+    func rescueFailureCardDidFinish(_ card: RescueFailureViewController) {
+        host?.completeSilently()
     }
 }

@@ -206,8 +206,9 @@ final class BypassTests: XCTestCase {
                count: characters / 42 + 1)
     }
 
-    /// A page carrying only teaser cards is NOT ready, however many of them there
-    /// are — this is the WSJ shape that used to read as a rendered article.
+    /// A page carrying only teaser cards is NOT ready, however many of them
+    /// there are. Guards the WSJ shape that a naive probe reads as a rendered
+    /// article.
     func testTeaserArticleCardsAreNotReadiness() {
         let cards = (0..<6).map { index in
             "<article><h3>Teaser \(index)</h3><p>A one-line standfirst.</p></article>"
@@ -624,13 +625,8 @@ final class BypassTests: XCTestCase {
 
     // MARK: - BypassGate
     //
-    // Ported from LunaLibraries/Tests/LunaPaywallBypassTests/BypassScenarioTests
-    // (retired — that SwiftPM test target never ran under the app-hosted `LunaTests`
-    // bundle). `BypassGate.Decision.attempt` carries no payload (the Signal it used
-    // to carry was collapsed), so this asserts `.attempt` rather than a case value.
-    // The sibling `ArticleResolver` scenario from that file is NOT ported — it is a
-    // byte-identical duplicate of `ArticleResolverTests.testLongDirectArticleBeatsStaleSchemaLock`
-    // (same URL, same shaped HTML, same "readable + exactly one direct fetch" assertion).
+    // `BypassGate.Decision.attempt` carries no payload, so the tests below
+    // assert `.attempt` itself rather than a case value.
 
     func testKnownPaywallPublisherCommerceMarkupRetainsDirectUnlockPlan() {
         let paywallURL = URL(string:

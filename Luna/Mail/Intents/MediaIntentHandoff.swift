@@ -2,13 +2,13 @@
 //  MediaIntentHandoff.swift
 //  Luna
 //
-//  The media-kind body of the Action Button intents' download handoff —
-//  compiled only into media-handling app targets (Downloader + the central
-//  Luna app; excluded from the others via the synchronized group's membership
-//  exceptions). Their `KindWiring` variants call `install()`, which fills
-//  `ActionButtonIntentSupport.media`; in article/product-only apps the
-//  seam stays nil and the intents return no media, matching the gate that only
-//  media apps hand off.
+//  The media-kind body of the Action Button intents' download handoff.
+//  Compiled only into media-handling app targets (Downloader and the central
+//  Luna app), and excluded from the others through the synchronized group's
+//  membership exceptions. Their `KindWiring` variants call `install()`, which
+//  fills `ActionButtonIntentSupport.media`. In an article- or product-only
+//  app, the seam stays nil and the intents return no media, matching the gate
+//  that only media apps hand off.
 //
 
 import AppIntents
@@ -22,9 +22,9 @@ enum MediaIntentHandoff {
 
     enum MediaHandoffError: Error, CustomLocalizedStringResourceConvertible {
         case insufficientStorage(String)
-        /// The save landed but its media didn't: nothing was downloaded and no
-        /// transfer is running. Reported so a Shortcut can never exit with
-        /// silent success and an empty library.
+        /// The save landed but its media did not. Nothing downloaded and no
+        /// transfer is running. Reported so a Shortcut never exits with silent
+        /// success and an empty library.
         case downloadFailed(message: String?)
         /// Photos add-authorization was refused for a sibling-app-owned save.
         case notAuthorized
@@ -109,8 +109,8 @@ enum MediaIntentHandoff {
     }
 
     /// SaveIntent's media handoff for both a prepared checkpoint and the
-    /// screenshot/search path. `foreground` is invoked only
-    /// when a first read/write Photos authorization prompt needs a visible host.
+    /// screenshot/search path. `foreground` runs only when a first read/write
+    /// Photos authorization prompt needs a visible host.
     private static func downloadMediaIfNeeded(
         for urlString: String,
         checkpoint: IntentMediaCheckpoint?,
@@ -157,11 +157,12 @@ enum MediaIntentHandoff {
                     photosAuthorized: photosAuthorized)
                 return nil
             }
-            // The AWAITED leg is the one the system's intent progress UI covers
-            // end to end (the intent stays alive for the whole transfer), so
-            // prefer it and suppress Luna's own Live Activity for its duration.
-            // The background leg below keeps ours, because the system's UI ends
-            // when the intent returns and that transfer outlives it.
+            // The awaited leg is the one the system's intent progress UI covers
+            // end to end, since the intent stays alive for the whole transfer.
+            // Prefer it, and suppress Luna's own Live Activity for its
+            // duration. The background leg below keeps ours, because the
+            // system's UI ends when the intent returns, and that transfer
+            // outlives it.
             let result = await LiveMediaDownloadManager.$systemProvidesProgressUI.withValue(
                 CaptureIntentExtendedRuntime.isAvailable
             ) {
@@ -180,12 +181,13 @@ enum MediaIntentHandoff {
             case let .completed(media): return intentFile(for: media)
             case .handledWithoutFile: return nil
             case let .failed(message):
-                // A user cancelling from the system's progress UI (or the system
-                // reclaiming the runtime) cancels this task — a dismissal, not a
-                // failure worth an error dialog. The transfer itself is durable
-                // and keeps going, so hand the progress UI back to Luna's own
-                // Live Activity on the way out: we suppressed it above precisely
-                // because the system's was showing, and that one is now gone.
+                // A user cancelling from the system's progress UI, or the
+                // system reclaiming the runtime, cancels this task. That is a
+                // dismissal, not a failure worth an error dialog. The transfer
+                // itself is durable and keeps going, so hand the progress UI
+                // back to Luna's own Live Activity on the way out — it was
+                // suppressed above only because the system's UI was showing,
+                // and that one is now gone.
                 if Task.isCancelled {
                     await LiveMediaDownloadManager.shared.resumeOwnProgressUI(
                         forSourceURLString: urlString)

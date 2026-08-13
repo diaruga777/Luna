@@ -79,12 +79,13 @@ final class LiveMediaDownloadActivityStateTests: XCTestCase {
         #endif
     }
 
-    // MARK: - The end-of-life alert (now fired by the `.finished` UPDATE)
+    // MARK: - The end-of-life alert (fired by the `.finished` update)
 
-    /// The finished card stays LIVE for five seconds, so its alert can no longer
-    /// come from `endActivity` — `updateActivity(for:alerting:)` fires it. Both
-    /// share this one definition, which alerts only for the two results and for
-    /// neither an in-progress phase nor a user cancellation.
+    /// The finished card stays LIVE for five seconds, so its alert must come
+    /// from `updateActivity(for:alerting:)` rather than from `endActivity`,
+    /// which never runs while the card is still live. Both share this one
+    /// definition, which alerts only for the two results and for neither an
+    /// in-progress phase nor a user cancellation.
     func testOnlyTheTwoResultPhasesCarryAnEndOfLifeAlert() {
         #if canImport(ActivityKit)
         let alerting: [LiveMediaDownloadJob.Phase] = [.finished, .failed]

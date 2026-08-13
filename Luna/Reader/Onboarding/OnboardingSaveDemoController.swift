@@ -16,8 +16,9 @@ enum OnboardingSaveDemoTiming {
     /// The fade in and out of that overlay.
     static let videoFadeDuration: TimeInterval = 0.22
     /// How long the sheet holds on a finished screen — a reader, a price editor,
-    /// an error — before sliding away. The same beat the hand-drawn mock used to
-    /// hold for, now spent on the real thing.
+    /// an error — before sliding away. Shares its duration with
+    /// `OnboardingShortcutRunTiming.extensionSheetHoldDuration` so both holds
+    /// feel identical.
     static var terminalHoldDuration: TimeInterval {
         OnboardingShortcutRunTiming.extensionSheetHoldDuration
     }
@@ -29,12 +30,9 @@ enum OnboardingSaveDemoTiming {
     static let mediaSettleInterval: TimeInterval = 0.15
 }
 
-/// THE SAVE LESSON'S ENGINE: it runs a real save through the real share surface
-/// and shows you what happened.
-///
-/// The lesson used to be a drawing — a fake extension sheet holding a bundled
-/// article for a fixed second. Everything here exists to make it the actual
-/// thing instead:
+/// THE SAVE LESSON'S ENGINE: it runs a real save through the real share
+/// surface and shows what happened, rather than playing a scripted mock.
+/// Real work needs real handling:
 ///
 /// - it resolves a real link (`OnboardingSaveDemoLink`): this app's live Save of
 ///   the Week when there is one, else the bundled practice link, else — offline —

@@ -1046,10 +1046,10 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     }
 
     /// Chrome clearance every deck reserves above the card area, on top of the
-    /// safe area. One value, shared — it is `CardDeckGeometry.topClearance`, and
-    /// the reason it is not a per-deck override any more is that the card frame
-    /// has to be a function of the SCREEN: the launch splash draws the card
-    /// before it knows which app it is launching.
+    /// safe area. One value, shared: `CardDeckGeometry.topClearance`. It
+    /// cannot be a per-deck override, because the card frame has to be a
+    /// function of the SCREEN — the launch splash draws the card before it
+    /// knows which app it is launching.
     static var carouselTopClearance: CGFloat { CardDeckGeometry.topClearance }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -1075,10 +1075,8 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
         // the "open the app" follow-up share notifications; first-share prompts
         // that deep-link to settings are left intact.
         //
-        // This lived on the sectioned list's `viewDidAppear`. When that screen was
-        // deleted the call went with it and nothing cleared the notifications, so
-        // it belongs here instead — on the base class every app's root inherits,
-        // rather than on one deck.
+        // This lives on the base class every app's root inherits, rather than
+        // on one deck, so no deck can be missing it.
         NotificationManager.clearShareNotifications()
     }
 
@@ -1470,9 +1468,9 @@ extension CardCarouselHostViewController: CardPresenterHost {
         presenter.openExternally(item, host: self)
     }
 
-    /// Unarchive, with this deck's choreography around the kind's store write.
-    /// One implementation for all three kinds: the tray rows used to each carry
-    /// their own, and only the article one bumped the row's date.
+    /// Unarchive, with this deck's choreography around the kind's store
+    /// write. One implementation for all three kinds, so every kind bumps
+    /// the row's date on unarchive, not only the article kind.
     func unarchive(_ item: SavedItem, from sourceView: UIView?) {
         performUnarchive(ofItemID: item.id, from: sourceView) { [weak self] in
             guard let self else { return }
@@ -1484,10 +1482,10 @@ extension CardCarouselHostViewController: CardPresenterHost {
         }
     }
 
-    /// Delete a save whole. The companion half is the reason this is one method:
-    /// the archive tray's delete released only the row, so an archived media
-    /// save deleted from the tray left its file, its Photos asset and its
-    /// auto-download bookkeeping behind.
+    /// Delete a save whole. This is one method because a delete that
+    /// released only the row would leave an archived media save's file,
+    /// Photos asset, and auto-download bookkeeping behind — the companion
+    /// half must go with the row, from every route that can delete it.
     func deleteSave(_ item: SavedItem) {
         presenter(forItem: item)?.deleteCompanionStorage(for: item, host: self)
         SavesStore.shared.delete(item)

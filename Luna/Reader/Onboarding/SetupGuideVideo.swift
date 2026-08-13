@@ -9,11 +9,7 @@ import LunaModels
 import UIKit
 
 /// The Action Button setup guide: a muted clip that moves into Picture in
-/// Picture while the user is in Settings assigning the shortcut. It used to
-/// come in two flavors (this one, and a Safari-extension guide shown while the
-/// user was in Safari) — the Safari half was retired once the in-app Safari
-/// instructions moved to a hosted setup web page the popup links out to, and
-/// there was no longer anything left for a PiP guide to narrate there.
+/// Picture while the user is in Settings assigning the shortcut.
 @MainActor
 final class SetupGuideVideo: NSObject {
     private static let resourceName = "ActionButtonGuide"

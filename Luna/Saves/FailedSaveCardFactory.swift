@@ -81,9 +81,9 @@ enum FailedSaveCardFactory {
         return canRescue ? .idle : .unavailable
     }
 
-    /// The deck's title for a failed card. The card body no longer shows a
-    /// headline (it shows the live page), but the carousel chrome above it and the
-    /// scrub preview both still need words, and they must agree — so both come
+    /// The deck's title for a failed card. The card body shows the live page
+    /// rather than a headline, but the carousel chrome above it and the scrub
+    /// preview both still need words, and they must agree — so both come
     /// through here.
     static func displayTitle(for item: SavedItem) -> String {
         let record = SaveFailureStore.shared.record(for: item.id)

@@ -2,9 +2,10 @@
 //  StageCatalog+Media.swift
 //  Luna
 //
-//  Media-kind stages. Compiled ONLY into the targets that link the media kind
-//  (Luna, LunaDownloader); the other two exclude this file by membership
-//  exception, as they already exclude `Downloader/MediaCardFactory.swift`.
+//  Media-kind stages. Only the targets that link the media kind compile this
+//  file — Luna and LunaDownloader. The other two exclude it by membership
+//  exception, the same way they already exclude
+//  `Downloader/MediaCardFactory.swift`.
 //
 
 #if DEBUG
@@ -96,9 +97,10 @@ enum MediaStageCatalog {
     // MARK: - Download states
 
     /// The four states a transfer passes through, each held still. A real
-    /// download is through all of them inside a few seconds, so these are built
-    /// from a described `DownloaderJobSnapshot` rather than by starting one —
-    /// and because staged mode posts no progress notifications, they stay.
+    /// download runs through all of them in a few seconds, so these build
+    /// from a described `DownloaderJobSnapshot` rather than from starting a
+    /// real one. Staged mode posts no progress notifications, so each state
+    /// stays put once built.
     @MainActor
     private static var downloadStateStages: [StageDescriptor] {
         [

@@ -7,11 +7,11 @@ import LunaModels
 import XCTest
 @testable import LunaPriceCompare
 
-/// A failing fan-out used to be invisible: twelve candidates, zero results, and
-/// nothing in the diagnostic log to say which retailer refused, which served a
-/// shell, and which was simply the wrong product. These pin the per-candidate
-/// record that replaced the silence, and the two things that consume it — the
-/// client-rendered skip and the injected render fallback.
+/// A failing fan-out is otherwise invisible: twelve candidates, zero results,
+/// and nothing in the diagnostic log to say which retailer refused, which
+/// served a shell, and which was simply the wrong product. These tests pin
+/// the per-candidate record that answers that, and the two things that
+/// consume it — the client-rendered skip and the injected render fallback.
 final class SellerFanOutDiagnosticsTests: XCTestCase {
 
     // MARK: - Fixtures
@@ -391,13 +391,12 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
         XCTAssertEqual(fetcher.requested, ["https://shop.example/search?q=0194644090876"])
     }
 
-    /// The evidence tier no longer needs the identifier question specifically
-    /// — once the name already agrees (this candidate's own nesting inside
+    /// The evidence tier does not need the identifier question specifically:
+    /// once the name already agrees (this candidate's own nesting inside
     /// `ComparisonMatching.verify`), a NAME query landing on a page that
     /// prints the barcode is exactly as good evidence as a GTIN query would
-    /// have been. This is the Costco/JB-style gap the fix closed: a retailer
-    /// whose search buries the exact product under a NAME query used to be
-    /// refused for it.
+    /// be. This closes the Costco/JB-style gap — a retailer whose search
+    /// buries the exact product under a NAME query is not refused for it.
     func testTheEvidenceTierIsNowAvailableOnTheNameFallbackToo() async {
         let fetcher = StubFetcher()
         fetcher.stub("https://shop.example/search?q=0194644090876", html: "<html></html>")
@@ -425,9 +424,9 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
 
     // MARK: - Falling through to the next query
 
-    /// A GTIN query whose extracted links all fail to verify (a retailer's
+    /// A GTIN query whose extracted links all fail to verify — a retailer's
     /// own junk that happened to match a shared URL pattern, or simply the
-    /// wrong product) used to END the candidate outright. The NAME query,
+    /// wrong product — does not end the candidate outright. The NAME query,
     /// asked second, is what actually finds the product.
     func testAGTINQueryWithNoVerifiedLinkFallsThroughToTheNameQuery() async {
         let fetcher = StubFetcher()
@@ -499,10 +498,10 @@ final class SellerFanOutDiagnosticsTests: XCTestCase {
     // MARK: - Rendering past a markup-only challenge
 
     /// A retailer's search sometimes serves a soft interstitial under an
-    /// ordinary 200 rather than a blocked status — previously indistinguishable
-    /// from a hard bot wall, so the run gave up on the host immediately. A
-    /// context that can render gets one chance to see past it, exactly as it
-    /// does for a structurally-empty page.
+    /// ordinary 200 rather than a blocked status, which reads identically to
+    /// a hard bot wall unless something looks past it. A context that can
+    /// render gets one chance to see past it, exactly as it does for a
+    /// structurally-empty page.
     func testAMarkupChallengeUnderTwoHundredGetsARenderAttempt() async {
         let fetcher = StubFetcher()
         fetcher.stub(

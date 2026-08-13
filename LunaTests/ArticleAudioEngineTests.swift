@@ -7,20 +7,7 @@ import AVFoundation
 @_spi(Testing) import LunaAudioPlayback
 import XCTest
 
-/// `ArticleAudioEngine` tests run entirely in `AVAudioEngine`'s offline
-/// manual-rendering mode (no real audio device needed, deterministic): they
-/// schedule synthetic silent buffers (never real synthesis) and drive the
-/// graph forward with `renderOffline(maxFrames:)`, asserting on the playhead,
-/// scheduling completion, rate pinning, and the low-water-mark signal.
-///
-/// SKIPPED unless `RUN_AUDIO_ENGINE_TESTS=1`. Manual-rendering mode still calls
-/// the real `AVAudioEngine.start()`, and on some Macs that reproducibly wedges
-/// mediaserverd ("RPC timeout, apparently deadlocked"), aborting every test in
-/// the class and sometimes the host with it. The coverage is real, so nothing
-/// here is deleted — it just doesn't ride along on every run. Run it with:
-/// `RUN_AUDIO_ENGINE_TESTS=1 xcodebuild test … -only-testing:LunaTests/ArticleAudioEngineTests`
-/// (the `TEST_RUNNER_`-prefixed form when passing it as a build setting).
-/// Records the engine's low-water signal for the two tests that assert it.
+/// Records the engine's low-water-mark signal for the two tests that assert it.
 private final class RecordingEngineDelegate: ArticleAudioEngineDelegate {
     var signalCount = 0
     var onSignal: (() -> Void)?
@@ -31,6 +18,17 @@ private final class RecordingEngineDelegate: ArticleAudioEngineDelegate {
     }
 }
 
+/// Tests `ArticleAudioEngine` in `AVAudioEngine`'s offline manual-rendering
+/// mode: no real audio device, deterministic timing. Each test schedules
+/// synthetic silent buffers and drives the graph with
+/// `renderOffline(maxFrames:)`, then asserts on the playhead, scheduling
+/// completion, rate pinning, or the low-water-mark signal.
+///
+/// Skipped unless `RUN_AUDIO_ENGINE_TESTS=1`. Manual-rendering mode still
+/// calls the real `AVAudioEngine.start()`. On some Macs that call wedges
+/// mediaserverd and aborts every test in the class. Run it with:
+/// `RUN_AUDIO_ENGINE_TESTS=1 xcodebuild test … -only-testing:LunaTests/ArticleAudioEngineTests`
+/// (use the `TEST_RUNNER_`-prefixed form as a build setting).
 final class ArticleAudioEngineTests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -125,8 +123,8 @@ final class ArticleAudioEngineTests: XCTestCase {
     func testResetAndScheduleRebasesPlayhead() throws {
         let engine = try makeEngine()
         engine.resetAndSchedule(from: 42.0)
-        // Immediately after a rebase (before any new rendering progress),
-        // currentTime should read back at (approximately) the rebase point.
+        // Right after a rebase, before any new rendering, currentTime reads
+        // back at the rebase point.
         XCTAssertEqual(engine.currentTime, 42.0, accuracy: 0.05)
     }
 

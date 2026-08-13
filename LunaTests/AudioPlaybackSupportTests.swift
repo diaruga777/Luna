@@ -2,10 +2,6 @@
 //  AudioPlaybackSupportTests.swift
 //  LunaTests
 //
-//  Merged from AudioPlaybackHandoffTests, AudioPlaybackPersistenceTests,
-//  AudioQueueRuleTests, AudioSessionCoordinatorTests, NowPlayingCoordinatorTests,
-//  ReaderPlaybackArbiterTests, and AudioFormatConversionTests.
-//
 
 import AVFoundation
 import MediaPlayer
@@ -15,18 +11,15 @@ import LunaModels
 import LunaReaderUI
 import XCTest
 
-/// Everything below `AudioPlaybackHandoffTests`'s doc comment through
-/// `AudioFormatConversionTests`'s doc comment used to be seven separate
-/// XCTestCase files; they're combined here since none of their fixtures
-/// conflict once reconciled (see the shared `setUp`/`tearDown` below).
-/// `ReaderPlaybackArbiterTests` (below, in this same file) is kept as its
-/// own class: it is `@MainActor` because `ReaderPlaybackArbiter` requires
-/// main-actor isolation, and forcing that isolation onto this class's
-/// NotificationCenter-driven (`AudioSessionCoordinatorTests`) and
-/// RunLoop-spinning (`NowPlayingCoordinatorTests`) fixtures would be an
-/// unverifiable behavior change for what should be a pure fixture-count
-/// merge — those fixtures' completion/notification callbacks are not
-/// guaranteed to already be main-actor-isolated.
+/// Groups several audio-playback fixtures (handoff, persistence, queue
+/// rules, session coordination, Now Playing, format conversion) under one
+/// shared `setUp`/`tearDown`.
+///
+/// `ReaderPlaybackArbiterTests`, below in this same file, stays its own
+/// class: `ReaderPlaybackArbiter` requires main-actor isolation, but this
+/// class's NotificationCenter-driven and RunLoop-spinning fixtures don't
+/// guarantee their completion and notification callbacks already run on the
+/// main actor.
 final class AudioPlaybackSupportTests: XCTestCase, AudioSessionCoordinatorDelegate {
 
     /// The session coordinator reports its interruption/route-change decisions

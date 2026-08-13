@@ -2,7 +2,7 @@
 //  CaptureIntentRuntime.swift
 //  Luna
 //
-//  Which background runtime SaveIntent runs under — the stable-SDK fallback.
+//  Which background runtime SaveIntent runs under: the stable-SDK fallback.
 //  `CaptureIntentRuntime+LongRunning.swift` supplies the guarded iOS 27 override
 //  in every app target.
 //
@@ -11,17 +11,17 @@ import AppIntents
 import LunaIntents
 import Foundation
 
-/// The default Save runtime: run the body inline under the ordinary background
-/// budget (~30 s, Apple's documented figure for an app intent).
+/// The default Save runtime: runs the body inline, under the ordinary ~30
+/// second background budget Apple documents for an app intent.
 ///
 /// Xcode 26.2 cannot name the iOS 27 LongRunningIntent API, so this keeps the
-/// stable archive build valid. Xcode 27 builds in every app override it with
-/// `CaptureIntentRuntime+LongRunning.swift`; Provide Context never uses either
-/// wrapper and remains a normal AppIntent.
+/// stable archive build valid. Every app's Xcode 27 build overrides it with
+/// `CaptureIntentRuntime+LongRunning.swift`. Provide Context never uses either
+/// wrapper and stays a normal AppIntent.
 ///
-/// The override is a shadowing method on the concrete intent type, so the call in
-/// `perform()` is identical in every app and the choice is made by compiler/OS
-/// availability.
+/// The override is a shadowing method on the concrete intent type, so the call
+/// in `perform()` is identical in every app, and compiler/OS availability
+/// picks the runtime.
 protocol CaptureIntentRuntime: AppIntent {}
 
 extension CaptureIntentRuntime {

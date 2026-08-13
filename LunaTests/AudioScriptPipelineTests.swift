@@ -250,10 +250,7 @@ final class AudioScriptPipelineTests: XCTestCase {
             self.scriptStore.load(forContentFileName: item.contentFileName!)?.refinementState == .permanentlyFailed
         }
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
-        // `llmPermanentlyFailed == true` and `refined == false` used to be
-        // asserted separately; they were the same fact (the both-true
-        // combination this refactor makes unrepresentable), so this is now
-        // one assertion.
+        // `.permanentlyFailed` makes "failed but still refined" unrepresentable.
         XCTAssertEqual(cached?.refinementState, .permanentlyFailed)
     }
 

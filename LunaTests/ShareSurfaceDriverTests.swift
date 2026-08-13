@@ -343,9 +343,9 @@ final class ShareSurfaceDriverTests: XCTestCase {
     /// The action extension presents the in-sheet reader for an article and persists
     /// the content; the share extension completes with no UI.
     ///
-    /// What it presents is the FINISHED reader, not the loading screen that used
-    /// to stand in for it: the article is prepared behind the host's own spinner,
-    /// so the surface never shows a second loading state.
+    /// What it presents is the FINISHED reader, never a loading screen: the
+    /// article is prepared behind the host's own spinner, so the surface
+    /// never shows a second loading state.
     func testArticlePresentationDiffersByHostButPersistsBoth() {
         let urlString = "https://example.com/story"
 

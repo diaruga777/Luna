@@ -10,21 +10,22 @@ import LunaStorage
 import XCTest
 @testable import Luna
 
-/// How a card PRESENTS its content is a property of what it shows; how big it is
-/// is not.
+/// How a card PRESENTS its content is a property of what it shows; how big it
+/// is is not.
 ///
-/// The presentation values — edge fade, scrub-preview autoplay, in-card paging —
-/// used to be deck-level `CardCarouselStyle` fields, so the one deck that mixes
-/// kinds had to pick ONE answer for all of them. It picked the article's: the
-/// central app dissolved every media card's video edges over the reader's 28pt
-/// fade and previewed it as a still, while the same download in the Downloader
-/// was hard-clipped and played under the finger. Those stay per-kind.
+/// Presentation values — edge fade, scrub-preview autoplay, in-card paging —
+/// stay per-kind. A deck-level value would force the one deck that mixes
+/// kinds to pick a single answer for all of them: the central app would
+/// dissolve every media card's video edges over the reader's 28pt fade and
+/// preview it as a still, while the same download in the Downloader is
+/// hard-clipped and plays under the finger.
 ///
-/// GEOMETRY went the other way. `fit`/`topOverflow` were per-kind too, so an
-/// article card, a video card and a product card in one deck were three
-/// different rectangles at three different centers — and paging between two
-/// kinds resized and re-centered the card underneath the transition. There is
-/// one card frame now, so the geometry test is that no kind can state one.
+/// Geometry goes the other way: every kind shares one card frame. A per-kind
+/// `fit`/`topOverflow` would make an article card, a video card, and a
+/// product card three different rectangles at three different centers in one
+/// deck, so paging between kinds would resize and re-center the card
+/// underneath the transition. The geometry test is that no kind can state
+/// its own frame.
 @MainActor
 final class CardKindStyleTests: XCTestCase {
 

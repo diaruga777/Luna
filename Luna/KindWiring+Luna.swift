@@ -2,11 +2,11 @@
 //  KindWiring+Luna.swift
 //  Luna
 //
-//  Per-app composition root: registers exactly the per-kind processors,
-//  ingestor handlers, and UI/lifecycle seams this app's target links. EXACTLY
-//  ONE KindWiring variant is compiled into each app target (the other variants
-//  are excluded via the synchronized group's per-target membership exceptions)
-//  — the registries and the static lifecycle API below mirror the link set.
+//  Per-app composition root. It registers the per-kind processors, ingestor
+//  handlers, and UI/lifecycle seams this app's target links. Each app target
+//  compiles exactly one `KindWiring` variant — the synchronized group excludes
+//  the others by membership exception — so the registries and the static
+//  lifecycle API below mirror this app's own link set.
 //
 
 import LunaIngest
@@ -30,10 +30,10 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
-        // Staged mode's catalogs, on the same rule as the kind packs: a kind's
-        // stages live with that kind, and this app installs the ones for the
-        // kinds it links (`claudedocs/staging.md`). No-op unless launched with
-        // `-LunaStage`.
+        // Staged mode's catalogs follow the same rule as the kind packs: a
+        // kind's stages live with that kind, and this app installs the ones
+        // for the kinds it links (`claudedocs/staging.md`). This is a no-op
+        // unless the app launches with `-LunaStage`.
         SharedStageCatalog.install()
         ArticleStageCatalog.install()
         EmailStageCatalog.install()
@@ -41,22 +41,23 @@ enum KindWiring {
         ProductStageCatalog.install()
         #endif
 
-        // One install per kind this app handles. WHAT each kind registers is
-        // defined once in that kind's own module and shared by every surface
-        // (app, share ext, action ext, clip) — see `ArticleKindComposition`.
+        // One install call per kind this app handles. What each kind
+        // registers is defined once in that kind's own module and shared by
+        // every surface — app, share extension, action extension, clip. See
+        // `ArticleKindComposition`.
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
-        // …and the CARD half of each kind, on the same principle: one
-        // definition per kind, installed by every app that shows it, so the
-        // central deck and each single-kind deck cannot disagree about the
-        // same save (`CardKindPresenter.swift`).
+        // The card half of each kind follows the same rule: one definition
+        // per kind, installed by every app that shows it, so the central deck
+        // and each single-kind deck can't disagree about the same save. See
+        // `CardKindPresenter.swift`.
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()
         CardKindPresenters.product = ProductCardPresenter()
-        // …and the app-shell half of each kind, from the same files each
-        // single-kind app installs (`ArticleShellWiring` and its siblings), so
-        // the central app cannot drift from the app that specializes in a kind.
+        // The app-shell half of each kind installs from the same files each
+        // single-kind app uses (`ArticleShellWiring` and its siblings), so the
+        // central app can't drift from the app that specializes in that kind.
         ArticleShellWiring.install()
         MediaShellWiring.install()
         ProductShellWiring.install()
@@ -78,8 +79,8 @@ enum KindWiring {
     // MARK: - Root UI shape
 
     /// The all-kinds card deck, wrapped in the window-level audio mini-player
-    /// host (read-aloud is an article-app feature; the bar floats above the
-    /// bottom safe area, survives every push/pop, and hides while idle).
+    /// host. Read-aloud is an article-app feature; the bar floats above the
+    /// bottom safe area, survives every push and pop, and hides while idle.
     static func makeRootViewController() -> UIViewController {
         let content: UIViewController = ArticleCardsViewController()
         let nav = UINavigationController(rootViewController: content)

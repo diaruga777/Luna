@@ -344,16 +344,17 @@ final class FailedSaveSurfacingTests: XCTestCase {
 
 final class FailedSaveCardFactoryTests: XCTestCase {
 
-    /// NO app asks which kind this is any more — the model classifies the page —
-    /// so the card's rescue action carries no hint in any surface, the central
-    /// Luna app included.
+    /// No app asks which kind this is: the model classifies the page, so the
+    /// card's rescue action carries no hint in any surface, the central Luna
+    /// app included.
     func testTheCardNeverPicksAContentHint() {
         for surface in [LunaApp.luna, .reader, .downloader, .priceTracker] {
             let model = FailedSaveCardFactory.makeModel(for: failedItem(), surface: surface)
             XCTAssertEqual(model.urlText, "example.com/broken")
-            // Not checking canRescue/hasSpentAIAttempt (now .unavailable vs .idle):
-            // canRescue depends on the shared, test-order-sensitive
-            // URLRescueCoordinator.engine, same as before this refactor.
+            // Not checking canRescue or hasSpentAIAttempt: canRescue depends
+            // on the shared, test-order-sensitive URLRescueCoordinator.engine,
+            // so asserting it here would make this test's outcome depend on
+            // run order.
             XCTAssertFalse(model.rescueState.isRunning)
         }
     }

@@ -7,11 +7,11 @@ import LunaDesignSystem
 import UIKit
 import XCTest
 
-/// The two ways out of a settings sub-screen. Both used to break because the
-/// screens replace the navigation bar with an in-content `NavHeaderBar`: the bar
-/// is a subview of the scrolling table (so section views scrolled in after it won
-/// hit-testing), and hiding the real nav bar takes UIKit's left-edge pop gesture
-/// with it.
+/// The two ways out of a settings sub-screen, both put at risk by the same
+/// mechanism: the screens replace the navigation bar with an in-content
+/// `NavHeaderBar`. The bar is a subview of the scrolling table, so a section
+/// view that scrolls in after it wins hit-testing over it, and hiding the
+/// real nav bar takes UIKit's left-edge pop gesture with it.
 @MainActor
 final class NavHeaderTableControllerTests: XCTestCase {
 
@@ -64,13 +64,13 @@ final class NavHeaderTableControllerTests: XCTestCase {
                 y: screen.header.frame.maxY - NavHeaderBar.barHeight / 2)
     }
 
-    /// Scrolls to an offset where one of the table's OWN section header/footer views
-    /// covers the back button. Those are siblings of the bar inside the same scroll
-    /// view, created as they scroll into range — i.e. added to `subviews` AFTER the
-    /// bar — which is exactly what used to win hit-testing over it. (Cells don't:
-    /// they live in a wrapper view that stays below the bar.) Settings pages are
-    /// mostly section headers and long explanatory footers, so once scrolled at all,
-    /// one is almost always under the bar.
+    /// Scrolls to an offset where one of the table's OWN section header/footer
+    /// views covers the back button. Those are siblings of the bar inside the
+    /// same scroll view, created as they scroll into range — added to
+    /// `subviews` after the bar, which is exactly what wins hit-testing over
+    /// it. (Cells don't: they live in a wrapper view that stays below the
+    /// bar.) Settings pages are mostly section headers and long explanatory
+    /// footers, so once scrolled at all, one is almost always under the bar.
     @discardableResult
     private func scrollUntilASectionViewCoversTheBackButton(_ screen: LongScreen) -> Bool {
         let table = screen.tableView!

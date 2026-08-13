@@ -2,11 +2,11 @@
 //  KindWiring+PriceTracker.swift
 //  Luna
 //
-//  Per-app composition root: registers exactly the per-kind processors,
-//  ingestor handlers, and UI/lifecycle seams this app's target links. EXACTLY
-//  ONE KindWiring variant is compiled into each app target (the other variants
-//  are excluded via the synchronized group's per-target membership exceptions)
-//  — the registries and the static lifecycle API below mirror the link set.
+//  Per-app composition root. It registers the per-kind processors, ingestor
+//  handlers, and UI/lifecycle seams this app's target links. Each app target
+//  compiles exactly one `KindWiring` variant — the synchronized group excludes
+//  the others by membership exception — so the registries and the static
+//  lifecycle API below mirror this app's own link set.
 //
 
 import LunaIngest
@@ -24,28 +24,30 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
-        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        // Staged mode's catalogs, for this app's kinds only
+        // (`claudedocs/staging.md`).
         SharedStageCatalog.install()
         ProductStageCatalog.install()
         #endif
 
         ProductKindComposition.install()
-        // The product kind's CARD half, on the same principle — the one
-        // definition the central app installs too (`CardKindPresenter.swift`).
+        // The product kind's card half follows the same rule — the one
+        // definition the central app installs too. See `CardKindPresenter.swift`.
         CardKindPresenters.product = ProductCardPresenter()
-        // …and the product kind's half of the app shell, which the central app
-        // installs from the same file (`ProductShellWiring`).
+        // The product kind's app-shell half installs from the same file the
+        // central app uses (`ProductShellWiring`).
         ProductShellWiring.install()
-        // No price-graph email snapshot: Price Tracker shares a tracker as its
-        // product link, never as a Luna email (see `LunaApp.sharesByEmail`).
+        // Price Tracker installs no price-graph email snapshot: it shares a
+        // tracker as its product link, never as a Luna email. See
+        // `LunaApp.sharesByEmail`.
     }
 
     // MARK: - Root UI shape
 
-    /// The Price Tracker uses the same root card deck + archive tray as Reader
-    /// and Downloader, without the article app's audio mini-player host. The deck
-    /// is the shared host configured by `ProductCardDeck`; this app has no deck
-    /// subclass of its own.
+    /// Price Tracker uses the same root card deck and archive tray as Reader
+    /// and Downloader, without the article app's audio mini-player host.
+    /// `ProductCardDeck` configures the shared deck host; this app has no
+    /// deck subclass of its own.
     @MainActor
     static func makeRootViewController() -> UIViewController {
         UINavigationController(rootViewController: ProductCardDeck.makeRoot())
@@ -63,7 +65,7 @@ enum KindWiring {
             itemID: itemID, navigationController: navigationController)
     }
 
-    /// Price Tracker adds no kind rows — the universal tail is the whole menu.
+    /// Price Tracker adds no kind rows. The universal tail is the whole menu.
     static func settingsCategories() -> [SettingsCategory] { [] }
 
     // MARK: - Lifecycle (called by AppDelegate/SceneDelegate at fixed points)
@@ -83,24 +85,28 @@ enum KindWiring {
 
     static func wifiBecameAvailable() {}
 
-    /// Price Tracker handles no articles — ereader sends are never pending here.
+    /// Price Tracker handles no articles, so ereader sends are never pending
+    /// here.
     static func retryPendingArticleSends() {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        // No media kind → no background URLSession to reattach; complete the
-        // callback immediately so the system isn't left waiting.
+        // Price Tracker links no media kind, so there is no background
+        // URLSession to reattach. It completes the callback immediately so
+        // the system isn't left waiting.
         completionHandler()
     }
 
-    /// Price Tracker links no media module — no Live Activity, so this route
-    /// never actually fires here, but `SceneDelegate` is universal.
+    /// Price Tracker links no media module, so it has no Live Activity and
+    /// this route never actually fires. `SceneDelegate` is universal, so the
+    /// method must still exist.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
-    /// …and so nothing here can produce a downloaded file to share either.
+    /// Price Tracker produces no downloaded file, so it has nothing to share.
     static let mediaShareFileExporter: (any MediaShareFileExporting)? = nil
 
     /// Price Tracker's Safari extension resolves no video (the native handler
-    /// gates on `hostHandlesMedia`), so nothing can ever queue a download for it.
+    /// gates on `hostHandlesMedia`), so nothing can ever queue a download for
+    /// it.
     static func drainPendingResolvedMedia(returningToSource: Bool) {}
 
     /// Runs one price-refresh pass and returns the processed-tracker count.

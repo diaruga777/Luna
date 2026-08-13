@@ -757,9 +757,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
 
 /// The article kind's per-save answers live in `ArticleCardPresenter`; the
 /// chrome those answers need lives here. This protocol is the entire contact
-/// surface between them — and the reason this class no longer implements
-/// `CardDeckProviding`, holds no slot arrays, and never asks what kind a save
-/// is.
+/// surface between them, which is why this class holds no slot arrays and
+/// never asks what kind a save is.
 extension ArticleCardsViewController: ArticleDeckChromeHosting {
 
     var readerCardDelegate: ReaderCardContentDelegate? { self }
@@ -773,8 +772,8 @@ extension ArticleCardsViewController: ArticleDeckChromeHosting {
         centerCard(onItemID: id)
     }
 
-    /// Same archive.today CAPTCHA flow as the old list root: on successful
-    /// extraction, reopen the now-`.ready` item.
+    /// The archive.today CAPTCHA unlock flow: on successful extraction, reopen
+    /// the now-`.ready` item.
     func presentUnlockFlow(for item: SavedItem, articleURL: URL) {
         ArchiveUnlockFlow.present(
             item: item, articleURL: articleURL, store: store, from: self

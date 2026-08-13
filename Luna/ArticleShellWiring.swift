@@ -2,16 +2,16 @@
 //  ArticleShellWiring.swift
 //  Luna
 //
-//  The article kind's half of the app shell: every seam an article-handling app
-//  installs at launch, and the lifecycle work articles owe at each of
-//  `KindWiring`'s fixed points. Compiled ONLY into the targets that link the
-//  article kind (Luna, LunaReader) — the other two exclude this file by
-//  membership exception, exactly as they exclude `Reader/ArticleCardPresenter
-//  .swift` and the rest of the article shell.
+//  The article kind's half of the app shell. It installs every seam an
+//  article-handling app needs at launch, and does the lifecycle work
+//  articles owe at each of `KindWiring`'s fixed points. Only the targets that
+//  link the article kind compile this file — Luna and LunaReader. The other
+//  two exclude it by membership exception, the same way they exclude
+//  `Reader/ArticleCardPresenter.swift` and the rest of the article shell.
 //
-//  A `KindWiring+<App>` variant installs the article KIND PACK
-//  (`ArticleKindComposition`) and the article CARD presenter itself, then calls
-//  the legs below; nothing article-specific is written twice.
+//  A `KindWiring+<App>` variant installs the article kind pack
+//  (`ArticleKindComposition`) and the article card presenter itself, then
+//  calls the legs below. Nothing article-specific is written twice.
 //
 
 import LunaArchiveReader
@@ -40,49 +40,54 @@ enum ArticleShellWiring {
 
         // Send-to-Kindle emails go out through the connected email account.
         // LunaSend sits below LunaMailTransport, so the transport factory is
-        // injected here (extensions leave it nil → Kindle sends are no-ops there).
+        // injected here. An extension leaves it nil, so Kindle sends are
+        // no-ops there.
         ArticleEmailTransportProvider.installed = MailFactoryTransportProvider()
 
-        // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
-        // install the autoplay queue provider and register the Now Playing /
-        // remote-command coordinator. Registration must happen at launch (not
-        // lazily) so a cold background relaunch from a lock-screen play command
-        // can restore the persisted session. Read-aloud (the app-wide center,
-        // its background session, the window mini-player) belongs exclusively
-        // to article-handling apps — the Downloader / Price Tracker leave
-        // `ReaderAudioLauncher.center` nil, keeping the shared readers on their
-        // legacy self-contained `SpeechController` path.
+        // Installs the autoplay queue provider and registers the Now
+        // Playing / remote-command coordinator (`claudedocs/audio-playback
+        // -plan.md`, Phase 2). Registration must happen at launch, not
+        // lazily, so a cold background relaunch from a lock-screen play
+        // command can restore the persisted session. Read-aloud — the
+        // app-wide center, its background session, the window mini-player —
+        // belongs exclusively to article-handling apps. The Downloader and
+        // Price Tracker leave `ReaderAudioLauncher.center` nil, which keeps
+        // their shared readers on the legacy self-contained
+        // `SpeechController` path.
         AudioPlaybackWiring.install()
-        // Phase 4 (trimming): opportunistic script-cache builder, wired
-        // right after playback so its scriptProvider/scriptPrefetchHandler
-        // seams are set before anything could call into the center.
+        // The trimming pipeline's opportunistic script-cache builder (Phase
+        // 4). It is wired right after playback, so its scriptProvider and
+        // scriptPrefetchHandler seams are set before anything can call into
+        // the center.
         AudioScriptPipelineWiring.install()
 
-        // The Action Button double save (claudedocs/double-save.md): its
+        // The Action Button double save (`claudedocs/double-save.md`). Its
         // "View immediately" returns an article document, and Kindle needs
-        // the account/Kindle setup screens. Both are article-only, so both are
-        // installed here — matching `ActionButtonIntentSupport.doubleSaveSurface`,
-        // which arms double save in exactly the apps that link LunaSend.
+        // the account/Kindle setup screens. Both are article-only, so both
+        // install here, matching `ActionButtonIntentSupport
+        // .doubleSaveSurface`, which arms double save in exactly the apps
+        // that link LunaSend.
         ActionButtonIntentSupport.articleExport = ArticleIntentExporter()
-        // Exports fetch the article images that haven't landed yet rather than
-        // shipping a file with none. The downloader is LunaReaderUI's and the
-        // exporters are LunaSend's, so the composition root joins them.
+        // Exports fetch article images that haven't landed yet, rather than
+        // shipping a file with none. The downloader lives in LunaReaderUI
+        // and the exporters live in LunaSend, so the composition root joins
+        // them.
         ArticleExportImages.preparer = ArticleExportImageDownloader()
         DoubleSaveSettingsSupport.kindleSetupLauncher = KindleSetupPresenter()
 
-        // A bulk import's pass over the saves that came back hard-paywalled:
-        // the same web unlock a tap would run, off-screen and giving up on any
-        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there is
-        // no article save to unlock anywhere else.
+        // A bulk import's pass over saves that came back hard-paywalled: the
+        // same web unlock a tap would run, off-screen, giving up on any
+        // CAPTCHA (`claudedocs/import-export.md`). Article apps only — there
+        // is no article save to unlock anywhere else.
         LinkImportRunner.articleUnlocker = ImportArticleUnlocker()
 
         // Voice status and installation live on the Audio settings page.
         VoiceFirstRunPrompt.voiceSettings = AudioSettingsRoute()
 
-        // Sending needs a connected email account: an attempted send without one
-        // redirects to the screen that connects it (its Sharing Account section is
-        // the sign-in form until then). Only the email-sending apps compile that
-        // screen, and they are exactly the article apps.
+        // Sending needs a connected email account. An attempted send without
+        // one redirects to the screen that connects it — its Sharing Account
+        // section is the sign-in form until then. Only the email-sending
+        // apps compile that screen, and they are exactly the article apps.
         SendToFriendSheet.accountSetupPresenter = EmailAccountSetupRoute()
         // The util card's email nudge goes to the same one place.
         UtilCardContentViewController.emailSetupLauncher = EmailSetupPresenter()
@@ -91,20 +96,20 @@ enum ArticleShellWiring {
     // MARK: - Lifecycle
 
     static func appDidLaunch() {
-        // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
-        // saves list so saved articles are semantically discoverable and Siri
-        // can resolve "my article about …"/"from …" without the app running.
-        // An app that shows no article has nothing to index and no way to open
-        // a result, so the index belongs to the article leg.
+        // Keeps ArticleEntity's Spotlight index in sync with the saves list,
+        // so saved articles are semantically discoverable and Siri can
+        // resolve "my article about …" or "from …" without the app running.
+        // An app that shows no article has nothing to index and no way to
+        // open a result, so the index belongs to the article leg.
         ArticleSpotlightIndexWiring.install()
         retryPendingSends()
     }
 
     static func appDidEnterBackground() {
-        // A finished-reading completion recorded during this session becomes an
-        // archive move now, so the next launch starts settled — the other half
-        // of the invariant `KindDeckProvider` documents (at launch AND at
-        // background).
+        // A finished-reading completion recorded during this session becomes
+        // an archive move now, so the next launch starts settled. This is
+        // the other half of the invariant `KindDeckProvider` documents: at
+        // launch and at background.
         SavesStore.shared.archivePendingFinishedItems()
         retryPendingSends()
     }
@@ -213,9 +218,9 @@ private struct SendCoordinatorReadiness: ArticleReadinessObserving {
 }
 
 /// Bridges `IngestorArticleHandling` to the article-kind modules: persistence
-/// in LunaReaderUI (`ArticleIngestHandler`, `PreloadCoordinator`) and sends in
-/// LunaSend (`ArticleSendCoordinator`) — the composition root is the one place
-/// allowed to see both tiers at once.
+/// in LunaReaderUI (`ArticleIngestHandler`, `PreloadCoordinator`) and sends
+/// in LunaSend (`ArticleSendCoordinator`). The composition root is the one
+/// place allowed to see both tiers at once.
 private struct ArticleKindHandler: IngestorArticleHandling {
     private let handler = ArticleIngestHandler(
         readinessObserver: SendCoordinatorReadiness())

@@ -19,19 +19,13 @@ protocol OnboardingSafariSetupPopupDelegate: AnyObject {
 /// with whatever lesson raised it still visible (and, after a short freeze,
 /// still looping) underneath.
 ///
-/// Step-by-step instructions used to live wherever the lesson ended: inline at
-/// the bottom of the `luna.app` explainer page, grown into the Downloader's
-/// video panel, or on `OnboardingSafariSetupCardView` over the price lesson's
-/// product page. All three are gone — that copy now lives on the hosted setup
-/// web page the prominent button opens — and every lesson ends on this one
-/// popup instead.
+/// Every Safari lesson ends on this one popup. Its prominent button opens the
+/// hosted setup web page, which holds the step-by-step instructions.
 ///
-/// Visually it borrows two things wholesale: the night-surface card itself
-/// (no border corona of its own — that glow is reserved for the "Set up in
-/// Safari" button below, so it reads as the one actionable thing here rather
-/// than the whole card), and the Skip button's own styling from the retired
-/// `OnboardingSafariActionsView` (plain configuration, white @ 0.7, 16pt
-/// medium).
+/// Visually it borrows the night-surface card itself (no border corona of its
+/// own — that glow is reserved for the "Set up in Safari" button below, so it
+/// reads as the one actionable thing here rather than the whole card). The
+/// Skip button uses a plain configuration: white @ 0.7, 16pt medium.
 final class OnboardingSafariSetupPopupView: UIView {
     /// The alpha of the FULL-SCREEN scrim behind the card. Deliberately
     /// light — every host now freezes the lesson that raised this popup and
@@ -174,10 +168,9 @@ final class OnboardingSafariSetupPopupView: UIView {
         // The activate button's frame is solved in the CARD's own layout
         // pass, which runs after this container's — so on the first pass the
         // conversion below reads a zero-sized button and builds no corona,
-        // and nothing guarantees this container is ever laid out again. The
-        // card-border corona used to paper over that (its size needed only
-        // `card.bounds`); with the card corona gone, settle the card's
-        // children first so the button's geometry is real on every pass.
+        // and nothing guarantees this container is ever laid out again.
+        // Settle the card's children first so the button's geometry is real
+        // on every pass.
         card.layoutIfNeeded()
         layOutActivateCorona()
     }

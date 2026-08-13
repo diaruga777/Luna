@@ -50,18 +50,19 @@ struct ResumeLiveMediaDownloadIntent: AppIntent {
     }
 }
 
-/// Tap-anywhere-on-the-activity target, every phase including `.finished` —
-/// opening the app on the downloading/downloaded card is correct and
-/// harmless regardless of where the transfer is. Built once by
-/// `LiveMediaDownloadManager.activityState(for:)` (which can import
-/// `LunaDeepLink`; this target links only `LunaMediaDownload` +
-/// `LunaDesignSystem`) rather than assembled here.
+/// The tap-anywhere-on-the-activity target, for every phase including
+/// `.finished` — opening the app on the downloading or downloaded card is
+/// correct at any point in the transfer. `LiveMediaDownloadManager
+/// .activityState(for:)` builds this URL once, because it can import
+/// `LunaDeepLink` and this target cannot: it links only `LunaMediaDownload`
+/// and `LunaDesignSystem`.
 private func viewURL(for state: LiveMediaDownloadAttributes.ContentState) -> URL? {
     state.viewURLString.flatMap(URL.init(string:))
 }
 
-/// The finished card's Share target — the same `media` route plus `&share=1`,
-/// prebuilt by `activityState(for:)` for the same reason `viewURLString` is.
+/// The finished card's Share target: the same `media` route as
+/// `viewURL(for:)`, plus `&share=1`. `activityState(for:)` prebuilds this URL
+/// for the same reason it prebuilds `viewURLString`.
 private func shareURL(for state: LiveMediaDownloadAttributes.ContentState) -> URL? {
     state.shareURLString.flatMap(URL.init(string:))
 }
@@ -96,8 +97,8 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 6) {
-                        // A finished card reads as done: no progress track, and
-                        // the two things there are left to do with the file.
+                        // A finished card shows no progress track. It reads
+                        // as done, with only the remaining actions on the file.
                         if context.state.phase != .failed, context.state.phase != .finished {
                             MoonHorizonProgressView(progress: context.state.progress)
                                 .frame(height: 20)
@@ -123,8 +124,8 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                 } else if context.state.phase == .finished {
-                    // A percentage that has nowhere left to go reads as a stalled
-                    // transfer; the completed card says so instead.
+                    // A percentage stuck at 100 reads as a stalled transfer,
+                    // so the finished card shows a checkmark instead.
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .accessibilityLabel(
@@ -177,10 +178,9 @@ private struct DownloadActivityView: View {
                     ActivityControlButton(context: context)
                 }
             }
-            // The moon horizon spans the full width of the activity, below the
-            // row — except once the transfer is done, where a full track would
-            // read as a stalled progress bar rather than a result. The finished
-            // card puts its two actions in that space instead.
+            // The progress bar spans the full width below the row. Once the
+            // transfer finishes, a full track would read as stalled rather
+            // than done, so the finished card puts its actions there instead.
             if context.state.phase == .finished {
                 FinishedActionsView(state: context.state)
             } else if context.state.phase != .failed {
@@ -192,10 +192,10 @@ private struct DownloadActivityView: View {
     }
 }
 
-/// The finished card's two affordances. `Link`s rather than buttons: a widget
+/// The finished card's two actions. Both are `Link`s, not buttons: a widget
 /// cannot present anything itself, so each one opens the app on a route that
-/// does — Play on the tap-to-view link (the same one the whole card carries),
-/// Share on that route plus `&share=1`, which raises the system share sheet
+/// can. Play opens the same tap-to-view link the whole card carries. Share
+/// opens that route plus `&share=1`, which raises the system share sheet
 /// over the downloaded file (`SceneDelegate.openMediaDeepLink`).
 private struct FinishedActionsView: View {
     let state: LiveMediaDownloadAttributes.ContentState

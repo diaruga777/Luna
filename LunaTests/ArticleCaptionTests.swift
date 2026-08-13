@@ -7,9 +7,9 @@ import LunaHTMLClassification
 import LunaModels
 import XCTest
 
-/// A picture's caption: shown by the scroll reader, never read by RSVP or aloud.
-/// Before this the extractor emitted no caption block at all — `figcaption` was in
-/// no selector — so the reader silently lost every caption on the page.
+/// Pins caption extraction. The scroll reader shows a caption block; RSVP and
+/// read-aloud never read it. Guards against `figcaption` falling out of every
+/// selector, which silently drops every caption on the page.
 final class ArticleCaptionTests: XCTestCase {
 
     private let extractor = ArticleExtractor()

@@ -37,23 +37,21 @@ enum OnboardingVideoDownloadTiming {
 /// below — since the extension's real panel plays whatever aspect a post's own
 /// video is, and this lesson's bundled clip is a portrait one.
 ///
-/// The panel STAYS in this one player state for the whole lesson now — it used
-/// to grow a chin of enable steps once the clip had played; that copy moved to
-/// the hosted setup web page, and the panel's own job shrank to just playing
-/// the clip and reporting to its `setupOfferDelegate` once it plainly has. The page
-/// underneath needs no explainer of its own either way — which is why the
-/// Downloader's Safari demonstration opens on InstaTok rather than on
+/// The panel stays in this one player state for the whole lesson: it plays
+/// the clip and reports to its `setupOfferDelegate` once it plainly has. The
+/// page underneath needs no explainer of its own either way — which is why
+/// the Downloader's Safari demonstration opens on InstaTok rather than on
 /// `luna.app` (`OnboardingSafariLesson`). It is the media sibling of
 /// `OnboardingPriceComparisonOverlayView`, and keeps that lesson's shape:
 /// `begin` / `reset`, mounted with the browser and generation-guarded so a
 /// rewind cancels its pending beats.
 ///
-/// Nothing in the panel answers a tap any more — not even an activate/skip
-/// pair, since those now live on the shared, window-hosted setup popup rather
-/// than inside this view. The close button, the download button, the player's
-/// own controls remain pictures of controls, inert by construction (no
-/// target, no gesture recognizer), because a demonstration that answers a tap
-/// is a demonstration that can be taken somewhere it cannot go.
+/// Nothing in the panel answers a tap. The close button, the download
+/// button, and the player's own controls are pictures of controls, inert by
+/// construction (no target, no gesture recognizer), because a demonstration
+/// that answers a tap is a demonstration that can be taken somewhere it
+/// cannot go. The activate/skip pair lives on the shared, window-hosted
+/// setup popup instead.
 @MainActor
 final class OnboardingVideoDownloadOverlayView: UIView {
     /// The lesson has said everything it has to say: the panel has arrived and
@@ -217,10 +215,9 @@ final class OnboardingVideoDownloadOverlayView: UIView {
         download.isAccessibilityElement = false
         panel.addSubview(download)
 
-        // Nothing in the panel answers a tap: the ask that used to live here
-        // now lives on the shared, window-hosted setup popup. The panel
-        // itself still takes touches so nothing behind it can be reached
-        // either.
+        // Nothing in the panel answers a tap: the setup ask lives on the
+        // shared, window-hosted setup popup instead. The panel itself still
+        // takes touches so nothing behind it can be reached either.
         for scenery in [blur, scrim, close, stage, download] as [UIView] {
             scenery.isUserInteractionEnabled = false
         }

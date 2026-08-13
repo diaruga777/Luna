@@ -49,9 +49,9 @@ final class RabbitHoleStackStoreTests: XCTestCase {
     }
 
     /// Restoring a saved layer whose persisted mode is Original must mount and
-    /// load that reader on the first presentation. Comparing only the restored
-    /// `readerMode` used to make the initial embed look redundant, producing a
-    /// blank card until switching away and back.
+    /// load that reader on the first presentation. Comparing only the
+    /// restored `readerMode` makes the initial embed look redundant, which
+    /// leaves a blank card until the user switches away and back.
     @MainActor
     func testRestoredOriginalModeMountsArchiveReaderInitially() {
         let layer = RabbitHoleLayerViewController(

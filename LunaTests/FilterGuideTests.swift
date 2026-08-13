@@ -2,11 +2,6 @@
 //  FilterGuideTests.swift
 //  LunaTests
 //
-//  Ported from LunaLibraries/Tests/LunaMailAccountTests (retired — that SwiftPM
-//  test target never ran under the app-hosted `LunaTests` bundle). Aligned with
-//  the tree-shake plan's `FilterGuide.isAutomatic` simplification — the source
-//  already reads `id == .outlook`, so no assertion here needed dropping.
-//
 
 import XCTest
 @testable import LunaMailAccount

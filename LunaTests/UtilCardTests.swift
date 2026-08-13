@@ -369,9 +369,9 @@ final class UtilCardTests: XCTestCase {
 
     /// The cycling labels are the ROW's app, turn for turn: whichever weekly
     /// pick the row arrives at, both labels arrive carrying that app's own
-    /// phrasing. They used to count for themselves from their own zero while the
-    /// row moved to the slot after the tick's, so the Price Tracker's phrasing
-    /// stood under the Reader's pick.
+    /// phrasing. Counting independently from their own zero would let the
+    /// labels advance a tick out of step with the row, so the Price
+    /// Tracker's phrasing could stand under the Reader's pick.
     func testCyclingSetupLabelsNameTheAppWhosePickTheRowArrivesAt() throws {
         seedWeekly(.article, url: "https://a.example.com/x", title: "A Read")
         seedWeekly(.media, url: "https://b.example.com/x", title: "A Watch")
@@ -439,11 +439,11 @@ final class UtilCardTests: XCTestCase {
     }
 
     /// The cycling belongs to central Luna, not to its first run. The completed
-    /// card keeps these two buttons and keeps them stretched edge to edge — room
-    /// reserved for a longer sibling phrase — so the phrases have to keep
-    /// arriving. The cycler used to be built only when the card was showing
-    /// onboarding, so the first save latched completion and from the next launch
-    /// the labels stood still inside buttons sized for movement.
+    /// card keeps these two buttons stretched edge to edge — room reserved for
+    /// a longer sibling phrase — so the phrases have to keep arriving.
+    /// Building the cycler only while the card shows onboarding would leave
+    /// the labels standing still, in buttons sized for movement, from the
+    /// launch after the first save latches completion.
     func testCompletedCentralCardCyclesItsSetupLabelsWithTheRow() throws {
         seedWeekly(.article, url: "https://a.example.com/x", title: "A Read")
         seedWeekly(.media, url: "https://b.example.com/x", title: "A Watch")
@@ -477,11 +477,11 @@ final class UtilCardTests: XCTestCase {
         }
     }
 
-    /// With no live pick there is no row on screen to carry the labels' clock —
-    /// so they keep their own. The hand-off at the end of the intro used to stop
-    /// that clock unconditionally and hand over to a row that never appeared,
-    /// freezing both labels on the single turn the hand-off had just made. Off
-    /// centre nothing runs at all.
+    /// With no live pick there is no row on screen to carry the labels' clock,
+    /// so they keep their own. Stopping that clock unconditionally at the end
+    /// of the intro's hand-off would freeze both labels on the single turn
+    /// the hand-off just made, since no row ever appears to hand over to. Off
+    /// centre, nothing runs at all.
     func testSetupLabelsKeepTheirOwnClockWithNoWeeklyPickToDriveThem() throws {
         var tick: (() -> Void)?
         UtilCardSetupTextCycler.schedulerOverrideForTesting = { _, callback in
@@ -520,8 +520,8 @@ final class UtilCardTests: XCTestCase {
 
     /// A cycling label slides sideways, and UIKit lays a configuration button's
     /// title out by assigning its frame — so a layout pass landing mid-slide
-    /// used to bake the offset into the label's centre and walk the title toward
-    /// the trailing edge one turn at a time. It stays where the icon left it.
+    /// could bake the offset into the label's centre and walk the title toward
+    /// the trailing edge one turn at a time. It must stay where the icon left it.
     func testCyclingSetupLabelKeepsItsLeadingPositionAcrossTurns() throws {
         let card = makeCard(showsOnboarding: true, app: .luna)
         card.loadViewIfNeeded()
@@ -780,8 +780,8 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(environment.savedSource, .manual)
     }
 
-    /// The flag is a band across the row's top, not a sticker on the artwork —
-    /// it used to overhang the thumbnail by a few points on purpose.
+    /// The flag is a band across the row's top, not a sticker on the artwork
+    /// — it must clear the thumbnail rather than overhang it.
     func testTheCornerFlagClearsTheArtworkItLabels() throws {
         seedWeekly(.article, url: "https://example.com/a", title: "A Read")
         let card = makeCard(showsOnboarding: false, app: .reader)
@@ -804,8 +804,9 @@ final class UtilCardTests: XCTestCase {
             artwork.frame.midY, row.bounds.midY, accuracy: 0.5)
     }
 
-    /// The trailing edge is ONE arc: it leaves the bottom edge and rises to the
-    /// top without turning back, which is exactly what the old swallowtail did.
+    /// The trailing edge is ONE arc: it leaves the bottom edge and rises to
+    /// the top without turning back — a swallowtail notch would double back
+    /// partway, and this shape must not.
     func testTheCornerFlagsTrailingEdgeIsOneArcRatherThanANotch() throws {
         let rect = CGRect(x: 0, y: 0, width: 120, height: WeeklyRibbonView.height)
         let path = WeeklyRibbonView.pennantPath(in: rect)
@@ -823,9 +824,10 @@ final class UtilCardTests: XCTestCase {
         XCTAssertGreaterThan(top - bottom, 6)
     }
 
-    /// The fill used to be the palette at full strength — bright enough that two
-    /// of the four had to letter in black to stay legible. Dimmed into the row's
-    /// own black, every one of them is a quiet patch that carries white.
+    /// The fill is dimmed into the row's own black, so every one of the four
+    /// is a quiet patch that carries white lettering legibly — the palette at
+    /// full strength is bright enough that two of the four would need black
+    /// lettering instead.
     func testEveryAppsFlagIsDimmedFarEnoughBelowItsLettering() {
         let surfaces: [LunaSurfacePalette.Surface] =
             [.luna, .reader, .downloader, .priceTracker]

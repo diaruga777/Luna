@@ -20,9 +20,9 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    /// Downloader: the automatic-download policy, then storage (Photos vs. local
-    /// files with a deletion clock — the two are mutually exclusive, which is why
-    /// they are one row).
+    /// The automatic-download policy, then storage: Photos or local files with
+    /// a deletion clock. The two are mutually exclusive, which is why they are
+    /// one row.
     private enum DownloaderSection: Int { case autoDownload, storage }
 
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
@@ -83,9 +83,10 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             permissionError: Self.needsPhotosPermissionInThisApp)
     }
 
-    /// Whether Photos is the stored destination — possibly answered in the
-    /// sibling app that also downloads, since the choice lives in the shared
-    /// App Group — while THIS app has never itself been granted Photos access.
+    /// Whether Photos is the stored destination. This may have been answered
+    /// in the sibling app that also downloads, since the choice lives in the
+    /// shared App Group, while this app has never itself been granted Photos
+    /// access.
     private static var needsPhotosPermissionInThisApp: Bool {
         guard MediaStorageSettings.option == .photos else { return false }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {

@@ -182,9 +182,9 @@ final class SavesStoreCacheTests: XCTestCase {
         XCTAssertNil(store.item(withID: item.id)?.archivedAt)
     }
 
-    /// The whole finish → pending → committed → unread lifecycle in one pass:
-    /// the two halves used to repeat the same finish-and-commit setup, one
-    /// notification round trip each.
+    /// The whole finish → pending → committed → unread lifecycle in one
+    /// pass, sharing one finish-and-commit setup across both halves rather
+    /// than repeating it for two separate notification round trips.
     func testFinishStaysActiveUntilCommittedAndMarkUnreadClearsBothArchiveMarks() {
         let item = addAndWaitForNotification("https://example.com/finish-later")
         let finishedAt = Date(timeIntervalSince1970: 456)

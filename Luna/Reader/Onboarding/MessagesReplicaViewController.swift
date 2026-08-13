@@ -605,10 +605,9 @@ final class MessagesReplicaViewController: OnboardingSaveSourceViewController {
     /// reader / saved-media / price editor, same errors — and stays up until that
     /// surface resolves on its own.
     ///
-    /// It used to be a hand-drawn fake holding a bundled article for exactly one
-    /// second. There is no timer here at all: the wait ends on the surface's own
-    /// terminal state, so a slow fetch is a longer sheet rather than a sheet that
-    /// dismissed before the thing it was demonstrating happened.
+    /// There is no timer here at all: the wait ends on the surface's own
+    /// terminal state, so a slow fetch is a longer sheet rather than a sheet
+    /// that dismisses before the thing it was demonstrating happened.
     private func presentSaveSurface(
         generation: Int,
         onDismiss: @escaping () -> Void
@@ -1324,11 +1323,12 @@ final class OnboardingMessageURLBubble: OnboardingMessageBubble {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.numberOfLines = Self.maximumLines
         label.lineBreakMode = .byTruncatingTail
-        // The bubble's own cap decides the wrap width. The label used to resist
-        // horizontal compression outright, which fought that cap: the loser was
-        // the label, and a long URL came out as a couple of characters and an
-        // ellipsis. Pinning `preferredMaxLayoutWidth` instead makes the wrapped
-        // width the label's intrinsic width, so short links still hug their text.
+        // The bubble's own cap decides the wrap width. Resisting horizontal
+        // compression outright would fight that cap: the label would lose,
+        // and a long URL would come out as a couple of characters and an
+        // ellipsis. Pinning `preferredMaxLayoutWidth` instead makes the
+        // wrapped width the label's intrinsic width, so short links still
+        // hug their text.
         label.preferredMaxLayoutWidth =
             OnboardingMessageBubble.maxWidth - Self.textInset * 2
         label.accessibilityIdentifier =

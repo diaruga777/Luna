@@ -2,16 +2,16 @@
 //  MediaShellWiring.swift
 //  Luna
 //
-//  The media kind's half of the app shell: every seam a media-handling app
-//  installs at launch, and the lifecycle work downloads owe at each of
-//  `KindWiring`'s fixed points. Compiled ONLY into the targets that link the
-//  media kind (Luna, LunaDownloader) — the other two exclude this file by
-//  membership exception, exactly as they exclude `Downloader/MediaCardPresenter
-//  .swift` and the rest of the media shell.
+//  The media kind's half of the app shell. It installs every seam a
+//  media-handling app needs at launch, and does the lifecycle work downloads
+//  owe at each of `KindWiring`'s fixed points. Only the targets that link the
+//  media kind compile this file — Luna and LunaDownloader. The other two
+//  exclude it by membership exception, the same way they exclude
+//  `Downloader/MediaCardPresenter.swift` and the rest of the media shell.
 //
-//  A `KindWiring+<App>` variant installs the media KIND PACK
-//  (`MediaKindComposition`) and the media CARD presenter itself, then calls the
-//  legs below; nothing media-specific is written twice.
+//  A `KindWiring+<App>` variant installs the media kind pack
+//  (`MediaKindComposition`) and the media card presenter itself, then calls
+//  the legs below. Nothing media-specific is written twice.
 //
 
 import LunaMediaDownload
@@ -55,10 +55,11 @@ enum MediaShellWiring {
         // back here. The media card presenter asks for the same bridge when the
         // deck starts observing; both calls are the one guarded registration.
         SavedMediaStore.startObservingCrossProcessChanges()
-        // Sweep any downloaded-but-never-saved media preview files orphaned by a
-        // previous run that was killed before its preview screen could clean up.
-        // Also apply the saved-media retention policy. Safe at launch (no
-        // preview is open yet); off the main thread to not block startup.
+        // Sweeps downloaded-but-never-saved media preview files orphaned when
+        // a previous run was killed before its preview screen could clean up,
+        // and applies the saved-media retention policy. Safe at launch, since
+        // no preview is open yet; runs off the main thread so it doesn't
+        // block startup.
         DispatchQueue.global(qos: .utility).async {
             MediaDownloadStorage.purgeAll()
             SavedMediaStore.shared.purgeExpired()
@@ -93,10 +94,11 @@ enum MediaShellWiring {
         }
     }
 
-    /// Safari's in-page player queued these; the extension already resolved
-    /// them, so the drain hands the assets straight to the download manager.
-    /// Also runs at launch and on foreground, so a deep link that never arrived
-    /// (a responder-chain open can silently fail) still lands its download.
+    /// Downloads the assets Safari's in-page player queued. The extension
+    /// already resolved them, so this hands them straight to the download
+    /// manager. Also runs at launch and on foreground, so a deep link that
+    /// never arrived — a responder-chain open can silently fail — still
+    /// lands its download.
     static func drainPendingResolvedMedia(returningToSource: Bool) {
         PendingResolvedMediaDownloads.drain(returningToSource: returningToSource)
     }
@@ -105,10 +107,10 @@ enum MediaShellWiring {
         LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
     }
 
-    /// The download Live Activity's tap-to-view link, resolved against the
-    /// saved-media store: a downloaded local file centers the deck's card;
-    /// a Photos-backed save opens Photos directly (reusing the card's
-    /// own rosette mechanism); still-downloading or unknown lands on the deck.
+    /// Resolves the download Live Activity's tap-to-view link against the
+    /// saved-media store. A downloaded local file centers the deck's card. A
+    /// Photos-backed save opens Photos directly, reusing the card's own
+    /// rosette mechanism. Still-downloading or unknown lands on the deck.
     static func deepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction {
         guard let matched = SavedMediaStore.shared.matchingItem(forURLString: urlString) else { return .none }
         switch matched.storageState {

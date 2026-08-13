@@ -19,7 +19,7 @@ final class PaywallDetectorTests: XCTestCase {
     /// theleader.com.au (ACM) failure case: a long body padded with subscription
     /// copy, but the "login or signup to continue reading" gate phrase is present.
     /// The `looksPaywalled` / `hasReadableBody` pair is asserted on the content shape
-    /// here; the phrase table below covers the other gate wordings we've hit.
+    /// here; the phrase table below covers other gate wordings seen in practice.
     func testGatePhraseFlaggedEvenWhenBodyIsLong() {
         let long = String(repeating: "Javid Ahmadi ran the 7-Eleven franchise for years before the dispute. ", count: 60)
         let article = content([
@@ -34,8 +34,8 @@ final class PaywallDetectorTests: XCTestCase {
     }
 
     /// Gate markers fire at any length — a deliberate precision-over-recall trade, so a
-    /// long article that merely QUOTES one is flagged too. Locking the policy (and each
-    /// wording we've actually seen) so a future change is a conscious one.
+    /// long article that merely QUOTES one is flagged too. Locking the policy, and each
+    /// wording seen in practice, makes a future change a conscious one.
     func testGateMarkersFlagAWallAtAnyBodyLength() {
         let long = String(repeating: "Substantive reporting continues across the piece. ", count: 80)
         let phrases = [

@@ -6,10 +6,10 @@
 import LunaHTMLClassification
 import XCTest
 
-/// The Safari extension and the ingest pipeline must agree on what an index page
-/// is. They used not to: `content.js` has always vetoed listings before offering
-/// a pill, while Swift had no equivalent, so pages Safari itself declined to
-/// suggest still filled the recents tray and reached the archive reader.
+/// The Safari extension and the ingest pipeline must agree on what an index
+/// page is. `content.js` has always vetoed listings before offering a pill;
+/// without a Swift equivalent, pages Safari itself declined to suggest could
+/// still fill the recents tray and reach the archive reader.
 ///
 /// `ListingPage` is the Swift twin. This runs one fixture set through BOTH — the
 /// production `content.js` in a bare `WKWebView`, and `ListingPage` directly — and

@@ -20,10 +20,9 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertNil(XLink.tweetID(from: "https://example.com/user/status/20"))
     }
 
-    /// `XLink` delegates its host check to `PlatformRecognizer`, which suffix-matches
-    /// ANY x.com/twitter.com subdomain — not just the small fixed set `XLink` used to
-    /// hardcode. A subdomain outside that old fixed set now parses instead of
-    /// silently returning nil.
+    /// `XLink` delegates its host check to `PlatformRecognizer`, which
+    /// suffix-matches any x.com/twitter.com subdomain rather than a small
+    /// fixed set. Any such subdomain parses; none is silently rejected.
     func testXRecognizesAnyTwitterSubdomain() {
         XCTAssertEqual(XLink.tweetID(from: "https://some-other.twitter.com/jack/status/20"), "20")
     }
@@ -38,10 +37,9 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertFalse(TikTokLink.isTikTok("https://example.com/@user/video/1"))
     }
 
-    /// `RedditLink.isReddit`/`.postID` had zero production callers (`.subreddit`,
-    /// the one caller that used to gate on `.isReddit`, doesn't) and duplicated a
-    /// narrower version of `PlatformRecognizer.reddit`'s host/post logic; both were
-    /// deleted as dead code. `.jsonURL` doesn't gate on host at all and is unchanged.
+    /// Covers `PlatformRecognizer.recognize`'s Reddit post-id resolution and
+    /// `RedditLink.jsonURL`, which builds the JSON API URL from a permalink
+    /// without gating on host at all.
     func testRedditParsesPostIDAndJSONURL() {
         let url = "https://www.reddit.com/r/swift/comments/abc123/some_title/"
         XCTAssertEqual(PlatformRecognizer.recognize(url)?.itemID, "abc123")
@@ -87,10 +85,9 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r//s/abc"))
     }
 
-    /// `InstagramLink`/`FacebookLink` (the presentation-layer parsers these used to
-    /// test) had zero production callers — `InstagramPlatform`/`FacebookPlatform`
-    /// never invoked them — and were deleted as dead code. `PlatformRecognizer` is
-    /// the only Instagram/Facebook recognition Luna ships.
+    /// `PlatformRecognizer` is the only Instagram/Facebook recognition Luna
+    /// ships; `InstagramPlatform`/`FacebookPlatform` resolve items through it
+    /// alone.
     func testInstagramShortcodeViaRecognizer() {
         XCTAssertEqual(
             PlatformRecognizer.recognize("https://www.instagram.com/reel/CxYz123/")?.itemID, "CxYz123")

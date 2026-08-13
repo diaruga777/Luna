@@ -89,9 +89,9 @@ final class OriginalPageViewControllerTests: XCTestCase {
         """
 
         // A fixture page's layout is stable on the first sample, so the settle
-        // loop's shipped pacing is several seconds of waiting to be told so. The
-        // loop still runs — first turn, three matching signatures, the cap — just
-        // at a pace the test can afford.
+        // loop's shipped pacing of several seconds only wastes time here. The
+        // loop still runs its full shape — first turn, three matching
+        // signatures, the cap — just at a pace the test can afford.
         WebArchiveCapturer.settleFirstTurn = .milliseconds(5)
         WebArchiveCapturer.settlePollInterval = .milliseconds(5)
         defer {

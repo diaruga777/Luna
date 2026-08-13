@@ -320,8 +320,8 @@ final class ProductHistoryPillRenderTests: XCTestCase {
 
     /// "Never" silences PILLS, not the passive snapshot: the record is local,
     /// non-refreshing product data, and it is what a later save's history is
-    /// seeded from. It used to be silenced too — `offerLunaButton` returned
-    /// before the product branch could run.
+    /// seeded from. `offerLunaButton` must still run the product branch that
+    /// records it, even while the setting suppresses the pill itself.
     func testSuggestionModeNeverStillRecordsTheSnapshotAndShowsNoPills() {
         let productPage = """
             <h1>Widget</h1>

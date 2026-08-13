@@ -7,10 +7,10 @@
 //  the not-yet-downloaded card with its in-card progress bar — plus the
 //  card-sized thumbnail behind the scrub strip and the Photos-reference badge.
 //
-//  It exists because TWO decks render the same media card: the Downloader's own
-//  root screen and the central Luna app's all-kinds deck, which must show a
-//  downloaded save with the real player rather than a title and a link. Compiled
-//  only into media-handling targets (Luna + LunaDownloader).
+//  It exists because two decks render the same media card: the Downloader's own
+//  root screen and the central Luna app's all-kinds deck, both of which must
+//  show a downloaded save with the real player rather than a title and a link.
+//  Compiled only into media-handling targets (Luna and LunaDownloader).
 //
 
 import AVFoundation
@@ -211,10 +211,11 @@ enum MediaCardFactory {
 
 /// The verbs a media row offers, and the storage work behind two of them.
 ///
-/// It exists for the same reason `MediaCardFactory` does: TWO decks show the
-/// same media save — the Downloader's own root and the central app's all-kinds
-/// deck — and they were answering "what can you do with this?" and "what goes
-/// when it goes?" with two copies of the same switch over `storageState`.
+/// It exists for the same reason `MediaCardFactory` does: two decks show the
+/// same media save — the Downloader's own root and the central app's
+/// all-kinds deck — and both need the same answer to "what can you do with
+/// this?" and "what goes when it goes?", one switch over `storageState`
+/// rather than two.
 enum MediaItemActions {
 
     /// What you can do with a media row depends only on where its file is: an
@@ -523,9 +524,8 @@ final class UndownloadedMediaCardContentViewController: CardContentViewControlle
 
         // "Retry with AI ✦" — shown only on a no-media failure when a model is
         // available. Styled by the one shared definition
-        // (`GlassStyle.retryWithAIConfiguration`) so this card's offer is visibly
-        // the SAME offer as the failed-save card's, which it wasn't when it read
-        // "Try Apple Intelligence" over a `wand.and.stars`.
+        // (`GlassStyle.retryWithAIConfiguration`), so this card's offer is
+        // visibly the same offer as the failed-save card's.
         rescueButton.configuration = GlassStyle.retryWithAIConfiguration(compact: true)
         rescueButton.isHidden = true
         rescueButton.addAction(UIAction { [weak self] _ in
@@ -701,14 +701,12 @@ enum MediaCardDeck {
         let deck = CardCarouselHostViewController()
         // The same strip geometry as every other app: the viewport begins and
         // ends at the inner edges of the flanking 44pt circles, and chips
-        // alpha-fade before they reach them. This app used 64/0 — a wider inset
-        // and no fade — purely because its strip was a different implementation.
+        // alpha-fade before they reach them.
         let style = CardCarouselStyle.singleKindDeck
         deck.configure(style: style) { host in
             var configuration = CardDeckConfiguration()
-            // This app has no generic link card, so a platform save with nothing
-            // downloaded behind it is not a slot here — the same set of rows it
-            // showed when it read the media store directly.
+            // This app has no generic link card, so a platform save with
+            // nothing downloaded behind it is not a slot here.
             configuration.showsSavesWithoutKindContent = false
             // The LINK is shareable in every storage state — only the file row of
             // the menu waits for a download — so the circle shows for any media

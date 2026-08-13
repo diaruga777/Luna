@@ -2,13 +2,14 @@
 //  MediaImportProgress.swift
 //  Luna
 //
-//  The media-kind body of the bulk import's download watcher — compiled only
-//  into media-handling app targets (Downloader + the central Luna app; excluded
-//  from the others via the synchronized group's membership exceptions). Their
-//  `KindWiring` variants install it as part of `LinkImportRunner.media`;
-//  in article/product-only apps that leg stays nil, which is correct there — a
-//  media link can't pass those apps' content gate, so no transfer ever exists to
-//  watch. See `claudedocs/import-export.md`.
+//  The media-kind body of the bulk import's download watcher. Compiled only
+//  into media-handling app targets (Downloader and the central Luna app), and
+//  excluded from the others through the synchronized group's membership
+//  exceptions. Their `KindWiring` variants install it as part of
+//  `LinkImportRunner.media`. In an article- or product-only app, that leg
+//  stays nil, which is correct there: a media link cannot pass those apps'
+//  content gate, so no transfer ever exists to watch. See
+//  `claudedocs/import-export.md`.
 //
 
 import LunaMediaDownload
@@ -18,13 +19,13 @@ enum MediaImportProgress {
 
     /// The live state of the transfer for `urlString`, or nil when there is none.
     ///
-    /// `isFinished` is read from the job's PHASE rather than from `progress`
-    /// reaching 1: a failed transfer stops short and a saving one sits at 1 for a
-    /// moment, so a fraction alone would either strand the import's slice open
-    /// until its deadline or close it before the file was durable.
-    /// `@Sendable` because the runner polls it from its own task, off the main
-    /// thread; the manager's job store is internally locked, which is why every
-    /// other background caller reads it the same way.
+    /// `isFinished` is read from the job's phase rather than from `progress`
+    /// reaching 1: a failed transfer stops short and a saving one sits at 1
+    /// for a moment, so a fraction alone would either strand the import's
+    /// slice open until its deadline or close it before the file was
+    /// durable. `@Sendable` because the runner polls it from its own task,
+    /// off the main thread; the manager's job store is internally locked,
+    /// which is why every other background caller reads it the same way.
     @Sendable
     static func observe(urlString: String) -> LinkImportRunner.MediaDownloadState? {
         guard let snapshot = LiveMediaDownloadManager.shared.currentDownloadSnapshot(

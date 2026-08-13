@@ -30,7 +30,7 @@ final class WeeklyCyclePacer {
     /// Starts a repeating tick and returns its canceller. Injected so tests
     /// drive the cadence by hand instead of waiting two seconds a time.
     ///
-    /// Stays a closure on purpose: this is the CLOCK, a pure-value parameter,
+    /// Stays a closure on purpose: this is the clock, a pure-value parameter,
     /// and what it hands back is a one-shot cancellation handle for the timer it
     /// just made — neither is standing wiring between components.
     typealias Scheduler = (
@@ -139,11 +139,10 @@ protocol UtilCardSetupTextCyclerDelegate: AnyObject {
 /// The central util card's setup labels advance *with* the weekly row. Only
 /// the labels move; the glass buttons, icons, frames and hit targets stay fixed.
 ///
-/// It keeps NO counter of its own. Which app's phrasing is due is asked of the
-/// row — `show(_:)` takes the app owning the kind the row is arriving at — so
-/// the two can never drift apart. They did: the cycler counted from its own
-/// zero while the row advanced to the slot AFTER the one the tick found, so the
-/// Price Tracker's phrasing sat under the Reader's pick.
+/// It keeps no counter of its own. Which app's phrasing is due is asked of
+/// the row — `show(_:)` takes the app owning the kind the row is arriving
+/// at — so the two can never drift apart, regardless of whether an
+/// auto-advance or a swipe moved the row.
 @MainActor
 final class UtilCardSetupTextCycler {
     static let animationDuration: TimeInterval = 0.55

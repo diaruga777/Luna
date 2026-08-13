@@ -8,12 +8,10 @@ import UIKit
 
 /// The corner flag a Save of the Week row wears.
 ///
-/// The weekly noun used to ride inside the row, beside the host, where it cost
-/// the host every character it spent (and truncated it). It is a RIBBON now: a
-/// small tab pinned to the row's TOP-LEFT corner, filled with the running app's
-/// own tint dimmed into the row's black. The row clips to its rounded corners,
-/// so the flag's outer corner is rounded by the row itself and this shape only
-/// has to draw the sweep of its trailing edge.
+/// A small tab pinned to the row's top-left corner, filled with the running
+/// app's own tint dimmed into the row's black. The row clips to its rounded
+/// corners, so the flag's outer corner is rounded by the row itself and this
+/// shape only has to draw the sweep of its trailing edge.
 final class WeeklyRibbonView: UIView {
     /// Short enough to clear the top of a centred thumbnail — the flag sits
     /// ABOVE the artwork, never across it — and no taller than the 10pt caps
@@ -144,8 +142,7 @@ final class WeeklyRibbonView: UIView {
             amount: 1 - tintStrength)
     }
 
-    /// Dimmed, every one of the four fills sits far enough below the letters to
-    /// carry white — the old per-app luminance branch existed only because the
-    /// undimmed colours straddled the legibility line.
+    /// Dimmed, every one of the four fills sits far enough below the letters
+    /// to carry white text without a per-app exception.
     static let textColor = UIColor(white: 0.97, alpha: 1)
 }

@@ -2,11 +2,11 @@
 //  StageCatalog+Article.swift
 //  Luna
 //
-//  Article-kind stages. Compiled ONLY into the targets that link the article
-//  kind (Luna, LunaReader) — the other two exclude this file by membership
-//  exception, exactly as they exclude `Reader/ArticleCardPresenter.swift` and
-//  the rest of the article shell. That, not a runtime check, is what keeps a
-//  single-kind app from knowing another kind's screens.
+//  Article-kind stages. Only the targets that link the article kind compile
+//  this file — Luna and LunaReader. The other two exclude it by membership
+//  exception, the same way they exclude `Reader/ArticleCardPresenter.swift`
+//  and the rest of the article shell. That exclusion, not a runtime check,
+//  is what keeps a single-kind app from knowing another kind's screens.
 //
 
 #if DEBUG

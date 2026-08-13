@@ -301,9 +301,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// The hand-off worked: we are on our way back to Safari, so the held splash
-    /// can retire off-screen and the next visit is an ordinary launch. (A
-    /// hand-off that never manages to leave releases on its own timeout instead —
+    /// The hand-off worked: the app is on its way back to Safari, so the held
+    /// splash can retire off-screen and the next visit is an ordinary launch.
+    /// (A hand-off that never manages to leave releases on its own timeout instead —
     /// `AppLaunchTransition.maximumHandoffHold`. This is deliberately NOT
     /// `sceneWillEnterForeground`, which a cold launch runs moments after the
     /// hold is taken.)
@@ -315,7 +315,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // A staged run is a frozen world; foregrounding must not re-fetch,
         // re-import or re-purge anything into it.
         guard !LunaStage.isActive else { return }
-        // Items may have been added by the intent while we were backgrounded.
+        // An intent may have added items while the app was backgrounded.
         NotificationCenter.default.post(name: .savesChanged, object: nil)
         SavesIngestor.shared.ingestAllPending()
         if LunaApp.current.sharesByEmail {
@@ -325,8 +325,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // download resume (media apps), pending-send retry + link-preload
         // resume (article apps).
         KindWiring.sceneDidForeground()
-        // The weekly pick may have changed while we were away (debounced to at
-        // most one pull a minute inside the refresher).
+        // The weekly pick may have changed while the app was backgrounded
+        // (debounced to at most one pull a minute inside the refresher).
         Task { @MainActor in
             await WeeklySaveRefresher.shared.refreshWeeklySaves()
             await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()

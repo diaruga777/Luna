@@ -37,18 +37,19 @@ enum SharedStageCatalog {
 
     // MARK: - The Messages lesson
 
-    /// The save lesson, playing itself: the other timed sequence in onboarding,
-    /// and the one that ends on somebody else's screen. The conversation lands
-    /// bubble by bubble, the Action Button press ripples over the link, the mock
-    /// Dynamic Island runs the shortcut, and the sheet carries the REAL share
-    /// surface saving this app's practice link — so the last third of this stage
-    /// is whatever that app's own save result looks like (the Downloader's
-    /// saved-media screen with the clip playing in it, the Price Tracker's price
-    /// editor, the Reader's preview).
+    /// The save lesson, playing itself. It is the other timed sequence in
+    /// onboarding, and the one that ends on somebody else's screen: the
+    /// conversation lands bubble by bubble, the Action Button press ripples
+    /// over the link, the mock Dynamic Island runs the shortcut, and the
+    /// sheet carries the real share surface saving this app's practice link.
+    /// So the last third of this stage is whatever that app's own save
+    /// result looks like — the Downloader's saved-media screen with the
+    /// clip playing in it, the Price Tracker's price editor, the Reader's
+    /// preview.
     ///
-    /// It has no browser and no carousel around it: the pieces the host owns are
-    /// the pill destinations (Shortcuts, Settings, the App Store) and the way
-    /// out, none of which a review of the demonstration needs.
+    /// It has no browser and no carousel around it. The host only owns the
+    /// pill destinations (Shortcuts, Settings, the App Store) and the way
+    /// out, and a review of the demonstration needs neither.
     @MainActor
     private static var messagesLessonStages: [StageDescriptor] {
         [
@@ -96,13 +97,13 @@ enum SharedStageCatalog {
 
     // MARK: - The Safari lesson
 
-    /// The setup lesson's browser, playing its own demonstration — the one
-    /// screen in onboarding that is a timed sequence rather than a state, and
-    /// so the one that cannot be reviewed by seeding a store. Which
+    /// The setup lesson's browser, playing its own demonstration. It is the
+    /// one screen in onboarding that is a timed sequence rather than a
+    /// state, so it cannot be reviewed by seeding a store. Which
     /// demonstration runs is the app's own answer
     /// (`OnboardingSurfaceConfiguration.SafariLesson`): the buried `luna.app`
-    /// page and its clearing wave in three of them, the blocked InstaTok post
-    /// and the extension's video panel in the Downloader.
+    /// page and its clearing wave in three of them, the blocked InstaTok
+    /// post and the extension's video panel in the Downloader.
     @MainActor
     private static var safariLessonStages: [StageDescriptor] {
         [

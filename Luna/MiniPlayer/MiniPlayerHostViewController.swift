@@ -32,12 +32,13 @@ final class MiniPlayerHostViewController: UIViewController {
     private let miniPlayer = AudioMiniPlayerView()
     private var barMode: AudioMiniPlayerView.BarMode = .hidden
     private var meldObserver: NSObjectProtocol?
-    /// Phase 6 extension → main-app handoff: true while the bar shows a
-    /// PAUSED PREVIEW of a recent extension-persisted position — the center
-    /// itself is still `.idle` (no engine/session exists yet). Cleared the
-    /// moment a real playback state arrives (whether via tapping play here,
-    /// or any other trigger), so the normal `AudioPlaybackObserver`-driven
-    /// display always wins once real state exists.
+    /// Extension → main-app handoff: true while the bar shows a paused
+    /// preview of a recent extension-persisted position, while the center
+    /// itself is still `.idle` (no engine or session exists yet). Cleared
+    /// the moment a real playback state arrives — whether from tapping play
+    /// here, or any other trigger — so the normal
+    /// `AudioPlaybackObserver`-driven display always wins once real state
+    /// exists.
     private var isShowingHandoffPreview = false
 
     init(content: UINavigationController) {
@@ -99,7 +100,7 @@ final class MiniPlayerHostViewController: UIViewController {
     // MARK: - Bar placement
 
     /// The meld anchor (RSVP's controls stack), only when genuinely visible in
-    /// THIS window — the RabbitHole host shows/hides its pre-built reader
+    /// this window. The RabbitHole host shows and hides its pre-built reader
     /// children without appearance callbacks, so a published anchor can be
     /// stale and must fail this check rather than dock the bar to a hidden view.
     private var validMeldAnchor: UIView? {
@@ -231,12 +232,12 @@ final class MiniPlayerHostViewController: UIViewController {
 
     // MARK: - Phase 6: extension → main-app handoff (launch-time paused preview)
 
-    /// Checked once at launch (`viewDidLoad`): if a RECENT extension-persisted
+    /// Checked once at launch (`viewDidLoad`). If a recent extension-persisted
     /// position exists and nothing is currently playing, shows the bar in a
-    /// paused preview (title/thumbnail visible) — `AudioPlaybackCenter` stays
-    /// `.idle` until the user actually taps play. Does nothing (per the
-    /// product guard) when the position is stale or its item/content is
-    /// gone — `restorableHandoffIfAvailable` already encodes both checks.
+    /// paused preview — title and thumbnail visible — while
+    /// `AudioPlaybackCenter` stays `.idle` until the user actually taps play.
+    /// Does nothing when the position is stale or its item or content is
+    /// gone: `restorableHandoffIfAvailable` already encodes both checks.
     private func showHandoffPreviewIfAvailable() {
         guard let handoff = AudioPlaybackCenter.shared.restorableHandoffIfAvailable() else { return }
         isShowingHandoffPreview = true
@@ -250,11 +251,11 @@ final class MiniPlayerHostViewController: UIViewController {
     }
 
     /// Routes the bar's single play/pause control: a normal toggle once real
-    /// playback state exists, or — while showing the handoff preview — the
-    /// EXISTING full-restore path (`restorePersistedSessionIfAvailable()`),
-    /// never a bespoke "resume from preview" method. If the item/content
-    /// vanished between the preview appearing and this tap (deleted
-    /// meanwhile), the restore silently fails and the bar just hides.
+    /// playback state exists, or, while showing the handoff preview, the
+    /// existing full-restore path (`restorePersistedSessionIfAvailable()`) —
+    /// never a bespoke "resume from preview" method. If the item or content
+    /// was deleted between the preview appearing and this tap, the restore
+    /// silently fails and the bar just hides.
     private func handlePlayPauseTap() {
         guard isShowingHandoffPreview else {
             AudioPlaybackCenter.shared.togglePlayPause()

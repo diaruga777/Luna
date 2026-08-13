@@ -9,8 +9,8 @@ import XCTest
 
 final class ArchiveTrayControllerTests: XCTestCase {
 
-    /// The deck the arc is mounted in: settable answers for the two questions the
-    /// tray asks, and a record of the open states it reports.
+    /// Stands in for the deck the arc mounts in. Answers the tray's two
+    /// questions and records the open states it reports.
     private final class TrayHost: ArchiveTrayDelegate {
         var shiftedViews: [UIView] = []
         var canPull = false
@@ -239,8 +239,7 @@ final class ArchiveTrayControllerTests: XCTestCase {
     }
 
     /// Downloader re-downloads an unavailable archived item in place, so its
-    /// progress belongs on that item's own cell — there is no floating download
-    /// bar anywhere in the app any more.
+    /// progress bar belongs on that item's own cell.
     @MainActor
     func testArchivedItemDrawsItsOwnDownloadProgressBar() {
         let host = UIViewController()

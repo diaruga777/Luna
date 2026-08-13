@@ -105,9 +105,8 @@ final class ReaderSettingsScreen: NavHeaderTableController {
             ])
             return cell
         case .rsvpMode:
-            // Words vs Phrases for the RSVP speed reader — moved here out of the
-            // reader itself (`RSVPViewController` reads `ReaderSettings.rsvpMode`
-            // when it opens). Default is Words.
+            // Words vs Phrases for the RSVP speed reader. `RSVPViewController`
+            // reads `ReaderSettings.rsvpMode` when it opens; the default is Words.
             content.text = L10n.string("Settings_reader_speedReaderLabel")
             let control = UISegmentedControl(items: [L10n.string("Settings_reader_rsvpModeWordsOption"), L10n.string("Settings_reader_rsvpModePhrasesOption")])
             control.selectedSegmentIndex = ReaderSettings.rsvpMode == .phrases ? 1 : 0

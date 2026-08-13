@@ -2,16 +2,13 @@
 //  ProductCardPresenter.swift
 //  Luna
 //
-//  The product kind's card behavior, defined ONCE for every app that shows a
-//  price tracker — Luna Price Tracker and the central Luna app. Compiled into
+//  The product kind's card behavior, defined once for every app that shows a
+//  price tracker: Luna Price Tracker and the central Luna app. Compiled into
 //  exactly those two targets.
 //
-//  The central app used to render a tracked product as a generic link card
-//  reading "Tap to see price history", with a globe badge, no product picture,
-//  no share, no alert acknowledgement, and a fingerprint with no price in it (so
-//  a price that moved never re-rendered). Tapping pushed a fullscreen editor.
-//  Meanwhile the REAL in-card editor was compiled into that same binary, inside
-//  the Price Tracker deck subclass, unreachable. Both apps now get this.
+//  Both apps render the same in-card editor here, with product picture,
+//  share, alert acknowledgement, and a fingerprint that includes price so a
+//  moved price re-renders the card.
 //
 
 import LunaDesignSystem
@@ -29,9 +26,8 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - Slot data
 
-    /// A price change must re-render the card. The central app's fingerprint had
-    /// no price component at all, so a tracker whose price moved kept drawing
-    /// its old graph until something unrelated forced a reload.
+    /// A price change must re-render the card, so the fingerprint includes
+    /// every store's last price and history count.
     func fingerprint(for item: SavedItem) -> String {
         guard let tracker = item.priceTracker else { return "" }
         let stores = tracker.stores.map {
@@ -51,16 +47,15 @@ final class ProductCardPresenter: CardKindPresenting {
     /// A product row with no tracker payload has nothing of this kind to draw.
     func hasContent(for item: SavedItem) -> Bool { item.priceTracker != nil }
 
-    /// A tracker's archived flag lives on the tracker, not on the row — so both
-    /// are consulted, which is what reconciles rows archived by only one of them
-    /// before `setArchived` started writing both.
+    /// A tracker's archived flag lives on the tracker, not on the row, so both
+    /// are consulted: a row may be archived on only one of the two.
     func isArchived(_ item: SavedItem) -> Bool {
         item.isArchived || item.priceTracker?.isArchived == true
     }
 
     // MARK: - The card
 
-    /// The real editor: product image and title, seller list with its add button,
+    /// The editor: product image and title, seller list with its add button,
     /// read-only price graph, and the dedicated alert row.
     func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
@@ -72,11 +67,9 @@ final class ProductCardPresenter: CardKindPresenting {
     // MARK: - Strip and scrub preview
 
     /// The editor is a scrolling column of controls with hard edges, and a
-    /// horizontal swipe pages the deck because nothing in it scrubs. It used to
-    /// take every point of the room (`.fill`) on the grounds that it has no
-    /// aspect to honour — but sitting beside a 9:16 video card in the central
-    /// app, "no aspect to honour" just meant "a different rectangle", so the
-    /// column now scrolls inside the deck's one card frame.
+    /// horizontal swipe pages the deck because nothing in it scrubs. It
+    /// scrolls inside the deck's one card frame, matching every other kind's
+    /// card rather than claiming a different rectangle for itself.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
         var style = CardCarouselCardStyle()
         style.pagesOnInCardSwipes = true
@@ -119,8 +112,8 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - Verbs
 
-    /// Share sits above the deck's own Archive/Delete, as it always did here —
-    /// and now in the central app too, which offered a product no share at all.
+    /// Share sits above the deck's own Archive/Delete, in both apps that show
+    /// a product card.
     func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] {
         [
             UIAction(
@@ -132,11 +125,11 @@ final class ProductCardPresenter: CardKindPresenting {
         ]
     }
 
-    /// What a product shares is the SELLER's page, not the save row's
+    /// What a product shares is the seller's page, not the save row's
     /// URL — a tracker with several stores is one save over many pages, and the
     /// first store is the one its card leads with. `sourceView` is nil when the
-    /// card isn't currently visible (e.g. a menu reached another way); the share
-    /// sheet then anchors to the deck itself.
+    /// card is not currently visible (for example, a menu reached another way);
+    /// the share sheet then anchors to the deck itself.
     @discardableResult
     func share(_ item: SavedItem, host: CardPresenterHost, sourceView: UIView?) -> Bool {
         guard let urlString = item.priceTracker?.stores.first?.urlString,
@@ -148,10 +141,10 @@ final class ProductCardPresenter: CardKindPresenting {
         return true
     }
 
-    /// Both stores this kind owns: the tracker's own flag and the saves list
-    /// row. They were written separately, so a product archived in one app
-    /// stayed live in the other. Unarchiving also bumps the row's date, which is
-    /// the ONE ordering rule's way of resurfacing a restored save — the same
+    /// Both stores this kind owns: the tracker's own flag and the saves-list
+    /// row. Writing both keeps a product's archived state consistent across
+    /// every app that shows it. Unarchiving also bumps the row's date, the
+    /// one ordering rule's way of resurfacing a restored save — the same
     /// thing `markUnread` does for an article.
     func setArchived(_ archived: Bool, for item: SavedItem) {
         if var tracker = store.item(withID: item.id)?.priceTracker {
@@ -172,9 +165,9 @@ final class ProductCardPresenter: CardKindPresenting {
         store.updatePriceTracker(tracker, for: item.id)
     }
 
-    /// The card IS the editor, so its own scroll view and controls own every
-    /// touch. Consuming the tap is what keeps the central app's deck from
-    /// treating a product card as a reader and toggling immersion on it.
+    /// The card is the editor, so its own scroll view and controls own every
+    /// touch. Consuming the tap keeps the deck from treating a product card
+    /// as a reader and toggling immersion on it.
     @discardableResult
     func itemWasTapped(
         _ item: SavedItem, cardContent: CardContentViewController?,
@@ -190,10 +183,9 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - Stores
 
-    /// The price editor's own Save posts this; the deck answers by centering the
-    /// tracker that was just written. It used to be an observer on the Price
-    /// Tracker deck subclass, so the central app never centered a product save
-    /// made from the editor.
+    /// The price editor's own Save posts this; the deck answers by centering
+    /// the tracker that was just written, in every app that shows a product
+    /// card.
     func willBeginObservingStores(host: CardPresenterHost) {
         savedInteractivelyObserver = NotificationCenter.default.addObserver(
             forName: .priceTrackerSavedInteractively, object: nil, queue: .main
@@ -210,9 +202,8 @@ final class ProductCardPresenter: CardKindPresenting {
 
     // MARK: - The archive tray
 
-    /// A product's tray row leads with its name and its current best price, and
-    /// its tap opens the seller's page. The central app showed a favicon, the
-    /// save date, and a tap that asked for a reader it could never build.
+    /// A product's tray row leads with its name and its current best price,
+    /// and its tap opens the seller's page.
     func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {

@@ -16,18 +16,19 @@ import LunaModels
 import LunaStorage
 import Foundation
 
-/// Long-running second step of the Action Button capture flow. It either resumes
-/// the opaque checkpoint returned by Provide Context or, given a screenshot,
-/// runs the app-specific screen-extraction prompt through the
+/// Long-running second step of the Action Button capture flow. It either
+/// resumes the opaque checkpoint returned by Provide Context, or, given a
+/// screenshot, runs the app-specific screen-extraction prompt through the
 /// in-process FoundationModels vision session (Private Cloud Compute when
 /// available, else the on-device model), parses the " ; "-joined response, and
-/// saves the matching post/page through the action-button save path
-/// (double-save preserved). A near-immediate repeat of the same screenshot
-/// skips the model and re-runs the previous save so the configured double-save
-/// action fires. Returns a transient entity containing the downloaded image or
-/// video when synchronous intent media is enabled; throws descriptive errors.
-/// See `CaptureIntentRuntime*.swift`: Save alone adopts the iOS 27 extended
-/// runtime in every app; stable-SDK builds retain the ordinary-runtime fallback.
+/// saves the matching post or page through the action-button save path, with
+/// double-save preserved. A near-immediate repeat of the same screenshot
+/// skips the model and re-runs the previous save, so the configured
+/// double-save action fires. Returns a transient entity containing the
+/// downloaded image or video when synchronous intent media is enabled;
+/// throws descriptive errors otherwise. See `CaptureIntentRuntime*.swift`:
+/// Save alone adopts the iOS 27 extended runtime in every app, while
+/// stable-SDK builds keep the ordinary-runtime fallback.
 struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Intents_save_title_Luna"
@@ -109,10 +110,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
-    /// The one place a save outcome becomes either the URL to hand onward or a
-    /// thrown error. A screen read that identified a post/page has already
-    /// passed this intent's pre-validation, so every non-success outcome is
-    /// reported — the extraction worked and the SAVE is what failed.
+    /// The one place a save outcome becomes either the URL to hand onward or
+    /// a thrown error. A screen read that identified a post or page has
+    /// already passed this intent's pre-validation, so every non-success
+    /// outcome is reported: the extraction worked, and the save is what
+    /// failed.
     private func savedURLString(
         from outcome: IntentIngestHelper.ActionButtonSaveOutcome
     ) throws -> String? {
@@ -134,10 +136,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     /// The article document a double save configured as "View immediately"
-    /// should return. Nil for every other outcome, and for an
-    /// article with nothing to export — a double save must never fail the save
-    /// that preceded it. When non-nil it IS this run's media, replacing the
-    /// media download (an article has none).
+    /// should return. Nil for every other outcome, and for an article with
+    /// nothing to export, since a double save must never fail the save that
+    /// preceded it. When non-nil, it is this run's media, replacing the media
+    /// download — an article has none.
     private static func exportedFile(
         from outcome: IntentIngestHelper.ActionButtonSaveOutcome
     ) async -> IntentFile? {
@@ -146,9 +148,10 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
-        // Capture before setup/progress/runtime work. This timestamp follows the
-        // run to the atomic store reservation, so a second invocation does not
-        // have to wait for the first invocation to tear down.
+        // Captured before setup, progress, and runtime work. This timestamp
+        // follows the run to the atomic store reservation, so a second
+        // invocation does not have to wait for the first invocation to tear
+        // down.
         let attemptDate = Date()
         LunaSetupStatusStore.shared.recordShortcutRun(for: .current)
         let reporter = IntentProgressReporter()
@@ -318,9 +321,9 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         return (SaveResultEntity(media: media), "Saved to Luna.")
     }
 
-    /// Resumes a checkpoint emitted by Provide Context. Invalid/unknown/empty
-    /// metadata deliberately returns nil so Save falls back to the screenshot
-    /// flow above, preserving manually configured shortcuts.
+    /// Resumes a checkpoint emitted by Provide Context. Invalid, unknown, or
+    /// empty metadata deliberately returns nil, so Save falls back to the
+    /// screenshot flow above, preserving manually configured shortcuts.
     private func resumeFromMetadataIfPossible(
         reporter: IntentProgressReporter
     ) async throws -> (value: SaveResultEntity, dialog: IntentDialog)? {

@@ -209,9 +209,7 @@ final class AudioScriptSupportTests: XCTestCase {
         XCTAssertTrue(wrote)
         let cached = scriptStore.load(forContentFileName: item.contentFileName!)
         XCTAssertNotNil(cached)
-        // `refined == false` and `llmPermanentlyFailed == false` used to be
-        // asserted separately; they were the same fact (a fresh save-time
-        // write is always heuristics-only), so this is now one assertion.
+        // A fresh save-time write is always heuristics-only.
         XCTAssertEqual(cached?.refinementState, .heuristicOnly, "save-time writes are heuristics-only")
         XCTAssertEqual(cached?.script.spokenBlocks.map(\.blockIndex), [1], "the byline should be dropped")
     }

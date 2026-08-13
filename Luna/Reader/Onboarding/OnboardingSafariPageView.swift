@@ -26,23 +26,19 @@ enum OnboardingSafariPageTiming {
 }
 
 /// Luna's own `luna.app` page — a plausible-looking mock article, not a real
-/// explanation of the extension any more — as Safari would show it. The page
-/// loads already buried under ads, popups and a subscription wall; once the
-/// mock extension-enable sequence completes, the clutter crumbles
-/// bottom-to-top and reveals the article underneath. The content itself never
-/// goes anywhere or animates: what the extension takes away is the clutter, so
+/// explanation of the extension — as Safari would show it. The page loads
+/// already buried under ads, popups and a subscription wall; once the mock
+/// extension-enable sequence completes, the clutter crumbles bottom-to-top
+/// and reveals the article underneath. The content itself never goes
+/// anywhere or animates: what the extension takes away is the clutter, so
 /// the page underneath stays exactly where the reader last saw it.
 ///
-/// The content used to be the extension's own explanation
-/// (`OnboardingSafariExtensionCopy`) plus the three steps that switch it on and
-/// the page's own Activate Safari / Skip actions, anchored to the bottom above
-/// the browser chrome. All of that is gone: the instructions now live on the
-/// hosted setup web page, and the ask that used to be this page's own call to
-/// action is now the shared, window-hosted `OnboardingSafariSetupPopupView` —
-/// raised by `SafariReplicaViewController` off this page's `cleanUpClutter`
-/// completion, not by anything in here. What is left is decoration: the app
-/// icon, a lorem ipsum headline, and lorem ipsum body copy that fills the page
-/// like a real article once the wave has revealed it.
+/// This view holds only decoration: the app icon, a lorem ipsum headline,
+/// and lorem ipsum body copy that fills the page like a real article once
+/// the wave has revealed it. The instructions live on the hosted setup web
+/// page, and the call to action is the shared, window-hosted
+/// `OnboardingSafariSetupPopupView` — raised by `SafariReplicaViewController`
+/// off this page's `cleanUpClutter` completion, not by anything in here.
 ///
 /// It is native instead of HTML so the wave's glyph-level effects are possible.
 final class OnboardingSafariPageView: UIView {
@@ -218,9 +214,9 @@ final class OnboardingSafariPageView: UIView {
     /// cumulative prefix of the lorem ipsum paragraphs that fits — so a short
     /// phone shows one paragraph and a tall iPad shows several, exactly the way
     /// a real article's copy would fill more or less of a taller page. This is
-    /// decoration now, not content anyone reads for meaning, so there is no
-    /// floor to protect the way the old furniture-plus-prose layout did: a
-    /// container too short even for paragraph one just truncates it.
+    /// decoration now, not content anyone reads for meaning, so nothing
+    /// protects a minimum: a container too short even for paragraph one just
+    /// truncates it.
     private func layOutContent(columnWidth: CGFloat, horizontalInset: CGFloat) {
         let bottomLimit = bounds.height - bottomReserve
         var y = Self.minimumTopInset
@@ -305,7 +301,7 @@ final class OnboardingSafariPageView: UIView {
 
     /// Plain paragraphs, each with a little breathing room under it — no
     /// bullets or hierarchy, since this is filler copy rather than a feature
-    /// list any more.
+    /// list.
     static func formattedProse(
         paragraphs: [String]
     ) -> (text: String, attributedText: NSAttributedString) {
@@ -402,16 +398,16 @@ final class OnboardingSafariPageView: UIView {
     /// anything below the latter would otherwise share one arrival and leave
     /// as a slab.
     ///
-    /// This front used to be cut into per-element legs, each starting when the
-    /// light reached that element's bottom. Between two elements the arrival
-    /// was then constant — the leg above answered for the whole gap — so the
-    /// front stalled for the height of every gap and then wiped it in a single
-    /// frame. The air the page leaves above its steps is the biggest of those
-    /// gaps, and a popup spanning it detached in one piece: THAT was the hitch
-    /// the crumble showed at the popup boundaries. Legs earned their keep while
-    /// each element bloomed on its own clock; nothing on this page blooms now,
-    /// and one uninterrupted front is both simpler and continuous by
-    /// construction.
+    /// Cutting this front into per-element legs, each starting when the light
+    /// reaches that element's bottom, stalls: between two elements the
+    /// arrival would be constant (the leg above answers for the whole gap),
+    /// so the front stalls for the height of every gap and then wipes it in a
+    /// single frame. The air the page leaves above its steps is the biggest
+    /// of those gaps, and a popup spanning it would detach in one piece —
+    /// the hitch a crumble shows at the popup boundaries. Legs would earn
+    /// their keep only if an element bloomed on its own clock; nothing on
+    /// this page blooms, so one uninterrupted front is both simpler and
+    /// continuous by construction.
     private func measureWaveOrigin() {
         let lowestObstruction = clutterContainer.subviews
             .filter { !$0.isHidden }
@@ -441,7 +437,7 @@ final class OnboardingSafariPageView: UIView {
     ///
     /// `completion` is what raises the shared setup popup
     /// (`SafariReplicaViewController.presentExtensionsSheet`'s call site) —
-    /// this page carries no ask of its own any more.
+    /// this page carries no ask of its own.
     func cleanUpClutter(completion: (() -> Void)? = nil) {
         guard stage == .blocked || stage == .primed else {
             completion?()

@@ -16,9 +16,9 @@ enum ProvideContextOutcome: String, AppEnum {
     case unhandled
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Intents_provideContextOutcome_typeName_Luna"
-    // AppEnum metadata, extracted at BUILD time — same restriction as
+    // AppEnum metadata, extracted at build time. Same restriction as
     // `typeDisplayRepresentation`: the title must be a string literal, so it
-    // can't go through `L10n.resource(...)` the way the per-instance
+    // cannot go through `L10n.resource(...)` the way the per-instance
     // `displayRepresentation` below does.
     static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .done: "Intents_provideContextOutcome_doneCase_title_Luna",

@@ -394,7 +394,8 @@ final class URLRescueDirectiveTests: XCTestCase {
         XCTAssertTrue(onDevice.contains("\"product\""), "the other options remain")
     }
 
-    /// A concrete hint keeps the old single-option form.
+    /// A concrete hint gets the single-option form; only an absent hint
+    /// offers every option.
     func testAConcreteHintOffersOnlyItsOwnOption() {
         let product = RescuePrompts.planInstructions(hint: .product, allowsArticlePayload: true)
         XCTAssertTrue(product.contains("\"product\""))
@@ -424,9 +425,9 @@ final class URLRescueDirectiveTests: XCTestCase {
     }
 
     /// No hint at all means a nil hint, not "guess from the failure kind" — this is
-    /// the default every automatic path and the card now take. It is a plain nil
-    /// rather than a sentinel case — the engine used to carry its own `ContentHint`
-    /// mirror of `RescueHint` whose `.auto` was a second spelling of nil.
+    /// the default every automatic path and the card take. It is a plain nil
+    /// rather than a sentinel case, so there is only one spelling of "no hint"
+    /// rather than a second one via a mirrored `ContentHint.auto`.
     func testAnAbsentHintStaysNilAndAllowsEveryPayload() {
         let request = RescueRequest(
             url: URL(string: "https://example.com/x")!, source: .manual,

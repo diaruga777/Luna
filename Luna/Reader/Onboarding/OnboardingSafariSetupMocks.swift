@@ -155,12 +155,12 @@ final class OnboardingManageExtensionsSheetView: UIView {
         // under heavy device load that pipeline can report "finished" almost
         // immediately (with `finished: false`, the animation having been
         // collapsed rather than actually played) instead of after the
-        // declared duration — which used to let this whole present → toggle →
-        // dismiss sequence race through in a fraction of a millisecond,
-        // shrinking the toggle's on-screen visible window to something no
-        // poll (or person) could ever catch. A timer matching the same
-        // duration keeps this step's pace independent of whether a frame was
-        // ever actually composited.
+        // declared duration. Driving off that completion handler directly
+        // would let this whole present → toggle → dismiss sequence race
+        // through in a fraction of a millisecond, shrinking the toggle's
+        // on-screen visible window to something no poll (or person) could
+        // ever catch. A timer matching the same duration keeps this step's
+        // pace independent of whether a frame was ever actually composited.
         DispatchQueue.main.asyncAfter(
             deadline: .now() + duration, execute: completion)
     }

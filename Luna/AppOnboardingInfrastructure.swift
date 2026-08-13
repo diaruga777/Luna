@@ -50,14 +50,14 @@ struct SavesStoredContent: OnboardingStoredContentProviding {
     }
 }
 
-/// Takes out a demonstration item an OLDER build installed.
+/// Removes a demonstration item that an older build installed.
 ///
-/// Builds up to this one saved the mock article/video/tracker into the shared
-/// store so the deck behind a lesson wasn't empty, and swept it at the next
-/// launch. An install updating across that change can still be holding one, so
-/// each app sweeps its own marker once at launch. Nothing writes one any more:
-/// this is migration only, and can be deleted once no install in the field
-/// predates the change.
+/// Builds before this one saved a mock article, video, or tracker into the
+/// shared store so the deck behind a lesson was never empty, then swept that
+/// item at the next launch. An install that updates across that change can
+/// still hold one, so each app sweeps its own marker once at launch. Nothing
+/// writes a new one — this is migration only, and can be deleted once no
+/// installed build predates the change.
 protocol OnboardingLegacyDemoSweeping {
     /// Deletes the demonstration item a previous build recorded, and clears the
     /// marker either way. Ownership is by exact id, so a save the user made
@@ -142,9 +142,10 @@ extension UIViewController {
 
 /// Debug-only wall-clock scaling for close visual inspection.
 ///
-/// The window layer slows every production Core Animation—including the real
-/// card eclipse—while `delay(_:)` and `displayLinkDuration(_:)` keep explicit
-/// timers and the custom liquid-wave renderer on the same timeline.
+/// Slowing the window layer scales every production Core Animation,
+/// including the real card eclipse. `delay(_:)` and
+/// `displayLinkDuration(_:)` keep explicit timers and the custom
+/// liquid-wave renderer on that same slowed timeline.
 enum OnboardingAnimationClock {
     static let scale: Double = {
         #if DEBUG

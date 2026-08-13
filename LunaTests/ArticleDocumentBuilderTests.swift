@@ -252,9 +252,9 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         XCTAssertGreaterThan(document.numberOfPages, 1)
     }
 
-    /// Counts real `/Subtype /Image` XObjects across every page. Comparing byte
-    /// counts (what this used to do) cannot tell an embedded picture from an
-    /// empty line where one should have been.
+    /// Counts real `/Subtype /Image` XObjects across every page. A byte-count
+    /// comparison cannot tell an embedded picture from an empty line where one
+    /// should have been.
     private func pdfImageCount(_ data: Data) throws -> Int {
         let document = try XCTUnwrap(CGPDFDocument(CGDataProvider(data: data as CFData)!))
         var total = 0

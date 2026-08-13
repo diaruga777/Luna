@@ -283,14 +283,12 @@ final class OnboardingSpotlightScrimView: UIView {
 /// is about to ask the user to switch on has already been seen working, on the
 /// page they were already looking at.
 ///
-/// The order used to be three layers: the pill is page content, the scrim
-/// dims everything but the hole over that pill, and a setup card sat above
-/// both. The card is gone — the ask now comes from the shared
-/// `OnboardingSafariSetupPopupView`, hosted by the enclosing
-/// `SafariReplicaViewController` rather than by this view — so the trick is
-/// just the first two layers: the pill, and the spotlight that closes on it.
-/// The popup's own 65% scrim stacks on top of this spotlight's 70% once it
-/// arrives; both stay visible, deliberately darker where they overlap.
+/// The trick is two layers: the pill, which is page content, and the spotlight
+/// that dims everything but the hole over it. The setup ask itself comes from
+/// the shared `OnboardingSafariSetupPopupView`, hosted by the enclosing
+/// `SafariReplicaViewController` rather than by this view. The popup's own 65%
+/// scrim stacks on top of this spotlight's 70% once it arrives; both stay
+/// visible, deliberately darker where they overlap.
 final class OnboardingPriceComparisonOverlayView: UIView {
     private enum Stage {
         case idle

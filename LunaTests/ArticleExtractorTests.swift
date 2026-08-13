@@ -235,13 +235,12 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertTrue(content.wholeText.contains("Another real paragraph"))
     }
 
-    /// Real-page smoke test: parses saved copies of actual news pages when the
-    /// fixtures are present on the host (skipped otherwise, e.g. in CI).
     /// An archived WSJ snapshot ships the real article body alongside a
-    /// subscription gate and a long reader-comments thread. The comment thread
-    /// holds far more `<p>` text than the article, so the old layer choice fell
-    /// back to the unstripped `basic` pass and surfaced gate + comments instead
-    /// of the story. The body must win.
+    /// subscription gate and a long reader-comments thread. The comment
+    /// thread holds far more `<p>` text than the article, so a layer choice
+    /// that only counts `<p>` text falls back to the unstripped `basic` pass
+    /// and surfaces the gate and comments instead of the story. The body
+    /// must win.
     func testArchivedArticleBeatsSubscriptionGateAndComments() throws {
         let articleParagraphs = (1...8).map { index in
             "<p>Apple is preparing to raise prices on several products as memory "
@@ -249,8 +248,8 @@ final class ArticleExtractorTests: XCTestCase {
             + "enough sentence length to read like genuine reported article prose.</p>"
         }.joined()
 
-        // A comment thread far larger than the article body — this is what used
-        // to win container scoring and the layer choice.
+        // A comment thread far larger than the article body, to stress the
+        // layer choice's container scoring.
         let commentParagraphs = (1...60).map { index in
             "<p>Reader comment \(index): I totally disagree with this take and here "
             + "is my long-winded opinion about pricing, supply chains, and the economy.</p>"

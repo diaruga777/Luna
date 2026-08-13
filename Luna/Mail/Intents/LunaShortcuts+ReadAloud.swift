@@ -6,12 +6,12 @@
 import LunaIntents
 import AppIntents
 
-/// Surfaces the intents in the Shortcuts app and Spotlight so they're easy to
-/// find when building the Action Button shortcut. This variant is for the two
-/// apps that link article read-aloud and so compile `ReadArticleIntent` — Luna
-/// and LunaReader. The other two compile `LunaShortcuts+SaveOnly.swift`, whose
-/// list stops at the save pair; each app excludes the variant it does not use
-/// by membership exception.
+/// Surfaces the intents in the Shortcuts app and Spotlight, so they are easy
+/// to find when building the Action Button shortcut. This variant is for the
+/// two apps that link article read-aloud and so compile `ReadArticleIntent`:
+/// Luna and LunaReader. The other two apps compile
+/// `LunaShortcuts+SaveOnly.swift`, whose list stops at the save pair. Each app
+/// excludes the variant it does not use by membership exception.
 struct LunaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(

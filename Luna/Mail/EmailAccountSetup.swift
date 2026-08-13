@@ -2,11 +2,11 @@
 //  EmailAccountSetup.swift
 //  Luna
 //
-//  Step 1 of connecting an email account, minus the UI that collects the address:
-//  infer the provider, resolve IMAP/SMTP settings, then either push the
-//  app-specific-password screen (`CredentialViewController`) or run Outlook OAuth
-//  to completion. Owned by whatever screen holds the address field — today the
-//  inline field in Settings → Email. See `claudedocs/email-login.md`.
+//  Step 1 of connecting an email account. Does not include the UI that collects
+//  the address: it infers the provider, resolves IMAP/SMTP settings, then either
+//  pushes the app-specific-password screen (`CredentialViewController`) or runs
+//  Outlook OAuth to completion. Owned by whatever screen holds the address field
+//  — today, the inline field in Settings → Email. See `claudedocs/email-login.md`.
 //
 
 import LunaMailAccount
@@ -24,17 +24,18 @@ final class EmailAccountSetup {
     private let onBusyChange: (Bool) -> Void
     private let completion: (Bool) -> Void
 
-    /// Latched while autodiscovery runs: the caller's Connect row and return key
-    /// stay live during the (network) resolve, and repeated taps would push
-    /// several credential screens onto the stack.
+    /// True while autodiscovery runs. The caller's Connect row and return key
+    /// stay live during the network resolve, so this guards against repeated
+    /// taps pushing several credential screens onto the stack.
     private var isResolving = false
     private var authSession: ASWebAuthenticationSession?
     private var contextProvider: AuthPresentationContext?
     private var loadingCover: EmailLoginLoadingCover?
 
-    /// `onBusyChange` brackets the one network wait on this step so the caller can
-    /// show it (and refuse further taps). `completion(true)` means an account was
-    /// connected and saved; `false` means the attempt ended without one.
+    /// `onBusyChange` brackets the one network wait on this step, so the caller
+    /// can show it and refuse further taps. `completion(true)` means an account
+    /// was connected and saved; `completion(false)` means the attempt ended
+    /// without one.
     init(
         presenter: UIViewController,
         accountStore: EmailAccountStore = .shared,
@@ -47,16 +48,16 @@ final class EmailAccountSetup {
         self.completion = completion
     }
 
-    /// The existing lightweight validation: no full RFC 5322 parse, just a shape
-    /// check good enough to catch obvious typos before a network round trip.
+    /// A lightweight check, not a full RFC 5322 parse. Good enough to catch
+    /// obvious typos before a network round trip.
     static func isValidAddress(_ raw: String) -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.contains("@") && trimmed.contains(".")
     }
 
-    /// Begins setup for `rawAddress`. Returns false (doing nothing) when the
-    /// address doesn't look like one or a resolve is already in flight — the
-    /// caller signals that itself (a shake, usually).
+    /// Begins setup for `rawAddress`. Returns false and does nothing when the
+    /// address is not valid or a resolve is already in flight. The caller signals
+    /// that failure itself, usually with a shake.
     @discardableResult
     func start(address rawAddress: String) -> Bool {
         let address = rawAddress.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -80,8 +81,8 @@ final class EmailAccountSetup {
             guard let presenter, let nav = presenter.navigationController,
                   nav.topViewController === presenter
             else {
-                // The user navigated away while autodiscovery was in flight —
-                // don't push a credential screen over wherever they went.
+                // The user navigated away during autodiscovery. Do not push a
+                // credential screen over wherever they went.
                 completion(false)
                 return
             }
@@ -97,9 +98,9 @@ final class EmailAccountSetup {
         return true
     }
 
-    /// Restarts authentication for an existing account without re-inferring its
-    /// provider or rediscovering custom server settings. Recovery must preserve
-    /// the configuration that worked when the account was originally connected.
+    /// Restarts authentication for an existing account. Does not re-infer the
+    /// provider or rediscover custom server settings, so recovery keeps the
+    /// configuration that worked when the account first connected.
     @discardableResult
     func start(account: EmailAccount) -> Bool {
         guard !isResolving, Self.isValidAddress(account.address) else { return false }
@@ -112,8 +113,8 @@ final class EmailAccountSetup {
               let navigationController = presenter.navigationController,
               navigationController.topViewController === presenter
         else {
-            // Corrupt/legacy metadata with no resolved app-password server can
-            // still recover through the normal inference/autodiscovery path.
+            // Legacy or corrupt metadata with no resolved app-password server.
+            // This still recovers through the normal inference/autodiscovery path.
             return start(address: account.address)
         }
         navigationController.pushViewController(
@@ -125,8 +126,9 @@ final class EmailAccountSetup {
         return true
     }
 
-    /// Resolves IMAP/SMTP settings: the registry entry for known providers, or
-    /// ISPDB autodiscovery (falling back to Gmail-like defaults) for custom domains.
+    /// Resolves IMAP/SMTP settings. Uses the registry entry for a known provider,
+    /// or ISPDB autodiscovery for a custom domain, falling back to Gmail-like
+    /// defaults.
     private func resolveServer(
         providerID: MailProvider.ID, address: String
     ) async -> MailServerConfig {
@@ -135,8 +137,8 @@ final class EmailAccountSetup {
            let discovered = await ProviderInference.autodiscover(domain: domain) {
             return discovered.server
         }
-        // Unknown custom domain: a reasonable implicit-TLS default the user can't
-        // easily correct here, but most providers accept it.
+        // Unknown custom domain. Falls back to an implicit-TLS default that most
+        // providers accept; the user cannot easily correct it here.
         let host = ProviderInference.domain(of: address) ?? "mail"
         return MailServerConfig(
             imapHost: "imap.\(host)", smtpHost: "smtp.\(host)", smtpPort: 465, smtpUsesSTARTTLS: false)
@@ -161,16 +163,16 @@ final class EmailAccountSetup {
         let session = ASWebAuthenticationSession(
             url: url, callbackURLScheme: MicrosoftOAuth.redirectScheme
         ) { [weak self] callback, error in
-            // ASWebAuthenticationSession doesn't document which thread delivers
-            // this handler; everything below touches UIKit, so hop to the main
-            // actor before doing anything.
+            // ASWebAuthenticationSession does not document which thread calls
+            // this handler. Everything below touches UIKit, so hop to the main
+            // actor first.
             Task { @MainActor in
                 guard let self else { return }
                 if let error {
                     if let authError = error as? ASWebAuthenticationSessionError,
                        authError.code == .canceledLogin {
-                        // The user backed out of the web sheet — leave the screen
-                        // usable, no error, no cover.
+                        // The user canceled the web sheet. Leave the screen
+                        // usable: no error, no cover.
                         self.completion(false)
                         return
                     }
@@ -181,13 +183,13 @@ final class EmailAccountSetup {
                       let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
                         .queryItems?.first(where: { $0.name == "code" })?.value
                 else {
-                    // A callback without a `code` item is a real failure, not a
-                    // cancellation — it must not fail silently.
+                    // A callback with no `code` item is a real failure, not a
+                    // cancellation. Report it instead of failing silently.
                     self.presentError(L10n.string("Settings_email_setup_outlookSignInFailedMessage"))
                     return
                 }
-                // The webview is gone but the token exchange + inbox-filter setup
-                // still run. Cover the host screen with a full-screen dot-matrix
+                // The web view is gone, but the token exchange and inbox-filter
+                // setup still run. Cover the host screen with a full-screen
                 // spinner so nothing is tappable meanwhile.
                 guard let host = self.presenter else { return }
                 host.view.endEditing(true)
@@ -225,9 +227,9 @@ final class EmailAccountSetup {
                 expiry: Date().addingTimeInterval(wire.expires_in))
             let account = EmailAccount(providerID: .outlook, address: address, displayName: nil, server: nil)
             accountStore.save(account, credential: .oauth(tokens))
-            // Same moment as the app-password path in `CredentialViewController`: an
-            // account exists, so incoming shares are now something to announce.
-            // Launch never asks — see `AppDelegate`.
+            // Same moment as the app-password path in `CredentialViewController`:
+            // once an account exists, an incoming share can be announced. Launch
+            // never asks for this permission — see `AppDelegate`.
             NotificationManager.requestAuthorization()
             // Best-effort: install the inbox filter.
             if let transport = MailTransportFactory.make(store: accountStore) {

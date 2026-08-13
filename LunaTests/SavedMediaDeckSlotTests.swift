@@ -2,11 +2,12 @@
 //  SavedMediaDeckSlotTests.swift
 //  LunaTests
 //
-//  The Downloader's deck is the one whose cards come from TWO stores: its media
-//  rows, then the saves whose ingestion failed (which carry no kind, so every app
-//  shows them). It used to keep two index maps over that — `mediaIndex` and
-//  `failedIndex` — and the two disagreed in two places. Both are now slots in the
-//  one list the shared host owns, and these tests pin the consequences.
+//  The Downloader's deck is the one whose cards come from TWO stores: its
+//  media rows, then the saves whose ingestion failed (which carry no kind,
+//  so every app shows them). Both are slots in the one list the shared host
+//  owns, and these tests pin the consequences: a failed save must count as a
+//  real card, and the tray's pull must never activate before the true last
+//  one.
 //
 
 import LunaMediaDownload
@@ -32,9 +33,9 @@ final class SavedMediaDeckSlotTests: XCTestCase {
 
     // MARK: - Failed saves are cards, so they are slots
 
-    /// A failed save sits after the media rows, and the deck must count it. The
-    /// old dual index space fed `canPull` `items.count + cardOffset` — the last
-    /// MEDIA card — so the archive tray's pull activated mid-deck and the true
+    /// A failed save sits after the media rows, and the deck must count it.
+    /// Feeding `canPull` only `items.count + cardOffset` — the last MEDIA
+    /// card — would activate the archive tray's pull mid-deck, so the true
     /// last card could never open it.
     @MainActor
     func testCardCountIncludesFailedSavesAfterTheMediaRows() {
@@ -63,7 +64,8 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         let window = UITestSupport.host(UINavigationController(rootViewController: deck))
         deck.view.layoutIfNeeded()
 
-        // The last MEDIA card — where the old count said "rightmost".
+        // The last MEDIA card, one short of the true last card once failed
+        // saves follow it.
         deck.carousel.reloadData(centeringAt: 2 + deck.cardOffset - 1)
         deck.refreshArchivePullAvailability(animated: false)
         XCTAssertFalse(

@@ -42,19 +42,19 @@ protocol LinkImportPreviewLoaderDelegate: AnyObject {
     func previewLoaderDidChangeRow(forURLString urlString: String)
 }
 
-/// Fetches titles and thumbnails for the links in the import review list, in a
-/// ROLLING WINDOW around what the user can see.
+/// Fetches titles and thumbnails for the links in the import review list, in
+/// a rolling window around what the user can see.
 ///
-/// A file can hold a thousand links and each preview is a real page read. Fetching
-/// the file would be minutes of cellular data for rows the user scrolls past
-/// without looking — so a row is fetched when it comes on screen (plus the table's
-/// own prefetch lead), and a row that leaves the window before its turn comes
-/// around is dropped from the queue rather than fetched. Nothing is speculative:
-/// the window IS the request list.
+/// A file can hold a thousand links, and each preview is a real page read.
+/// Fetching the whole file would cost minutes of cellular data for rows the
+/// user scrolls past without looking. So a row is fetched when it comes on
+/// screen, plus the table's own prefetch lead, and a row that leaves the
+/// window before its turn comes around is dropped from the queue rather than
+/// fetched. Nothing is speculative: the window is the request list.
 ///
-/// What a row shows while it waits, and if the fetch fails, is the display the
-/// sheet always had — the URL's path over its host — so a preview is an upgrade to
-/// a row that already works, never a blank waiting to be filled.
+/// What a row shows while it waits, and if the fetch fails, is the display
+/// the sheet always had — the URL's path over its host — so a preview is an
+/// upgrade to a row that already works, never a blank waiting to be filled.
 @MainActor
 final class LinkImportPreviewLoader {
 

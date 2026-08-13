@@ -3,8 +3,8 @@
 //  LunaTests
 //
 //  The column an extension surface lays its bands out in must never be wider
-//  than the surface. It used to be, and the price editor in the share sheet was
-//  clipped off both edges as a result.
+//  than the surface — a wider column clips the price editor in the share
+//  sheet off both edges.
 //
 
 import LunaDesignSystem

@@ -2,11 +2,10 @@
 //  CredentialViewController.swift
 //  Luna
 //
-//  Step 2 of connecting an email account: an app-specific password for the
-//  provider `EmailAccountSetup` inferred and resolved from the entered address.
-//  Pushed onto whatever navigation stack collected that address, and left in place
-//  on success — `completion` owns what happens next. See
-//  `claudedocs/email-login.md`.
+//  Step 2 of connecting an email account. Asks for the app-specific password
+//  for the provider that `EmailAccountSetup` resolved from the entered address.
+//  This screen pushes onto the caller's navigation stack and stays on success;
+//  `completion` decides what happens next. See `claudedocs/email-login.md`.
 //
 
 import LunaMailAccount
@@ -41,8 +40,8 @@ final class CredentialViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        // The hero owns the title; the back button (pushed, not presented at this
-        // step) is the only nav-bar chrome.
+        // The hero view owns the title. The pushed back button is the only
+        // nav-bar chrome at this step.
 
         let hero = EmailLoginUI.heroTile(symbol: "key.fill")
         let titleLabel = EmailLoginUI.titleLabel(account.provider.displayName)
@@ -55,15 +54,14 @@ final class CredentialViewController: UIViewController {
         passwordField.isSecureTextEntry = true
         passwordField.autocapitalizationType = .none
         passwordField.autocorrectionType = .no
-        // Deliberately no `textContentType`: AutoFill would offer the account's
-        // real sign-in password (from a saved credential for this domain), which
-        // is the wrong secret here — this field wants a separate app password.
+        // No `textContentType`. AutoFill would offer the account's saved sign-in
+        // password for this domain, but this field needs a separate app password.
         passwordField.returnKeyType = .go
         passwordField.borderStyle = .none
         passwordField.backgroundColor = .clear
         passwordField.contentVerticalAlignment = .center
         passwordField.translatesAutoresizingMaskIntoConstraints = false
-        // No delegate, same as the email field — return key is a control action.
+        // No delegate. Like the email field, the return key acts through a control action.
         passwordField.addTarget(self, action: #selector(signIn), for: .editingDidEndOnExit)
         passwordField.addTarget(self, action: #selector(passwordEdited), for: .editingChanged)
 
@@ -157,8 +155,8 @@ final class CredentialViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Same windowing reason as the email field: only after the view is
-        // attached to the presented (here: pushed) window.
+        // Same reason as the email field: the window is ready only after the
+        // view attaches — here, after the push completes.
         passwordField.becomeFirstResponder()
     }
 
@@ -176,8 +174,8 @@ final class CredentialViewController: UIViewController {
 
     @objc private func toggleReveal() {
         passwordField.isSecureTextEntry.toggle()
-        // Re-set the text: toggling `isSecureTextEntry` on a live UITextField can
-        // otherwise leave stale glyphs or jump the caret to the start.
+        // Reset the text. Toggling `isSecureTextEntry` on a live field can leave
+        // stale glyphs or move the caret to the start.
         if let existing = passwordField.text {
             passwordField.text = nil
             passwordField.text = existing
@@ -186,12 +184,11 @@ final class CredentialViewController: UIViewController {
             UIImage(systemName: passwordField.isSecureTextEntry ? "eye" : "eye.slash"), for: .normal)
     }
 
-    /// App-password providers (Gmail/iCloud/Yahoo) display the generated code in
-    /// spaced groups ("xxxx xxxx xxxx xxxx"), and copying it commonly carries those
-    /// display spaces along — so strip ALL whitespace, not just the edges. Custom
-    /// IMAP servers (`.generic`) take unconstrained free-form passwords that could
-    /// legitimately contain an internal space, so only the edges are trimmed there.
-    /// Pure + static so it's unit-testable without a live text field.
+    /// App-password providers (Gmail, iCloud, Yahoo) show the generated code in
+    /// spaced groups, and copying it usually copies those spaces too. This strips
+    /// all whitespace for those providers. A custom IMAP server (`.generic`) can
+    /// take a free-form password with a real internal space, so it only trims the
+    /// edges. Static and pure, so a test can call it without a live text field.
     static func normalizedPassword(_ raw: String, providerID: MailProvider.ID) -> String {
         guard providerID != .generic else {
             return raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,10 +203,10 @@ final class CredentialViewController: UIViewController {
         passwordField.isUserInteractionEnabled = false
         passwordField.resignFirstResponder()
         let cover = EmailLoginLoadingCover(host: navigationController?.view ?? view)
-        // One of the three moments Luna asks to notify (launch does not): with an
-        // account connected, an incoming share becomes something to announce. Asked
-        // before the round trip rather than after, so the system dialog shares the
-        // dead waiting time — and idempotent, so a re-sign-in doesn't re-ask.
+        // One of the three moments Luna asks for notification permission (never at
+        // launch): connecting an account means an incoming share can be announced.
+        // Asked before the network round trip so the system dialog overlaps the
+        // wait. The call is idempotent, so re-signing in does not ask again.
         NotificationManager.requestAuthorization()
 
         Task { @MainActor in
@@ -234,16 +231,14 @@ final class CredentialViewController: UIViewController {
         }
     }
 
-    /// IMAP/SMTP transport failures split into two flavors worth telling apart:
-    /// the transport (`StreamIMAPClient`/`StreamSMTPClient`, backed by
-    /// `URLSessionStreamTask`) surfaces unreachable-host/timeout failures as
-    /// `NSURLErrorDomain`/`NSPOSIXErrorDomain`/CFNetwork errors, while a wrong
-    /// address or password comes back as a protocol-level `IMAPError`/`SMTPError`
-    /// (a plain Swift error, in neither domain) after the server actually replied.
-    /// This is a pragmatic domain check, not an exhaustive one — a
-    /// `MailStream.StreamError` (e.g. connection dropped mid-exchange) isn't in
-    /// these domains and reads as a credential failure, which is an acceptable
-    /// simplification for now.
+    /// Splits IMAP/SMTP failures into two kinds. The transport
+    /// (`StreamIMAPClient`/`StreamSMTPClient`, over `URLSessionStreamTask`)
+    /// reports unreachable-host or timeout failures in `NSURLErrorDomain`,
+    /// `NSPOSIXErrorDomain`, or CFNetwork. A wrong address or password comes back
+    /// as `IMAPError`/`SMTPError` once the server has replied. This check is not
+    /// exhaustive: a `MailStream.StreamError` (for example, a dropped connection)
+    /// falls outside these domains and reads as a credential failure. That gap is
+    /// accepted for now.
     private static let connectivityErrorDomains: Set<String> = [
         NSURLErrorDomain, NSPOSIXErrorDomain, "kCFErrorDomainCFNetwork",
     ]

@@ -81,8 +81,8 @@ final class ProductSnapshotStoreTests: XCTestCase {
 
     /// The meta/microdata capture tiers hand over the page's RAW price text —
     /// "$1,299.00", not "1299.00" — and `Decimal(string:)` refuses it outright.
-    /// Every such visit used to be dropped silently. The SANITIZED string is
-    /// what persists, so `priceAmount` parses back.
+    /// The SANITIZED string is what persists, so `priceAmount` parses back
+    /// instead of silently dropping every such visit.
     func testASymbolAndCommaDecoratedPriceIsSanitizedAndKept() throws {
         let snapshot = try XCTUnwrap(ProductSnapshotStore.makeSnapshot(
             fromPayload: payload(price: "$1,299.00"), now: Date()))

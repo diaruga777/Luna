@@ -14,11 +14,8 @@ import UIKit
 /// splash's own geometry: the reference canvas the artwork is recorded on, and
 /// the corona's throw past the card.
 ///
-/// This used to be three constants (`rootCardHorizontalInset`,
-/// `rootCardBottomClearanceFromSafeArea`, `referenceSafeAreaBottomInset`)
-/// hand-copied from the ARTICLE card's layout and measured on one iPhone, plus a
-/// "launch-safe approximation" (`fallbackRootCardFrame`) used on every other
-/// device. Both are gone: there is one card frame, and it is exact everywhere.
+/// There is one card frame, computed by the same pure function everywhere —
+/// no per-device approximation and no hand-copied constants.
 enum AppLaunchGeometry {
     /// The phone the artwork is recorded at. Nothing depends on it being this
     /// device — the rasters are scaled to the card frame wherever they land —
@@ -202,14 +199,15 @@ enum AppLaunchTransition {
 
     /// The recorded corona-and-card artwork, sized to `cardFrame`.
     ///
-    /// It used to be a live `EclipseCoronaView`, rendered fresh at every launch
-    /// and again for onboarding's persistent corona. Two things were wrong with
-    /// that. It is not free — the exterior corona is ~80ms of stroked offset
-    /// curves at 1x on a simulator, on the launch path, three times over — and
-    /// 1x is exactly what made the splash look soft: the recorded artwork is
-    /// baked at 3x from a 1x render, so its streamer wedges arrived as 3x3
-    /// blocks. Drawing the artwork instead costs nothing, is sharp, and is
-    /// identical to the launch screen by construction rather than by agreement.
+    /// A live `EclipseCoronaView`, rendered fresh at every launch and again for
+    /// onboarding's persistent corona, has two costs. Rendering is not free —
+    /// the exterior corona is ~80ms of stroked offset curves at 1x on a
+    /// simulator, on the launch path, three times over — and 1x is exactly what
+    /// makes a live render look soft: the recorded artwork here is baked at 3x
+    /// from a 1x render, so its streamer wedges arrive sharp instead of as 3x3
+    /// blocks. Drawing the recorded artwork instead costs nothing, is sharp,
+    /// and is identical to the launch screen by construction rather than by
+    /// agreement.
     ///
     /// The view's own bounds are the CARD's, with the artwork overhanging on
     /// every side, so callers position it exactly as they position the card.

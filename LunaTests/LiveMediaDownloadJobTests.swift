@@ -174,11 +174,12 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertFalse(reddit.contains("URLSession.shared"))
     }
 
-    /// `mediaKind` used to be a bare `String` that three producers wrote three
-    /// incompatible encodings for: `MediaAsset.Kind.rawValue` ("gif"), the old
+    /// `mediaKind` was a bare `String` that three producers wrote three
+    /// incompatible encodings for: `MediaAsset.Kind.rawValue` ("gif"), the
     /// widget-facing `liveActivityKind` ("animatedImage"), and a literal
-    /// "unknown" sentinel for a job with no resolved asset yet. All must still
-    /// decode off disk into the one typed field.
+    /// "unknown" sentinel for a job with no resolved asset yet. A job
+    /// persisted under any of those encodings must still decode off disk
+    /// into the one typed field.
     func testLegacyMediaKindStringsDecodeIntoTypedKind() throws {
         func decodedKind(forLegacyMediaKind raw: String) throws -> MediaAsset.Kind? {
             let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
@@ -195,10 +196,10 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertNil(try decodedKind(forLegacyMediaKind: "unknown"))
     }
 
-    /// `timeRange` used to be shredded into two top-level `rangeStartSeconds`/
-    /// `rangeEndSeconds` fields. An in-flight job written before the update
-    /// must still decode its range (and a job with neither key decodes nil,
-    /// not a zero-start range).
+    /// `timeRange` was once shredded into two top-level `rangeStartSeconds`/
+    /// `rangeEndSeconds` fields. An in-flight job persisted in that shape
+    /// must still decode its range, and a job with neither key must decode
+    /// nil rather than a zero-start range.
     func testLegacyRangeSecondsKeysDecodeIntoTimeRange() throws {
         let withRange = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#
             + #""mediaKind":"video","title":"Media","resolveKind":null,"phase":"resolving","#
@@ -218,12 +219,12 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertNil(bare.timeRange)
     }
 
-    /// `resolveKind` used to be a bare `String`, and two producers (the
-    /// URL-rescue and direct-URL starts) wrote "rescue"/"direct" literals that
-    /// matched none of the enum's cases at the time — every read site's
+    /// `resolveKind` was a bare `String`, and two producers — the URL-rescue
+    /// and direct-URL starts — wrote "rescue"/"direct" literals that matched
+    /// none of the enum's cases: every read site's
     /// `flatMap(ResolveKind.init(rawValue:))` silently produced nil for them.
-    /// Both are now real cases, and any other legacy value still safely
-    /// decodes to nil rather than throwing.
+    /// Both are real cases now, and any other unrecognized value still
+    /// safely decodes to nil rather than throwing.
     func testLegacyResolveKindStringsDecodeIntoTypedKind() throws {
         func decodedKind(forLegacyResolveKind raw: String) throws -> LiveMediaDownloadJob.ResolveKind? {
             let json = #"{"id":"1","sourceURLString":"https://example.com","assetURLString":null,"#

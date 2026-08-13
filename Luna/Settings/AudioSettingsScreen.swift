@@ -10,9 +10,9 @@ import UIKit
 import LunaModels
 
 /// Read-aloud playback preferences (claudedocs/audio-playback-plan.md,
-/// Phase 3): the autoplay-next-article toggle, the Apple Intelligence
+/// Phase 3). Covers the autoplay-next-article toggle, the Apple Intelligence
 /// listening-cleanup toggle (`AudioSettings.isIntelligentTrimmingEnabled`,
-/// consumed by the Phase-4 trimming pipeline), and enhanced-voice status/setup.
+/// consumed by the Phase-4 trimming pipeline), and enhanced-voice status and setup.
 final class AudioSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case autoplay, cleanup, voice }

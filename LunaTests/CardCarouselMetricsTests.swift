@@ -37,12 +37,10 @@ final class CardCarouselMetricsTests: XCTestCase {
             accuracy: 0.01)
     }
 
-    /// **One shape, every container.** A reader card used to take every point of
-    /// width and hang its extra height ABOVE the container's top; a product card
-    /// ignored the aspect and filled the room; only a video card was this. Three
-    /// rectangles at two different centers in one deck is what jumped when
-    /// paging between kinds, so the rule is pinned as an invariant rather than
-    /// per case.
+    /// **One shape, every container.** Every kind's card is the same exact
+    /// 9:16 rectangle, centered in the container. A per-kind card shape
+    /// produces different frames and centers across the deck, which visibly
+    /// jumps when paging between kinds.
     func testEveryContainerYieldsAnExact9By16CardCenteredInTheRoom() {
         for size in [
             CGSize(width: 320, height: 600),
@@ -491,9 +489,9 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
 
     /// Releasing a mini-card scrub must settle in place even when the preview
     /// never mounted the card's real content — a media save, whose player the
-    /// strip deliberately doesn't build per chip, previewed as its poster. It
-    /// used to fall through to the eclipse, so letting go of a video chip in
-    /// the all-kinds deck played a page transition to a card already on screen.
+    /// strip deliberately doesn't build per chip, previewed as its poster.
+    /// Falling through to the eclipse here would play a page transition to a
+    /// card already on screen.
     func testScrubSettleOnAPosterOnlyCardHandsOverWithoutTheEclipse() throws {
         let source = PosterOnlyScrubDataSource()
         let carousel = CardCarouselViewController()
@@ -609,12 +607,11 @@ private final class CenteringSpyCardContentViewController: CardContentViewContro
 
 @MainActor
 private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
-    /// One preview controller PER CARD, which is what a real data source
-    /// supplies. A single shared instance used to work here only because the
-    /// deck-level `.thumbnails` scrubber prepared nothing, so the peeks never
-    /// mounted anything: once the strip prepares its visible window for every
-    /// deck, a shared instance lets a PEEK's "peeks never play" pause land on
-    /// the centre's own player and the spy can no longer tell the two apart.
+    /// One preview controller PER CARD, matching what a real data source
+    /// supplies. The strip prepares its visible window for every deck, so a
+    /// shared instance would let a peek's "peeks never play" pause land on
+    /// the centre's own player, and the spy could no longer tell the two
+    /// apart.
     let previews = [
         PlaybackSpyCardContentViewController(),
         PlaybackSpyCardContentViewController(),

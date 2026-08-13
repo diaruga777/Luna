@@ -365,7 +365,7 @@ final class SurfaceParityTests: XCTestCase {
 
     /// The extension PERSISTS the classified item the SAME shape the main app would:
     /// a non-downloadable platform post saved via the extension carries its platform +
-    /// item id (the bug-4 regression — it used to be a bare URL), a product becomes a
+    /// item id rather than a bare URL (the bug-4 regression), and a product becomes a
     /// tracker.
     func testExtensionPersistsClassifiedItem() async {
         // Bluesky via the share extension.

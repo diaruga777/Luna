@@ -204,9 +204,8 @@ final class SavesSectioningTests: XCTestCase {
 
     // MARK: - Which app shows which item (`LunaApp.includes`)
 
-    /// The display counterpart to `SurfaceSupport`'s ingest gate. This used to be
-    /// a second enum (`AppSurface` + `ListFilter`) that shadowed `LunaApp`; the
-    /// rules are unchanged, they just live on the one enum now.
+    /// The display counterpart to `SurfaceSupport`'s ingest gate. Both live on
+    /// `LunaApp` itself, so the rules cannot drift onto a second enum.
     func testCentralAppShowsEveryKind() {
         for item in [article(), platformItem(), priceTracker()] {
             XCTAssertTrue(LunaApp.luna.includes(item))

@@ -2,11 +2,11 @@
 //  KindWiring+Reader.swift
 //  Luna
 //
-//  Per-app composition root: registers exactly the per-kind processors,
-//  ingestor handlers, and UI/lifecycle seams this app's target links. EXACTLY
-//  ONE KindWiring variant is compiled into each app target (the other variants
-//  are excluded via the synchronized group's per-target membership exceptions)
-//  — the registries and the static lifecycle API below mirror the link set.
+//  Per-app composition root. It registers the per-kind processors, ingestor
+//  handlers, and UI/lifecycle seams this app's target links. Each app target
+//  compiles exactly one `KindWiring` variant — the synchronized group excludes
+//  the others by membership exception — so the registries and the static
+//  lifecycle API below mirror this app's own link set.
 //
 
 import LunaDesignSystem
@@ -29,28 +29,30 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
-        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        // Staged mode's catalogs, for this app's kinds only
+        // (`claudedocs/staging.md`).
         SharedStageCatalog.install()
         ArticleStageCatalog.install()
         EmailStageCatalog.install()
         #endif
 
-        // The article kind pack — one call, shared verbatim with Reader's share
-        // extension, action extension and App Clip (`ArticleKindComposition`).
+        // The article kind pack: one call, shared verbatim with Reader's
+        // share extension, action extension, and App Clip. See
+        // `ArticleKindComposition`.
         ArticleKindComposition.install()
-        // The article kind's CARD half, on the same principle — the one
-        // definition the central app installs too (`CardKindPresenter.swift`).
+        // The article kind's card half follows the same rule — the one
+        // definition the central app installs too. See `CardKindPresenter.swift`.
         CardKindPresenters.article = ArticleCardPresenter()
-        // …and the article kind's half of the app shell, which the central app
-        // installs from the same file (`ArticleShellWiring`).
+        // The article kind's app-shell half installs from the same file the
+        // central app uses (`ArticleShellWiring`).
         ArticleShellWiring.install()
     }
 
     // MARK: - Root UI shape
 
     /// The article card deck, wrapped in the window-level audio mini-player
-    /// host (read-aloud is a Reader feature; the bar floats above the bottom
-    /// safe area, survives every push/pop, and hides while idle).
+    /// host. Read-aloud is a Reader feature; the bar floats above the bottom
+    /// safe area, survives every push and pop, and hides while idle.
     static func makeRootViewController() -> UIViewController {
         let content: UIViewController = ArticleCardsViewController()
         let nav = UINavigationController(rootViewController: content)
@@ -120,24 +122,26 @@ enum KindWiring {
     }
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        // No media kind → no background URLSession to reattach; complete the
-        // callback immediately so the system isn't left waiting.
+        // Reader links no media kind, so there is no background URLSession
+        // to reattach. It completes the callback immediately so the system
+        // isn't left waiting.
         completionHandler()
     }
 
-    /// Reader links no media module — no Live Activity, so this route never
-    /// actually fires here, but `SceneDelegate` is universal.
+    /// Reader links no media module, so it has no Live Activity and this
+    /// route never actually fires. `SceneDelegate` is universal, so the
+    /// method must still exist.
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction { .none }
 
-    /// …and so nothing here can produce a downloaded file to share either.
+    /// Reader produces no downloaded file, so it has nothing to share.
     static let mediaShareFileExporter: (any MediaShareFileExporting)? = nil
 
-    /// Reader's Safari extension resolves no video (the native handler gates on
-    /// `hostHandlesMedia`), so nothing can ever queue a download for it.
+    /// Reader's Safari extension resolves no video (the native handler gates
+    /// on `hostHandlesMedia`), so nothing can ever queue a download for it.
     static func drainPendingResolvedMedia(returningToSource: Bool) {}
 
-    /// Reader handles no products — no runner ⇒ AppDelegate never registers or
-    /// schedules the price-refresh BGTask.
+    /// Reader handles no products, so there is no runner. AppDelegate never
+    /// registers or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (any PriceRefreshRunning)? = nil
 
     #if DEBUG

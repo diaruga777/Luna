@@ -97,15 +97,15 @@ final class LinkImportPreviewLoaderTests: XCTestCase {
     /// Asserts a row REACHES a state, rather than assuming a fixed number of
     /// yields already got it there.
     ///
-    /// `settle()`'s eight yields are enough when this class runs alone and not
-    /// when the whole suite is competing for the main actor: every assertion
-    /// below that follows an async transition used to read the state one hop
-    /// early under load. That is how
+    /// `settle()`'s eight yields are enough when this class runs alone and
+    /// not when the whole suite is competing for the main actor: reading
+    /// state right after an async transition, without polling, can read one
+    /// hop early under load. That is how
     /// `testAPageThatDoesNotAnswerLeavesTheRowAsItWas` passed in isolation
-    /// (0.001s) and failed in a full run, reading `.loading` where the refusal
-    /// had not yet landed. Assertions about a state that must NOT change (a row
-    /// that stays `.idle`, a request that is never made) still use `settle()` —
-    /// waiting for those would be a tautology.
+    /// (0.001s) and failed in a full run, reading `.loading` where the
+    /// refusal had not yet landed. Assertions about a state that must NOT
+    /// change (a row that stays `.idle`, a request that is never made) still
+    /// use `settle()` — waiting for those would be a tautology.
     private func assertState(
         _ loader: LinkImportPreviewLoader, of urlString: String,
         reaches expected: LinkImportPreviewLoader.State,

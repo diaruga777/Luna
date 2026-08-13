@@ -2,16 +2,16 @@
 //  ProductShellWiring.swift
 //  Luna
 //
-//  The product kind's half of the app shell: every seam a product-handling app
-//  installs at launch, and the lifecycle work price trackers owe at each of
-//  `KindWiring`'s fixed points. Compiled ONLY into the targets that link the
-//  product kind (Luna, LunaPriceTracker) — the other two exclude this file by
-//  membership exception, exactly as they exclude `PriceTracker/
-//  ProductCardPresenter.swift` and the rest of the product shell.
+//  The product kind's half of the app shell. It installs every seam a
+//  product-handling app needs at launch, and does the lifecycle work price
+//  trackers owe at each of `KindWiring`'s fixed points. Only the targets that
+//  link the product kind compile this file — Luna and LunaPriceTracker. The
+//  other two exclude it by membership exception, the same way they exclude
+//  `PriceTracker/ProductCardPresenter.swift` and the rest of the product shell.
 //
-//  A `KindWiring+<App>` variant installs the product KIND PACK
-//  (`ProductKindComposition`) and the product CARD presenter itself, then calls
-//  the legs below; nothing product-specific is written twice.
+//  A `KindWiring+<App>` variant installs the product kind pack
+//  (`ProductKindComposition`) and the product card presenter itself, then
+//  calls the legs below. Nothing product-specific is written twice.
 //
 
 import LunaHTMLClassification
@@ -26,36 +26,40 @@ enum ProductShellWiring {
     @MainActor
     static func install() {
         IngestorKindHandlers.product = ProductKindHandler()
-        // A re-save that merges into a tracker which has never been through
-        // a fan-out (still fewer than two stores) kicks a comparison instead
-        // of showing nothing forever — `LunaSaves` cannot link
-        // `LunaPriceUI`, so this is the bridge (`claudedocs/price-comparison.md`).
+        // A re-save that merges into a tracker with fewer than two stores —
+        // one that never ran a fan-out — kicks off a comparison instead of
+        // showing nothing forever. `LunaSaves` cannot link `LunaPriceUI`, so
+        // this closure bridges the two. See `claudedocs/price-comparison.md`.
         SavesIngestor.priceTrackerComparisonKicker = ResaveComparisonKicker()
         // Action Button intents hand a saved product back as its comparison
-        // summary (`claudedocs/price-comparison.md`).
+        // summary. See `claudedocs/price-comparison.md`.
         ProductIntentHandoff.install()
-        // Price Tracker "no price" → "Ask Apple Intelligence" resolver (URL
-        // Rescue Phase 6 UI).
+        // Resolves the Price Tracker's "no price" screen through "Ask Apple
+        // Intelligence" — URL Rescue's Phase 6 UI.
         ProductPriceRescue.resolver = URLRescuePriceResolver()
     }
 
     // MARK: - Lifecycle
 
     static func appDidLaunch() {
-        // A save-time seller fan-out that never finished — a share extension is
-        // torn down the moment the user is done with it — is resumed here, from
-        // the pending marker the tracker carries (`claudedocs/price-comparison.md`).
-        // Product snapshots are NOT swept here: they are read once, on the
-        // save path, when a tracker is created (`claudedocs/price-tracking.md`).
+        // Resumes a save-time seller fan-out that never finished — a share
+        // extension is torn down the moment the user is done with it — from
+        // the pending marker the tracker carries. See
+        // `claudedocs/price-comparison.md`.
+        //
+        // Product snapshots are not swept here. They are read once, on the
+        // save path, when a tracker is created. See
+        // `claudedocs/price-tracking.md`.
         Task {
             await SellerComparison.completePending(store: SavesStore.shared)
         }
     }
 
     static func appDidEnterBackground() {
-        // Keeps the Safari extension's history-pill data current even between
-        // refresh cycles (e.g. after the user edits an alert threshold or
-        // archives a tracker, neither of which triggers a refresh).
+        // Keeps the Safari extension's history-pill data current between
+        // refresh cycles — for example after the user edits an alert
+        // threshold or archives a tracker, neither of which triggers a
+        // refresh.
         PriceHistoryIndexWriter.regenerate()
     }
 
@@ -71,8 +75,9 @@ enum ProductShellWiring {
         }
     }
 
-    /// Brings the tracker's card to the centre of the deck and opens its
-    /// add-seller sheet — the Action Button intent's "add a seller" route.
+    /// Brings the tracker's card to the center of the deck and opens its
+    /// add-seller sheet. This is the Action Button intent's "add a seller"
+    /// route.
     @MainActor
     static func openAddSeller(itemID: UUID, navigationController: UINavigationController) {
         guard SavesStore.shared.item(withID: itemID)?.priceTracker != nil,
@@ -86,8 +91,8 @@ enum ProductShellWiring {
     }
 }
 
-/// The price editors' "Ask Apple Intelligence to find the price" leg: URL
-/// Rescue's product resolution, mapped onto the price the editor needs. Only the
+/// The price editors' "Ask Apple Intelligence to find the price" leg. It maps
+/// URL Rescue's product resolution onto the price the editor needs. Only the
 /// app installs one, so an extension never makes the offer.
 private struct URLRescuePriceResolver: ProductPriceResolving {
     func resolvePrice(forURLString urlString: String) async -> ProductPriceRescue.ResolvedPrice? {
@@ -98,15 +103,15 @@ private struct URLRescuePriceResolver: ProductPriceResolving {
     }
 }
 
-/// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
-/// The re-save bridge: `LunaSaves` cannot link `LunaPriceUI`, so the
-/// composition root carries the fan-out call.
+/// The re-save bridge: `LunaSaves` cannot link `LunaPriceUI`, so this struct
+/// carries the fan-out call the composition root installs above.
 private struct ResaveComparisonKicker: PriceTrackerComparisonKicking {
     func kickComparison(itemID: UUID, url: URL, store: SavesStore) {
         SellerComparison.beginAndRunInBackground(itemID: itemID, sourceURL: url, store: store)
     }
 }
 
+/// Bridges `IngestorProductHandling` to LunaPriceUI's `ProductTrackerIngestor`.
 private struct ProductKindHandler: IngestorProductHandling {
     func ingestProductTracker(
         _ item: SavedItem, url: URL, product: ProductInfo, store: SavesStore

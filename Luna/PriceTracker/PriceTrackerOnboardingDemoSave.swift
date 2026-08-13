@@ -7,10 +7,10 @@ import Foundation
 import LunaModels
 import LunaStorage
 
-/// The tracked product the Price Tracker's onboarding mocks show is rendered by
-/// the replica views alone and is **never saved**. What remains here is the
-/// one-time sweep of the item an OLDER build installed (its product image
-/// included) — see `OnboardingLegacyDemoSave`.
+/// The tracked product the Price Tracker's onboarding mocks show is rendered
+/// by the replica views alone and is never saved. This file only sweeps the
+/// demo item a previous app version installed, including its product image —
+/// see `OnboardingLegacyDemoSave`.
 enum PriceTrackerOnboardingDemoSave {
     static let legacyCleanup: any OnboardingLegacyDemoSweeping = LegacySweep()
 

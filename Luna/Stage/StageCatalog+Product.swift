@@ -2,9 +2,10 @@
 //  StageCatalog+Product.swift
 //  Luna
 //
-//  Product-kind stages. Compiled ONLY into the targets that link the product
-//  kind (Luna, LunaPriceTracker); the other two exclude this file by membership
-//  exception, as they already exclude `PriceTracker/ProductCardContent.swift`.
+//  Product-kind stages. Only the targets that link the product kind compile
+//  this file — Luna and LunaPriceTracker. The other two exclude it by
+//  membership exception, the same way they already exclude
+//  `PriceTracker/ProductCardContent.swift`.
 //
 
 #if DEBUG

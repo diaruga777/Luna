@@ -2,11 +2,12 @@
 //  IngestPipelineTimeoutLegTests.swift
 //  LunaTests
 //
-//  The overall-budget leg of `IngestPipeline.processResolved`: it must speak only
-//  when the budget really elapsed. It is one of two children in a task group, and
-//  the group cancels it as soon as the work leg answers — a save that finished in
-//  a second used to have "budget of 28s elapsed" as the last line of its trace,
-//  because the cancelled sleeper fell through and recorded anyway.
+//  The overall-budget leg of `IngestPipeline.processResolved`: it must speak
+//  only when the budget really elapsed. It is one of two children in a task
+//  group, and the group cancels it as soon as the work leg answers. A
+//  cancelled sleeper that falls through and records anyway would put "budget
+//  of 28s elapsed" as the last line of the trace for a save that finished in
+//  a second.
 //
 
 import LunaFetch

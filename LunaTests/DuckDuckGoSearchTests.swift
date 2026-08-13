@@ -6,13 +6,12 @@
 import LunaFetch
 import XCTest
 
-/// `DuckDuckGoSearch.resultURLs` was silently dead: `html.duckduckgo.com` now
-/// serves every result as a DIRECT href on `class="result__a"`, and the old
-/// parser understood only the historical `…/l/?uddg=` redirect wrapper — a
-/// live 200 page full of results parsed to zero links. These pin BOTH shapes
-/// (a live capture for the direct one, a crafted fixture for the legacy one
-/// the code must keep understanding too) and the anomaly/challenge page that
-/// must be refused rather than parsed as an empty success.
+/// `html.duckduckgo.com` serves every result as a DIRECT href on
+/// `class="result__a"`. `DuckDuckGoSearch.resultURLs` must parse that shape
+/// AND the legacy `…/l/?uddg=` redirect wrapper some pages still use. These
+/// tests pin both shapes — a live capture for the direct one, a crafted
+/// fixture for the legacy one — plus the anomaly/challenge page, which must
+/// be refused rather than parsed as an empty success.
 final class DuckDuckGoSearchTests: XCTestCase {
 
     private func fixture(_ name: String) -> String {

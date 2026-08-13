@@ -36,14 +36,15 @@ extension UITableViewController {
     }
 }
 
-/// A row of the top-level settings menu (title + SF Symbol + the subpage it
-/// pushes). The kind-specific leading rows come from each app's `KindWiring`
-/// variant (`KindWiring.settingsCategories()`); the universal tail is built
-/// here.
+/// A row of the top-level settings menu: a title, an SF Symbol, and the
+/// subpage it pushes. The kind-specific leading rows come from each app's
+/// `KindWiring` variant (`KindWiring.settingsCategories()`); the universal
+/// tail is built here.
 ///
-/// The three closures stay closures: this is a VALUE describing one row, written
-/// inline at its declaration site, and `detail`/`make`/`makePrerequisite` are
-/// that row's own text and screen — not wiring installed between components.
+/// The three closures stay closures: this is a value describing one row,
+/// written inline at its declaration site, and `detail`/`make`/
+/// `makePrerequisite` are that row's own text and screen — not wiring
+/// installed between components.
 struct SettingsCategory {
     let title: String
     let symbol: String
@@ -79,12 +80,11 @@ final class SettingsViewController: NavHeaderTableController, UIGestureRecognize
         + (LunaApp.current.sharesByEmail
             ? [SettingsCategory(title: L10n.string("Common_contacts"), symbol: "person.2") { FriendsViewController() }]
             : [])
-        // Shortcut & Safari holds the suggestion-button toggle and the cookie
-        // auto-decline switch (article apps only), the in-page video player's
-        // off switch (media apps only) and
-        // the Action Button shortcut sections (any device that can run one) —
-        // omit the whole row rather than risk landing on a screen with nothing
-        // in it.
+        // Shortcut & Safari holds the suggestion-button toggle and the
+        // cookie auto-decline switch (article apps only), the in-page video
+        // player's off switch (media apps only), and the Action Button
+        // shortcut sections (any device that can run one). Omit the whole
+        // row rather than risk landing on a screen with nothing in it.
         + (LunaApp.current.handlesArticles || LunaApp.current.handlesMedia
             || ShortcutSettingsScreen.deviceHasShortcutSetup
             ? [SettingsCategory(title: ShortcutSettingsScreen.screenTitle(), symbol: "safari") { ShortcutSettingsScreen() }]
@@ -245,15 +245,16 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private var safariButtonName: String {
         L10n.string("Settings_shortcut_safariButtonName")
     }
-    /// Whether THIS device has an Action Button shortcut to set up: it needs the
-    /// OS that can run the bundled shortcut AND hardware with an Action Button to
-    /// assign it to. Asked of the same helper the onboarding save lesson asks
-    /// (`OnboardingSaveSetupMode`), so Settings and the util card can never
-    /// disagree about which save route this device is being taught.
+    /// Whether this device has an Action Button shortcut to set up. It needs
+    /// the OS that can run the bundled shortcut and hardware with an Action
+    /// Button to assign it to. Asked of the same helper the onboarding save
+    /// lesson asks (`OnboardingSaveSetupMode`), so Settings and the util card
+    /// can never disagree about which save route this device is being taught.
     ///
-    /// Nothing about the Safari extension is behind this: `nativeMessaging` — and
-    /// so the extension's page buttons, its unlocking, and the recent-URL history
-    /// the util card offers — runs on every OS Luna supports.
+    /// Nothing about the Safari extension is behind this: `nativeMessaging`
+    /// — and so the extension's page buttons, its unlocking, and the
+    /// recent-URL history the util card offers — runs on every OS Luna
+    /// supports.
     static var deviceHasShortcutSetup: Bool {
         OnboardingSaveSetupMode.current == .actionButtonShortcut
     }
@@ -270,11 +271,11 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
         // The suggestion pill only ever fires on article pages, so its toggle
         // is meaningless outside the two apps that handle articles.
         var sections: [Section] = LunaApp.current.handlesArticles ? [.suggestionButton] : []
-        // Cookie auto-decline is a READING comfort — the two apps whose users
+        // Cookie auto-decline is a reading comfort. The two apps whose users
         // spend their Safari time on article pages own the choice, and the
-        // Downloader / Price Tracker keep it always-on with no control (their
-        // extensions never read the key, so an "off" here cannot reach them
-        // through the shared App Group suite).
+        // Downloader and Price Tracker keep it always on with no control:
+        // their extensions never read the key, so an "off" here cannot
+        // reach them through the shared App Group suite.
         if LunaApp.current.handlesArticles { sections.append(.cookiePopups) }
         // The in-page video player is media handling, and only the two
         // media-handling apps' extensions ever open one
@@ -356,8 +357,8 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             control.addTarget(self, action: #selector(suggestionModeChanged(_:)), for: .valueChanged)
             control.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(control)
-            // Center at the control's NATURAL height (pinning top+bottom would
-            // stretch it taller than a normal segmented control and look off).
+            // Centers at the control's natural height; pinning top and bottom
+            // would stretch it taller than a normal segmented control and look off.
             NSLayoutConstraint.activate([
                 control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
                 control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),

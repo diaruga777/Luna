@@ -12,12 +12,13 @@ import LunaStorage
 import UIKit
 import XCTest
 
-/// The extension's immediate-editor path: before it asked `ProductTrackerMerge`,
-/// a share-sheet save of an already-tracked product created a SECOND tracker
-/// instead of merging into the first — even when both pages declared the same
-/// GTIN. These pin the merge outcome at the presenter's own level: the
-/// placeholder item is removed, the existing tracker gains the store, and no
-/// duplicate tracker is left behind.
+/// The extension's immediate-editor path. A share-sheet save of an
+/// already-tracked product must merge into the existing tracker through
+/// `ProductTrackerMerge`, even when both pages declare the same GTIN, rather
+/// than create a second tracker for the same product. These pin the merge
+/// outcome at the presenter's own level: the placeholder item is removed,
+/// the existing tracker gains the store, and no duplicate tracker is left
+/// behind.
 @MainActor
 final class ExtensionProductPresenterTests: XCTestCase {
 
@@ -78,7 +79,7 @@ final class ExtensionProductPresenterTests: XCTestCase {
         return host.presented
     }
 
-    // MARK: - No match: creates a new tracker, as before
+    // MARK: - No match: creates a new tracker
 
     func testNoExistingTrackerCreatesANewTrackerAndPresentsTheEditor() {
         let url = URL(string: "https://a.example/p/1")!

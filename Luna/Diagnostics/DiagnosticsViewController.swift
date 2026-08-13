@@ -272,11 +272,10 @@ final class DiagnosticsViewController: UIViewController {
         present(confirm, animated: true)
     }
 
-    /// The factory reset. This used to clear onboarding alone; it now erases the
-    /// whole install — both containers, both defaults domains, the shared
-    /// keychain, notifications and the Spotlight index (`FactoryReset`) — so
-    /// onboarding comes back as a consequence of there being nothing left rather
-    /// than as a special case.
+    /// The factory reset erases the whole install — both containers, both
+    /// defaults domains, the shared keychain, notifications and the Spotlight
+    /// index (`FactoryReset`) — so onboarding comes back as a consequence of
+    /// there being nothing left rather than as a special case.
     ///
     /// It ends by QUITTING. Every store in the app is a singleton holding a
     /// decoded cache of a file that no longer exists, and the first one to write

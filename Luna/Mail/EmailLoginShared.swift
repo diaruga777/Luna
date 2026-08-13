@@ -2,9 +2,9 @@
 //  EmailLoginShared.swift
 //  Luna
 //
-//  Visual language and small helpers shared by the email sign-in surfaces
-//  (`CredentialViewController`, and the inline address field in Settings →
-//  Email): the hero/title/body/field-card treatment, the filled action
+//  Shared visual language and small helpers for the email sign-in surfaces
+//  (`CredentialViewController` and the inline address field in Settings →
+//  Email). Covers the hero/title/body/field-card treatment, the filled action
 //  button, the provider badge chip, the OAuth presentation-context anchor, and
 //  the invalid-input shake.
 //
@@ -30,9 +30,9 @@ enum EmailLoginUI {
         glyph.contentMode = .center
         glyph.translatesAutoresizingMaskIntoConstraints = false
         tile.addSubview(glyph)
-        // Wrapped in a centering container: the screens' vertical stacks use
-        // `.fill` alignment, which would otherwise stretch the tile's required
-        // 96pt width to the full stack width.
+        // Wrapped in a centering container. The screens' vertical stacks use
+        // `.fill` alignment, which would otherwise stretch the tile to the full
+        // stack width.
         let wrapper = UIView()
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(tile)
@@ -67,9 +67,8 @@ enum EmailLoginUI {
         return label
     }
 
-    /// A rounded `LunaColors.secondaryBackground` card the text field sits inside,
-    /// matching the comfortable 52-56pt row height used elsewhere for tappable
-    /// list-like rows.
+    /// A rounded `LunaColors.secondaryBackground` card that holds the text field.
+    /// Matches the 52-56pt row height used elsewhere for tappable list rows.
     static func fieldCard() -> UIView {
         let card = UIView()
         card.backgroundColor = LunaColors.secondaryBackground
@@ -91,9 +90,9 @@ enum EmailLoginUI {
     }
 }
 
-/// The filled accent action button (Sign In): 52pt tall, white 19pt semibold
-/// title, `GlassStyle.lunaBrandAccent` fill, cornerRadius 14. Disabling dims to
-/// 50% alpha (the stock disabled state barely dims a solid fill).
+/// The filled accent action button (Sign In). 52pt tall, white 19pt semibold
+/// title, `GlassStyle.lunaBrandAccent` fill, 14pt corner radius. Disabling dims
+/// to 50% alpha, since the stock disabled state barely dims a solid fill.
 final class EmailLoginActionButton: UIButton {
     private let spinner = HorizonSpinnerView(side: 20)
     private var restingTitle: String
@@ -129,18 +128,18 @@ final class EmailLoginActionButton: UIButton {
     private func updateAlpha() { alpha = isEnabled ? 1 : 0.5 }
 }
 
-/// The chip text for a known provider, or nil to hide the badge — `.generic`
-/// covers both unrecognized domains and the empty field (no "@" → no domain →
-/// `.generic`), so one check handles both "hidden" cases the design calls for.
+/// The chip text for a known provider, or nil to hide the badge. `.generic`
+/// covers both an unrecognized domain and an empty field (no "@" means no
+/// domain, which resolves to `.generic`), so one check covers both hidden cases.
 enum ProviderBadgeText {
     static func text(for providerID: MailProvider.ID) -> String? {
         providerID == .generic ? nil : MailProvider.provider(for: providerID).displayName
     }
 }
 
-/// A small capsule chip ("Gmail", "iCloud", …) inside a field card. Always laid
-/// out at its natural size and only ever faded via `alpha` — never added/removed
-/// or constraint-shifted — so it never causes a layout jump when it appears.
+/// A small capsule chip ("Gmail", "iCloud", …) inside a field card. Always at
+/// its natural size and only ever faded via `alpha` — never added, removed, or
+/// constraint-shifted — so it never causes a layout jump when it appears.
 final class ProviderBadgeView: UIView {
     private let label = UILabel()
 
@@ -167,8 +166,8 @@ final class ProviderBadgeView: UIView {
         layer.cornerRadius = bounds.height / 2
     }
 
-    /// `nil` fades the chip out; a name fades it in (updating the text first so
-    /// it never flashes the wrong provider mid-fade).
+    /// `nil` fades the chip out. A name fades it in, updating the text first so
+    /// it never flashes the wrong provider mid-fade.
     func setProvider(_ text: String?) {
         if let text { label.text = text }
         UIView.animate(withDuration: 0.15) {

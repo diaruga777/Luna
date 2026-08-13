@@ -22,14 +22,14 @@ final class ClipReaderViewController: UIViewController {
 
     private var state: State = .waiting
     private var task: Task<Void, Never>?
-    /// The clip's OWN saves store, in the clip's own container — never the
-    /// App Group one the full app reads.
+    /// The clip's own saves store, in the clip's own container. It never
+    /// touches the App Group store the full app reads.
     ///
-    /// `ArchiveWebReaderViewController` extracts THROUGH a store (it saves the
-    /// unlocked article to an item, then hands the item back), and the clip stays
-    /// read-only with respect to the user's saved list: no clip save may show up in
-    /// Luna Reader later. A private container satisfies both — the unlock writes
-    /// somewhere real, and that somewhere is thrown away with the clip.
+    /// `ArchiveWebReaderViewController` extracts through a store: it saves the
+    /// unlocked article to an item, then hands the item back. The clip must
+    /// stay read-only with respect to the user's saved list, so no clip save
+    /// may ever show up in Luna Reader. A private container gives the unlock
+    /// somewhere real to write, while keeping that write scoped to the clip.
     private lazy var scratchStore: SavesStore = {
         let directory = URL.cachesDirectory.appendingPathComponent(
             "ClipArchiveUnlock", isDirectory: true)
@@ -46,8 +46,9 @@ final class ClipReaderViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L10n.string("AppClip_reader_navigationTitle")
-        // Same appearance the host app pins: the clip pushes LunaReaderUI /
-        // LunaMediaDownload screens that are light-on-dark in both appearances.
+        // Pins the same appearance the host app uses. The clip pushes
+        // LunaReaderUI / LunaMediaDownload screens, which stay light-on-dark
+        // in both appearances.
         AppearanceSettings.apply(to: self)
         view.backgroundColor = LunaColors.background
         configureLayout()
@@ -112,27 +113,28 @@ final class ClipReaderViewController: UIViewController {
         navigationController?.setViewControllers([reader], animated: false)
     }
 
-    /// A hard paywall or a bot wall the silent tier couldn't pass: resolve it right
-    /// here, exactly as the app and both share-sheet extensions do. Nothing about
-    /// the unlock needs the full app — an App Clip may run a `WKWebView`, keep
-    /// cookies, and open Safari — so parking the user on "download the app" was
-    /// throwing away an article the clip can read.
+    /// Resolves a hard paywall or bot wall the silent tier couldn't pass,
+    /// right here — the same way the app and both share-sheet extensions do.
+    /// An App Clip can run a `WKWebView`, keep cookies, and open Safari, so
+    /// the unlock needs nothing from the full app. Sending the user to
+    /// "download the app" instead would throw away an article the clip can
+    /// already read.
     private func presentArchiveUnlock(for url: URL, fallbackTitle: String) {
         let item = scratchStore.add(urlString: url.absoluteString)
         scratchStore.markNeedsCaptcha(item.id, title: fallbackTitle)
 
         let archive = ArchiveWebReaderViewController(
             articleURL: url, itemID: item.id, store: scratchStore)
-        // A clip lives in a window it doesn't own the root of, so — like the
-        // extensions — each screen pins the appearance itself.
+        // A clip does not own the root of its window, so — like the
+        // extensions — each screen pins its own appearance.
         AppearanceSettings.apply(to: archive)
         archive.delegate = ClipUnlockLegs(host: self, itemID: item.id, store: scratchStore)
         navigationController?.setViewControllers([archive], animated: false)
     }
 
-    /// The clip's answer to a closed unlock: there is nowhere to go back to, so it
-    /// returns to this screen with the full app offered as the remaining route, and
-    /// the unlock one tap away again via Retry.
+    /// Handles a closed unlock. There is nowhere to go back to, so this
+    /// returns to this screen, offers the full app as the remaining route,
+    /// and puts the unlock one tap away again via Retry.
     fileprivate func returnFromUnlock() {
         navigationController?.setViewControllers([self], animated: false)
         update(.failed(L10n.string("AppClip_reader_needsArchiveUnlockMessage")))
@@ -174,8 +176,8 @@ final class ClipReaderViewController: UIViewController {
                 greaterThanOrEqualTo: view.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(
                 lessThanOrEqualTo: view.layoutMarginsGuide.trailingAnchor),
-            // A clip opens full screen, so on an iPad this waiting state would
-            // otherwise be one line of copy stretched across thirteen inches.
+            // A clip opens full screen. Without this cap, an iPad would
+            // stretch this waiting state's copy across the whole width.
             stack.widthAnchor.constraint(
                 lessThanOrEqualToConstant: LunaLayout.readableWidth),
             stack.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
@@ -217,12 +219,13 @@ final class ClipReaderViewController: UIViewController {
     }
 }
 
-/// The clip's legs for the archive unlock. The reader retains this; it holds the
-/// clip screen weakly, the same lifetime rule the extensions' own legs follow.
+/// The clip's delegate for the archive unlock. The reader retains this, and
+/// this holds the clip screen weakly — the same lifetime rule the
+/// extensions' own delegates follow.
 ///
-/// It is the one host that ANSWERS the Safari escape: a clip is an app, so
-/// `UIApplication` is there to leave with, where an `.appex` has nothing to open a
-/// URL through and takes the protocol's `false`.
+/// It is the one host that answers the Safari escape: a clip is an app, so
+/// it can open a URL through `UIApplication`. An `.appex` has no such route
+/// and returns the protocol's `false` instead.
 @MainActor
 private final class ClipUnlockLegs: ArchiveUnlockDelegate {
     private weak var host: ClipReaderViewController?

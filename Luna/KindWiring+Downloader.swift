@@ -2,11 +2,11 @@
 //  KindWiring+Downloader.swift
 //  Luna
 //
-//  Per-app composition root: registers exactly the per-kind processors,
-//  ingestor handlers, and UI/lifecycle seams this app's target links. EXACTLY
-//  ONE KindWiring variant is compiled into each app target (the other variants
-//  are excluded via the synchronized group's per-target membership exceptions)
-//  — the registries and the static lifecycle API below mirror the link set.
+//  Per-app composition root. It registers the per-kind processors, ingestor
+//  handlers, and UI/lifecycle seams this app's target links. Each app target
+//  compiles exactly one `KindWiring` variant — the synchronized group excludes
+//  the others by membership exception — so the registries and the static
+//  lifecycle API below mirror this app's own link set.
 //
 
 import LunaMediaDownload
@@ -24,30 +24,32 @@ enum KindWiring {
     static func install() {
         #if DEBUG
         AppOnboardingStore.shared.resetIfRequested()
-        // Staged mode's catalogs — this app's kinds only (`claudedocs/staging.md`).
+        // Staged mode's catalogs, for this app's kinds only
+        // (`claudedocs/staging.md`).
         SharedStageCatalog.install()
         MediaStageCatalog.install()
         #endif
 
-        // The media kind pack — one call, shared verbatim with the Downloader's
-        // share and action extensions (`MediaKindComposition`). Media needs no
-        // web-processing pipeline stage (platform recognition is URL-only
-        // classification), which is stated there rather than re-derived here.
+        // The media kind pack: one call, shared verbatim with the
+        // Downloader's share and action extensions. See
+        // `MediaKindComposition`, which also states that media needs no
+        // web-processing pipeline stage — platform recognition is URL-only
+        // classification.
         MediaKindComposition.install()
-        // The media kind's CARD half, on the same principle — the one
-        // definition the central app installs too (`CardKindPresenter.swift`).
+        // The media kind's card half follows the same rule — the one
+        // definition the central app installs too. See `CardKindPresenter.swift`.
         CardKindPresenters.media = MediaCardPresenter()
-        // …and the media kind's half of the app shell, which the central app
-        // installs from the same file (`MediaShellWiring`).
+        // The media kind's app-shell half installs from the same file the
+        // central app uses (`MediaShellWiring`).
         MediaShellWiring.install()
     }
 
     // MARK: - Root UI shape
 
-    /// The saved-media card deck in a bare nav controller — no audio
-    /// mini-player host (read-aloud is an article-app feature). The deck itself
-    /// is the shared host configured by `MediaCardDeck`; this app has no deck
-    /// subclass of its own.
+    /// The saved-media card deck in a bare nav controller, with no audio
+    /// mini-player host — read-aloud is an article-app feature. `MediaCardDeck`
+    /// configures the shared deck host; this app has no deck subclass of its
+    /// own.
     @MainActor
     static func makeRootViewController() -> UIViewController {
         UINavigationController(rootViewController: MediaCardDeck.makeRoot())
@@ -86,9 +88,9 @@ enum KindWiring {
 
     static func sceneDidForeground() {
         MediaShellWiring.sceneDidForeground()
-        // Foregrounding is possibly the first time this process is on Wi-Fi
-        // since a download queued, so it resumes what the policy deferred —
-        // the central app leaves that to the reachability notification.
+        // This may be the first time this process sees Wi-Fi since a
+        // download queued, so it resumes what the policy deferred. The
+        // central app instead leaves that to the reachability notification.
         MediaShellWiring.resumePendingWiFiDownloads()
     }
 
@@ -100,7 +102,8 @@ enum KindWiring {
         MediaShellWiring.resumePendingWiFiDownloads()
     }
 
-    /// Downloader handles no articles — ereader sends are never pending here.
+    /// Downloader handles no articles, so ereader sends are never pending
+    /// here.
     static func retryPendingArticleSends() {}
 
     static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
@@ -114,8 +117,8 @@ enum KindWiring {
     static let mediaShareFileExporter: (any MediaShareFileExporting)? =
         MediaShellWiring.shareFileExporter
 
-    /// Downloader handles no products — no runner ⇒ AppDelegate never registers
-    /// or schedules the price-refresh BGTask.
+    /// Downloader handles no products, so there is no runner. AppDelegate
+    /// never registers or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (any PriceRefreshRunning)? = nil
 
     #if DEBUG

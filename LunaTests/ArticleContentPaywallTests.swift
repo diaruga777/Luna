@@ -71,10 +71,6 @@ final class ArticleContentPaywallTests: XCTestCase {
     }
 
     // MARK: - PaywallDetector.htmlDeclaresLocked / looksPaywalled(content:html:)
-    //
-    // Ported from LunaLibraries/Tests/LunaHTMLClassificationTests (retired) —
-    // retargeted at `PaywallDetector.htmlDeclaresLocked`, since the
-    // `HTMLClassification.declaresPaywall` wrapper it originally asserted was deleted.
 
     func testDetectsPublisherPaywallSchema() {
         XCTAssertTrue(PaywallDetector.htmlDeclaresLocked(#"{"isAccessibleForFree":false}"#))

@@ -10,6 +10,6 @@ import Foundation
 /// `SafariURLStore`/`ScreenshotDoublePressStore`'s otherwise-identical
 /// test-injection hook — each store keeps its own `testDefaultsOverride` slot so
 /// tests can't leak an override from one store into the other.
-func resolvedAppGroupDefaults(appGroupID: String, testOverride: UserDefaults?) -> UserDefaults? {
+public func resolvedAppGroupDefaults(appGroupID: String, testOverride: UserDefaults?) -> UserDefaults? {
     testOverride ?? UserDefaults(suiteName: appGroupID)
 }

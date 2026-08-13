@@ -105,7 +105,7 @@ public final class ExtensionProductPresenter: ShareProductPresenting {
                 mode: .creation(itemID: itemID, host: .extension),
                 addSellerHandoff: addSellerHandoff)
         }
-        editor.onDone = { [weak host] in host?.confirmSavedThenComplete() }
+        editor.completionDelegate = host
         host.presentModally(editor)
     }
 

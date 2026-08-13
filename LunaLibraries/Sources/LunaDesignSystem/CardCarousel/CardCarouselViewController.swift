@@ -502,14 +502,7 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.addSubview(playbackScrubProgress)
         playbackSpeedPill.alpha = 0
         playbackSpeedPill.isHidden = true
-        playbackSpeedPill.onSelectSpeed = { [weak self] speed in
-            guard let self, let content = self.slots[self.currentIndex]?.content else { return }
-            content.setPlaybackSpeed(speed)
-            // The new label needs a new pill frame ("0.25×" is wider than
-            // "1×", and the pill is frame-managed) — without this the longer
-            // title wraps to a second line inside the old width.
-            self.layoutPlaybackScrubProgress()
-        }
+        playbackSpeedPill.delegate = self
         cardArea.addSubview(playbackSpeedPill)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         scrubberLeadingConstraint = scrubber.leadingAnchor.constraint(
@@ -1798,6 +1791,17 @@ extension CardCarouselViewController: CardContentAudioAvailabilityObserving,
 
     public func cardContentDidChangePlaybackState(_ content: CardContentViewController) {
         updatePlaybackControls()
+    }
+}
+
+extension CardCarouselViewController: PlaybackSpeedPillDelegate {
+    public func playbackSpeedPill(_ pill: PlaybackSpeedPillButton, didSelect speed: Double) {
+        guard let content = slots[currentIndex]?.content else { return }
+        content.setPlaybackSpeed(speed)
+        // The new label needs a new pill frame ("0.25×" is wider than "1×", and the
+        // pill is frame-managed) — without this the longer title wraps to a second
+        // line inside the old width.
+        layoutPlaybackScrubProgress()
     }
 }
 

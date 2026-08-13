@@ -37,9 +37,18 @@ public protocol SavedMediaScreenDelegate: AnyObject {
     func savedMediaScreenDidFinish(_ screen: UIViewController)
 }
 
+/// What a hosted price editor tells the surface that presented it: the user pressed
+/// its exit button. Same reason for living here as `SavedMediaScreenDelegate` above —
+/// `ExtensionHost` refines it, so the product presenter hands the editor `host`
+/// directly. Nil in the app, where the editor's own back chevron pops instead.
+@MainActor
+public protocol PriceEditorScreenDelegate: AnyObject {
+    func priceEditorDidFinish(_ editor: UIViewController)
+}
+
 @MainActor
 public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
-    SavedMediaScreenDelegate {
+    SavedMediaScreenDelegate, PriceEditorScreenDelegate {
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
     /// reader-vs-save-silently fork in the unified presenter. Kind-neutral
@@ -89,6 +98,14 @@ public extension ExtensionHost {
     /// user had just dismissed. The same answer for every extension host.
     func savedMediaScreenDidFinish(_ screen: UIViewController) {
         completeSilently()
+    }
+
+    /// The price editor's exit DOES show the saved checkmark, unlike the media
+    /// screen's: this editor has no header of its own claiming the save, so the
+    /// checkmark is the only confirmation the user gets. The same answer for every
+    /// extension host.
+    func priceEditorDidFinish(_ editor: UIViewController) {
+        confirmSavedThenComplete()
     }
 }
 

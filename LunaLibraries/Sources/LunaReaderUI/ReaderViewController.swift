@@ -256,10 +256,9 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     /// grows a playback footer when read-aloud is on, so the button sits low until
     /// then and lifts to clear the controls once they appear.
     ///
-    /// RSVP is not here: its footer no longer sits at a fixed height above the
-    /// safe area (the controls lift off it on a roomy container), so the button
-    /// hangs off the speed reader's own controls instead — see
-    /// `updateFloatingShareAnchor`.
+    /// RSVP has no case here: its footer's height varies (the controls lift off
+    /// the safe area on a roomy container), so the button hangs off the speed
+    /// reader's own controls instead — see `updateFloatingShareAnchor`.
     private static func floatingShareBottomInset(
         for mode: SavedItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {

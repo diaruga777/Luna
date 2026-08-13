@@ -272,8 +272,8 @@ final class RSVPGazeCoordinator: GazeTrackingDelegate {
     }
 
     /// Whether a calibrated point (in `view`'s coordinates) still lands on the
-    /// physical display. The tracker no longer decides this — it can't, since
-    /// only the calibrated point says where the reader is actually looking.
+    /// physical display. This decides it, not the tracker: only the calibrated
+    /// point says where the reader is actually looking.
     private func isOnDisplay(_ point: CGPoint, in view: UIView) -> Bool {
         guard let window = view.window else { return true }
         let inWindow = view.convert(point, to: window)

@@ -81,23 +81,20 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
     /// under a Done button that arrived before the article did.
     public func presentReader(url: URL, mode: ExtensionReaderMode, outcome: Outcome, host: ExtensionHost) {
         let readerMode = Self.readerMode(mode)
-        let onModeChange: (ShareReaderViewController.Mode) -> Void = {
-            ActionReaderMode.last = Self.extensionMode($0)
-        }
+        let legs = ExtensionReaderLegs(host: host)
         guard case let .article(content, _) = outcome else {
             // The driver only routes `.article` here; anything else keeps the
             // standalone reader's own outcome handling rather than a blank sheet.
             host.presentModally(ShareReaderViewController(
-                url: url, mode: readerMode, outcome: outcome, onModeChange: onModeChange,
-                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
+                url: url, mode: readerMode, outcome: outcome,
+                modePreferenceDelegate: legs, completionDelegate: legs))
             return
         }
         Task { @MainActor [weak host] in
             guard let host else { return }
             host.presentModally(await ShareReaderViewController.preparedReader(
                 url: url, mode: readerMode, content: content,
-                onModeChange: onModeChange,
-                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
+                modePreferenceDelegate: legs, completionDelegate: legs))
         }
     }
 
@@ -122,6 +119,38 @@ public final class ExtensionArticlePresenter: ShareArticlePresenting {
 
     fileprivate static func extensionMode(_ mode: ShareReaderViewController.Mode) -> ExtensionReaderMode {
         ExtensionReaderMode(rawValue: mode.rawValue) ?? .reader
+    }
+}
+
+/// The in-sheet reader's two host legs, kept together for the life of the sheet.
+///
+/// A small coordinator rather than the presenter itself: the driver AND this presenter
+/// are intentionally short-lived, while the reader stays up until the user leaves it.
+/// The reader (and its Done bar item) retain this; this holds the host weakly, so
+/// nothing cycles.
+///
+/// Two protocols on one object because the two legs share one owner, not because they
+/// are one event: exiting the extension and remembering a mode are unrelated, and only
+/// the exit is mandatory.
+@MainActor
+private final class ExtensionReaderLegs: ShareReaderCompletionDelegate,
+    ReaderModePreferenceDelegate {
+    private weak var host: (any ExtensionHost)?
+
+    init(host: any ExtensionHost) {
+        self.host = host
+    }
+
+    func shareReaderDidFinish() {
+        host?.confirmSavedThenComplete()
+    }
+
+    /// The action extension keeps its own last-used mode. The reader speaks in
+    /// `ReadingListItem.ReaderMode`; the surface stores `ExtensionReaderMode`, and
+    /// `ShareReaderViewController.Mode` is the shared vocabulary between them.
+    func reader(_ reader: UIViewController, didSelectMode mode: ReadingListItem.ReaderMode) {
+        ActionReaderMode.last = ExtensionArticlePresenter.extensionMode(
+            ShareReaderViewController.Mode(readerMode: mode))
     }
 }
 
@@ -165,10 +194,10 @@ private final class ExtensionUnlockLegs: ArchiveUnlockDelegate {
         let url = url
         Task { @MainActor [weak host] in
             guard let host else { return }
+            let legs = ExtensionReaderLegs(host: host)
             host.presentModally(await ShareReaderViewController.preparedReader(
                 url: url, mode: readerMode, content: content,
-                onModeChange: { ActionReaderMode.last = ExtensionArticlePresenter.extensionMode($0) },
-                onDone: { [weak host] in host?.confirmSavedThenComplete() }))
+                modePreferenceDelegate: legs, completionDelegate: legs))
         }
     }
 

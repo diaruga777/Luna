@@ -46,9 +46,11 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
 
     /// When false, switching modes does NOT write the shared `ReaderSettings`/
     /// per-item mode (used by the action extension, which keeps its own
-    /// preference). When set, `onModeChange` is called instead.
+    /// preference). The switch goes to `modePreferenceDelegate` instead.
     private let persistsModePreference: Bool
-    private let onModeChange: ((ReadingListItem.ReaderMode) -> Void)?
+    /// See `ReaderModePreferenceDelegate` — held strongly, since the conformer is a
+    /// coordinator the surface made for this presentation rather than an owner.
+    private let modePreferenceDelegate: (any ReaderModePreferenceDelegate)?
 
     /// When false, opening does NOT mark the item `.opened` — for a host that just
     /// previews the article; only an explicit Mark Read changes its state.
@@ -82,7 +84,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
          marksOpenedOnLoad: Bool = true,
          inlineControlsHeader: Bool = false,
          inlineHeaderSubtitle: String? = nil,
-         onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
+         modePreferenceDelegate: (any ReaderModePreferenceDelegate)? = nil) {
         self.item = item
         self.content = content
         self.shareProvider = shareProvider
@@ -90,7 +92,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         self.marksOpenedOnLoad = marksOpenedOnLoad
         self.inlineControlsHeader = inlineControlsHeader
         self.inlineHeaderSubtitle = inlineHeaderSubtitle
-        self.onModeChange = onModeChange
+        self.modePreferenceDelegate = modePreferenceDelegate
         self.availableModes = Self.baseModes + (ReadingListStore.shared.hasOriginalSource(for: item) ? [.original] : [])
         // First time on this article, fall back to the global last-used mode.
         let requestedMode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
@@ -310,7 +312,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             store.setReaderMode(newMode, for: item.id)
             ReaderSettings.lastReaderMode = newMode
         }
-        onModeChange?(newMode)
+        modePreferenceDelegate?.reader(self, didSelectMode: newMode)
         showCurrentMode()
     }
 

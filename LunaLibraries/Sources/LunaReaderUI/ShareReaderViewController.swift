@@ -45,12 +45,16 @@ public final class ShareReaderViewController: UIViewController {
     /// article against the SAME page URL this screen was opened for.
     fileprivate let url: URL
     private let mode: Mode
-    private let onDone: () -> Void
+    /// The surface's exit. Held strongly: the conformer is a small coordinator the
+    /// composition root made for this presentation, and the Done item it ends up on
+    /// has to outlive this screen (see `doneButton`).
+    private let completionDelegate: any ShareReaderCompletionDelegate
     /// Persists the surface's last-used reader mode (the action extension's own
     /// `ActionReaderMode`, injected by the composition root — this article-kind
     /// module doesn't see the surface's preference store). Nil when the host
-    /// surface keeps no mode preference (e.g. the UI-test harness).
-    private let onModeChange: ((Mode) -> Void)?
+    /// surface keeps no mode preference (e.g. the UI-test harness). Passed straight
+    /// through to the reader this screen builds, which is what emits the switches.
+    private let modePreferenceDelegate: (any ReaderModePreferenceDelegate)?
     /// A pre-computed `Outcome` to present (the action extension already ran the
     /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
     private let precomputedOutcome: Outcome?
@@ -60,13 +64,14 @@ public final class ShareReaderViewController: UIViewController {
 
     public init(
         url: URL, mode: Mode, outcome: Outcome? = nil,
-        onModeChange: ((Mode) -> Void)? = nil, onDone: @escaping () -> Void
+        modePreferenceDelegate: (any ReaderModePreferenceDelegate)? = nil,
+        completionDelegate: any ShareReaderCompletionDelegate
     ) {
         self.url = url
         self.mode = mode
         self.precomputedOutcome = outcome
-        self.onModeChange = onModeChange
-        self.onDone = onDone
+        self.modePreferenceDelegate = modePreferenceDelegate
+        self.completionDelegate = completionDelegate
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -99,7 +104,8 @@ public final class ShareReaderViewController: UIViewController {
     /// hand-off replaces all three steps.
     public static func preparedReader(
         url: URL, mode: Mode, content: ArticleContent, store: ReadingListStore = .shared,
-        onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
+        modePreferenceDelegate: (any ReaderModePreferenceDelegate)?,
+        completionDelegate: any ShareReaderCompletionDelegate
     ) async -> UIViewController {
         // Reuse the row the extension already appended (`add` is idempotent), so
         // the reader marks the same shared item opened/read.
@@ -108,7 +114,8 @@ public final class ShareReaderViewController: UIViewController {
         let saved = store.saveContent(settled, for: item)
         return makeReader(
             item: saved, content: settled, mode: mode,
-            onModeChange: onModeChange, onDone: onDone)
+            modePreferenceDelegate: modePreferenceDelegate,
+            completionDelegate: completionDelegate)
     }
 
     /// Resolves the images already on disk, then downloads the ones the page gave
@@ -153,7 +160,8 @@ public final class ShareReaderViewController: UIViewController {
 
     private static func makeReader(
         item: ReadingListItem, content: ArticleContent, mode: Mode,
-        onModeChange: ((Mode) -> Void)?, onDone: @escaping () -> Void
+        modePreferenceDelegate: (any ReaderModePreferenceDelegate)?,
+        completionDelegate: any ShareReaderCompletionDelegate
     ) -> ReaderViewController {
         // A lightweight share provider (friend-share via the App Group queue +
         // link share — no CloudKit in the extension) so the reader's own share
@@ -164,10 +172,10 @@ public final class ShareReaderViewController: UIViewController {
             shareProvider: ExtensionReaderShareProvider(),
             // The action extension keeps its OWN last-used mode, separate from
             // the main app — persist switches locally (via the injected
-            // `onModeChange`), don't touch the shared ReaderSettings.
+            // delegate), don't touch the shared ReaderSettings.
             persistsModePreference: false,
-            onModeChange: { onModeChange?(Mode(readerMode: $0)) })
-        reader.navigationItem.leftBarButtonItem = doneButton(onDone)
+            modePreferenceDelegate: modePreferenceDelegate)
+        reader.navigationItem.leftBarButtonItem = doneButton(completionDelegate)
         return reader
     }
 
@@ -179,12 +187,18 @@ public final class ShareReaderViewController: UIViewController {
     /// circles in one corner is worse than one bar button. Every screen that
     /// doesn't have that conflict — this one's loading / saved / failure states,
     /// and the other extension surfaces — uses `ExtensionExitButton` instead.
-    private static func doneButton(_ onDone: @escaping () -> Void) -> UIBarButtonItem {
-        UIBarButtonItem(systemItem: .done, primaryAction: UIAction { _ in onDone() })
+    private static func doneButton(
+        _ delegate: any ShareReaderCompletionDelegate
+    ) -> UIBarButtonItem {
+        UIBarButtonItem(
+            systemItem: .done,
+            primaryAction: UIAction { _ in delegate.shareReaderDidFinish() })
     }
 
     /// This screen's own exit: the shared floating glass button, bottom-right.
-    private lazy var exitButton = ExtensionExitButton.make { [weak self] in self?.onDone() }
+    private lazy var exitButton = ExtensionExitButton.make {
+        [weak self] in self?.completionDelegate.shareReaderDidFinish()
+    }
 
     /// The loading / saved / failure states carry the floating exit instead of a
     /// navigation bar holding nothing else. The reader that replaces this screen
@@ -306,7 +320,7 @@ public final class ShareReaderViewController: UIViewController {
         // the web view out for the native reader showing the captured content —
         // the user reads in-app, not the raw archive page.
         archive.delegate = InSheetUnlockLegs(
-            screen: self, itemID: item.id, onDone: onDone)
+            screen: self, itemID: item.id, completionDelegate: completionDelegate)
         navigationController?.setViewControllers([archive], animated: false)
     }
 
@@ -317,7 +331,8 @@ public final class ShareReaderViewController: UIViewController {
         spinner.stopAnimating()
         let reader = Self.makeReader(
             item: item, content: content, mode: mode,
-            onModeChange: onModeChange, onDone: onDone)
+            modePreferenceDelegate: modePreferenceDelegate,
+            completionDelegate: completionDelegate)
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)
     }
@@ -396,9 +411,9 @@ public final class ShareReaderViewController: UIViewController {
 /// it replaces had built in: handing the archive reader the nav stack REMOVES this
 /// screen from it (`setViewControllers([archive])`), so nothing retains the screen
 /// past that moment. So the two legs keep exactly the reach they had — the finish leg
-/// captures the completion strongly, and so still exits the extension after the screen
-/// has gone, while the reader swap-in holds the screen weakly and simply doesn't
-/// happen without it.
+/// holds the completion delegate strongly, and so still exits the extension after the
+/// screen has gone, while the reader swap-in holds the screen weakly and simply
+/// doesn't happen without it.
 ///
 /// It declares no Safari escape and takes the protocol's `false`: an extension has no
 /// `UIApplication` to leave Luna with.
@@ -406,12 +421,15 @@ public final class ShareReaderViewController: UIViewController {
 private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
     private weak var screen: ShareReaderViewController?
     private let itemID: UUID
-    private let onDone: () -> Void
+    private let completionDelegate: any ShareReaderCompletionDelegate
 
-    init(screen: ShareReaderViewController, itemID: UUID, onDone: @escaping () -> Void) {
+    init(
+        screen: ShareReaderViewController, itemID: UUID,
+        completionDelegate: any ShareReaderCompletionDelegate
+    ) {
         self.screen = screen
         self.itemID = itemID
-        self.onDone = onDone
+        self.completionDelegate = completionDelegate
     }
 
     func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
@@ -427,6 +445,6 @@ private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
     }
 
     func archiveReaderDidClose(_ reader: ArchiveWebReaderViewController) {
-        onDone()
+        completionDelegate.shareReaderDidFinish()
     }
 }

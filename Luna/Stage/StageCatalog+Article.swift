@@ -148,7 +148,10 @@ enum ArticleStageCatalog {
                     guard let url = URL(string: "https://example.com/article") else { return nil }
                     return UINavigationController(
                         rootViewController: ShareReaderViewController(
-                            url: url, mode: .reader, onDone: {}))
+                            url: url, mode: .reader,
+                            // A staged surface has no extension request to complete,
+                            // exactly as the empty closure it replaces had none.
+                            completionDelegate: StageShareReaderHost()))
                 }),
         ]
     }
@@ -302,6 +305,11 @@ final class StageBarOverReaderViewController: UIViewController {
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
         ])
     }
+}
+
+/// A staged extension reader has nothing to exit to — no extension request, no host.
+private final class StageShareReaderHost: ShareReaderCompletionDelegate {
+    func shareReaderDidFinish() {}
 }
 
 #endif

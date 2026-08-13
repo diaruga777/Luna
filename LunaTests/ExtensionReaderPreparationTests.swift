@@ -13,6 +13,13 @@ import UIKit
 import XCTest
 @testable import LunaReaderUI
 
+/// Stands in for the extension host's exit leg. Nothing here can press Done — a
+/// `UIBarButtonItem`'s `UIAction` is not reachable from a test — so this exists to be
+/// the real conformer the prepared reader is built against.
+private final class StubShareReaderHost: ShareReaderCompletionDelegate {
+    func shareReaderDidFinish() {}
+}
+
 @MainActor
 final class ExtensionReaderPreparationTests: XCTestCase {
 
@@ -134,10 +141,11 @@ final class ExtensionReaderPreparationTests: XCTestCase {
     /// own spinner to the article, with the reader's Done already in place.
     func testPreparedReaderIsTheFinishedReaderWithDone() async {
         ShareReaderViewController.settleImagesOverride = { content, _, _, _ in content }
+        let host = StubShareReaderHost()
         let reader = await ShareReaderViewController.preparedReader(
             url: URL(string: "https://example.com/story")!, mode: .reader,
             content: content([.init(kind: .paragraph, text: "body", links: [])]),
-            store: store, onModeChange: nil, onDone: {})
+            store: store, modePreferenceDelegate: nil, completionDelegate: host)
         XCTAssertTrue(reader is ReaderViewController)
         XCTAssertFalse(reader is ShareReaderViewController, "no intermediate loading screen")
         XCTAssertNotNil(reader.navigationItem.leftBarButtonItem)

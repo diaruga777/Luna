@@ -10,18 +10,18 @@ import LunaPriceMetadata
 import LunaURLClassification
 import SwiftSoup
 
-/// The complete metadata for a page already classified as a `.product`. Price is
-/// NON-OPTIONAL by construction: a `ProductMetadata` only exists once a real price
-/// (with a known currency) was found, so a tracker can never be created without one
-/// (the mandatory-price invariant lives in the type).
+/// The complete metadata for a page already classified as a `.product`. Price
+/// is non-optional by construction: a `ProductMetadata` only exists once a
+/// real price with a known currency was found, so a tracker can never be
+/// created without one. The mandatory-price invariant lives in the type.
 public struct ProductMetadata: Equatable {
     public let name: String
-    /// The resolved price — always a real amount + currency.
+    /// The resolved price: always a real amount plus currency.
     public let price: ProductPrice
     public let imageURL: URL?
     public let brand: String?
     public let productID: String?
-    /// The KEYED identifiers the page declared (`ProductIdentifiers`) — what a
+    /// The keyed identifiers the page declared (`ProductIdentifiers`): what a
     /// cross-seller comparison matches on, since only a GTIN travels between
     /// retailers.
     public let identifiers: ProductIdentifiers
@@ -44,10 +44,11 @@ public struct ProductMetadata: Equatable {
     }
 }
 
-/// A single site's price-extraction strategy. Pure, deterministic, currency-complete:
-/// the currency MUST be resolved inside the rule (a declared code, else a host/TLD
-/// map) — never a blind USD default. Register a new retailer by adding one conformer
-/// to `ProductMetadataExtractor.hostRules`; the extractor itself never changes.
+/// A single site's price-extraction strategy. Pure, deterministic,
+/// currency-complete: the rule must resolve the currency itself (a declared
+/// code, else a host/TLD map), never a blind USD default. Register a new
+/// retailer by adding one conformer to `ProductMetadataExtractor.hostRules`;
+/// the extractor itself never changes.
 public protocol ProductPriceRule {
     /// Whether this rule handles `host` (already lowercased, trailing dot stripped).
     func matches(host: String) -> Bool
@@ -56,16 +57,18 @@ public protocol ProductPriceRule {
     func price(html: String, document: Document, host: String) -> ProductPrice?
 }
 
-/// Stage-2 processing component: given a page ALREADY classified as a product (the
-/// `Classifier` owns "is this a product?"; this component never re-decides that),
-/// produce its complete metadata INCLUDING a mandatory price — from ONE price source.
+/// Stage-2 processing component: given a page already classified as a
+/// product (the `Classifier` owns "is this a product?"; this component never
+/// re-decides that), produces its complete metadata, including a mandatory
+/// price, from one price source.
 ///
-/// One parse, one price source per extraction — no detect-then-refetch double parse:
-/// the per-host rule table is consulted first, then a generic JSON-LD/OG/microdata/
-/// embedded-JSON fallback. The WKWebView render tier is reached
-/// ONLY when `render != nil`; extensions pass `render: nil`, making the render tier
-/// structurally unreachable there (the action-extension "spins forever" fix). It is
-/// also hard-bounded wherever it runs.
+/// One parse, one price source per extraction: no detect-then-refetch double
+/// parse. The per-host rule table is consulted first, then a generic
+/// JSON-LD/OG/microdata/embedded-JSON fallback. The WKWebView render tier is
+/// reached only when `render != nil`. Extensions pass `render: nil`, so the
+/// render tier is structurally unreachable there — it can never spin up a
+/// `WKWebView` in the memory-limited extension host. It is also
+/// hard-bounded wherever it runs.
 public struct ProductMetadataExtractor {
 
     /// Ordered, extensible per-host rules consulted before the generic fallback. First
@@ -95,7 +98,7 @@ public struct ProductMetadataExtractor {
     public func extract(
         url: URL, html: String, render: ((URL) async -> String?)? = nil
     ) async -> ProductMetadata? {
-        // ONE parse of the static markup; ONE price source (host rule, else generic).
+        // One parse of the static markup; one price source (host rule, else generic).
         if let metadata = metadata(url: url, html: html) {
             SaveDiagnostics.record(
                 "product: static markup yielded \(metadata.price.amount) "
@@ -156,17 +159,18 @@ public struct ProductMetadataExtractor {
     /// Fills identifier gaps from retailer markup that publishes no structured
     /// data at all.
     ///
-    /// Amazon is the whole of it today, and it is not a small case: it publishes
-    /// no JSON-LD `Product`, so a save from the most important retailer in the
-    /// feature produced NO keyed identifiers, and its alternative-seller fan-out
-    /// then had nothing to verify any candidate against. The ISBN/UPC/EAN, the
-    /// "Item model number" and the brand are plain text in the product-details
-    /// table, and for books the ASIN in the URL IS the ISBN-10.
+    /// Amazon is the whole of it today, and it is not a small case: it
+    /// publishes no JSON-LD `Product`. Without this fallback, a save from
+    /// the most important retailer in the feature would carry no keyed
+    /// identifiers, leaving its alternative-seller fan-out nothing to verify
+    /// any candidate against. The ISBN/UPC/EAN, the "Item model number", and
+    /// the brand are plain text in the product-details table, and for books
+    /// the ASIN in the URL is the ISBN-10.
     ///
-    /// The reader is `AmazonProductDetails` in LunaPriceMetadata — the same code
-    /// the lean comparison engine runs, so the two tiers cannot disagree about
-    /// what an Amazon page says. Structured extraction still WINS: this only
-    /// fills what came back empty.
+    /// The reader is `AmazonProductDetails` in LunaPriceMetadata, the same
+    /// code the lean comparison engine runs, so the two tiers cannot
+    /// disagree about what an Amazon page says. Structured extraction still
+    /// wins: this only fills what came back empty.
     private func enrichedIdentifiers(
         _ identifiers: ProductIdentifiers, amazon details: AmazonProductDetails.Identifiers?
     ) -> ProductIdentifiers {
@@ -342,10 +346,11 @@ enum GoogleShoppingProductParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Dedup key: host + path only. Google appends per-link click-tracking query
-    /// params (`srsltid`, `region_id`, store ids, …), so the SAME retailer's product
-    /// page is often listed under two different query strings — collapse those to one
-    /// seller by ignoring the query entirely when deduping.
+    /// Dedup key: host + path only. Google appends per-link click-tracking
+    /// query params (`srsltid`, `region_id`, store ids, …), so the same
+    /// retailer's product page is often listed under two different query
+    /// strings. Ignoring the query entirely when deduping collapses those
+    /// to one seller.
     private static func canonicalKey(_ url: URL) -> String {
         let host = url.host?.lowercased() ?? ""
         let path = HostMatching.normalizedPath(url.path.lowercased())
@@ -369,17 +374,18 @@ enum GoogleShoppingProductParser {
 // MARK: - Per-host rules
 
 /// Amazon: the buy-box price from Amazon's price model (`"priceAmount"` /
-/// `"displayPrice"`), NOT the first `.a-offscreen` span (often a strikethrough list
-/// price). Currency is a declared code, else the storefront TLD (so a bare `$` on
-/// amazon.com.au resolves to AUD), never a blind USD default. Host matching uses the
-/// complete current Amazon retail-storefront catalog, so `amazon.scam.com` can't
-/// match and newly supported regional URLs stay consistent across the app.
+/// `"displayPrice"`), not the first `.a-offscreen` span (often a
+/// strikethrough list price). Currency is a declared code, else the
+/// storefront TLD (so a bare `$` on amazon.com.au resolves to AUD), never a
+/// blind USD default. Host matching uses the complete current Amazon
+/// retail-storefront catalog, so `amazon.scam.com` cannot match, and newly
+/// supported regional URLs stay consistent across the app.
 public struct AmazonPriceRule: ProductPriceRule {
     public init() {}
 
     /// The storefront registry is classification data shared with the
     /// deterministic shop table (`AmazonStorefronts`, LunaURLClassification);
-    /// these aliases keep the rule's historical spelling.
+    /// these aliases keep this rule's own naming.
     public static let storefronts = AmazonStorefronts.storefronts
 
     public static let storefrontHosts = AmazonStorefronts.hosts
@@ -393,8 +399,9 @@ public struct AmazonPriceRule: ProductPriceRule {
             ?? Self.storefront(for: host)?.currency
         guard let currency else { return nil }   // no silent USD default
 
-        // Buy-box first (Amazon's price model), then the buy-box-scoped offscreen span —
-        // NOT the first `.a-offscreen` on the page (a strikethrough list price).
+        // Buy-box first (Amazon's price model), then the buy-box-scoped
+        // offscreen span, not the first `.a-offscreen` on the page (a
+        // strikethrough list price).
         let amount = RegexCapture.first(in: html, pattern: #""priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#)
             ?? RegexCapture.first(in: html, pattern: #""displayPrice"\s*:\s*"([^"]+)""#)
             ?? buyBoxOffscreenPrice(document)
@@ -419,9 +426,9 @@ public struct AmazonPriceRule: ProductPriceRule {
         return nil
     }
 
-    /// The `.a-offscreen` price SCOPED to the core/buy-box price node, so a list-price
-    /// strikethrough elsewhere on the page can't win. Falls back to the first
-    /// `.a-offscreen` only if no scoped buy-box node exists.
+    /// The `.a-offscreen` price scoped to the core/buy-box price node, so a
+    /// list-price strikethrough elsewhere on the page cannot win. Falls back
+    /// to the first `.a-offscreen` only if no scoped buy-box node exists.
     private func buyBoxOffscreenPrice(_ document: Document) -> String? {
         let buyBoxSelectors = [
             "#corePriceDisplay_desktop_feature_div", "#corePrice_feature_div",
@@ -511,11 +518,12 @@ public enum NextDataPrice {
         EmbeddedJSONBlobs.nextDataAndJSONScripts(in: document)
     }
 
-    /// Depth-first, sorted-key search for the first numeric value under any of `keys`
-    /// (lowercased). A child object can itself BE the value's holder — e.g.
-    /// `currentPrice: { price: 12.34 }` matches `currentPrice` by recursing into it and
-    /// taking its own nested `price`. Sorted-key traversal keeps the result a pure
-    /// function of the JSON content (Swift dictionary order is hash-seed randomized).
+    /// Depth-first, sorted-key search for the first numeric value under any
+    /// of `keys` (lowercased). A child object can itself be the value's
+    /// holder: `currentPrice: { price: 12.34 }` matches `currentPrice` by
+    /// recursing into it and taking its own nested `price`. Sorted-key
+    /// traversal keeps the result a pure function of the JSON content,
+    /// since Swift dictionary order is hash-seed randomized.
     private static func numericValue(in object: Any, forKeys keys: Set<String>) -> Decimal? {
         if let dictionary = object as? [String: Any] {
             for key in dictionary.keys.sorted() where keys.contains(key.lowercased()) {

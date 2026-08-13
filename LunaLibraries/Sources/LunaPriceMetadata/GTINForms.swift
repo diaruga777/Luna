@@ -43,13 +43,13 @@ public enum GTINForms {
                 forms.append(String(repeating: "0", count: 13 - normalized.count) + normalized)
             }
         }
-        // UPC-A: a 13-digit number that is a zero-prefixed 12 is usually PRINTED
-        // as the 12.
+        // UPC-A: a 13-digit number that is a zero-prefixed 12 is usually
+        // printed as the 12.
         if normalized.count == 13, normalized.hasPrefix("0") {
             forms.append(String(normalized.dropFirst()))
         }
         // Books: an ISBN-13 and its ISBN-10 are the same book, and Amazon's
-        // book ASINs ARE the ISBN-10.
+        // book ASINs are the ISBN-10.
         if let isbn10 = isbn10(fromISBN13: normalized) { forms.append(isbn10) }
         if let isbn13 = isbn13(fromISBN10: normalized) {
             forms.append(isbn13)

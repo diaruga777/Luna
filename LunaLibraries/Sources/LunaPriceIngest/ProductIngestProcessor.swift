@@ -9,30 +9,30 @@ import LunaModels
 import LunaPriceCompare
 import Foundation
 
-/// Supplies product metadata for a page whose own markup gave none — the
+/// Supplies product metadata for a page whose own markup gave none: the
 /// passive Safari snapshot of the page the user actually looked at. It is the
-/// ONLY thing standing between a bot-walled shop and a price-less save, so the
-/// product surfaces install `SnapshotProductInfoFallback` (LunaPriceUI, which is
-/// where the snapshot lookup lives); a surface that installs nothing simply has
-/// no recovery.
+/// only thing standing between a bot-walled shop and a price-less save, so
+/// the product surfaces install `SnapshotProductInfoFallback` (LunaPriceUI,
+/// where the snapshot lookup lives). A surface that installs nothing simply
+/// has no recovery.
 public protocol ProductInfoFallbackProviding {
     func productInfo(forPageURL url: URL) -> ProductInfo?
 }
 
 /// The product-kind pipeline processor: wraps `ProductMetadataExtractor`
-/// (mandatory price from one source). Registered into
-/// `IngestKindProcessors.product` by product-handling targets' composition
-/// roots (Price Tracker + the central Luna app and their extensions).
+/// (mandatory price from one source). Product-handling targets' composition
+/// roots (Price Tracker, the central Luna app, and their extensions) register
+/// this into `IngestKindProcessors.product`.
 ///
 /// **Every page that gets this far is recorded as a product snapshot**, in
-/// whichever process did the classifying — the app, the share extension, the
-/// action extension. This is the app-side half of the capture rule the Safari
-/// extension has always had: a product page Luna looked at is a price
+/// whichever process did the classifying: the app, the share extension, or
+/// the action extension. This is the app-side half of the capture rule the
+/// Safari extension applies too: a product page Luna looked at is a price
 /// observation, unconditionally, whether or not this visit ends in a save
-/// (`claudedocs/price-tracking.md`'s "Product snapshots"). Before it existed,
-/// the ONLY writer in the whole codebase was the Safari extension, so a user
-/// who saves through the app, the share sheet or the Action Button accumulated
-/// an empty store and every tracker was born with a single point.
+/// (`claudedocs/price-tracking.md`'s "Product snapshots"). Without this app
+/// side, every tracker would build its history from Safari visits alone, and
+/// saves made through the app, the share sheet, or the Action Button would
+/// contribute nothing.
 public final class ProductIngestProcessor: ProductIngestProcessing {
     private let metadataExtractor: ProductMetadataExtractor
     private let fallback: (any ProductInfoFallbackProviding)?
@@ -69,9 +69,9 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
                 sellers: metadata.sellers)
         }
         // The passive Safari snapshot: the page the user actually looked at,
-        // recorded by the extension. It is the ONLY thing standing between a
-        // bot-walled shop and a price-less save, so a trace has to say whether
-        // it was consulted and whether it answered.
+        // recorded by the extension. It is the only recovery for a
+        // bot-walled shop, so the diagnostic trace says whether it was
+        // consulted and whether it answered.
         let recovered = fallback?.productInfo(forPageURL: url)
         SaveDiagnostics.record(
             "product: static extraction found no price for \(SaveDiagnostics.url(url)) — "
@@ -88,10 +88,10 @@ public final class ProductIngestProcessor: ProductIngestProcessing {
         snapshotStore.record(payload: Self.snapshotPayload(for: product, url: url))
     }
 
-    /// A detected product page as a snapshot payload — the same key shape
+    /// A detected product page as a snapshot payload: the same key shape
     /// `content.js`'s `extractProductSnapshot()` sends and
-    /// `ComparableSellerResult.snapshotPayload` produces, so all three writers
-    /// go through one validator.
+    /// `ComparableSellerResult.snapshotPayload` produces, so all three
+    /// writers go through one validator.
     static func snapshotPayload(for product: ProductInfo, url: URL) -> [String: Any] {
         var payload: [String: Any] = [
             "name": product.name,

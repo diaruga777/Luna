@@ -7,15 +7,17 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
-/// How a rehearsal tells its host the user is done with it — the one thing every
-/// rehearsal owes. The host presents the rehearsal, so conformers hold this weakly.
+/// How a rehearsal tells its host the user is done with it. This is the one
+/// thing every rehearsal owes. The host presents the rehearsal, so
+/// conformers hold this delegate weakly.
 @MainActor
 protocol ShareSetupPracticeDelegate: AnyObject {
     func shareSetupPracticeDidFinish(_ practice: UIViewController)
 }
 
-/// What every practice rehearsal owes its host: one way out. Which rehearsal a
-/// practice link gets is `ShareViewController.practicePreview`.
+/// What every practice rehearsal owes its host: one way out.
+/// `ShareViewController.practicePreview` decides which rehearsal a practice
+/// link gets.
 @MainActor
 protocol ShareSetupPracticePresenting: AnyObject {
     var completionDelegate: (any ShareSetupPracticeDelegate)? { get set }
@@ -23,10 +25,10 @@ protocol ShareSetupPracticePresenting: AnyObject {
 
 /// The real extension-side counterpart of onboarding's mock preview. Practice
 /// URLs never enter the saves list; both extension points show this bundled
-/// content so the lesson is deterministic and works without a network fetch.
+/// content so the lesson stays deterministic and needs no network fetch.
 ///
-/// This is the ARTICLE rehearsal. The InstaTok practice link stands for a video
-/// post and gets `ShareSetupPracticeDownloadViewController` instead.
+/// This is the article rehearsal. The InstaTok practice link stands for a
+/// video post and gets `ShareSetupPracticeDownloadViewController` instead.
 @MainActor
 final class ShareSetupPracticePreviewViewController: UIViewController,
     ShareSetupPracticePresenting {

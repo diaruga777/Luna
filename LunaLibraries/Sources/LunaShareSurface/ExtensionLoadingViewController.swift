@@ -14,26 +14,25 @@ public protocol ExtensionLoadingExitDelegate: AnyObject {
         _ screen: ExtensionLoadingViewController)
 }
 
-/// The action extension's first frame: a spinner, rotating status copy, and a header
-/// carrying the way out.
+/// The action extension's first frame: a spinner, rotating status copy, and a
+/// header with the way out.
 ///
-/// It is a real navigation root rather than views dropped onto `ShareViewController`
-/// so the header exists from the FIRST frame. The extension used to show a bare
-/// black sheet with a centred spinner and no bar at all, then — when the archive
-/// reader took over as the navigation root — a bar would appear from nowhere partway
-/// through the wait. One wait should look like one wait: the bar is there from the
-/// start, and only the button inside it changes (an `xmark` while the outcome is
-/// unknown, a `checkmark` once something has been saved).
+/// This screen is a real navigation root, not views placed on top of
+/// `ShareViewController`. The header must exist from the first frame, so the
+/// wait looks the same throughout — only the button inside it changes, from
+/// an `xmark` while the outcome is unknown to a `checkmark` once something
+/// saves.
 ///
-/// The spinner + copy come from `LoadingStatusLayout`, which the archive reader's
-/// cover also uses, so the handover between the two doesn't move anything.
+/// The spinner and status copy come from `LoadingStatusLayout`, which the
+/// archive reader's cover also uses. This keeps the handover between the two
+/// screens from moving anything on screen.
 public final class ExtensionLoadingViewController: UIViewController {
 
     private let spinner = HorizonSpinnerView(side: 36)
     private let statusLabel = EclipseBloomStatusLabel()
     private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private let initialText: String
-    /// The extension host, which owns this screen — hence weak.
+    /// The extension host owns this screen, so this reference stays weak.
     public weak var exitDelegate: (any ExtensionLoadingExitDelegate)?
     /// Built only when a terminal state actually asks for them, so the ordinary
     /// wait carries no extra views.
@@ -71,9 +70,9 @@ public final class ExtensionLoadingViewController: UIViewController {
         articleLoadingStatus?.start()
     }
 
-    /// A terminal state: stop the wait and let the message stand. The header's exit
-    /// button is already there, so there is nothing to reveal — which is why this
-    /// screen needs no floating close button of its own.
+    /// A terminal state: stop the wait and let the message stand. The header's
+    /// exit button is already there, so this screen needs no floating close
+    /// button of its own.
     ///
     /// - Parameters:
     ///   - symbolName: an SF Symbol that takes the stopped spinner's place, for a
@@ -93,8 +92,8 @@ public final class ExtensionLoadingViewController: UIViewController {
         if let detail { showDetail(detail) }
     }
 
-    /// Names the terminal symbol, so a test can assert a state was DRAWN and not
-    /// only written without having to identify an image by its contents.
+    /// Identifies the terminal symbol so a test can assert a state was drawn,
+    /// not just written, without matching an image by its contents.
     public static let terminalIconIdentifier = "extension.terminal.icon"
 
     /// Swaps the stopped spinner for a symbol in the same spot — the layout keeps

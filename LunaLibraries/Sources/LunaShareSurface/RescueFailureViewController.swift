@@ -25,25 +25,26 @@ public protocol RescueFailureCardDelegate: AnyObject {
 
 /// The extension failure card shown when a share/action save can't be loaded.
 ///
-/// Deliberately the SAME card as the in-app failed save
-/// (`FailedSaveCardViewController`, see `claudedocs/failed-saves.md`): a red-rimmed
-/// card surface, the page itself in a near-full-bleed web view, a URL bar under it,
-/// and "Retry with AI ✦" in the chin. A user who hits this in the share sheet and
-/// then opens Luna should recognise the same object, not meet two different
-/// apologies for one failure.
+/// This is deliberately the same card as the in-app failed save
+/// (`FailedSaveCardViewController`, see `claudedocs/failed-saves.md`): a
+/// red-rimmed card surface, the page itself in a near-full-bleed web view, a
+/// URL bar under it, and "Retry with AI ✦" in the chin. A user who hits this
+/// in the share sheet and then opens Luna should recognise the same object,
+/// not meet a second, different apology for the same failure.
 ///
-/// The one honest difference: an extension links NO rescue engine, so the button
-/// can't run anything. It records a pending-rescue request and best-effort opens
-/// the containing app — hence no progress overlay here, and a reassurance line in
-/// place of a result. There is no content-type picker in either card; the model
-/// classifies the page itself.
+/// The one real difference: an extension links no rescue engine, so its
+/// button cannot run anything. It records a pending-rescue request instead
+/// and best-effort opens the containing app, so this card shows no progress
+/// overlay, only a reassurance line in place of a result. Neither card shows
+/// a content-type picker; the model classifies the page itself.
 public final class RescueFailureViewController: UIViewController {
     private let url: URL?
     private let rescueURL: URL?
-    /// Held STRONGLY, and deliberately: the conformer is a small coordinator the
-    /// save flow makes for this card, not the card's owner, so nothing cycles —
-    /// and it has to outlive the driver that raised the card, which is a
-    /// temporary. Nil in a staged card, where every leg is a no-op.
+    /// Held strongly, on purpose. The conformer is a small coordinator the
+    /// save flow makes for this card, not the card's owner, so nothing
+    /// cycles — and it must outlive the driver that raised the card, which
+    /// is a temporary object. Nil in a staged card, where every leg is a
+    /// no-op.
     private let delegate: (any RescueFailureCardDelegate)?
 
     /// Matches the in-app card's geometry so the two read as one design.
@@ -81,8 +82,8 @@ public final class RescueFailureViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
-        // An extension lives in someone else's window, so the appearance has to be
-        // applied to the view controller rather than a window we don't own
+        // An extension lives in someone else's window, so appearance must apply
+        // to the view controller, not to a window this code doesn't own
         // (`claudedocs/visual-effects.md`).
         AppearanceSettings.apply(to: self)
         navigationItem.title = FailedSaveCopy.couldNotLoad
@@ -128,7 +129,8 @@ public final class RescueFailureViewController: UIViewController {
                 greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
             cardView.trailingAnchor.constraint(
                 lessThanOrEqualTo: view.trailingAnchor, constant: -16),
-            // The failure card is a card, not a banner across an iPad sheet.
+            // Caps width so the card stays a card on an iPad sheet, instead
+            // of stretching into a banner.
             cardView.widthAnchor.constraint(
                 lessThanOrEqualToConstant: LunaLayout.readableWidth),
 
@@ -227,8 +229,8 @@ public final class RescueFailureViewController: UIViewController {
             return
         }
         let configuration = WebJunkBlocker.makeConfiguration()
-        // The user's own cookies — the same reason the in-app card uses them: a
-        // page a background fetch couldn't read often renders here.
+        // Uses the user's own cookies, the same reason the in-app card does:
+        // a page a background fetch couldn't read often renders here.
         configuration.websiteDataStore = .default()
         let web = WKWebView(frame: webContainer.bounds, configuration: configuration)
         web.navigationDelegate = self
@@ -257,12 +259,12 @@ public final class RescueFailureViewController: UIViewController {
     }
 
     @objc private func finishTapped() {
-        // Record the pending request first — so the open never loses it.
+        // Records the pending request first, so the open never loses it.
         delegate?.rescueFailureCardDidRequestRescue(self)
         if let url = rescueURL { delegate?.rescueFailureCard(self, openApp: url) }
-        // We can't observe whether the deep-link open succeeded from an extension,
-        // so always leave the manual instruction (the app's foreground drain is the
-        // real guarantee).
+        // An extension cannot observe whether the deep-link open succeeded,
+        // so this always leaves the manual instruction up. The app's
+        // foreground drain is the real guarantee.
         rescueButton.isHidden = true
         manualLabel.isHidden = false
         doneButton.isHidden = false
@@ -273,8 +275,8 @@ public final class RescueFailureViewController: UIViewController {
     }
 
     #if DEBUG
-    /// Test seam: fires the same record-the-request path the button does, without
-    /// synthesizing a touch on a card that was never put in a window.
+    /// Test seam: fires the same record-the-request path the button does,
+    /// without synthesizing a touch on a card that was never put in a window.
     public func recordPendingRescueForTesting() {
         delegate?.rescueFailureCardDidRequestRescue(self)
     }
@@ -285,9 +287,9 @@ public final class RescueFailureViewController: UIViewController {
 
 extension RescueFailureViewController: WKNavigationDelegate {
 
-    /// The card is a window onto ONE page and the URL bar names it, so a tapped
-    /// link is refused rather than navigating in place. There's no full-screen
-    /// browser to hand off to inside an extension, so this simply declines.
+    /// The card is a window onto one page, named by the URL bar, so a tapped
+    /// link is refused rather than navigated in place. An extension has no
+    /// full-screen browser to hand off to, so this simply declines.
     public func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,

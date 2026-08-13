@@ -5,10 +5,11 @@
 
 import Foundation
 
-/// The reader mode the "Read in Luna" ACTION extension last used. Persisted in
-/// the extension's OWN `UserDefaults.standard` (its private container — NOT the
-/// App Group, NOT the main app), so the action extension remembers its own
-/// preference independently of the main-app reader.
+/// The reader mode the "Read in Luna" action extension used last.
+///
+/// This value lives in the extension's own `UserDefaults.standard`, not the
+/// App Group and not the main app. The action extension keeps its own
+/// preference, separate from the main app's reader.
 public enum ActionReaderMode {
     private static let key = "actionReaderMode"
 

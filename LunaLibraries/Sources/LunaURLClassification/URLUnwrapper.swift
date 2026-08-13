@@ -1,6 +1,6 @@
 //
 //  URLUnwrapper.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation
@@ -44,8 +44,8 @@ public struct WrapperHandler {
 /// publisher URL, offline-first and deterministically, as the first thing that
 /// runs on any incoming URL. Built as an extensible `[WrapperHandler]` registry
 /// over the well-tested pure parsers in `NewsAggregatorUnwrapper` — only the
-/// dispatch is new. Pure / dependency-free (lives in ReaderKit), so the main app
-/// and every extension unwrap identically.
+/// dispatch is new. Pure and dependency-free, so the main app and every
+/// extension unwrap identically.
 public enum URLUnwrapper {
 
     /// Parses an incoming user/share URL into the one canonical URL every ingest

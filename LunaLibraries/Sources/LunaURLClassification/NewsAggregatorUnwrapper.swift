@@ -1,6 +1,6 @@
 //
 //  NewsAggregatorUnwrapper.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

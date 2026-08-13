@@ -1,6 +1,6 @@
 //
 //  ShoppingSites.swift
-//  ReaderKit
+//  Luna
 //
 
 import Foundation

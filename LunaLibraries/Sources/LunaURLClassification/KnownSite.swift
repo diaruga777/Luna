@@ -1,6 +1,6 @@
 //
 //  KnownSite.swift
-//  ReaderKit
+//  Luna
 //
 
 import LunaModels

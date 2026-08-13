@@ -10,12 +10,12 @@ import Foundation
 /// price/media UI can all name it without pulling in the rescue engine module
 /// (which extensions must never link).
 ///
-/// **Never user-facing.** No surface asks which kind a page is any more — the
-/// model classifies it (`RescueRequest.ContentHint.auto`), and every hint picker
-/// is gone. What remains are the two PROGRAMMATIC callers that genuinely know
-/// because of where the user pressed: the price editor's no-price retry
-/// (`.product`) and the media card's no-assets retry (`.media`). Hence no
-/// `displayName` — nothing displays it.
+/// **Never user-facing.** No surface asks which kind a page is — the model
+/// classifies it (`RescueRequest.ContentHint.auto`). Only two PROGRAMMATIC
+/// callers pick a specific hint, because they know from where the user
+/// pressed: the price editor's no-price retry (`.product`) and the media
+/// card's no-assets retry (`.media`). Hence no `displayName` — nothing
+/// displays it.
 public enum RescueHint: String, Codable, CaseIterable {
     case article
     case product

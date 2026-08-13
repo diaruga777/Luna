@@ -49,8 +49,7 @@ public enum PriceTrackingLeftButton: Equatable {
 ///
 /// The host is what decides it: in-app the editor was pushed and goes BACK, in an
 /// extension it is the whole sheet and the only way out is to complete the
-/// request. The entry carries no chrome of its own — it used to decide a
-/// top-right "Read instead" button, which is gone.
+/// request. The entry carries no chrome of its own.
 public struct PriceTrackingExitContext: Equatable {
     public let host: PriceTrackingHost
     public let entry: PriceTrackingEntry

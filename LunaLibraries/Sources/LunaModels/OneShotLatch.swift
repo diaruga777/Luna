@@ -12,10 +12,9 @@ import Synchronization
 /// .savePressRacingTimeout`, `ArticleExportImages.withTimeout` and
 /// `URLRescueEngine.raceAgainstTimeout` — which each start two unstructured
 /// tasks and must resume one checked continuation from whichever finishes
-/// first. Each used to spell it as a local `var resumed` guarded by its own
-/// `NSLock`; that is the same guarantee, but a captured `var` mutated from
-/// concurrently-executing tasks is a data race the compiler can only warn
-/// about rather than verify.
+/// first. A local `var resumed` guarded by its own `NSLock` gives the same
+/// guarantee, but a captured `var` mutated from concurrently-executing tasks
+/// is a data race the compiler can only warn about, not verify.
 ///
 /// The state lives in a `Mutex`, so this class's `Sendable` is CHECKED — the
 /// compiler verifies it rather than taking the annotation's word for it. A

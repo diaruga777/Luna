@@ -356,7 +356,7 @@ public final class ShareSurfaceDriver {
     private func presentUnsupportedError(owner: LunaApp) {
         guard let host else { return }
         let error = UnsupportedSaveCardViewController(owner: owner, currentApp: currentApp)
-        error.onDone = { [weak host] in host?.completeSilently() }
+        error.delegate = host
         host.presentModally(error)
     }
 

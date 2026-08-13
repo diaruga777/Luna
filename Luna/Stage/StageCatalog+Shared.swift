@@ -434,9 +434,9 @@ enum SharedStageCatalog {
                 kind: .shared,
                 make: {
                     let owner: LunaApp = LunaApp.current == .downloader ? .reader : .downloader
-                    let card = UnsupportedSaveCardViewController(owner: owner)
-                    card.onDone = {}
-                    return card
+                    // No delegate: on a staged card Done is inert, exactly as
+                    // the empty closure it replaces was.
+                    return UnsupportedSaveCardViewController(owner: owner)
                 }),
             StageDescriptor(
                 id: "card.rescue-failure", screen: "Extension failure card",

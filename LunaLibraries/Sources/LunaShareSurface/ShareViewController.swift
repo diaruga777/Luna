@@ -221,7 +221,7 @@ open class ShareViewController: UIViewController {
             // happen until somebody taps Close, and an in-app host has no
             // finger to do it with.
             if self.isHosted {
-                HostedShareSession.current?.onReachedTerminal?()
+                HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
             }
         }
     }
@@ -383,7 +383,7 @@ open class ShareViewController: UIViewController {
         SharedDiagnosticLog.record(
             "hosted surface saved url \(url.absoluteString)", category: "share")
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
-            HostedShareSession.current?.onDidAppendRow?(row.id)
+            HostedShareSession.current?.delegate?.hostedShareSessionDidAppendRow(row.id)
         }
         presentSavedOrReader(url: url)
     }
@@ -564,7 +564,7 @@ open class ShareViewController: UIViewController {
     private func presentProductSetupPractice(_ url: URL) {
         SharedReadingListAppender.append(urlString: url.absoluteString)
         if let row = ReadingListStore.shared.item(forURLString: url.absoluteString) {
-            HostedShareSession.current?.onDidAppendRow?(row.id)
+            HostedShareSession.current?.delegate?.hostedShareSessionDidAppendRow(row.id)
         }
         recordShareSurfaceRun()
         guard let presenter = ShareKindPresenters.product else {
@@ -676,7 +676,7 @@ open class ShareViewController: UIViewController {
                 guard let self else { return }
                 let error = UnsupportedSaveCardViewController(
                     owner: owner, currentApp: .current)
-                error.onDone = { [weak self] in self?.completeSilently() }
+                error.delegate = self
                 self.presentModally(error)
             }
         }
@@ -698,7 +698,7 @@ open class ShareViewController: UIViewController {
         // so the old line would have been a silent no-op that never ended the
         // flow. Same chokepoint, so it still happens at most once.
         if let hostedFinish {
-            HostedShareSession.current?.onReachedTerminal?()
+            HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
             hostedFinish()
             return
         }
@@ -913,7 +913,7 @@ extension ShareViewController: ExtensionHost {
         // route out of one is a tap. An in-app host is told so it can hold the
         // sheet on it and then take it away itself.
         if isHosted {
-            HostedShareSession.current?.onReachedTerminal?()
+            HostedShareSession.current?.delegate?.hostedShareSessionReachedTerminal()
         }
         if isActionExtension {
             // The wait screen is being replaced, so retire it rather than leaving its

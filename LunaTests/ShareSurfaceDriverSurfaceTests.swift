@@ -101,8 +101,10 @@ final class ShareSurfaceDriverSurfaceTests: XCTestCase {
         XCTAssertEqual(host.autoDownloads, [])
         XCTAssertEqual(host.completedSilently, 0, "waits for the drop card's Done")
 
-        // Done on the card completes quietly.
-        card?.onDone?()
+        // Done on the card completes quietly, through the host the driver
+        // handed it — every `ExtensionHost` IS the drop card's delegate.
+        XCTAssertTrue(card?.delegate === host)
+        card.map { $0.delegate?.unsupportedSaveCardDidFinish($0) }
         XCTAssertEqual(host.completedSilently, 1)
 
         // The other half of "nothing remains": a document's copied source file.

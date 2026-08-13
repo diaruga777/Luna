@@ -14,6 +14,16 @@ import XCTest
 /// the share extension, and the action extension say the same thing — so these
 /// pin the wording, the sibling-app icon (which must resolve in EVERY app, not
 /// just the one whose appiconset it is), and the header-only fallback.
+/// Stands in for whichever surface put the drop card on screen.
+@MainActor
+final class RecordingUnsupportedSaveCardHost: UnsupportedSaveCardDelegate {
+    private(set) var finishedCards: [UnsupportedSaveCardViewController] = []
+
+    func unsupportedSaveCardDidFinish(_ card: UnsupportedSaveCardViewController) {
+        finishedCards.append(card)
+    }
+}
+
 @MainActor
 final class UnsupportedSaveCardTests: XCTestCase {
 
@@ -101,14 +111,14 @@ final class UnsupportedSaveCardTests: XCTestCase {
         let card = UnsupportedSaveCardViewController(owner: .reader, currentApp: .downloader)
         card.view.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
         card.view.layoutIfNeeded()
-        var doneCount = 0
-        card.onDone = { doneCount += 1 }
+        let host = RecordingUnsupportedSaveCardHost()
+        card.delegate = host
 
         guard let button = Self.first(UIButton.self, in: card.view) else {
             return XCTFail("no Done button")
         }
         button.sendActions(for: .touchUpInside)
-        XCTAssertEqual(doneCount, 1)
+        XCTAssertEqual(host.finishedCards, [card])
     }
 
     // MARK: - Appearance

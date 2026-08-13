@@ -32,7 +32,7 @@ import UIKit
 /// bottom — a full-width Done under a full-width Delete, with the system-share
 /// affordance a floating glass circle above them (action extension only; the
 /// share extension's sheet already sits inside a share flow).
-public final class SavedNonTextualViewController: UIViewController {
+public final class SavedNonTextualViewController: UIViewController, HostedShareBeatReplaying {
 
     private let articleURLString: String
     private let onDone: () -> Void
@@ -570,7 +570,7 @@ public final class SavedNonTextualViewController: UIViewController {
         guard let session = HostedShareSession.current else { return }
         // Whatever this screen last resolved to, it can show again from what it
         // already holds — that is what makes a looping lesson free.
-        session.onReplayBeat = { [weak self] in self?.replayHostedBeat() }
+        session.beatReplayer = self
         switch state {
         case .downloading:
             session.awaitsMediaPlayback = true
@@ -600,13 +600,13 @@ public final class SavedNonTextualViewController: UIViewController {
                 session.awaitsMediaPlayback = false
                 return
             }
-            session.onMediaFileReady?(fileURL)
+            session.delegate?.hostedShareSession(mediaFileReadyAt: fileURL)
         case let .alreadyDownloaded(item):
             guard item.kind == .video, let fileURL = item.fileURL else {
                 session.awaitsMediaPlayback = false
                 return
             }
-            session.onMediaFileReady?(fileURL)
+            session.delegate?.hostedShareSession(mediaFileReadyAt: fileURL)
         }
     }
 
@@ -649,7 +649,7 @@ public final class SavedNonTextualViewController: UIViewController {
     /// Plays the media beat over again, off the file already on disk: back to the
     /// download indication, through its minimum, then the same result. No
     /// resolve, no transfer, no second copy.
-    private func replayHostedBeat() {
+    public func replayHostedShareBeat() {
         switch mediaState {
         case let .ready(media):
             guard !isPracticePreview else {

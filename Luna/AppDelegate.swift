@@ -485,8 +485,20 @@ private struct UnsupportedSaveCardPresenter: UnsupportedSavePresenting {
         guard let presenter = AppDelegate.frontmostViewController() else { return }
         let card = UnsupportedSaveCardViewController(owner: owner)
         card.modalPresentationStyle = .fullScreen
-        card.onDone = { [weak card] in card?.dismiss(animated: true) }
+        card.delegate = DropCardDismisser.shared
         presenter.present(card, animated: true)
+    }
+}
+
+/// In the app the drop card is a full-screen presentation over the deck, so Done
+/// just takes it back down. Stateless, and a `static let` because the card holds
+/// its delegate weakly.
+@MainActor
+private final class DropCardDismisser: UnsupportedSaveCardDelegate {
+    static let shared = DropCardDismisser()
+
+    func unsupportedSaveCardDidFinish(_ card: UnsupportedSaveCardViewController) {
+        card.dismiss(animated: true)
     }
 }
 

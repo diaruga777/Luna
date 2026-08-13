@@ -23,8 +23,8 @@ public enum BypassStrategy: Equatable {
     case userAgent(CrawlerAgent)
     /// Re-fetch sending a spoofed `Referer` (and otherwise the normal UA). Silent.
     case referer(RefererOrigin)
-    /// Re-fetch the trailing-dot FQDN variant of the host. Silent (URLSession) AND
-    /// usable in WKWebView (the former NYT-only pre-stage).
+    /// Re-fetch the trailing-dot FQDN variant of the host. Silent (URLSession) and
+    /// also usable in WKWebView.
     case trailingDotHost
     /// Re-fetch with no cookies via a fresh ephemeral session. Silent.
     case freshSession
@@ -39,23 +39,25 @@ public enum BypassStrategy: Equatable {
     /// Wayback: resolve the newest 200 snapshot (CDX, then Availability) and fetch
     /// the raw `id_` replay. Silent.
     case waybackRaw
-    /// Wayback: resolve the OLDEST 200 snapshot and fetch the raw `id_` replay — the
-    /// capture that predates a wall the publisher added after publication (the only
-    /// thing that works on a site whose archive went free-then-metered, e.g. The Paris
-    /// Review's interview archive). Runs AFTER `.waybackRaw`, whose newest capture is
-    /// the right answer for an article walled from publication. Silent.
+    /// Wayback: resolve the oldest 200 snapshot and fetch the raw `id_`
+    /// replay — the capture that predates a wall the publisher added after
+    /// publication (the only thing that works on a site whose archive went
+    /// free-then-metered, e.g. The Paris Review's interview archive). Runs
+    /// after `.waybackRaw`, whose newest capture is the right answer for an
+    /// article walled from publication. Silent.
     case waybackPrePaywall
     /// r.jina.ai reader proxy (`https://r.jina.ai/<url>`) → Markdown/HTML. Silent.
     case jinaReader
     /// A server-rendering proxy (1ft.io) whose response is plain HTML a URLSession
     /// can extract. Silent.
     case ladderProxy(LadderProxy)
-    /// Load the ORIGINAL article URL in the WKWebView with the paywall/meter
-    /// vendor scripts blocked (a compiled `WKContentRuleList`) and a DOM-cleanup
-    /// userscript injected (remove overlays, unhide the clamped body, restore
-    /// scroll). The site's own JS renders the article while the meter can't run, so
-    /// the rendered DOM is extractable. WKWebView-only — the core technique.
-    /// Tried before archive.today (only when the user opts in).
+    /// Load the original article URL in the WKWebView with the paywall/meter
+    /// vendor scripts blocked (a compiled `WKContentRuleList`) and a
+    /// DOM-cleanup userscript injected (remove overlays, unhide the clamped
+    /// body, restore scroll). The site's own JS renders the article while
+    /// the meter cannot run, so the rendered DOM is extractable.
+    /// WKWebView-only — the core technique. Tried before archive.today (only
+    /// when the user opts in).
     case directUnlock
     /// archive.is snapshot via the interactive WKWebView reader. WKWebView-only,
     /// always the terminal (most expensive/hostile) strategy.

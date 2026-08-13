@@ -7,9 +7,8 @@ import LunaModels
 import Foundation
 
 /// A bypass strategy that runs in the background URLSession path — provably silent
-/// (no WKWebView). Split out of `BypassStrategy` so the "skip the non-silent cases"
-/// filter the resolver used to apply is no longer representable: a `SilentStrategy`
-/// is silent by construction.
+/// (no WKWebView). Split out of `BypassStrategy` so a caller can never need to filter
+/// out the non-silent cases: a `SilentStrategy` is silent by construction.
 public enum SilentStrategy: Equatable {
     case jsonLDBody
     case userAgent(CrawlerAgent)
@@ -46,22 +45,24 @@ public enum SilentStrategy: Equatable {
 /// is modeled separately as the terminal flow (`BypassPlan.allowsArchiveToday`), so a
 /// `WebStrategy` is always a non-terminal pre-stage.
 public enum WebStrategy: Equatable {
-    /// Load the ORIGINAL URL in the WKWebView with paywall scripts blocked + a
-    /// DOM-cleanup userscript (the core direct-unlock technique). The reader's
-    /// pre-stage flow installs the content rules + cleanup before loading it.
+    /// Load the original URL in the WKWebView with paywall scripts blocked
+    /// plus a DOM-cleanup userscript (the core direct-unlock technique). The
+    /// reader's pre-stage flow installs the content rules and cleanup before
+    /// loading it.
     case directUnlock
-    /// The trailing-dot FQDN variant, loaded in a real browser. Emitted whenever the
-    /// selector chose trailing-dot, INCLUDING when the silent fetch already tried it:
-    /// the trick is a client-side origin behaviour that only takes effect in a browser,
-    /// so the WKWebView attempt can succeed where the silent URLSession fetch could not.
+    /// The trailing-dot FQDN variant, loaded in a real browser. Emitted
+    /// whenever the selector chose trailing-dot, including when the silent
+    /// fetch already tried it: the trick is a client-side origin behaviour
+    /// that only takes effect in a browser, so the WKWebView attempt can
+    /// succeed where the silent URLSession fetch could not.
     case trailingDotHost
 }
 
-/// ONE typed, ordered bypass plan, built ONCE by `make(for:directHTML:)` and consumed
-/// by both the background resolver (the `silent` leg) and the archive web reader (the
-/// `webPreStages` leg + `allowsArchiveToday`). Because both paths read the same plan
-/// from the same factory, they can no longer derive divergent orderings (the former
-/// double-compute between `ArticleResolver` and `webPreStageURLs`).
+/// One typed, ordered bypass plan, built once by `make(for:directHTML:)` and
+/// consumed by both the background resolver (the `silent` leg) and the
+/// archive web reader (the `webPreStages` leg plus `allowsArchiveToday`).
+/// Because both paths read the same plan from the same factory, they cannot
+/// derive divergent strategy orderings.
 public struct BypassPlan: Equatable {
     /// Ordered URLSession strategies for the background path — provably silent.
     public let silent: [SilentStrategy]
@@ -78,16 +79,18 @@ public struct BypassPlan: Equatable {
     /// path fails fast to `.needsArchive` instead of blocking.
     public static let silentChainDeadlineSeconds: TimeInterval = 20
 
-    /// The same budget when the resolver already HOLDS a readable browser capture (the
-    /// Safari "Read in Luna" hand-off of a page whose body the server truncated). The
-    /// chain is then only trying to IMPROVE on something the user can already read, so it
-    /// gets a fraction of the time before we hand that capture back.
+    /// The same budget when the resolver already holds a readable browser
+    /// capture (the Safari "Read in Luna" hand-off of a page whose body the
+    /// server truncated). The chain is then only trying to improve on
+    /// something the user can already read, so it gets a fraction of the
+    /// time before we hand that capture back.
     public static let trustedCaptureSilentDeadlineSeconds: TimeInterval = 8
 
-    /// Build the plan for `url` from the existing pure selector. PURE — no I/O. The
-    /// selector still owns gate + per-host-rule + generic-fallback + normalization;
-    /// this factory just splits its single ordered `[BypassStrategy]` into the typed
-    /// legs so the two consumers can't diverge.
+    /// Builds the plan for `url` from the existing pure selector. Pure — no
+    /// I/O. The selector still owns gate, per-host-rule, generic-fallback,
+    /// and normalization; this factory just splits its single ordered
+    /// `[BypassStrategy]` into the typed legs so the two consumers cannot
+    /// diverge.
     ///
     /// - `silent` = the silent prefix, in order.
     /// - `webPreStages` = the WKWebView (non-archive) strategies; trailing-dot is kept
@@ -95,10 +98,10 @@ public struct BypassPlan: Equatable {
     ///   browser (the silent fetch sees the same wall).
     /// - `allowsArchiveToday` = whether `.archiveToday` is in the selected list.
     ///
-    /// `directFailure` carries WHY the direct read failed, when it did. It is what makes
-    /// a browser pre-stage reachable on a host with no unlock rule: a 401/403/429 refusal
-    /// is a verdict on the client, and a WKWebView is a different client
-    /// (`SaveFailureReason.browserMayRecover`).
+    /// `directFailure` carries why the direct read failed, when it did. It
+    /// is what makes a browser pre-stage reachable on a host with no unlock
+    /// rule: a 401/403/429 refusal is a verdict on the client, and a
+    /// WKWebView is a different client (`SaveFailureReason.browserMayRecover`).
     public static func make(
         for url: URL, directHTML: String?, directFailure: SaveFailureReason? = nil,
         silentTierExhausted: Bool = false
@@ -114,14 +117,16 @@ public struct BypassPlan: Equatable {
             case .directUnlock:
                 return .directUnlock
             case .trailingDotHost:
-                // The trailing-dot trick is a CLIENT-SIDE origin behaviour, not a server
-                // one: a real browser scopes the meter's host-keyed cookies/JS to
-                // `www.example.com` and treats `www.example.com.` as a *different* origin,
-                // so the article renders — whereas the silent URLSession fetch just gets
-                // the same gated server HTML. So it is ALWAYS worth a WKWebView pre-stage,
-                // even (especially) when the silent fetch already tried and failed: the
-                // web pre-stages only run once silent bypass has been exhausted and the
-                // item parked, so the browser attempt is the whole point of trying it here
+                // The trailing-dot trick is a client-side origin behaviour,
+                // not a server one: a real browser scopes the meter's
+                // host-keyed cookies/JS to `www.example.com` and treats
+                // `www.example.com.` as a different origin, so the article
+                // renders, whereas the silent URLSession fetch just gets the
+                // same gated server HTML. So it is always worth a WKWebView
+                // pre-stage, even (especially) when the silent fetch already
+                // tried and failed: the web pre-stages only run once silent
+                // bypass has been exhausted and the item parked, so the
+                // browser attempt is the whole point of trying it here
                 // before falling back to archive.today.
                 return .trailingDotHost
             default:
@@ -154,8 +159,9 @@ public struct BypassPlan: Equatable {
     }
 }
 
-/// The ONE strategy→URL mapper, replacing the duplicated `switch strategy` URL builders
-/// that lived in `BypassRunner.run` and `ArchiveWebReaderViewController.webPreStageURLs`.
+/// The one strategy→URL mapper, replacing the duplicated `switch strategy`
+/// URL builders that lived in `BypassRunner.run` and
+/// `ArchiveWebReaderViewController.webPreStageURLs`.
 public enum BypassURLs {
 
     /// The URL a silent strategy fetches over URLSession, or nil when it can't be

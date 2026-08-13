@@ -10,19 +10,22 @@ import SwiftSoup
 /// (`<article>?amp`) rather than by a `rel=amphtml` link.
 ///
 /// News Corp Australia (`theaustralian.com.au`, `heraldsun.com.au`,
-/// `dailytelegraph.com.au`, …) is the family this exists for, and it is a different
-/// shape from every other bypass in the plan:
+/// `dailytelegraph.com.au`, …) is the family this exists for, and it is a
+/// different shape from every other bypass in the plan:
 ///
-/// - A plain GET of a premium article REDIRECTS to `…/subscribe/news/1/?dest=<article>`,
-///   so there is no article HTML to work with at all — no teaser to un-clamp, no
-///   `rel=amphtml` link to discover (`.amp` needs the article page to advertise one),
-///   and nothing for a JSON-LD reconstruction to read.
-/// - The same URL with `?amp` is NOT redirected, and the AMP document it returns
-///   carries the COMPLETE body server-rendered, in `<section subscriptions-section=
-///   "content">` blocks that only `amp-subscriptions-*.js` hides — client-side, after
-///   load. A background URLSession fetch never runs that script, so the plain bytes
-///   are the whole article. (Verified live against the reported article: the direct
-///   read lands on the subscription pitch, `?amp` returns ~7k characters of body.)
+/// - A plain GET of a premium article redirects to
+///   `…/subscribe/news/1/?dest=<article>`, so there is no article HTML to
+///   work with at all: no teaser to un-clamp, no `rel=amphtml` link to
+///   discover (`.amp` needs the article page to advertise one), and nothing
+///   for a JSON-LD reconstruction to read.
+/// - The same URL with `?amp` is not redirected, and the AMP document it
+///   returns carries the complete body server-rendered, in `<section
+///   subscriptions-section="content">` blocks that only
+///   `amp-subscriptions-*.js` hides, client-side, after load. A background
+///   URLSession fetch never runs that script, so the plain bytes are the
+///   whole article. (Verified live against the reported article: the direct
+///   read lands on the subscription pitch, `?amp` returns ~7k characters of
+///   body.)
 ///
 /// So it is a *silent* strategy — the cheapest possible unlock for these hosts, no
 /// browser, no archive, no CAPTCHA. Host-gated on purpose: `?amp` is meaningless on a
@@ -83,16 +86,18 @@ public enum AMPQueryBypass {
 
     /// The AMP document rewritten into something the ordinary extractor can read:
     ///
-    /// 1. **The subscriber gate goes.** Every `[subscriptions-section]` node that isn't
-    ///    the `content` role — the "Already a subscriber? Log in / Get the full story"
-    ///    panel — is removed, and the attribute is stripped from the content blocks.
-    ///    This is not cosmetic: AMP ships the article and the pitch in the SAME
-    ///    document and lets `amp-subscriptions` choose between them at runtime, so a
-    ///    silent fetch sees both — and the pitch carries gate wording
-    ///    (`PaywallDetector.gateMarkers` matches "already a subscriber? log in" at ANY
-    ///    body length), which would make the extractor reject a document that holds
-    ///    the complete story. Removing the machine-labeled gate is what lets the real
-    ///    paywall judgment run on the real body.
+    /// 1. **The subscriber gate goes.** Every `[subscriptions-section]` node
+    ///    that isn't the `content` role — the "Already a subscriber? Log in /
+    ///    Get the full story" panel — is removed, and the attribute is
+    ///    stripped from the content blocks. This is not cosmetic: AMP ships
+    ///    the article and the pitch in the same document and lets
+    ///    `amp-subscriptions` choose between them at runtime, so a silent
+    ///    fetch sees both, and the pitch carries gate wording
+    ///    (`PaywallDetector.gateMarkers` matches "already a subscriber? log
+    ///    in" at any body length), which would make the extractor reject a
+    ///    document that holds the complete story. Removing the
+    ///    machine-labeled gate is what lets the real paywall judgment run on
+    ///    the real body.
     /// 2. **`<amp-img>` becomes `<img>`.** AMP has no plain images, and the extractor
     ///    only knows `img` — so without this the article arrives as text with every
     ///    photo and chart silently dropped. `src`/`srcset`/`alt`/`width`/`height` are

@@ -8,14 +8,15 @@ import LunaHTMLClassification
 import LunaModels
 import Foundation
 
-/// Runs a single SILENT `BypassStrategy` (a URLSession request transform) and returns
-/// the fetched+extracted content paired with its source HTML, or nil when the
-/// strategy isn't applicable / didn't fetch / didn't parse. The only new I/O unit in
-/// the pipeline — protocol-ized so callers can mock it, and itself driven by the
-/// `HTMLFetching` protocol so it's testable without the network.
+/// Runs a single silent `BypassStrategy` (a URLSession request transform) and
+/// returns the fetched and extracted content paired with its source HTML, or
+/// nil when the strategy is not applicable, did not fetch, or did not parse.
+/// The only new I/O unit in the pipeline — protocol-ized so callers can mock
+/// it, and itself driven by the `HTMLFetching` protocol so it is testable
+/// without the network.
 ///
-/// archive.is is not silent;
-/// `run` returns nil for them (they're handled by the archive web reader).
+/// `.directUnlock` and `.archiveToday` are not silent; `run` returns nil for both
+/// (the archive web reader handles them instead).
 public protocol BypassRunning {
     /// Runs `strategy` for `url`. `directHTML` is the already-fetched direct page,
     /// reused by zero-network strategies (`.jsonLDBody`) and AMP discovery. Returns

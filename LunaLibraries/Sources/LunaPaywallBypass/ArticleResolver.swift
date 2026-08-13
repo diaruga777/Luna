@@ -9,10 +9,11 @@ import LunaModels
 import Foundation
 import SwiftSoup
 
-/// The outcome of trying to read an article — directly first, then through the
-/// public web archives. Modeled so invalid states can't arise: a readable result
-/// always carries its content AND source HTML, a paywalled result always carries
-/// a real (non-empty) title, and there's a distinct "nothing usable" case.
+/// The outcome of trying to read an article — directly first, then through
+/// the public web archives. Modeled so invalid states cannot arise: a
+/// readable result always carries its content and source HTML, a paywalled
+/// result always carries a real, non-empty title, and there is a distinct
+/// "nothing usable" case.
 public enum ArticleResolution: Equatable {
     /// A readable article was obtained (directly or from an archive). `html` is
     /// the winning source HTML, kept for cover-image extraction.
@@ -20,13 +21,13 @@ public enum ArticleResolution: Equatable {
     /// Only a paywall stub was reachable, but it carried a real title. The item
     /// can be parked for a user-solved archive CAPTCHA under this title.
     ///
-    /// This case means "a wall stands between us and a real article", NOT merely
-    /// "unreadable but titled" — see `resolution(direct:archived:...)`.
+    /// This case means "a wall stands between us and a real article", not
+    /// merely "unreadable but titled" — see `resolution(direct:archived:...)`.
     case paywalled(title: String)
-    /// Nothing usable — not even a title. Carries WHY when the direct fetch's
-    /// error was captured (403 / offline / timeout / not-HTML), so the failed
-    /// card can say more than "couldn't fetch"; nil when the page came back
-    /// fine and simply had no article and no title in it.
+    /// Nothing usable — not even a title. Carries the reason when the direct
+    /// fetch's error was captured (403, offline, timeout, not-HTML), so the
+    /// failed card can say more than "couldn't fetch"; nil when the page
+    /// came back fine and simply had no article and no title in it.
     case unreadable(SaveFailureReason?)
 
     /// One line for the per-save trace — shapes, never the body.
@@ -74,10 +75,11 @@ public enum ArticleResolver {
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
         let siteRule = SiteUnlockRules.rule(for: url)
-        // Reuse the caller's already-fetched direct HTML when supplied (the shared
-        // decider fetches it once for product detection), else fetch it now.
-        // The direct read's error is the ONE that explains a total failure, so it
-        // is captured here and carried into `.unreadable` at the bottom.
+        // Reuse the caller's already-fetched direct HTML when supplied (the
+        // shared decider fetches it once for product detection), else fetch
+        // it now. The direct read's error is the one that explains a total
+        // failure, so it is captured here and carried into `.unreadable` at
+        // the bottom.
         var directFailure: SaveFailureReason?
         let direct = await extraction.fetchAndExtract(
             baseURL: url,
@@ -86,21 +88,24 @@ public enum ArticleResolver {
                 return try await fetcher.fetchHTML(from: url)
             },
             onFetchError: { directFailure = SaveFailureReason(fetchError: $0) })
-        // Skip everything else when the direct read already succeeded. A TRUSTED
-        // prefetch (the Safari "Read in Luna" hand-off, which captured the already-
-        // unlocked on-screen article) is accepted on body length alone: the page's
-        // stale schema.org lock would otherwise re-reject the very content the user is
-        // looking at, sending them back through the whole archive dance.
+        // Skip everything else when the direct read already succeeded. A
+        // trusted prefetch (the Safari "Read in Luna" hand-off, which
+        // captured the already-unlocked on-screen article) is accepted on
+        // body length alone: the page's stale schema.org lock would
+        // otherwise re-reject the very content the user is looking at,
+        // sending them back through the whole archive dance.
         //
-        // But a capture that STILL reads as locked is only a FLOOR, never the winner:
-        // Safari can apply a rule's script-blocking half yet cannot spoof the request
-        // User-Agent, so a partially unlocked capture may be the publisher's TRUNCATED
-        // render (NYT sends the whole body and truncates the DOM client-side — a hand-off
-        // of that is 2k readable characters of a 5k article), and on a
-        // generous-preview site the browser is looking at a body the SERVER already cut
-        // short, which no amount of on-page unlocking can restore. The silent tier below
-        // can do what the browser could not; the capture stays as the fallback, so
-        // consulting it can only improve the result.
+        // But a capture that still reads as locked is only a floor, never
+        // the winner: Safari can apply a rule's script-blocking half yet
+        // cannot spoof the request User-Agent, so a partially unlocked
+        // capture may be the publisher's truncated render (NYT sends the
+        // whole body and truncates the DOM client-side — a hand-off of that
+        // is 2k readable characters of a 5k article), and on a
+        // generous-preview site the browser is looking at a body the server
+        // already cut short, which no amount of on-page unlocking can
+        // restore. The silent tier below can do what the browser could not;
+        // the capture stays as the fallback, so consulting it can only
+        // improve the result.
         var trustedCapture: ExtractedArticle?
         SaveDiagnostics.record(
             "resolve \(SaveDiagnostics.url(url)): direct read "
@@ -119,20 +124,22 @@ public enum ArticleResolver {
             }
         }
 
-        // Build the ONE typed bypass plan (per-host rule, else the generic
-        // signal-based fallback) and run its silent leg. The WKWebView strategies
-        // (third-party reader pages, archive.today) live in the plan's web leg and run
-        // later in the archive reader.
+        // Build the one typed bypass plan (per-host rule, else the generic
+        // signal-based fallback) and run its silent leg. The WKWebView
+        // strategies (third-party reader pages, archive.today) live in the
+        // plan's web leg and run later in the archive reader.
         //
-        // A site unlock rule contributes two more silent attempts AHEAD of the plan's:
-        // the rule's own request technique (crawler/custom UA or spoofed Referer) and a
-        // forced JSON-LD reconstruction. They're kept out of the strategy enum because
-        // the rule carries arbitrary UA/referer strings the enum can't express — but
-        // they are the same TIER, so they belong in the same ordered list.
+        // A site unlock rule contributes two more silent attempts ahead of
+        // the plan's: the rule's own request technique (crawler/custom UA or
+        // spoofed Referer) and a forced JSON-LD reconstruction. They are kept
+        // out of the strategy enum because the rule carries arbitrary
+        // UA/referer strings the enum cannot express, but they are the same
+        // tier, so they belong in the same ordered list.
         //
-        // Never trade a trusted capture DOWN: a rule fetch or an archive snapshot can
-        // come back readable (no lock declaration, over the threshold) and still be
-        // shorter than what the user already had on screen.
+        // Never trade a trusted capture down: a rule fetch or an archive
+        // snapshot can come back readable (no lock declaration, over the
+        // threshold) and still be shorter than what the user already had on
+        // screen.
         let floor = trustedCapture?.content.bodyTextLength ?? 0
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let directHTML = direct?.sourceHTML
@@ -161,8 +168,9 @@ public enum ArticleResolver {
             { await bypassRunner.run(strategy.asBypassStrategy, url: url, directHTML: directHTML) }
         }
 
-        // A trusted capture is already on screen, so the chain is a bounded attempt to
-        // IMPROVE it, not the thing the user is waiting for — it gets the shorter budget.
+        // A trusted capture is already on screen, so the chain is a bounded
+        // attempt to improve it, not the thing the user is waiting for; it
+        // gets the shorter budget.
         let silentDeadline = Date().addingTimeInterval(
             trustedCapture == nil
                 ? BypassPlan.silentChainDeadlineSeconds
@@ -186,17 +194,14 @@ public enum ArticleResolver {
             return .readable(trustedCapture.content, html: trustedCapture.sourceHTML)
         }
 
-        // No silent strategy worked. Map to the resolution — preserving the title so
-        // the item parks for the WKWebView archive path. (The legacy `fetchArchivedHTML`
-        // last-silent attempt was dropped: `.waybackRaw` covers Wayback in every plan,
-        // and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
-        // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
-        // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
-        // `plan.allowsArchiveToday` is the gate's verdict, already computed: it is
-        // true only when `BypassGate` found real paywall evidence (a declared lock,
-        // a gate marker, a hard-paywall host, an archive URL, or a fetch that never
-        // came back) or a site rule applies. Handing it to `resolution` is what stops
-        // EVERY titled-but-unreadable page from parking for the archive reader.
+        // No silent strategy worked. Map to the resolution — preserving the
+        // title so the item parks for the WKWebView archive path.
+        // `plan.allowsArchiveToday` is the gate's verdict, already computed:
+        // it is true only when `BypassGate` found real paywall evidence (a
+        // declared lock, a gate marker, a hard-paywall host, an archive URL,
+        // or a fetch that never came back) or a site rule applies. Handing
+        // it to `resolution` is what stops every titled-but-unreadable page
+        // from parking for the archive reader.
         let resolved = resolution(
             direct: direct, archived: nil, directFailure: directFailure,
             parksForArchive: plan.allowsArchiveToday)
@@ -204,22 +209,25 @@ public enum ArticleResolver {
         return resolved
     }
 
-    /// Runs every silent attempt CONCURRENTLY and returns the first one — in LIST order,
-    /// not completion order — that clears the readability gate and the trusted-capture
-    /// `floor`. Nil when none does, or when `deadline` passes first.
+    /// Runs every silent attempt concurrently and returns the first one — in
+    /// list order, not completion order — that clears the readability gate
+    /// and the trusted-capture `floor`. Nil when none does, or when
+    /// `deadline` passes first.
     ///
-    /// Concurrency here is the whole reason a hard-paywalled save is quick. The
-    /// strategies are independent GETs against DIFFERENT servers (the publisher, the
-    /// Wayback index, an archive replay), so running them one after another made the
-    /// wall clock their SUM: a WSJ article spent ~30s in the Wayback index alone, twice
-    /// blowing past `IngestPipeline`'s 28s ceiling, and the extension sat on a spinner
-    /// that looked hung. Fanning them out makes it the MAX instead.
+    /// Concurrency here is the whole reason a hard-paywalled save is quick.
+    /// The strategies are independent GETs against different servers (the
+    /// publisher, the Wayback index, an archive replay). Running them one
+    /// after another would make the wall clock their sum: a WSJ article
+    /// spends about 30s in the Wayback index alone, twice past
+    /// `IngestPipeline`'s 28s ceiling on its own, which would leave the
+    /// extension sitting on a spinner that looks hung. Fanning them out
+    /// makes the wall clock the max instead.
     ///
-    /// Resolving by list order rather than by whoever finishes first keeps the OUTCOME
-    /// identical to the old serial walk: a cheap-but-weaker strategy that happens to
-    /// answer first still can't beat a better one that was ranked above it. Once a
-    /// winner is settled the rest are cancelled, so a fast win doesn't pay for the
-    /// downloads it made unnecessary.
+    /// Resolving by list order rather than by whoever finishes first
+    /// preserves rank: a cheap-but-weaker strategy that happens to answer
+    /// first still cannot beat a better one that was ranked above it. Once a
+    /// winner is settled the rest are cancelled, so a fast win does not pay
+    /// for the downloads it made unnecessary.
     private static func firstQualifying(
         _ attempts: [@Sendable () async -> ExtractedArticle?],
         deadline: Date, floor: Int
@@ -283,15 +291,16 @@ public enum ArticleResolver {
     /// - Parameter directFailure: why the direct fetch threw, when it did. Only
     ///   reaches the result in the `.unreadable` case — a page that yielded a
     ///   title or a body wasn't a failure at all.
-    /// - Parameter parksForArchive: whether the archive tier is a legitimate next
-    ///   step for this page — `BypassPlan.allowsArchiveToday`, i.e. `BypassGate`
-    ///   found paywall evidence. A `<title>` is NOT that evidence: every web page
-    ///   has one, so returning `.paywalled` on a title alone sent Google's
-    ///   homepage, a search-results page, and every JS shell into the
-    ///   archive.today CAPTCHA reader (and, via `.needsArchive`, into the Safari
-    ///   recents tray as a would-be article). Defaults to true so the pure
-    ///   title-preference tests below can exercise it in isolation; the one
-    ///   production caller always passes the plan's verdict.
+    /// - Parameter parksForArchive: whether the archive tier is a legitimate
+    ///   next step for this page — `BypassPlan.allowsArchiveToday`, i.e.
+    ///   `BypassGate` found paywall evidence. A `<title>` is not that
+    ///   evidence: every web page has one, so returning `.paywalled` on a
+    ///   title alone would send Google's homepage, a search-results page,
+    ///   and every JS shell into the archive.today CAPTCHA reader (and, via
+    ///   `.needsArchive`, into the Safari recents tray as a would-be
+    ///   article). Defaults to true so the pure title-preference tests below
+    ///   can exercise it in isolation; the one production caller always
+    ///   passes the plan's verdict.
     public static func resolution(
         direct: ExtractedArticle?, archived: ExtractedArticle?,
         directFailure: SaveFailureReason? = nil,

@@ -125,7 +125,7 @@ final class SavesDatabaseTests: XCTestCase {
 
         let reopened = try openDatabase()
         try reopened.perform { db in
-            XCTAssertEqual(try SavesSchema.userVersion(in: db), 9)
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM preload_pages"), 0)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM files WHERE id = 41"), 0)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM file_refs WHERE file_id = 41"), 0)
@@ -150,8 +150,8 @@ final class SavesDatabaseTests: XCTestCase {
     }
 
     /// The other version-6 layout already has the current columns. Its rows must
-    /// survive the v9 open; shape detection makes the repair idempotent instead of
-    /// deleting a valid cache solely because its stamp is old.
+    /// survive the current-schema open; shape detection makes the repair
+    /// idempotent instead of deleting a valid cache solely because its stamp is old.
     func testCompleteVersionSixPreloadTableIsPreserved() throws {
         let root = makeStore().add(urlString: "https://example.com/current-root")
         let preload = PreloadStore(containerURL: directory)
@@ -169,10 +169,63 @@ final class SavesDatabaseTests: XCTestCase {
 
         let reopened = try openDatabase()
         try reopened.perform { db in
-            XCTAssertEqual(try SavesSchema.userVersion(in: db), 9)
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM preload_pages"), 1)
         }
         XCTAssertEqual(PreloadStore(containerURL: directory).entry(for: pageURL)?.kind, .article)
+    }
+
+    // MARK: - Per-app Spotlight bookkeeping
+
+    func testSpotlightBookkeepingIsIndependentForTheTwoArticleApps() {
+        let store = makeStore()
+        store.setSpotlightIndexedIDs(
+            ["core-only", "shared"], for: .luna,
+            completingLegacyReconciliation: true)
+        store.setSpotlightIndexedIDs(
+            ["reader-only", "shared"], for: .reader,
+            completingLegacyReconciliation: true)
+
+        XCTAssertEqual(store.spotlightIndexState(for: .luna).indexedIDs, ["core-only", "shared"])
+        XCTAssertEqual(
+            store.spotlightIndexState(for: .reader).indexedIDs, ["reader-only", "shared"])
+
+        store.setSpotlightIndexedIDs(["core-next"], for: .luna)
+
+        XCTAssertEqual(store.spotlightIndexState(for: .luna).indexedIDs, ["core-next"])
+        XCTAssertEqual(
+            store.spotlightIndexState(for: .reader).indexedIDs, ["reader-only", "shared"],
+            "a Luna sweep must not consume Reader's bundle-specific index state")
+    }
+
+    func testSchemaNineSpotlightIDsAreOfferedToEachArticleAppOnce() throws {
+        try createRawDatabase("""
+            CREATE TABLE spotlight_index (
+                save_id TEXT PRIMARY KEY NOT NULL
+            ) WITHOUT ROWID;
+            INSERT INTO spotlight_index (save_id) VALUES ('still-live'), ('now-deleted');
+            PRAGMA user_version = 9;
+            """)
+
+        let store = makeStore()
+        for app in [LunaApp.luna, .reader] {
+            let state = store.spotlightIndexState(for: app)
+            XCTAssertTrue(state.needsLegacyReconciliation)
+            XCTAssertEqual(state.legacyIndexedIDs, ["still-live", "now-deleted"])
+        }
+
+        store.setSpotlightIndexedIDs(
+            ["still-live"], for: .luna, completingLegacyReconciliation: true)
+
+        XCTAssertEqual(
+            store.spotlightIndexState(for: .luna),
+            SpotlightIndexState(
+                indexedIDs: ["still-live"], legacyIndexedIDs: [],
+                needsLegacyReconciliation: false))
+        XCTAssertEqual(
+            store.spotlightIndexState(for: .reader).legacyIndexedIDs,
+            ["still-live", "now-deleted"],
+            "one app's reconciliation must not consume the other app's legacy cleanup")
     }
 
     // MARK: - Two connections, one file

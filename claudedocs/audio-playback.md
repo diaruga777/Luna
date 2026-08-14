@@ -474,9 +474,11 @@ unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
   `ArticleEntity.attributeSet`, calls `associateAppEntity` (so Spotlight's
   semantic index can resolve back to the entity/intent), indexes them via
   `CSSearchableIndex.default()`, and deletes entries for ids that dropped out
-  of the readable set since the last sweep (a small id-set diff persisted in
-  App-Group `UserDefaults`, so a deletion that happened while the app was
-  terminated is still cleaned up on the next launch).
+  of the readable set since the last sweep. The small id-set diff is persisted
+  in `saves.sqlite` PER APP SURFACE because Luna and Reader have separate default
+  Spotlight indexes. On each app's first schema-10 sweep it also reconciles the
+  old shared SQL set and the earlier App-Group `UserDefaults` set, so stale
+  pre-SQL entries are removed from both bundle-specific indexes.
 
 ### Known limits (honest accounting)
 

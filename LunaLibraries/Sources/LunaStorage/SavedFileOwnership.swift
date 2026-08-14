@@ -89,11 +89,11 @@ enum SavedFileOwnership {
         return articlesPath(fileName)
     }
 
-    /// The path of a preloaded page's file, or nil for a name the preload cache
-    /// would not have produced. The cache's own index is excluded by name: a
-    /// corrupt entry must not be able to queue `preloads.json` for deletion.
+    /// The path of a preloaded page's file. The retired JSON index is excluded by
+    /// name, so a stale row naming it could not queue it for deletion while the
+    /// store is still clearing it away.
     static func preloadsPath(_ fileName: String) -> OwnedFilePath? {
-        guard fileName != PreloadStore.indexFileName else { return nil }
+        guard fileName != PreloadStore.retiredIndexFileName else { return nil }
         return path("Preloads", fileName)
     }
 

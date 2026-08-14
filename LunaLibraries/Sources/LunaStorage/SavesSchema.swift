@@ -46,6 +46,21 @@ enum SavesSchema {
             try database.execute("BEGIN IMMEDIATE")
             do {
                 let existing = try userVersion(in: database)
+                // Version 6 gave `preload_pages` the columns that used to live in
+                // `preloads.json`, and `CREATE TABLE IF NOT EXISTS` cannot add a
+                // column to a table that is already there. Nothing adopts a
+                // version-5 row, so the table is rebuilt — but its files are
+                // released FIRST, through the edges, or dropping the table would
+                // strand them owned and unreachable.
+                if existing >= 5 && existing < 6 {
+                    try database.execute("""
+                        DELETE FROM file_refs
+                            WHERE file_id IN (SELECT file_id FROM preload_pages);
+                        DELETE FROM file_holders
+                            WHERE file_id IN (SELECT file_id FROM preload_pages);
+                        DROP TABLE IF EXISTS preload_pages;
+                        """)
+                }
                 try database.execute(tables)
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
@@ -307,8 +322,22 @@ enum SavesSchema {
         -- is what lets one mechanism count every page. The reaper already clears
         -- a queued path whose file is absent.
         CREATE TABLE IF NOT EXISTS preload_pages (
-            url_key TEXT    PRIMARY KEY NOT NULL,
-            file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
+            url_key       TEXT    PRIMARY KEY NOT NULL,
+            file_id       INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE,
+            url_string    TEXT    NOT NULL DEFAULT '',
+            kind          TEXT    NOT NULL DEFAULT 'unrepresentable',
+            last_loaded_at REAL,
+            has_content   INTEGER NOT NULL DEFAULT 0
+        ) WITHOUT ROWID;
+
+        -- The outbound links one preloaded page reached, so a second save landing
+        -- on a cached page can claim the subtree below it. `position` keeps
+        -- document order, which is the order the crawl walks them in.
+        CREATE TABLE IF NOT EXISTS preload_page_links (
+            url_key       TEXT    NOT NULL REFERENCES preload_pages(url_key) ON DELETE CASCADE,
+            position      INTEGER NOT NULL,
+            child_url_key TEXT    NOT NULL,
+            PRIMARY KEY (url_key, position)
         ) WITHOUT ROWID;
 
         -- Files whose last holder is gone, waiting to be unlinked. A file system
@@ -401,6 +430,15 @@ enum SavesSchema {
                 SELECT relative_path, strftime('%s', 'now'), 0
                 FROM files WHERE id = OLD.file_id;
             DELETE FROM files WHERE id = OLD.file_id;
+        END;
+
+        -- A preloaded page's images are held under the page's own key, which is not
+        -- a save and so cascades from nothing. When the page row goes — because its
+        -- file's last edge went, or because a save's delete cascaded — this drops
+        -- those holds, and the trigger below frees any image nobody else wants.
+        CREATE TRIGGER IF NOT EXISTS preload_pages_release AFTER DELETE ON preload_pages
+        BEGIN
+            DELETE FROM file_holders WHERE holder_key = OLD.url_key;
         END;
 
         CREATE TRIGGER IF NOT EXISTS file_holders_release AFTER DELETE ON file_holders

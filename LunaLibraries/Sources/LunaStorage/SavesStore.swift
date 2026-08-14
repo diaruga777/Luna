@@ -1252,6 +1252,45 @@ public final class SavesStore {
         claimPreloadPage(urlKey: urlKey, existingFileName: nil, owners: [owner])
     }
 
+    /// Every preloaded page the cache holds, keyed by URL hash.
+    func preloadEntries() -> [String: PreloadEntry] {
+        guard let database = database() else { return [:] }
+        do {
+            return try database.perform { db in try PreloadPageRow.entries(in: db) }
+        } catch {
+            record(error, "read preload pages")
+            return [:]
+        }
+    }
+
+    /// One preloaded page, or nil when the cache holds none for that key.
+    func preloadEntry(forKey key: String) -> PreloadEntry? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                try PreloadPageRow.entry(forKey: key, in: db)
+            }
+        } catch {
+            record(error, "read preload page")
+            return nil
+        }
+    }
+
+    /// Records what a crawl learned about a page whose row already exists, and
+    /// answers the row as it now stands.
+    func updatePreloadEntry(key: String, entry: PreloadEntry) -> PreloadEntry? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in
+                try PreloadPageRow.update(key: key, entry: entry, in: db)
+                return try PreloadPageRow.entry(forKey: key, in: db)
+            }
+        } catch {
+            record(error, "write preload page")
+            return nil
+        }
+    }
+
     /// Adds `owner` to a page the cache already holds, and says whether it took.
     /// Registers nothing: a second save reaching a cached page extends ownership,
     /// it never creates the page.

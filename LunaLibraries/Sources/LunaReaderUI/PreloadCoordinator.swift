@@ -30,12 +30,6 @@ public final class PreloadCoordinator {
     private var lastPasteboardKey: String?
     private let lock = NSLock()
 
-    /// A fixed sentinel "owner" for the CURRENT pasteboard candidate's preloads — bounds
-    /// pasteboard preloading to the single clipboard link (its tree is released and
-    /// re-crawled when the candidate changes). A real save claims the same cached subtree
-    /// on actual save, so content survives this owner later being released.
-    public static let pasteboardOwner = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
-
     /// High safety bound on pages crawled per root run so a pathological hub page can't
     /// crawl truly unbounded — but high enough that a normal article's links are NEVER
     /// silently dropped (we log if it's ever hit, so a truncation is visible, not silent).
@@ -106,9 +100,9 @@ public final class PreloadCoordinator {
     }
 
     /// Eagerly preload the CURRENT pasteboard candidate's links (the user chose eager
-    /// pasteboard preloading). Bounded to the single clipboard link via `pasteboardOwner`;
-    /// re-crawls when the candidate URL changes, no-ops when it's unchanged. Returns
-    /// immediately; the crawl runs detached and Wi-Fi-gated.
+    /// pasteboard preloading). Bounded to the single clipboard link via
+    /// `PreloadStore.pasteboardOwner`; re-crawls when the candidate URL changes, no-ops
+    /// when it's unchanged. Returns immediately; the crawl runs detached and Wi-Fi-gated.
     public func preloadPasteboard(content: ArticleContent, sourceURL: URL) {
         guard ReaderSettings.preloadDepth > 0 else { return }
         let key = PreloadStore.key(for: sourceURL)
@@ -122,9 +116,10 @@ public final class PreloadCoordinator {
             guard let self else { return }
             // Drop the previous clipboard candidate's speculative tree (a real save that
             // also owns any of it keeps its own ownership).
-            self.store.releaseTree(rootID: Self.pasteboardOwner)
+            self.store.releaseTree(rootID: PreloadStore.pasteboardOwner)
             await self.performCrawl(
-                rootID: Self.pasteboardOwner, seedLinks: links, allowsBackgroundTask: false)
+                rootID: PreloadStore.pasteboardOwner, seedLinks: links,
+                allowsBackgroundTask: false)
         }
     }
 

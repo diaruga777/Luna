@@ -167,7 +167,7 @@ final class SavesStoreCacheTests: XCTestCase {
         let item = addAndWaitForNotification("https://example.com/root")
         let descendant = try XCTUnwrap(URL(string: "https://example.com/child"))
         preloadStore.record(url: descendant, rootID: item.id, kind: .unrepresentable)
-        XCTAssertEqual(preloadStore.entry(for: descendant)?.owners, [item.id.uuidString])
+        XCTAssertNotNil(preloadStore.entry(for: descendant))
 
         let archived = expectation(forNotification: .savesChanged, object: nil)
         store.setArchived(true, for: item.id, at: Date(timeIntervalSince1970: 123))

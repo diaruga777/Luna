@@ -45,6 +45,9 @@ final class ProductHistoryPillRenderTests: XCTestCase {
     private var historyPillText: String? {
         js.string("(document.getElementById('queue-history-pill') || {}).textContent")
     }
+    private var moveButtonExists: Bool {
+        js.bool("!!document.getElementById(window.__lunaPillMoveButtonID)")
+    }
 
     func testUnsavedWithHistoryShowsBothPillsHistoryAboveTrack() {
         render(historyRespJSON: #"{hasHistory: true, isTracked: false, amount: "79.99", currency: "USD", day: "2026-01-12"}"#)
@@ -62,6 +65,7 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         render(historyRespJSON: "{hasHistory: false, isTracked: true}")
         XCTAssertFalse(trackPillExists)
         XCTAssertFalse(historyPillExists)
+        XCTAssertFalse(moveButtonExists, "the move control only exists while a pill is visible")
     }
 
     func testUnsavedWithNoHistoryShowsOnlyTheTrackPill() {
@@ -88,6 +92,41 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         let pointerEvents = js.string(
             "getComputedStyle(document.getElementById('queue-history-pill')).pointerEvents")
         XCTAssertEqual(pointerEvents, "none")
+    }
+
+    func testMoveControlMirrorsEveryPillAndKeepsA44PointHitTarget() {
+        render(historyRespJSON: #"{hasHistory: true, isTracked: false, amount: "79.99", currency: "USD", day: "2026-01-12"}"#)
+
+        XCTAssertTrue(moveButtonExists)
+        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).textContent"), "‹")
+        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).style.width"), "44px")
+        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).style.height"), "44px")
+        XCTAssertEqual(
+            js.string("document.getElementById(window.__lunaPillMoveButtonID).getAttribute('aria-label')"),
+            "Move Luna buttons to the left")
+        XCTAssertTrue(js.bool("""
+            (function () {
+                var button = document.getElementById(window.__lunaPillMoveButtonID).getBoundingClientRect();
+                var pill = document.getElementById(window.__lunaPillID).getBoundingClientRect();
+                return button.right <= pill.left - 7;
+            })()
+            """), "the initial left chevron sits to the left of the bottommost pill")
+
+        _ = js.evaluate("document.getElementById(window.__lunaPillMoveButtonID).click(); \"moved\"")
+
+        XCTAssertEqual(js.string("document.getElementById('queue-read-button').style.left"), "16px")
+        XCTAssertEqual(js.string("document.getElementById('queue-history-pill').style.left"), "16px")
+        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).textContent"), "›")
+        XCTAssertEqual(
+            js.string("document.getElementById(window.__lunaPillMoveButtonID).getAttribute('aria-label')"),
+            "Move Luna buttons to the right")
+        XCTAssertTrue(js.bool("""
+            (function () {
+                var button = document.getElementById(window.__lunaPillMoveButtonID).getBoundingClientRect();
+                var pill = document.getElementById(window.__lunaPillID).getBoundingClientRect();
+                return button.left >= pill.right + 7;
+            })()
+            """), "the right chevron sits to the right of the bottommost pill after mirroring")
     }
 
     // MARK: - The alternative-seller lookup

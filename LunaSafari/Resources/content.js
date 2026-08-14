@@ -156,6 +156,8 @@
         // `{price}`/`{date}`, substituted the same way as `{app}` above --
         // never `$`-style syntax (see the note on `returnToApp`).
         wasPriceOnDate: "Was {price} on {date}",
+        movePillsLeft: "Move Luna buttons to the left",
+        movePillsRight: "Move Luna buttons to the right",
         findingSellers: "Finding other sellers…",
         // `{price}`/`{seller}` -- same rule again, never `$`-style syntax.
         priceAtSeller: "{price} at {seller}",
@@ -1724,6 +1726,7 @@
             pointerEvents: "none"
         });
         (document.body || document.documentElement).appendChild(pill);
+        updateLunaPillPositioning();
     }
 
     // Renders whatever the productSnapshot round trip earned: the history
@@ -1840,6 +1843,7 @@
         pill.appendChild(document.createTextNode(localizedMessage("findingSellers")));
         applyStyle(pill, sellerPillStyle(stacked, false));
         (document.body || document.documentElement).appendChild(pill);
+        updateLunaPillPositioning();
     }
 
     // The answer: tappable, and it navigates to the seller's own page. The URL
@@ -1866,6 +1870,7 @@
         pill.setAttribute("role", "button");
         pill.appendChild(document.createTextNode(label));
         applyStyle(pill, sellerPillStyle(stacked, true));
+        updateLunaPillPositioning();
         pill.addEventListener("click", function () {
             var destination = pill.getAttribute("data-luna-seller-url");
             if (destination) { window.location.href = destination; }
@@ -1901,6 +1906,7 @@
         pill.setAttribute("data-luna-state", state);
         pill.appendChild(document.createTextNode(localizedMessage(messageKey)));
         applyStyle(pill, sellerPillStyle(stacked, false));
+        updateLunaPillPositioning();
     }
 
     function finishSellerLookup(context, historyResp, sellerResp, snapshot) {
@@ -2667,7 +2673,115 @@
     window.__lunaInstantSizingMilliseconds = PLAYER_INSTANT_SIZING_MS;
 
     var PILL_ID = "queue-read-button";
+    var PILL_MOVE_BUTTON_ID = "luna-pill-move-button";
+    var PILL_MOVE_GAP = 12;
+    // These are the only compact, page-level floating controls. The video
+    // player is deliberately absent: it is a full-screen popup with its own
+    // layout and must never move when a page pill does.
+    var LUNA_PILL_IDS = [PILL_ID, "queue-history-pill", SELLER_PILL_ID];
+    var lunaPillsAreOnLeft = false;
     window.__lunaPillID = PILL_ID;
+    window.__lunaPillMoveButtonID = PILL_MOVE_BUTTON_ID;
+
+    function renderedLunaPills() {
+        var pills = [];
+        for (var i = 0; i < LUNA_PILL_IDS.length; i++) {
+            var pill = document.getElementById(LUNA_PILL_IDS[i]);
+            if (pill) { pills.push(pill); }
+        }
+        return pills;
+    }
+
+    function bottommostLunaPill(pills) {
+        var bottommost = pills[0];
+        var bottommostRect = bottommost.getBoundingClientRect();
+        for (var i = 1; i < pills.length; i++) {
+            var candidateRect = pills[i].getBoundingClientRect();
+            if (candidateRect.bottom > bottommostRect.bottom) {
+                bottommost = pills[i];
+                bottommostRect = candidateRect;
+            }
+        }
+        return bottommost;
+    }
+
+    function createLunaPillMoveButton() {
+        // Keep this a div like the pills themselves: page-level `button { ... }`
+        // rules are common and must not be allowed to shrink its hit target.
+        var button = document.createElement("div");
+        button.id = PILL_MOVE_BUTTON_ID;
+        button.setAttribute("role", "button");
+        button.setAttribute("tabindex", "0");
+        applyStyle(button, {
+            position: "fixed", zIndex: "2147483647", boxSizing: "border-box",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: "44px", height: "44px", minHeight: "44px", padding: "0",
+            margin: "0", border: "none", borderRadius: "999px",
+            color: "#ffffff", font: "500 28px/1 -apple-system, system-ui, sans-serif",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.25)", cursor: "pointer",
+            transition: "transform 0.12s ease, opacity 0.12s ease",
+            webkitTapHighlightColor: "transparent", touchAction: "manipulation",
+            webkitAppearance: "none", appearance: "none"
+        });
+        button.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            lunaPillsAreOnLeft = !lunaPillsAreOnLeft;
+            updateLunaPillPositioning();
+        });
+        button.addEventListener("touchstart", function () { button.style.transform = "scale(0.92)"; }, { passive: true });
+        button.addEventListener("touchend", function () { button.style.transform = "none"; });
+        button.addEventListener("touchcancel", function () { button.style.transform = "none"; });
+        button.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter" && event.key !== " ") { return; }
+            event.preventDefault();
+            button.click();
+        });
+        (document.body || document.documentElement).appendChild(button);
+        return button;
+    }
+
+    // Mirrors every page-level pill as one unit. The control is adjacent to the
+    // bottommost pill: on the right it sits to that pill's left and points left;
+    // on the left the arrangement is reversed and it points right.
+    function updateLunaPillPositioning() {
+        var pills = renderedLunaPills();
+        var button = document.getElementById(PILL_MOVE_BUTTON_ID);
+        if (!pills.length) {
+            if (button && button.parentNode) { button.parentNode.removeChild(button); }
+            return;
+        }
+
+        for (var i = 0; i < pills.length; i++) {
+            pills[i].style.left = lunaPillsAreOnLeft ? "16px" : "auto";
+            pills[i].style.right = lunaPillsAreOnLeft ? "auto" : "16px";
+        }
+
+        var bottomPill = bottommostLunaPill(pills);
+        var pillRect = bottomPill.getBoundingClientRect();
+        if (!button) { button = createLunaPillMoveButton(); }
+
+        var movesLeft = !lunaPillsAreOnLeft;
+        var accessibilityLabel = localizedMessage(movesLeft ? "movePillsLeft" : "movePillsRight");
+        button.textContent = movesLeft ? "‹" : "›";
+        button.setAttribute("aria-label", accessibilityLabel);
+        button.setAttribute("title", accessibilityLabel);
+        button.style.background = getComputedStyle(bottomPill).backgroundColor;
+        button.style.color = getComputedStyle(bottomPill).color;
+        button.style.top = Math.max(0, pillRect.top + (pillRect.height - 44) / 2) + "px";
+        button.style.bottom = "auto";
+        if (lunaPillsAreOnLeft) {
+            button.style.left = (pillRect.right + PILL_MOVE_GAP) + "px";
+            button.style.right = "auto";
+        } else {
+            button.style.left = "auto";
+            button.style.right = Math.max(0, window.innerWidth - pillRect.left + PILL_MOVE_GAP) + "px";
+        }
+    }
+
+    // Rotation and Safari's viewport changes alter the measured width of a pill,
+    // so re-place the adjacent move control without changing the chosen side.
+    window.addEventListener("resize", updateLunaPillPositioning);
 
     function injectLunaButton(target) {
         if (document.getElementById(PILL_ID)) { return; }
@@ -2728,6 +2842,7 @@
             }
         });
         (document.body || document.documentElement).appendChild(btn);
+        updateLunaPillPositioning();
     }
 
     // A pill deep-links ONLY into this extension's OWN containing app (which is
@@ -3151,6 +3266,7 @@
     function removeLunaButton() {
         var existing = document.getElementById(PILL_ID);
         if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+        updateLunaPillPositioning();
     }
 
     function hostMatches(host, roots) {

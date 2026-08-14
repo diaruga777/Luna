@@ -51,6 +51,14 @@
         "message": "Was {price} on {date}",
         "description": "Non-interactive pill showing a lower historical price. {price} and {date} are substituted by content.js. Deliberately NOT written $PRICE$/$DATE$ -- see the note in content.js."
     },
+    "movePillsLeft": {
+        "message": "Move Luna buttons to the left",
+        "description": "Accessibility label for the 44-point chevron control that moves the page-level Luna pills to the left edge."
+    },
+    "movePillsRight": {
+        "message": "Move Luna buttons to the right",
+        "description": "Accessibility label for the 44-point chevron control that moves the page-level Luna pills to the right edge."
+    },
     "findingSellers": {
         "message": "Finding other sellers…",
         "description": "Pill shown while the native handler looks for the same product on other retailers' sites."

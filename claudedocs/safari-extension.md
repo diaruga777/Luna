@@ -343,6 +343,21 @@ copy, the kind mapping, the text-colour rule and the resulting contrast against
 player panel in UIKit and reads the same palette
 (`SafariVideoOverlayReplicaTests`).
 
+### Move page pills out of the way
+
+Whenever at least one page-level pill is visible, Luna adds a **44 × 44 point**
+chevron control beside the bottommost one — the smallest Apple touch target. It
+starts to the pill's left at the right screen edge and points left; tapping it
+mirrors every visible page pill to the left edge, then puts the control to the
+right of that same bottom pill and points it right. This includes the action pill,
+the non-interactive history chip, and every alternative-seller state, so a product
+stack stays together. Its accessibility label names the direction it will move.
+
+The video player is explicitly not part of this system: it is a full-screen popup
+with its own layout, and moving page pills neither shifts nor changes it.
+`ProductHistoryPillRenderTests.testMoveControlMirrorsEveryPillAndKeepsA44PointHitTarget`
+pins the placement, mirrored stack, icon direction, and hit size.
+
 `LunaSafari/Resources/content.js` is loaded **both** ways: it is a **declared
 `content_scripts` entry** (`run_at: document_idle`, top frame, `js:
 [news_hosts.generated.js, platform_hosts.generated.js, product_rules.generated.js,

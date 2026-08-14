@@ -39,7 +39,7 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
    "In-app progress" below for why nothing floats.
 2. **`localFile(fileName:)`** — the media file lives under the shared App Group at
    `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
-3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
+3. **`photosReference(localIdentifier:…)`** — the row keeps PhotoKit's durable
    `PHAsset.localIdentifier`, not a duplicate media file. Card content, scrub-strip
    thumbnails, and pasteboard exports resolve the asset through PhotoKit each
    time. A small multicolor Photos rosette appears in the card's top-leading corner
@@ -53,8 +53,8 @@ transitions into Photos retain their generated thumbnail as the archive fallback
 Re-download completion preserves `archivedAt`, updates `dateSaved` to the download
 date, and therefore uses the ordinary local-retention clock without unarchiving.
 
-`SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
-the saves list UUID as its stable identity. Existing manifests with the old required
+`SavedMediaStore.ensureUndownloaded` creates the media row before transfer and uses
+the saves list UUID as its stable identity. Existing legacy manifests with the old required
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
 file disappears, store recovery changes the row back to `.undownloaded`.
 
@@ -62,7 +62,7 @@ Safari's in-page player is a direct-resolved exception to the ordinary ingest
 funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
 before creating the job, then awaits preflight until the named background task is
 registered before returning the foreground to Safari. A completed transfer can
-therefore never arrive without a manifest row to receive it, and suspension cannot
+therefore never arrive without a media row to receive it, and suspension cannot
 catch the handoff in the persist-before-task gap. The save row it reserved
 is finished the same way it would be in any other save — just later and in the
 background, after the bounce: see "The save the hand-off did not have time to
@@ -106,16 +106,16 @@ from saving the same post twice.
 ### Local to Photos transition
 
 Manual **Save to Photos** copies the local file to a PhotoKit staging URL. After PhotoKit
-confirms the save and returns an identifier, `transitionToPhotosReference` performs a
-crash-recoverable two-write transaction:
+confirms the save and returns an identifier, `transitionToPhotosReference` performs one
+SQLite transaction:
 
-1. atomically commit `.photosReference` together with the old local file name
-   as pending deletion (the small generated thumbnail is retained);
-2. delete those files durably, then atomically clear the pending names.
+1. commit `.photosReference` while retaining the small generated thumbnail;
+2. remove the old media-file ownership edge, whose trigger records the path in
+   `pending_deletes`, in that same commit.
 
-`SavedMediaStore.items()` finishes interrupted pending deletions on the next load. Thus a
-confirmed Photos save never reverts to local merely because the process stopped between
-the manifest commit and file cleanup.
+The reaper unlinks queued paths after the commit and retries after a process interruption.
+Thus a confirmed Photos save cannot leave the row and its ownership edges disagreeing;
+physical cleanup remains durable and idempotent.
 
 ### Photos deletion and authorization
 

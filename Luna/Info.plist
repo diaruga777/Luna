@@ -19,9 +19,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Luna tracks your eyes to pause playback automatically when you look away.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
+	<string>Luna saves photos, GIFs, and videos from social posts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Luna loads media you saved to Photos so it remains available in Downloader.</string>
+	<string>Luna loads media you saved to Photos so it remains available in Luna Video.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<!-- $(LUNA_URL_SCHEME) is set per app target (lunareader / lunadownloader /

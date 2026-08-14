@@ -51,7 +51,7 @@ final class SafariVideoOverlayTests: XCTestCase {
             });
             window.__lunaPresentVideoOverlay(
                 { scheme: \(json(scheme)), supportsMedia: true },
-                { label: "Download in Luna",
+                { label: "Open in Luna",
                   url: function () {
                       return \(json(scheme)) + "://read?url="
                           + encodeURIComponent(location.href) + "&ret=safari";
@@ -162,7 +162,7 @@ final class SafariVideoOverlayTests: XCTestCase {
             });
             window.__lunaPresentVideoOverlay(
                 { scheme: "lunadownloader", supportsMedia: true },
-                { label: "Download in Luna", url: function () { return "lunadownloader://read"; } });
+                { label: "Open in Luna", url: function () { return "lunadownloader://read"; } });
             "presented"
             """)
         _ = js.evaluate("void 0")

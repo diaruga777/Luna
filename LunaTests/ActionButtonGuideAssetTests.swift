@@ -45,7 +45,7 @@ final class ActionButtonGuideAssetTests: XCTestCase {
     func testGuideGeneratorUsesOnlyCurrentShortcutNames() {
         let generator = source("scripts/generate_action_button_guides.swift")
         XCTAssertFalse(generator.contains("Send To Luna"))
-        for name in ["Luna", "Luna Reader", "Luna Downloader", "Luna Price Tracker"] {
+        for name in ["Luna", "Luna Reader", "Luna Video", "Luna Price Tracker"] {
             XCTAssertTrue(generator.contains("name: \"\(name)\""))
         }
     }

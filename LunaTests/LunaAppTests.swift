@@ -56,7 +56,7 @@ final class LunaAppTests: XCTestCase {
     func testDisplayNames() {
         XCTAssertEqual(LunaApp.luna.displayName, "Luna")
         XCTAssertEqual(LunaApp.reader.displayName, "Luna Reader")
-        XCTAssertEqual(LunaApp.downloader.displayName, "Luna Downloader")
+        XCTAssertEqual(LunaApp.downloader.displayName, "Luna Video")
         XCTAssertEqual(LunaApp.priceTracker.displayName, "Luna Price Tracker")
     }
 

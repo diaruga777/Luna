@@ -12,11 +12,12 @@ their phone in Safari at the exact moment they're enabling the extension.
 /setup/                 same list
 /setup/luna             central Luna
 /setup/reader           Luna Reader
-/setup/downloader       Luna Downloader
+/setup/video            Luna Video
 /setup/price-tracker    Luna Price Tracker
 ```
 
-`luna-reader`, `lunareader`, `luna-downloader`, `lunadownloader`,
+`luna-reader`, `lunareader`, `downloader`, `luna-downloader`, `lunadownloader`,
+`luna-video`, `lunavideo`,
 `luna-price-tracker`, `pricetracker` and `price` 301 to the canonical slug
 (`site/dist/_redirects`).
 

@@ -9,7 +9,7 @@ import Photos
 import UIKit
 import LunaModels
 
-/// Shared media download and retention controls for Luna and Luna Downloader.
+/// Shared video-saving and retention controls for Luna and Luna Video.
 final class DownloadsSettingsScreen: NavHeaderTableController {
 
     init() { super.init(style: .insetGrouped) }
@@ -20,12 +20,10 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    /// The automatic-download policy, then storage: Photos or local files with
-    /// a deletion clock. The two are mutually exclusive, which is why they are
-    /// one row.
-    private enum DownloaderSection: Int { case autoDownload, storage }
+    /// Streaming policy, storage, and optional save-progress notifications.
+    private enum DownloaderSection: Int { case autoDownload, storage, progress }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+    override func numberOfSections(in tableView: UITableView) -> Int { 3 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         1
@@ -41,6 +39,8 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             return L10n.string("Settings_downloads_autoDownloadFooter")
         case .storage:
             return L10n.string("Settings_downloads_storageFooter")
+        case .progress:
+            return nil
         }
     }
 
@@ -50,6 +50,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         switch DownloaderSection(rawValue: indexPath.section)! {
         case .autoDownload: return autoDownloadPolicyCell()
         case .storage: return storageCell()
+        case .progress: return progressCell()
         }
     }
 
@@ -72,7 +73,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
         let menu = UIMenu(children: MediaStorageOption.allCases.map { option in
             UIAction(title: option.displayName, state: option == current ? .on : .off) { [weak self] _ in
                 // `choose`, not `option =`: answering here also retires the util
-                // card's inline "Store downloads …" line.
+                // card's inline "Store files …" line.
                 MediaStorageSettings.choose(option)
                 self?.reload(.storage)
             }
@@ -81,6 +82,23 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             title: L10n.string("Settings_downloads_storageLabel"), symbol: "internaldrive",
             identifier: "storagePicker", value: current.displayName, menu: menu,
             permissionError: Self.needsPhotosPermissionInThisApp)
+    }
+
+    private func progressCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = L10n.string("Settings_video_notifySaveProgressLabel")
+        cell.contentConfiguration = content
+
+        let toggle = makeToggle(isOn: AutoDownloadSettings.notifySaveProgress) { isOn in
+            AutoDownloadSettings.notifySaveProgress = isOn
+            guard !isOn else { return }
+            Task { await LiveMediaDownloadManager.shared.endAllActivities() }
+        }
+        toggle.accessibilityIdentifier = "notifySaveProgressToggle"
+        cell.accessoryView = toggle
+        return cell
     }
 
     /// Whether Photos is the stored destination. This may have been answered

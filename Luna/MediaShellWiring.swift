@@ -31,7 +31,7 @@ enum MediaShellWiring {
         PasteboardSuggester.platformPreviewArt = PlatformPreviewArt()
         // Action Button intents hand recognized posts to the media downloader.
         MediaIntentHandoff.install()
-        // The util card's inline "Store downloads …" line. Only an app that
+        // The util card's inline "Store files …" line. Only an app that
         // downloads has anywhere to store, so only an app that links this module
         // installs the choice (`claudedocs/util-card.md`).
         MediaUtilCardStorageChoice.install()

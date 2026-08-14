@@ -179,7 +179,7 @@ final class LinkImportSheetTests: XCTestCase {
         let cell = sheet.tableView(
             sheet.table, cellForRowAt: IndexPath(row: 0, section: 1))
         let content = cell.contentConfiguration as? UIListContentConfiguration
-        XCTAssertEqual(content?.secondaryText, "Luna Downloader handles this kind of link.")
+        XCTAssertEqual(content?.secondaryText, "Luna Video handles this kind of link.")
     }
 
     func testTheSummaryReportsAFailureAsRecoverableRatherThanRejected() async {

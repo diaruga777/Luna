@@ -1,6 +1,6 @@
-# Social Media Download
+# Social Media Video
 
-Luna downloads the first still image, GIF, or video from supported X, Instagram,
+Luna Video fetches the first still image, GIF, or video from supported X, Instagram,
 TikTok, Facebook, Reddit, and YouTube links. It also downloads directly hosted
 image, GIF, video, and audio file URLs without a platform-resolution request.
 Platform resolution is keyless/client-side and therefore best effort.
@@ -14,7 +14,7 @@ model. Foreground downloads return it immediately from `SocialMediaResolver`;
 durable background jobs skip the resolve transfer entirely and start the media
 transfer with the original URL.
 
-## Downloader storage model
+## Video storage model
 
 Every Downloader save has one durable `SavedMediaItem` row and exactly one visible
 `StorageState`:
@@ -86,8 +86,8 @@ UI surface uses instead of ever showing the URL when metadata was fetched.
 - Direct audio is always preserved as a local file because PhotoKit does not
   accept standalone audio assets.
 
-All Downloader completion paths use this policy: foreground ingest/App Intents
-(`MediaDownloadService`), background URLSession/Live Activity
+All Luna Video completion paths use this policy: foreground ingest/App Intents
+(`MediaDownloadService`), background URLSession (and, when enabled, Live Activity)
 (`LiveMediaDownloadManager`), and the share/action-extension inline preview
 (`SavedNonTextualViewController`). The bounded downloaded-URL list prevents those paths
 from saving the same post twice.
@@ -211,7 +211,7 @@ Photos references remain governed by the user's Photos library.
   media's own action.
   Its chrome is the extensions' shared chrome: a
   `GlassConfirmationBadge` header ("Saved to Luna" — the screen used to carry a navigation
-  title hard-coded to "Luna Downloader" in all four apps) and Liquid Glass action pills in
+  title hard-coded to "Luna Video" in all apps) and Liquid Glass action pills in
   the host app's own tint (`GlassStyle.actionButtonConfiguration(tint:)`). **The ways out
   stack up from the bottom safe area** instead: a full-width **Done** carrying the app's
   tint as a real glass fill (`GlassStyle.primaryActionButtonConfiguration`, iOS 26
@@ -252,7 +252,9 @@ Photos references remain governed by the user's Photos library.
   every app, while only Downloader + central Luna install the media handoff and
   can start a transfer. Save conforms to `LiveActivityIntent`, which is
   what lets `Activity.request` succeed from a background Action Button run at all — before
-  that it threw and the transfer ran invisibly. On iOS 27 builds compiled with Xcode 27 the
+  that it threw and the transfer ran invisibly. Luna Video's **Settings → Video →
+  Notify save progress** setting defaults to off, so ordinary background saves remain
+  silent; when enabled it permits Luna's Live Activity. On iOS 27 builds compiled with Xcode 27 the
   Save also runs under `LongRunningIntent`, whose own system progress UI covers the
   AWAITED leg; `LiveMediaDownloadManager.systemProvidesProgressUI` (a task local bound by
   `MediaIntentHandoff`) suppresses Luna's activity for exactly that leg so the two don't
@@ -296,17 +298,18 @@ The carousel observes both `.savedMediaChanged` and `.savesChanged`.
 in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
 
-## Bounce back to Safari, and tap-to-view on the Live Activity
+## Bounce back to Safari, and optional tap-to-view Live Activity
 
 A media pill save (`&ret=safari` on the deep link, `claudedocs/safari-extension.md`)
 reopens the original https page in Safari once the download has actually started:
 `PlatformItemIngestor.ingest` is awaited all the way through
-`LiveMediaDownloadManager.shared.start` (which requests the Live Activity) before
+`LiveMediaDownloadManager.shared.start` (which requests a Live Activity only when the
+user has enabled **Notify save progress**) before
 `SceneDelegate`'s save-press `Task` returns, so by the time
 `SafariReturnPolicy.shouldReturn` decides to bounce (`UIApplication.shared.open` on
 the original URL, never a private scheme), the transfer is already running in the
-background `URLSession` and the activity is already visible — bouncing away doesn't
-race either. The transfer and the activity's lifecycle are otherwise unaffected by
+background `URLSession` — bouncing away doesn't race the transfer. When enabled,
+the activity is already visible. The transfer and the optional activity's lifecycle are otherwise unaffected by
 whether the app is foreground, backgrounded, or suspended: a background-session
 delegate callback wakes the process briefly to advance the job regardless.
 
@@ -573,9 +576,10 @@ separate product/legal review.
 
 ## Settings
 
-Luna and Luna Downloader share the same `Settings → Downloads` screen with two picker rows:
+Luna and Luna Video share the same `Settings → Video` screen with two picker rows and
+one toggle:
 
-1. **Download Automatically** — **Never**, **Always** (the default), or **On Wi-Fi Only**.
+1. **Begin Streaming** — **Never**, **Always** (the default), or **On Wi-Fi Only**.
    `AutoDownloadSettings.policy` reads and writes the two prefs behind it
    (`autoDownloadMediaInPreview` + `wifiOnlyDownloads`): Never means nothing downloads on
    its own, and the two on-values differ only in whether a download that starts on cellular
@@ -588,10 +592,12 @@ Luna and Luna Downloader share the same `Settings → Downloads` screen with two
    Photos off. An installation that had Photos off with no retention choice reads as the
    default age (1 month); a since-removed age (2 days, 1 week) maps to the closest
    surviving one.
+3. **Notify save progress** — defaults to off. Enabling it restores the background
+   save Live Activity; the setting has no explanatory footer.
 
 The screen writes through `MediaStorageSettings.choose`, not `option`, so the user's
 answer is recorded as theirs (`hasExplicitChoice`). That marker is what the util
-card's inline **“Store downloads in Luna / in Photos”** line waits on: Luna is the
+card's inline **“Store files in Luna / in Photos”** line waits on: Luna is the
 default, and Photos needs a permission nobody has been asked for, so both downloading
 apps offer the choice on the card until it is answered anywhere — and that row, unlike
 this screen, asks for Photos access BEFORE it saves the setting

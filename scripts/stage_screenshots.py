@@ -40,7 +40,7 @@ APPS = [
     ("luna", "Luna", "com.hsanabria.luna", "Luna.app", "Luna (central)"),
     ("reader", "LunaReader", "com.hsanabria.luna.reader", "LunaReader.app", "Luna Reader"),
     ("downloader", "LunaDownloader", "com.hsanabria.luna.downloader",
-     "LunaDownloader.app", "Luna Downloader"),
+     "LunaDownloader.app", "Luna Video"),
     ("pricetracker", "LunaPriceTracker", "com.hsanabria.luna.pricetracker",
      "LunaPriceTracker.app", "Luna Price Tracker"),
 ]

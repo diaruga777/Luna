@@ -138,7 +138,7 @@
         unlockedWithLuna: "Unlocked with Luna",
         openingLuna: "Opening Luna…",
         readInLuna: "📖  Read in Luna",
-        downloadInLuna: "Download in Luna",
+        downloadInLuna: "Open in Luna",
         trackInLuna: "Track in Luna",
         findingVideo: "Finding video…",
         videoUnplayable: "This one can't play here",
@@ -2090,7 +2090,7 @@
     window.__lunaSetupCelebrationDuration = SETUP_CELEBRATION_DURATION;
 
     // ── The in-page video player ────────────────────────────────────────────────
-    // On a media host (the central Luna app / Luna Downloader), a recognized post
+    // On a media host (the central Luna app / Luna Video), a recognized post
     // page opens a player right here instead of navigating: the native handler
     // runs the app's own resolver over this post URL and hands back a direct CDN
     // URL, which a plain <video> streams. The page's own CSP governs that load,
@@ -2874,7 +2874,7 @@
 
     // Visibility-only media gate for Downloader-platform pages. Saving/downloading a
     // URL still happens in the app when the user adds it manually; this only decides
-    // whether Safari should proactively show the "Download in Luna" pill.
+    // whether Safari should proactively show the "Open in Luna" pill.
     function shouldShowDownloadPillForPlatform(platform) {
         if (platform === "reddit") { return redditPostHasMedia(); }
         if (pathIsInherentlyVideo(platform)) { return true; }
@@ -2976,7 +2976,7 @@
 
     // MARK: - Reddit post-page + media gating
     //
-    // Reddit's "Download in Luna" pill must appear ONLY on an individual post whose
+    // Reddit's "Open in Luna" pill must appear ONLY on an individual post whose
     // primary content is animated image/video (never static image posts, the home
     // feed, a subreddit listing, a comment-history listing, or a text/link/poll
     // post). New Reddit is a client-side-navigating SPA, so we also watch for

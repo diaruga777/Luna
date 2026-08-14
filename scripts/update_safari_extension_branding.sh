@@ -11,7 +11,7 @@ case "${PRODUCT_BUNDLE_IDENTIFIER}" in
     app_icon="AppIconReader"
     ;;
   *.downloader.safari)
-    app_name="${DISPLAY_NAME_PREFIX:-Luna} Downloader"
+    app_name="${DISPLAY_NAME_PREFIX:-Luna} Video"
     app_icon="AppIconDownloader"
     ;;
   *.pricetracker.safari)

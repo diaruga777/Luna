@@ -93,38 +93,6 @@ public final class SavedMediaStore {
         return store
     }
 
-    /// Empties the library once, on the first run of the build that moved file
-    /// ownership into the database.
-    ///
-    /// Nothing adopts what an older build left behind: its library was a JSON
-    /// manifest this build no longer reads, and its posters are named from their
-    /// item id, which the ownership tables cannot take (see
-    /// `OwnedFileKind.mediaThumbnail`). Rather than leave files no owner will ever
-    /// free, the retired manifest and both directories go. Idempotent and
-    /// cross-process — the flag lives in the shared App Group defaults, so
-    /// whichever process runs first does the work.
-    public func resetLibraryForSQLOwnershipOnce() {
-        let defaults = UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
-        let key = "savedMedia.sqlOwnershipReset.v1"
-        guard !defaults.bool(forKey: key) else { return }
-        lock.lock()
-        do {
-            try saveUnlocked([])
-        } catch {
-            lock.unlock()
-            return
-        }
-        lock.unlock()
-        try? fm.removeItem(at: directory.appendingPathComponent("savedMedia.json"))
-        for directory in [mediaDirectory, thumbnailDirectory] {
-            let contents = (try? fm.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil)) ?? []
-            for file in contents { try? fm.removeItem(at: file) }
-        }
-        defaults.set(true, forKey: key)
-        notifyChanged()
-    }
-
     public var directory: URL {
         let fallback = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory

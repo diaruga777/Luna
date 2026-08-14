@@ -62,7 +62,6 @@ enum MediaShellWiring {
         // block startup.
         DispatchQueue.global(qos: .utility).async {
             MediaDownloadStorage.purgeAll()
-            SavedMediaStore.shared.resetLibraryForSQLOwnershipOnce()
             SavedMediaStore.shared.purgeExpired()
         }
         LiveMediaDownloadManager.shared.resumeLiveActivities()

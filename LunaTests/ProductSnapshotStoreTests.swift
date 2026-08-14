@@ -183,11 +183,12 @@ final class ProductSnapshotStoreTests: XCTestCase {
 
     // MARK: - SQLite persistence
 
-    func testSnapshotsAreStoredInSQLiteWithoutJSONArtifacts() throws {
+    func testSnapshotsAreStoredInSQLiteWithoutTouchingLegacyArtifacts() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let legacyDirectory = directory.appendingPathComponent("Library/ProductSnapshots")
         try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
-        try Data("obsolete".utf8).write(to: legacyDirectory.appendingPathComponent("snapshotIndex.json"))
+        let legacyMarker = legacyDirectory.appendingPathComponent("snapshotIndex.json")
+        try Data("obsolete".utf8).write(to: legacyMarker)
         store.record(payload: payload(url: "https://shop.example/persisted"), now: now)
 
         let children = try FileManager.default.contentsOfDirectory(
@@ -195,7 +196,7 @@ final class ProductSnapshotStoreTests: XCTestCase {
         XCTAssertTrue(children.contains("saves.sqlite"))
         XCTAssertFalse(children.contains("snapshotIndex.json"))
         XCTAssertFalse(children.contains("records"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
+        XCTAssertEqual(try Data(contentsOf: legacyMarker), Data("obsolete".utf8))
 
         var database: OpaquePointer?
         XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("saves.sqlite").path, &database), SQLITE_OK)
@@ -206,6 +207,19 @@ final class ProductSnapshotStoreTests: XCTestCase {
         defer { sqlite3_finalize(statement) }
         XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
         XCTAssertEqual(sqlite3_column_int64(statement, 0), 1)
+    }
+
+    func testFailedDatabaseOpenDoesNotDeleteLegacySnapshotDirectory() throws {
+        let legacyDirectory = directory.appendingPathComponent("Library/ProductSnapshots")
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        let legacyMarker = legacyDirectory.appendingPathComponent("snapshotIndex.json")
+        try Data("leave me alone".utf8).write(to: legacyMarker)
+        // A directory at the database path makes sqlite3_open fail deterministically.
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("saves.sqlite"), withIntermediateDirectories: true)
+
+        XCTAssertFalse(store.record(payload: payload(url: "https://shop.example/not-recorded")))
+        XCTAssertEqual(try Data(contentsOf: legacyMarker), Data("leave me alone".utf8))
     }
 
     /// The ordering every consumer relies on: a day compares as its text, so a

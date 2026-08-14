@@ -45,20 +45,10 @@ public final class ProductSnapshotStore: @unchecked Sendable {
         directoryURL?.appendingPathComponent("saves.sqlite")
     }
 
-    /// Snapshot JSON was deliberately retired rather than migrated. Removing
-    /// the old directory on first use leaves `saves.sqlite` as the only source
-    /// of truth on an updated install.
-    private func discardLegacyJSONStore() {
-        guard let directoryURL else { return }
-        try? FileManager.default.removeItem(
-            at: directoryURL.appendingPathComponent("Library/ProductSnapshots", isDirectory: true))
-    }
-
     private func database() -> SavesDatabase? {
         openLock.lock()
         defer { openLock.unlock() }
         if let openedDatabase { return openedDatabase }
-        discardLegacyJSONStore()
         guard let databaseFileURL, let database = try? SavesDatabase(fileURL: databaseFileURL) else {
             return nil
         }

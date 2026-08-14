@@ -34,19 +34,21 @@ means: preload links on the saved page (depth 1), then links on those pages (dep
   - `kind`: `.article` | `.platform` | `.webArchive` | `.unrepresentable` (paywalled/
     failed — recorded so we don't re-crawl every time, and so the viewer falls back
     to a live load)
-  - `contentFile`: `<urlKey>.json` (article) or `<urlKey>.webarchive`, or nil
+  - `contentFile`: `page-<UUID>.json`, or nil for a kind that caches no content
   - `platform`: small descriptor (ContentPlatform + itemID) for `.platform`
-  - `owners`: `Set<UUID>` of ROOT save item IDs whose preload subtree includes this
-    URL (the refcount = `owners.count`)
-  - `children`: `[urlKey]` discovered outbound links (for tree teardown + resume)
+  - `children`: `[urlKey]` discovered outbound links (so a second root reaching this
+    page can claim the subtree below it, and for resume)
   - `depthRemaining`: how much deeper we still intend to crawl from here (for resume)
   - `state`: `.pending` | `.loaded` | `.failed`
   - `updated`: Date
 
-Refcount semantics: when root R's tree is (re)built, every URL reached is given
-`owners.insert(R)`. On delete of R, `releaseTree(rootID: R)` removes R from every
-entry's `owners`; any entry with empty `owners` has its files deleted and is dropped.
-(Children are reachable transitively via `children`, so teardown walks R's roots.)
+**Refcounting is not here — it is in the saves database.** `preload_pages(url_key,
+file_id)` points at the page's file, and the page's owners are ordinary ownership
+edges on that `files` row: `file_refs` for the saves whose crawl reached it,
+`file_holders` for the tapped-link and pasteboard owners, which have no save row.
+So when root R's tree is built every URL reached takes an edge for R, and deleting
+R cascades all of them at once — no tree to walk. `children` remains, for extending
+ownership down a subtree another root already cached. See `claudedocs/saves.md`.
 
 ## Preload engine (`PreloadCoordinator`, main app)
 - Trigger: after a root article is persisted (`IngestorOutcomePresenter` article path)
@@ -104,12 +106,24 @@ unavailable it's deferred to the next foreground resume.]
   best-effort; if the content changed materially we keep top.]
 
 ## Deletion
-`SavesStore.removeFiles(for:)` → `PreloadStore.releaseTree(rootID: item.id)`.
-Only `Preloads/` files are touched.
+Deleting a save deletes its row, and the ownership edges cascade with it — a page
+whose last edge went is queued in `pending_deletes` by the same trigger every other
+artifact uses, and `PendingDeleteReaper` unlinks it. `PreloadStore` deletes no
+page file itself.
+
+`SavesStore.releaseSidecars(for:)` → `PreloadStore.releaseTree(rootID:)` still runs
+afterwards, and is the whole operation for the two routes that keep the save row —
+archiving, and the pasteboard candidate changing. It drops that owner's edges, then
+prunes the index against the pages the database still holds. That sweep, rather
+than the answer from one release, is what covers the delete: the cascade got there
+first.
 
 ## Tests (no live network)
 - `PreloadStore`: refcount add/release across two roots sharing a URL → file kept
-  until both released, then deleted; URL-key canonicalization; index round-trip.
+  until both released, then deleted; deleting the save releases its pages by
+  cascade; a page reloaded after release lands on a different file; a page caching
+  no content still reserves and releases a name; a legacy index's owners move into
+  the database; URL-key canonicalization; index round-trip.
 - `PreloadDepth` setting clamp.
 - BFS planning (pure): given a link graph + depth, the set of URLs to crawl and the
   dedup/owner assignment. (Pure `PreloadPlanner` over an injected link-provider.)

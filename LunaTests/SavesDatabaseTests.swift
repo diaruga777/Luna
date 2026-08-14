@@ -170,7 +170,7 @@ final class SavesDatabaseTests: XCTestCase {
         }
         for platform in ContentPlatform.allCases {
             let item = store.add(urlString: "https://example.com/platform-\(platform.rawValue)")
-            store.savePlatformMetadata(
+            _ = store.savePlatformMetadata(
                 platform: platform, platformItemID: "id-\(platform.rawValue)", title: nil,
                 thumbnailFileName: nil, for: item.id)
             XCTAssertEqual(store.item(withID: item.id)?.platform, platform)

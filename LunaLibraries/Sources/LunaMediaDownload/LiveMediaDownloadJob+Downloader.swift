@@ -47,6 +47,7 @@ extension LiveMediaDownloadJob {
             title: title,
             phase: DownloaderJobPhase(rawValue: phase.rawValue) ?? .failed,
             progress: progress,
+            receivedByteCount: receivedByteCount,
             message: statusMessage,
             thumbnailFileName: thumbnailFileName,
             failureKind: failureKind)

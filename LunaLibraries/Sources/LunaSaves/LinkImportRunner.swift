@@ -152,11 +152,18 @@ public final class LinkImportRunner {
     /// The live state of a media download, or nil when none is running for that URL.
     public struct MediaDownloadState: Equatable, Sendable {
         public let fraction: Double
+        /// Raw transfer progress when the downloader knows it. Unlike a rounded
+        /// fraction, this advances for unknown/very large payloads and lets the
+        /// import distinguish a slow stream from thirty seconds of silence.
+        public let receivedByteCount: Int64?
         /// True once the transfer has finished or failed.
         public let isFinished: Bool
 
-        public init(fraction: Double, isFinished: Bool) {
+        public init(
+            fraction: Double, receivedByteCount: Int64? = nil, isFinished: Bool
+        ) {
             self.fraction = fraction
+            self.receivedByteCount = receivedByteCount
             self.isFinished = isFinished
         }
     }
@@ -183,6 +190,9 @@ public final class LinkImportRunner {
     /// How long an item's own download is waited on before the run moves on and
     /// lets the background transfer finish by itself.
     static let downloadWait: TimeInterval = 180
+    /// A transfer may exceed `downloadWait` while it continues in the background,
+    /// but the import itself stops waiting after this much silence.
+    public static let perLinkIdleTimeout: TimeInterval = 30
     private static let downloadPoll: TimeInterval = 0.25
     /// How long an ingest is assumed to take, for the clock-based creep.
     private static let expectedIngestDuration: TimeInterval = 6
@@ -222,6 +232,7 @@ public final class LinkImportRunner {
     private let rescueFraction: (UUID) -> Double?
     private let concurrency: Int
     private let clock: () -> Date
+    private let idleTimeout: TimeInterval
 
     /// Everything below is guarded by `lock`.
     private let lock = NSLock()
@@ -250,6 +261,7 @@ public final class LinkImportRunner {
         store: SavesStore = .shared,
         concurrency: Int = LinkImportRunner.defaultConcurrency(),
         clock: @escaping () -> Date = Date.init,
+        idleTimeout: TimeInterval = LinkImportRunner.perLinkIdleTimeout,
         // `allowsInteractivePrompt: false` does two things here. It suppresses the
         // unsupported-kind modal — `.manual` is an interactive source, so a batch
         // of foreign links would otherwise stack one alert per dropped link on top
@@ -270,6 +282,7 @@ public final class LinkImportRunner {
         self.store = store
         self.concurrency = max(1, concurrency)
         self.clock = clock
+        self.idleTimeout = max(0, idleTimeout)
         self.ingest = ingest
         self.rescue = rescue
         self.rescueFraction = rescueFraction
@@ -478,8 +491,16 @@ public final class LinkImportRunner {
                 // The outcome doesn't change the score: a locked save counts as
                 // imported either way — it is titled and it opens. Unlocking now
                 // just means the user doesn't have to tap it later.
-                _ = await unlocker.unlockArticle(
-                    itemID: unit.item.id, urlString: unit.candidate.urlString)
+                let unlocked = await IdleTimeLimit.run(idleTimeout) {
+                    await unlocker.unlockArticle(
+                        itemID: unit.item.id, urlString: unit.candidate.urlString)
+                }
+                if unlocked == nil {
+                    SharedDiagnosticLog.record(
+                        "bulk import: \(Int(idleTimeout))s idle timeout unlocking "
+                            + unit.candidate.urlString,
+                        category: "archive")
+                }
                 summary.imported += 1
                 complete(slice: unit.slice)
             }
@@ -499,7 +520,7 @@ public final class LinkImportRunner {
                 continue
             }
             beginRescue(slice: failure.slice, itemID: failure.item.id)
-            let recovered = await rescue(failure.item.id)
+            let recovered = await rescueWithIdleTimeout(itemID: failure.item.id)
             endRescue()
             if let fresh = store.item(withID: failure.item.id) {
                 if recovered, fate(of: fresh).isSaved {
@@ -555,7 +576,19 @@ public final class LinkImportRunner {
     private func ingestOne(_ item: SavedItem) async -> ItemFate {
         let slice = sliceIndex(forItem: item)
         beginIngest(slice: slice)
-        let decision = await ingest(item)
+        guard let decision = await IdleTimeLimit.run(idleTimeout, operation: {
+            await self.ingest(item)
+        }) else {
+            // Every candidate was inserted before this phase, so abandoning an
+            // unresponsive worker loses nothing: the placeholder remains durable
+            // and the ordinary launch sweep can retry it. Crucially, the task
+            // group's worker itself returns, freeing its concurrency slot and
+            // allowing the batch to finish.
+            SharedDiagnosticLog.record(
+                "bulk import: \(Int(idleTimeout))s idle timeout for \(item.urlString)",
+                category: "ingest")
+            return .abandoned
+        }
         if case let .unsupported(owner) = decision { return .rejected(owner: owner) }
         setSlice(slice, to: Self.ingestShare)
 
@@ -599,14 +632,58 @@ public final class LinkImportRunner {
         guard let media = Self.media,
               media.downloadState(forURLString: item.urlString) != nil else { return }
         let started = clock()
+        var lastActivity = started
+        var lastFraction = -1.0
+        var lastReceivedByteCount: Int64?
         let span = Self.followUpShare - Self.ingestShare
-        while clock().timeIntervalSince(started) < Self.downloadWait, !isCancelled {
+        while clock().timeIntervalSince(started) < Self.downloadWait,
+              clock().timeIntervalSince(lastActivity) < idleTimeout,
+              !isCancelled {
             // Finished and reaped.
             guard let state = media.downloadState(forURLString: item.urlString) else { return }
+            if state.fraction > lastFraction
+                || state.receivedByteCount.map({ $0 > (lastReceivedByteCount ?? -1) }) == true {
+                lastActivity = clock()
+                lastFraction = state.fraction
+                lastReceivedByteCount = state.receivedByteCount
+            }
             setSlice(slice, to: Self.ingestShare + span * min(1, max(0, state.fraction)))
             if state.isFinished { return }
             try? await Task.sleep(nanoseconds: UInt64(Self.downloadPoll * 1_000_000_000))
         }
+    }
+
+    /// Gives the model leg the same silence rule as fetching and WebKit. Its
+    /// coordinator exposes stage progress rather than bytes, so poll that stage
+    /// into the shared idle heartbeat while the operation runs.
+    private func rescueWithIdleTimeout(itemID: UUID) async -> Bool {
+        let activity = IdleTimeLimit.Activity()
+        let progressPoller = Task {
+            var previous = rescueFraction(itemID)
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 250_000_000)
+                } catch {
+                    return
+                }
+                let current = rescueFraction(itemID)
+                if current != previous {
+                    previous = current
+                    activity.touch()
+                }
+            }
+        }
+        defer { progressPoller.cancel() }
+
+        let recovered = await IdleTimeLimit.run(idleTimeout, activity: activity) {
+            await self.rescue(itemID)
+        }
+        if recovered == nil {
+            SharedDiagnosticLog.record(
+                "bulk import: \(Int(idleTimeout))s idle timeout rescuing \(itemID)",
+                category: "rescue")
+        }
+        return recovered ?? false
     }
 
     // MARK: - Slice bookkeeping

@@ -133,10 +133,12 @@ public struct IngestResult: Equatable {
 ///      else `PlatformRecognizer`; video/audio go to `PlatformRecognizer`;
 ///      document becomes `.document`.
 ///
-/// One mandatory overall timeout (`processTimeout`) wraps the whole call, so
-/// it can never hang: on timeout it returns `.failed`, or `.needsArchive` for
-/// a hard-paywall host. Every production surface uses the same no-WebView
-/// processing policy, keeping classification independent of the capture host.
+/// One mandatory idle timeout (`processTimeout`) wraps the whole call, so it
+/// can never hang: on timeout it returns `.failed`, or `.needsArchive` for a
+/// hard-paywall host. Network progress resets that deadline, so a slow but
+/// healthy byte stream is not cut off. Every production surface uses the same
+/// no-WebView processing policy, keeping classification independent of the
+/// capture host.
 ///
 /// The pipeline has no dependency on UIKit or CloudKit, so it compiles in the
 /// extension targets. It never writes the store; the surface persists from
@@ -144,15 +146,15 @@ public struct IngestResult: Equatable {
 /// mock fetcher.
 public enum IngestPipeline {
 
-    /// The mandatory upper bound on a whole `process` call. Each inner stage
+    /// The mandatory maximum silence during a `process` call. Each inner stage
     /// is individually bounded too (the bypass silent chain to about 20s,
-    /// each fetch to about 12–30s), but this is the hard ceiling that
-    /// guarantees the call always resolves.
-    public static let processTimeout: TimeInterval = 28
+    /// each fetch to about 12–30s). Useful progress resets this watchdog.
+    public static let processTimeout: TimeInterval = 30
 
-    /// Runs the complete pipeline for `input`, always within `timeout`. On
-    /// timeout, returns `.needsArchive` for a hard-paywall host (the archive
-    /// reader is its only route) and `.failed` otherwise. Never waits forever.
+    /// Runs the complete pipeline for `input`, allowing at most `timeout`
+    /// seconds without progress. On timeout, returns `.needsArchive` for a
+    /// hard-paywall host (the archive reader is its only route) and `.failed`
+    /// otherwise. Never waits forever.
     public static func process(
         _ input: IngestInput,
         timeout: TimeInterval = processTimeout,
@@ -182,42 +184,29 @@ public enum IngestPipeline {
         productProcessor: ProductIngestProcessing? = IngestKindProcessors.product,
         socialTextProcessor: SocialTextIngestProcessing? = IngestKindProcessors.socialText
     ) async -> IngestResult {
-        await withTaskGroup(of: IngestResult?.self) { group in
-            group.addTask {
-                await runUnbounded(
-                    input, session: session, fetcher: fetcher,
-                    productDetector: productDetector, articleProcessor: articleProcessor,
-                    productProcessor: productProcessor, socialTextProcessor: socialTextProcessor)
-            }
-            group.addTask {
-                // Use `catch` rather than `try?`. When the work leg finishes
-                // first, the group cancels this one and the sleep throws; the
-                // timeout leg must then report nothing. Swallowing that
-                // cancellation would log a false "budget elapsed" line for
-                // every save that finishes on time.
-                do {
-                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                } catch {
-                    return nil
-                }
-                // The timeout leg returns the hard-fail fallback for `input.url`:
-                // a hard-paywall host parks for the archive reader, everything
-                // else fails.
-                let url = URLUnwrapper.unwrapOffline(input.url).url
-                let outcome = ArticleFetcher.isHardPaywallHost(url)
-                    ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
-                    : .failed(.timedOut)
-                SaveDiagnostics.record(
-                    "pipeline: budget of \(Int(timeout))s elapsed — "
-                        + (ArticleFetcher.isHardPaywallHost(url)
-                            ? "hard-paywall host, parking for archive" : "failing timedOut"),
-                    category: "ingest")
-                return IngestResult(url: url, outcome: outcome)
-            }
-            let first = await group.next() ?? IngestResult(url: input.url, outcome: .failed(.timedOut))
-            group.cancelAll()
-            return first ?? IngestResult(url: input.url, outcome: .failed(.timedOut))
+        let limitedResult = await IdleTimeLimit.run(timeout) {
+            await runUnbounded(
+                input, session: session, fetcher: fetcher,
+                productDetector: productDetector, articleProcessor: articleProcessor,
+                productProcessor: productProcessor, socialTextProcessor: socialTextProcessor)
         }
+        if let result = limitedResult {
+            return result
+        }
+
+        // The idle deadline returns independently of an uncooperative losing
+        // task. A structured task-group race cannot make that guarantee because
+        // its scope drains every child before returning.
+        let url = URLUnwrapper.unwrapOffline(input.url).url
+        let outcome = ArticleFetcher.isHardPaywallHost(url)
+            ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
+            : .failed(.timedOut)
+        SaveDiagnostics.record(
+            "pipeline: idle budget of \(Int(timeout))s elapsed — "
+                + (ArticleFetcher.isHardPaywallHost(url)
+                    ? "hard-paywall host, parking for archive" : "failing timedOut"),
+            category: "ingest")
+        return IngestResult(url: url, outcome: outcome)
     }
 
     /// The pipeline body, without the overall timeout that `process` wraps

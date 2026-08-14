@@ -581,7 +581,13 @@ public struct ArticleFetcher: HTMLFetching {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            // Poll the task's received-byte count while Foundation buffers the
+            // response. `URLRequest.timeoutInterval` already bounds silence at
+            // the transport layer; forwarding byte growth also resets the
+            // pipeline's outer idle watchdog, so a large response may run longer
+            // than that watchdog while it is still making steady progress.
+            (data, response) = try await ActivityReportingDataTask.run(
+                request, in: session, activity: IdleTimeLimit.activity)
         } catch {
             SaveDiagnostics.record(
                 "\(context) → transport error "
@@ -656,5 +662,117 @@ public struct ArticleFetcher: HTMLFetching {
         // 0b10xxxxxx is a UTF-8 continuation byte; the cut point must not land on one.
         while end > 0, data[data.startIndex + end] & 0b1100_0000 == 0b1000_0000 { end -= 1 }
         return data.prefix(end)
+    }
+}
+
+/// Awaits a completion-handler data task while reporting received-byte growth.
+///
+/// `URLSession.data(for:)` intentionally exposes only the final `Data`, which
+/// makes an outer idle deadline unable to distinguish a silent server from a
+/// large response that is still streaming. Polling the task counter keeps the
+/// normal session/cookie behavior and avoids iterating `AsyncBytes` one byte at
+/// a time. Cancellation resumes the continuation immediately; the URLSession
+/// completion that follows is ignored by the one-shot state.
+private final class ActivityReportingDataTask: @unchecked Sendable {
+    typealias Response = (Data, URLResponse)
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Response, Error>?
+    private var task: URLSessionDataTask?
+    private var poller: Task<Void, Never>?
+    private var wasCancelled = false
+
+    static func run(
+        _ request: URLRequest,
+        in session: URLSession,
+        activity: IdleTimeLimit.Activity?
+    ) async throws -> Response {
+        let state = ActivityReportingDataTask()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Response, Error>) in
+                state.start(
+                    request: request, session: session,
+                    activity: activity, continuation: continuation)
+            }
+        } onCancel: {
+            state.cancel()
+        }
+    }
+
+    private func start(
+        request: URLRequest,
+        session: URLSession,
+        activity: IdleTimeLimit.Activity?,
+        continuation: CheckedContinuation<Response, Error>
+    ) {
+        lock.lock()
+        guard !wasCancelled else {
+            lock.unlock()
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
+        let task = session.dataTask(with: request) { [weak self] data, response, error in
+            self?.finish(data: data, response: response, error: error)
+        }
+        self.task = task
+        if let activity {
+            poller = Task {
+                var previous: Int64 = 0
+                while !Task.isCancelled {
+                    let received = task.countOfBytesReceived
+                    if received > previous {
+                        previous = received
+                        activity.touch()
+                    }
+                    do {
+                        try await Task.sleep(nanoseconds: 250_000_000)
+                    } catch {
+                        return
+                    }
+                }
+            }
+        }
+        lock.unlock()
+        task.resume()
+    }
+
+    private func finish(data: Data?, response: URLResponse?, error: Error?) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        task = nil
+        let poller = poller
+        self.poller = nil
+        lock.unlock()
+
+        poller?.cancel()
+        if let error {
+            continuation.resume(throwing: error)
+        } else if let data, let response {
+            continuation.resume(returning: (data, response))
+        } else {
+            continuation.resume(throwing: URLError(.badServerResponse))
+        }
+    }
+
+    private func cancel() {
+        lock.lock()
+        wasCancelled = true
+        let continuation = continuation
+        self.continuation = nil
+        let task = task
+        self.task = nil
+        let poller = poller
+        self.poller = nil
+        lock.unlock()
+
+        poller?.cancel()
+        task?.cancel()
+        continuation?.resume(throwing: CancellationError())
     }
 }

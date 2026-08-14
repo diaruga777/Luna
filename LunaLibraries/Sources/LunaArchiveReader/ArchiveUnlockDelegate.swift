@@ -34,6 +34,11 @@ public protocol ArchiveUnlockDelegate: AnyObject {
     /// at most once, and never alongside `archiveReaderDidUnlockArticle`.
     func archiveReaderDidGiveUp(_ reader: ArchiveWebReaderViewController)
 
+    /// `.unattended` only: the browser received more of the current page. The
+    /// bulk import uses this heartbeat to reset its per-link idle deadline; it
+    /// is deliberately not an outcome.
+    func archiveReaderDidMakeProgress(_ reader: ArchiveWebReaderViewController)
+
     /// The user pressed the header's leading button. The main app dismisses the
     /// modal; extensions complete their extension request. The default dismisses the
     /// reader's own presentation, which is also what an unattended host wants: it
@@ -55,6 +60,8 @@ public protocol ArchiveUnlockDelegate: AnyObject {
 
 public extension ArchiveUnlockDelegate {
     func archiveReaderDidGiveUp(_ reader: ArchiveWebReaderViewController) {}
+
+    func archiveReaderDidMakeProgress(_ reader: ArchiveWebReaderViewController) {}
 
     func archiveReaderDidClose(_ reader: ArchiveWebReaderViewController) {
         reader.dismiss(animated: true)

@@ -86,6 +86,9 @@ public struct DownloaderJobSnapshot: Equatable {
     public let title: String
     public let phase: DownloaderJobPhase
     public let progress: Double
+    /// Raw bytes received when known. Import progress uses this as an idle
+    /// heartbeat even when the rounded fraction has not visibly changed.
+    public let receivedByteCount: Int64?
     public let message: String
     public let thumbnailFileName: String?
     public let failureKind: FailureKind?
@@ -97,13 +100,15 @@ public struct DownloaderJobSnapshot: Equatable {
     /// Staged mode builds them directly instead (`claudedocs/staging.md`).
     public init(
         sourceURLString: String, title: String, phase: DownloaderJobPhase,
-        progress: Double, message: String, thumbnailFileName: String? = nil,
+        progress: Double, receivedByteCount: Int64? = nil,
+        message: String, thumbnailFileName: String? = nil,
         failureKind: FailureKind? = nil
     ) {
         self.sourceURLString = sourceURLString
         self.title = title
         self.phase = phase
         self.progress = progress
+        self.receivedByteCount = receivedByteCount
         self.message = message
         self.thumbnailFileName = thumbnailFileName
         self.failureKind = failureKind

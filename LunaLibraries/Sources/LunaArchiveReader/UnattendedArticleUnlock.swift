@@ -22,7 +22,8 @@ import UIKit
 /// - **It gives up instead of asking.** `ArchiveWebReaderViewController`'s
 ///   `.unattended` mode reports a CAPTCHA or a dead end through
 ///   `archiveReaderDidGiveUp` rather than uncovering the page or showing a message,
-///   and this adds the one thing the controller has no opinion about: a deadline. A
+///   and this adds the one thing the controller has no opinion about: an idle
+///   deadline. A
 ///   save that isn't unlocked is
 ///   left exactly as it was — titled, tappable, `.needsCaptcha` — so the user can
 ///   open it and solve the CAPTCHA themselves whenever they like. That is why
@@ -31,13 +32,12 @@ import UIKit
 @MainActor
 public enum UnattendedArticleUnlock {
 
-    /// How long one article gets. Generous enough for a real page load plus an
-    /// archive.today round trip, short enough that a file with fifty locked
-    /// articles can't hold the import open for an hour. A slow one is abandoned,
-    /// not failed.
+    /// How long one article may make no network progress. A real page load plus
+    /// an archive.today round trip may take longer while WebKit's resource
+    /// progress keeps moving; thirty silent seconds abandons the attempt.
     /// `nonisolated` so `unlock` can take it as a default argument: a default
     /// is evaluated in the caller's context, which is not this actor.
-    public nonisolated static let defaultTimeout: TimeInterval = 45
+    public nonisolated static let defaultTimeout: TimeInterval = 30
 
     /// Attempts the unlock; returns whether the article's content ended up saved.
     ///
@@ -61,25 +61,35 @@ public enum UnattendedArticleUnlock {
         install(reader, in: host)
         defer { remove(reader) }
 
-        let outcome = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
-            group.addTask { @MainActor in
-                await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                    // Resumed exactly once: the controller reports one outcome, and
-                    // the deadline below races it in a separate child task. The reader
-                    // holds its delegate strongly, which is what keeps the box (and so
-                    // the continuation) alive past this scope.
-                    reader.delegate = OnceBox(continuation)
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+        // Reuse the runner's ambient heartbeat when one exists, so WebKit byte
+        // progress extends both the inner browser guard and the outer per-link
+        // guard. Direct callers still get their own heartbeat.
+        let activity = IdleTimeLimit.activity ?? IdleTimeLimit.Activity()
+        let outcome = await IdleTimeLimit.run(timeout, activity: activity) {
+            await waitForOutcome(from: reader, activity: activity)
         }
-        return outcome
+        if outcome == nil {
+            // Resume the otherwise-uncancellable WebKit continuation as cleanup.
+            // The idle race has already returned independently; this simply lets
+            // its cancelled work task unwind instead of staying suspended.
+            (reader.delegate as? OnceBox)?.resume(false)
+            SharedDiagnosticLog.record(
+                "archive: unattended attempt idle for \(Int(timeout))s — giving up "
+                    + url.absoluteString,
+                category: "archive")
+        }
+        return outcome ?? false
+    }
+
+    private static func waitForOutcome(
+        from reader: ArchiveWebReaderViewController,
+        activity: IdleTimeLimit.Activity
+    ) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            // The reader retains the delegate, which keeps this continuation and
+            // heartbeat alive until one outcome (or idle cleanup) wins.
+            reader.delegate = OnceBox(continuation, activity: activity)
+        }
     }
 
     /// Guarantees one resume for a continuation the reader's two outcome legs can
@@ -91,9 +101,14 @@ public enum UnattendedArticleUnlock {
     @MainActor
     private final class OnceBox: ArchiveUnlockDelegate {
         private var continuation: CheckedContinuation<Bool, Never>?
+        private let activity: IdleTimeLimit.Activity
 
-        init(_ continuation: CheckedContinuation<Bool, Never>) {
+        init(
+            _ continuation: CheckedContinuation<Bool, Never>,
+            activity: IdleTimeLimit.Activity
+        ) {
             self.continuation = continuation
+            self.activity = activity
         }
 
         func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
@@ -104,7 +119,11 @@ public enum UnattendedArticleUnlock {
             resume(false)
         }
 
-        private func resume(_ value: Bool) {
+        func archiveReaderDidMakeProgress(_ reader: ArchiveWebReaderViewController) {
+            activity.touch()
+        }
+
+        fileprivate func resume(_ value: Bool) {
             guard let continuation else { return }
             self.continuation = nil
             continuation.resume(returning: value)

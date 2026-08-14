@@ -145,6 +145,10 @@ public enum SaveDiagnostics {
     /// **Never pass a response body.** Shapes, sizes, statuses and decisions
     /// only; cap any quoted snippet at ~200 chars (`snippet(_:)`).
     public static func record(_ message: @autoclosure () -> String, category: String) {
+        // A pipeline decision or completed transfer is useful progress for the
+        // bulk import's silence-based per-link deadline. This is independent of
+        // whether a diagnostic recorder is installed.
+        IdleTimeLimit.touch()
         guard let recorder else { return }
         recorder.record(message(), category: category)
     }

@@ -223,10 +223,14 @@ beats leaving two hundred locked saves to be tapped one at a time.
   of a window, and this flow is entirely JS-driven (a DOM probe every 0.35s, a
   form submit, a DOM extraction). Occluded is fine. It also means the progress
   sheet is never interrupted — no modal, no reveal, nothing to dismiss.
-- **Serial, with a deadline.** One `WKWebView` at a time, both because each is
+- **Serial, with an idle deadline.** One `WKWebView` at a time, both because each is
   expensive and because two racing archive.today is the quickest way to be
-  rate-limited; 45s each (`UnattendedArticleUnlock.defaultTimeout`), after which
-  the attempt is abandoned rather than failed. Stopping the run skips the
+  rate-limited. WebKit's resource progress resets a 30s per-link idle watchdog
+  (`UnattendedArticleUnlock.defaultTimeout`), so a slow page may take longer while
+  data keeps arriving; thirty silent seconds abandons the attempt rather than
+  failing the save. The watchdog uses an unstructured timeout race: a structured
+  task group would choose its deadline result and then wait forever while draining
+  a WebKit continuation that ignores cancellation. Stopping the run skips the
   remaining unlocks and costs nothing.
 - Its slice takes the same `ingestShare`→`followUpShare` stretch a download or a
   rescue would, eased on the clock (`expectedUnlockDuration`) because the flow
@@ -285,6 +289,15 @@ task-scoped binding would silence every start and let every finish through.
 Low Power Mode. The floor of 2 exists because most of an ingest is network wait;
 the ceiling because past it `URLSession`'s per-host limit and the extractor's
 memory cost make more workers pure contention.
+
+**No link can hold the batch open.** Each ingest has a 30s idle watchdog. Pipeline
+diagnostic progress and received-byte growth reset it, so a large response may run
+longer while it streams consistently; a silent or cancellation-uncooperative task
+is cancelled and abandoned without draining it. Because every placeholder was
+inserted before the workers started, that link remains durable for Luna's launch
+sweep and the worker slot immediately advances to the next link. Media transfers
+use the same 30s silence rule while also retaining their 180s foreground-wait cap;
+anything beyond that continues through the background URLSession.
 
 ### Progress
 

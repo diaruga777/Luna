@@ -43,6 +43,8 @@ enum MediaImportProgress {
             isFinished = false
         }
         return LinkImportRunner.MediaDownloadState(
-            fraction: snapshot.progress, isFinished: isFinished)
+            fraction: snapshot.progress,
+            receivedByteCount: snapshot.receivedByteCount,
+            isFinished: isFinished)
     }
 }

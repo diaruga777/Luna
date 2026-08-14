@@ -455,6 +455,74 @@ final class LinkImportRunnerTests: XCTestCase {
         _ = await runner.run(candidates(urls))
         XCTAssertEqual(runner.currentProgress().fraction, 1, accuracy: 0.0001)
     }
+
+    func testAnIdleLinkCannotHoldTheWholeBatchOpen() async {
+        let store = store!
+        let runner = LinkImportRunner(
+            store: store, concurrency: 1, idleTimeout: 0.1,
+            ingest: { item in
+                if item.urlString.hasSuffix("/stuck") {
+                    await withCheckedContinuation { continuation in
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                            continuation.resume()
+                        }
+                    }
+                } else {
+                    Self.markReady(item, in: store)
+                }
+                return .supported
+            },
+            rescue: { _ in false }, rescueFraction: { _ in nil })
+
+        let started = Date()
+        let summary = await runner.run(candidates([
+            "https://example.com/stuck", "https://example.com/next",
+        ]))
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.6)
+        XCTAssertEqual(summary.imported, 1)
+        XCTAssertEqual(summary.recoverableFailures, 1)
+        XCTAssertEqual(summary.total, 2)
+        XCTAssertEqual(runner.currentProgress().finished, 2)
+    }
+
+    func testAStuckFirstUnlockCannotStrandThreeLockedLinksAtFortyEightOfFiftyOne() async {
+        let attempted = Attempts()
+        LinkImportRunner.articleUnlocker = FakeArticleUnlocker { _, urlString in
+            await attempted.record(urlString)
+            if urlString.hasSuffix("/first") {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                        continuation.resume(returning: ())
+                    }
+                }
+            }
+            return false
+        }
+        let urls = [
+            "https://example.com/first",
+            "https://example.com/second",
+            "https://example.com/third",
+        ]
+        let store = store!
+        let timedRunner = LinkImportRunner(
+            store: store, concurrency: 1, idleTimeout: 0.1,
+            ingest: { item in
+                store.markNeedsCaptcha(item.id, title: "Locked")
+                return .supported
+            },
+            rescue: { _ in false }, rescueFraction: { _ in nil })
+
+        let started = Date()
+        let summary = await timedRunner.run(candidates(urls))
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.6)
+        XCTAssertEqual(summary.imported, 3)
+        XCTAssertEqual(summary.total, 3)
+        let attemptCount = await attempted.urlStrings.count
+        XCTAssertEqual(attemptCount, 3)
+        XCTAssertEqual(timedRunner.currentProgress().finished, 3)
+    }
 }
 
 /// Lets a stub reach the runner it was handed to.

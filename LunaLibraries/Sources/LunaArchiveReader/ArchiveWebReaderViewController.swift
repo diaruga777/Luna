@@ -48,6 +48,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private let store: SavesStore
     private let mode: Mode
     private let webView: WKWebView
+    /// WebKit's resource progress is the useful heartbeat an unattended host
+    /// can observe while a large page is still arriving.
+    private var estimatedProgressObservation: NSKeyValueObservation?
     private let progress = HorizonSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It
@@ -281,6 +284,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         }
 
         webView.navigationDelegate = self
+        estimatedProgressObservation = webView.observe(
+            \.estimatedProgress, options: [.new]
+        ) { [weak self] _, _ in
+            guard let self else { return }
+            self.delegate?.archiveReaderDidMakeProgress(self)
+        }
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
 
@@ -541,6 +550,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         if let http = navigationResponse.response as? HTTPURLResponse {
             SharedDiagnosticLog.record(
                 "archive: response \(http.statusCode) \(http.url?.absoluteString ?? "")", category: "archive")
+            if navigationResponse.isForMainFrame {
+                delegate?.archiveReaderDidMakeProgress(self)
+            }
             if http.statusCode == 429, navigationResponse.isForMainFrame,
                let url = http.url, ArticleFetcher.isArchiveTodayURL(url) {
                 challengeCount += 1

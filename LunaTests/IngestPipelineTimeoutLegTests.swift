@@ -111,4 +111,45 @@ final class IngestPipelineTimeoutLegTests: XCTestCase {
             },
             "the parking decision must be in the trace: \(lines)")
     }
+
+    /// A checked continuation does not observe cancellation. The former
+    /// task-group timeout chose its fallback at the deadline and then silently
+    /// waited for this losing fetch anyway while draining the group.
+    func testTimeoutReturnsWithoutWaitingForAnUncancellableFetch() async {
+        let started = Date()
+        let result = await IngestPipeline.processResolved(
+            IngestInput(
+                url: url("https://example.com/2026/08/a-readable-story"),
+                source: .shareSheet),
+            timeout: 0.1,
+            fetcher: UncancellableArticleFetcher(delay: 1),
+            articleProcessor: nil,
+            productProcessor: nil,
+            socialTextProcessor: nil)
+
+        XCTAssertEqual(result.outcome, .failed(.timedOut))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.6)
+    }
+}
+
+private struct UncancellableArticleFetcher: HTMLFetching {
+    let delay: TimeInterval
+
+    private func response() async -> String {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                continuation.resume(returning: "<html><body>late</body></html>")
+            }
+        }
+    }
+
+    func fetchHTML(from url: URL) async throws -> String { await response() }
+    func fetchHTML(
+        from url: URL, userAgent: String, xForwardedFor: String?
+    ) async throws -> String { await response() }
+    func fetchHTML(from url: URL, referer: String) async throws -> String { await response() }
+    func fetchHTMLWithoutCookies(from url: URL) async throws -> String { await response() }
+    func fetchWaybackRawHTML(for url: URL) async throws -> String { await response() }
+    func fetchWaybackPrePaywallHTML(for url: URL) async throws -> String { await response() }
+    func fetchJinaReader(for url: URL) async throws -> String { await response() }
 }

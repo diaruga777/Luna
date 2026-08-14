@@ -331,12 +331,12 @@ extension CardKindPresenting {
 
 // MARK: - The registry
 
-/// The installed presenters, and the ONE place a save is mapped to its kind.
+/// The installed presenters for each stored-save kind.
 ///
-/// Resolution order is fixed and lives here, not at call sites: the deck asks
-/// `presenter(for:)` and never asks what kind of save it is holding. That is
-/// the invariant `KindCompositionRootTests.testTheDeckNeverBranchesOnKind`
-/// enforces by reading the deck's own source.
+/// `SavesSectioning.kind(for:)` is the ONE place a stored row is mapped to its
+/// kind. The deck asks `presenter(for:)` and never asks what kind of save it is
+/// holding; `KindCompositionRootTests.testTheDeckNeverBranchesOnKind` enforces
+/// that invariant by reading the deck's own source.
 @MainActor
 enum CardKindPresenters {
 
@@ -350,10 +350,12 @@ enum CardKindPresenters {
     /// so it belongs to no presenter and the deck draws the shared error card
     /// itself. That is also why every app shows failed saves.
     static func presenter(for item: SavedItem) -> CardKindPresenting? {
-        if SavesSectioning.isFailedSave(item) { return nil }
-        if item.isPriceTracker { return product }
-        if item.contentPlatform != nil { return media }
-        return article
+        switch SavesSectioning.kind(for: item) {
+        case .failed: return nil
+        case .product: return product
+        case .media: return media
+        case .article: return article
+        }
     }
 
     /// Every installed presenter, for the hooks the deck asks of all of them at

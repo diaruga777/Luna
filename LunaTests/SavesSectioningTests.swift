@@ -202,10 +202,30 @@ final class SavesSectioningTests: XCTestCase {
             unviewedSmall.id)
     }
 
+    // MARK: - Stored-save kind
+
+    func testStoredSaveKindUsesTheSharedDisplayPrecedence() {
+        var failed = article(state: .failed)
+        XCTAssertEqual(SavesSectioning.kind(for: failed), .failed)
+
+        var productWinsOverMedia = priceTracker()
+        productWinsOverMedia.platform = .youtube
+        XCTAssertEqual(SavesSectioning.kind(for: productWinsOverMedia), .product)
+
+        XCTAssertEqual(SavesSectioning.kind(for: platformItem()), .media)
+        XCTAssertEqual(SavesSectioning.kind(for: article()), .article)
+
+        // A failure after product/media metadata exists keeps that item's kind.
+        failed.priceTracker = PriceTracker(
+            productName: "Widget", firstStoreURL: failed.urlString,
+            price: 10, currency: "USD")
+        XCTAssertEqual(SavesSectioning.kind(for: failed), .product)
+    }
+
     // MARK: - Which app shows which item (`LunaApp.includes`)
 
-    /// The display counterpart to `SurfaceSupport`'s ingest gate. Both live on
-    /// `LunaApp` itself, so the rules cannot drift onto a second enum.
+    /// The display counterpart to `SurfaceSupport`'s ingest gate. Its mapping
+    /// comes from `SavesSectioning.kind(for:)`, so it stays aligned with cards.
     func testCentralAppShowsEveryKind() {
         for item in [article(), platformItem(), priceTracker()] {
             XCTAssertTrue(LunaApp.luna.includes(item))

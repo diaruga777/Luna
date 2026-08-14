@@ -10,15 +10,43 @@ import Foundation
 /// which of them read as text, and the Reading/Archive/Error split that fixes
 /// autoplay order. The card decks and the read-aloud queue both depend on it.
 public enum SavesSectioning {
+    /// The display kind inferred from the shape of a stored save.
+    ///
+    /// This is intentionally not `ContentKind`: ingest's classifier is allowed
+    /// to refine its answer while processing (for example, a social post can
+    /// become an article), while this value answers how the settled row should
+    /// surface. Keep every consumer of stored-save kind on this one pure
+    /// resolver rather than independently probing the row's optional payloads.
+    public enum Kind: Equatable, Sendable {
+        /// A save that failed before it acquired a content kind.
+        case failed
+        case product
+        case media
+        case article
+    }
+
     /// Items older than this (by save date) and still unread fall out of the
     /// active Reading window into the Archive bucket.
     public static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
+
+    /// Resolves the kind a stored save currently presents as, solely from its
+    /// persisted shape. The precedence is deliberate: a kind-less failure has
+    /// no presenter, then product and media payloads own their specialised
+    /// cards, and the remaining saves are reader items.
+    public static func kind(for item: SavedItem) -> Kind {
+        if item.state == .failed && !item.isPriceTracker && item.contentPlatform == nil {
+            return .failed
+        }
+        if item.isPriceTracker { return .product }
+        if item.contentPlatform != nil { return .media }
+        return .article
+    }
 
     /// Whether `item` is a kind-less failed save (the error-card state). Price
     /// trackers and platform items that merely failed a LATER step keep their own
     /// kind and their own UI, so they're excluded.
     public static func isFailedSave(_ item: SavedItem) -> Bool {
-        item.state == .failed && !item.isPriceTracker && item.contentPlatform == nil
+        kind(for: item) == .failed
     }
 
     /// Whether the item opens in the text reader (articles, documents, emails),
@@ -26,7 +54,7 @@ public enum SavesSectioning {
     /// Mirrors the tap routing. Price trackers are neither — they open the
     /// price-tracking screen.
     public static func rendersAsReader(_ item: SavedItem) -> Bool {
-        !item.isPriceTracker && item.contentPlatform == nil
+        kind(for: item) == .article
     }
 
     /// Splits items into the Reading / Archive / Error / price buckets. The
@@ -87,7 +115,8 @@ public enum SavesSectioning {
 
 public extension LunaApp {
     /// Whether this app SHOWS `item` — the display counterpart to
-    /// `SurfaceSupport`'s ingest gate, and the same three-way kind split.
+    /// `SurfaceSupport`'s ingest gate. The stored-save kind comes from
+    /// `SavesSectioning.kind(for:)`, shared with the card-presenter registry.
     ///
     /// A failed save is shown by every app: it has no kind (the classifier never
     /// got far enough to give it one, which is also why the ingest gate never
@@ -95,17 +124,19 @@ public extension LunaApp {
     /// it break, and any app can offer the rescue that gives it a kind. Once
     /// rescued it classifies and settles into its own app.
     ///
-    /// Lives here rather than on `LunaApp` in LunaModels because it needs the
-    /// sectioning predicates above; the kind-free capability flags
-    /// (`handlesArticles` &c.) are on the enum itself.
+    /// Lives here rather than on `LunaApp` in LunaModels because resolving a
+    /// stored save's kind belongs to `LunaSavesUI`; the kind-free capability
+    /// flags (`handlesArticles` &c.) are on the enum itself.
     func includes(_ item: SavedItem) -> Bool {
-        if SavesSectioning.isFailedSave(item) { return true }
-        switch self {
-        case .luna: return true
-        case .reader: return SavesSectioning.rendersAsReader(item)
-        case .downloader:
-            return !SavesSectioning.rendersAsReader(item) && !item.isPriceTracker
-        case .priceTracker: return item.isPriceTracker
+        switch SavesSectioning.kind(for: item) {
+        case .failed:
+            return true
+        case .article:
+            return handlesArticles
+        case .media:
+            return handlesMedia
+        case .product:
+            return handlesProducts
         }
     }
 }

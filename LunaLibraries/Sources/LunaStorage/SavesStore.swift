@@ -1248,7 +1248,7 @@ public final class SavesStore {
     /// A page already in the cache keeps its file, so re-recording one overwrites
     /// what is there; a new page is given a fresh name, because the name it would
     /// otherwise inherit may have been retired by an earlier release.
-    public func claimPreloadPage(urlKey: String, owner: PreloadPageOwner) -> String? {
+    func claimPreloadPage(urlKey: String, owner: PreloadPageOwner) -> String? {
         claimPreloadPage(urlKey: urlKey, existingFileName: nil, owners: [owner])
     }
 
@@ -1256,7 +1256,7 @@ public final class SavesStore {
     /// Registers nothing: a second save reaching a cached page extends ownership,
     /// it never creates the page.
     @discardableResult
-    public func holdPreloadPage(urlKey: String, owner: PreloadPageOwner) -> Bool {
+    func holdPreloadPage(urlKey: String, owner: PreloadPageOwner) -> Bool {
         guard let database = database() else { return false }
         do {
             return try database.transaction { db in
@@ -1274,7 +1274,7 @@ public final class SavesStore {
     }
 
     /// The file a preloaded page's content is in, without claiming it.
-    public func preloadPageFileName(urlKey: String) -> String? {
+    func preloadPageFileName(urlKey: String) -> String? {
         guard let database = database() else { return nil }
         do {
             return try database.perform { db in
@@ -1293,7 +1293,7 @@ public final class SavesStore {
     /// carries an edge for its root, so there is no tree to walk. Which pages that
     /// emptied is read back separately through `preloadPageKeys`, because deleting
     /// a save reaches them by cascade instead and never comes through here.
-    public func releasePreloadPages(ownedBy owner: PreloadPageOwner) {
+    func releasePreloadPages(ownedBy owner: PreloadPageOwner) {
         writeFileOwnership { db in
             if let holderKey = owner.holderKey {
                 try SavedFileOwnership.detachPreloadPages(holderKey: holderKey, in: db)
@@ -1306,7 +1306,7 @@ public final class SavesStore {
 
     /// Every page the cache still holds. The preload index is pruned against this,
     /// so a page released by a save's delete cascade is dropped from it too.
-    public func preloadPageKeys() -> Set<String> {
+    func preloadPageKeys() -> Set<String> {
         guard let database = database() else { return [] }
         do {
             return try database.perform { db in
@@ -1334,7 +1334,7 @@ public final class SavesStore {
     /// mapped file is a path a legacy database retired without dropping. The
     /// second case clears itself at the next reap and the caller is a cache, so a
     /// refused claim costs one un-cached page.
-    public func claimPreloadPage(
+    func claimPreloadPage(
         urlKey: String, existingFileName: String?, owners: [PreloadPageOwner]
     ) -> String? {
         guard let database = database() else { return nil }

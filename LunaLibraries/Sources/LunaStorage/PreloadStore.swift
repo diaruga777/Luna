@@ -64,7 +64,7 @@ public struct PreloadEntry: Codable, Equatable {
 /// A save's claim is a `file_refs` edge, so deleting the save cascades it away.
 /// A session owner has no row to cascade from — it is one of the two fixed
 /// sentinels — so its claim is a `file_holders` edge that only it releases.
-public enum PreloadPageOwner: Hashable {
+enum PreloadPageOwner: Hashable {
     case save(UUID)
     case session(UUID)
 

@@ -77,32 +77,21 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertNotNil(store.entry(for: u)?.lastLoadedAt)
     }
 
-    /// Writes the index a pre-version-5 build left behind: the owner set lives in
-    /// the JSON, and the page's file is named after its URL hash.
-    @discardableResult
-    private func writeLegacyIndex(
-        _ u: URL, owners: [UUID], lastLoadedAt: Date?, content: ArticleContent? = nil
-    ) throws -> String {
-        let key = PreloadStore.key(for: u)
-        var entry = PreloadEntry(
-            urlString: PreloadStore.canonicalString(for: u), kind: .article,
-            contentFile: "\(key).json", lastLoadedAt: lastLoadedAt, children: [])
-        entry.legacyOwners = Set(owners.map(\.uuidString))
-        try JSONEncoder().encode([key: entry])
-            .write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
-        if let content {
-            try JSONEncoder().encode(content)
-                .write(to: store.contentURL(fileName: "\(key).json"), options: .atomic)
-        }
-        return "\(key).json"
+    func testAnArticleIsRefreshDueOnceItPassesTheMinimumAge() {
+        let u = url("https://example.com/stale")
+        store.record(url: u, rootID: makeSave(), kind: .article, content: article("Stale"))
+
+        XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+        XCTAssertTrue(store.articleRefreshDue(
+            for: u, now: Date(timeIntervalSinceNow: 49 * 60 * 60),
+            minimumAge: 48 * 60 * 60))
     }
 
-    func testLegacyArticleWithoutLoadDateIsRefreshDueOnce() throws {
-        let u = url("https://example.com/legacy")
-        try writeLegacyIndex(u, owners: [makeSave()], lastLoadedAt: nil,
-                             content: article("Legacy"))
-
-        XCTAssertTrue(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+    func testRefreshingAnArticleResetsItsAge() {
+        let u = url("https://example.com/refreshed")
+        store.record(url: u, rootID: makeSave(), kind: .article, content: article("First"))
+        let later = Date(timeIntervalSinceNow: 49 * 60 * 60)
+        XCTAssertTrue(store.articleRefreshDue(for: u, now: later, minimumAge: 48 * 60 * 60))
 
         store.refreshArticle(for: u, content: article("Refreshed"))
 
@@ -110,69 +99,19 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertEqual(store.articleContent(for: u)?.title, "Refreshed")
     }
 
-    func testOldArticleIsRefreshDueAfterMinimumAge() throws {
-        let u = url("https://example.com/stale")
-        try writeLegacyIndex(u, owners: [makeSave()],
-                             lastLoadedAt: Date(timeIntervalSinceNow: -49 * 60 * 60))
-
-        XCTAssertTrue(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
-    }
-
-    // MARK: - Moving a legacy index's owners into the database
-
-    /// The one-time pass keeps the file the cache already wrote and hands its
-    /// owners to the database, so the page now releases through the save.
-    func testLegacyOwnersMoveIntoTheDatabaseAndStillRelease() throws {
-        let u = url("https://example.com/adopted")
-        let root = makeSave()
-        let legacyFile = try writeLegacyIndex(
-            u, owners: [root], lastLoadedAt: Date(), content: article("Adopted"))
-
-        // Any ownership call runs the pass first.
-        store.releaseTree(rootID: makeSave())
-
-        XCTAssertEqual(pageFile(u), legacyFile, "the file already on disk is adopted")
-        XCTAssertNil(store.entry(for: u)?.legacyOwners, "the index no longer counts owners")
-
-        store.releaseTree(rootID: root)
-        XCTAssertNil(store.entry(for: u))
-        XCTAssertFalse(pageFileExists(legacyFile))
-    }
-
-    /// The cache's own index is not a page. A legacy entry naming it — a corrupt
-    /// one, since no build ever wrote that — claims nothing, so `preloads.json`
-    /// can never reach the delete queue.
-    func testTheIndexItselfCannotBeAdoptedAsAPage() throws {
-        let u = url("https://example.com/index-named")
+    /// The library is rows now, so the retired JSON index is not read — and the
+    /// store clears it away rather than leaving a store nothing consults.
+    func testTheRetiredJSONIndexIsDeletedAndNeverRead() throws {
+        let u = url("https://example.com/ignored")
         let key = PreloadStore.key(for: u)
-        var entry = PreloadEntry(
-            urlString: PreloadStore.canonicalString(for: u), kind: .article,
-            contentFile: "preloads.json", lastLoadedAt: Date(), children: [])
-        entry.legacyOwners = [makeSave().uuidString]
-        try JSONEncoder().encode([key: entry])
-            .write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
+        let index = #"{"\#(key)":{"urlString":"\#(u.absoluteString)","kind":"article","children":[]}}"#
+        let indexURL = store.contentURL(fileName: "preloads.json")
+        try Data(index.utf8).write(to: indexURL, options: .atomic)
 
         store.releaseTree(rootID: makeSave())
 
-        XCTAssertNil(pageFile(u))
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: store.contentURL(fileName: "preloads.json").path),
-            "the index survives the entry that named it")
-    }
-
-    /// A legacy page whose owners have all been deleted is adopted by nobody. It
-    /// is dropped rather than left holding a file no save can free.
-    func testLegacyPageWithNoSurvivingOwnerIsDropped() throws {
-        let u = url("https://example.com/orphaned")
-        let legacyFile = try writeLegacyIndex(
-            u, owners: [UUID()], lastLoadedAt: Date(), content: article("Orphan"))
-
-        store.releaseTree(rootID: makeSave())
-
-        XCTAssertNil(store.entry(for: u))
-        XCTAssertNil(pageFile(u))
-        XCTAssertFalse(pageFileExists(legacyFile))
+        XCTAssertNil(store.entry(for: u), "a retired index entry is not a page")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: indexURL.path))
     }
 
     // MARK: - Synchronous / in-memory cache (instant, spinner-free opens)

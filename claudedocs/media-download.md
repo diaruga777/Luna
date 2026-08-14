@@ -16,6 +16,17 @@ transfer with the original URL.
 
 ## Video storage model
 
+**The library is SQL.** `media_saves` is a child table of `saves` under `ON DELETE
+CASCADE` — there is no `savedMedia.json`. The media file and its poster are `files`
+rows owned by `file_refs`, so deleting the save takes the row, the row's edges, and
+(through the release trigger and `PendingDeleteReaper`) the files. `SavedMediaStore`
+unlinks nothing itself. Consequences worth knowing before touching this: one media
+row per save (a replacement reuses the save's id); posters get generated
+`thumb-<UUID>.jpg` names because a released path is retired forever; a download
+reserves its save row up front via `MediaSaveBacking`; and the local→Photos
+transition is a single write, because the delete queue is the durable intent the
+old `pendingLocal*` pair used to provide. See `claudedocs/saves.md`.
+
 Every Downloader save has one durable `SavedMediaItem` row and exactly one visible
 `StorageState`:
 

@@ -46,6 +46,21 @@ enum SavesSchema {
             try database.execute("BEGIN IMMEDIATE")
             do {
                 let existing = try userVersion(in: database)
+                // Version 6 gave `preload_pages` the columns that used to live in
+                // `preloads.json`, and `CREATE TABLE IF NOT EXISTS` cannot add a
+                // column to a table that is already there. Nothing adopts a
+                // version-5 row, so the table is rebuilt — but its files are
+                // released FIRST, through the edges, or dropping the table would
+                // strand them owned and unreachable.
+                if existing >= 5 && existing < 6 {
+                    try database.execute("""
+                        DELETE FROM file_refs
+                            WHERE file_id IN (SELECT file_id FROM preload_pages);
+                        DELETE FROM file_holders
+                            WHERE file_id IN (SELECT file_id FROM preload_pages);
+                        DROP TABLE IF EXISTS preload_pages;
+                        """)
+                }
                 try database.execute(tables)
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
@@ -189,6 +204,33 @@ enum SavesSchema {
             pending_comparison_threshold_at_start  REAL
         ) WITHOUT ROWID;
 
+        -- The downloaded-media payload of a save that is one, the twin of
+        -- `price_trackers`. Absent for every other save. Under `ON DELETE
+        -- CASCADE`, so deleting the save takes the row, and the row's
+        -- `file_refs` edges go with it and queue the files.
+        --
+        -- `source_url_string` is deliberately its OWN column rather than a read
+        -- of `saves.url_string`: the download keeps the pre-unwrap source URL, and
+        -- matching a media row by URL has to use the URL it was downloaded from.
+        --
+        -- `storage_state` is `undownloaded` | `localFile` | `photosReference`,
+        -- with `file_name` set for the first and `photos_identifier` for the
+        -- second. No CHECK constraint, for the reason no enum column here has one.
+        CREATE TABLE IF NOT EXISTS media_saves (
+            save_id             TEXT PRIMARY KEY NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            source_url_string   TEXT NOT NULL,
+            title               TEXT,
+            date_saved          REAL NOT NULL,
+            archived_at         REAL,
+            kind                TEXT,
+            storage_state       TEXT NOT NULL,
+            file_name           TEXT,
+            photos_identifier   TEXT,
+            thumbnail_file_name TEXT,
+            platform            TEXT,
+            platform_item_id    TEXT
+        ) WITHOUT ROWID;
+
         -- The hosts the user took off a tracker's seller list. A passive writer
         -- checks this before adding a seller back.
         CREATE TABLE IF NOT EXISTS tracker_rejected_sellers (
@@ -280,8 +322,22 @@ enum SavesSchema {
         -- is what lets one mechanism count every page. The reaper already clears
         -- a queued path whose file is absent.
         CREATE TABLE IF NOT EXISTS preload_pages (
-            url_key TEXT    PRIMARY KEY NOT NULL,
-            file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
+            url_key       TEXT    PRIMARY KEY NOT NULL,
+            file_id       INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE,
+            url_string    TEXT    NOT NULL DEFAULT '',
+            kind          TEXT    NOT NULL DEFAULT 'unrepresentable',
+            last_loaded_at REAL,
+            has_content   INTEGER NOT NULL DEFAULT 0
+        ) WITHOUT ROWID;
+
+        -- The outbound links one preloaded page reached, so a second save landing
+        -- on a cached page can claim the subtree below it. `position` keeps
+        -- document order, which is the order the crawl walks them in.
+        CREATE TABLE IF NOT EXISTS preload_page_links (
+            url_key       TEXT    NOT NULL REFERENCES preload_pages(url_key) ON DELETE CASCADE,
+            position      INTEGER NOT NULL,
+            child_url_key TEXT    NOT NULL,
+            PRIMARY KEY (url_key, position)
         ) WITHOUT ROWID;
 
         -- Files whose last holder is gone, waiting to be unlinked. A file system
@@ -337,6 +393,12 @@ enum SavesSchema {
         -- tracker_price_points on store_id), so they are already covered.
         CREATE INDEX IF NOT EXISTS tracker_stores_save ON tracker_stores(save_id);
 
+        -- mediaItem(forURLString:) — the "have I already downloaded this?" check
+        -- every media start path runs, against the download's own source URL.
+        -- The platform + item-id dedupe still runs in Swift over the whole list,
+        -- so it gets its index the day it becomes a query.
+        CREATE INDEX IF NOT EXISTS media_saves_url ON media_saves(source_url_string);
+
         -- The FK covering index for file_refs.save_id, which is what a save's
         -- delete cascade and its ownership reconciliation both scan.
         -- `file_id` leads the primary key, so the release trigger's "any edges
@@ -368,6 +430,15 @@ enum SavesSchema {
                 SELECT relative_path, strftime('%s', 'now'), 0
                 FROM files WHERE id = OLD.file_id;
             DELETE FROM files WHERE id = OLD.file_id;
+        END;
+
+        -- A preloaded page's images are held under the page's own key, which is not
+        -- a save and so cascades from nothing. When the page row goes — because its
+        -- file's last edge went, or because a save's delete cascaded — this drops
+        -- those holds, and the trigger below frees any image nobody else wants.
+        CREATE TRIGGER IF NOT EXISTS preload_pages_release AFTER DELETE ON preload_pages
+        BEGIN
+            DELETE FROM file_holders WHERE holder_key = OLD.url_key;
         END;
 
         CREATE TRIGGER IF NOT EXISTS file_holders_release AFTER DELETE ON file_holders

@@ -79,8 +79,9 @@ final class CardDeckDateBumpTests: XCTestCase {
         var item = seed(urlString: urlString)
         item.platform = .reddit
         store.seedForTesting(items: [item], contents: [:])
+        // The media row is a child of this save, so it carries the save's id.
         let media = try XCTUnwrap(try? SavedMediaStore.shared.ensureUndownloaded(
-            id: UUID(), sourceURLString: urlString, title: "Clip",
+            id: item.id, sourceURLString: urlString, title: "Clip",
             kind: .video, dateSaved: Date()))
         CardKindPresenters.media = MediaCardPresenter()
         let presenter = try XCTUnwrap(CardKindPresenters.presenter(for: item))

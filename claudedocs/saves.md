@@ -112,8 +112,16 @@ database, written in the same transaction as the row that made them. See
   saves — the tapped link and the pasteboard candidate — hold their PAGES here
   under a `preload-owner:<uuid>` key, because there is no save row for them to
   cascade from. No foreign key: the holder lives outside this database.
-- `preload_pages(url_key, file_id)` — one preloaded page's file, pointed at by
-  the page's URL hash. See **Preloaded pages** below.
+- `preload_pages(url_key, file_id, url_string, kind, last_loaded_at, has_content)`
+  — one preloaded page: the file it owns plus everything the crawl learned about
+  it. See **Preloaded pages** below.
+- `preload_page_links(url_key, position, child_url_key)` — the outbound links one
+  page reached, in document order, so a second save landing on a cached page can
+  claim the subtree below it.
+- `media_saves(save_id, source_url_string, title, date_saved, archived_at, kind,
+  storage_state, file_name, photos_identifier, thumbnail_file_name, platform,
+  platform_item_id)` — the downloaded-media payload of a save that is one, the
+  twin of `price_trackers`. See **Downloaded media** below.
 - `pending_deletes(relative_path, enqueued_at, attempts)` — files whose last
   holder is gone, waiting to be unlinked.
 - `retired_paths(relative_path, retired_at)` — permanent tombstones. A path is
@@ -134,9 +142,11 @@ A downloader can reuse an image only by atomically claiming its live
 fresh UUID filename. The release trigger fires for a cascade-driven delete too,
 pinned by `SavedFileOwnershipTests`.
 
-**Preloaded pages are counted here too.** The preload cache keeps its pages as
-JSON files in its own `Preloads/` directory under its own `preloads.json` index
-(`claudedocs/preload-plan.md`), but the index no longer counts owners:
+**Preloaded pages live here too.** The preload cache keeps each page's BODY as a
+file in its own `Preloads/` directory (`claudedocs/preload-plan.md`), but nothing
+else: there is no `preloads.json` any more, and there never was an owner set in
+SQL's place. `preload_pages` carries the page's kind, load date and content flag,
+`preload_page_links` its outbound links, and:
 `preload_pages(url_key, file_id)` points at the page's file and the page's owners
 are ordinary edges on that `files` row. So a save's delete cascades to its whole
 preload subtree, the release trigger queues each emptied page's file, and the one
@@ -149,12 +159,24 @@ reaper unlinks it. Three consequences:
   gets a row, reserving a NAME it never writes. That is what lets one mechanism
   count every page; the reaper already treats a queued path whose file is absent
   as done.
-- A save's delete reaches its pages by CASCADE, before `PreloadStore` is told, so
-  the index is pruned by sweeping it against `preloadPageKeys()` rather than by
-  the answer from one release. An index written before this (owners in the JSON)
-  is moved over once per process by `PreloadStore.migrateLegacyOwnersIfNeeded`,
-  which writes the database FIRST so an interrupted run repeats itself instead of
-  stranding files.
+- A page's IMAGES are held under the page's own key, which cascades from nothing,
+  so a `preload_pages_release` trigger drops those holds when the row goes and the
+  holder trigger frees any image no save still wants. `releaseTree` is left with
+  only what SQL cannot do: evicting this process's decoded copies.
+
+**Downloaded media.** `media_saves` is the same shape one level up: the media file
+and its poster are `files` rows of kind `mediaFile` / `mediaThumbnail`, owned by
+`file_refs`, and the row itself cascades with the save. `SavedMediaStore` unlinks
+nothing — every mutation ends in one `SavesStore.reconcileMediaFiles` call that
+makes the save's media holdings exactly what the row still names. That is also
+what retired the two-write Photos transition: the row stops naming the file, the
+trigger queues it, and the reaper unlinks it whenever the process next runs, so
+there are no `pendingLocal*` names to recover from. A download claims its file
+BEFORE the row commits (`claimMediaFiles`), so a process killed in between leaves
+a file the database owns rather than one nobody does. Posters are generated names
+(`thumb-<UUID>.jpg`), not derived from the item id, for the tombstone reason
+above. And a download needs its save row first — `MediaSaveBacking` reserves one
+when the URL has none — because a row with no save owns nothing.
 
 **The reaper is the second commit.** A file system cannot join a transaction, so
 releasing an artifact is two commits: the transaction records the intent, and

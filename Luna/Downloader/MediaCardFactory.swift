@@ -82,7 +82,7 @@ enum MediaCardFactory {
                     }
                 })
             }
-        case .photosReference(let identifier, _, _):
+        case .photosReference(let identifier):
             if item.kind == .video || item.kind == .audio {
                 let content = VideoCardContentViewController(
                     itemProvider: { completion in
@@ -373,7 +373,7 @@ enum MediaItemActions {
         switch item.storageState {
         case .undownloaded: return "undownloaded"
         case .localFile: return "local|\(item.fileName ?? "")"
-        case .photosReference(let identifier, _, _): return "photos|\(identifier)"
+        case .photosReference(let identifier): return "photos|\(identifier)"
         }
     }
 

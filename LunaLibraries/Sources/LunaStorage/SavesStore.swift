@@ -986,6 +986,28 @@ public final class SavesStore {
         reapPendingDeletes()
     }
 
+    /// Inserts or updates `items`, leaving every other save alone. DEBUG-only.
+    ///
+    /// The additive twin of `seedForTesting`, which deletes the whole list first
+    /// and so cascades away the child rows of saves it is about to re-insert. A
+    /// test that means "a save arrives" or "this save changed" wants this.
+    public func upsertForTesting(_ items: [SavedItem]) {
+        write { db in
+            var nextSeq = try SavesReader.maxSeq(in: db) + 1
+            for item in items {
+                if let stored = try SavesReader.item(id: item.id, in: db) {
+                    try self.writeSave(
+                        StoredSave(item: item, seq: stored.seq),
+                        previous: stored.item, in: db)
+                } else {
+                    try self.writeSave(
+                        StoredSave(item: item, seq: nextSeq), previous: nil, in: db)
+                    nextSeq += 1
+                }
+            }
+        }
+    }
+
     /// Empties the saves list and removes all article files. DEBUG-only.
     public func wipeForTesting() {
         let articlesDir = articlesDirectory
@@ -1252,6 +1274,45 @@ public final class SavesStore {
         claimPreloadPage(urlKey: urlKey, existingFileName: nil, owners: [owner])
     }
 
+    /// Every preloaded page the cache holds, keyed by URL hash.
+    func preloadEntries() -> [String: PreloadEntry] {
+        guard let database = database() else { return [:] }
+        do {
+            return try database.perform { db in try PreloadPageRow.entries(in: db) }
+        } catch {
+            record(error, "read preload pages")
+            return [:]
+        }
+    }
+
+    /// One preloaded page, or nil when the cache holds none for that key.
+    func preloadEntry(forKey key: String) -> PreloadEntry? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                try PreloadPageRow.entry(forKey: key, in: db)
+            }
+        } catch {
+            record(error, "read preload page")
+            return nil
+        }
+    }
+
+    /// Records what a crawl learned about a page whose row already exists, and
+    /// answers the row as it now stands.
+    func updatePreloadEntry(key: String, entry: PreloadEntry) -> PreloadEntry? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in
+                try PreloadPageRow.update(key: key, entry: entry, in: db)
+                return try PreloadPageRow.entry(forKey: key, in: db)
+            }
+        } catch {
+            record(error, "write preload page")
+            return nil
+        }
+    }
+
     /// Adds `owner` to a page the cache already holds, and says whether it took.
     /// Registers nothing: a second save reaching a cached page extends ownership,
     /// it never creates the page.
@@ -1387,6 +1448,181 @@ public final class SavesStore {
             try SavedFileOwnership.attach(path: path, kind: .preloadPage, to: id, in: db)
         }
     }
+
+    // MARK: - Downloaded media rows
+
+    /// Every downloaded-media save, in no particular order — the Downloader deck
+    /// imposes its own.
+    public func mediaItems() -> [SavedMediaItem] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var items: [SavedMediaItem] = []
+                try db.query(MediaSaveRow.selectSQL) { row in
+                    if let item = MediaSaveRow.item(from: row) { items.append(item) }
+                }
+                return items
+            }
+        } catch {
+            record(error, "read media rows")
+            return []
+        }
+    }
+
+    /// The media row downloaded from `urlString`, matched on the download's own
+    /// source URL rather than the save's — a download keeps the pre-unwrap URL.
+    public func mediaItem(forURLString urlString: String) -> SavedMediaItem? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                var item: SavedMediaItem?
+                try db.query(
+                    "\(MediaSaveRow.selectSQL) WHERE source_url_string = ?",
+                    { try $0.bind(1, urlString) }
+                ) { row in
+                    if item == nil { item = MediaSaveRow.item(from: row) }
+                }
+                return item
+            }
+        } catch {
+            record(error, "read media row")
+            return nil
+        }
+    }
+
+    /// Inserts or updates one media row, and says whether it landed. A row whose
+    /// save is not there records nothing: the save is what owns its files, so a
+    /// media row without one could never be freed.
+    @discardableResult
+    public func writeMediaItem(_ item: SavedMediaItem) -> Bool {
+        guard let database = database() else { return false }
+        do {
+            return try database.transaction { db in
+                try db.run(MediaSaveRow.upsertSQL) {
+                    try MediaSaveRow.bindUpsert(item, to: $0)
+                }
+                return try db.scalarInt(
+                    "SELECT 1 FROM media_saves WHERE save_id = ?",
+                    { try $0.bind(1, uuid: item.id) }) != nil
+            }
+        } catch {
+            record(error, "write media row")
+            return false
+        }
+    }
+
+    /// Drops one media row. Its files are released by the reconcile that follows,
+    /// or by the save's own delete cascade — whichever gets there first.
+    public func deleteMediaItem(id: UUID) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                try db.run("DELETE FROM media_saves WHERE save_id = ?") {
+                    try $0.bind(1, uuid: id)
+                }
+            }
+        } catch {
+            record(error, "delete media row")
+        }
+    }
+
+    /// Makes the media table exactly `items`: rows it no longer lists are deleted,
+    /// the rest inserted or updated, all in one transaction.
+    ///
+    /// `SavedMediaStore` reads the list, edits it, and hands it back, so this is
+    /// the write half of that. One transaction means another process sees the whole
+    /// edit or none of it — which the atomic manifest write it replaces could only
+    /// promise for the file, not for the file plus its ownership edges.
+    public func replaceMediaItems(_ items: [SavedMediaItem]) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                // `uuidString` is hex and dashes, so the list is safe to inline —
+                // the same reason `heldPaths` inlines its kind list. An empty list
+                // has no `NOT IN ()` form, so it deletes everything.
+                if items.isEmpty {
+                    try db.run("DELETE FROM media_saves")
+                } else {
+                    let keep = items.map { "'\($0.id.uuidString)'" }.joined(separator: ", ")
+                    try db.run("DELETE FROM media_saves WHERE save_id NOT IN (\(keep))")
+                }
+                for item in items {
+                    try db.run(MediaSaveRow.upsertSQL) {
+                        try MediaSaveRow.bindUpsert(item, to: $0)
+                    }
+                }
+            }
+        } catch {
+            record(error, "replace media rows")
+        }
+    }
+
+    // MARK: - Downloaded media files
+
+    /// Makes the save `saveID` hold exactly the media file and poster named here,
+    /// and frees whatever it held before. Either name may be nil: archiving keeps
+    /// the poster and drops the media, and a deleted download names neither.
+    ///
+    /// This is the ONE call `SavedMediaStore` makes after a manifest write. The
+    /// files it stops naming reach `pending_deletes` through the release trigger,
+    /// so the store never unlinks anything itself — which is what makes the
+    /// destructive half of a Photos export crash-safe without a second manifest
+    /// write to remember it by.
+    public func reconcileMediaFiles(
+        saveID: UUID, fileName: String?, thumbnailFileName: String?
+    ) {
+        var artifacts: [(OwnedFileKind, OwnedFilePath)] = []
+        if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
+            artifacts.append((.mediaFile, path))
+        }
+        if let thumbnailFileName,
+           let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
+            artifacts.append((.mediaThumbnail, path))
+        }
+        writeFileOwnership { db in
+            try SavedFileOwnership.reconcile(
+                saveID: saveID, kinds: Self.mediaFileKinds, artifacts: artifacts, in: db)
+        }
+        reapPendingDeletes()
+    }
+
+    /// Adds these media files to what `saveID` holds, releasing nothing.
+    ///
+    /// A download claims its file before the row that will name it commits, so a
+    /// process killed in between leaves a file the database owns rather than one
+    /// nobody does. The reconcile that follows the commit — or the failure — frees
+    /// whichever set lost.
+    public func claimMediaFiles(saveID: UUID, fileName: String?, thumbnailFileName: String?) {
+        writeFileOwnership { db in
+            if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
+                try SavedFileOwnership.attach(
+                    path: path, kind: .mediaFile, to: saveID, in: db)
+            }
+            if let thumbnailFileName,
+               let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
+                try SavedFileOwnership.attach(
+                    path: path, kind: .mediaThumbnail, to: saveID, in: db)
+            }
+        }
+    }
+
+    /// The media names `saveID` holds, for a caller that needs to know whether a
+    /// claim took — a download's file is only safe to report once the save owns it.
+    public func heldMediaFileNames(saveID: UUID) -> Set<String> {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                Set(try SavedFileOwnership.heldPaths(
+                    saveID: saveID, kinds: Self.mediaFileKinds, in: db
+                ).map(\.lastPathComponent))
+            }
+        } catch {
+            record(error, "read media files")
+            return []
+        }
+    }
+
+    private static let mediaFileKinds: Set<OwnedFileKind> = [.mediaFile, .mediaThumbnail]
 
     // MARK: - Files a preloaded page holds
 

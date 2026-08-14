@@ -32,6 +32,14 @@ enum OwnedFileKind: String {
     /// that caches no content reserves this name without writing it, so every
     /// page is counted the same way.
     case preloadPage
+    /// `SavedMedia/Files/<save id>-<UUID>.<ext>` — a downloaded video, audio
+    /// file, GIF or image.
+    case mediaFile
+    /// `SavedMedia/Thumbnails/thumb-<UUID>.jpg` — a downloaded media file's
+    /// poster. It outlives the media on archive, so it is its own kind. Generated
+    /// rather than named from its item, because a name a tombstone has retired
+    /// can never be written again.
+    case mediaThumbnail
 }
 
 /// A path the ownership tables may hold, and only this file can make one — the
@@ -81,11 +89,11 @@ enum SavedFileOwnership {
         return articlesPath(fileName)
     }
 
-    /// The path of a preloaded page's file, or nil for a name the preload cache
-    /// would not have produced. The cache's own index is excluded by name: a
-    /// corrupt entry must not be able to queue `preloads.json` for deletion.
+    /// The path of a preloaded page's file. The retired JSON index is excluded by
+    /// name, so a stale row naming it could not queue it for deletion while the
+    /// store is still clearing it away.
     static func preloadsPath(_ fileName: String) -> OwnedFilePath? {
-        guard fileName != PreloadStore.indexFileName else { return nil }
+        guard fileName != PreloadStore.retiredIndexFileName else { return nil }
         return path("Preloads", fileName)
     }
 
@@ -93,6 +101,17 @@ enum SavedFileOwnership {
     /// the path this becomes is retired the moment the page is released and a
     /// later preload of the same URL has to land somewhere else.
     static func newPreloadPageName() -> String { "page-\(UUID().uuidString).json" }
+
+    /// The path of a downloaded media file. Its own directory holds nothing else,
+    /// so any plain name belongs to a download.
+    static func mediaFilePath(_ fileName: String) -> OwnedFilePath? {
+        path("SavedMedia/Files", fileName)
+    }
+
+    /// The path of a downloaded media file's poster.
+    static func mediaThumbnailPath(_ fileName: String) -> OwnedFilePath? {
+        path("SavedMedia/Thumbnails", fileName)
+    }
 
     /// A file name is only ever a name: one carrying a path separator produces
     /// no path at all.

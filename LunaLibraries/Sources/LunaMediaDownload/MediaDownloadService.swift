@@ -32,7 +32,7 @@ public struct MediaDownloadService {
             throw MediaDownloadError.unsupported
         }
         let pending = try SavedMediaStore.shared.ensureUndownloaded(
-            id: SavesStore.shared.item(forURLString: url.absoluteString)?.id ?? UUID(),
+            id: MediaSaveBacking.saveID(for: url.absoluteString, title: title),
             sourceURLString: url.absoluteString,
             title: title)
         let assets = await resolver.resolveAssets(for: url)

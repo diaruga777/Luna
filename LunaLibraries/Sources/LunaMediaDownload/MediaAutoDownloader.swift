@@ -186,7 +186,7 @@ public enum MediaAutoDownloader {
                 MediaDownloadStorage.discardIntentExport(at: exportURL)
                 return nil
             }
-        case .photosReference(let identifier, _, _):
+        case .photosReference(let identifier):
             do {
                 try await PhotoLibrarySaver().writeResource(
                     localIdentifier: identifier, kind: kind, to: exportURL)

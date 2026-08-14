@@ -62,6 +62,7 @@ enum MediaShellWiring {
         // block startup.
         DispatchQueue.global(qos: .utility).async {
             MediaDownloadStorage.purgeAll()
+            SavedMediaStore.shared.resetLibraryForSQLOwnershipOnce()
             SavedMediaStore.shared.purgeExpired()
         }
         LiveMediaDownloadManager.shared.resumeLiveActivities()
@@ -116,7 +117,7 @@ enum MediaShellWiring {
         switch matched.storageState {
         case .localFile:
             return .center(matched.id)
-        case .photosReference(let localIdentifier, _, _):
+        case .photosReference(let localIdentifier):
             MediaCardFactory.openInPhotos(localIdentifier: localIdentifier)
             return .openedExternally
         case .undownloaded:

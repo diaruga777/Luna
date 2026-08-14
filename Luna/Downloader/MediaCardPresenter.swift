@@ -464,7 +464,7 @@ final class MediaCardPresenter: CardKindPresenting {
                     }
                 }
             }
-        case .photosReference(let identifier, _, _):
+        case .photosReference(let identifier):
             if item.kind == .video || item.kind == .audio {
                 MediaCardFactory.loadPhotosVideoItem(identifier: identifier) {
                     [weak self, weak host] playerItem in

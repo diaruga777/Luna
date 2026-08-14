@@ -1,10 +1,13 @@
+import LunaModels
 import LunaMediaDownload
+import LunaStorage
 import UIKit
 import XCTest
 
 final class SavedMediaStoreTests: XCTestCase {
     private var root: URL!
     private var store: SavedMediaStore!
+    private var saves: SavesStore!
 
     override func setUpWithError() throws {
         // The interpolation here was missing its backslash, so every test in this class
@@ -19,17 +22,26 @@ final class SavedMediaStoreTests: XCTestCase {
             .appendingPathComponent("SavedMediaStoreTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         store = SavedMediaStore(containerURL: root)
+        saves = SavesStore(containerURL: root)
     }
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
         store = nil
+        saves = nil
         root = nil
     }
 
+    /// The save a download's files belong to. Ownership is a `file_refs` edge, so
+    /// a media row whose id is not a save's owns nothing and frees nothing — which
+    /// is why every row here is backed by a real one.
+    private func makeSave(_ urlString: String) -> UUID {
+        saves.reserveSaveAttempt(urlString: urlString, at: Date()).item.id
+    }
+
     func testUndownloadedLocalAndPhotosTransitionsRoundTrip() async throws {
-        let id = UUID()
         let urlString = "https://x.com/example/status/1"
+        let id = makeSave(urlString)
         let pending = try store.ensureUndownloaded(
             id: id, sourceURLString: urlString, title: "Example")
         XCTAssertEqual(pending.storageState, .undownloaded)
@@ -57,28 +69,27 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.kind, .video)
     }
 
-    func testLegacyFileNameManifestDecodesAsLocalFile() throws {
-        let directory = root.appendingPathComponent("SavedMedia", isDirectory: true)
-        let files = directory.appendingPathComponent("Files", isDirectory: true)
-        try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
-        let id = UUID()
-        let fileName = "legacy.mp4"
-        try Data("video".utf8).write(to: files.appendingPathComponent(fileName))
-        let json = """
-        [{
-          "id":"\(id.uuidString)",
-          "sourceURLString":"https://x.com/example/status/2",
-          "title":"Legacy",
-          "dateSaved":"2026-01-01T00:00:00Z",
-          "kind":"video",
-          "fileName":"\(fileName)"
-        }]
-        """
-        try Data(json.utf8).write(to: directory.appendingPathComponent("savedMedia.json"))
+    /// A row survives a round trip through the table, storage state and all.
+    func testRowRoundTripsThroughTheTable() async throws {
+        let urlString = "https://x.com/example/status/2"
+        let id = makeSave(urlString)
+        let source = root.appendingPathComponent("round-trip.mp4")
+        try Data("video".utf8).write(to: source)
+        _ = try await store.addDownloadedFile(
+            source, kind: .video, sourceURLString: urlString, title: "Round trip")
 
-        let item = try XCTUnwrap(store.items().first(where: { $0.id == id }))
-        XCTAssertEqual(item.storageState, .localFile(fileName: fileName))
-        XCTAssertEqual(item.kind, .video)
+        // A second store over the same container reads the same rows: the library
+        // is in the database, so there is no manifest to be stale about.
+        let reloaded = try XCTUnwrap(
+            SavedMediaStore(containerURL: root).items().first(where: { $0.id == id }))
+        XCTAssertEqual(reloaded.title, "Round trip")
+        XCTAssertEqual(reloaded.kind, .video)
+        XCTAssertEqual(reloaded.sourceURLString, urlString)
+        XCTAssertNotNil(reloaded.fileName)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("SavedMedia/savedMedia.json").path),
+            "no manifest is written any more")
     }
 
     func testMissingLocalFileRepairsToUndownloaded() async throws {
@@ -97,7 +108,8 @@ final class SavedMediaStoreTests: XCTestCase {
 
     func testEnsureUndownloadedDedupesByPlatformItemIDAcrossDifferentlyShapedURLs() throws {
         let first = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/abc123/some_title/",
+            id: makeSave("https://www.reddit.com/r/test/comments/abc123/some_title/"),
+            sourceURLString: "https://www.reddit.com/r/test/comments/abc123/some_title/",
             title: "First shape")
         XCTAssertEqual(first.platformItemID, "abc123")
 
@@ -105,14 +117,16 @@ final class SavedMediaStoreTests: XCTestCase {
         // (as if the saves list never recognized it as the same item) — must
         // merge into the existing row instead of creating a second one.
         let second = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://redd.it/abc123", title: nil)
+            id: makeSave("https://redd.it/abc123"),
+            sourceURLString: "https://redd.it/abc123", title: nil)
         XCTAssertEqual(second.id, first.id)
         XCTAssertEqual(store.items().count, 1)
     }
 
     func testAddDownloadedFileDedupesByPlatformItemIDAndPreservesTitle() async throws {
         _ = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/xyz789/title/",
+            id: makeSave("https://www.reddit.com/r/test/comments/xyz789/title/"),
+            sourceURLString: "https://www.reddit.com/r/test/comments/xyz789/title/",
             title: "Example")
 
         let source = root.appendingPathComponent("source.mp4")
@@ -127,7 +141,8 @@ final class SavedMediaStoreTests: XCTestCase {
 
     func testExistingDownloadedItemMatchesUndownloadedOnlyAfterDownload() async throws {
         let urlString = "https://x.com/example/status/42"
-        _ = try store.ensureUndownloaded(id: UUID(), sourceURLString: urlString, title: "Example")
+        _ = try store.ensureUndownloaded(
+            id: makeSave(urlString), sourceURLString: urlString, title: "Example")
         XCTAssertNil(store.existingDownloadedItem(forURLString: urlString))
 
         let source = root.appendingPathComponent("source.jpg")
@@ -140,7 +155,8 @@ final class SavedMediaStoreTests: XCTestCase {
 
     func testExistingDownloadedItemMatchesByPlatformItemID() async throws {
         _ = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/dup1/title/",
+            id: makeSave("https://www.reddit.com/r/test/comments/dup1/title/"),
+            sourceURLString: "https://www.reddit.com/r/test/comments/dup1/title/",
             title: "Example")
         let source = root.appendingPathComponent("source.jpg")
         try Data("image".utf8).write(to: source)
@@ -204,10 +220,7 @@ final class SavedMediaStoreTests: XCTestCase {
             XCTAssertEqual(existing.photosLocalIdentifier, "kept-id")
             XCTAssertEqual(
                 try XCTUnwrap(store.items().first(where: { $0.id == item.id })).storageState,
-                .photosReference(
-                    localIdentifier: "kept-id",
-                    pendingLocalFileName: nil,
-                    pendingThumbnailFileName: nil))
+                .photosReference(localIdentifier: "kept-id"))
         }
     }
 
@@ -223,16 +236,16 @@ final class SavedMediaStoreTests: XCTestCase {
         defer { if !wasMarked { AutoDownloadSettings.unmarkDownloaded(urlString) } }
         store.photosBackingProbe = StubBackingProbe(.deleted)
 
-        let freshID = UUID()
+        // The row is keyed by its save, so the replacement takes the same id —
+        // there is one media row per save. What must be fresh is its STATE.
         let ensured = try store.ensureUndownloaded(
-            id: freshID, sourceURLString: urlString, title: "Example")
-        XCTAssertEqual(ensured.id, freshID, "a new save, not the discarded one")
-        XCTAssertEqual(ensured.storageState, .undownloaded)
+            id: makeSave(urlString), sourceURLString: urlString, title: "Example")
+        XCTAssertEqual(ensured.id, stale.id)
+        XCTAssertEqual(ensured.storageState, .undownloaded, "the Photos backing is gone")
         XCTAssertNil(ensured.thumbnailFileName)
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(
             storageState: ensured.storageState))
         XCTAssertEqual(store.items().count, 1, "the stale save didn't survive alongside it")
-        XCTAssertNil(store.items().first(where: { $0.id == stale.id }))
         XCTAssertFalse(AutoDownloadSettings.wasDownloaded(urlString))
     }
 
@@ -267,11 +280,12 @@ final class SavedMediaStoreTests: XCTestCase {
     func testDisplayTitleFallsBackFromTitleToURL() throws {
         let urlString = "https://x.com/example/status/99"
         let titled = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: urlString, title: "A title")
+            id: makeSave(urlString), sourceURLString: urlString, title: "A title")
         XCTAssertEqual(titled.displayTitle, "A title")
 
         let neither = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://x.com/example/status/101")
+            id: makeSave("https://x.com/example/status/101"),
+            sourceURLString: "https://x.com/example/status/101")
         XCTAssertEqual(neither.displayTitle, "https://x.com/example/status/101")
     }
 
@@ -282,12 +296,14 @@ final class SavedMediaStoreTests: XCTestCase {
     /// same manifest.
     func testItemsCacheRefreshesWhenManifestChangesFromAnotherInstance() throws {
         _ = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://x.com/example/status/200", title: "First")
+            id: makeSave("https://x.com/example/status/200"),
+            sourceURLString: "https://x.com/example/status/200", title: "First")
         XCTAssertEqual(store.items().count, 1, "primes this instance's cache")
 
         let other = SavedMediaStore(containerURL: root)
         _ = try other.ensureUndownloaded(
-            id: UUID(), sourceURLString: "https://x.com/example/status/201", title: "Second")
+            id: makeSave("https://x.com/example/status/201"),
+            sourceURLString: "https://x.com/example/status/201", title: "Second")
 
         XCTAssertEqual(
             store.items().count, 2,
@@ -312,9 +328,10 @@ final class SavedMediaStoreTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
 
         let store = try! XCTUnwrap(store)
+        let urlString = "https://x.com/example/status/3"
+        let id = makeSave(urlString)
         DispatchQueue.global().async {
-            _ = try? store.ensureUndownloaded(
-                id: UUID(), sourceURLString: "https://x.com/example/status/3")
+            _ = try? store.ensureUndownloaded(id: id, sourceURLString: urlString)
         }
 
         wait(for: [changed], timeout: 2)
@@ -367,7 +384,7 @@ final class SavedMediaStoreTests: XCTestCase {
     func testRequiredPendingRowCannotBeResurrectedAfterDeletion() async throws {
         let urlString = "https://x.com/example/status/deleted-during-download"
         let pending = try store.ensureUndownloaded(
-            id: UUID(), sourceURLString: urlString, title: "Pending")
+            id: makeSave(urlString), sourceURLString: urlString, title: "Pending")
         store.delete(pending)
         let source = root.appendingPathComponent("deleted-during-download.jpg")
         try makeJPEG().write(to: source)
@@ -406,14 +423,23 @@ final class SavedMediaStoreTests: XCTestCase {
             source, kind: .image, sourceURLString: "https://instagram.com/p/expired",
             title: nil, dateSaved: Date(timeIntervalSince1970: 100))
         store.setArchived(true, for: local.id)
-        let thumbnail = try XCTUnwrap(store.items().first?.thumbnailFileName)
+        let firstThumbnail = try XCTUnwrap(store.items().first?.thumbnailFileName)
 
-        // Re-download produces a local file while preserving archive state.
+        // Re-download produces a local file while preserving archive state. Each
+        // download generates its own poster name, so the replaced one is released.
         let redownload = root.appendingPathComponent("expired-again.jpg")
         try makeJPEG().write(to: redownload)
         _ = try await store.addDownloadedFile(
             redownload, kind: .image, sourceURLString: local.sourceURLString,
             title: nil, dateSaved: Date(timeIntervalSince1970: 200))
+        let thumbnail = try XCTUnwrap(store.items().first?.thumbnailFileName)
+        XCTAssertNotEqual(thumbnail, firstThumbnail)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: store.thumbnailDirectory
+                    .appendingPathComponent(firstThumbnail).path),
+            "the poster the re-download replaced is freed")
+
         store.purgeExpired(now: Date(timeIntervalSince1970: 200 + 2 * 86_400))
 
         let expired = try XCTUnwrap(store.items().first)

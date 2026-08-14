@@ -1,3 +1,4 @@
+import LunaModels
 //
 //  IntentMediaExportNamingTests.swift
 //  LunaTests

@@ -102,7 +102,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         // Something the deck renders changes, without adding a save: retitle the
         // OTHER failed row so the fingerprint moves and the reload is applied.
         failed[1].title = "Retitled"
-        SavesStore.shared.seedForTesting(items: failed, contents: [:])
+        SavedMediaDeckFixtures.reseedSaves(failed)
         NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(
@@ -133,7 +133,7 @@ final class SavedMediaDeckSlotTests: XCTestCase {
                 dateAdded: base.addingTimeInterval(TimeInterval(-offset * 60)),
                 state: .failed)
         }
-        SavesStore.shared.seedForTesting(items: items, contents: [:])
+        SavedMediaDeckFixtures.reseedSaves(items)
         return items
     }
 }
@@ -141,12 +141,28 @@ final class SavedMediaDeckSlotTests: XCTestCase {
 /// `SavedMediaStore.shared` is the real App Group store — there is no
 /// `seedForTesting` twin for it — so a deck test that counts cards has to empty
 /// it first, and put it back to empty afterwards.
+///
+/// A media row is a child of its save, so seeding one seeds a save too, and
+/// `backingSaves` hands those back: a test that goes on to REPLACE the saves list
+/// has to include them, or the cascade takes its media with them.
 enum SavedMediaDeckFixtures {
+
+    private(set) static var backingSaves: [SavedItem] = []
 
     static func emptySharedMediaStore() {
         for item in SavedMediaStore.shared.items() {
             SavedMediaStore.shared.delete(item)
         }
+        backingSaves = []
+    }
+
+    /// Adds or updates saves without disturbing the media rows.
+    ///
+    /// `seedForTesting` deletes every save before inserting, and a media row
+    /// cascades with its save, so it cannot be used once media is seeded. Any deck
+    /// test that seeds saves AFTER seeding media has to come through here.
+    static func reseedSaves(_ items: [SavedItem]) {
+        SavesStore.shared.upsertForTesting(items)
     }
 
     /// Undownloaded rows, deliberately: they need no file on disk and no Photos
@@ -157,13 +173,24 @@ enum SavedMediaDeckFixtures {
         prefix: String,
         startingAt date: Date = Date()
     ) -> [SavedMediaItem] {
-        (0..<count).compactMap { offset in
-            try? SavedMediaStore.shared.ensureUndownloaded(
-                id: UUID(),
-                sourceURLString: "https://media.example.com/\(prefix)-\(offset)",
+        let saves: [SavedItem] = (0..<count).map { offset in
+            SavedItem(
+                seed: "\(prefix)-\(offset)",
+                urlString: "https://media.example.com/\(prefix)-\(offset)",
                 title: "\(prefix) \(offset)",
+                dateAdded: date.addingTimeInterval(TimeInterval(-offset * 60)),
+                state: .ready,
+                platform: .x)
+        }
+        backingSaves.append(contentsOf: saves)
+        SavesStore.shared.seedForTesting(items: backingSaves, contents: [:])
+        return saves.compactMap { save in
+            try? SavedMediaStore.shared.ensureUndownloaded(
+                id: save.id,
+                sourceURLString: save.urlString,
+                title: save.title,
                 kind: .video,
-                dateSaved: date.addingTimeInterval(TimeInterval(-offset * 60)))
+                dateSaved: save.dateAdded)
         }
     }
 }

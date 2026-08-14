@@ -247,7 +247,7 @@ final class NewSaveCenteringTests: XCTestCase {
             title: nil,
             dateAdded: Date().addingTimeInterval(60),
             state: .failed)
-        SavesStore.shared.seedForTesting(items: [broken], contents: [:])
+        SavedMediaDeckFixtures.reseedSaves([broken])
         NotificationCenter.default.post(name: .savesChanged, object: nil)
 
         XCTAssertEqual(

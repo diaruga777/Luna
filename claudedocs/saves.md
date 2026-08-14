@@ -58,6 +58,13 @@ two-column layout is released and rebuilt, while a complete layout (including on
 with additive columns from a newer sibling) is preserved. Rebuilding releases its
 ownership edges and queues/tombstones the old page files before dropping the map.
 
+The SQL transition has no in-place compatibility promise: pre-SQL and intermediate
+development installs are wiped manually, and mixed-version app/extension operation is
+unsupported. Consequently startup never imports, resets, or deletes retired JSON stores
+(`savedMedia.json`, `jobs.json`, or `Library/ProductSnapshots`). Leaving an unidentified
+old artifact inert is safer than letting migration cleanup race with and erase fresh SQL
+rows or directories.
+
 - `saves` — one row per save (`WITHOUT ROWID`, TEXT id). `seq` is the list's own
   order, highest first: a new save goes to the front and `bump` moves one there,
   independently of the dates a deck sorts by. URL, title, the dates, the state

@@ -1,5 +1,10 @@
 # Plan: passive product snapshots, Safari bounce-back saves, and the "Was $X" history pill
 
+> **Current implementation note:** Product snapshots now live only in the shared
+> `saves.sqlite` tables. The JSON design below is historical planning context, not an
+> upgrade format: no runtime importer or legacy-directory deletion exists. Development
+> installs from before the SQL store are wiped manually.
+
 Three features over the Safari extension + price-tracking + media-download stack. Commit this
 file as `claudedocs/safari-product-snapshots-plan.md` in your first commit and keep it updated
 if implementation diverges.

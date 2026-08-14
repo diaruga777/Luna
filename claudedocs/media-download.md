@@ -54,9 +54,12 @@ Re-download completion preserves `archivedAt`, updates `dateSaved` to the downlo
 date, and therefore uses the ordinary local-retention clock without unarchiving.
 
 `SavedMediaStore.ensureUndownloaded` creates the media row before transfer and uses
-the saves list UUID as its stable identity. Existing legacy manifests with the old required
-`fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
-file disappears, store recovery changes the row back to `.undownloaded`.
+the saves list UUID as its stable identity. There is no runtime import or destructive
+cleanup for the retired `savedMedia.json` format: pre-SQL/intermediate installs are
+unsupported and the App Group is wiped before installing this build. In particular,
+launch maintenance never empties `media_saves` or sweeps `SavedMedia/` as a migration.
+If a current SQL row's local file disappears, ordinary store recovery changes that row
+back to `.undownloaded`.
 
 Safari's in-page player is a direct-resolved exception to the ordinary ingest
 funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
@@ -488,7 +491,10 @@ once and then remain in the visible **Waiting to resume** state instead of being
 `JobStore` applies every existing-job change as a single lock-held mutation, so progress
 callbacks cannot overwrite retry counters or resolver bookkeeping. It also creates jobs with
 an atomic insert-or-reuse check, preventing simultaneous starts for one source URL from
-registering duplicate background transfers.
+registering duplicate background transfers. Job state is stored only in the
+`media_download_jobs` table. The retired `jobs.json` is neither imported nor deleted at
+runtime; the same manual-wipe upgrade policy applies, so an obsolete sidecar can never be
+mistaken for authority or used as a reason to clear current SQL rows.
 Launch/foreground repair and Downloader's twice-daily BG processing job compare persisted jobs
 with the background session and restart every missing resolving, downloading, or waiting task.
 The local saving/YouTube-range-export stage is persisted too: the untouched transfer stays in a
@@ -669,8 +675,8 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
   prior consent/login wall cannot mask a public reel. The mobile and crawler fallbacks accept
   video metadata regardless of attribute order or whether Facebook uses inline JSON,
   `property`, or `name`.
-- `SavedMediaStore.swift` owns `savedMedia.json`, the three-state model, legacy decoding,
-  local files/thumbnails, retention, and crash recovery.
+- `SavedMediaStore.swift` owns the SQL-backed three-state model, local files/thumbnails,
+  retention, and crash recovery. It has no legacy-manifest migration/reset path.
 - `PhotoLibrarySaver.swift` requests authorization, creates `.photo`/`.video` resources
   with `shouldMoveFile`, returns `placeholderForCreatedAsset.localIdentifier`, fetches by
   identifier, and streams original resources with iCloud network access allowed.

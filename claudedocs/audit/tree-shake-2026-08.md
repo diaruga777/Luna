@@ -261,7 +261,7 @@ Verify each with grep before demoting (tests may need `@testable import`, which 
 
 - `ProductInfo.productID` vs `identifiers` unification — 124 call sites.
 - `XPostPayload` → XThread boundary type — parse already centralized; churn > payout.
-- `LiveMediaDownloadJob` phase-conditional payloads (`Phase.failed(message:kind:)` etc.) — jobs.json Codable migration + 1836-line manager.
+- `LiveMediaDownloadJob` phase-conditional payloads (`Phase.failed(message:kind:)` etc.) — persisted SQL-row compatibility + 1836-line manager.
 - `AudioPlaybackCenter` per-session state → `RenderSession` struct — real payout, do alongside other work in that file.
 - `RSVPWord` boundary bools → enum — 8+ test files.
 - Full `FriendEmail` parse-once type (see D25 for the contained subset).

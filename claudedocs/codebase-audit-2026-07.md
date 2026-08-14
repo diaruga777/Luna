@@ -30,22 +30,11 @@ Conventions for implementers (from CLAUDE.md and repo practice):
 
 ## WS-A — Downloader download pipeline I/O (LunaMediaDownload)
 
-**A1. `JobStore` re-reads/re-writes `jobs.json` on every progress callback.**
-`LunaLibraries/Sources/LunaMediaDownload/LiveMediaDownloadManager.swift:1332-1424`.
-`urlSession(_:downloadTask:didWriteData:…)` (line ~1024) runs per received
-chunk — often many times per second — and each call does
-`store.job(id:)` (full disk read + JSON decode of jobs.json) followed by
-`store.upsert(job)` (another full read + decode + encode + atomic write), on
-the URLSession delegate queue. `jobs.json` has **no other writer process**
-(verified: no LiveMediaDownloadManager/jobs.json references in
-LunaShareSurface, LunaIntents, or Luna/Intents), so:
-- Give `JobStore` an authoritative in-memory `[LiveMediaDownloadJob]` (loaded
-  once lazily from disk, guarded by its existing `lock`), and make
-  `jobs()`/`job(id:)` serve from memory.
-- Keep persisting to disk (a background relaunch after suspension must be able
-  to restore jobs), but throttle persistence from the progress path: write on
-  phase changes and job add/remove always; for pure progress updates write at
-  most ~2×/sec or on whole-percent change. In-memory state always updates.
+**A1. Resolved — `JobStore` uses `media_download_jobs` in `saves.sqlite`.**
+Progress writes are throttled and every read-modify-write is one SQL transaction,
+so independently arriving callbacks cannot overwrite each other. `jobs.json` is
+retired and is neither imported nor deleted at runtime; pre-SQL development
+installs use the repository's manual-wipe policy.
 
 **A2. Live Activity updated on every chunk.** Same delegate method ends with
 `Task { await updateActivity(for: job) }` — unthrottled `activity.update`
@@ -54,27 +43,16 @@ whole-percent progress changes (the in-process notification already does this
 via `previousPercent`) — reuse that same gate for `updateActivity`, while
 keeping unconditional updates on phase transitions.
 
-**A3. `SavedMediaStore.items()` decodes the manifest from disk on every call.**
-`LunaLibraries/Sources/LunaMediaDownload/SavedMediaStore.swift:265` (and
-`item(id:)`/`item(forURLString:)` funnel through it). The manifest IS written
-by other flows, so mirror `ReadingListStore`'s pattern: an in-memory cache
-validated by a file-stat token (modification date + size), refreshed by every
-mutation from the array it just wrote. Keep all existing locking.
+**A3. Resolved — `SavedMediaStore` reads indexed `media_saves` rows.**
+There is no manifest or stat-token cache. Mutations are transactional, and the
+runtime has no legacy-manifest reset that could clear current SQL rows.
 
-**A4. `purgeExpired()` runs on the main thread.** Two call sites:
-`Luna/AppDelegate.swift:177-182` (`.readingListChanged` observer on
-`queue: .main`) and `Luna/SceneDelegate.swift:217`
-(`sceneWillEnterForeground`). Both do manifest disk I/O (+ file deletion)
-under a lock on main. Dispatch the `purgeExpired()` work to a utility queue at
-both call sites (the store is already lock-guarded and posts its change
-notification on main).
+**A4. Resolved — `purgeExpired()` is dispatched to a utility queue.**
+The store performs its SQL mutation there and marshals UI notification back to
+the main queue.
 
-Files: `LunaLibraries/Sources/LunaMediaDownload/LiveMediaDownloadManager.swift`,
-`LunaLibraries/Sources/LunaMediaDownload/SavedMediaStore.swift`,
-`Luna/AppDelegate.swift`, `Luna/SceneDelegate.swift`.
-Tests: `LunaTests` has media-download/saved-media coverage — extend it for the
-JobStore cache (cache serves writes back; persisted file still restorable) and
-the SavedMediaStore stat-token cache (cross-instance visibility via re-stat).
+Current coverage lives in `LiveMediaDownloadJobTests` and
+`SavedMediaStoreTests`; both use isolated SQL stores.
 
 ---
 

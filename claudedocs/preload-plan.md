@@ -25,8 +25,11 @@ Settings UI: a stepper row under Settings → Reader → Preload Links. Depth N
 means: preload links on the saved page (depth 1), then links on those pages (depth
 2), … up to N.
 
-## Data model (`PreloadStore`, ReaderKit, App Group `Preloads/`)
-`preloads.json` = `[urlKey: PreloadEntry]`.
+## Data model (`PreloadStore`, App Group `Preloads/` + `saves.sqlite`)
+**There is no `preloads.json`.** The page bodies are files in `Preloads/`; every
+piece of metadata about a page is a `preload_pages` row (with its outbound links in
+`preload_page_links`), so nothing about the cache scales as a JSON collection. See
+`claudedocs/saves.md`. `PreloadEntry` is the in-memory projection of that row.
 - `urlKey` = sha256 hex of the canonical URL (`ArticleFetcher.canonicalForArchiving`
   / unwrapped + lowercased host + no fragment). Stable, filesystem-safe.
 - `PreloadEntry`:

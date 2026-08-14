@@ -7,6 +7,13 @@ import LunaAppConfig
 import LunaModels
 import Foundation
 
+private enum SavesStoreError: Error {
+    case databaseUnavailable
+    case duplicateMediaItemID(UUID)
+    case mediaFileOwnershipMismatch(UUID)
+    case missingOwningSave(UUID)
+}
+
 public extension Notification.Name {
     /// Posted whenever the saves list changes (add/update/delete).
     ///
@@ -1655,11 +1662,7 @@ public final class SavesStore {
         guard let database = database() else { return [] }
         do {
             return try database.perform { db in
-                var items: [SavedMediaItem] = []
-                try db.query(MediaSaveRow.selectSQL) { row in
-                    if let item = MediaSaveRow.item(from: row) { items.append(item) }
-                }
-                return items
+                try Self.readMediaItems(in: db)
             }
         } catch {
             record(error, "read media rows")
@@ -1688,71 +1691,101 @@ public final class SavesStore {
         }
     }
 
-    /// Inserts or updates one media row, and says whether it landed. A row whose
-    /// save is not there records nothing: the save is what owns its files, so a
-    /// media row without one could never be freed.
-    @discardableResult
-    public func writeMediaItem(_ item: SavedMediaItem) -> Bool {
-        guard let database = database() else { return false }
-        do {
-            return try database.transaction { db in
-                try db.run(MediaSaveRow.upsertSQL) {
-                    try MediaSaveRow.bindUpsert(item, to: $0)
-                }
-                return try db.scalarInt(
-                    "SELECT 1 FROM media_saves WHERE save_id = ?",
-                    { try $0.bind(1, uuid: item.id) }) != nil
-            }
-        } catch {
-            record(error, "write media row")
-            return false
-        }
-    }
-
-    /// Drops one media row. Its files are released by the reconcile that follows,
-    /// or by the save's own delete cascade — whichever gets there first.
-    public func deleteMediaItem(id: UUID) {
-        guard let database = database() else { return }
-        do {
-            try database.transaction { db in
-                try db.run("DELETE FROM media_saves WHERE save_id = ?") {
-                    try $0.bind(1, uuid: id)
-                }
-            }
-        } catch {
-            record(error, "delete media row")
-        }
-    }
-
-    /// Makes the media table exactly `items`: rows it no longer lists are deleted,
-    /// the rest inserted or updated, all in one transaction.
+    /// Applies one read-modify-write to the media library while holding SQLite's
+    /// cross-process write lock. `SavedMediaStore` must use this for every ordinary
+    /// mutation: an `NSLock` only serialises one instance in one process, while the
+    /// app and its extensions all edit these rows.
     ///
-    /// `SavedMediaStore` reads the list, edits it, and hands it back, so this is
-    /// the write half of that. One transaction means another process sees the whole
-    /// edit or none of it — which the atomic manifest write it replaces could only
-    /// promise for the file, not for the file plus its ownership edges.
-    public func replaceMediaItems(_ items: [SavedMediaItem]) {
-        guard let database = database() else { return }
-        do {
-            try database.transaction { db in
-                // `uuidString` is hex and dashes, so the list is safe to inline —
-                // the same reason `heldPaths` inlines its kind list. An empty list
-                // has no `NOT IN ()` form, so it deletes everything.
-                if items.isEmpty {
-                    try db.run("DELETE FROM media_saves")
-                } else {
-                    let keep = items.map { "'\($0.id.uuidString)'" }.joined(separator: ", ")
-                    try db.run("DELETE FROM media_saves WHERE save_id NOT IN (\(keep))")
-                }
-                for item in items {
-                    try db.run(MediaSaveRow.upsertSQL) {
-                        try MediaSaveRow.bindUpsert(item, to: $0)
-                    }
-                }
-            }
-        } catch {
-            record(error, "replace media rows")
+    /// Only rows that changed are written. Besides avoiding needless work, that
+    /// preserves fields an older sibling does not understand on every unrelated
+    /// row. SQL failures propagate so a caller never reports success or releases
+    /// files for a row change that did not commit.
+    public func mutateMediaItems<Result>(
+        _ body: (inout [SavedMediaItem]) throws -> Result
+    ) throws -> Result {
+        guard let database = database() else { throw SavesStoreError.databaseUnavailable }
+        let result = try database.transaction { db in
+            let original = try Self.readMediaItems(in: db)
+            var updated = original
+            let result = try body(&updated)
+            try Self.applyMediaChanges(from: original, to: updated, in: db)
+            return result
         }
+        reapPendingDeletes()
+        return result
+    }
+
+    /// Replaces the complete media table for explicit reset/test seeding only.
+    /// Production edits use `mutateMediaItems`, which cannot overwrite a sibling
+    /// process's row from a stale pre-transaction snapshot.
+    public func replaceMediaItems(_ items: [SavedMediaItem]) throws {
+        try mutateMediaItems { $0 = items }
+    }
+
+    private static func readMediaItems(in database: SavesDatabase) throws -> [SavedMediaItem] {
+        var items: [SavedMediaItem] = []
+        try database.query(MediaSaveRow.selectSQL) { row in
+            if let item = MediaSaveRow.item(from: row) { items.append(item) }
+        }
+        return items
+    }
+
+    private static func applyMediaChanges(
+        from original: [SavedMediaItem], to updated: [SavedMediaItem], in database: SavesDatabase
+    ) throws {
+        let oldByID = Dictionary(uniqueKeysWithValues: original.map { ($0.id, $0) })
+        var newByID: [UUID: SavedMediaItem] = [:]
+        for item in updated {
+            guard newByID.updateValue(item, forKey: item.id) == nil else {
+                throw SavesStoreError.duplicateMediaItemID(item.id)
+            }
+        }
+
+        for id in oldByID.keys where newByID[id] == nil {
+            try database.run("DELETE FROM media_saves WHERE save_id = ?") {
+                try $0.bind(1, uuid: id)
+            }
+            try SavedFileOwnership.reconcile(
+                saveID: id, kinds: mediaFileKinds, artifacts: [], in: database)
+            try verifyMediaOwnership(saveID: id, artifacts: [], in: database)
+        }
+        for item in updated where oldByID[item.id] != item {
+            try database.run(MediaSaveRow.upsertSQL) {
+                try MediaSaveRow.bindUpsert(item, to: $0)
+            }
+            guard try database.scalarInt(
+                "SELECT 1 FROM media_saves WHERE save_id = ?",
+                { try $0.bind(1, uuid: item.id) }) != nil
+            else { throw SavesStoreError.missingOwningSave(item.id) }
+            let artifacts = mediaArtifacts(of: item)
+            try SavedFileOwnership.reconcile(
+                saveID: item.id, kinds: mediaFileKinds, artifacts: artifacts, in: database)
+            try verifyMediaOwnership(saveID: item.id, artifacts: artifacts, in: database)
+        }
+    }
+
+    private static func mediaArtifacts(
+        of item: SavedMediaItem
+    ) -> [(OwnedFileKind, OwnedFilePath)] {
+        var artifacts: [(OwnedFileKind, OwnedFilePath)] = []
+        if let fileName = item.fileName,
+           let path = SavedFileOwnership.mediaFilePath(fileName) {
+            artifacts.append((.mediaFile, path))
+        }
+        if let thumbnailFileName = item.thumbnailFileName,
+           let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
+            artifacts.append((.mediaThumbnail, path))
+        }
+        return artifacts
+    }
+
+    private static func verifyMediaOwnership(
+        saveID: UUID, artifacts: [(OwnedFileKind, OwnedFilePath)], in database: SavesDatabase
+    ) throws {
+        let wanted = Set(artifacts.map(\.1))
+        let held = Set(try SavedFileOwnership.heldPaths(
+            saveID: saveID, kinds: mediaFileKinds, in: database))
+        guard held == wanted else { throw SavesStoreError.mediaFileOwnershipMismatch(saveID) }
     }
 
     // MARK: - Downloaded media files
@@ -1761,14 +1794,12 @@ public final class SavesStore {
     /// and frees whatever it held before. Either name may be nil: archiving keeps
     /// the poster and drops the media, and a deleted download names neither.
     ///
-    /// This is the ONE call `SavedMediaStore` makes after a manifest write. The
-    /// files it stops naming reach `pending_deletes` through the release trigger,
-    /// so the store never unlinks anything itself — which is what makes the
-    /// destructive half of a Photos export crash-safe without a second manifest
-    /// write to remember it by.
+    /// Ordinary media-row edits reconcile these edges in their own transaction.
+    /// This explicit form cleans up a pre-commit file claim if the row transaction
+    /// fails.
     public func reconcileMediaFiles(
         saveID: UUID, fileName: String?, thumbnailFileName: String?
-    ) {
+    ) throws {
         var artifacts: [(OwnedFileKind, OwnedFilePath)] = []
         if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
             artifacts.append((.mediaFile, path))
@@ -1777,7 +1808,8 @@ public final class SavesStore {
            let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
             artifacts.append((.mediaThumbnail, path))
         }
-        writeFileOwnership { db in
+        guard let database = database() else { throw SavesStoreError.databaseUnavailable }
+        try database.transaction { db in
             try SavedFileOwnership.reconcile(
                 saveID: saveID, kinds: Self.mediaFileKinds, artifacts: artifacts, in: db)
         }
@@ -1790,16 +1822,27 @@ public final class SavesStore {
     /// process killed in between leaves a file the database owns rather than one
     /// nobody does. The reconcile that follows the commit — or the failure — frees
     /// whichever set lost.
-    public func claimMediaFiles(saveID: UUID, fileName: String?, thumbnailFileName: String?) {
-        writeFileOwnership { db in
+    public func claimMediaFiles(
+        saveID: UUID, fileName: String?, thumbnailFileName: String?
+    ) throws {
+        guard let database = database() else { throw SavesStoreError.databaseUnavailable }
+        try database.transaction { db in
+            var claimed: [(OwnedFileKind, OwnedFilePath)] = []
             if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
                 try SavedFileOwnership.attach(
                     path: path, kind: .mediaFile, to: saveID, in: db)
+                claimed.append((.mediaFile, path))
             }
             if let thumbnailFileName,
                let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
                 try SavedFileOwnership.attach(
                     path: path, kind: .mediaThumbnail, to: saveID, in: db)
+                claimed.append((.mediaThumbnail, path))
+            }
+            let held = Set(try SavedFileOwnership.heldPaths(
+                saveID: saveID, kinds: Self.mediaFileKinds, in: db))
+            guard Set(claimed.map(\.1)).isSubset(of: held) else {
+                throw SavesStoreError.mediaFileOwnershipMismatch(saveID)
             }
         }
     }

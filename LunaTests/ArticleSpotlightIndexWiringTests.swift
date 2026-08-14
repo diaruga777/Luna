@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import XCTest
 @testable import Luna
 
@@ -56,5 +57,42 @@ final class ArticleSpotlightIndexWiringTests: XCTestCase {
         let removed = ArticleSpotlightIndexWiring.removedIdentifiers(
             previousIDs: ["a", "b"], currentIDs: ["a", "b", "c"])
         XCTAssertTrue(removed.isEmpty)
+    }
+
+    func testLegacyDefaultsReconciliationKeepsLiveAndRemovesDeletedIDs() {
+        let suiteName = "ArticleSpotlightIndexWiringTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            ["defaults-live", "defaults-deleted"],
+            forKey: "articleSpotlightIndex.lastIndexedIDs")
+        let state = SpotlightIndexState(
+            indexedIDs: ["current-live"],
+            legacyIndexedIDs: ["sql-live", "sql-deleted"],
+            needsLegacyReconciliation: true)
+
+        let previous = ArticleSpotlightIndexWiring.previousIdentifiers(
+            state: state, legacyDefaults: defaults)
+        let removed = ArticleSpotlightIndexWiring.removedIdentifiers(
+            previousIDs: previous,
+            currentIDs: ["current-live", "defaults-live", "sql-live"])
+
+        XCTAssertEqual(Set(removed), ["defaults-deleted", "sql-deleted"])
+    }
+
+    func testCompletedSurfaceDoesNotReconsumeSharedLegacyIDs() {
+        let suiteName = "ArticleSpotlightIndexWiringTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            ["other-app-id"], forKey: "articleSpotlightIndex.lastIndexedIDs")
+        let state = SpotlightIndexState(
+            indexedIDs: ["this-app-id"], legacyIndexedIDs: ["old-sql-id"],
+            needsLegacyReconciliation: false)
+
+        XCTAssertEqual(
+            ArticleSpotlightIndexWiring.previousIdentifiers(
+                state: state, legacyDefaults: defaults),
+            ["this-app-id"])
     }
 }

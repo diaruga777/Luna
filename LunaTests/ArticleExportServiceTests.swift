@@ -78,7 +78,7 @@ final class ArticleExportServiceTests: XCTestCase {
         updated.blocks = content.blocks.map { block in
             guard block.kind == .image, let raw = block.imageURLString else { return block }
             var block = block
-            let name = "\(ArticleImageFiles.stableBase(forImageURL: raw)).png"
+            let name = ArticleImageFiles.newFileName(fileExtension: "png")
             let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 10)).image {
                 UIColor.red.setFill()
                 $0.fill(CGRect(x: 0, y: 0, width: 20, height: 10))

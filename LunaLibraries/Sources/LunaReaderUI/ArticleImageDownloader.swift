@@ -102,13 +102,11 @@ public enum ArticleImageDownloader {
                 blocks.append(block)
                 continue
             }
-            // Images are keyed by a stable hash of their URL, NOT the item id, so the
-            // same image reuses one local file across every reader/open (the inline
-            // viewer builds a fresh transient item each time — itemId naming meant it
-            // re-fetched every open). If a local copy already exists, skip the network.
-            let base = Self.stableBase(for: rawURL)
-            if let existing = Self.existingFileName(
-                base: base, in: store.articlesDirectory,
+            // Reuse only a copy the database can claim under its write lock. A
+            // path queued for deletion is retired, even when its bytes are still
+            // visible on disk, so this can never revive a pending-delete path.
+            if let existing = store.claimLiveImageCopy(
+                sourceURL: rawURL, for: itemID,
                 animatedGIFOnly: expectsGIFAnimation(imageURL)
             ) {
                 block.imageFileName = existing
@@ -124,7 +122,10 @@ public enum ArticleImageDownloader {
                 continue
             }
 
-            let fileName = "\(base).\(image.fileExtension)"
+            // This name intentionally has no URL-derived component. Once any
+            // path is marked for deletion it is gone forever; a later fetch of
+            // the same URL must therefore land somewhere new.
+            let fileName = ArticleImageFiles.newFileName(fileExtension: image.fileExtension)
             let destination = store.articlesDirectory.appendingPathComponent(fileName)
             do {
                 try image.data.write(to: destination, options: .atomic)
@@ -144,67 +145,37 @@ public enum ArticleImageDownloader {
         return updated
     }
 
-    /// Synchronously fill in `imageFileName` for every image block whose downloaded
-    /// file already exists on disk (keyed by the image URL's stable hash). No network,
-    /// no decoding — just a hash + file-existence check per image, cheap enough to run
-    /// on the main thread right before the first render, so on-disk images bake into
-    /// the article *with the text* instead of popping in later via the async `download`.
-    /// Blocks whose file isn't cached yet are returned unchanged (the async `download`
-    /// fetches those). Returns `content` untouched when no image needs resolving.
+    /// Clears stale recorded names synchronously. Finding and claiming another
+    /// live copy requires a write transaction, so the async downloader performs
+    /// that work rather than deriving a filename from the image URL.
     public static func resolveLocalImages(
         _ content: ArticleContent, store: SavesStore
     ) -> ArticleContent {
         guard content.blocks.contains(where: { block in
-            guard block.kind == .image else { return false }
-            if block.imageFileName == nil { return true }
-            guard let rawURL = block.imageURLString, let imageURL = URL(string: rawURL),
-                  expectsGIFAnimation(imageURL) else { return false }
-            return block.imageFileName?.lowercased().hasSuffix(".gif") != true
+            guard block.kind == .image, let name = block.imageFileName else { return false }
+            let missing = !FileManager.default.fileExists(
+                atPath: store.articlesDirectory.appendingPathComponent(name).path)
+            let needsGIFRepair = block.imageURLString.flatMap(URL.init(string:))
+                .map(expectsGIFAnimation) == true && !name.lowercased().hasSuffix(".gif")
+            return missing || needsGIFRepair
         })
         else { return content }
         let directory = store.articlesDirectory
         var blocks: [ArticleContent.Block] = []
         blocks.reserveCapacity(content.blocks.count)
         for var block in content.blocks {
-            if block.kind == .image, let rawURL = block.imageURLString,
-               let imageURL = URL(string: rawURL) {
-                let expectsAnimation = expectsGIFAnimation(imageURL)
-                if let current = block.imageFileName,
-                   expectsAnimation, !current.lowercased().hasSuffix(".gif") {
-                    // Unlink a legacy frame-zero JPEG so the reader's missing-image
-                    // pass can fetch the animation again.
-                    block.imageFileName = nil
-                }
-                if block.imageFileName == nil,
-                   let existing = existingFileName(
-                       base: stableBase(for: rawURL), in: directory,
-                       animatedGIFOnly: expectsAnimation) {
-                    block.imageFileName = existing
-                }
+            if block.kind == .image, let current = block.imageFileName {
+                let missing = !FileManager.default.fileExists(
+                    atPath: directory.appendingPathComponent(current).path)
+                let needsGIFRepair = block.imageURLString.flatMap(URL.init(string:))
+                    .map(expectsGIFAnimation) == true && !current.lowercased().hasSuffix(".gif")
+                if missing || needsGIFRepair { block.imageFileName = nil }
             }
             blocks.append(block)
         }
         var updated = content
         updated.blocks = blocks
         return updated
-    }
-
-    /// Stable, filesystem-safe filename stem for an image URL (so the same image maps
-    /// to one local file regardless of which item/open requested it).
-    ///
-    /// The naming lives in `LunaStorage.ArticleImageFiles` because the exporters
-    /// resolve files by it too and can't see this module — the two ends MUST
-    /// agree, so there is one definition.
-    private static func stableBase(for rawURL: String) -> String {
-        ArticleImageFiles.stableBase(forImageURL: rawURL)
-    }
-
-    /// An already-downloaded file for `base` (any image extension), or nil.
-    private static func existingFileName(
-        base: String, in directory: URL, animatedGIFOnly: Bool = false
-    ) -> String? {
-        ArticleImageFiles.existingFileName(
-            base: base, in: directory, animatedGIFOnly: animatedGIFOnly)
     }
 
     private static func fetch(_ url: URL, refererURL: URL) async -> (data: Data, fileExtension: String)? {

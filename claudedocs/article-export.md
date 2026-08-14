@@ -113,7 +113,8 @@ already on disk (or fetchable):
 
 So an export must not read the recorded name and stop. Two pieces:
 
-`LunaModels/ArticleImageFiles` — the URL-hash file naming
+`LunaModels/ArticleImageFiles` — UUID image file naming; the storage database
+maps a source URL to a live copy when it can be claimed safely
 (`img-<sha256 prefix>.<ext>`) and `localFile(for:in:)`, which falls back from
 the recorded name to the hash-keyed file the downloader actually wrote. It sits
 in LunaModels because the writer (`ArticleImageDownloader`, LunaReaderUI) and

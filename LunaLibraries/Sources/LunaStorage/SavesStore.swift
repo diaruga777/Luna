@@ -851,23 +851,37 @@ public final class SavesStore {
         let saved: SavedItem = write { db -> SavedItem in
             guard var stored = try SavesReader.item(id: item.id, in: db) else { return item }
             let previous = stored.item
+            // A retired path is gone permanently. A reader may have observed a
+            // file just before another process released it; under this write lock
+            // discard that stale reference so its next image pass downloads a new,
+            // uniquely named copy instead of reviving the dead path.
+            var persistedContent = content
+            for index in persistedContent.blocks.indices {
+                guard let name = persistedContent.blocks[index].imageFileName,
+                      let path = SavedFileOwnership.imagePath(name),
+                      try SavedFileOwnership.canAttach(path: path, in: db)
+                else {
+                    persistedContent.blocks[index].imageFileName = nil
+                    continue
+                }
+            }
             // The images this content references, claimed in the same transaction
             // as the row: nil while the content write has not succeeded, because a
             // save that failed to write claims nothing.
             var ownedImages: [String]?
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
-            if let data = try? JSONEncoder().encode(content),
+            if let data = try? JSONEncoder().encode(persistedContent),
                (try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName),
                                 options: .atomic)) != nil {
                 BackupPolicy.includeInBackups(self.articlesDirectory.appendingPathComponent(fileName))
                 stored.item.contentFileName = fileName
-                stored.item.title = content.title
-                ownedImages = ArticleImageFiles.referencedNames(in: content)
+                stored.item.title = persistedContent.title
+                ownedImages = ArticleImageFiles.referencedNames(in: persistedContent)
                 // Real content now exists (possibly after the user solved an archive
                 // CAPTCHA), so this is the terminal ready state regardless of how it got here.
                 stored.item.state = .ready
-                stored.item.wordCount = content.blocks.reduce(0) {
+                stored.item.wordCount = persistedContent.blocks.reduce(0) {
                     $0 + $1.text.split(whereSeparator: { $0.isWhitespace }).count
                 }
             } else {
@@ -885,6 +899,13 @@ public final class SavesStore {
                         SavedFileOwnership.imagePath(name).map { (OwnedFileKind.image, $0) }
                     },
                     in: db)
+                for block in persistedContent.blocks {
+                    guard let sourceURL = block.imageURLString,
+                          let name = block.imageFileName,
+                          let path = SavedFileOwnership.imagePath(name)
+                    else { continue }
+                    try SavedFileOwnership.registerImageSource(sourceURL, for: path, in: db)
+                }
             }
             return stored.item
         } ?? item
@@ -1155,6 +1176,60 @@ public final class SavesStore {
         guard let database = database() else { return }
         PendingDeleteReaper.reap(
             in: database, containerURL: containerURL, fileManager: fileManager)
+    }
+
+    /// Atomically claims the current live local copy of `sourceURL` for `itemID`.
+    /// The mapping and the ownership edge are examined and written under one
+    /// SQLite write lock, so a path that was released between an earlier lookup
+    /// and this claim is rejected rather than rescued.
+    public func claimLiveImageCopy(
+        sourceURL: String, for itemID: UUID, animatedGIFOnly: Bool
+    ) -> String? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in
+                var path: String?
+                try db.query(
+                    """
+                    SELECT files.relative_path FROM image_sources
+                    JOIN files ON files.id = image_sources.file_id
+                    WHERE image_sources.source_url = ?
+                        AND NOT EXISTS (
+                            SELECT 1 FROM retired_paths
+                            WHERE relative_path = files.relative_path
+                        )
+                    """,
+                    { try $0.bind(1, sourceURL) }
+                ) { row in path = row.string(0) }
+                guard let path,
+                      let name = path.split(separator: "/").last.map(String.init),
+                      SavedFileOwnership.imagePath(name)?.relativePath == path,
+                      (!animatedGIFOnly || name.lowercased().hasSuffix(".gif")),
+                      fileManager.fileExists(
+                        atPath: articlesDirectory.appendingPathComponent(name).path)
+                else { return nil }
+
+                try SavedFileOwnership.attach(
+                    path: OwnedFilePath(path), kind: .image, to: itemID, in: db)
+                // `attach` is conditional on both the save and the tombstone
+                // check. Confirm the edge landed before handing this name back.
+                let claimed = try db.scalarInt(
+                    """
+                    SELECT 1 FROM file_refs
+                    JOIN files ON files.id = file_refs.file_id
+                    WHERE files.relative_path = ? AND file_refs.save_id = ?
+                    """,
+                    { statement in
+                        try statement.bind(1, path)
+                        try statement.bind(2, uuid: itemID)
+                    }
+                ) != nil
+                return claimed ? name : nil
+            }
+        } catch {
+            record(error, "claim live image copy")
+            return nil
+        }
     }
 
     /// The artifact kinds a save's own columns decide, reconciled at every row

@@ -40,9 +40,7 @@ final class ArticleCoverThumbnailTests: XCTestCase {
     }
 
     /// Writes `data` under a lead-image file name and returns that name. Real
-    /// downloads use `ArticleImageDownloader.stableBase`'s hashed name, but
-    /// that helper is private, so the content here links the file name
-    /// directly instead of reproducing the hash.
+    /// downloads use fresh generated names; the content links the name directly.
     private func seedDownloadedImage(forImageURL imageURL: String, data: Data) -> String {
         let fileName = "lead-\(UUID().uuidString).jpg"
         try? data.write(to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)

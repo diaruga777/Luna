@@ -54,14 +54,14 @@ final class ArticleDocumentBuilderTests: XCTestCase {
     }
 
     /// An image block with NO recorded `imageFileName`, whose file sits on disk
-    /// under the URL-hash name the downloader uses — the state content is in
+    /// under an unrelated generated name — the state content is in
     /// between "saved" and "images finished downloading".
     private func hashNamedImageBlock(remote: String) -> ArticleContent.Block {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30)).image { context in
             UIColor.blue.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
         }
-        let name = "\(ArticleImageFiles.stableBase(forImageURL: remote)).png"
+        let name = ArticleImageFiles.newFileName(fileExtension: "png")
         try? image.pngData()?.write(to: scratch.appendingPathComponent(name))
         return ArticleContent.Block(
             kind: .image, text: "Unrecorded", links: [],
@@ -296,16 +296,13 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         XCTAssertEqual(try pdfImageCount(missing), 0)
     }
 
-    /// The regression this whole path exists for: content is persisted BEFORE
-    /// its images finish downloading, so an image block routinely has no
-    /// `imageFileName` while the file is already on disk under its URL hash.
-    /// Trusting the recorded name alone is what shipped picture-less exports.
-    func testPDFEmbedsImageResolvedByURLHashWhenFileNameIsUnrecorded() throws {
+    /// An unrecorded image cannot be found by deriving a path from its URL.
+    func testPDFDoesNotGuessAnImagePathWhenFileNameIsUnrecorded() throws {
         let block = hashNamedImageBlock(remote: "https://example.com/unrecorded.png")
         XCTAssertNil(block.imageFileName, "precondition: content recorded no file name")
         let data = ArticlePDFBuilder().build(
             content: content([block]), sourceURLString: "", imagesDirectory: scratch)
-        XCTAssertEqual(try pdfImageCount(data), 1)
+        XCTAssertEqual(try pdfImageCount(data), 0)
     }
 
     /// PDF has no animation, so a GIF contributes its first frame rather than
@@ -452,11 +449,11 @@ final class ArticleDocumentBuilderTests: XCTestCase {
         XCTAssertTrue(document.contains("[A chart]"), document)
     }
 
-    func testDOCXResolvesHashNamedImageWhenFileNameWasNotRecorded() {
+    func testDOCXDoesNotGuessAnImagePathWhenFileNameWasNotRecorded() {
         let data = docx([
             hashNamedImageBlock(remote: "https://example.com/docx-unrecorded.png"),
         ])
-        XCTAssertNotNil(zipEntry("word/media/image001.png", in: data))
+        XCTAssertNil(zipEntry("word/media/image001.png", in: data))
     }
 
     // MARK: - Format descriptors

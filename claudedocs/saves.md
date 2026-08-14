@@ -51,6 +51,13 @@ idempotently at open and stamped into `PRAGMA user_version`. **Every field is a
 typed column — there is no payload blob**, so a reader never has to understand a
 writer's version of a struct to read a column it does know.
 
+Schema 9 also repairs an ambiguous schema-6 rollout: two shipped builds used the
+same version stamp for different `preload_pages` layouts. Open therefore inspects
+that table's columns rather than trusting `user_version`; only the obsolete
+two-column layout is released and rebuilt, while a complete layout (including one
+with additive columns from a newer sibling) is preserved. Rebuilding releases its
+ownership edges and queues/tombstones the old page files before dropping the map.
+
 - `saves` — one row per save (`WITHOUT ROWID`, TEXT id). `seq` is the list's own
   order, highest first: a new save goes to the front and `bump` moves one there,
   independently of the dates a deck sorts by. URL, title, the dates, the state
@@ -165,6 +172,11 @@ reaper unlinks it. Three consequences:
   gets a row, reserving a NAME it never writes. That is what lets one mechanism
   count every page; the reaper already treats a queued path whose file is absent
   as done.
+- An article body is installed with an atomic file replacement before
+  `has_content` and `last_loaded_at` are advanced. A failed first write remains
+  content-less and immediately retryable; a failed re-record or viewer refresh
+  retains the older readable body, timestamp, image holdings, and memory-cache
+  value as one consistent version.
 - A page's IMAGES are held under the page's own key, which cascades from nothing,
   so a `preload_pages_release` trigger drops those holds when the row goes and the
   holder trigger frees any image no save still wants. `releaseTree` is left with

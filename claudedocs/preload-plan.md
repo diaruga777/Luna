@@ -8,16 +8,13 @@ URL-keyed, refcounted cache** so duplicate links across trees keep one copy and 
 deleted when no save references them.
 
 ## Hard safety invariant
-The preload cache is **physically isolated** from real saves: its own directory
-(`Preloads/`) and index (`preloads.json`), never the saves database. It shares
-only the downloaded IMAGES in `Articles/`, and those are refcounted per holder in
-the database (`file_holders`), so releasing a page never takes a picture a save
-still shows.
-Preload code never deletes or mutates a user's saved item or its files. The only
-touch-point in `SavesStore` is a single call on item delete that asks
-`PreloadStore` to release that root's subtree — and `PreloadStore` only ever deletes
-files under `Preloads/`. A bug in preloading can waste space or fail to preload; it
-can never corrupt or delete the user's library.
+Preloaded article bodies are physically isolated from real save bodies in their
+own `Preloads/` directory. Their metadata and ownership are SQL rows in the shared
+`saves.sqlite`, so a save deletion can cascade its preload claims without Swift
+walking a tree. Downloaded images live in `Articles/` and are refcounted per
+holder in the same ownership tables, so releasing a page never takes a picture a
+save still shows. Preload code never deletes or mutates a user's saved-item row or
+its save-owned content/archive/document files.
 
 ## Setting
 `ReaderSettings.preloadDepth: Int` (App Group), default **1**, clamped 0…5. 0 = off.
@@ -83,7 +80,10 @@ ownership down a subtree another root already cached. See `claudedocs/saves.md`.
   while the app is foreground-active, and only when its `lastLoadedAt` is at least
   48 hours old (legacy entries with no timestamp are treated as due once). If the app
   backgrounds mid-refresh, the refresh task is cancelled; first-time root/nested loads
-  are the only preload work allowed to spend background time.
+  are the only preload work allowed to spend background time. A record or refresh
+  advances `contentFile`/`lastLoadedAt`, reconciles image ownership, and warms memory
+  only after the atomic body-file replacement succeeds. Failure leaves a first load
+  immediately retryable, or preserves the previous readable version unchanged.
 - Resume: on `sceneWillEnterForeground` and in the existing inbox BGAppRefresh, call
   `PreloadCoordinator.resumeIncomplete()` which finds `.ready` articles whose root
   tree is missing/partial and continues. We do NOT re-refresh already-complete trees.

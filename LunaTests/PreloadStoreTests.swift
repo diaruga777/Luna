@@ -12,6 +12,8 @@ import XCTest
 @testable import LunaStorage
 
 final class PreloadStoreTests: XCTestCase {
+    private enum InjectedWriteError: Error { case failed }
+
     private var dir: URL!
     private var store: PreloadStore!
     private var saves: SavesStore!
@@ -97,6 +99,70 @@ final class PreloadStoreTests: XCTestCase {
 
         XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
         XCTAssertEqual(store.articleContent(for: u)?.title, "Refreshed")
+    }
+
+    func testFailedInitialArticleWriteStaysAbsentAndRetryable() throws {
+        let u = url("https://example.com/write-failure")
+        let root = makeSave()
+        let failingStore = PreloadStore(containerURL: dir) { _, _ in
+            throw InjectedWriteError.failed
+        }
+
+        let failed = try XCTUnwrap(failingStore.record(
+            url: u, rootID: root, kind: .article, content: article("Not persisted")))
+
+        XCTAssertNil(failed.contentFile)
+        XCTAssertNil(failed.lastLoadedAt)
+        XCTAssertNil(failingStore.articleContent(for: u))
+        XCTAssertTrue(failingStore.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+        let reservedFile = try XCTUnwrap(pageFile(u))
+        XCTAssertFalse(pageFileExists(reservedFile))
+
+        let retried = try XCTUnwrap(store.record(
+            url: u, rootID: root, kind: .article, content: article("Persisted")))
+        XCTAssertEqual(retried.contentFile, reservedFile)
+        XCTAssertNotNil(retried.lastLoadedAt)
+        XCTAssertEqual(store.articleContent(for: u)?.title, "Persisted")
+        XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+    }
+
+    func testFailedRerecordPreservesPriorContentAndRefreshAge() throws {
+        let u = url("https://example.com/failed-rerecord")
+        let root = makeSave()
+        store.record(url: u, rootID: root, kind: .article, content: article("Original"))
+        let before = try XCTUnwrap(store.entry(for: u))
+        let failingStore = PreloadStore(containerURL: dir) { _, _ in
+            throw InjectedWriteError.failed
+        }
+
+        let failed = try XCTUnwrap(failingStore.record(
+            url: u, rootID: root, kind: .article, content: article("Replacement")))
+
+        XCTAssertEqual(failed.contentFile, before.contentFile)
+        XCTAssertEqual(failed.lastLoadedAt, before.lastLoadedAt)
+        XCTAssertEqual(failingStore.articleContent(for: u)?.title, "Original")
+        XCTAssertTrue(failingStore.articleRefreshDue(
+            for: u, now: Date(timeIntervalSinceNow: 49 * 60 * 60),
+            minimumAge: 48 * 60 * 60))
+    }
+
+    func testFailedRefreshPreservesPriorContentAndRefreshAge() throws {
+        let u = url("https://example.com/failed-refresh")
+        store.record(url: u, rootID: makeSave(), kind: .article, content: article("Original"))
+        let before = try XCTUnwrap(store.entry(for: u))
+        let failingStore = PreloadStore(containerURL: dir) { _, _ in
+            throw InjectedWriteError.failed
+        }
+
+        failingStore.refreshArticle(for: u, content: article("Replacement"))
+
+        let after = try XCTUnwrap(failingStore.entry(for: u))
+        XCTAssertEqual(after.contentFile, before.contentFile)
+        XCTAssertEqual(after.lastLoadedAt, before.lastLoadedAt)
+        XCTAssertEqual(failingStore.articleContent(for: u)?.title, "Original")
+        XCTAssertTrue(failingStore.articleRefreshDue(
+            for: u, now: Date(timeIntervalSinceNow: 49 * 60 * 60),
+            minimumAge: 48 * 60 * 60))
     }
 
     /// The library is rows now, so the retired JSON index is not read — and the

@@ -10,6 +10,7 @@
 
 import LunaModels
 @testable import LunaStorage
+import SQLite3
 import XCTest
 
 final class SavesDatabaseTests: XCTestCase {
@@ -38,6 +39,28 @@ final class SavesDatabaseTests: XCTestCase {
         try SavesDatabase(fileURL: databaseURL)
     }
 
+    /// Creates a fixture without passing through `SavesSchema.create`, so an
+    /// upgrade test can reproduce a genuinely shipped old shape rather than a
+    /// current database whose version stamp was merely lowered.
+    private func createRawDatabase(_ sql: String) throws {
+        var database: OpaquePointer?
+        let openStatus = sqlite3_open(databaseURL.path, &database)
+        guard openStatus == SQLITE_OK, let database else {
+            throw NSError(domain: "SavesDatabaseTests.SQLite", code: Int(openStatus))
+        }
+        defer { sqlite3_close(database) }
+
+        var errorMessage: UnsafeMutablePointer<CChar>?
+        let executeStatus = sqlite3_exec(database, sql, nil, nil, &errorMessage)
+        guard executeStatus == SQLITE_OK else {
+            let message = errorMessage.map { String(cString: $0) } ?? "SQLite fixture failed"
+            sqlite3_free(errorMessage)
+            throw NSError(
+                domain: "SavesDatabaseTests.SQLite", code: Int(executeStatus),
+                userInfo: [NSLocalizedDescriptionKey: message])
+        }
+    }
+
     // MARK: - Configuration
 
     /// The configuration every process depends on: WAL (so a reader is never
@@ -52,6 +75,104 @@ final class SavesDatabaseTests: XCTestCase {
             XCTAssertEqual(try db.scalarInt("PRAGMA foreign_keys"), 1)
             XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
         }
+    }
+
+    /// Two different layouts were shipped with the version-6 stamp. Opening the
+    /// earlier, two-column layout detects it by shape, releases its page file, and
+    /// creates the complete table rather than trusting the ambiguous stamp.
+    func testAmbiguousVersionSixPreloadTableIsRebuiltByShape() throws {
+        try createRawDatabase("""
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE saves (
+                id TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL,
+                url_string TEXT NOT NULL, pending_archive_at REAL
+            ) WITHOUT ROWID;
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY, relative_path TEXT NOT NULL UNIQUE, kind TEXT
+            );
+            CREATE TABLE file_refs (
+                file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                save_id TEXT NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+                PRIMARY KEY (file_id, save_id)
+            ) WITHOUT ROWID;
+            CREATE TABLE file_holders (
+                file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                holder_key TEXT NOT NULL, PRIMARY KEY (file_id, holder_key)
+            ) WITHOUT ROWID;
+            CREATE TABLE preload_pages (
+                url_key TEXT PRIMARY KEY NOT NULL,
+                file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+            CREATE TABLE pending_deletes (
+                relative_path TEXT PRIMARY KEY NOT NULL, enqueued_at REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0
+            ) WITHOUT ROWID;
+            CREATE TABLE retired_paths (
+                relative_path TEXT PRIMARY KEY NOT NULL, retired_at REAL NOT NULL
+            ) WITHOUT ROWID;
+            INSERT INTO saves (id, seq, url_string)
+                VALUES ('11111111-1111-1111-1111-111111111111', 1,
+                        'https://example.com/root');
+            INSERT INTO files (id, relative_path, kind)
+                VALUES (41, 'Preloads/legacy-page.json', 'preloadPage');
+            INSERT INTO file_refs (file_id, save_id)
+                VALUES (41, '11111111-1111-1111-1111-111111111111');
+            INSERT INTO file_holders (file_id, holder_key)
+                VALUES (41, 'preload-owner:legacy-session');
+            INSERT INTO preload_pages (url_key, file_id) VALUES ('legacy-key', 41);
+            PRAGMA user_version = 6;
+            """)
+
+        let reopened = try openDatabase()
+        try reopened.perform { db in
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), 9)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM preload_pages"), 0)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM files WHERE id = 41"), 0)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM file_refs WHERE file_id = 41"), 0)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM file_holders WHERE file_id = 41"), 0)
+            XCTAssertEqual(
+                try db.scalarInt(
+                    "SELECT COUNT(*) FROM pending_deletes WHERE relative_path = 'Preloads/legacy-page.json'"),
+                1)
+            XCTAssertEqual(
+                try db.scalarInt(
+                    "SELECT COUNT(*) FROM retired_paths WHERE relative_path = 'Preloads/legacy-page.json'"),
+                1)
+
+            var columns: Set<String> = []
+            try db.query("PRAGMA table_info(preload_pages)") { row in
+                if let name = row.string(1) { columns.insert(name) }
+            }
+            XCTAssertTrue([
+                "url_key", "file_id", "url_string", "kind", "last_loaded_at", "has_content",
+            ].allSatisfy(columns.contains))
+        }
+    }
+
+    /// The other version-6 layout already has the current columns. Its rows must
+    /// survive the v9 open; shape detection makes the repair idempotent instead of
+    /// deleting a valid cache solely because its stamp is old.
+    func testCompleteVersionSixPreloadTableIsPreserved() throws {
+        let root = makeStore().add(urlString: "https://example.com/current-root")
+        let preload = PreloadStore(containerURL: directory)
+        let pageURL = URL(string: "https://example.com/current-page")!
+        XCTAssertNotNil(preload.record(
+            url: pageURL, rootID: root.id, kind: .article,
+            content: ArticleContent(title: "Current", blocks: [
+                .init(kind: .paragraph, text: String(repeating: "x", count: 1500), links: []),
+            ])))
+
+        try autoreleasepool {
+            let database = try openDatabase()
+            try database.perform { db in try db.execute("PRAGMA user_version = 6") }
+        }
+
+        let reopened = try openDatabase()
+        try reopened.perform { db in
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), 9)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM preload_pages"), 1)
+        }
+        XCTAssertEqual(PreloadStore(containerURL: directory).entry(for: pageURL)?.kind, .article)
     }
 
     // MARK: - Two connections, one file

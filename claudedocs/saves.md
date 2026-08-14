@@ -99,17 +99,21 @@ database, written in the same transaction as the row that made them. See
   is its identity. A live image may be shared by several saves, while a new
   download always gets a fresh URL-independent filename. `OwnedFileKind` says
   what it is (`content`, `archive`, `readerSource`,
-  `document`, `thumbnail`, `productImage`, `image`), which is what lets a save
-  reconcile one sort of artifact without disturbing the others.
+  `document`, `thumbnail`, `productImage`, `image`, `preloadPage`), which is what
+  lets a save reconcile one sort of artifact without disturbing the others.
 - `file_refs(file_id, save_id)` — which saves hold which files. **The reference
   count is the edge count**, so there is no counter to drift, and a save's delete
   cascades here: a delete cannot forget an artifact.
 - `file_holders(file_id, holder_key)` — the same ownership for a holder that is
-  NOT a save. A preloaded page (`PreloadStore`, keyed by the page's URL hash)
-  downloads its images into the same shared `Articles/` cache a save reads from,
-  so one table has to count both or a save's delete would take a live page's
-  picture with it. No foreign key: the holder lives outside this database and
-  `PreloadStore` releases its own keys.
+  NOT a save. Two kinds of holder use it. A preloaded page (`PreloadStore`, keyed
+  by the page's URL hash) downloads its images into the same shared `Articles/`
+  cache a save reads from, so one table has to count both or a save's delete
+  would take a live page's picture with it. The two preload owners that are not
+  saves — the tapped link and the pasteboard candidate — hold their PAGES here
+  under a `preload-owner:<uuid>` key, because there is no save row for them to
+  cascade from. No foreign key: the holder lives outside this database.
+- `preload_pages(url_key, file_id)` — one preloaded page's file, pointed at by
+  the page's URL hash. See **Preloaded pages** below.
 - `pending_deletes(relative_path, enqueued_at, attempts)` — files whose last
   holder is gone, waiting to be unlinked.
 - `retired_paths(relative_path, retired_at)` — permanent tombstones. A path is
@@ -129,6 +133,28 @@ A downloader can reuse an image only by atomically claiming its live
 `image_sources` mapping under SQLite's write lock; otherwise it downloads to a
 fresh UUID filename. The release trigger fires for a cascade-driven delete too,
 pinned by `SavedFileOwnershipTests`.
+
+**Preloaded pages are counted here too.** The preload cache keeps its pages as
+JSON files in its own `Preloads/` directory under its own `preloads.json` index
+(`claudedocs/preload-plan.md`), but the index no longer counts owners:
+`preload_pages(url_key, file_id)` points at the page's file and the page's owners
+are ordinary edges on that `files` row. So a save's delete cascades to its whole
+preload subtree, the release trigger queues each emptied page's file, and the one
+reaper unlinks it. Three consequences:
+
+- A page's file name is `page-<UUID>.json`, not the URL hash it used to be. The
+  mapping is a table for the same reason `image_sources` is one: the path is
+  retired on release, so a page reloaded later must land somewhere new.
+- A page that caches no content — a platform link, an unrepresentable one — still
+  gets a row, reserving a NAME it never writes. That is what lets one mechanism
+  count every page; the reaper already treats a queued path whose file is absent
+  as done.
+- A save's delete reaches its pages by CASCADE, before `PreloadStore` is told, so
+  the index is pruned by sweeping it against `preloadPageKeys()` rather than by
+  the answer from one release. An index written before this (owners in the JSON)
+  is moved over once per process by `PreloadStore.migrateLegacyOwnersIfNeeded`,
+  which writes the database FIRST so an interrupted run repeats itself instead of
+  stranding files.
 
 **The reaper is the second commit.** A file system cannot join a transaction, so
 releasing an artifact is two commits: the transaction records the intent, and

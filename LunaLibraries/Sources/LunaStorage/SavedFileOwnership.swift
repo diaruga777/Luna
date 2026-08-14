@@ -28,6 +28,10 @@ enum OwnedFileKind: String {
     /// `Articles/img-<UUID>.<ext>` — a downloaded article image. A live copy can
     /// be shared, but a path queued for deletion is never reused.
     case image
+    /// `Preloads/page-<UUID>.json` — one preloaded page's cached article. A page
+    /// that caches no content reserves this name without writing it, so every
+    /// page is counted the same way.
+    case preloadPage
 }
 
 /// A path the ownership tables may hold, and only this file can make one — the
@@ -36,10 +40,17 @@ struct OwnedFilePath: Hashable {
     let relativePath: String
 
     init(_ relativePath: String) { self.relativePath = relativePath }
+
+    /// The file's own name, without the directory the ownership tables record it
+    /// under. Every constructor builds the path from a plain name, so this is the
+    /// name that went in.
+    var lastPathComponent: String {
+        String(relativePath.split(separator: "/").last ?? "")
+    }
 }
 
-/// The writes to `files` / `file_refs` / `file_holders`: which saves and preloaded
-/// pages hold which files on disk.
+/// The writes to `files` / `file_refs` / `file_holders` / `preload_pages`: which
+/// saves and preloaded pages hold which files on disk.
 ///
 /// Every call here runs INSIDE the caller's transaction, alongside the row write
 /// that made the artifact set what it is. That is the point of moving ownership
@@ -69,6 +80,19 @@ enum SavedFileOwnership {
         guard fileName.hasPrefix("img-") else { return nil }
         return articlesPath(fileName)
     }
+
+    /// The path of a preloaded page's file, or nil for a name the preload cache
+    /// would not have produced. The cache's own index is excluded by name: a
+    /// corrupt entry must not be able to queue `preloads.json` for deletion.
+    static func preloadsPath(_ fileName: String) -> OwnedFilePath? {
+        guard fileName != PreloadStore.indexFileName else { return nil }
+        return path("Preloads", fileName)
+    }
+
+    /// A fresh name for a preloaded page. Independent of the page's URL, because
+    /// the path this becomes is retired the moment the page is released and a
+    /// later preload of the same URL has to land somewhere else.
+    static func newPreloadPageName() -> String { "page-\(UUID().uuidString).json" }
 
     /// A file name is only ever a name: one carrying a path separator produces
     /// no path at all.
@@ -259,20 +283,28 @@ enum SavedFileOwnership {
             try detachHolder(path: held, holderKey: holderKey, in: db)
         }
         for path in wanted {
-            try insertFile(path: path, kind: .image, in: db)
-            try db.run(
-                """
-                INSERT OR IGNORE INTO file_holders (file_id, holder_key)
-                    SELECT id, ? FROM files WHERE relative_path = ?
-                        AND NOT EXISTS (
-                            SELECT 1 FROM retired_paths
-                            WHERE relative_path = files.relative_path
-                        )
-                """
-            ) {
-                try $0.bind(1, holderKey)
-                try $0.bind(2, path.relativePath)
-            }
+            try attachHolder(path: path, kind: .image, holderKey: holderKey, in: db)
+        }
+    }
+
+    /// Records that `holderKey` holds `path`, inserting the file row when it is
+    /// new. Like `attach`, a retired path is refused rather than resurrected.
+    static func attachHolder(
+        path: OwnedFilePath, kind: OwnedFileKind, holderKey: String, in db: SavesDatabase
+    ) throws {
+        try insertFile(path: path, kind: kind, in: db)
+        try db.run(
+            """
+            INSERT OR IGNORE INTO file_holders (file_id, holder_key)
+                SELECT id, ? FROM files WHERE relative_path = ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM retired_paths
+                        WHERE relative_path = files.relative_path
+                    )
+            """
+        ) {
+            try $0.bind(1, holderKey)
+            try $0.bind(2, path.relativePath)
         }
     }
 
@@ -308,6 +340,70 @@ enum SavedFileOwnership {
             try $0.bind(1, holderKey)
             try $0.bind(2, path.relativePath)
         }
+    }
+
+    // MARK: - Preloaded pages
+
+    /// The live file of the preloaded page `urlKey`, or nil when the cache holds
+    /// no page for it.
+    static func preloadPagePath(urlKey: String, in db: SavesDatabase) throws -> OwnedFilePath? {
+        var path: String?
+        try db.query(
+            """
+            SELECT files.relative_path FROM preload_pages
+            JOIN files ON files.id = preload_pages.file_id
+            WHERE preload_pages.url_key = ?
+            """,
+            { try $0.bind(1, urlKey) }
+        ) { row in path = row.string(0) }
+        return path.map(recorded)
+    }
+
+    /// Points `urlKey` at `path`, inserting the file row when it is new.
+    ///
+    /// The caller must take an ownership edge on the same path in this
+    /// transaction: a `files` row nothing holds is never freed, because the
+    /// triggers that free one fire on an edge being deleted.
+    static func registerPreloadPage(
+        urlKey: String, path: OwnedFilePath, in db: SavesDatabase
+    ) throws {
+        try insertFile(path: path, kind: .preloadPage, in: db)
+        try db.run(
+            """
+            INSERT OR IGNORE INTO preload_pages (url_key, file_id)
+                SELECT ?, id FROM files
+                WHERE relative_path = ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM retired_paths
+                        WHERE relative_path = files.relative_path
+                    )
+            """
+        ) {
+            try $0.bind(1, urlKey)
+            try $0.bind(2, path.relativePath)
+        }
+    }
+
+    /// Drops one save's claim on every page it holds, leaving its other artifacts
+    /// alone. The mapping table is what scopes the delete to preloaded pages.
+    static func detachPreloadPages(saveID: UUID, in db: SavesDatabase) throws {
+        try db.run(
+            """
+            DELETE FROM file_refs WHERE save_id = ?
+                AND file_id IN (SELECT file_id FROM preload_pages)
+            """
+        ) { try $0.bind(1, uuid: saveID) }
+    }
+
+    /// The same, for an owner that is not a save. Its image claims, which are
+    /// keyed by page rather than by owner, are released separately.
+    static func detachPreloadPages(holderKey: String, in db: SavesDatabase) throws {
+        try db.run(
+            """
+            DELETE FROM file_holders WHERE holder_key = ?
+                AND file_id IN (SELECT file_id FROM preload_pages)
+            """
+        ) { try $0.bind(1, holderKey) }
     }
 
     // MARK: - Files

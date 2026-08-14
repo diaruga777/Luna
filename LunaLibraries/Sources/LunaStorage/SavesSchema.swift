@@ -26,9 +26,9 @@ import Foundation
 /// sort on these. **Prices are TEXT** so a `Decimal` keeps its exact digits.
 ///
 /// The file-ownership tables (`files` / `file_refs` / `file_holders` /
-/// `image_sources` / `pending_deletes` / `retired_paths`) own the FILES beside
-/// the database, with triggers that keep them honest. See `SavedFileOwnership` for the writes and
-/// `PendingDeleteReaper` for the unlink.
+/// `image_sources` / `preload_pages` / `pending_deletes` / `retired_paths`) own
+/// the FILES beside the database, with triggers that keep them honest. See
+/// `SavedFileOwnership` for the writes and `PendingDeleteReaper` for the unlink.
 enum SavesSchema {
 
     /// Creates the tables and indexes if they are absent, and stamps the schema
@@ -63,6 +63,10 @@ enum SavesSchema {
                 if existing > 0 && existing < 2 {
                     try backfillFileOwnership(in: database)
                 }
+                // Version 5 added `preload_pages`, and it starts empty. What fills
+                // it for an existing install is the preload cache's own index,
+                // which this has no business reading — see
+                // `PreloadStore.migrateLegacyOwnersIfNeeded`.
                 if existing < SavesDatabase.schemaVersion {
                     try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
                 }
@@ -258,6 +262,26 @@ enum SavesSchema {
         CREATE TABLE IF NOT EXISTS image_sources (
             source_url TEXT    PRIMARY KEY NOT NULL,
             file_id    INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
+        ) WITHOUT ROWID;
+
+        -- One preloaded page's file, pointed at by the page's URL hash. The page
+        -- itself lives in `PreloadStore`'s own `Preloads/` cache; this table is
+        -- the pointer into it, so the page's owners are ordinary ownership edges
+        -- on the `files` row — `file_refs` for the saves whose crawl reached the
+        -- page, `file_holders` for the two owners that are not saves. Deleting a
+        -- save therefore cascades to here, and the release trigger queues the
+        -- page's file for the same reaper every other artifact uses.
+        --
+        -- A mapping rather than a filename convention, for the reason
+        -- `image_sources` is one: a released path is retired forever, so a later
+        -- preload of the same URL must receive a different file. A page that
+        -- caches no content (a platform link, an unrepresentable one) still has a
+        -- row, and its `files` row reserves a NAME that is never written — which
+        -- is what lets one mechanism count every page. The reaper already clears
+        -- a queued path whose file is absent.
+        CREATE TABLE IF NOT EXISTS preload_pages (
+            url_key TEXT    PRIMARY KEY NOT NULL,
+            file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
         ) WITHOUT ROWID;
 
         -- Files whose last holder is gone, waiting to be unlinked. A file system

@@ -16,6 +16,11 @@ public enum PreloadKind: String, Codable {
 }
 
 /// One entry in the shared preload cache, keyed by the canonical URL's hash.
+///
+/// It carries what the page IS. Who holds it is not here — that is the saves
+/// database's `preload_pages` mapping and the ownership edges on the file it
+/// points at, so a save's delete cascades to a preloaded page the same way it
+/// reaches every other artifact.
 public struct PreloadEntry: Codable, Equatable {
     public var urlString: String
     public var kind: PreloadKind
@@ -23,23 +28,28 @@ public struct PreloadEntry: Codable, Equatable {
     /// Last time this page was successfully loaded/refreshed into the preload cache.
     /// nil means the entry predates this field and may be refreshed once on open.
     public var lastLoadedAt: Date?
-    /// Root SAVE item UUID strings whose preload subtree reaches this URL. The
-    /// refcount is `owners.count`; the entry's files are deleted when it hits zero.
-    public var owners: Set<String>
-    /// Hashed keys of outbound links discovered on this page (for subtree
-    /// teardown). Empty for non-article kinds.
+    /// Hashed keys of outbound links discovered on this page (so a second save
+    /// reaching this page can claim the subtree below it). Empty for non-article
+    /// kinds.
     public var children: [String]
+    /// The owners an index written before version 5 recorded here. Read once, by
+    /// the pass that moves them into the database, and never written again.
+    var legacyOwners: Set<String>?
+
+    private enum CodingKeys: String, CodingKey {
+        case urlString, kind, contentFile, lastLoadedAt, children
+        case legacyOwners = "owners"
+    }
 
     public init(
         urlString: String, kind: PreloadKind, contentFile: String? = nil,
         lastLoadedAt: Date? = nil,
-        owners: Set<String>, children: [String]
+        children: [String]
     ) {
         self.urlString = urlString
         self.kind = kind
         self.contentFile = contentFile
         self.lastLoadedAt = lastLoadedAt
-        self.owners = owners
         self.children = children
     }
 
@@ -47,6 +57,24 @@ public struct PreloadEntry: Codable, Equatable {
     /// resolved platform link, as opposed to `.unrepresentable`. Derived from
     /// `kind` alone.
     public var loadedSuccessfully: Bool { kind != .unrepresentable }
+}
+
+/// Who holds a preloaded page.
+///
+/// A save's claim is a `file_refs` edge, so deleting the save cascades it away.
+/// A session owner has no row to cascade from — it is one of the two fixed
+/// sentinels — so its claim is a `file_holders` edge that only it releases.
+enum PreloadPageOwner: Hashable {
+    case save(UUID)
+    case session(UUID)
+
+    /// The `file_holders` key a session owner writes, and nil for a save, which
+    /// holds through `file_refs` instead. Namespaced, because that table also
+    /// counts the images a preloaded page holds, keyed by page.
+    var holderKey: String? {
+        guard case let .session(id) = self else { return nil }
+        return "preload-owner:\(id.uuidString)"
+    }
 }
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. Its own
@@ -58,9 +86,12 @@ public struct PreloadEntry: Codable, Equatable {
 /// this store touches nothing else in it.
 ///
 /// Duplicate links (within one save's tree or across saves) share a single on-disk
-/// copy; each referencing root save is an "owner". Deleting a save releases its
-/// subtree (removes it from every entry's `owners`); entries with no owners left are
-/// deleted. Pure index logic is unit-tested; file I/O is best-effort (a cache).
+/// copy, and each referencing root is an owner. The owners are ownership edges in
+/// the saves database — `preload_pages` points at the page's file, `file_refs` and
+/// `file_holders` count who holds it — so deleting a save cascades to its whole
+/// subtree, and the page's file is freed by the trigger and the reaper that free
+/// every other artifact. This index says what a page IS, never who wants it.
+/// File I/O is best-effort (a cache).
 public final class PreloadStore {
     public static let shared = PreloadStore()
 
@@ -68,9 +99,28 @@ public final class PreloadStore {
     /// (vs. the save-time crawl's per-save owners). A tapped link is materialized on
     /// first open and recorded under this durable owner so it survives app relaunches
     /// and is NOT torn down when the save that surfaced it is deleted — the user reached
-    /// it, so it stays instant forever after. (Distinct from `PreloadCoordinator`'s
-    /// speculative `pasteboardOwner`, whose tree is released when the candidate changes.)
+    /// it, so it stays instant forever after. (Distinct from the speculative
+    /// `pasteboardOwner` below, whose tree is released when the candidate changes.)
     public static let tappedLinkOwner = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+
+    /// A fixed sentinel "owner" for the CURRENT pasteboard candidate's preloads — bounds
+    /// pasteboard preloading to the single clipboard link (its tree is released and
+    /// re-crawled when the candidate changes). A real save claims the same cached subtree
+    /// on actual save, so content survives this owner later being released.
+    public static let pasteboardOwner = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+
+    /// The owners that are not saves. Everything else `record` is given is a save
+    /// id, whose claim cascades with the save.
+    private static let sessionOwners: Set<UUID> = [tappedLinkOwner, pasteboardOwner]
+
+    /// How a root id claims a page. The two sentinels have no row in the saves
+    /// database to cascade from, so they hold as sessions.
+    static func owner(for rootID: UUID) -> PreloadPageOwner {
+        sessionOwners.contains(rootID) ? .session(rootID) : .save(rootID)
+    }
+
+    /// The index's own file name, which is never a page's.
+    static let indexFileName = "preloads.json"
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
@@ -86,6 +136,11 @@ public final class PreloadStore {
     /// Guards the lazy resolution of `ownershipStore` only.
     private let ownershipLock = NSLock()
     private var resolvedOwnershipStore: SavesStore?
+    /// Guards the once-per-process move of a pre-version-5 index's owner sets into
+    /// the database. Held across the work, so a second thread waits for it rather
+    /// than racing past a flag that is set but not yet true.
+    private let migrationLock = NSLock()
+    private var migratedLegacyOwners = false
 
     /// In-memory cache of decoded article content, keyed by URL hash. Lets the inline
     /// link viewer resolve a preloaded page **synchronously on the main thread** (no
@@ -137,7 +192,7 @@ public final class PreloadStore {
         return dir
     }
 
-    private var indexURL: URL { preloadsDirectory.appendingPathComponent("preloads.json") }
+    private var indexURL: URL { preloadsDirectory.appendingPathComponent(Self.indexFileName) }
 
     /// File URL for a preloaded entry's content (article JSON / webarchive).
     public func contentURL(fileName: String) -> URL {
@@ -205,8 +260,12 @@ public final class PreloadStore {
     // MARK: - Reads (safe from any process)
 
     public func entry(for url: URL) -> PreloadEntry? {
+        entry(forKey: Self.key(for: url))
+    }
+
+    func entry(forKey key: String) -> PreloadEntry? {
         lock.lock(); defer { lock.unlock() }
-        return loadIndex()[Self.key(for: url)]
+        return loadIndex()[key]
     }
 
     /// Largest preloaded article we'll decode SYNCHRONOUSLY on the main thread (an
@@ -279,12 +338,20 @@ public final class PreloadStore {
         url: URL, rootID: UUID, kind: PreloadKind,
         content: ArticleContent? = nil,
         children: [URL] = []
-    ) -> PreloadEntry {
+    ) -> PreloadEntry? {
+        migrateLegacyOwnersIfNeeded()
         let key = Self.key(for: url)
+        // The page's file is claimed before it is written: the database decides
+        // the name, so a page another process registered first is written once
+        // rather than twice, and a page that nothing can own is not written at
+        // all. A page caching no content reserves its name without using it.
+        guard let fileName = ownershipStore().claimPreloadPage(
+            urlKey: key, owner: Self.owner(for: rootID))
+        else { return nil }
         var contentFile: String?
         if kind == .article, let content, let data = try? JSONEncoder().encode(content) {
-            contentFile = "\(key).json"
-            let fileURL = contentURL(fileName: "\(key).json")
+            contentFile = fileName
+            let fileURL = contentURL(fileName: fileName)
             try? data.write(to: fileURL, options: .atomic)
             BackupPolicy.excludeFromBackups(fileURL)
         }
@@ -294,12 +361,11 @@ public final class PreloadStore {
             var entry = index[key] ?? PreloadEntry(
                 urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
                 lastLoadedAt: kind == .unrepresentable ? nil : now,
-                owners: [], children: childKeys)
+                children: childKeys)
             entry.kind = kind
             if contentFile != nil { entry.contentFile = contentFile }
             entry.children = childKeys
             if entry.loadedSuccessfully { entry.lastLoadedAt = now }
-            entry.owners.insert(rootID.uuidString)
             index[key] = entry
             return entry
         }
@@ -320,24 +386,26 @@ public final class PreloadStore {
     /// extend ownership down the shared subtree.
     @discardableResult
     public func addOwner(_ rootID: UUID, toKey key: String) -> PreloadEntry? {
-        mutate { index in
-            guard var entry = index[key] else { return nil }
-            entry.owners.insert(rootID.uuidString)
-            index[key] = entry
-            return entry
-        }
+        migrateLegacyOwnersIfNeeded()
+        guard ownershipStore().holdPreloadPage(urlKey: key, owner: Self.owner(for: rootID))
+        else { return nil }
+        return entry(forKey: key)
     }
 
-    /// Overwrites the cached article content for `url` IF an entry already exists
-    /// (a viewer background-refresh), preserving owners/kind. No-op otherwise — a
-    /// refresh never creates an unowned entry.
+    /// Overwrites the cached article content for `url` IF the cache already holds
+    /// the page (a viewer background-refresh), preserving its kind and its owners.
+    /// No-op otherwise — a refresh never creates an unowned entry.
     public func refreshArticle(for url: URL, content: ArticleContent) {
+        migrateLegacyOwnersIfNeeded()
         let key = Self.key(for: url)
         let now = Date()
+        // The page's own file, which it holds whether or not it has written one
+        // yet. An entry that failed to encode its content on first record has a
+        // name reserved and nothing in it.
+        guard let file = ownershipStore().preloadPageFileName(urlKey: key) else { return }
         let refreshed: Bool = mutate { index in
             guard var entry = index[key], entry.kind == .article,
                   let data = try? JSONEncoder().encode(content) else { return false }
-            let file = entry.contentFile ?? "\(key).json"
             let fileURL = contentURL(fileName: file)
             try? data.write(to: fileURL, options: .atomic)
             BackupPolicy.excludeFromBackups(fileURL)
@@ -353,34 +421,97 @@ public final class PreloadStore {
 
     // MARK: - Teardown
 
-    /// Releases the entire preload subtree owned by `rootID`: removes it from every
-    /// entry's `owners`; any entry left with no owners has its files deleted and is
-    /// dropped. Only ever deletes files under `Preloads/`.
+    /// Releases the entire preload subtree owned by `rootID`.
+    ///
+    /// One call, no tree walk: every page the crawl reached carries an ownership
+    /// edge for its root, so dropping that root's edges releases the subtree at
+    /// once. Each page whose last edge went reaches `pending_deletes` through the
+    /// same trigger every other artifact uses, and `PendingDeleteReaper` unlinks it.
     public func releaseTree(rootID: UUID) {
-        let id = rootID.uuidString
-        var orphanedKeys: [String] = []
-        let orphanedFiles: [String] = mutate { index in
-            var files: [String] = []
-            for (key, var entry) in index where entry.owners.contains(id) {
-                entry.owners.remove(id)
-                if entry.owners.isEmpty {
-                    if let file = entry.contentFile { files.append(file) }
-                    orphanedKeys.append(key)
-                    index[key] = nil
-                } else {
-                    index[key] = entry
-                }
-            }
-            return files
+        migrateLegacyOwnersIfNeeded()
+        ownershipStore().releasePreloadPages(ownedBy: Self.owner(for: rootID))
+        pruneReleasedPages()
+    }
+
+    /// Drops every index entry the database no longer holds a page for, and
+    /// releases what those pages held.
+    ///
+    /// A sweep rather than the answer from one release, because the release that
+    /// matters most never comes through `releaseTree` at all: deleting a save
+    /// takes its edges with the row, so the pages it emptied are already gone by
+    /// the time this store is told. The live set is read INSIDE the index write,
+    /// so a page another process records mid-sweep is either wholly present or
+    /// wholly absent, never pruned out from under its own row.
+    private func pruneReleasedPages() {
+        let orphanedKeys: [String] = mutate { index in
+            let live = self.ownershipStore().preloadPageKeys()
+            let gone = index.keys.filter { !live.contains($0) }
+            for key in gone { index[key] = nil }
+            return gone
         }
-        for file in orphanedFiles {
-            try? fileManager.removeItem(at: contentURL(fileName: file))
-        }
+        guard !orphanedKeys.isEmpty else { return }
         // Release the orphaned pages' images (each deleted only if no other page or
         // save owns it) and drop their decoded copies from the in-memory cache.
         ownershipStore().releasePreloadedPages(pageKeys: orphanedKeys)
         for key in orphanedKeys {
             memoryCache.removeObject(forKey: key as NSString)
+        }
+    }
+
+    // MARK: - Migration
+
+    /// Moves the owner sets of an index written before the database counted them.
+    ///
+    /// Runs once per process, and only does work while an entry still carries the
+    /// old set. The database is written FIRST: a run interrupted between the two
+    /// finds the sets still in the index and registers them again, which is
+    /// idempotent, where the other order would lose an owner and strand its files.
+    private func migrateLegacyOwnersIfNeeded() {
+        migrationLock.lock()
+        defer { migrationLock.unlock() }
+        guard !migratedLegacyOwners else { return }
+        migratedLegacyOwners = true
+
+        let legacy = legacyOwnedPages()
+        guard !legacy.isEmpty else { return }
+
+        var adopted: [String: String] = [:]
+        for page in legacy {
+            let owners = page.owners
+                .compactMap(UUID.init(uuidString:))
+                .map(Self.owner(for:))
+            adopted[page.key] = ownershipStore().claimPreloadPage(
+                urlKey: page.key, existingFileName: page.fileName, owners: owners)
+        }
+        mutate { index in
+            for (key, var entry) in index where entry.legacyOwners != nil {
+                entry.legacyOwners = nil
+                // A page nothing could adopt — every owner gone — leaves the index
+                // with it. Its file is not the database's to free, so unlink it
+                // here, and only when it is a name the ownership tables would have
+                // taken: a corrupt entry must not make this delete the index it is
+                // stored in.
+                guard let file = adopted[key] else {
+                    if let stale = entry.contentFile,
+                       SavedFileOwnership.preloadsPath(stale) != nil {
+                        try? fileManager.removeItem(at: contentURL(fileName: stale))
+                    }
+                    index[key] = nil
+                    continue
+                }
+                if entry.contentFile != nil { entry.contentFile = file }
+                index[key] = entry
+            }
+        }
+    }
+
+    /// The pages an old index still counts owners for. A read, not a mutation, so
+    /// it takes the index lock without the writing coordination.
+    private func legacyOwnedPages() -> [(key: String, fileName: String?, owners: Set<String>)] {
+        lock.lock(); defer { lock.unlock() }
+        return loadIndex().compactMap { key, entry in
+            guard let owners = entry.legacyOwners, !owners.isEmpty else { return nil }
+            return (key, entry.contentFile, owners)
         }
     }
 }

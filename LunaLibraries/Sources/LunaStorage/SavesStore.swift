@@ -1239,6 +1239,155 @@ public final class SavesStore {
         .content, .archive, .document, .thumbnail, .productImage,
     ]
 
+    // MARK: - Preloaded pages
+
+    /// The file name a preloaded page's content must be written to, claimed for
+    /// `owner` in the same transaction. Returns nil when the owner cannot hold
+    /// anything — a save that is no longer there.
+    ///
+    /// A page already in the cache keeps its file, so re-recording one overwrites
+    /// what is there; a new page is given a fresh name, because the name it would
+    /// otherwise inherit may have been retired by an earlier release.
+    func claimPreloadPage(urlKey: String, owner: PreloadPageOwner) -> String? {
+        claimPreloadPage(urlKey: urlKey, existingFileName: nil, owners: [owner])
+    }
+
+    /// Adds `owner` to a page the cache already holds, and says whether it took.
+    /// Registers nothing: a second save reaching a cached page extends ownership,
+    /// it never creates the page.
+    @discardableResult
+    func holdPreloadPage(urlKey: String, owner: PreloadPageOwner) -> Bool {
+        guard let database = database() else { return false }
+        do {
+            return try database.transaction { db in
+                guard try ownerCanHold(owner, in: db),
+                      let path = try SavedFileOwnership.preloadPagePath(urlKey: urlKey, in: db),
+                      try SavedFileOwnership.canAttach(path: path, in: db)
+                else { return false }
+                try hold(path, owner: owner, in: db)
+                return true
+            }
+        } catch {
+            record(error, "hold preload page")
+            return false
+        }
+    }
+
+    /// The file a preloaded page's content is in, without claiming it.
+    func preloadPageFileName(urlKey: String) -> String? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                try SavedFileOwnership.preloadPagePath(urlKey: urlKey, in: db)?.lastPathComponent
+            }
+        } catch {
+            record(error, "read preload page")
+            return nil
+        }
+    }
+
+    /// Drops `owner`'s claim on every page it holds. A page still owned by another
+    /// save — or by the tapped-link owner — keeps its file.
+    ///
+    /// The whole subtree goes in one transaction: every page the crawl reached
+    /// carries an edge for its root, so there is no tree to walk. Which pages that
+    /// emptied is read back separately through `preloadPageKeys`, because deleting
+    /// a save reaches them by cascade instead and never comes through here.
+    func releasePreloadPages(ownedBy owner: PreloadPageOwner) {
+        writeFileOwnership { db in
+            if let holderKey = owner.holderKey {
+                try SavedFileOwnership.detachPreloadPages(holderKey: holderKey, in: db)
+            } else if case let .save(id) = owner {
+                try SavedFileOwnership.detachPreloadPages(saveID: id, in: db)
+            }
+        }
+        reapPendingDeletes()
+    }
+
+    /// Every page the cache still holds. The preload index is pruned against this,
+    /// so a page released by a save's delete cascade is dropped from it too.
+    func preloadPageKeys() -> Set<String> {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var keys: Set<String> = []
+                try db.query("SELECT url_key FROM preload_pages") { row in
+                    if let key = row.string(0) { keys.insert(key) }
+                }
+                return keys
+            }
+        } catch {
+            record(error, "read preload pages")
+            return []
+        }
+    }
+
+    /// Claims the page `urlKey` for `owners`, and answers the file its content
+    /// belongs in.
+    ///
+    /// `existingFileName` adopts a file the cache already wrote — the one-time
+    /// pass that moves an index written before ownership lived here. A page not
+    /// yet in the database is given a fresh name instead, because the name it
+    /// would otherwise inherit may have been retired by an earlier release.
+    ///
+    /// Returns nil when nothing could take the page: every owner has gone, or the
+    /// mapped file is a path a legacy database retired without dropping. The
+    /// second case clears itself at the next reap and the caller is a cache, so a
+    /// refused claim costs one un-cached page.
+    func claimPreloadPage(
+        urlKey: String, existingFileName: String?, owners: [PreloadPageOwner]
+    ) -> String? {
+        guard let database = database() else { return nil }
+        do {
+            let name: String? = try database.transaction { db in
+                let holders = try owners.filter { try ownerCanHold($0, in: db) }
+                guard !holders.isEmpty else { return nil }
+                if try SavedFileOwnership.preloadPagePath(urlKey: urlKey, in: db) == nil {
+                    let fresh = existingFileName ?? SavedFileOwnership.newPreloadPageName()
+                    guard let path = SavedFileOwnership.preloadsPath(fresh) else { return nil }
+                    try SavedFileOwnership.registerPreloadPage(urlKey: urlKey, path: path, in: db)
+                }
+                // Another process may have registered this page first, so take the
+                // edges on whatever file is actually in force rather than the one
+                // just offered.
+                guard let path = try SavedFileOwnership.preloadPagePath(urlKey: urlKey, in: db),
+                      try SavedFileOwnership.canAttach(path: path, in: db)
+                else { return nil }
+                for owner in holders { try hold(path, owner: owner, in: db) }
+                return path.lastPathComponent
+            }
+            if name != nil { reapPendingDeletes() }
+            return name
+        } catch {
+            record(error, "claim preload page")
+            return nil
+        }
+    }
+
+    /// Whether `owner` is something an edge can point at. A session owner is not a
+    /// row in this database, so there is nothing to check; a save must be there,
+    /// or `attach` would record no edge and leave the page held by nobody.
+    private func ownerCanHold(_ owner: PreloadPageOwner, in db: SavesDatabase) throws -> Bool {
+        switch owner {
+        case let .save(id):
+            return try db.scalarInt(
+                "SELECT 1 FROM saves WHERE id = ?", { try $0.bind(1, uuid: id) }) != nil
+        case .session:
+            return true
+        }
+    }
+
+    private func hold(
+        _ path: OwnedFilePath, owner: PreloadPageOwner, in db: SavesDatabase
+    ) throws {
+        if let holderKey = owner.holderKey {
+            try SavedFileOwnership.attachHolder(
+                path: path, kind: .preloadPage, holderKey: holderKey, in: db)
+        } else if case let .save(id) = owner {
+            try SavedFileOwnership.attach(path: path, kind: .preloadPage, to: id, in: db)
+        }
+    }
+
     // MARK: - Files a preloaded page holds
 
     /// Records that the preloaded page `pageKey` holds exactly `fileNames` of the

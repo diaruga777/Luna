@@ -8,6 +8,11 @@ import LunaAppConfig
 import LunaStorage
 
 final class JobStore {
+    enum InsertResult {
+        case inserted(LiveMediaDownloadJob)
+        case existing(LiveMediaDownloadJob)
+    }
+
     private let lock = NSLock()
 
     /// Authoritative in-memory copy of jobs.json, loaded lazily on first
@@ -84,6 +89,50 @@ final class JobStore {
 
     func job(forSourceURLString urlString: String) -> LiveMediaDownloadJob? {
         jobs().first { $0.sourceURLString == urlString && !$0.isTerminal }
+    }
+
+    /// Atomically creates `job`, unless a non-terminal job already owns the
+    /// same source URL. Starting a transfer has to use this rather than a
+    /// separate lookup followed by `upsert`, otherwise simultaneous starts can
+    /// both create work for one URL.
+    func insertIfNoActiveJob(_ job: LiveMediaDownloadJob) -> InsertResult {
+        lock.withLock {
+            var jobs = loadJobsLocked()
+            if let existing = jobs.first(where: {
+                $0.sourceURLString == job.sourceURLString && !$0.isTerminal
+            }) {
+                return .existing(existing)
+            }
+            jobs.append(job)
+            cachedJobs = jobs
+            persistLocked(jobs)
+            return .inserted(job)
+        }
+    }
+
+    /// Applies a read-modify-write update while holding the store's single
+    /// lock. Background-session delegates, retry bookkeeping, and progress
+    /// callbacks all arrive independently; handing callers a snapshot to edit
+    /// and later upsert loses unrelated fields written in the gap.
+    @discardableResult
+    func mutate(
+        id: String,
+        progressOnly: Bool = false,
+        _ body: (inout LiveMediaDownloadJob) -> Void
+    ) -> LiveMediaDownloadJob? {
+        lock.withLock {
+            var jobs = loadJobsLocked()
+            guard let index = jobs.firstIndex(where: { $0.id == id }) else { return nil }
+            body(&jobs[index])
+            let job = jobs[index]
+            cachedJobs = jobs
+            if progressOnly, !shouldPersistProgressLocked(for: job) {
+                return job
+            }
+            lastProgressPersist[job.id] = (Date(), Int(job.progress * 100))
+            persistLocked(jobs)
+            return job
+        }
     }
 
     /// `progressOnly` marks a per-chunk progress tick with no phase change —

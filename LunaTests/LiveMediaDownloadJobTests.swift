@@ -12,6 +12,83 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             encoding: .utf8)) ?? ""
     }
 
+    func testJobStoreMutationsDoNotLoseRetryBookkeepingDuringProgressUpdates() {
+        let store = JobStore()
+        let id = UUID().uuidString
+        let job = LiveMediaDownloadJob(
+            id: id,
+            sourceURLString: "https://example.com/\(id)",
+            title: "Race test",
+            phase: .downloading,
+            progress: 0,
+            resolveAttempts: 0,
+            mediaAttempts: 0)
+        store.upsert(job)
+        defer { store.remove(id) }
+
+        let updates = 100
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "JobStoreConcurrencyTests", attributes: .concurrent)
+        for index in 0..<updates {
+            group.enter()
+            queue.async {
+                _ = store.mutate(id: id) { $0.mediaAttempts += 1 }
+                group.leave()
+            }
+            group.enter()
+            queue.async {
+                _ = store.mutate(id: id, progressOnly: true) {
+                    $0.progress = Double(index + 1) / Double(updates)
+                }
+                group.leave()
+            }
+        }
+
+        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(store.job(id: id)?.mediaAttempts, updates)
+    }
+
+    func testJobStoreAtomicallyReusesAnExistingSourceJob() {
+        let store = JobStore()
+        let sourceURLString = "https://example.com/\(UUID().uuidString)"
+        defer {
+            if let job = store.job(forSourceURLString: sourceURLString) {
+                store.remove(job.id)
+            }
+        }
+
+        let attempts = 100
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "JobStoreInsertConcurrencyTests", attributes: .concurrent)
+        let resultsLock = NSLock()
+        var inserted = 0
+        for _ in 0..<attempts {
+            group.enter()
+            queue.async {
+                let candidate = LiveMediaDownloadJob(
+                    id: UUID().uuidString,
+                    sourceURLString: sourceURLString,
+                    title: "Race test",
+                    phase: .resolving,
+                    progress: 0,
+                    resolveAttempts: 0,
+                    mediaAttempts: 0)
+                if case .inserted = store.insertIfNoActiveJob(candidate) {
+                    resultsLock.lock()
+                    inserted += 1
+                    resultsLock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(inserted, 1)
+        XCTAssertEqual(
+            store.jobs().filter { $0.sourceURLString == sourceURLString && !$0.isTerminal }.count,
+            1)
+    }
+
     func testFacebookReelBackgroundResolutionStartsWithVideoPlugin() throws {
         let source = try XCTUnwrap(URL(string:
             "https://www.facebook.com/reel/1610065874019369/?fs=e&mibextid=wwXIfr&fs=e"))
@@ -143,7 +220,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             .components(separatedBy: "public func startWithResolvedAssets(").last?
             .components(separatedBy: "private func createAndStartJob(").first ?? ""
         let destination = method.range(of: "SavedMediaStore.shared.ensureUndownloaded")
-        let job = method.range(of: "store.upsert(job)")
+        let job = method.range(of: "store.insertIfNoActiveJob(job)")
         let task = method.range(of: "startMediaDownload(for: job, asset: asset)")
         XCTAssertNotNil(destination)
         XCTAssertNotNil(job)

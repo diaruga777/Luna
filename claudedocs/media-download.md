@@ -474,6 +474,10 @@ events, connectivity waiting, and a seven-day resource timeout. Jobs persist exp
 received byte counts, resolver stage, source range, and a sidecar resume-data file. A user
 pause asks `URLSessionDownloadTask` to produce resume data; transient network failures retry
 once and then remain in the visible **Waiting to resume** state instead of being discarded.
+`JobStore` applies every existing-job change as a single lock-held mutation, so progress
+callbacks cannot overwrite retry counters or resolver bookkeeping. It also creates jobs with
+an atomic insert-or-reuse check, preventing simultaneous starts for one source URL from
+registering duplicate background transfers.
 Launch/foreground repair and Downloader's twice-daily BG processing job compare persisted jobs
 with the background session and restart every missing resolving, downloading, or waiting task.
 The local saving/YouTube-range-export stage is persisted too: the untouched transfer stays in a

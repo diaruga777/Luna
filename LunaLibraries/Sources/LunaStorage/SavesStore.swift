@@ -1388,7 +1388,115 @@ public final class SavesStore {
         }
     }
 
-    // MARK: - Downloaded media
+    // MARK: - Downloaded media rows
+
+    /// Every downloaded-media save, in no particular order — the Downloader deck
+    /// imposes its own.
+    public func mediaItems() -> [SavedMediaItem] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var items: [SavedMediaItem] = []
+                try db.query(MediaSaveRow.selectSQL) { row in
+                    if let item = MediaSaveRow.item(from: row) { items.append(item) }
+                }
+                return items
+            }
+        } catch {
+            record(error, "read media rows")
+            return []
+        }
+    }
+
+    /// The media row downloaded from `urlString`, matched on the download's own
+    /// source URL rather than the save's — a download keeps the pre-unwrap URL.
+    public func mediaItem(forURLString urlString: String) -> SavedMediaItem? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                var item: SavedMediaItem?
+                try db.query(
+                    "\(MediaSaveRow.selectSQL) WHERE source_url_string = ?",
+                    { try $0.bind(1, urlString) }
+                ) { row in
+                    if item == nil { item = MediaSaveRow.item(from: row) }
+                }
+                return item
+            }
+        } catch {
+            record(error, "read media row")
+            return nil
+        }
+    }
+
+    /// Inserts or updates one media row, and says whether it landed. A row whose
+    /// save is not there records nothing: the save is what owns its files, so a
+    /// media row without one could never be freed.
+    @discardableResult
+    public func writeMediaItem(_ item: SavedMediaItem) -> Bool {
+        guard let database = database() else { return false }
+        do {
+            return try database.transaction { db in
+                try db.run(MediaSaveRow.upsertSQL) {
+                    try MediaSaveRow.bindUpsert(item, to: $0)
+                }
+                return try db.scalarInt(
+                    "SELECT 1 FROM media_saves WHERE save_id = ?",
+                    { try $0.bind(1, uuid: item.id) }) != nil
+            }
+        } catch {
+            record(error, "write media row")
+            return false
+        }
+    }
+
+    /// Drops one media row. Its files are released by the reconcile that follows,
+    /// or by the save's own delete cascade — whichever gets there first.
+    public func deleteMediaItem(id: UUID) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                try db.run("DELETE FROM media_saves WHERE save_id = ?") {
+                    try $0.bind(1, uuid: id)
+                }
+            }
+        } catch {
+            record(error, "delete media row")
+        }
+    }
+
+    /// Makes the media table exactly `items`: rows it no longer lists are deleted,
+    /// the rest inserted or updated, all in one transaction.
+    ///
+    /// `SavedMediaStore` reads the list, edits it, and hands it back, so this is
+    /// the write half of that. One transaction means another process sees the whole
+    /// edit or none of it — which the atomic manifest write it replaces could only
+    /// promise for the file, not for the file plus its ownership edges.
+    public func replaceMediaItems(_ items: [SavedMediaItem]) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                // `uuidString` is hex and dashes, so the list is safe to inline —
+                // the same reason `heldPaths` inlines its kind list. An empty list
+                // has no `NOT IN ()` form, so it deletes everything.
+                if items.isEmpty {
+                    try db.run("DELETE FROM media_saves")
+                } else {
+                    let keep = items.map { "'\($0.id.uuidString)'" }.joined(separator: ", ")
+                    try db.run("DELETE FROM media_saves WHERE save_id NOT IN (\(keep))")
+                }
+                for item in items {
+                    try db.run(MediaSaveRow.upsertSQL) {
+                        try MediaSaveRow.bindUpsert(item, to: $0)
+                    }
+                }
+            }
+        } catch {
+            record(error, "replace media rows")
+        }
+    }
+
+    // MARK: - Downloaded media files
 
     /// Makes the save `saveID` hold exactly the media file and poster named here,
     /// and frees whatever it held before. Either name may be nil: archiving keeps

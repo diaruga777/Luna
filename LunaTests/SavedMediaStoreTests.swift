@@ -1,3 +1,4 @@
+import LunaModels
 import LunaMediaDownload
 import LunaStorage
 import UIKit
@@ -68,28 +69,27 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.kind, .video)
     }
 
-    func testLegacyFileNameManifestDecodesAsLocalFile() throws {
-        let directory = root.appendingPathComponent("SavedMedia", isDirectory: true)
-        let files = directory.appendingPathComponent("Files", isDirectory: true)
-        try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
-        let id = UUID()
-        let fileName = "legacy.mp4"
-        try Data("video".utf8).write(to: files.appendingPathComponent(fileName))
-        let json = """
-        [{
-          "id":"\(id.uuidString)",
-          "sourceURLString":"https://x.com/example/status/2",
-          "title":"Legacy",
-          "dateSaved":"2026-01-01T00:00:00Z",
-          "kind":"video",
-          "fileName":"\(fileName)"
-        }]
-        """
-        try Data(json.utf8).write(to: directory.appendingPathComponent("savedMedia.json"))
+    /// A row survives a round trip through the table, storage state and all.
+    func testRowRoundTripsThroughTheTable() async throws {
+        let urlString = "https://x.com/example/status/2"
+        let id = makeSave(urlString)
+        let source = root.appendingPathComponent("round-trip.mp4")
+        try Data("video".utf8).write(to: source)
+        _ = try await store.addDownloadedFile(
+            source, kind: .video, sourceURLString: urlString, title: "Round trip")
 
-        let item = try XCTUnwrap(store.items().first(where: { $0.id == id }))
-        XCTAssertEqual(item.storageState, .localFile(fileName: fileName))
-        XCTAssertEqual(item.kind, .video)
+        // A second store over the same container reads the same rows: the library
+        // is in the database, so there is no manifest to be stale about.
+        let reloaded = try XCTUnwrap(
+            SavedMediaStore(containerURL: root).items().first(where: { $0.id == id }))
+        XCTAssertEqual(reloaded.title, "Round trip")
+        XCTAssertEqual(reloaded.kind, .video)
+        XCTAssertEqual(reloaded.sourceURLString, urlString)
+        XCTAssertNotNil(reloaded.fileName)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("SavedMedia/savedMedia.json").path),
+            "no manifest is written any more")
     }
 
     func testMissingLocalFileRepairsToUndownloaded() async throws {
@@ -236,16 +236,16 @@ final class SavedMediaStoreTests: XCTestCase {
         defer { if !wasMarked { AutoDownloadSettings.unmarkDownloaded(urlString) } }
         store.photosBackingProbe = StubBackingProbe(.deleted)
 
-        let freshID = UUID()
+        // The row is keyed by its save, so the replacement takes the same id —
+        // there is one media row per save. What must be fresh is its STATE.
         let ensured = try store.ensureUndownloaded(
-            id: freshID, sourceURLString: urlString, title: "Example")
-        XCTAssertEqual(ensured.id, freshID, "a new save, not the discarded one")
-        XCTAssertEqual(ensured.storageState, .undownloaded)
+            id: makeSave(urlString), sourceURLString: urlString, title: "Example")
+        XCTAssertEqual(ensured.id, stale.id)
+        XCTAssertEqual(ensured.storageState, .undownloaded, "the Photos backing is gone")
         XCTAssertNil(ensured.thumbnailFileName)
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(
             storageState: ensured.storageState))
         XCTAssertEqual(store.items().count, 1, "the stale save didn't survive alongside it")
-        XCTAssertNil(store.items().first(where: { $0.id == stale.id }))
         XCTAssertFalse(AutoDownloadSettings.wasDownloaded(urlString))
     }
 

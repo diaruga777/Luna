@@ -189,6 +189,33 @@ enum SavesSchema {
             pending_comparison_threshold_at_start  REAL
         ) WITHOUT ROWID;
 
+        -- The downloaded-media payload of a save that is one, the twin of
+        -- `price_trackers`. Absent for every other save. Under `ON DELETE
+        -- CASCADE`, so deleting the save takes the row, and the row's
+        -- `file_refs` edges go with it and queue the files.
+        --
+        -- `source_url_string` is deliberately its OWN column rather than a read
+        -- of `saves.url_string`: the download keeps the pre-unwrap source URL, and
+        -- matching a media row by URL has to use the URL it was downloaded from.
+        --
+        -- `storage_state` is `undownloaded` | `localFile` | `photosReference`,
+        -- with `file_name` set for the first and `photos_identifier` for the
+        -- second. No CHECK constraint, for the reason no enum column here has one.
+        CREATE TABLE IF NOT EXISTS media_saves (
+            save_id             TEXT PRIMARY KEY NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            source_url_string   TEXT NOT NULL,
+            title               TEXT,
+            date_saved          REAL NOT NULL,
+            archived_at         REAL,
+            kind                TEXT,
+            storage_state       TEXT NOT NULL,
+            file_name           TEXT,
+            photos_identifier   TEXT,
+            thumbnail_file_name TEXT,
+            platform            TEXT,
+            platform_item_id    TEXT
+        ) WITHOUT ROWID;
+
         -- The hosts the user took off a tracker's seller list. A passive writer
         -- checks this before adding a seller back.
         CREATE TABLE IF NOT EXISTS tracker_rejected_sellers (
@@ -336,6 +363,12 @@ enum SavesSchema {
         -- price_trackers, tracker_rejected_sellers on save_id;
         -- tracker_price_points on store_id), so they are already covered.
         CREATE INDEX IF NOT EXISTS tracker_stores_save ON tracker_stores(save_id);
+
+        -- mediaItem(forURLString:) — the "have I already downloaded this?" check
+        -- every media start path runs, against the download's own source URL.
+        -- The platform + item-id dedupe still runs in Swift over the whole list,
+        -- so it gets its index the day it becomes a query.
+        CREATE INDEX IF NOT EXISTS media_saves_url ON media_saves(source_url_string);
 
         -- The FK covering index for file_refs.save_id, which is what a save's
         -- delete cascade and its ownership reconciliation both scan.

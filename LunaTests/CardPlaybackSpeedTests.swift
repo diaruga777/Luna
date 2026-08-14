@@ -1,3 +1,4 @@
+import LunaModels
 //
 //  CardPlaybackSpeedTests.swift
 //  LunaTests

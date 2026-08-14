@@ -75,7 +75,8 @@ enum MediaStageCatalog {
             named: fileName, in: SavedMediaStore.shared.mediaDirectory) != nil {
             items.insert(
                 SavedMediaItem(
-                    id: SavedItem.deterministicUUID(from: "stage-media-image"),
+                    // The media row is keyed by its SAVE, so it must carry the seeded save's id.
+                    id: SavedItem.deterministicUUID(from: "stage-image"),
                     sourceURLString: imageURL, title: "A Saved Photo",
                     dateSaved: StageFixtures.ago(hours: 1), kind: .image,
                     storageState: .localFile(fileName: fileName), thumbnailFileName: nil,
@@ -87,7 +88,7 @@ enum MediaStageCatalog {
 
     private static func undownloadedVideo() -> SavedMediaItem {
         SavedMediaItem(
-            id: SavedItem.deterministicUUID(from: "stage-media-video"),
+            id: SavedItem.deterministicUUID(from: "stage-video"),
             sourceURLString: videoURL, title: "A Short Film About Rain",
             dateSaved: StageFixtures.ago(days: 1), kind: .video,
             storageState: .undownloaded, thumbnailFileName: nil,

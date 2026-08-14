@@ -17,167 +17,14 @@ private enum SavedMediaStoreMutationError: Error {
     case itemRemoved
 }
 
-public struct SavedMediaItem: Codable, Identifiable, Equatable {
-    /// Where a saved row's media actually is.
-    ///
-    /// The Photos case carries only the identifier. Handing the media to Photos
-    /// used to need two manifest writes — commit the identifier with the local
-    /// names held as `pendingLocal*`, remove those files, then clear the names —
-    /// because a crash in between had to be recoverable. The database records that
-    /// intent now: the row stops naming the file, the release trigger queues it,
-    /// and the reaper unlinks it whenever the process next runs.
-    public enum StorageState: Codable, Equatable {
-        case undownloaded
-        case localFile(fileName: String)
-        case photosReference(localIdentifier: String)
-
-        private enum CodingKeys: String, CodingKey {
-            case type, fileName, localIdentifier
-        }
-        private enum Kind: String, Codable { case undownloaded, localFile, photosReference }
-
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            switch try container.decode(Kind.self, forKey: .type) {
-            case .undownloaded:
-                self = .undownloaded
-            case .localFile:
-                self = .localFile(fileName: try container.decode(String.self, forKey: .fileName))
-            case .photosReference:
-                self = .photosReference(
-                    localIdentifier: try container.decode(String.self, forKey: .localIdentifier))
-            }
-        }
-
-        public func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            switch self {
-            case .undownloaded:
-                try container.encode(Kind.undownloaded, forKey: .type)
-            case .localFile(let fileName):
-                try container.encode(Kind.localFile, forKey: .type)
-                try container.encode(fileName, forKey: .fileName)
-            case .photosReference(let identifier):
-                try container.encode(Kind.photosReference, forKey: .type)
-                try container.encode(identifier, forKey: .localIdentifier)
-            }
-        }
-    }
-
-    public let id: UUID
-    public var sourceURLString: String
-    public var title: String?
-    public var dateSaved: Date
-    /// When non-nil, this row lives in the archive tray. Re-downloads preserve
-    /// the value so playback availability never implicitly unarchives it.
-    public var archivedAt: Date?
-    /// Nil until resolution/download establishes the actual resource type.
-    public var kind: MediaAsset.Kind?
-    public var storageState: StorageState
-    public var thumbnailFileName: String?
-    /// The content platform this save belongs to, recognized from
-    /// `sourceURLString` (nil for a platform `PlatformRecognizer` doesn't know).
-    public var platform: ContentPlatform?
-    /// A durable per-platform item id (tweet id, post shortcode, video id, …)
-    /// extracted from the URL by `PlatformRecognizer` — used, together with
-    /// `platform`, to dedupe saves whose URLs aren't byte-identical (a share
-    /// link vs. its resolved permalink, tracking params, etc.).
-    public var platformItemID: String?
-
-    /// Title if fetched, else the raw URL as a last resort — the single
-    /// fallback rule every UI surface should use instead of reaching for
-    /// `sourceURLString` directly.
-    public var displayTitle: String { title ?? sourceURLString }
-
-    public var isArchived: Bool { archivedAt != nil }
-
-    public var fileName: String? {
-        guard case .localFile(let fileName) = storageState else { return nil }
-        return fileName
-    }
-
-    public var photosLocalIdentifier: String? {
-        guard case .photosReference(let identifier) = storageState else { return nil }
-        return identifier
-    }
-
-    public var fileURL: URL? {
-        fileName.map { SavedMediaStore.shared.mediaDirectory.appendingPathComponent($0) }
-    }
-
-    public var thumbnailURL: URL? {
-        thumbnailFileName.map { SavedMediaStore.shared.thumbnailDirectory.appendingPathComponent($0) }
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, sourceURLString, title, dateSaved, archivedAt, kind, storageState, fileName, thumbnailFileName
-        case platform, platformItemID
-    }
-
-    public init(
-        id: UUID, sourceURLString: String, title: String?, dateSaved: Date,
-        kind: MediaAsset.Kind?, storageState: StorageState,
-        thumbnailFileName: String?,
-        platform: ContentPlatform? = nil, platformItemID: String? = nil
-    ) {
-        self.id = id
-        self.sourceURLString = sourceURLString
-        self.title = title
-        self.dateSaved = dateSaved
-        self.archivedAt = nil
-        self.kind = kind
-        self.storageState = storageState
-        self.thumbnailFileName = thumbnailFileName
-        self.platform = platform
-        self.platformItemID = platformItemID
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        sourceURLString = try container.decode(String.self, forKey: .sourceURLString)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        dateSaved = try container.decode(Date.self, forKey: .dateSaved)
-        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
-        kind = try container.decodeIfPresent(MediaAsset.Kind.self, forKey: .kind)
-        thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
-        platform = try? container.decodeIfPresent(ContentPlatform.self, forKey: .platform)
-        platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
-        if let state = try container.decodeIfPresent(StorageState.self, forKey: .storageState) {
-            storageState = state
-        } else if let legacyFileName = try container.decodeIfPresent(String.self, forKey: .fileName),
-                  !legacyFileName.isEmpty {
-            storageState = .localFile(fileName: legacyFileName)
-        } else {
-            storageState = .undownloaded
-        }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(sourceURLString, forKey: .sourceURLString)
-        try container.encodeIfPresent(title, forKey: .title)
-        try container.encode(dateSaved, forKey: .dateSaved)
-        try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
-        try container.encodeIfPresent(kind, forKey: .kind)
-        try container.encode(storageState, forKey: .storageState)
-        try container.encodeIfPresent(thumbnailFileName, forKey: .thumbnailFileName)
-        try container.encodeIfPresent(platform, forKey: .platform)
-        try container.encodeIfPresent(platformItemID, forKey: .platformItemID)
-        // Continue writing the legacy key for local rows during the rollout.
-        try container.encodeIfPresent(fileName, forKey: .fileName)
-    }
-}
-
 public final class SavedMediaStore {
     public static let shared = SavedMediaStore()
 
     /// Darwin notification name mutations are echoed on, in addition to the in-process
     /// `.savedMediaChanged` — the only channel that reaches a DIFFERENT process (e.g. the
     /// action/share extension, which downloads media via `LiveMediaDownloadManager` and
-    /// writes the shared manifest from its own process; `NotificationCenter.default` posts
-    /// never cross the process boundary).
+    /// writes the shared media rows from its own process; `NotificationCenter.default`
+    /// posts never cross the process boundary).
     private static var darwinNotificationName: String {
         "\(AppConfig.appGroupID).savedMediaChanged"
     }
@@ -193,7 +40,7 @@ public final class SavedMediaStore {
     /// Darwin's C callback can't capture context, so this uses the classic pattern: a
     /// plain top-level function pointer that only knows how to post the in-process
     /// notification — it doesn't need `self`, since there's nothing instance-specific to
-    /// recover (the shared manifest is the same for every SavedMediaStore instance).
+    /// recover (the shared library is the same for every SavedMediaStore instance).
     public static func startObservingCrossProcessChanges() {
         guard !didRegisterDarwinObserver else { return }
         didRegisterDarwinObserver = true
@@ -229,34 +76,6 @@ public final class SavedMediaStore {
     /// PhotoKit probe in every process; tests substitute a verdict.
     public var photosBackingProbe: PhotosBackingProbing = PhotoKitBackingProbe()
 
-    /// In-memory cache of the decoded manifest, valid only while `cacheToken` matches the
-    /// file's current (modification date, size). Filled by `loadUnlocked()` on a cache miss
-    /// and refreshed by `saveUnlocked()` from the array it just wrote — guarded entirely by
-    /// `lock`, mirroring `SavesStore`'s stat-token cache.
-    private var cachedItems: [SavedMediaItem]?
-    private var cacheToken: FileStatToken?
-
-    /// A cheap proxy for "has the manifest changed since we last read it" — the manifest IS
-    /// written by other flows (download completion on the URLSession delegate queue, the
-    /// share/action extension in its own process), so every read re-stats the file and only
-    /// trusts the cache when the stat still matches.
-    private struct FileStatToken: Equatable {
-        let modificationDate: Date
-        let size: Int
-    }
-
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
-    }()
-    private let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
@@ -277,10 +96,11 @@ public final class SavedMediaStore {
     /// Empties the library once, on the first run of the build that moved file
     /// ownership into the database.
     ///
-    /// Nothing adopts what an older build left behind: its rows own no files, and
-    /// its posters are named from their item id, which this system cannot take
-    /// (see `OwnedFileKind.mediaThumbnail`). Rather than leave files no owner will
-    /// ever free, the manifest and both directories go. Idempotent and
+    /// Nothing adopts what an older build left behind: its library was a JSON
+    /// manifest this build no longer reads, and its posters are named from their
+    /// item id, which the ownership tables cannot take (see
+    /// `OwnedFileKind.mediaThumbnail`). Rather than leave files no owner will ever
+    /// free, the retired manifest and both directories go. Idempotent and
     /// cross-process — the flag lives in the shared App Group defaults, so
     /// whichever process runs first does the work.
     public func resetLibraryForSQLOwnershipOnce() {
@@ -291,6 +111,7 @@ public final class SavedMediaStore {
         lock.lock()
         try? saveUnlocked([])
         lock.unlock()
+        try? fm.removeItem(at: directory.appendingPathComponent("savedMedia.json"))
         for directory in [mediaDirectory, thumbnailDirectory] {
             let contents = (try? fm.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil)) ?? []
@@ -321,10 +142,8 @@ public final class SavedMediaStore {
         return dir
     }
 
-    private var manifestURL: URL {
-        directory.appendingPathComponent("savedMedia.json")
-    }
-
+    /// The whole library, oldest save first. The table has no insertion order of
+    /// its own — every deck sorts by the save's dates anyway — so this fixes one.
     public func items() -> [SavedMediaItem] {
         lock.lock()
         defer { lock.unlock() }
@@ -336,7 +155,7 @@ public final class SavedMediaStore {
     }
 
     public func item(forURLString urlString: String) -> SavedMediaItem? {
-        items().first { $0.sourceURLString == urlString }
+        ownershipStore().mediaItem(forURLString: urlString)
     }
 
     /// Finds the row for `urlString` by exact URL or, failing that, by
@@ -590,8 +409,11 @@ public final class SavedMediaStore {
 
     #if DEBUG
     /// Deterministic seeding, the twin of `SavesStore.seedForTesting`.
-    /// Replaces the whole manifest with `items`, so a staged (or test) run gets
-    /// a media library it fully controls rather than whatever the device had.
+    /// Replaces every media row, so a staged (or test) run gets a media library
+    /// it fully controls rather than whatever the device had.
+    ///
+    /// Each item's id must be a SEEDED SAVE's id: the row is keyed by its save, so
+    /// one that names no save is not written at all. Seed the saves first.
     ///
     /// Deliberately does NOT touch `Files/` or `Thumbnails/`: an item that
     /// names a local file expects that file to exist, and the caller is the one
@@ -604,7 +426,7 @@ public final class SavedMediaStore {
         NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
     }
 
-    /// Empties the manifest and the media/thumbnail directories. DEBUG-only.
+    /// Empties the media table and the media/thumbnail directories. DEBUG-only.
     public func wipeForTesting() {
         lock.lock()
         try? saveUnlocked([])
@@ -803,36 +625,19 @@ public final class SavedMediaStore {
 
     /// nil when the manifest doesn't exist (or its attributes can't be read) — such a
     /// token never matches a previously cached one, so the next read decodes fresh.
-    private func currentFileStatTokenUnlocked() -> FileStatToken? {
-        guard let attributes = try? fm.attributesOfItem(atPath: manifestURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date,
-              let size = attributes[.size] as? Int
-        else { return nil }
-        return FileStatToken(modificationDate: modificationDate, size: size)
-    }
-
+    /// The library, read from the `media_saves` table.
+    ///
+    /// No decode cache in front of it: the table is indexed, one connection per
+    /// process serialises it, and a stat-token cache existed only because the
+    /// alternative was re-decoding a whole JSON array.
     private func loadUnlocked() -> [SavedMediaItem] {
-        let token = currentFileStatTokenUnlocked()
-        if let cachedItems, token != nil, token == cacheToken {
-            return cachedItems
-        }
-        guard let data = try? Data(contentsOf: manifestURL),
-              let items = try? decoder.decode([SavedMediaItem].self, from: data)
-        else {
-            cachedItems = []
-            cacheToken = token
-            return []
-        }
-        cachedItems = items
-        cacheToken = token
-        return items
+        ownershipStore().mediaItems()
     }
 
+    /// Writes the library back. One transaction, so another process sees the whole
+    /// edit or none of it.
     private func saveUnlocked(_ items: [SavedMediaItem]) throws {
-        let data = try encoder.encode(items)
-        try data.write(to: manifestURL, options: [.atomic])
-        cachedItems = items
-        cacheToken = currentFileStatTokenUnlocked()
+        ownershipStore().replaceMediaItems(items)
     }
 
     /// Repairs local rows whose backing file was removed from under them.

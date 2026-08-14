@@ -51,7 +51,7 @@ idempotently at open and stamped into `PRAGMA user_version`. **Every field is a
 typed column — there is no payload blob**, so a reader never has to understand a
 writer's version of a struct to read a column it does know.
 
-Schema 9 also repairs an ambiguous schema-6 rollout: two shipped builds used the
+Schema 10 also repairs an ambiguous schema-6 rollout: two shipped builds used the
 same version stamp for different `preload_pages` layouts. Open therefore inspects
 that table's columns rather than trusting `user_version`; only the obsolete
 two-column layout is released and rebuilt, while a complete layout (including one
@@ -76,6 +76,11 @@ ownership edges and queues/tombstones the old page files before dropping the map
   observations and their indexed identifier/name buckets. They are independent
   of saves: a page visit records an observation without creating a save. The
   key table cascades when an observation is pruned; no snapshot JSON is stored.
+- `spotlight_surface_index` and `spotlight_surface_state` — the save ids each
+  article app last handed to its own bundle-specific Core Spotlight index, plus
+  its one-time legacy-reconciliation marker. The old shared `spotlight_index`
+  table remains for mixed-version binaries; schema 10 offers its ids, and the
+  still older App-Group defaults ids, to Luna and Reader independently once.
 - Every save-owned child table is `REFERENCES saves(id) ON DELETE CASCADE`, so
   deleting a save is the row delete. Passive snapshot rows are intentionally
   independent of saves, while their key rows cascade from the snapshot.

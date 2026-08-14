@@ -444,15 +444,38 @@ enum SavesSchema {
             ownership                TEXT
         ) WITHOUT ROWID;
 
-        -- The saves currently in the Spotlight index, one row each.
+        -- Legacy schema-9 Spotlight bookkeeping. Keep this table for independently
+        -- updated older app binaries: they still read and replace it. Schema 10
+        -- offers its ids to EACH article app once, so neither app-specific
+        -- Spotlight index can strand an entry that this shared set once tracked.
         --
         -- **No foreign key, deliberately.** Its whole job is to outlive the save:
         -- a sweep deletes a Spotlight entry by diffing this against what is
         -- indexable NOW, and an id that cascaded away with its save would be an
         -- entry nothing could ever remove. The sweep replaces the table with what
-        -- it just indexed, so it holds a deleted save's id for one sweep only.
+        -- it just indexed, so it holds a deleted save's id for one schema-9
+        -- sweep. Schema 10 leaves it intact for older binaries and ignores it
+        -- after each new app surface has reconciled it.
         CREATE TABLE IF NOT EXISTS spotlight_index (
             save_id TEXT PRIMARY KEY NOT NULL
+        ) WITHOUT ROWID;
+
+        -- The saves each article app currently has in its OWN Spotlight index.
+        -- Core Spotlight's default index is bundle-specific even though the saves
+        -- database is shared, so the app surface is part of this identity.
+        CREATE TABLE IF NOT EXISTS spotlight_surface_index (
+            surface TEXT NOT NULL,
+            save_id TEXT NOT NULL,
+            PRIMARY KEY (surface, save_id)
+        ) WITHOUT ROWID;
+
+        -- A row records that this app has reconciled both schema-9's shared set
+        -- and the older App-Group UserDefaults set against its own Spotlight
+        -- domain. It is per surface because one app completing that cleanup says
+        -- nothing about the other app's separate system index.
+        CREATE TABLE IF NOT EXISTS spotlight_surface_state (
+            surface TEXT PRIMARY KEY NOT NULL,
+            legacy_reconciled INTEGER NOT NULL DEFAULT 0
         ) WITHOUT ROWID;
 
         -- Files whose last holder is gone, waiting to be unlinked. A file system

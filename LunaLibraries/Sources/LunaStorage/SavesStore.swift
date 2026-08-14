@@ -1618,35 +1618,74 @@ public final class SavesStore {
 
     // MARK: - Spotlight index bookkeeping
 
-    /// The save ids the last Spotlight sweep indexed.
-    public func spotlightIndexedIDs() -> Set<String> {
-        guard let database = database() else { return [] }
+    /// This app's last indexed ids plus any shared schema-9 ids it still needs
+    /// to reconcile against its bundle-specific Core Spotlight index.
+    public func spotlightIndexState(for app: LunaApp) -> SpotlightIndexState {
+        guard let database = database() else {
+            return SpotlightIndexState(
+                indexedIDs: [], legacyIndexedIDs: [], needsLegacyReconciliation: true)
+        }
         do {
             return try database.perform { db in
-                var ids: Set<String> = []
-                try db.query("SELECT save_id FROM spotlight_index") { row in
-                    if let id = row.string(0) { ids.insert(id) }
+                let surface = app.storageIdentifier
+                var indexedIDs: Set<String> = []
+                try db.query(
+                    "SELECT save_id FROM spotlight_surface_index WHERE surface = ?",
+                    { try $0.bind(1, surface) }
+                ) { row in
+                    if let id = row.string(0) { indexedIDs.insert(id) }
                 }
-                return ids
+                let reconciled = try db.scalarInt(
+                    "SELECT legacy_reconciled FROM spotlight_surface_state WHERE surface = ?",
+                    { try $0.bind(1, surface) }) == 1
+                var legacyIndexedIDs: Set<String> = []
+                if !reconciled {
+                    try db.query("SELECT save_id FROM spotlight_index") { row in
+                        if let id = row.string(0) { legacyIndexedIDs.insert(id) }
+                    }
+                }
+                return SpotlightIndexState(
+                    indexedIDs: indexedIDs, legacyIndexedIDs: legacyIndexedIDs,
+                    needsLegacyReconciliation: !reconciled)
             }
         } catch {
             record(error, "read spotlight index")
-            return []
+            return SpotlightIndexState(
+                indexedIDs: [], legacyIndexedIDs: [], needsLegacyReconciliation: true)
         }
     }
 
     /// Records exactly what a sweep just handed to Spotlight, replacing what the
-    /// previous sweep recorded. One transaction, so a reader never sees a half
-    /// list and conclude a live entry needs deleting.
-    public func setSpotlightIndexedIDs(_ ids: Set<String>) {
+    /// previous sweep for THIS app recorded. One transaction, so another process
+    /// never sees a half list, and updating Luna cannot consume Reader's state.
+    public func setSpotlightIndexedIDs(
+        _ ids: Set<String>, for app: LunaApp, completingLegacyReconciliation: Bool = false
+    ) {
         guard let database = database() else { return }
         do {
             try database.transaction { db in
-                try db.run("DELETE FROM spotlight_index")
+                let surface = app.storageIdentifier
+                try db.run("DELETE FROM spotlight_surface_index WHERE surface = ?") {
+                    try $0.bind(1, surface)
+                }
                 for id in ids {
-                    try db.run("INSERT OR IGNORE INTO spotlight_index (save_id) VALUES (?)") {
-                        try $0.bind(1, id)
+                    try db.run("""
+                        INSERT OR IGNORE INTO spotlight_surface_index (surface, save_id)
+                            VALUES (?, ?)
+                        """) {
+                        try $0.bind(1, surface)
+                        try $0.bind(2, id)
                     }
+                }
+                try db.run("""
+                    INSERT INTO spotlight_surface_state (surface, legacy_reconciled)
+                        VALUES (?, ?)
+                    ON CONFLICT(surface) DO UPDATE SET legacy_reconciled =
+                        MAX(spotlight_surface_state.legacy_reconciled,
+                            excluded.legacy_reconciled)
+                    """) {
+                    try $0.bind(1, surface)
+                    try $0.bind(2, completingLegacyReconciliation)
                 }
             }
         } catch {

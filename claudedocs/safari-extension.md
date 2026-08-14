@@ -931,6 +931,8 @@ sku+host → canonical URL; no fuzzy name — a name is not an identifier), thro
 `LunaPriceCompare.ProductPageMatching`, which is also where the tracker's
 matcher-shaped projection `PriceHistoryIndexEntry` lives. `LunaSafari
 /SharedProductMatching.swift` is now only the reduction to a pill's one line;
+the projection exposes only the last 365 days of tracked history to both this
+path and `ComparableSellerFinder`, from its one shared retention constant.
 `SharedProductMatchingParityTests` runs one fixture matrix through both matchers.
 The reply is
 `{hasHistory, isTracked, amount, currency, day}`: `isTracked` skips the Track pill

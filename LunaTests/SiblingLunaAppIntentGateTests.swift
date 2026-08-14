@@ -8,9 +8,30 @@ import LunaModels
 import XCTest
 
 /// All four Luna apps register the same two Action Button intents, so a press
-/// made while a SIBLING app owns the screen can reach any of them. Both intents
+/// made while any Luna app owns the screen can reach any of them. Both intents
 /// stop there and report the press unhandled — see `AppNamePlatform`.
 final class SiblingLunaAppIntentGateTests: XCTestCase {
+    func testEveryLunaAppInTheFamilyIsRecognized() {
+        for app in LunaApp.allCases {
+            XCTAssertTrue(
+                AppNamePlatform.isLunaApp(app.displayName),
+                "\(app.displayName) should be recognized as a Luna app")
+        }
+    }
+
+    func testLunaAppRecognitionUsesWholeNormalizedNames() {
+        XCTAssertTrue(AppNamePlatform.isLunaApp("  luna   reader "))
+        XCTAssertTrue(AppNamePlatform.isLunaApp("LUNA VIDEO"))
+        XCTAssertFalse(AppNamePlatform.isLunaApp("Luna Reader Pro"))
+        XCTAssertFalse(AppNamePlatform.isLunaApp("Lunar"))
+    }
+
+    func testUnrelatedAndMissingAppNamesAreNotLunaApps() {
+        for name in [nil, "", "   ", "Safari"] {
+            XCTAssertFalse(AppNamePlatform.isLunaApp(name))
+        }
+    }
+
     func testEveryOtherLunaAppInTheFamilyIsRecognized() {
         for running in LunaApp.allCases {
             for other in LunaApp.allCases where other != running {
@@ -47,7 +68,7 @@ final class SiblingLunaAppIntentGateTests: XCTestCase {
         XCTAssertTrue(
             AppNamePlatform.isSiblingLunaApp("  luna   reader ", running: .luna))
         XCTAssertTrue(
-            AppNamePlatform.isSiblingLunaApp("LUNA DOWNLOADER", running: .luna))
+            AppNamePlatform.isSiblingLunaApp("LUNA VIDEO", running: .luna))
     }
 
     func testUnrelatedAndMissingAppNamesAreNotSiblings() {

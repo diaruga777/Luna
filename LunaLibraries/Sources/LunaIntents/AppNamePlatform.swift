@@ -19,6 +19,20 @@ public enum AppNamePlatform {
         platform(forAppName: app) != nil || isSafari(forAppName: app) || isShortcuts(forAppName: app)
     }
 
+    /// Whether the frontmost app is any app in the Luna family.
+    ///
+    /// The Action Button intents must not inspect a Luna app's screen: links
+    /// shown there are already owned by the shared store, and the app itself
+    /// is not one of the external surfaces these intents capture from.
+    /// Compared as a whole normalized name because "Luna" is a prefix of the
+    /// other three, so substring matching would fold unrelated names together.
+    public static func isLunaApp(_ app: String?) -> Bool {
+        guard let name = normalizedName(app) else { return false }
+        return LunaApp.allCases.contains {
+            normalizedName($0.displayName) == name
+        }
+    }
+
     /// Whether the frontmost app is a DIFFERENT app in the Luna family.
     ///
     /// All four apps register the same two Action Button intents, so a press
@@ -28,14 +42,12 @@ public enum AppNamePlatform {
     /// app that owns its kind. Both intents therefore treat this as unhandled
     /// and stop — see `ProvideContextIntent` / `SaveIntent`.
     ///
-    /// The running app itself is deliberately NOT a match: a press inside the
-    /// app you're holding keeps whatever behavior its screen affords.
-    /// Compared as a whole normalized name because "Luna" is a prefix of the
-    /// other three, so substring matching would fold them together.
+    /// This narrower predicate remains useful to callers that need to
+    /// distinguish the running app from its siblings.
     public static func isSiblingLunaApp(
         _ app: String?, running: LunaApp = .current
     ) -> Bool {
-        guard let name = normalizedName(app) else { return false }
+        guard isLunaApp(app), let name = normalizedName(app) else { return false }
         return LunaApp.allCases.contains {
             $0 != running && normalizedName($0.displayName) == name
         }

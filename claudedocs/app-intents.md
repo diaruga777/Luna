@@ -75,18 +75,18 @@ a `comparison` checkpoint, resumed under Save's extended runtime. The whole leg 
 `ProductIntentHandoff` (the product twin of `MediaIntentHandoff`, compiled only
 into the two product apps), so Reader and Downloader never look for one.
 
-**A sibling Luna app in the foreground outranks everything below.** All four apps
-register both intents, so a press made while another app in the family owns the
-screen can reach any of them; there is nothing there to save (the sibling's own
-UI is not a page, and a link visible inside it is already in the shared store,
-filed under the app that owns its kind). `AppNamePlatform.isSiblingLunaApp` is
-checked before the OnScreenURLs input and before the decision table:
-`ProvideContextIntent` returns `.unhandled` and `SaveIntent` returns an empty
-`SaveResultEntity` — no save, no error dialog, no screenshot. The frontmost name
-is compared against every `LunaApp.displayName` as a WHOLE normalized name,
-because "Luna" is a prefix of the other three; the running app itself is
-deliberately not a match, so a press inside the app you're holding keeps whatever
-its own screen affords. `SiblingLunaAppIntentGateTests` pins the matrix.
+**Any Luna app in the foreground outranks everything below.** All four apps
+register both intents, so a press made while any app in the family owns the
+screen can reach any of them; there is nothing there to save (a Luna app's own
+UI is not an external capture surface, and a link visible inside it is already
+in the shared store, filed under the app that owns its kind).
+`AppNamePlatform.isLunaApp` is checked before the OnScreenURLs input and before
+the decision table: `ProvideContextIntent` returns `.unhandled` and `SaveIntent`
+returns an empty `SaveResultEntity` — no save, no error dialog, no screenshot.
+The frontmost name is compared against every `LunaApp.displayName` as a WHOLE
+normalized name, because "Luna" is a prefix of the other three.
+`SiblingLunaAppIntentGateTests` pins both the all-Luna gate and the narrower
+sibling predicate.
 
 The optional **OnScreenURLs** input is checked next, before the normal decision
 table (including in Safari), so a supplied
@@ -154,7 +154,7 @@ evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 
 | `app` | conditions | result |
 |---|---|---|
-| another Luna app | — (gated in the intent, above the table) | **unhandled** |
+| any Luna app | — (gated in the intent, above the table) | **unhandled** |
 | nil / empty (lock screen) | — | **unhandled** |
 | Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done or download** — prepares/saves `lastURL` now |
 | Safari | URL stale/absent, no extension has ever run | **unhandled** |
@@ -221,7 +221,7 @@ twice within 7 s) is configured as **View immediately**, a self-contained DOCX
 article document is returned there instead, and the media handoff is skipped for
 that run. See double-save.md.
 
-0. **Sibling Luna app gate** — first, and specifically ahead of the double-press
+0. **Luna-app gate** — first, and specifically ahead of the double-press
    skip below, which would otherwise re-run the previous save without ever
    consulting the current app. Returns an empty `SaveResultEntity`.
 1. **Digest double-press skip** — `ScreenshotDigest.digest(forImageData:)`

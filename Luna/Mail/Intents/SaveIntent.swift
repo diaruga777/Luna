@@ -168,14 +168,14 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     private func save(
         reporter: IntentProgressReporter, attemptDate: Date
     ) async throws -> (value: SaveResultEntity, dialog: IntentDialog) {
-        // A sibling Luna app owns the screen. This has to come before the
-        // double-press path below, which would otherwise re-run the previous
-        // save without ever consulting the current app.
-        if AppNamePlatform.isSiblingLunaApp(currentApp) {
+        // A Luna app owns the screen. This has to come before every input path,
+        // including the double-press path below, which would otherwise re-run
+        // the previous save without consulting the current app.
+        if AppNamePlatform.isLunaApp(currentApp) {
             SharedDiagnosticLog.record(
-                "save: ignored — sibling Luna app frontmost (app=\(currentApp))",
+                "save: ignored — Luna app frontmost (app=\(currentApp))",
                 category: "intents")
-            return (SaveResultEntity(), "Nothing to save from another Luna app.")
+            return (SaveResultEntity(), "Nothing to save from a Luna app.")
         }
 
         if let resumed = try await resumeFromMetadataIfPossible(reporter: reporter) {

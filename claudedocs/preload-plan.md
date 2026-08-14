@@ -65,9 +65,9 @@ ownership down a subtree another root already cached. See `claudedocs/saves.md`.
       handles product UI). [Deferred: dedicated product preload.]
     - `.failed` / non-reader → **web-archive fallback** (see below), else
       `.unrepresentable`.
-  - Dedup: if the urlKey already exists `.loaded`, just add the root to `owners` and
-    enqueue its existing `children` (so the shared copy's subtree is owned too) — no
-    re-fetch.
+  - Dedup: if the urlKey already exists `.loaded`, just take an ownership edge for
+    the root and enqueue its existing `children` (so the shared copy's subtree is
+    owned too) — no re-fetch. `addOwner` only ever extends: it never creates a page.
 - Concurrency: a small bounded worker (≤3) off the main thread. Never blocks UI:
   the save's checkmark/Outcome completes immediately; preload runs detached.
 - Background survival: fresh-save preloads wrap with `UIApplication.beginBackgroundTask`

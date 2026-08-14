@@ -340,6 +340,17 @@ enum SavesSchema {
             PRIMARY KEY (url_key, position)
         ) WITHOUT ROWID;
 
+        -- The saves currently in the Spotlight index, one row each.
+        --
+        -- **No foreign key, deliberately.** Its whole job is to outlive the save:
+        -- a sweep deletes a Spotlight entry by diffing this against what is
+        -- indexable NOW, and an id that cascaded away with its save would be an
+        -- entry nothing could ever remove. The sweep replaces the table with what
+        -- it just indexed, so it holds a deleted save's id for one sweep only.
+        CREATE TABLE IF NOT EXISTS spotlight_index (
+            save_id TEXT PRIMARY KEY NOT NULL
+        ) WITHOUT ROWID;
+
         -- Files whose last holder is gone, waiting to be unlinked. A file system
         -- cannot join a transaction, so the COMMIT records the intent and
         -- `PendingDeleteReaper` does the unlink afterwards; a process killed in

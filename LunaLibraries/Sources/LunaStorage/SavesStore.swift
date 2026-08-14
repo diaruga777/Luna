@@ -1449,6 +1449,44 @@ public final class SavesStore {
         }
     }
 
+    // MARK: - Spotlight index bookkeeping
+
+    /// The save ids the last Spotlight sweep indexed.
+    public func spotlightIndexedIDs() -> Set<String> {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var ids: Set<String> = []
+                try db.query("SELECT save_id FROM spotlight_index") { row in
+                    if let id = row.string(0) { ids.insert(id) }
+                }
+                return ids
+            }
+        } catch {
+            record(error, "read spotlight index")
+            return []
+        }
+    }
+
+    /// Records exactly what a sweep just handed to Spotlight, replacing what the
+    /// previous sweep recorded. One transaction, so a reader never sees a half
+    /// list and conclude a live entry needs deleting.
+    public func setSpotlightIndexedIDs(_ ids: Set<String>) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                try db.run("DELETE FROM spotlight_index")
+                for id in ids {
+                    try db.run("INSERT OR IGNORE INTO spotlight_index (save_id) VALUES (?)") {
+                        try $0.bind(1, id)
+                    }
+                }
+            }
+        } catch {
+            record(error, "write spotlight index")
+        }
+    }
+
     // MARK: - Downloaded media rows
 
     /// Every downloaded-media save, in no particular order — the Downloader deck

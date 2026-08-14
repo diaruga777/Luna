@@ -8,6 +8,7 @@ import LunaAppConfig
 import LunaModels
 import os
 import LunaPriceCompare
+import LunaStorage
 import LunaURLClassification
 
 /// Answers "is this product cheaper somewhere else, right now?" for the product
@@ -98,16 +99,20 @@ enum ComparableSellerFinder {
             .map(answer(from:))
     }
 
-    /// Points from the tracked-product index the app writes.
+    /// Points from the user's own price trackers, read straight out of the saves
+    /// database — this appex links `LunaStorage` and holds the App Group
+    /// entitlement, so there is no index file between it and the rows.
     ///
-    /// An index point records a DAY, not an instant, so its honest timestamp is
+    /// A tracked point records a DAY, not an instant, so its honest timestamp is
     /// that day's UTC start. That makes `isFresh` mean exactly "recorded today":
     /// today's start is always less than 24h ago, and yesterday's never is.
     private static func indexPoints(
         matching page: ProductSnapshot
     ) -> [ComparablePricePoint] {
         var points: [ComparablePricePoint] = []
-        for entry in PriceHistoryIndex.load()
+        let tracked = SavesStore.shared.activePriceTrackers()
+            .map { PriceHistoryIndexEntry(tracker: $0) }
+        for entry in tracked
         where ProductPageMatching.matches(page: page, indexEntry: entry) {
             for store in entry.stores {
                 for point in store.points {

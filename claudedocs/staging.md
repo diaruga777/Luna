@@ -144,9 +144,8 @@ defaults is per-device configuration a stage has no business rewriting.
 > onboarding lesson's product rehearsal fell back to a bare "Saved" confirmation
 > instead of opening the price editor, with nothing in the log to say why. If a
 > staged save ever goes missing again, this is the shape of it. (`ProductSnapshotStore`
-> and `PriceHistoryIndexWriter` still resolve their own snapshot file; they are
-> read-mostly, and the stage that needs them isolated is the change that should
-> fix them.)
+> still resolves its own snapshot file; it is read-mostly, and the stage that needs
+> it isolated is the change that should fix it.)
 
 > **The scratch suite must not be named `group.…`.** cfprefsd resolves a suite
 > with that prefix as an app-group container, the process is not entitled to a

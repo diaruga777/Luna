@@ -48,7 +48,6 @@ public final class PriceRefreshCoordinator {
         // The history pill's data source: a refresh is exactly when a
         // tracker's priceHistory changes, so the index the extension reads
         // must be regenerated every cycle, not only at save time.
-        PriceHistoryIndexWriter.regenerate()
         DiagnosticLog.shared.record("price refresh: runner completed", category: "price")
         return outcomes
     }
@@ -63,7 +62,6 @@ public final class PriceRefreshCoordinator {
     public func refreshTracker(itemID: UUID) async -> PriceRefreshOutcome? {
         guard let outcome = await refresher.refreshTracker(itemID: itemID) else { return nil }
         notify([outcome])
-        PriceHistoryIndexWriter.regenerate()
         return outcome
     }
 

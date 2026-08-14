@@ -60,7 +60,6 @@ enum ProductShellWiring {
         // refresh cycles — for example after the user edits an alert
         // threshold or archives a tracker, neither of which triggers a
         // refresh.
-        PriceHistoryIndexWriter.regenerate()
     }
 
     /// Runs one price-refresh pass and returns the processed-tracker count. Its

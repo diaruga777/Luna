@@ -23,23 +23,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
 
-    /// Set when a tapped pending-request notification asks to open that screen.
-    /// Static because the tap is delivered to the AppDelegate before any scene
-    /// may have connected.
-    private static var pendingRequestsRoute = false
-
-    /// Entry point for a tapped pending-request notification (called from
-    /// `AppDelegate.userNotificationCenter(_:didReceive:)`). Opens the Pending
-    /// Requests screen now if the UI is ready, else stashes it for when it is.
-    static func routeToPendingRequests() {
-        pendingRequestsRoute = true
-        activeSceneDelegate()?.applyPendingNotificationRoute()
-    }
-
-    private static func activeSceneDelegate() -> SceneDelegate? {
-        UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first
-    }
-
     /// The main navigation controller, whichever shape this app's root takes:
     /// wrapped in the audio mini-player host (article apps' normal main UI) or
     /// bare (the other apps, UI-test and debug roots). The shape is a kind
@@ -47,18 +30,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private var mainNavigationController: UINavigationController? {
         guard let root = window?.rootViewController else { return nil }
         return KindWiring.mainNavigationController(of: root)
-    }
-
-    /// Pushes the Pending Requests screen onto the saves nav once the main
-    /// UI exists. Pending contact requests arrive by email, so only the apps that
-    /// do email have this screen to route to.
-    private func applyPendingNotificationRoute() {
-        guard Self.pendingRequestsRoute, LunaApp.current.sharesByEmail,
-              let nav = mainNavigationController else { return }
-        Self.pendingRequestsRoute = false
-        nav.dismiss(animated: false)
-        nav.popToRootViewController(animated: false)
-        nav.pushViewController(PendingRequestsViewController(), animated: true)
     }
 
     func scene(
@@ -107,7 +78,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
         }
-        applyPendingNotificationRoute()
     }
 
     #if DEBUG
@@ -332,7 +302,5 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             await WeeklySaveRefresher.shared.refreshWeeklySaves()
             await WeeklySaveRefresher.shared.checkProposalsIfKeyHolder()
         }
-        // A notification tapped while the app was backgrounded.
-        applyPendingNotificationRoute()
     }
 }

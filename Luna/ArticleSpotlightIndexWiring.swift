@@ -15,7 +15,9 @@ import Foundation
 /// debounce a burst would — `SavesSweepDriver`, shared with
 /// `AudioScriptPipeline` and `URLRescueCoordinator`), indexing every readable
 /// article and deleting Spotlight entries for ones that are no longer
-/// readable/present.
+/// readable/present. Which ids the last sweep indexed is the `spotlight_index`
+/// table — it has to survive a save's deletion to know the entry needs removing,
+/// which is why it is a table of its own rather than a column on the save.
 ///
 /// An article app's main process only. The Share/Action extensions never call
 /// `install()` (they don't index at all; their saves get picked up the next
@@ -24,7 +26,6 @@ import Foundation
 /// there would lead nowhere.
 enum ArticleSpotlightIndexWiring {
     private static let domainIdentifier = "articles"
-    private static let lastIndexedIDsKey = "articleSpotlightIndex.lastIndexedIDs"
 
     /// The driver holds its sweeper weakly, so this indexer's stands-in object
     /// is a `static let` of its own rather than a temporary. Both live for the
@@ -51,9 +52,8 @@ enum ArticleSpotlightIndexWiring {
             return item
         }
 
-        let defaults = UserDefaults(suiteName: SavesStore.appGroupID) ?? .standard
         let currentIDs = Set(entities.map { $0.id.uuidString })
-        let previousIDs = Set(defaults.stringArray(forKey: lastIndexedIDsKey) ?? [])
+        let previousIDs = SavesStore.shared.spotlightIndexedIDs()
         let removedIDs = removedIdentifiers(previousIDs: previousIDs, currentIDs: currentIDs)
 
         if !searchableItems.isEmpty {
@@ -62,7 +62,7 @@ enum ArticleSpotlightIndexWiring {
         if !removedIDs.isEmpty {
             CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: removedIDs, completionHandler: nil)
         }
-        defaults.set(Array(currentIDs), forKey: lastIndexedIDsKey)
+        SavesStore.shared.setSpotlightIndexedIDs(currentIDs)
     }
 
     // MARK: - Pure (ArticleSpotlightIndexWiringTests)

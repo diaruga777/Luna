@@ -439,18 +439,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         [.banner, .list, .sound]
     }
 
-    /// Handle a notification tap. A pending-request notification deep-links to
-    /// the Pending Requests screen; everything else just opens the app.
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let userInfo = response.notification.request.content.userInfo
-        if userInfo[NotificationManager.typeKey] as? String == NotificationManager.typePendingRequest {
-            await MainActor.run { SceneDelegate.routeToPendingRequests() }
-        }
-    }
-
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,

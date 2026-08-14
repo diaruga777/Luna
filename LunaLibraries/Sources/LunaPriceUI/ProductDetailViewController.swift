@@ -731,7 +731,6 @@ public final class ProductDetailViewController: UIViewController {
         // Safari pill reads is built from the same stores, so it has to be
         // rebuilt now rather than at the next refresh — otherwise the page in
         // Safari keeps quoting a price the user just deleted.
-        PriceHistoryIndexWriter.regenerate(store: store)
         reload()
     }
 }

@@ -266,6 +266,11 @@ STRICTLY LOWER than the current page price **in the same currency**, show a seco
 ### 3a. The app-written history index
 
 The handler does not open the saves database (the whole library is the wrong shape for one page load). Instead the
+> **Superseded.** The mirror file described below is gone: the Safari appexes link
+> `LunaStorage` and read the tracker rows directly
+> (`SavesStore.activePriceTrackers()`). Read this section as history — see
+> `claudedocs/price-tracking.md`'s "The tracked products".
+
 APP maintains a compact `priceHistoryIndex.json` next to the snapshots file: per tracked
 product: `{name, brand?, productID?, stores: [{url, host, points: [{day, price, currency}]}]}`.
 - Writer in LunaPriceUI (`PriceHistoryIndexWriter`), regenerated (atomic, whole-file) after:

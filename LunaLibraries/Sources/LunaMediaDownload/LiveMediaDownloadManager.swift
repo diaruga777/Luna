@@ -13,11 +13,6 @@ import ImageIO
 import Photos
 import UIKit
 
-public enum LiveMediaDownloadOwnership: String, Codable {
-    case downloader
-    case invokingApp
-}
-
 public enum LiveMediaDownloadStartPolicy {
     public static func downloaderShouldStart(
         storageState: SavedMediaItem.StorageState?
@@ -737,7 +732,7 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     /// Job ids currently backed by a real URLSession task. `taskDescription`
-    /// persists with background tasks, making it the join key to `jobs.json`.
+    /// persists with background tasks, making it the join key to `media_download_jobs`.
     private func activeTaskJobIDs() async -> Set<String> {
         await withCheckedContinuation { continuation in
             session.getAllTasks { tasks in
@@ -1119,7 +1114,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     /// Pauses download tasks while asking URLSession for resumable state. Resolve
     /// pages are small and simply cancel; media tasks persist their opaque resume
-    /// blob beside jobs.json before this method returns.
+    /// blob beside the job's other files before this method returns.
     private func suspendTasks(jobID: String) async {
         await withCheckedContinuation { continuation in
             session.getAllTasks { tasks in

@@ -187,4 +187,41 @@ enum SavesReader {
                 from: row, stores: storesBySave[id] ?? [], rejectedHosts: rejectedBySave[id] ?? [])
         }
     }
+
+    /// Every live price tracker with its sellers and their price points, reading
+    /// the three tracker tables and NOTHING else.
+    ///
+    /// A Safari extension asking "do I track this page's product?" runs on a page
+    /// load, and hydrating the whole saves list — every article, every media row,
+    /// every child table — to reach the trackers would be the wrong shape of work
+    /// for that question. Archived trackers are excluded: they are not being
+    /// watched, so they have no answer to give.
+    static func activePriceTrackers(in db: SavesDatabase) throws -> [PriceTracker] {
+        var pointsByStore: [Int64: [PriceDaySnapshot]] = [:]
+        try db.query(
+            "SELECT \(SaveRow.pricePointColumns) FROM tracker_price_points ORDER BY store_id, day"
+        ) { row in
+            guard let point = SaveRow.pricePoint(from: row) else { return }
+            pointsByStore[row.int64(0), default: []].append(point)
+        }
+
+        var storesBySave: [UUID: [PriceTrackerStore]] = [:]
+        try db.query(
+            "SELECT \(SaveRow.storeColumns) FROM tracker_stores ORDER BY save_id, position"
+        ) { row in
+            guard let id = row.string(1).flatMap(UUID.init(uuidString:)) else { return }
+            let store = SaveRow.store(from: row, priceHistory: pointsByStore[row.int64(0)] ?? [])
+            storesBySave[id, default: []].append(store)
+        }
+
+        var trackers: [PriceTracker] = []
+        try db.query(
+            "SELECT \(SaveRow.trackerColumns) FROM price_trackers WHERE is_archived = 0"
+        ) { row in
+            guard let id = row.string(0).flatMap(UUID.init(uuidString:)) else { return }
+            trackers.append(SaveRow.tracker(
+                from: row, stores: storesBySave[id] ?? [], rejectedHosts: []))
+        }
+        return trackers
+    }
 }

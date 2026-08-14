@@ -2,7 +2,7 @@
 //  FriendSharingTests.swift
 //  LunaTests
 //
-//  Merges RecentFriendRecipientsStoreTests, PendingRequestsStoreTests, and
+//  Merges RecentFriendRecipientsStoreTests and
 //  ReaderCardSenderTests: friend-sharing's recipient bookkeeping, incoming
 //  pending requests, and the reader card's sender-name resolution.
 //
@@ -15,17 +15,9 @@ import XCTest
 final class FriendSharingTests: XCTestCase {
 
     // MARK: - Shared fixtures
-    //
-    // RecentFriendRecipientsStoreTests and PendingRequestsStoreTests each
-    // scratch their own store in their own temp directory; both are named
-    // distinctly ("Recent…"/"pending…") since the two stores are different
-    // types and neither test group touches the other's fixture.
 
     private var recentRecipientsScratchDirectory: URL!
     private var recentRecipientsStore: RecentFriendRecipientsStore!
-
-    private var pendingRequestsScratch: URL!
-    private var pendingRequestsStore: PendingRequestsStore!
 
     override func setUp() {
         super.setUp()
@@ -34,22 +26,12 @@ final class FriendSharingTests: XCTestCase {
         try? FileManager.default.createDirectory(
             at: recentRecipientsScratchDirectory, withIntermediateDirectories: true)
         recentRecipientsStore = RecentFriendRecipientsStore(containerURL: recentRecipientsScratchDirectory)
-
-        pendingRequestsScratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PendingReq-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: pendingRequestsScratch, withIntermediateDirectories: true)
-        pendingRequestsStore = PendingRequestsStore(containerURL: pendingRequestsScratch)
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: recentRecipientsScratchDirectory)
         recentRecipientsStore = nil
         recentRecipientsScratchDirectory = nil
-
-        try? FileManager.default.removeItem(at: pendingRequestsScratch)
-        pendingRequestsStore = nil
-        pendingRequestsScratch = nil
         super.tearDown()
     }
 
@@ -94,45 +76,6 @@ final class FriendSharingTests: XCTestCase {
 
         XCTAssertEqual(
             recentRecipientsStore.items().map(\.email), ["other@example.com", "same@example.com"])
-    }
-
-    // MARK: - PendingRequestsStoreTests
-
-    private func request(url: String = "https://ex.com/a") -> PendingRequest {
-        PendingRequest(senderEmail: "bob@example.com", senderName: "Bob", urlString: url,
-                       title: "A", kind: "article", messageID: "1")
-    }
-
-    func testLoadsAndRemovesLegacyRequests() throws {
-        let item = request()
-        try JSONEncoder().encode([item]).write(
-            to: pendingRequestsScratch.appendingPathComponent("pendingRequests.json"), options: .atomic)
-
-        XCTAssertEqual(pendingRequestsStore.items(), [item])
-        XCTAssertEqual(pendingRequestsStore.count, 1)
-        pendingRequestsStore.remove(id: item.id)
-        XCTAssertEqual(pendingRequestsStore.count, 0)
-    }
-
-    func testLegacyRequestsAreSortedNewestFirst() throws {
-        let older = PendingRequest(
-            senderEmail: "bob@example.com", senderName: "Bob",
-            urlString: "https://ex.com/old", title: "Old", kind: "article",
-            messageID: "1", date: Date(timeIntervalSince1970: 1))
-        let newer = PendingRequest(
-            senderEmail: "alice@example.com", senderName: "Alice",
-            urlString: "https://ex.com/new", title: "New", kind: "article",
-            messageID: "2", date: Date(timeIntervalSince1970: 2))
-        try JSONEncoder().encode([older, newer]).write(
-            to: pendingRequestsScratch.appendingPathComponent("pendingRequests.json"), options: .atomic)
-
-        XCTAssertEqual(pendingRequestsStore.items().map(\.id), [newer.id, older.id])
-    }
-
-    func testDisplaySenderFallsBackToLocalPart() {
-        let req = PendingRequest(senderEmail: "carol@example.com", senderName: nil,
-                                 urlString: "https://x", title: nil, kind: "link", messageID: nil)
-        XCTAssertEqual(req.displaySender, "carol")
     }
 
     // MARK: - ReaderCardSenderTests

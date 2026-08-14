@@ -921,14 +921,15 @@ the share extension and the action extension write, not a Safari-local copy
 (`Library/ProductSnapshots/`, an identifier index plus one record file per
 observation, deduped by (canonical url, day), pruned past 365 days / 5000 records;
 see `claudedocs/price-tracking.md`'s "Product snapshots"). Then it ANSWERS the
-history-pill query by matching the page against (a) `priceHistoryIndex.json` (the
-app-written compact index of tracked products — `PriceHistoryIndexWriter`,
-LunaPriceUI, regenerated after every save/refresh/background) and (b) the
-observations the store's index says share one of this page's identifiers, using the
-SAME precedence `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family →
-mpn+brand → sku+host → canonical URL; no fuzzy name — a name is not an identifier),
-through `LunaPriceCompare.ProductPageMatching`, which is also where
-`PriceHistoryIndexEntry` and the index's location live. `LunaSafari
+history-pill query by matching the page against (a) the user's own price trackers,
+read straight out of `saves.sqlite` via `SavesStore.activePriceTrackers()` — this
+appex links `LunaStorage` and holds the App Group entitlement, so there is no
+mirror file and nothing to regenerate — and (b) the observations the store's index
+says share one of this page's identifiers, using the SAME precedence
+`SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family → mpn+brand →
+sku+host → canonical URL; no fuzzy name — a name is not an identifier), through
+`LunaPriceCompare.ProductPageMatching`, which is also where the tracker's
+matcher-shaped projection `PriceHistoryIndexEntry` lives. `LunaSafari
 /SharedProductMatching.swift` is now only the reduction to a pill's one line;
 `SharedProductMatchingParityTests` runs one fixture matrix through both matchers.
 The reply is
@@ -962,7 +963,7 @@ content.js (after the productSnapshot reply)  → spinner pill + Track pill
   → runtime.sendMessage {type:"comparableSellers", snapshot}
   → background.js relay → sendNativeMessage
   → SafariWebExtensionHandler → ComparableSellerFinder.answer(forPageSnapshot:)
-      ├─ 1. priceHistoryIndex.json + the snapshot index, <24h               ← no network
+      ├─ 1. the tracker rows + the snapshot index, <24h                     ← no network
       ├─ 2. else SellerFanOut(.constrained) over URLSession                 ← LunaPriceCompare
       │      └─ results written back via ProductSnapshotStore.record
       └─ reply {found, price, currency, sellerName, url}
@@ -973,7 +974,7 @@ content.js (after the productSnapshot reply)  → spinner pill + Track pill
 Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`) it
 runs two legs in order:
 
-1. **What is already stored.** The app-written `priceHistoryIndex.json` and the
+1. **What is already stored.** The user's own tracker rows and the
    passive snapshot file, matched to this page by `ProductPageMatching`'s tiers.
    Costs no network, and after one visit to a rival's page it is usually enough.
 2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with

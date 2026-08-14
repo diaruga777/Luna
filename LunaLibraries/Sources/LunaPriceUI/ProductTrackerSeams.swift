@@ -34,27 +34,12 @@ public protocol SingleTrackerRefreshing {
     func refresh(itemID: UUID) async -> PriceRefreshOutcome?
 }
 
-/// Production: the real single-tracker coordinator, which also regenerates the
-/// history index on completion.
+/// Production: the real single-tracker coordinator.
 public struct CoordinatorTrackerRefresher: SingleTrackerRefreshing {
     public init() {}
 
     public func refresh(itemID: UUID) async -> PriceRefreshOutcome? {
         await PriceRefreshCoordinator.shared.refreshTracker(itemID: itemID)
-    }
-}
-
-/// Regenerates the compact price-history index (the Safari pill's data source).
-public protocol PriceHistoryIndexRegenerating {
-    func regenerate()
-}
-
-/// Production: the real index.
-public struct PriceHistoryIndexRegenerator: PriceHistoryIndexRegenerating {
-    public init() {}
-
-    public func regenerate() {
-        PriceHistoryIndexWriter.regenerate()
     }
 }
 

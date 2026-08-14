@@ -26,7 +26,6 @@ public final class ProductTrackerIngestor {
     var refresher: any SingleTrackerRefreshing = CoordinatorTrackerRefresher()
     /// Test seam: the history-index regeneration `finishSeeding` fires right
     /// after persisting.
-    var indexRegenerator: any PriceHistoryIndexRegenerating = PriceHistoryIndexRegenerator()
     /// Test seam: STARTING the save-time alternative-seller fan-out.
     var comparisonStarter: any SellerComparisonStarting = BackgroundSellerComparisonStarter()
     /// Test seam for the complete product-artwork pass.
@@ -116,7 +115,6 @@ public final class ProductTrackerIngestor {
     /// wrapped in a background task: Feature 2's bounce-back may background the
     /// app immediately after this call returns.
     private func finishSeeding(itemID: UUID) {
-        indexRegenerator.regenerate()
         var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(
             withName: "ProductSnapshotSeedRefresh"

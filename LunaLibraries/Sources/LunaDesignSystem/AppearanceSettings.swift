@@ -59,6 +59,7 @@ public enum AppearanceSettings {
         let resolved = sky(systemStyle: viewController.traitCollection.userInterfaceStyle)
         viewController.overrideUserInterfaceStyle = .dark
         viewController.traitOverrides.lunaSky = resolved
+        followSystemStyle(of: viewController)
     }
 
     /// Which sky the current preference resolves to.
@@ -100,6 +101,40 @@ public enum AppearanceSettings {
             for window in scene.windows {
                 window.traitOverrides.lunaSky = resolved
             }
+        }
+    }
+
+    /// View controllers, similarly held WEAKLY: an extension/App Clip screen that
+    /// deallocates should not leave a dangling registration behind.
+    nonisolated(unsafe) private static let observedViewControllers =
+        NSHashTable<UIViewController>.weakObjects()
+
+    /// A share/action extension or App Clip pins the VIEW CONTROLLER, not a window
+    /// it owns, so — same problem `followSystemStyle(of window:)` solves one level
+    /// up — its own resolved style can no longer report a device appearance flip
+    /// either. The window it's presented in (the host app's, for an extension; the
+    /// clip's own, for a Clip) carries no override of ours, so watch that instead.
+    /// `viewDidLoad` runs before this screen is inserted into that window (an
+    /// extension host attaches it only after presenting the principal view
+    /// controller returns), so a still-nil window is retried a few run-loop turns
+    /// rather than given up on — by the time this screen is actually on screen for
+    /// the user to see, its window must exist.
+    @MainActor
+    private static func followSystemStyle(of viewController: UIViewController, attemptsRemaining: Int = 5) {
+        guard !observedViewControllers.contains(viewController) else { return }
+        guard let window = viewController.view.window else {
+            guard attemptsRemaining > 0 else { return }
+            DispatchQueue.main.async { [weak viewController] in
+                guard let viewController else { return }
+                followSystemStyle(of: viewController, attemptsRemaining: attemptsRemaining - 1)
+            }
+            return
+        }
+        observedViewControllers.add(viewController)
+        window.registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+            [weak viewController] (window: UIWindow, _) in
+            guard let viewController else { return }
+            viewController.traitOverrides.lunaSky = sky(systemStyle: window.traitCollection.userInterfaceStyle)
         }
     }
 }

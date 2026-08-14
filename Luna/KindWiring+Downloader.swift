@@ -65,7 +65,7 @@ enum KindWiring {
 
     static func settingsCategories() -> [SettingsCategory] {
         [
-            SettingsCategory(title: L10n.string("Common_downloads"), symbol: "arrow.down.circle") {
+            SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
                 DownloadsSettingsScreen()
             },
         ]

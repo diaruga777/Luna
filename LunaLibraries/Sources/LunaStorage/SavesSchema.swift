@@ -46,20 +46,15 @@ enum SavesSchema {
             try database.execute("BEGIN IMMEDIATE")
             do {
                 let existing = try userVersion(in: database)
-                // Version 6 gave `preload_pages` the columns that used to live in
-                // `preloads.json`, and `CREATE TABLE IF NOT EXISTS` cannot add a
-                // column to a table that is already there. Nothing adopts a
-                // version-5 row, so the table is rebuilt — but its files are
-                // released FIRST, through the edges, or dropping the table would
-                // strand them owned and unreachable.
-                if existing >= 5 && existing < 6 {
-                    try database.execute("""
-                        DELETE FROM file_refs
-                            WHERE file_id IN (SELECT file_id FROM preload_pages);
-                        DELETE FROM file_holders
-                            WHERE file_id IN (SELECT file_id FROM preload_pages);
-                        DROP TABLE IF EXISTS preload_pages;
-                        """)
+                // The first build stamped schema 6 when it added `media_saves`;
+                // a later build used the same stamp while adding the columns that
+                // moved `preloads.json` into `preload_pages`. A database opened by
+                // the first build therefore says 6 but still has the old two-column
+                // page table. A version test cannot distinguish those layouts, so
+                // inspect the table itself on every open. This is also safe for a
+                // newer sibling's schema: extra columns are left alone.
+                if try preloadPagesNeedRebuild(in: database) {
+                    try rebuildPreloadPages(in: database)
                 }
                 try database.execute(tables)
                 try database.execute(indexes)
@@ -78,10 +73,10 @@ enum SavesSchema {
                 if existing > 0 && existing < 2 {
                     try backfillFileOwnership(in: database)
                 }
-                // Version 5 added `preload_pages`, and it starts empty. What fills
-                // it for an existing install is the preload cache's own index,
-                // which this has no business reading — see
-                // `PreloadStore.migrateLegacyOwnersIfNeeded`.
+                // Version 5 added `preload_pages`. The later full-index migration
+                // deliberately starts its rebuilt table empty; `PreloadStore`
+                // retires the old JSON index rather than mixing its stale cache
+                // entries into current ownership.
                 if existing < SavesDatabase.schemaVersion {
                     try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
                 }
@@ -128,6 +123,44 @@ enum SavesSchema {
     /// The schema revision recorded in the file.
     static func userVersion(in database: SavesDatabase) throws -> Int32 {
         Int32(try database.scalarInt("PRAGMA user_version") ?? 0)
+    }
+
+    /// Whether an existing `preload_pages` table predates the full SQL index.
+    /// Absence is a fresh/older database that `tables` creates normally; extra
+    /// columns belong to a newer sibling and are deliberately tolerated.
+    private static func preloadPagesNeedRebuild(in database: SavesDatabase) throws -> Bool {
+        var columns: Set<String> = []
+        try database.query("PRAGMA table_info(preload_pages)") { row in
+            if let name = row.string(1) { columns.insert(name) }
+        }
+        guard !columns.isEmpty else { return false }
+        let required: Set<String> = [
+            "url_key", "file_id", "url_string", "kind", "last_loaded_at", "has_content",
+        ]
+        return !required.isSubset(of: columns)
+    }
+
+    /// Releases the files mapped by an obsolete page table, then removes that
+    /// table so `tables` can create the current layout. Ownership edges go first:
+    /// their release triggers retire and queue normally held files. The explicit
+    /// tail handles a malformed zero-holder row defensively, so dropping the map
+    /// can never strand a `files` row with no way to find it again.
+    private static func rebuildPreloadPages(in database: SavesDatabase) throws {
+        try database.execute("DROP TABLE IF EXISTS preload_page_links")
+        try database.execute("""
+            DELETE FROM file_refs
+                WHERE file_id IN (SELECT file_id FROM preload_pages);
+            DELETE FROM file_holders
+                WHERE file_id IN (SELECT file_id FROM preload_pages);
+            INSERT OR IGNORE INTO retired_paths (relative_path, retired_at)
+                SELECT files.relative_path, strftime('%s', 'now')
+                FROM files JOIN preload_pages ON preload_pages.file_id = files.id;
+            INSERT OR REPLACE INTO pending_deletes (relative_path, enqueued_at, attempts)
+                SELECT files.relative_path, strftime('%s', 'now'), 0
+                FROM files JOIN preload_pages ON preload_pages.file_id = files.id;
+            DELETE FROM files WHERE id IN (SELECT file_id FROM preload_pages);
+            DROP TABLE preload_pages;
+            """)
     }
 
     private static let tables = """

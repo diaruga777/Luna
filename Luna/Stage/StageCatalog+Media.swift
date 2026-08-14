@@ -125,7 +125,7 @@ enum MediaStageCatalog {
                 kind: .media,
                 make: {
                     downloadCard(snapshot: snapshot(
-                        phase: .downloading, progress: 0.45, message: "Downloading…"))
+                        phase: .downloading, progress: 0.45, message: "Fetching video…"))
                 }),
             StageDescriptor(
                 id: "card.media.waiting", screen: "Media card", variant: "waiting for Wi-Fi",
@@ -212,7 +212,7 @@ enum MediaStageCatalog {
             StageDescriptor(
                 id: "util.download-storage", screen: "Util card",
                 variant: "storage unanswered",
-                summary: "The inline \"Store downloads\" line above the setup buttons, on a "
+                summary: "The inline \"Store files\" line above the setup buttons, on a "
                     + "completed card whose recents it stands down. Only the two apps that "
                     + "download can offer it.",
                 kind: .media,

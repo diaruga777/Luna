@@ -56,15 +56,21 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(rowTitle(screen, row: 1, section: 2), "Install Enhanced Voices")
     }
 
-    func testDownloadsUsesOneSharedTwoPickerLayout() {
+    func testVideoUsesTwoPickersAndAProgressToggle() {
         let screen = DownloadsSettingsScreen()
         window = UITestSupport.host(screen)
 
-        XCTAssertEqual(screen.tableView.numberOfSections, 2)
+        XCTAssertEqual(screen.tableView.numberOfSections, 3)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 0), 1)
         XCTAssertEqual(screen.tableView.numberOfRows(inSection: 1), 1)
-        XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Begin Downloads")
+        XCTAssertEqual(screen.tableView.numberOfRows(inSection: 2), 1)
+        XCTAssertEqual(rowTitle(screen, row: 0, section: 0), "Begin Streaming")
         XCTAssertEqual(rowTitle(screen, row: 0, section: 1), "Storage")
+        XCTAssertEqual(rowTitle(screen, row: 0, section: 2), "Notify save progress")
+        XCTAssertEqual(
+            (screen.tableView(screen.tableView, cellForRowAt: IndexPath(row: 0, section: 2)).accessoryView
+                as? UISwitch)?.isOn,
+            false)
     }
 
     func testImportExportIsTwoButtonsAndReachableFromTheTopLevel() {

@@ -55,7 +55,7 @@ APPS = [
     ("luna", "Core", "AppIconLuna.appiconset/AppIconLuna1024.png"),
     ("reader", "Reader", "AppIconReader.appiconset/AppIconReader-1024.png"),
     (
-        "downloader",
+        "video",
         "Downloader",
         "AppIconDownloader.appiconset/AppIconDownloader-1024.png",
     ),
@@ -70,8 +70,11 @@ APPS = [
 ALIASES = {
     "luna-reader": "reader",
     "lunareader": "reader",
-    "luna-downloader": "downloader",
-    "lunadownloader": "downloader",
+    "downloader": "video",
+    "luna-downloader": "video",
+    "lunadownloader": "video",
+    "luna-video": "video",
+    "lunavideo": "video",
     "luna-price-tracker": "price-tracker",
     "pricetracker": "price-tracker",
     "price": "price-tracker",
@@ -667,7 +670,9 @@ def build(out: Path) -> None:
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
 
     redirects = "".join(
-        f"/setup/{alias} /setup/{slug}/ 301\n" for alias, slug in sorted(ALIASES.items())
+        f"/setup/{alias} /setup/{slug}/ 301\n"
+        f"/setup/{alias}/ /setup/{slug}/ 301\n"
+        for alias, slug in sorted(ALIASES.items())
     )
     (out / "_redirects").write_text(redirects, encoding="utf-8")
 

@@ -34,6 +34,16 @@ public enum AutoDownloadSettings {
         set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }
     }
 
+    private static let notifySaveProgressKey = "notifySaveProgress"
+
+    /// Whether background media saves should create a Live Activity. Defaults to
+    /// OFF so saves stay in the background unless the person opts into progress
+    /// on the Lock Screen and Dynamic Island.
+    public static var notifySaveProgress: Bool {
+        get { (defaults.object(forKey: notifySaveProgressKey) as? Bool) ?? false }
+        set { defaults.set(newValue, forKey: notifySaveProgressKey) }
+    }
+
     private static let wifiOnlyDownloadsKey = "wifiOnlyDownloads"
 
     /// Whether Downloader-owned downloads should be deferred while on cellular.

@@ -20,8 +20,8 @@
         "description": "Button that opens an article in Luna Reader."
     },
     "downloadInLuna": {
-        "message": "Download in Luna",
-        "description": "Button that sends downloadable media to Luna."
+        "message": "Open in Luna",
+        "description": "Button that opens this video in Luna."
     },
     "trackInLuna": {
         "message": "Track in Luna",
@@ -33,7 +33,7 @@
     },
     "videoUnplayable": {
         "message": "This one can't play here",
-        "description": "Shown in the in-page player when the video can't be resolved or streamed in Safari. The Download button below it still hands the page to Luna."
+        "description": "Shown in the in-page player when the video can't be resolved or streamed in Safari. The Open in Luna button below it still hands the page to Luna."
     },
     "closeVideo": {
         "message": "Close",

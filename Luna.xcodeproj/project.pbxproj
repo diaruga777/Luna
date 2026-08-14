@@ -690,7 +690,7 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
-				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Video.shortcut",
 				"Resources/Luna Reader.shortcut",
 				Resources/Luna.shortcut,
 				Settings/AudioSettingsScreen.swift,
@@ -759,7 +759,7 @@
 				PriceTracker/ProductCardPresenter.swift,
 				PriceTracker/ProductIntentHandoff.swift,
 				ProductShellWiring.swift,
-				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Video.shortcut",
 				"Resources/Luna Price Tracker.shortcut",
 				Resources/Luna.shortcut,
 				Settings/DownloadsSettingsScreen.swift,
@@ -822,7 +822,7 @@
 				"KindWiring+Reader.swift",
 				"Mail/Intents/LunaShortcuts+SaveOnly.swift",
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
-				"Resources/Luna Downloader.shortcut",
+				"Resources/Luna Video.shortcut",
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Reader.shortcut",
 			);
@@ -2973,7 +2973,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luna/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
@@ -3127,7 +3127,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaAction/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3192,7 +3192,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaAction/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3381,8 +3381,8 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
-				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3469,7 +3469,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4202,7 +4202,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Luna/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LunaLaunchScreen;
@@ -4262,7 +4262,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4289,8 +4289,8 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
-				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4413,7 +4413,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaDownloaderClip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -4446,7 +4446,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaDownloaderClip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -4480,7 +4480,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaDownloaderLiveActivity/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4507,7 +4507,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaDownloaderLiveActivity/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Video";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

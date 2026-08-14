@@ -52,9 +52,9 @@
 "Common_delete_Luna" = "Delete";
 "Common_document_Luna" = "Document";
 "Common_done_Luna" = "Done";
-"Common_download_Luna" = "Download";
-"Common_downloading_Luna" = "Downloading";
-"Common_downloads_Luna" = "Downloads";
+"Common_download_Luna" = "Open in Luna";
+"Common_downloading_Luna" = "Fetching video…";
+"Common_downloads_Luna" = "Video";
 "Common_email_Luna" = "Email";
 "Common_emailPlaceholderExample_Luna" = "you@example.com";
 "Common_installShortcut_Luna" = "Install Shortcut";
@@ -97,7 +97,7 @@
 "LunaApp_displayName_Luna" = "Luna";
 "LunaApp_displayName_Core" = "Luna";
 "LunaApp_displayName_Reader" = "Luna Reader";
-"LunaApp_displayName_Downloader" = "Luna Downloader";
+"LunaApp_displayName_Downloader" = "Luna Video";
 "LunaApp_displayName_PriceTracker" = "Luna Price Tracker";
 
 /* ===================== UnsupportedSave — "this app can't take this link",
@@ -234,7 +234,7 @@
 "SaveFailure_nothingToSave_Luna" = "There's nothing on this page to save";
 "SaveFailure_notReadableWebPage_Luna" = "The link isn't a readable web page";
 "SaveFailure_tooLarge_Luna" = "Oops! The page is too large to read";
-"SaveFailure_noMediaFound_Luna" = "There was nothing to download";
+"SaveFailure_noMediaFound_Luna" = "There was no playable video to fetch";
 "SaveFailure_couldntStoreDownload_Luna" = "Unable to save the file, is your phone out of space?";
 "SaveFailure_sentToSubscribePage_Luna" = "The site sent Luna to its subscribe page";
 "SaveFailure_couldntFetchLink_Luna" = "Luna couldn't fetch this link";
@@ -270,18 +270,18 @@
 "Onboarding_Intro_headline1Initial_Luna" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Core" = "All your Luna apps.";
 "Onboarding_Intro_headline1Initial_Reader" = "Read.";
-"Onboarding_Intro_headline1Initial_Downloader" = "Download any video.";
+"Onboarding_Intro_headline1Initial_Downloader" = "Watch any video.";
 "Onboarding_Intro_headline1Initial_PriceTracker" = "Want the best price?";
 "Onboarding_Intro_headline2Final_Luna" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Core" = "One Luna app.";
 "Onboarding_Intro_headline2Final_Reader" = "Read more.";
-"Onboarding_Intro_headline2Final_Downloader" = "Download any video.\nNo sign in required.";
+"Onboarding_Intro_headline2Final_Downloader" = "Watch any video.\nNo sign in required.";
 "Onboarding_Intro_headline2Final_PriceTracker" = "Get the best price.";
 "Onboarding_Intro_orSeparator_Luna" = "or";
 "Onboarding_Intro_paste_Luna" = "Paste a link";
 "Onboarding_Intro_safariAction_Luna" = "Use Luna inside Safari";
 "Onboarding_Intro_safariAction_Reader" = "Unlock & read in Safari";
-"Onboarding_Intro_safariAction_Downloader" = "Watch & download in Safari";
+"Onboarding_Intro_safariAction_Downloader" = "Watch in Safari";
 "Onboarding_Intro_safariAction_PriceTracker" = "Show better prices right in Safari";
 "Onboarding_Intro_saveBenefit_Luna" = "Read, watch, track, anything";
 "Onboarding_Intro_saveBenefit_Core" = "Save anything";
@@ -290,7 +290,7 @@
 "Onboarding_Intro_saveBenefit_PriceTracker" = "Never miss a sale";
 "Onboarding_Intro_shortcutAction_Luna" = "Save in 1 click";
 "Onboarding_Intro_shortcutAction_Reader" = "Save for later in 1 click";
-"Onboarding_Intro_shortcutAction_Downloader" = "Download videos in 1 click";
+"Onboarding_Intro_shortcutAction_Downloader" = "Watch videos in 1 click";
 "Onboarding_Intro_shortcutAction_PriceTracker" = "Track prices in 1 click";
 "Onboarding_Intro_unableToLoadPage_Luna" = "Unable to load website";
 
@@ -352,7 +352,7 @@
 "Onboarding_Safari_explainerChunk2_Luna" = "\n\nStop popups and blocking ads.";
 "Onboarding_Safari_explainerChunk2_Core" = "\n\nStop popups and blocking ads.";
 "Onboarding_Safari_explainerChunk2_Reader" = "\n\nStop popups and blocking ads.";
-"Onboarding_Safari_explainerChunk2_Downloader" = "\n\nDownload in one tap.";
+"Onboarding_Safari_explainerChunk2_Downloader" = "\n\nWatch in one tap.";
 "Onboarding_Safari_explainerChunk2_PriceTracker" = "\n\nOne tap to get alerted when the price drops.";
 "Onboarding_Safari_explainerChunk3_Luna" = "\n\n";
 "Onboarding_Safari_explainerChunk3_Core" = "\n\n";
@@ -377,7 +377,7 @@
 "Onboarding_Safari_newsletterSubtitle_Luna" = "We promise to spam you";
 "Onboarding_Safari_newsletterTitle_Luna" = "Subscribe to our newsletter";
 "Onboarding_Safari_pageMenuStep_Luna" = "Tap the page menu in the address bar";
-"Onboarding_Safari_playerDownload_Luna" = "Download in Luna";
+"Onboarding_Safari_playerDownload_Luna" = "Open in Luna";
 "Onboarding_Safari_pricePillFoundTemplate_Luna" = "%@ at %@";
 "Onboarding_Safari_pricePillLooking_Luna" = "Finding other sellers…";
 "Onboarding_Safari_setUpInSafari_Luna" = "Set up in Safari";
@@ -434,10 +434,10 @@
  * inline storage line, and accessibility strings ===== */
 "Onboarding_Util_invalidURL_Luna" = "Invalid URL";
 "Onboarding_Util_recentRowAccessibilityHint_Luna" = "Saves link in Luna";
-"Onboarding_Util_storage1Label_Luna" = "Store downloads";
+"Onboarding_Util_storage1Label_Luna" = "Store files";
 "Onboarding_Util_storage2InLuna_Luna" = "in Luna";
 "Onboarding_Util_storage3InPhotos_Luna" = "in Photos";
-"Onboarding_Util_storagePermissionAlertMessage_Luna" = "Downloads are set to save to Photos, but this app hasn't been given permission yet. Allow Photos access in Settings to continue.";
+"Onboarding_Util_storagePermissionAlertMessage_Luna" = "Files are set to save to Photos, but this app hasn't been given permission yet. Allow Photos access in Settings to continue.";
 "Onboarding_Util_storagePermissionAlertTitle_Luna" = "Photos Access Needed";
 "Onboarding_Util_storagePermissionBadgeLabel_Luna" = "Photos access needed";
 "Onboarding_Util_unableToSaveURL_Luna" = "Unable to save URL";
@@ -506,13 +506,14 @@
 "Settings_autoSend_sectionFooter_Luna" = "Choose which saves %@ receives automatically.";
 "Settings_autoSend_shareAndPasteLabel_Luna" = "Share Sheet & Paste";
 
-/* ===== Settings_downloads — Settings → Downloads: auto-download policy and
+/* ===== Settings_downloads — Settings → Video: automatic streaming policy and
  * storage/retention. Luna/Settings/DownloadsSettingsScreen.swift ===== */
-"Settings_downloads_autoDownloadLabel_Luna" = "Begin Downloads";
-"Settings_downloads_autoDownloadFooter_Luna" = "Start downloading immediately when you save a link, or wait until you're on Wi-Fi or you tap to view.";
+"Settings_downloads_autoDownloadLabel_Luna" = "Begin Streaming";
+"Settings_downloads_autoDownloadFooter_Luna" = "Start streaming immediately when you save a link, or wait until you're on Wi-Fi or you tap to view.";
 "Settings_downloads_storageLabel_Luna" = "Storage";
-"Settings_downloads_storageFooter_Luna" = "Store downloaded files in Photos or in Luna with auto-delete. Photos storage is managed by your device and iCloud.";
+"Settings_downloads_storageFooter_Luna" = "Store files in Photos or in Luna with auto-delete. Photos storage is managed by your device and iCloud.";
 "Settings_downloads_storagePermissionErrorLabel_Luna" = "Photos access needed";
+"Settings_video_notifySaveProgressLabel_Luna" = "Notify save progress";
 
 /* ===== Settings_email — Settings → Email: the Sharing Account section (also
  * the inline sign-in form until an account exists), Import from Email, and
@@ -587,7 +588,7 @@
 "Settings_linkImport_stopButton_Luna" = "Stop";
 "Settings_linkImport_progressCount_Luna" = "%lld of %lld finished";
 "Settings_linkImport_savingStatus_Luna" = "Saving links…";
-"Settings_linkImport_downloadingStatus_Luna" = "Downloading content…";
+"Settings_linkImport_downloadingStatus_Luna" = "Fetching content…";
 "Settings_linkImport_unlockingStatus_Luna" = "Extracting website text…";
 "Settings_linkImport_rescuingStatus_Luna" = "Retrying with Apple Intelligence…";
 "Settings_linkImport_doneStatus_Luna" = "Finishing up…";
@@ -598,7 +599,7 @@
 "Settings_linkImport_resultSectionHeader_Luna" = "Summary";
 "Settings_linkImport_importedCount_Luna" = "%lld imported";
 "Settings_linkImport_importedSubtitle_Luna" = "Saved, with their content ready.";
-"Settings_linkImport_failuresCount_Luna" = "%lld couldn't be downloaded yet";
+"Settings_linkImport_failuresCount_Luna" = "%lld couldn't be fetched yet";
 "Settings_linkImport_failuresSubtitle_Luna" = "Saved anyway — will automatically retry later.";
 "Settings_linkImport_duplicatesCount_Luna" = "%lld already saved";
 "Settings_linkImport_duplicatesSubtitle_Luna" = "Left exactly as they were.";
@@ -645,7 +646,7 @@
  * suggestion-button label. ===== */
 "Settings_shortcut_safariButtonName_Luna" = "Luna";
 "Settings_shortcut_safariButtonName_Reader" = "Read in Luna";
-"Settings_shortcut_safariButtonName_Downloader" = "Download";
+"Settings_shortcut_safariButtonName_Downloader" = "Open in Luna";
 "Settings_shortcut_safariButtonName_PriceTracker" = "Track in Luna";
 
 "Settings_shortcut_titleWithSetup_Luna" = "Safari & One-click save";
@@ -657,7 +658,7 @@
 "Settings_shortcut_cookiePopupsFooter_Luna" = "When a site asks about cookies, Luna answers \"necessary cookies only\" before the popup can appear — it never accepts anything on your behalf. Turn this off to answer cookie prompts yourself; newsletter and app-install popups are hidden either way.";
 "Settings_shortcut_videoPlayerSectionHeader_Luna" = "Video Player";
 "Settings_shortcut_videoPlayerToggleLabel_Luna" = "Play in Safari";
-"Settings_shortcut_videoPlayerFooter_Luna" = "Open a video post in Safari and Luna plays it right there, with one button to download it. Turn this off to leave the page alone — the \"%@\" button still hands the video to Luna.";
+"Settings_shortcut_videoPlayerFooter_Luna" = "Open a video post in Safari and Luna plays it right there, with one button to open it in Luna. Turn this off to leave the page alone — the \"%@\" button still hands the video to Luna.";
 "Settings_shortcut_onScreenURLsSectionHeader_Luna" = "Apple Intelligence";
 "Settings_shortcut_onScreenURLsToggleLabel_Luna" = "On-Screen URLs";
 "Settings_shortcut_onScreenURLsFooter_Luna" = "When enabled, use Apple Intelligence to save any url on screen with the Action Button. URLs are identified on-device and may not be perfect.";
@@ -721,7 +722,7 @@
 "MailAccount_mailProvider_genericSetupInstructions_Luna" = "Enter your mail server settings and password. If your provider requires an app password, create one first.";
 
 /* ===== Email & Sending — Action Button media handoff errors (MediaIntentHandoff.swift) ===== */
-"MediaIntentHandoff_downloadFailedMessage_Luna" = "Luna saved the link but couldn't download media.";
+"MediaIntentHandoff_downloadFailedMessage_Luna" = "Luna saved the link but couldn't fetch the video.";
 "MediaIntentHandoff_notAuthorizedMessage_Luna" = "Luna needs permission to save media to your photo library.";
 
 /* ===== App Intents metadata — ArticleEntity.swift (concrete _Luna keys, no runtime fallback) ===== */
@@ -732,7 +733,7 @@
 /* ===== App Intents metadata — CaptureIntentResult.swift ===== */
 "Intents_provideContextOutcome_doneCase_title_Luna" = "Done";
 "Intents_provideContextOutcome_screenshotCase_title_Luna" = "Screenshot";
-"Intents_provideContextOutcome_downloadCase_title_Luna" = "Download";
+"Intents_provideContextOutcome_downloadCase_title_Luna" = "Save";
 "Intents_provideContextOutcome_unhandledCase_title_Luna" = "Unhandled";
 "Intents_provideContextResultEntity_mediaProperty_title_Luna" = "Media";
 "Intents_provideContextResultEntity_outcomeProperty_title_Luna" = "Outcome";
@@ -879,7 +880,7 @@
 "Reader_export_sendModeDoubleSaveTitle_Luna" = "2x Save";
 
 /* ===== Downloader_mediaCard — MediaCardFactory.swift / MediaCardPresenter.swift / PhotosReferenceBadgeView.swift (Downloader's + central app's media card) ===== */
-"Downloader_mediaCard_downloadAccessibilityLabel_Luna" = "Download media";
+"Downloader_mediaCard_downloadAccessibilityLabel_Luna" = "Open video in Luna";
 "Downloader_mediaCard_menu_saveToPhotos_Luna" = "Save to Photos";
 "Downloader_mediaCard_photosAccess_deleteMessage_Luna" = "Allow Photos access in Settings to delete this media from Photos.";
 "Downloader_mediaCard_photosAccess_playMessage_Luna" = "Allow Photos access to play this archived item.";
@@ -900,11 +901,11 @@
 "Downloader_mediaCard_shareFile_videoTitle_Luna" = "Share video";
 
 /* ===== Downloader_liveActivity — LiveMediaDownloadJob.swift / LiveMediaDownloadManager.swift / LiveMediaDownloadManager+ActivityKit.swift (the download's Live Activity + its status line, shared with the Downloader footer view) ===== */
-"Downloader_liveActivity_alert_downloadFinishedTitle_Luna" = "Download finished";
-"Downloader_liveActivity_alert_downloadStartedTitle_Luna" = "Download started";
-"Downloader_liveActivity_defaultTitle_Luna" = "Downloading";
-"Downloader_liveActivity_status_downloadFailed_Luna" = "Download failed";
-"Downloader_liveActivity_status_resolving_Luna" = "Preparing download";
+"Downloader_liveActivity_alert_downloadFinishedTitle_Luna" = "Save finished";
+"Downloader_liveActivity_alert_downloadStartedTitle_Luna" = "Saving video";
+"Downloader_liveActivity_defaultTitle_Luna" = "Fetching video";
+"Downloader_liveActivity_status_downloadFailed_Luna" = "Couldn't fetch video";
+"Downloader_liveActivity_status_resolving_Luna" = "Fetching video";
 "Downloader_liveActivity_status_savedToPhotos_Luna" = "Saved to Photos";
 "Downloader_liveActivity_status_savingToLuna_Luna" = "Saving to Luna";
 "Downloader_liveActivity_status_savingToPhotos_Luna" = "Saving to Photos";
@@ -919,16 +920,16 @@
 
 /* ===== Downloader_media — MediaDownload.swift / SavedMediaStore.swift / SavedNonTextualViewController.swift (download errors, retention ages, and the action/share extension's inline media preview) ===== */
 "Downloader_media_error_deleteFailed_Luna" = "Couldn't delete.";
-"Downloader_media_error_downloadFailed_Luna" = "Couldn't download.";
+"Downloader_media_error_downloadFailed_Luna" = "Couldn't fetch video.";
 "Downloader_media_error_insufficientStorage_Luna" = "Not enough storage. Free at least %@ and try again.";
-"Downloader_media_error_noMedia_Luna" = "Couldn't find media to download.";
+"Downloader_media_error_noMedia_Luna" = "Couldn't find video to fetch.";
 "Downloader_media_error_permissionDenied_Luna" = "Allow Photos access in Settings to save media.";
 "Downloader_media_error_saveFailed_Luna" = "Couldn't save to your Photos library.";
 "Downloader_media_error_saveMediaFailed_Luna" = "Couldn't save.";
-"Downloader_media_error_unsupported_Luna" = "This link has no downloadable media.";
+"Downloader_media_error_unsupported_Luna" = "This link has no playable video.";
 "Downloader_media_preview_deletingStatus_Luna" = "Deleting…";
-"Downloader_media_preview_downloadButtonTitle_Luna" = "Download";
-"Downloader_media_preview_downloadingStatus_Luna" = "Downloading…";
+"Downloader_media_preview_downloadButtonTitle_Luna" = "Open in Luna";
+"Downloader_media_preview_downloadingStatus_Luna" = "Fetching video…";
 "Downloader_media_preview_saveAccessibilityLabel_Luna" = "Save to Photos";
 "Downloader_media_preview_saveButtonTitleFormat_Luna" = "Save to %@ Photos";
 "Downloader_media_preview_savedAccessibilityLabel_Luna" = "Saved to Photos";
@@ -1060,7 +1061,7 @@
 /* ===== CardDeck_archiveTray — the swipe-in archive drawer (ArchiveTrayController.swift) ===== */
 "CardDeck_archiveTray_header_accessibilityLabel_Luna" = "Archive";
 "CardDeck_archiveTray_header_title_Luna" = "archive";
-"CardDeck_archiveTray_item_downloadHint_Luna" = "Downloads item";
+"CardDeck_archiveTray_item_downloadHint_Luna" = "Saves item";
 "CardDeck_archiveTray_item_openHint_Luna" = "Opens item";
 "CardDeck_archiveTray_unarchiveAction_Luna" = "Unarchive";
 
@@ -1076,14 +1077,14 @@
 
 /* ===== AppClip_downloader — the Downloader App Clip's single screen (ClipDownloadViewController.swift) ===== */
 "AppClip_downloader_navigationTitle_Luna" = "Luna";
-"AppClip_downloader_waitingHeadline_Luna" = "Ready to download";
-"AppClip_downloader_waitingSubtitle_Luna" = "Open a Luna download link to start.";
-"AppClip_downloader_readyHeadline_Luna" = "Download complete";
+"AppClip_downloader_waitingHeadline_Luna" = "Ready to fetch video";
+"AppClip_downloader_waitingSubtitle_Luna" = "Open a Luna video link to start.";
+"AppClip_downloader_readyHeadline_Luna" = "Video ready";
 "AppClip_downloader_readySubtitle_Luna" = "Choose where to save or send it.";
-"AppClip_downloader_failedHeadline_Luna" = "Couldn't download";
+"AppClip_downloader_failedHeadline_Luna" = "Couldn't fetch video";
 "AppClip_downloader_retryButtonTitle_Luna" = "Try Again";
-"AppClip_downloader_missingURLMessage_Luna" = "This link is missing a downloadable URL.";
-"AppClip_downloader_saveSheetUnavailableMessage_Luna" = "The media downloaded, but iOS could not open the save sheet.";
+"AppClip_downloader_missingURLMessage_Luna" = "This link is missing a video URL.";
+"AppClip_downloader_saveSheetUnavailableMessage_Luna" = "The video is ready, but iOS could not open the save sheet.";
 "AppClip_downloader_genericFailureMessage_Luna" = "Check the link and try again.";
 
 /* ===== AppClip_reader — the Reader App Clip's single screen (ClipReaderViewController.swift) ===== */
@@ -1098,24 +1099,24 @@
 
 /* ===== LiveActivity_downloader — non-intent-literal strings in LunaDownloaderLiveActivityWidget.swift ===== */
 "LiveActivity_downloader_openPhotosSettingsLabel_Luna" = "Open Photos Settings";
-"LiveActivity_downloader_cancelButtonAccessibilityLabel_Luna" = "Cancel download";
-"LiveActivity_downloader_resumeButtonAccessibilityLabel_Luna" = "Resume download";
+"LiveActivity_downloader_cancelButtonAccessibilityLabel_Luna" = "Cancel save";
+"LiveActivity_downloader_resumeButtonAccessibilityLabel_Luna" = "Resume save";
 /* The finished card, live for five seconds before the activity ends. */
-"LiveActivity_downloader_finishedAccessibilityLabel_Luna" = "Download complete";
+"LiveActivity_downloader_finishedAccessibilityLabel_Luna" = "Save complete";
 "LiveActivity_downloader_playButtonLabel_Luna" = "Play";
-"LiveActivity_downloader_playButtonAccessibilityLabel_Luna" = "Play the download";
+"LiveActivity_downloader_playButtonAccessibilityLabel_Luna" = "Play video";
 "LiveActivity_downloader_shareButtonLabel_Luna" = "Share";
-"LiveActivity_downloader_shareButtonAccessibilityLabel_Luna" = "Share the download";
+"LiveActivity_downloader_shareButtonAccessibilityLabel_Luna" = "Share video";
 
 /* ===== Intents_cancelLiveDownload / Intents_resumeLiveDownload — App Intents metadata baked
    as concrete already-suffixed literals directly in LunaDownloaderLiveActivityWidget.swift
    (the metadata processor requires Swift literals, so these keys ARE the source literals) ===== */
-"Intents_cancelLiveDownload_title_Luna" = "Cancel Download";
-"Intents_cancelLiveDownload_description_Luna" = "Cancels this media download.";
-"Intents_cancelLiveDownload_jobIDParam_title_Luna" = "Download ID";
-"Intents_resumeLiveDownload_title_Luna" = "Resume Download";
-"Intents_resumeLiveDownload_description_Luna" = "Resumes a paused Luna download.";
-"Intents_resumeLiveDownload_jobIDParam_title_Luna" = "Download ID";
+"Intents_cancelLiveDownload_title_Luna" = "Cancel Save";
+"Intents_cancelLiveDownload_description_Luna" = "Cancels this video save.";
+"Intents_cancelLiveDownload_jobIDParam_title_Luna" = "Save ID";
+"Intents_resumeLiveDownload_title_Luna" = "Resume Save";
+"Intents_resumeLiveDownload_description_Luna" = "Resumes a paused Luna video save.";
+"Intents_resumeLiveDownload_jobIDParam_title_Luna" = "Save ID";
 
 /* ===== Saves_emailShare — EmailShareCenter.swift ===== */
 "Saves_emailShare_setupNeededMessage_Luna" = "Set up your email account first.";
@@ -1139,7 +1140,7 @@
 "ShareExtension_share_noLinkFoundMessage_Luna" = "No link found to save.";
 "ShareExtension_share_sharedTextFallbackTitle_Luna" = "Shared Text";
 "ShareExtension_share_missingFileMessage_Luna" = "Couldn't read the shared file.";
-"ShareExtension_share_startingDownloadStatus_Luna" = "Starting download…";
+"ShareExtension_share_startingDownloadStatus_Luna" = "Fetching video…";
 "ShareExtension_share_savingMediaStatus_Luna" = "Saving media…";
 "ShareExtension_share_loadTimeoutMessage_Luna" = "Couldn't read the shared content in time.";
 "ShareExtension_share_hostedOfflineDetail_Luna" = "You get your full save when you're online, but you get the idea";

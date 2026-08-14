@@ -464,7 +464,7 @@ pending beats. Its own beats:
 | --- | --- |
 | `pageHoldDuration` (3.2s) | the post alone: its video playing full-bleed behind the "Sign up to keep watching" wall that stops it |
 | `presentDuration` (0.45s) | `OnboardingVideoDownloadOverlayView` arrives over it, and the clip starts in its stage |
-| `playbackHoldDuration` (0.75s) | the video starts under a full-width "Download in Luna"; after a brief proof-of-playback beat, the panel reports its setup offer and stays exactly like this |
+| `playbackHoldDuration` (0.75s) | the video starts under a full-width "Open in Luna"; after a brief proof-of-playback beat, the panel reports its setup offer and stays exactly like this |
 
 The blocked-post hold establishes the premise. The player only needs a short
 proof-of-playback beat before the shared popup flow advances; the panel's former

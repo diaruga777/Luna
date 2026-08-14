@@ -90,12 +90,12 @@ final class UndownloadedMediaCardTests: XCTestCase {
         let card = makeCard()
 
         post(makeSnapshot(phase: .resolving, progress: 0))
-        XCTAssertEqual(card.statusTextForTesting, "Preparing download")
+        XCTAssertEqual(card.statusTextForTesting, "Fetching video")
         // No bytes are moving yet, so a percentage would be a fiction.
         XCTAssertNil(card.percentTextForTesting)
 
         post(makeSnapshot(phase: .downloading, progress: 0.426))
-        XCTAssertEqual(card.statusTextForTesting, "Downloading")
+        XCTAssertEqual(card.statusTextForTesting, "Fetching video…")
         XCTAssertEqual(card.percentTextForTesting, "43%")
         XCTAssertEqual(card.progressForTesting, 0.426, accuracy: 0.001)
 

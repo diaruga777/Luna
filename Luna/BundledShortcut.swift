@@ -28,7 +28,7 @@ enum BundledShortcut {
         switch LunaApp.current {
         case .luna: return "Luna"
         case .reader: return "Luna Reader"
-        case .downloader: return "Luna Downloader"
+        case .downloader: return "Luna Video"
         case .priceTracker: return "Luna Price Tracker"
         }
     }

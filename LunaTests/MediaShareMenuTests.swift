@@ -10,6 +10,7 @@
 //
 
 import LunaModels
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -124,12 +125,15 @@ final class AllKindsShareMenuTests: XCTestCase {
     @MainActor
     func testMediaSaveOffersTheLadderOverItsOriginalURL() throws {
         let url = "https://x.com/luna/status/91919"
-        _ = try SavedMediaStore.shared.ensureUndownloaded(
-            id: UUID(), sourceURLString: url, title: "Clip",
-            kind: .video, dateSaved: Date())
         let item = SavedItem(
             seed: "allkinds-share", urlString: url, title: "Clip",
             dateAdded: Date(), state: .ready, platform: .x)
+        // The media row is a child of the save, so the save goes in first and the
+        // row takes its id.
+        SavesStore.shared.seedForTesting(items: [item], contents: [:])
+        _ = try SavedMediaStore.shared.ensureUndownloaded(
+            id: item.id, sourceURLString: url, title: "Clip",
+            kind: .video, dateSaved: Date())
 
         let menu = MediaCardPresenter().shareMenu(
             for: item, host: makeHost(), sourceView: UIView())
@@ -176,10 +180,14 @@ final class SavedMediaDeckShareChromeTests: XCTestCase {
         super.setUp()
         UIView.setAnimationsEnabled(false)
         SavedMediaDeckFixtures.emptySharedMediaStore()
+        // A media row is a save now, so this deck counts cards from the saves list
+        // too — it has to start from a known-empty one.
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
     }
 
     override func tearDown() {
         SavedMediaDeckFixtures.emptySharedMediaStore()
+        SavesStore.shared.seedForTesting(items: [], contents: [:])
         super.tearDown()
     }
 

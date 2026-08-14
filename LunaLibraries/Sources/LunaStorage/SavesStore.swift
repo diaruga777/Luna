@@ -986,6 +986,28 @@ public final class SavesStore {
         reapPendingDeletes()
     }
 
+    /// Inserts or updates `items`, leaving every other save alone. DEBUG-only.
+    ///
+    /// The additive twin of `seedForTesting`, which deletes the whole list first
+    /// and so cascades away the child rows of saves it is about to re-insert. A
+    /// test that means "a save arrives" or "this save changed" wants this.
+    public func upsertForTesting(_ items: [SavedItem]) {
+        write { db in
+            var nextSeq = try SavesReader.maxSeq(in: db) + 1
+            for item in items {
+                if let stored = try SavesReader.item(id: item.id, in: db) {
+                    try self.writeSave(
+                        StoredSave(item: item, seq: stored.seq),
+                        previous: stored.item, in: db)
+                } else {
+                    try self.writeSave(
+                        StoredSave(item: item, seq: nextSeq), previous: nil, in: db)
+                    nextSeq += 1
+                }
+            }
+        }
+    }
+
     /// Empties the saves list and removes all article files. DEBUG-only.
     public func wipeForTesting() {
         let articlesDir = articlesDirectory

@@ -750,10 +750,12 @@ regeneration entirely and leaves room to match on the real identifiers.
 What survives is the SHAPE the matcher asks questions in:
 `PriceHistoryIndexEntry` (LunaPriceCompare) is now built in memory from a
 `PriceTracker`, `{name, brand?, productID?, stores: [{url, host, points: [{day,
-price, currency}]}]}`. Its `UTCDay(point.dayStart)` conversion is deliberate — the
-stored instant is a LOCAL start-of-day and the pill has always shown a UTC day, so
-keeping the relabelling keeps the pill's text identical. See the history-pill flow
-in `claudedocs/safari-extension.md`.
+price, currency}]}]}`. The projection keeps the same 365-day history window as the
+retired mirror; `PriceHistoryIndexEntry.maxPointAgeDays` is the single policy used
+by both Safari matching paths. Its `UTCDay(point.dayStart)` conversion is
+deliberate — the stored instant is a LOCAL start-of-day and the pill has always
+shown a UTC day, so keeping the relabelling keeps the pill's text identical. See
+the history-pill flow in `claudedocs/safari-extension.md`.
 
 ## Background refresh (`AppDelegate`)
 

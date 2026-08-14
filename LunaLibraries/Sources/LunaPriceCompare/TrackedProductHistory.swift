@@ -59,12 +59,23 @@ public struct PriceHistoryIndexEntry: Codable, Equatable {
 
 public extension PriceHistoryIndexEntry {
 
+    /// The history window exposed to Safari's tracked-product matchers.
+    ///
+    /// Keep this policy beside the projection so every SQL-backed consumer gets
+    /// the same window without maintaining its own cutoff.
+    static let maxPointAgeDays = 365
+
     /// A tracker's history in the matcher's terms.
     ///
     /// `UTCDay(point.dayStart)` is the same relabelling the retired writer did —
     /// the stored instant is a LOCAL start-of-day, and the pill has always shown it
     /// as a UTC day. Keeping the conversion keeps the pill's text identical.
-    init(tracker: PriceTracker, since cutoff: Date? = nil) {
+    init(tracker: PriceTracker, now: Date = Date()) {
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let cutoff = utcCalendar.date(
+            byAdding: .day, value: -Self.maxPointAgeDays, to: now) ?? now
+
         self.init(
             name: tracker.productName,
             brand: tracker.brand,
@@ -74,7 +85,7 @@ public extension PriceHistoryIndexEntry {
                     url: store.urlString,
                     host: URL(string: store.urlString)?.host ?? store.urlString,
                     points: store.priceHistory
-                        .filter { cutoff == nil || $0.dayStart >= cutoff! }
+                        .filter { $0.dayStart >= cutoff }
                         .map {
                             Point(
                                 day: UTCDay($0.dayStart),

@@ -83,7 +83,8 @@ enum PreloadPageOwner: Hashable {
 /// `file_holders` count who holds it — so deleting a save cascades to its whole
 /// subtree, and the page's file is freed by the trigger and the reaper that free
 /// every other artifact. This index says what a page IS, never who wants it.
-/// File I/O is best-effort (a cache).
+/// File I/O is best-effort (a cache), but a page is only marked as containing
+/// current article content after its atomic file replacement succeeds.
 public final class PreloadStore {
     public static let shared = PreloadStore()
 
@@ -116,6 +117,7 @@ public final class PreloadStore {
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
+    private let atomicWrite: (Data, URL) throws -> Void
     private let lock = NSLock()
     /// Guards the lazy resolution of `ownershipStore` only.
     private let ownershipLock = NSLock()
@@ -137,8 +139,16 @@ public final class PreloadStore {
         return cache
     }()
 
-    public init(containerURL: URL? = nil) {
+    public convenience init(containerURL: URL? = nil) {
+        self.init(containerURL: containerURL) { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Internal injection point for deterministic file-write failure tests.
+    init(containerURL: URL?, atomicWrite: @escaping (Data, URL) throws -> Void) {
         self.overrideContainerURL = containerURL
+        self.atomicWrite = atomicWrite
     }
 
     /// The store that counts who holds the shared `Articles/img-…` files. A
@@ -286,29 +296,40 @@ public final class PreloadStore {
         guard let fileName = ownershipStore().claimPreloadPage(
             urlKey: key, owner: Self.owner(for: rootID))
         else { return nil }
-        var contentFile: String?
+        let previousEntry = ownershipStore().preloadEntry(forKey: key)
+        var persistedContent: ArticleContent?
         if kind == .article, let content, let data = try? JSONEncoder().encode(content) {
-            contentFile = fileName
             let fileURL = contentURL(fileName: fileName)
-            try? data.write(to: fileURL, options: .atomic)
-            BackupPolicy.excludeFromBackups(fileURL)
+            do {
+                try atomicWrite(data, fileURL)
+                BackupPolicy.excludeFromBackups(fileURL)
+                persistedContent = content
+            } catch {
+                // Keep the previous body and timestamp, if any. With no prior
+                // body, a nil timestamp makes this article immediately retryable.
+            }
         }
         let childKeys = children.map { Self.key(for: $0) }
         let now = Date()
-        var entry = PreloadEntry(
-            urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
-            lastLoadedAt: kind == .unrepresentable ? nil : now,
-            children: childKeys)
-        // A re-record keeps the content this run did not write: an entry already
-        // holding a body stays an entry with a body.
-        if contentFile == nil, ownershipStore().preloadEntry(forKey: key)?.contentFile != nil {
-            entry.contentFile = fileName
+        let contentFile = persistedContent == nil ? previousEntry?.contentFile : fileName
+        let lastLoadedAt: Date?
+        switch kind {
+        case .article:
+            lastLoadedAt = persistedContent == nil ? previousEntry?.lastLoadedAt : now
+        case .platform:
+            lastLoadedAt = now
+        case .unrepresentable:
+            lastLoadedAt = nil
         }
+        let entry = PreloadEntry(
+            urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
+            lastLoadedAt: lastLoadedAt,
+            children: childKeys)
         guard let entry = ownershipStore().updatePreloadEntry(key: key, entry: entry)
         else { return nil }
         // Tie this page's downloaded images to the page key so they're freed when (and
         // only when) the page itself is released.
-        if kind == .article, let content {
+        if let content = persistedContent {
             ownershipStore().setPreloadedPageImages(
                 pageKey: key, fileNames: ArticleImageFiles.referencedNames(in: content))
             // Warm the in-memory cache so the very first tap after a preload is a
@@ -344,7 +365,13 @@ public final class PreloadStore {
               let data = try? JSONEncoder().encode(content)
         else { return }
         let fileURL = contentURL(fileName: file)
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            try atomicWrite(data, fileURL)
+        } catch {
+            // The old file and metadata remain a matched, readable pair. Its old
+            // timestamp also keeps a failed refresh due for another attempt.
+            return
+        }
         BackupPolicy.excludeFromBackups(fileURL)
         entry.contentFile = file
         entry.lastLoadedAt = now
@@ -376,7 +403,8 @@ public final class PreloadStore {
 
     /// Deletes the JSON index this store used to keep, once per process.
     ///
-    /// Its contents are not adopted: the version-6 schema step released the pages
+    /// Its contents are not adopted: the SQL-index migration (including the
+    /// shape-based repair for the ambiguous version-6 table) released the pages
     /// an older build owned, so the file names nothing. Removing it is what keeps
     /// the container from carrying a store no code reads.
     private func removeRetiredIndexOnce() {

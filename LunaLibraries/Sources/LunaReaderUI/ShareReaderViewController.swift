@@ -275,7 +275,7 @@ public final class ShareReaderViewController: UIViewController {
             let settled = await Self.settledImageLayout(
                 for: content, item: item, url: url, store: SavesStore.shared)
             let saved = SavesStore.shared.saveContent(settled, for: item)
-            presentReader(item: saved, content: settled)
+            presentReader(item: saved, content: settled, in: navigationController)
         case let .product(product, _):
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
@@ -323,15 +323,20 @@ public final class ShareReaderViewController: UIViewController {
     }
 
     /// `fileprivate` for the unlock coordinator below, which is what re-enters this
-    /// screen once the archive CAPTCHA is solved.
-    fileprivate func presentReader(item: SavedItem, content: ArticleContent) {
+    /// screen once the archive CAPTCHA is solved. Takes the nav controller to swap
+    /// into explicitly: by the time the archive unlock fires, this screen was
+    /// already replaced on the stack by the archive reader, so `self
+    /// .navigationController` is nil — the caller passes the archive reader's own.
+    fileprivate func presentReader(
+        item: SavedItem, content: ArticleContent, in navigationController: UINavigationController?
+    ) {
         articleLoadingStatus?.stop()
         spinner.stopAnimating()
         let reader = Self.makeReader(
             item: item, content: content, mode: mode,
             modePreferenceDelegate: modePreferenceDelegate,
             completionDelegate: completionDelegate)
-        // Replace this loading screen with the reader as the sole VC (no back).
+        // Replace the archive screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)
     }
 
@@ -407,17 +412,17 @@ public final class ShareReaderViewController: UIViewController {
 ///
 /// A small coordinator rather than the screen itself, and for a reason the closures
 /// it replaces had built in: handing the archive reader the nav stack REMOVES this
-/// screen from it (`setViewControllers([archive])`), so nothing retains the screen
-/// past that moment. So the two legs keep exactly the reach they had — the finish leg
-/// holds the completion delegate strongly, and so still exits the extension after the
-/// screen has gone, while the reader swap-in holds the screen weakly and simply
-/// doesn't happen without it.
+/// screen from it (`setViewControllers([archive])`), so nothing else retains the
+/// screen past that moment. Held STRONGLY here instead, so its stored state (`url`,
+/// `mode`, `modePreferenceDelegate`) survives to build the reader — the swap itself
+/// then targets the archive reader's own `navigationController`, since the screen's
+/// was cleared the moment it left the stack.
 ///
 /// It declares no Safari escape and takes the protocol's `false`: an extension has no
 /// `UIApplication` to leave Luna with.
 @MainActor
 private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
-    private weak var screen: ShareReaderViewController?
+    private let screen: ShareReaderViewController
     private let itemID: UUID
     private let completionDelegate: any ShareReaderCompletionDelegate
 
@@ -431,14 +436,13 @@ private final class InSheetUnlockLegs: ArchiveUnlockDelegate {
     }
 
     func archiveReaderDidUnlockArticle(_ reader: ArchiveWebReaderViewController) {
-        guard let screen,
-              let fresh = SavesStore.shared.item(withID: itemID),
+        guard let fresh = SavesStore.shared.item(withID: itemID),
               let content = SavesStore.shared.content(for: fresh) else { return }
         Task { @MainActor in
             let settled = await ShareReaderViewController.settledImageLayout(
                 for: content, item: fresh, url: screen.url, store: SavesStore.shared)
             let saved = SavesStore.shared.saveContent(settled, for: fresh)
-            screen.presentReader(item: saved, content: settled)
+            screen.presentReader(item: saved, content: settled, in: reader.navigationController)
         }
     }
 

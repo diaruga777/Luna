@@ -494,7 +494,22 @@ job.
 ## Long downloads, interruption, and storage
 
 `LiveMediaDownloadManager` uses a shared-container background `URLSession` with launch
-events, connectivity waiting, and a seven-day resource timeout. Jobs persist expected and
+events, connectivity waiting, and a seven-day resource timeout. Its stable identifier is
+`<process bundle id>.mediaDownload.background.v2`, so the containing app and each of its
+share, action, Safari, Live Activity, and App Clip processes own distinct sessions even
+though they use the same App Group. When iOS wakes a containing app for a completed
+extension transfer, `AppDelegate` routes the callback's identifier through the media shell;
+the manager recreates that exact session and retains its delegate until the session finishes
+delivering events. The central app accepts only its own exact embedded-process identifiers,
+not sibling app identifiers that merely share its bundle-id prefix. This is a clean-break
+identifier change; the retired generic session is intentionally not adopted.
+
+Each `media_download_jobs` row persists that exact session identifier as well. Launch repair,
+explicit retry, pause/resume, and expired-suspension cleanup operate through the owning
+session's retained manager; a process never compares a shared job with the wrong session's
+task list and starts a duplicate transfer.
+
+Jobs persist expected and
 received byte counts, resolver stage, source range, and a sidecar resume-data file. A user
 pause asks `URLSessionDownloadTask` to produce resume data; transient network failures retry
 once and then remain in the visible **Waiting to resume** state instead of being discarded.

@@ -51,7 +51,7 @@ idempotently at open and stamped into `PRAGMA user_version`. **Every field is a
 typed column — there is no payload blob**, so a reader never has to understand a
 writer's version of a struct to read a column it does know.
 
-Schema 10 also repairs an ambiguous schema-6 rollout: two shipped builds used the
+Schema 11 also repairs an ambiguous schema-6 rollout: two shipped builds used the
 same version stamp for different `preload_pages` layouts. Open therefore inspects
 that table's columns rather than trusting `user_version`; only the obsolete
 two-column layout is released and rebuilt, while a complete layout (including one
@@ -88,6 +88,11 @@ rows or directories.
   its one-time legacy-reconciliation marker. The old shared `spotlight_index`
   table remains for mixed-version binaries; schema 10 offers its ids, and the
   still older App-Group defaults ids, to Luna and Reader independently once.
+- `media_download_jobs` — durable in-flight download state. Its
+  `background_session_identifier` assigns the job to the exact app or embedded
+  extension process that created its background URLSession task, so another
+  process sharing the database cannot mistake that task for missing and restart
+  it in a different session.
 - Every save-owned child table is `REFERENCES saves(id) ON DELETE CASCADE`, so
   deleting a save is the row delete. Passive snapshot rows are intentionally
   independent of saves, while their key rows cascade from the snapshot.

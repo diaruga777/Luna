@@ -139,6 +139,28 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertFalse(pageFileExists(legacyFile))
     }
 
+    /// The cache's own index is not a page. A legacy entry naming it — a corrupt
+    /// one, since no build ever wrote that — claims nothing, so `preloads.json`
+    /// can never reach the delete queue.
+    func testTheIndexItselfCannotBeAdoptedAsAPage() throws {
+        let u = url("https://example.com/index-named")
+        let key = PreloadStore.key(for: u)
+        var entry = PreloadEntry(
+            urlString: PreloadStore.canonicalString(for: u), kind: .article,
+            contentFile: "preloads.json", lastLoadedAt: Date(), children: [])
+        entry.legacyOwners = [makeSave().uuidString]
+        try JSONEncoder().encode([key: entry])
+            .write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
+
+        store.releaseTree(rootID: makeSave())
+
+        XCTAssertNil(pageFile(u))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: store.contentURL(fileName: "preloads.json").path),
+            "the index survives the entry that named it")
+    }
+
     /// A legacy page whose owners have all been deleted is adopted by nobody. It
     /// is dropped rather than left holding a file no save can free.
     func testLegacyPageWithNoSurvivingOwnerIsDropped() throws {

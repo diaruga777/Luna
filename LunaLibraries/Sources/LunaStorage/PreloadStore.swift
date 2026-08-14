@@ -487,9 +487,13 @@ public final class PreloadStore {
             for (key, var entry) in index where entry.legacyOwners != nil {
                 entry.legacyOwners = nil
                 // A page nothing could adopt — every owner gone — leaves the index
-                // with it. Its file is not the database's to free, so unlink it here.
+                // with it. Its file is not the database's to free, so unlink it
+                // here, and only when it is a name the ownership tables would have
+                // taken: a corrupt entry must not make this delete the index it is
+                // stored in.
                 guard let file = adopted[key] else {
-                    if let stale = entry.contentFile {
+                    if let stale = entry.contentFile,
+                       SavedFileOwnership.preloadsPath(stale) != nil {
                         try? fileManager.removeItem(at: contentURL(fileName: stale))
                     }
                     index[key] = nil

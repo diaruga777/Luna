@@ -64,7 +64,7 @@ final class DownloadsSettingsScreen: NavHeaderTableController {
             }
         })
         return pickerCell(
-            title: L10n.string("Settings_downloads_autoDownloadLabel"), symbol: "arrow.down.circle",
+            title: L10n.string("Settings_downloads_autoDownloadLabel"), symbol: "play.fill",
             identifier: "downloadAutomaticallyPicker", value: current.displayName, menu: menu)
     }
 

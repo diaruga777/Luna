@@ -1,6 +1,7 @@
 import LunaModels
 import LunaMediaDownload
 import LunaStorage
+import SQLite3
 import UIKit
 import XCTest
 
@@ -14,7 +15,7 @@ final class SavedMediaStoreTests: XCTestCase {
         // — in every process — shared one directory literally named
         // "SavedMediaStoreTests-(UUID().uuidString)". `tearDown` hid it while runs
         // completed, but a process killed mid-suite (a WebKit jetsam `signal kill` is
-        // enough) leaves the manifest behind, and the next run's FIRST test inherits it:
+        // enough) leaves the shared store behind, and the next run's FIRST test inherits it:
         // `testAddDownloadedFileDedupes…` then counted 2 items where it saved 1, while
         // every later test in the class passed on the directory its own tearDown had
         // just cleaned. Per-test isolation now actually happens.
@@ -289,12 +290,9 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(neither.displayTitle, "https://x.com/example/status/101")
     }
 
-    /// The manifest is written by other flows/processes (share/action extension,
-    /// download completion), so `items()`'s in-memory cache must re-stat on every
-    /// call and only trust itself when the file is unchanged — never serve a
-    /// stale read once another `SavedMediaStore` instance has written to the
-    /// same manifest.
-    func testItemsCacheRefreshesWhenManifestChangesFromAnotherInstance() throws {
+    /// Every process has its own connection, so a read must see rows another
+    /// `SavedMediaStore` instance committed to the shared database.
+    func testItemsSeesDatabaseChangesFromAnotherInstance() throws {
         _ = try store.ensureUndownloaded(
             id: makeSave("https://x.com/example/status/200"),
             sourceURLString: "https://x.com/example/status/200", title: "First")
@@ -307,7 +305,122 @@ final class SavedMediaStoreTests: XCTestCase {
 
         XCTAssertEqual(
             store.items().count, 2,
-            "a write from another instance must invalidate the stat-token cache")
+            "a write from another instance must be visible on the next read")
+    }
+
+    func testCrossStoreMutationsSerializeAndPreserveBothRows() throws {
+        let firstURL = "https://x.com/example/status/concurrent-1"
+        let secondURL = "https://x.com/example/status/concurrent-2"
+        let firstID = makeSave(firstURL)
+        let secondID = makeSave(secondURL)
+        let firstStore = SavesStore(containerURL: root)
+        let secondStore = SavesStore(containerURL: root)
+        let firstEntered = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let secondEntered = DispatchSemaphore(value: 0)
+        let finished = expectation(description: "both database mutations finish")
+        finished.expectedFulfillmentCount = 2
+        let errorLock = NSLock()
+        var errors: [Error] = []
+
+        DispatchQueue.global().async {
+            do {
+                try firstStore.mutateMediaItems { items in
+                    items.append(SavedMediaItem(
+                        id: firstID, sourceURLString: firstURL, title: "First",
+                        dateSaved: Date(timeIntervalSince1970: 1), kind: .video,
+                        storageState: .undownloaded, thumbnailFileName: nil))
+                    firstEntered.signal()
+                    guard releaseFirst.wait(timeout: .now() + 5) == .success else {
+                        throw ConcurrentMutationTestError.timedOut
+                    }
+                }
+            } catch {
+                errorLock.withLock { errors.append(error) }
+            }
+            finished.fulfill()
+        }
+
+        XCTAssertEqual(firstEntered.wait(timeout: .now() + 5), .success)
+        DispatchQueue.global().async {
+            do {
+                try secondStore.mutateMediaItems { items in
+                    secondEntered.signal()
+                    items.append(SavedMediaItem(
+                        id: secondID, sourceURLString: secondURL, title: "Second",
+                        dateSaved: Date(timeIntervalSince1970: 2), kind: .video,
+                        storageState: .undownloaded, thumbnailFileName: nil))
+                }
+            } catch {
+                errorLock.withLock { errors.append(error) }
+            }
+            finished.fulfill()
+        }
+
+        XCTAssertEqual(
+            secondEntered.wait(timeout: .now() + 0.2), .timedOut,
+            "the second read-modify-write must wait for the first transaction")
+        releaseFirst.signal()
+        XCTAssertEqual(secondEntered.wait(timeout: .now() + 5), .success)
+        wait(for: [finished], timeout: 5)
+
+        XCTAssertTrue(errorLock.withLock { errors.isEmpty }, "\(errors)")
+        XCTAssertEqual(Set(saves.mediaItems().map(\.id)), Set([firstID, secondID]))
+    }
+
+    func testEnsureUndownloadedPropagatesMissingOwnerFailureWithoutNotifying() throws {
+        var notificationCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: .savedMediaChanged, object: store, queue: nil
+        ) { _ in
+            notificationCount += 1
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        XCTAssertThrowsError(try store.ensureUndownloaded(
+            id: UUID(),
+            sourceURLString: "https://x.com/example/status/no-owning-save",
+            title: "Must fail"))
+        XCTAssertTrue(store.items().isEmpty)
+        XCTAssertEqual(notificationCount, 0, "a rolled-back mutation must not report success")
+    }
+
+    func testOwnershipFailureRollsBackMediaRowAndDoesNotNotify() async throws {
+        let urlString = "https://x.com/example/status/ownership-rollback"
+        let source = root.appendingPathComponent("ownership-rollback.jpg")
+        try makeJPEG().write(to: source)
+        let local = try await store.addDownloadedFile(
+            source, kind: .image, sourceURLString: urlString, title: "Rollback")
+        let fileName = try XCTUnwrap(local.fileName)
+        let priorNotificationsDrained = expectation(description: "prior notifications drained")
+        DispatchQueue.main.async { priorNotificationsDrained.fulfill() }
+        await fulfillment(of: [priorNotificationsDrained], timeout: 1)
+        try executeSQL(
+            """
+            CREATE TRIGGER fail_media_ownership_release
+            BEFORE DELETE ON file_refs
+            BEGIN
+                SELECT RAISE(ABORT, 'forced ownership failure');
+            END
+            """)
+        var notificationCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: .savedMediaChanged, object: store, queue: nil
+        ) { _ in
+            notificationCount += 1
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        store.setArchived(true, for: local.id)
+
+        let unchanged = try XCTUnwrap(store.items().first(where: { $0.id == local.id }))
+        XCTAssertFalse(unchanged.isArchived)
+        XCTAssertEqual(unchanged.storageState, .localFile(fileName: fileName))
+        let expectedNames = Set([fileName, local.thumbnailFileName].compactMap { $0 })
+        XCTAssertEqual(saves.heldMediaFileNames(saveID: local.id), expectedNames)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.mediaDirectory.appendingPathComponent(fileName).path))
+        XCTAssertEqual(notificationCount, 0, "a rolled-back row/ownership edit must stay silent")
     }
 
     func testBackgroundMutationDeliversChangeNotificationOnMainThread() {
@@ -457,6 +570,31 @@ final class SavedMediaStoreTests: XCTestCase {
             context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
         }
     }
+
+    private func executeSQL(_ sql: String) throws {
+        var database: OpaquePointer?
+        let path = root.appendingPathComponent("saves.sqlite").path
+        guard sqlite3_open(path, &database) == SQLITE_OK, let database else {
+            throw SQLiteTestError.openFailed
+        }
+        defer { sqlite3_close(database) }
+        var message: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(database, sql, nil, nil, &message)
+        defer { sqlite3_free(message) }
+        guard result == SQLITE_OK else {
+            throw SQLiteTestError.executionFailed(
+                message.map { String(cString: $0) } ?? "SQLite error \(result)")
+        }
+    }
+}
+
+private enum ConcurrentMutationTestError: Error {
+    case timedOut
+}
+
+private enum SQLiteTestError: Error {
+    case openFailed
+    case executionFailed(String)
 }
 
 /// States one verdict for every identifier, and counts the questions asked — the

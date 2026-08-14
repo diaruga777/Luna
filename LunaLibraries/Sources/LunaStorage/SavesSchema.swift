@@ -63,6 +63,10 @@ enum SavesSchema {
                 if existing > 0 && existing < 2 {
                     try backfillFileOwnership(in: database)
                 }
+                // Version 5 added `preload_pages`, and it starts empty. What fills
+                // it for an existing install is the preload cache's own index,
+                // which this has no business reading — see
+                // `PreloadStore.migrateLegacyOwnersIfNeeded`.
                 if existing < SavesDatabase.schemaVersion {
                     try database.execute("PRAGMA user_version = \(SavesDatabase.schemaVersion)")
                 }

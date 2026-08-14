@@ -86,9 +86,12 @@ public enum PreloadPageOwner: Hashable {
 /// this store touches nothing else in it.
 ///
 /// Duplicate links (within one save's tree or across saves) share a single on-disk
-/// copy; each referencing root save is an "owner". Deleting a save releases its
-/// subtree (removes it from every entry's `owners`); entries with no owners left are
-/// deleted. Pure index logic is unit-tested; file I/O is best-effort (a cache).
+/// copy, and each referencing root is an owner. The owners are ownership edges in
+/// the saves database — `preload_pages` points at the page's file, `file_refs` and
+/// `file_holders` count who holds it — so deleting a save cascades to its whole
+/// subtree, and the page's file is freed by the trigger and the reaper that free
+/// every other artifact. This index says what a page IS, never who wants it.
+/// File I/O is best-effort (a cache).
 public final class PreloadStore {
     public static let shared = PreloadStore()
 
@@ -96,8 +99,8 @@ public final class PreloadStore {
     /// (vs. the save-time crawl's per-save owners). A tapped link is materialized on
     /// first open and recorded under this durable owner so it survives app relaunches
     /// and is NOT torn down when the save that surfaced it is deleted — the user reached
-    /// it, so it stays instant forever after. (Distinct from `PreloadCoordinator`'s
-    /// speculative `pasteboardOwner`, whose tree is released when the candidate changes.)
+    /// it, so it stays instant forever after. (Distinct from the speculative
+    /// `pasteboardOwner` below, whose tree is released when the candidate changes.)
     public static let tappedLinkOwner = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
 
     /// A fixed sentinel "owner" for the CURRENT pasteboard candidate's preloads — bounds
@@ -389,9 +392,9 @@ public final class PreloadStore {
         return entry(forKey: key)
     }
 
-    /// Overwrites the cached article content for `url` IF an entry already exists
-    /// (a viewer background-refresh), preserving owners/kind. No-op otherwise — a
-    /// refresh never creates an unowned entry.
+    /// Overwrites the cached article content for `url` IF the cache already holds
+    /// the page (a viewer background-refresh), preserving its kind and its owners.
+    /// No-op otherwise — a refresh never creates an unowned entry.
     public func refreshArticle(for url: URL, content: ArticleContent) {
         migrateLegacyOwnersIfNeeded()
         let key = Self.key(for: url)
@@ -469,13 +472,7 @@ public final class PreloadStore {
         guard !migratedLegacyOwners else { return }
         migratedLegacyOwners = true
 
-        let legacy = { () -> [(key: String, fileName: String?, owners: Set<String>)] in
-            lock.lock(); defer { lock.unlock() }
-            return loadIndex().compactMap { key, entry in
-                guard let owners = entry.legacyOwners, !owners.isEmpty else { return nil }
-                return (key, entry.contentFile, owners)
-            }
-        }()
+        let legacy = legacyOwnedPages()
         guard !legacy.isEmpty else { return }
 
         var adopted: [String: String] = [:]
@@ -501,6 +498,16 @@ public final class PreloadStore {
                 if entry.contentFile != nil { entry.contentFile = file }
                 index[key] = entry
             }
+        }
+    }
+
+    /// The pages an old index still counts owners for. A read, not a mutation, so
+    /// it takes the index lock without the writing coordination.
+    private func legacyOwnedPages() -> [(key: String, fileName: String?, owners: Set<String>)] {
+        lock.lock(); defer { lock.unlock() }
+        return loadIndex().compactMap { key, entry in
+            guard let owners = entry.legacyOwners, !owners.isEmpty else { return nil }
+            return (key, entry.contentFile, owners)
         }
     }
 }

@@ -154,7 +154,8 @@ public final class LiveMediaDownloadManager: NSObject {
 
     public static let shared = LiveMediaDownloadManager()
 
-    private static let sessionIdentifier = "com.hsanabria.luna.mediaDownload.background"
+    private static let routedManagersLock = NSLock()
+    private static var routedManagers: [String: LiveMediaDownloadManager] = [:]
     static let failureDismissalDelay: TimeInterval = 14
     /// How long the FINISHED card stays LIVE before its activity is ended.
     ///
@@ -178,10 +179,18 @@ public final class LiveMediaDownloadManager: NSObject {
     private let backgroundWorkLock = NSLock()
     private var pendingBackgroundWork = 0
     private var backgroundEventsFinished = false
+    public let backgroundSessionIdentifier: String
 
     private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.background(
-            withIdentifier: Self.sessionIdentifier)
+        let configuration = Self.backgroundSessionConfiguration(
+            identifier: backgroundSessionIdentifier)
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+    }()
+
+    static func backgroundSessionConfiguration(
+        identifier: String
+    ) -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
         configuration.sharedContainerIdentifier = AppConfig.appGroupID
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
@@ -194,12 +203,67 @@ public final class LiveMediaDownloadManager: NSObject {
         // background resolve stage and an app relaunch.
         configuration.httpCookieStorage = .shared
         configuration.httpShouldSetCookies = true
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    }()
+        return configuration
+    }
 
-    public init(saver: PhotoLibrarySaving = PhotoLibrarySaver()) {
+    public init(
+        saver: PhotoLibrarySaving = PhotoLibrarySaver(),
+        backgroundSessionIdentifier: String = MediaBackgroundSessionIdentifier.current
+    ) {
         self.saver = saver
+        self.backgroundSessionIdentifier = backgroundSessionIdentifier
         super.init()
+    }
+
+    /// Recreates and attaches the exact session iOS names in the containing
+    /// app's lifecycle callback. Extension-started transfers use their extension
+    /// bundle id, so routing them through `shared` would recreate the app's
+    /// DIFFERENT session and leave the callback unfinished.
+    @discardableResult
+    public static func attachBackgroundCompletionHandler(
+        forSessionIdentifier identifier: String,
+        containingAppBundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        completionHandler: @escaping () -> Void
+    ) -> Bool {
+        guard let containingAppBundleIdentifier,
+              let routedIdentifier = MediaBackgroundSessionIdentifier.routedIdentifier(
+                identifier,
+                containingAppBundleIdentifier: containingAppBundleIdentifier)
+        else {
+            completionHandler()
+            return false
+        }
+
+        let manager = retainedManager(forSessionIdentifier: routedIdentifier)
+        manager.attachBackgroundCompletionHandler(completionHandler)
+        return true
+    }
+
+    private static func retainedManager(
+        forSessionIdentifier identifier: String
+    ) -> LiveMediaDownloadManager {
+        if shared.backgroundSessionIdentifier == identifier { return shared }
+        routedManagersLock.lock()
+        defer { routedManagersLock.unlock() }
+        if let existing = routedManagers[identifier] { return existing }
+        let manager = LiveMediaDownloadManager(backgroundSessionIdentifier: identifier)
+        routedManagers[identifier] = manager
+        return manager
+    }
+
+    private func managerOwning(_ job: LiveMediaDownloadJob) -> LiveMediaDownloadManager? {
+        guard let identifier = job.backgroundSessionIdentifier,
+              identifier != backgroundSessionIdentifier
+        else { return self }
+        guard let processBundleIdentifier = Bundle.main.bundleIdentifier else { return nil }
+        let containingAppBundleIdentifier =
+            MediaBackgroundSessionIdentifier.containingAppBundleIdentifier(
+                forProcessBundleIdentifier: processBundleIdentifier)
+        guard MediaBackgroundSessionIdentifier.routedIdentifier(
+            identifier,
+            containingAppBundleIdentifier: containingAppBundleIdentifier) != nil
+        else { return nil }
+        return Self.retainedManager(forSessionIdentifier: identifier)
     }
 
     @discardableResult
@@ -360,6 +424,16 @@ public final class LiveMediaDownloadManager: NSObject {
     private func attachToExistingJob(
         _ persistedJob: LiveMediaDownloadJob, gated: GateResult
     ) async -> ExistingJobOutcome {
+        guard let owningManager = managerOwning(persistedJob) else {
+            // A sibling app owns this durable transfer. Its task cannot be
+            // attached from this containing app, but it is still active shared
+            // work and must not be restarted locally.
+            await updateActivity(for: persistedJob)
+            return .attached(true)
+        }
+        if owningManager !== self {
+            return await owningManager.attachToExistingJob(persistedJob, gated: gated)
+        }
         var existing = persistedJob
 
         if gated.ownership == .downloader && !existing.isDownloaderOwned {
@@ -463,6 +537,7 @@ public final class LiveMediaDownloadManager: NSObject {
             mediaAttempts: 0,
             suspendDeadline: nil,
             ownership: ownership,
+            backgroundSessionIdentifier: backgroundSessionIdentifier,
             audioURLString: asset.audioURL?.absoluteString,
             dashManifestURLString: asset.dashManifestURL?.absoluteString)
         switch store.insertIfNoActiveJob(job) {
@@ -507,7 +582,8 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveAttempts: 0,
             mediaAttempts: 0,
             suspendDeadline: nil,
-            ownership: gated.ownership
+            ownership: gated.ownership,
+            backgroundSessionIdentifier: backgroundSessionIdentifier
         )
         if let youtube = YouTubeLink(url: gated.sourceURL) {
             job.resolvedVideoID = youtube.videoID
@@ -700,7 +776,12 @@ public final class LiveMediaDownloadManager: NSObject {
     public func resumeUnfinishedDownloads() async {
         await reapExpiredSuspensions()
         let activeJobIDs = await activeTaskJobIDs()
-        for job in store.jobs().filter({ !$0.isTerminal }) {
+        for job in store.jobs().filter({
+            !$0.isTerminal
+                && MediaBackgroundSessionIdentifier.includesJob(
+                    withSessionIdentifier: $0.backgroundSessionIdentifier,
+                    inSessionIdentifier: backgroundSessionIdentifier)
+        }) {
             if job.phase == .saving {
                 resumeFinalization(for: job)
                 continue
@@ -914,6 +995,12 @@ public final class LiveMediaDownloadManager: NSObject {
               job.phase == .downloading || job.phase == .resolving
         else { return }
 
+        guard let owningManager = managerOwning(job) else { return }
+        if owningManager !== self {
+            await owningManager.suspend(jobID: jobID)
+            return
+        }
+
         guard let updated = store.mutate(id: jobID, {
             $0.phase = .suspended
             $0.suspendDeadline = Date().addingTimeInterval(Self.suspensionGracePeriod)
@@ -935,6 +1022,11 @@ public final class LiveMediaDownloadManager: NSObject {
         guard var job = store.job(id: jobID),
               job.phase == .suspended || job.phase == .waiting
         else { return }
+        guard let owningManager = managerOwning(job) else { return }
+        if owningManager !== self {
+            await owningManager.resume(jobID: jobID)
+            return
+        }
         if job.phase == .waiting {
             await restartTransfer(for: job)
             return
@@ -1017,7 +1109,11 @@ public final class LiveMediaDownloadManager: NSObject {
     func reapExpiredSuspensions() async {
         let now = Date()
         for job in store.jobs()
-            where job.phase == .suspended && (job.suspendDeadline ?? .distantPast) <= now {
+            where MediaBackgroundSessionIdentifier.includesJob(
+                withSessionIdentifier: job.backgroundSessionIdentifier,
+                inSessionIdentifier: backgroundSessionIdentifier)
+                && job.phase == .suspended
+                && (job.suspendDeadline ?? .distantPast) <= now {
             await tearDownSuspendedJob(job)
         }
     }

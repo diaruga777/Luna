@@ -103,8 +103,11 @@ enum MediaShellWiring {
         PendingResolvedMediaDownloads.drain(returningToSource: returningToSource)
     }
 
-    static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
+    static func attachBackgroundURLSessionHandler(
+        identifier: String, _ completionHandler: @escaping () -> Void
+    ) {
+        LiveMediaDownloadManager.attachBackgroundCompletionHandler(
+            forSessionIdentifier: identifier, completionHandler: completionHandler)
     }
 
     /// Resolves the download Live Activity's tap-to-view link against the

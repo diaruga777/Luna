@@ -103,6 +103,11 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
     /// Nil only for jobs written by older builds. Those retain the former
     /// Bundle.main inference while every new job carries explicit ownership.
     public var ownership: LiveMediaDownloadOwnership?
+    /// The exact background URLSession that owns this job's tasks. Every Luna
+    /// process has a distinct session even though all jobs share one App Group
+    /// database, so repair must not compare this row with another process's
+    /// task list.
+    public var backgroundSessionIdentifier: String?
 
     public var isTerminal: Bool { phase == .finished || phase == .failed }
 
@@ -119,6 +124,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         errorMessage: String? = nil, errorKind: ErrorKind? = nil,
         resolveAttempts: Int, mediaAttempts: Int,
         suspendDeadline: Date? = nil, ownership: LiveMediaDownloadOwnership? = nil,
+        backgroundSessionIdentifier: String? = nil,
         audioURLString: String? = nil, dashManifestURLString: String? = nil
     ) {
         self.id = id
@@ -145,6 +151,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         self.mediaAttempts = mediaAttempts
         self.suspendDeadline = suspendDeadline
         self.ownership = ownership
+        self.backgroundSessionIdentifier = backgroundSessionIdentifier
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -157,6 +164,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         case rangeStartSeconds, rangeEndSeconds
         case resolvedVideoID, youtubeVisitorData
         case errorMessage, errorKind, resolveAttempts, mediaAttempts, suspendDeadline, ownership
+        case backgroundSessionIdentifier
     }
 
     public init(from decoder: Decoder) throws {
@@ -195,6 +203,8 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         mediaAttempts = try c.decode(Int.self, forKey: .mediaAttempts)
         suspendDeadline = try c.decodeIfPresent(Date.self, forKey: .suspendDeadline)
         ownership = try c.decodeIfPresent(LiveMediaDownloadOwnership.self, forKey: .ownership)
+        backgroundSessionIdentifier = try c.decodeIfPresent(
+            String.self, forKey: .backgroundSessionIdentifier)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -223,6 +233,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encode(mediaAttempts, forKey: .mediaAttempts)
         try c.encodeIfPresent(suspendDeadline, forKey: .suspendDeadline)
         try c.encodeIfPresent(ownership, forKey: .ownership)
+        try c.encodeIfPresent(backgroundSessionIdentifier, forKey: .backgroundSessionIdentifier)
     }
 
     /// Legacy on-disk `mediaKind` strings, from before the field was typed:

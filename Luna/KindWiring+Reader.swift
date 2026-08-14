@@ -121,7 +121,9 @@ enum KindWiring {
         ArticleShellWiring.retryPendingSends()
     }
 
-    static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
+    static func attachBackgroundURLSessionHandler(
+        identifier: String, _ completionHandler: @escaping () -> Void
+    ) {
         // Reader links no media kind, so there is no background URLSession
         // to reattach. It completes the callback immediately so the system
         // isn't left waiting.

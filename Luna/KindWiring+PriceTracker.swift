@@ -89,7 +89,9 @@ enum KindWiring {
     /// here.
     static func retryPendingArticleSends() {}
 
-    static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
+    static func attachBackgroundURLSessionHandler(
+        identifier: String, _ completionHandler: @escaping () -> Void
+    ) {
         // Price Tracker links no media kind, so there is no background
         // URLSession to reattach. It completes the callback immediately so
         // the system isn't left waiting.

@@ -24,7 +24,7 @@ enum MediaDownloadJobRow {
                received_byte_count, resume_data_file_name, time_range_start,
                time_range_end, resolved_video_id, youtube_visitor_data,
                error_message, error_kind, resolve_attempts, media_attempts,
-               suspend_deadline, ownership
+               suspend_deadline, ownership, background_session_identifier
         FROM media_download_jobs
         """
 
@@ -36,8 +36,8 @@ enum MediaDownloadJobRow {
             received_byte_count, resume_data_file_name, time_range_start,
             time_range_end, resolved_video_id, youtube_visitor_data,
             error_message, error_kind, resolve_attempts, media_attempts,
-            suspend_deadline, ownership)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            suspend_deadline, ownership, background_session_identifier)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (id) DO UPDATE SET
             source_url_string = excluded.source_url_string,
             asset_url_string = excluded.asset_url_string,
@@ -62,7 +62,8 @@ enum MediaDownloadJobRow {
             resolve_attempts = excluded.resolve_attempts,
             media_attempts = excluded.media_attempts,
             suspend_deadline = excluded.suspend_deadline,
-            ownership = excluded.ownership
+            ownership = excluded.ownership,
+            background_session_identifier = excluded.background_session_identifier
         """
 
     static func bindUpsert(_ job: LiveMediaDownloadJob, to s: SavesStatement) throws {
@@ -91,6 +92,7 @@ enum MediaDownloadJobRow {
         try s.bind(23, job.mediaAttempts)
         try s.bind(24, date: job.suspendDeadline)
         try s.bind(25, job.ownership?.rawValue)
+        try s.bind(26, job.backgroundSessionIdentifier)
     }
 
     static func job(from row: SavesStatement) -> LiveMediaDownloadJob? {
@@ -124,6 +126,7 @@ enum MediaDownloadJobRow {
             mediaAttempts: row.int(22) ?? 0,
             suspendDeadline: row.date(23),
             ownership: row.string(24).flatMap(LiveMediaDownloadOwnership.init(rawValue:)),
+            backgroundSessionIdentifier: row.string(25),
             audioURLString: row.string(3),
             dashManifestURLString: row.string(4))
     }

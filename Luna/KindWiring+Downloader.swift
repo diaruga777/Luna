@@ -106,8 +106,10 @@ enum KindWiring {
     /// here.
     static func retryPendingArticleSends() {}
 
-    static func attachBackgroundURLSessionHandler(_ completionHandler: @escaping () -> Void) {
-        MediaShellWiring.attachBackgroundURLSessionHandler(completionHandler)
+    static func attachBackgroundURLSessionHandler(
+        identifier: String, _ completionHandler: @escaping () -> Void
+    ) {
+        MediaShellWiring.attachBackgroundURLSessionHandler(identifier: identifier, completionHandler)
     }
 
     static func mediaDeepLinkAction(forURLString urlString: String) -> MediaDeepLinkAction {

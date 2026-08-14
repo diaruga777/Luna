@@ -288,7 +288,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     ) {
         // Background URLSessions belong to the media download manager; apps
         // without the media kind complete the callback immediately.
-        KindWiring.attachBackgroundURLSessionHandler(completionHandler)
+        KindWiring.attachBackgroundURLSessionHandler(
+            identifier: identifier, completionHandler)
         // The one wake this process is guaranteed to get without the user
         // touching anything: the transfer a Safari hand-off started just
         // finished. If that hand-off's metadata pass was cut short by an

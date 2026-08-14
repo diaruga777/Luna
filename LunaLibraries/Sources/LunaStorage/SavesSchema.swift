@@ -57,6 +57,15 @@ enum SavesSchema {
                     try rebuildPreloadPages(in: database)
                 }
                 try database.execute(tables)
+                // Version 11 assigns every live media job to the exact
+                // process-specific background session that owns its tasks.
+                // CREATE TABLE above handles a fresh database; an existing
+                // schema-10 table needs the additive column explicitly.
+                if try mediaDownloadJobsNeedSessionIdentifier(in: database) {
+                    try database.execute(
+                        "ALTER TABLE media_download_jobs "
+                            + "ADD COLUMN background_session_identifier TEXT")
+                }
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
                 // retirement. Preserve that fact before a reaper clears it.
@@ -123,6 +132,16 @@ enum SavesSchema {
     /// The schema revision recorded in the file.
     static func userVersion(in database: SavesDatabase) throws -> Int32 {
         Int32(try database.scalarInt("PRAGMA user_version") ?? 0)
+    }
+
+    private static func mediaDownloadJobsNeedSessionIdentifier(
+        in database: SavesDatabase
+    ) throws -> Bool {
+        var columns: Set<String> = []
+        try database.query("PRAGMA table_info(media_download_jobs)") { row in
+            if let name = row.string(1) { columns.insert(name) }
+        }
+        return !columns.contains("background_session_identifier")
     }
 
     /// Whether an existing `preload_pages` table predates the full SQL index.
@@ -441,7 +460,8 @@ enum SavesSchema {
             resolve_attempts         INTEGER NOT NULL,
             media_attempts           INTEGER NOT NULL,
             suspend_deadline         REAL,
-            ownership                TEXT
+            ownership                TEXT,
+            background_session_identifier TEXT
         ) WITHOUT ROWID;
 
         -- Legacy schema-9 Spotlight bookkeeping. Keep this table for independently

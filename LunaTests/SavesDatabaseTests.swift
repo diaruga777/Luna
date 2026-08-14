@@ -77,6 +77,49 @@ final class SavesDatabaseTests: XCTestCase {
         }
     }
 
+    func testMediaDownloadJobRoundTripsOwningBackgroundSession() {
+        let store = makeStore()
+        let job = LiveMediaDownloadJob(
+            id: "session-owned-job",
+            sourceURLString: "https://example.com/video",
+            title: "Video",
+            phase: .resolving,
+            progress: 0,
+            resolveAttempts: 0,
+            mediaAttempts: 0,
+            backgroundSessionIdentifier:
+                "com.hsanabria.luna.share.mediaDownload.background.v2")
+
+        store.writeMediaDownloadJob(job)
+
+        XCTAssertEqual(
+            store.mediaDownloadJob(id: job.id)?.backgroundSessionIdentifier,
+            job.backgroundSessionIdentifier)
+    }
+
+    func testSchemaTenAddsMediaDownloadSessionOwnerColumn() throws {
+        _ = makeStore()
+        try autoreleasepool {
+            let database = try openDatabase()
+            try database.perform { db in
+                try db.execute(
+                    "ALTER TABLE media_download_jobs "
+                        + "DROP COLUMN background_session_identifier")
+                try db.execute("PRAGMA user_version = 10")
+            }
+        }
+
+        let reopened = try openDatabase()
+        try reopened.perform { db in
+            var columns: Set<String> = []
+            try db.query("PRAGMA table_info(media_download_jobs)") { row in
+                if let name = row.string(1) { columns.insert(name) }
+            }
+            XCTAssertTrue(columns.contains("background_session_identifier"))
+            XCTAssertEqual(try SavesSchema.userVersion(in: db), SavesDatabase.schemaVersion)
+        }
+    }
+
     /// Two different layouts were shipped with the version-6 stamp. Opening the
     /// earlier, two-column layout detects it by shape, releases its page file, and
     /// creates the complete table rather than trusting the ambiguous stamp.

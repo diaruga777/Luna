@@ -18,19 +18,21 @@ private enum SavedMediaStoreMutationError: Error {
 }
 
 public struct SavedMediaItem: Codable, Identifiable, Equatable {
+    /// Where a saved row's media actually is.
+    ///
+    /// The Photos case carries only the identifier. Handing the media to Photos
+    /// used to need two manifest writes — commit the identifier with the local
+    /// names held as `pendingLocal*`, remove those files, then clear the names —
+    /// because a crash in between had to be recoverable. The database records that
+    /// intent now: the row stops naming the file, the release trigger queues it,
+    /// and the reaper unlinks it whenever the process next runs.
     public enum StorageState: Codable, Equatable {
         case undownloaded
         case localFile(fileName: String)
-        /// `pendingLocal*` make the destructive half of local -> Photos recoverable:
-        /// the Photos identifier is committed first, then these files are removed and
-        /// the pending names are cleared in a second atomic manifest write.
-        case photosReference(
-            localIdentifier: String,
-            pendingLocalFileName: String?,
-            pendingThumbnailFileName: String?)
+        case photosReference(localIdentifier: String)
 
         private enum CodingKeys: String, CodingKey {
-            case type, fileName, localIdentifier, pendingLocalFileName, pendingThumbnailFileName
+            case type, fileName, localIdentifier
         }
         private enum Kind: String, Codable { case undownloaded, localFile, photosReference }
 
@@ -43,11 +45,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
                 self = .localFile(fileName: try container.decode(String.self, forKey: .fileName))
             case .photosReference:
                 self = .photosReference(
-                    localIdentifier: try container.decode(String.self, forKey: .localIdentifier),
-                    pendingLocalFileName: try container.decodeIfPresent(
-                        String.self, forKey: .pendingLocalFileName),
-                    pendingThumbnailFileName: try container.decodeIfPresent(
-                        String.self, forKey: .pendingThumbnailFileName))
+                    localIdentifier: try container.decode(String.self, forKey: .localIdentifier))
             }
         }
 
@@ -59,11 +57,9 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
             case .localFile(let fileName):
                 try container.encode(Kind.localFile, forKey: .type)
                 try container.encode(fileName, forKey: .fileName)
-            case .photosReference(let identifier, let pendingFile, let pendingThumbnail):
+            case .photosReference(let identifier):
                 try container.encode(Kind.photosReference, forKey: .type)
                 try container.encode(identifier, forKey: .localIdentifier)
-                try container.encodeIfPresent(pendingFile, forKey: .pendingLocalFileName)
-                try container.encodeIfPresent(pendingThumbnail, forKey: .pendingThumbnailFileName)
             }
         }
     }
@@ -101,7 +97,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
     }
 
     public var photosLocalIdentifier: String? {
-        guard case .photosReference(let identifier, _, _) = storageState else { return nil }
+        guard case .photosReference(let identifier) = storageState else { return nil }
         return identifier
     }
 
@@ -224,6 +220,9 @@ public final class SavedMediaStore {
     private let lock = NSLock()
     private let fm = FileManager.default
     private let overrideContainerURL: URL?
+    /// Guards the lazy resolution of `ownershipStore` only.
+    private let ownershipLock = NSLock()
+    private var resolvedOwnershipStore: SavesStore?
 
     /// Consulted before a `.photosReference` row is allowed to answer "already
     /// downloaded" (`existingDownloadedItem`, `ensureUndownloaded`). The real
@@ -260,6 +259,44 @@ public final class SavedMediaStore {
 
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
+    }
+
+    /// The store that counts who holds this library's files. Resolved lazily, and
+    /// to the shared store whenever this store is the shared one, so the process
+    /// ends up with one connection to the database rather than two.
+    private func ownershipStore() -> SavesStore {
+        guard let overrideContainerURL else { return .shared }
+        ownershipLock.lock()
+        defer { ownershipLock.unlock() }
+        if let resolvedOwnershipStore { return resolvedOwnershipStore }
+        let store = SavesStore(containerURL: overrideContainerURL)
+        resolvedOwnershipStore = store
+        return store
+    }
+
+    /// Empties the library once, on the first run of the build that moved file
+    /// ownership into the database.
+    ///
+    /// Nothing adopts what an older build left behind: its rows own no files, and
+    /// its posters are named from their item id, which this system cannot take
+    /// (see `OwnedFileKind.mediaThumbnail`). Rather than leave files no owner will
+    /// ever free, the manifest and both directories go. Idempotent and
+    /// cross-process — the flag lives in the shared App Group defaults, so
+    /// whichever process runs first does the work.
+    public func resetLibraryForSQLOwnershipOnce() {
+        let defaults = UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
+        let key = "savedMedia.sqlOwnershipReset.v1"
+        guard !defaults.bool(forKey: key) else { return }
+        defaults.set(true, forKey: key)
+        lock.lock()
+        try? saveUnlocked([])
+        lock.unlock()
+        for directory in [mediaDirectory, thumbnailDirectory] {
+            let contents = (try? fm.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in contents { try? fm.removeItem(at: file) }
+        }
+        notifyChanged()
     }
 
     public var directory: URL {
@@ -439,7 +476,13 @@ public final class SavedMediaStore {
                 throw SavedMediaStoreMutationError.itemRemoved
             }
             let protectedItemID = requiringItemID ?? existing?.id
-            return (existing, protectedItemID, protectedItemID ?? UUID())
+            // A brand-new row takes the id of the save that will own its files.
+            // Minting a bare UUID here would produce a row whose downloads no
+            // `file_refs` edge could ever point at.
+            return (existing, protectedItemID, protectedItemID
+                ?? MediaSaveBacking.saveID(
+                    for: sourceURLString, title: title, dateSaved: dateSaved,
+                    store: ownershipStore()))
         }
         let cleanExt = Self.cleanExtension(ext ?? fileURL.pathExtension, kind: kind)
         // A fresh name keeps an existing durable local backing intact until the
@@ -449,7 +492,7 @@ public final class SavedMediaStore {
         try? fm.removeItem(at: destination)
         try fm.moveItem(at: fileURL, to: destination)
 
-        let thumbnailName = await makeThumbnail(for: destination, kind: kind, id: id)
+        let thumbnailName = await makeThumbnail(for: destination, kind: kind)
         let item = SavedMediaItem(
             id: id,
             sourceURLString: sourceURLString,
@@ -460,19 +503,17 @@ public final class SavedMediaStore {
             thumbnailFileName: thumbnailName,
             platform: recognized?.platform ?? existing?.platform,
             platformItemID: recognized?.itemID ?? existing?.platformItemID)
-        func removeNewFiles() {
-            try? fm.removeItem(at: destination)
-            if let thumbnailName {
-                try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailName))
-            }
-        }
+        // Claim the new files BEFORE the manifest commit, alongside whatever the
+        // row already holds. A process killed between the move and the commit then
+        // leaves files the database owns rather than files nobody does, and the
+        // reconcile that follows either commit or failure frees the losing set.
+        ownershipStore().claimMediaFiles(
+            saveID: id, fileName: fileName, thumbnailFileName: thumbnailName)
         // The commit runs under one `withLock`; a failure inside it rethrows and
         // the file cleanup happens outside, so the lock is never held across it.
-        let replaced: [SavedMediaItem]
         let persistedItem: SavedMediaItem
         do {
-            (replaced, persistedItem) = try lock.withLock {
-                () -> ([SavedMediaItem], SavedMediaItem) in
+            persistedItem = try lock.withLock { () -> SavedMediaItem in
                 var items = loadUnlocked()
                 let latestIndex = Self.matchIndex(
                     in: items, id: id, sourceURLString: sourceURLString)
@@ -495,21 +536,22 @@ public final class SavedMediaStore {
                 } else {
                     merged.archivedAt = existing?.archivedAt
                 }
-                let replaced = items.filter { $0.id == id }
                 items.removeAll { $0.id == id }
                 items.append(merged)
                 try saveUnlocked(items)
-                return (replaced, merged)
+                return merged
             }
         } catch {
-            removeNewFiles()
+            // The manifest still names whatever it named before, so reconciling to
+            // the row as it stands drops the files this call just claimed.
+            reconcileOwnership(of: existing ?? SavedMediaItem(
+                id: id, sourceURLString: sourceURLString, title: nil, dateSaved: dateSaved,
+                kind: kind, storageState: .undownloaded, thumbnailFileName: nil))
             throw error
         }
-        for old in replaced where old.id != persistedItem.id || old.fileName != persistedItem.fileName {
-            removePendingFiles(fileName: old.fileName,
-                               thumbnailFileName: old.thumbnailFileName == persistedItem.thumbnailFileName
-                                   ? nil : old.thumbnailFileName)
-        }
+        // The row now names one file and one poster; every earlier pair it held is
+        // released by this one call, replaced set and all.
+        reconcileOwnership(of: persistedItem)
         notifyChanged()
         return persistedItem
     }
@@ -527,40 +569,21 @@ public final class SavedMediaStore {
             lock.unlock()
             return nil
         }
-        let pendingFile = items[index].fileName
-        // The small poster is the archive's durable visual identity. Keep it
-        // even after the full app-owned media moves into Photos.
-        let pendingThumbnail: String? = nil
         if items[index].kind == nil { items[index].kind = kind }
-        items[index].storageState = .photosReference(
-            localIdentifier: localIdentifier,
-            pendingLocalFileName: pendingFile,
-            pendingThumbnailFileName: pendingThumbnail)
+        items[index].storageState = .photosReference(localIdentifier: localIdentifier)
         do {
             try saveUnlocked(items)
         } catch {
             lock.unlock()
             throw error
         }
+        // The small poster is the archive's durable visual identity, so it is kept
+        // even after the full app-owned media moves into Photos. The row no longer
+        // names the media file, so the reconcile below hands it to the delete queue.
+        let result = items[index]
         lock.unlock()
 
-        let cleanupFinished = removePendingFiles(
-            fileName: pendingFile, thumbnailFileName: pendingThumbnail)
-
-        lock.lock()
-        items = loadUnlocked()
-        if cleanupFinished,
-           let refreshed = items.firstIndex(where: { $0.id == itemID }),
-           case .photosReference(let identifier, _, _) = items[refreshed].storageState,
-           identifier == localIdentifier {
-            items[refreshed].storageState = .photosReference(
-                localIdentifier: identifier,
-                pendingLocalFileName: nil,
-                pendingThumbnailFileName: nil)
-            try? saveUnlocked(items)
-        }
-        let result = items.first(where: { $0.id == itemID })
-        lock.unlock()
+        reconcileOwnership(of: result)
         notifyChanged()
         return result
     }
@@ -600,7 +623,7 @@ public final class SavedMediaStore {
         items.removeAll { $0.id == item.id }
         try? saveUnlocked(items)
         lock.unlock()
-        removeLocalFiles(for: item)
+        releaseOwnership(of: item.id)
         notifyChanged()
     }
 
@@ -628,7 +651,9 @@ public final class SavedMediaStore {
         guard (try? saveUnlocked(items)) != nil else { lock.unlock(); return }
         lock.unlock()
         if archived, case .localFile = old.storageState {
-            removePendingFiles(fileName: old.fileName, thumbnailFileName: nil)
+            // The row kept its poster and dropped its media, so one reconcile
+            // against the archived row queues exactly the media file.
+            reconcileOwnership(of: items[index])
         }
         notifyChanged()
     }
@@ -658,7 +683,7 @@ public final class SavedMediaStore {
         lock.lock()
         let items = loadUnlocked()
         guard let index = items.firstIndex(where: { $0.id == itemID }),
-              case .photosReference(let identifier, _, _) = items[index].storageState
+              case .photosReference(let identifier) = items[index].storageState
         else {
             lock.unlock()
             return false
@@ -672,7 +697,7 @@ public final class SavedMediaStore {
         lock.lock()
         var updated = loadUnlocked()
         guard let index = updated.firstIndex(where: { $0.id == itemID }),
-              case .photosReference(let current, _, _) = updated[index].storageState,
+              case .photosReference(let current) = updated[index].storageState,
               current == identifier
         else {
             lock.unlock()
@@ -692,13 +717,13 @@ public final class SavedMediaStore {
         // An archived row keeps its poster — that IS the archive's visual
         // identity, and `items()`'s recovery pass already clears any leftover
         // pending files.
-        if !stale.isArchived {
-            removeLocalFiles(for: stale)
-            // `delete` leaves a Photos-backed row's poster on disk (it clears
-            // only the transition's pending names). Nothing can reference it
-            // once the row is gone, and unlike a one-off delete this path runs
-            // again on every re-save.
-            removePendingFiles(fileName: nil, thumbnailFileName: stale.thumbnailFileName)
+        if stale.isArchived {
+            // The archived row keeps its poster — that IS the archive's visual
+            // identity — and no longer names any media.
+            reconcileOwnership(of: updated[index])
+        } else {
+            // The row is gone, so nothing it held has an owner left.
+            releaseOwnership(of: stale.id)
         }
         AutoDownloadSettings.unmarkDownloaded(sourceURLString)
         notifyChanged()
@@ -768,12 +793,10 @@ public final class SavedMediaStore {
             return
         }
         lock.unlock()
-        for item in ageExpired {
-            if item.isArchived {
-                removePendingFiles(fileName: item.fileName, thumbnailFileName: nil)
-            } else {
-                removeLocalFiles(for: item)
-            }
+        // Each expired row now names either its poster alone (archived) or
+        // nothing, so one reconcile per row queues what it gave up.
+        for item in updated where expiredIDs.contains(item.id) {
+            reconcileOwnership(of: item)
         }
         notifyChanged()
     }
@@ -812,66 +835,43 @@ public final class SavedMediaStore {
         cacheToken = currentFileStatTokenUnlocked()
     }
 
-    /// Repairs interrupted Photos cleanup and local rows whose backing file was
-    /// externally removed. Returns whether the manifest needs a follow-up write.
+    /// Repairs local rows whose backing file was removed from under them.
+    /// Returns whether the manifest needs a follow-up write.
+    ///
+    /// The interrupted-Photos-cleanup half of this is gone: a row that stops
+    /// naming its file leaves the unlink to the delete queue, so there is no
+    /// half-finished state left to find.
     private func recoverInterruptedTransitionsUnlocked(_ items: inout [SavedMediaItem]) -> Bool {
         var changed = false
         for index in items.indices {
-            switch items[index].storageState {
-            case .undownloaded:
-                break
-            case .localFile(let fileName):
-                guard !fm.fileExists(atPath: mediaDirectory.appendingPathComponent(fileName).path)
-                else { continue }
-                if let thumbnail = items[index].thumbnailFileName {
-                    try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnail))
-                }
-                items[index].storageState = .undownloaded
-                items[index].thumbnailFileName = nil
-                changed = true
-            case .photosReference(let identifier, let pendingFile, let pendingThumbnail):
-                guard pendingFile != nil || pendingThumbnail != nil else { continue }
-                guard removePendingFiles(
-                    fileName: pendingFile, thumbnailFileName: pendingThumbnail)
-                else { continue }
-                items[index].storageState = .photosReference(
-                    localIdentifier: identifier,
-                    pendingLocalFileName: nil,
-                    pendingThumbnailFileName: nil)
-                changed = true
-            }
+            guard case .localFile(let fileName) = items[index].storageState,
+                  !fm.fileExists(atPath: mediaDirectory.appendingPathComponent(fileName).path)
+            else { continue }
+            items[index].storageState = .undownloaded
+            items[index].thumbnailFileName = nil
+            changed = true
         }
         return changed
     }
 
-    @discardableResult
-    private func removePendingFiles(fileName: String?, thumbnailFileName: String?) -> Bool {
-        if let fileName {
-            try? fm.removeItem(at: mediaDirectory.appendingPathComponent(fileName))
-        }
-        if let thumbnailFileName {
-            try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailFileName))
-        }
-        let fileGone = fileName.map {
-            !fm.fileExists(atPath: mediaDirectory.appendingPathComponent($0).path)
-        } ?? true
-        let thumbnailGone = thumbnailFileName.map {
-            !fm.fileExists(atPath: thumbnailDirectory.appendingPathComponent($0).path)
-        } ?? true
-        return fileGone && thumbnailGone
+    /// Tells the database what `item` now claims, so it frees what the row no
+    /// longer names.
+    ///
+    /// The ONE place this store's files are released. Nothing here unlinks: the
+    /// release trigger queues a path in `pending_deletes` and
+    /// `PendingDeleteReaper` performs the unlink, which is what makes the
+    /// destructive half of every operation survive being killed mid-way.
+    private func reconcileOwnership(of item: SavedMediaItem) {
+        ownershipStore().reconcileMediaFiles(
+            saveID: item.id,
+            fileName: item.fileName,
+            thumbnailFileName: item.thumbnailFileName)
     }
 
-    private func removeLocalFiles(for item: SavedMediaItem) {
-        switch item.storageState {
-        case .localFile(let fileName):
-            removePendingFiles(fileName: fileName, thumbnailFileName: item.thumbnailFileName)
-        case .photosReference(_, let pendingFile, let pendingThumbnail):
-            removePendingFiles(fileName: pendingFile, thumbnailFileName: pendingThumbnail)
-        case .undownloaded:
-            if let thumbnail = item.thumbnailFileName {
-                removePendingFiles(fileName: nil, thumbnailFileName: thumbnail)
-            }
-        }
+    /// Releases everything a row held, for a row that is going away.
+    private func releaseOwnership(of itemID: UUID) {
+        ownershipStore().reconcileMediaFiles(
+            saveID: itemID, fileName: nil, thumbnailFileName: nil)
     }
 
     private func notifyChanged() {
@@ -891,8 +891,10 @@ public final class SavedMediaStore {
         postCrossProcessChange()
     }
 
-    private func makeThumbnail(for fileURL: URL, kind: MediaAsset.Kind, id: UUID) async -> String? {
-        let name = "\(id.uuidString).jpg"
+    private func makeThumbnail(for fileURL: URL, kind: MediaAsset.Kind) async -> String? {
+        // Generated, not named from the item: a released path is retired forever,
+        // so a name reused across downloads could never be written a second time.
+        let name = "thumb-\(UUID().uuidString).jpg"
         let destination = thumbnailDirectory.appendingPathComponent(name)
         let image: UIImage?
         switch kind {

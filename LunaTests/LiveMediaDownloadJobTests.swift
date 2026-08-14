@@ -181,9 +181,7 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertFalse(LiveMediaDownloadStartPolicy.downloaderShouldStart(
             storageState: .localFile(fileName: "media.mp4")))
         XCTAssertFalse(LiveMediaDownloadStartPolicy.downloaderShouldStart(
-            storageState: .photosReference(
-                localIdentifier: "photo-id", pendingLocalFileName: nil,
-                pendingThumbnailFileName: nil)))
+            storageState: .photosReference(localIdentifier: "photo-id")))
     }
 
     func testLegacyJobWithoutOwnershipStillDecodes() throws {

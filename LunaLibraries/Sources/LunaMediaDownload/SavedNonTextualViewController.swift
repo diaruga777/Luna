@@ -826,7 +826,8 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
                 try FileManager.default.copyItem(at: previewURL, to: copy)
                 let store = SavedMediaStore.shared
                 let pending = try store.ensureUndownloaded(
-                    id: readingItem?.id ?? UUID(),
+                    id: readingItem?.id ?? MediaSaveBacking.saveID(
+                        for: sourceURLString, title: title),
                     sourceURLString: sourceURLString,
                     title: title)
                 let saved: SavedMediaItem
@@ -953,7 +954,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
                 return
             }
             showReadyPreview(DownloadedMedia(fileURL: fileURL, kind: kind))
-        case .photosReference(let identifier, _, _):
+        case .photosReference(let identifier):
             previewImageView.isHidden = false
             playOverlay.isHidden = item.kind != .video
             Task { [weak self] in

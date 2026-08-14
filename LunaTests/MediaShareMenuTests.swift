@@ -59,9 +59,7 @@ final class MediaShareMenuTests: XCTestCase {
         XCTAssertEqual(
             rowTitles(
                 kind: .video,
-                storageState: .photosReference(
-                    localIdentifier: "asset", pendingLocalFileName: nil,
-                    pendingThumbnailFileName: nil)),
+                storageState: .photosReference(localIdentifier: "asset")),
             ["Copy link", "Share link", "Share video"])
     }
 

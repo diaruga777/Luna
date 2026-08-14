@@ -299,7 +299,8 @@ public final class LiveMediaDownloadManager: NSObject {
         let readingItem = SavesStore.shared.item(forURLString: urlString)
         if ownership == .downloader {
             let savedItem = try? SavedMediaStore.shared.ensureUndownloaded(
-                id: readingItem?.id ?? UUID(),
+                id: readingItem?.id ?? MediaSaveBacking.saveID(
+                    for: urlString, title: title),
                 sourceURLString: urlString,
                 title: title ?? readingItem?.title,
                 dateSaved: readingItem?.dateAdded ?? Date())
@@ -429,7 +430,8 @@ public final class LiveMediaDownloadManager: NSObject {
         let readingItem = SavesStore.shared.item(forURLString: sourceURLString)
         if ownership == .downloader {
             guard let pending = try? SavedMediaStore.shared.ensureUndownloaded(
-                id: readingItem?.id ?? UUID(),
+                id: readingItem?.id ?? MediaSaveBacking.saveID(
+                    for: sourceURLString, title: title),
                 sourceURLString: sourceURLString,
                 title: title ?? readingItem?.title,
                 dateSaved: readingItem?.dateAdded ?? Date())

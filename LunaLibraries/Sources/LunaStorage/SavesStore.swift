@@ -1388,6 +1388,73 @@ public final class SavesStore {
         }
     }
 
+    // MARK: - Downloaded media
+
+    /// Makes the save `saveID` hold exactly the media file and poster named here,
+    /// and frees whatever it held before. Either name may be nil: archiving keeps
+    /// the poster and drops the media, and a deleted download names neither.
+    ///
+    /// This is the ONE call `SavedMediaStore` makes after a manifest write. The
+    /// files it stops naming reach `pending_deletes` through the release trigger,
+    /// so the store never unlinks anything itself — which is what makes the
+    /// destructive half of a Photos export crash-safe without a second manifest
+    /// write to remember it by.
+    public func reconcileMediaFiles(
+        saveID: UUID, fileName: String?, thumbnailFileName: String?
+    ) {
+        var artifacts: [(OwnedFileKind, OwnedFilePath)] = []
+        if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
+            artifacts.append((.mediaFile, path))
+        }
+        if let thumbnailFileName,
+           let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
+            artifacts.append((.mediaThumbnail, path))
+        }
+        writeFileOwnership { db in
+            try SavedFileOwnership.reconcile(
+                saveID: saveID, kinds: Self.mediaFileKinds, artifacts: artifacts, in: db)
+        }
+        reapPendingDeletes()
+    }
+
+    /// Adds these media files to what `saveID` holds, releasing nothing.
+    ///
+    /// A download claims its file before the row that will name it commits, so a
+    /// process killed in between leaves a file the database owns rather than one
+    /// nobody does. The reconcile that follows the commit — or the failure — frees
+    /// whichever set lost.
+    public func claimMediaFiles(saveID: UUID, fileName: String?, thumbnailFileName: String?) {
+        writeFileOwnership { db in
+            if let fileName, let path = SavedFileOwnership.mediaFilePath(fileName) {
+                try SavedFileOwnership.attach(
+                    path: path, kind: .mediaFile, to: saveID, in: db)
+            }
+            if let thumbnailFileName,
+               let path = SavedFileOwnership.mediaThumbnailPath(thumbnailFileName) {
+                try SavedFileOwnership.attach(
+                    path: path, kind: .mediaThumbnail, to: saveID, in: db)
+            }
+        }
+    }
+
+    /// The media names `saveID` holds, for a caller that needs to know whether a
+    /// claim took — a download's file is only safe to report once the save owns it.
+    public func heldMediaFileNames(saveID: UUID) -> Set<String> {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                Set(try SavedFileOwnership.heldPaths(
+                    saveID: saveID, kinds: Self.mediaFileKinds, in: db
+                ).map(\.lastPathComponent))
+            }
+        } catch {
+            record(error, "read media files")
+            return []
+        }
+    }
+
+    private static let mediaFileKinds: Set<OwnedFileKind> = [.mediaFile, .mediaThumbnail]
+
     // MARK: - Files a preloaded page holds
 
     /// Records that the preloaded page `pageKey` holds exactly `fileNames` of the

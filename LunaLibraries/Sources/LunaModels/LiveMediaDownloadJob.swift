@@ -1,13 +1,18 @@
 //
 //  LiveMediaDownloadJob.swift
-//  Luna
+//  LunaModels
 //
 
-import LunaModels
 import Foundation
 
-struct LiveMediaDownloadJob: Codable, Equatable {
-    enum Phase: String, Codable {
+/// Which app owns a live media download's completed file.
+public enum LiveMediaDownloadOwnership: String, Codable {
+    case downloader
+    case invokingApp
+}
+
+public struct LiveMediaDownloadJob: Codable, Equatable {
+    public enum Phase: String, Codable {
         case resolving
         case downloading
         case waiting
@@ -17,7 +22,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         case failed
     }
 
-    enum ErrorKind: String, Codable {
+    public enum ErrorKind: String, Codable {
         case download
         case photosPermission
         /// Resolution found no downloadable assets — the case URL rescue targets.
@@ -25,10 +30,10 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     }
 
     /// The stage of a persisted background resolve. Codable (String-backed) so
-    /// jobs.json keeps the same on-disk shape; an unrecognized legacy raw string
+    /// The stored raw string keeps its old spelling; an unrecognized one
     /// decodes to nil via `init(rawValue:)`, the same way a hand-matched string
     /// literal used to silently fail to match any case.
-    enum ResolveKind: String, Codable {
+    public enum ResolveKind: String, Codable {
         case x
         case tiktok
         case instagramGraphQL
@@ -54,14 +59,14 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         case direct
     }
 
-    var id: String
-    var sourceURLString: String
-    var assetURLString: String?
+    public var id: String
+    public var sourceURLString: String
+    public var assetURLString: String?
     /// Reddit's audio-only companion and authoritative DASH fallback. Keeping
     /// these with the job lets both legs be recreated as background-session
     /// tasks after process death instead of falling back to `URLSession.shared`.
-    var audioURLString: String?
-    var dashManifestURLString: String?
+    public var audioURLString: String?
+    public var dashManifestURLString: String?
     /// Nil for a job that hasn't resolved an asset yet (or whose legacy on-disk
     /// value didn't parse — the old "unknown" sentinel and anything else
     /// unrecognized). Never a case that CLAIMS a kind it doesn't have: the old
@@ -69,44 +74,39 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     /// same `.gif` case ("gif" from `Kind.rawValue`, "animatedImage" from the
     /// old `liveActivityKind`), so a job written by one and read by the other's
     /// assumption silently became `.image`.
-    var mediaKind: MediaAsset.Kind?
-    var title: String
-    var resolveKind: ResolveKind?
-    var phase: Phase
-    var progress: Double
-    var thumbnailFileName: String?
-    var fileExtension: String?
+    public var mediaKind: MediaAsset.Kind?
+    public var title: String
+    public var resolveKind: ResolveKind?
+    public var phase: Phase
+    public var progress: Double
+    public var thumbnailFileName: String?
+    public var fileExtension: String?
     /// Size/transfer state survives process death. Resume data is stored as a
-    /// sibling file instead of bloating jobs.json with base64 bytes.
-    var expectedByteCount: Int64?
-    var receivedByteCount: Int64?
-    var resumeDataFileName: String?
+    /// sibling file rather than as base64 bytes in the row.
+    public var expectedByteCount: Int64?
+    public var receivedByteCount: Int64?
+    public var resumeDataFileName: String?
     /// Optional source-requested range (notably YouTube timestamp/clip links).
-    var timeRange: MediaTimeRange?
+    public var timeRange: MediaTimeRange?
     /// The underlying YouTube video id after a `/clip/` URL has been expanded.
     /// Persisting it lets a later resolver stage survive a process relaunch.
-    var resolvedVideoID: String?
+    public var resolvedVideoID: String?
     /// Guest-session identity extracted from YouTube's watch page and forwarded
     /// to the Android VR player request. Optional for jobs from older builds and
     /// for every non-YouTube platform.
-    var youtubeVisitorData: String?
-    var errorMessage: String?
-    var errorKind: ErrorKind?
-    var resolveAttempts: Int
-    var mediaAttempts: Int
-    var suspendDeadline: Date?
+    public var youtubeVisitorData: String?
+    public var errorMessage: String?
+    public var errorKind: ErrorKind?
+    public var resolveAttempts: Int
+    public var mediaAttempts: Int
+    public var suspendDeadline: Date?
     /// Nil only for jobs written by older builds. Those retain the former
     /// Bundle.main inference while every new job carries explicit ownership.
-    var ownership: LiveMediaDownloadOwnership?
+    public var ownership: LiveMediaDownloadOwnership?
 
-    var isTerminal: Bool { phase == .finished || phase == .failed }
+    public var isTerminal: Bool { phase == .finished || phase == .failed }
 
-    var isDownloaderOwned: Bool {
-        ownership == .downloader
-            || (ownership == nil && MediaAutoDownloader.isRunningInDownloader)
-    }
-
-    init(
+    public init(
         id: String, sourceURLString: String, assetURLString: String? = nil,
         mediaKind: MediaAsset.Kind? = nil, title: String,
         resolveKind: ResolveKind? = nil,
@@ -159,7 +159,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         case errorMessage, errorKind, resolveAttempts, mediaAttempts, suspendDeadline, ownership
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         sourceURLString = try c.decode(String.self, forKey: .sourceURLString)
@@ -197,7 +197,7 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         ownership = try c.decodeIfPresent(LiveMediaDownloadOwnership.self, forKey: .ownership)
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(sourceURLString, forKey: .sourceURLString)
@@ -235,47 +235,10 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         return raw == "animatedImage" ? .gif : nil
     }
 
-    mutating func fail(message: String, kind: ErrorKind = .download) {
+    public mutating func fail(message: String, kind: ErrorKind = .download) {
         phase = .failed
         errorMessage = message
         errorKind = kind
         suspendDeadline = nil
-    }
-
-    /// The human-readable status line shown by both the Live Activity and the
-    /// Downloader footer status view — kept as one source of truth so the two
-    /// surfaces never drift.
-    var statusMessage: String {
-        switch phase {
-        case .resolving: return L10n.string("Downloader_liveActivity_status_resolving")
-        case .downloading: return L10n.string("Common_downloading")
-        case .waiting: return L10n.string("Downloader_liveActivity_status_waiting")
-        case .suspended: return L10n.string("Downloader_liveActivity_status_suspended")
-        case .saving:
-            return isDownloaderOwned
-                ? L10n.string("Downloader_liveActivity_status_savingToLuna")
-                : L10n.string("Downloader_liveActivity_status_savingToPhotos")
-        case .finished:
-            return isDownloaderOwned
-                ? L10n.string("Common_savedToLuna")
-                : L10n.string("Downloader_liveActivity_status_savedToPhotos")
-        case .failed: return errorMessage ?? L10n.string("Downloader_liveActivity_status_downloadFailed")
-        }
-    }
-
-    var downloaderSnapshot: DownloaderJobSnapshot {
-        let failureKind: DownloaderJobSnapshot.FailureKind?
-        switch phase {
-        case .failed: failureKind = errorKind == .noMedia ? .noMedia : .other
-        default: failureKind = nil
-        }
-        return DownloaderJobSnapshot(
-            sourceURLString: sourceURLString,
-            title: title,
-            phase: DownloaderJobPhase(rawValue: phase.rawValue) ?? .failed,
-            progress: progress,
-            message: statusMessage,
-            thumbnailFileName: thumbnailFileName,
-            failureKind: failureKind)
     }
 }

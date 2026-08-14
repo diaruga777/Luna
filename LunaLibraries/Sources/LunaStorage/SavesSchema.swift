@@ -340,6 +340,46 @@ enum SavesSchema {
             PRIMARY KEY (url_key, position)
         ) WITHOUT ROWID;
 
+        -- One live media download in flight. Not a child of `saves`: a download
+        -- started from a share sheet need not have a save, and the row has to
+        -- outlive a cascade either way — its `id` is the prefix of every sibling
+        -- file in `LiveMediaDownloads/` AND of the background URLSession's
+        -- `taskDescription`, which is what a relaunch joins a surviving transfer
+        -- back to. So the id stays the opaque UUID string the job was created
+        -- with, never a rowid.
+        --
+        -- Only active jobs live here: the manager deletes a row when the download
+        -- finishes, fails, or has its suspension expire. `time_range_start` being
+        -- NULL means there is no trim range at all, since its start is
+        -- non-optional when a range exists.
+        CREATE TABLE IF NOT EXISTS media_download_jobs (
+            id                       TEXT    PRIMARY KEY NOT NULL,
+            source_url_string        TEXT    NOT NULL,
+            asset_url_string         TEXT,
+            audio_url_string         TEXT,
+            dash_manifest_url_string TEXT,
+            media_kind               TEXT,
+            title                    TEXT    NOT NULL,
+            resolve_kind             TEXT,
+            phase                    TEXT    NOT NULL,
+            progress                 REAL    NOT NULL,
+            thumbnail_file_name      TEXT,
+            file_extension           TEXT,
+            expected_byte_count      INTEGER,
+            received_byte_count      INTEGER,
+            resume_data_file_name    TEXT,
+            time_range_start         REAL,
+            time_range_end           REAL,
+            resolved_video_id        TEXT,
+            youtube_visitor_data     TEXT,
+            error_message            TEXT,
+            error_kind               TEXT,
+            resolve_attempts         INTEGER NOT NULL,
+            media_attempts           INTEGER NOT NULL,
+            suspend_deadline         REAL,
+            ownership                TEXT
+        ) WITHOUT ROWID;
+
         -- The saves currently in the Spotlight index, one row each.
         --
         -- **No foreign key, deliberately.** Its whole job is to outlive the save:
@@ -403,6 +443,11 @@ enum SavesSchema {
         -- price_trackers, tracker_rejected_sellers on save_id;
         -- tracker_price_points on store_id), so they are already covered.
         CREATE INDEX IF NOT EXISTS tracker_stores_save ON tracker_stores(save_id);
+
+        -- job(forSourceURLString:) — "is a download already running for this
+        -- link?", which every start path asks before it begins one.
+        CREATE INDEX IF NOT EXISTS media_download_jobs_url
+            ON media_download_jobs(source_url_string);
 
         -- mediaItem(forURLString:) — the "have I already downloaded this?" check
         -- every media start path runs, against the download's own source URL.

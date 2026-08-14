@@ -324,6 +324,13 @@ struct SavesStatement {
         try check(sqlite3_bind_int64(handle, index, value))
     }
 
+    /// Named rather than a nullable overload of the above, so a call passing a
+    /// non-optional `Int64` cannot become ambiguous.
+    func bind(_ index: Int32, int64 value: Int64?) throws {
+        guard let value else { try check(sqlite3_bind_null(handle, index)); return }
+        try check(sqlite3_bind_int64(handle, index, value))
+    }
+
     func bind(_ index: Int32, _ value: Double?) throws {
         guard let value else { try check(sqlite3_bind_null(handle, index)); return }
         try check(sqlite3_bind_double(handle, index, value))
@@ -387,6 +394,10 @@ struct SavesStatement {
 
     func int64(_ column: Int32) -> Int64 {
         sqlite3_column_int64(handle, column)
+    }
+
+    func int64OrNil(_ column: Int32) -> Int64? {
+        isNull(column) ? nil : sqlite3_column_int64(handle, column)
     }
 
     func double(_ column: Int32) -> Double? {

@@ -1,4 +1,5 @@
 import LunaModels
+import LunaStorage
 @testable import LunaMediaDownload
 import XCTest
 
@@ -12,8 +13,17 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             encoding: .utf8)) ?? ""
     }
 
+    /// Its own scratch container, so the job rows never land in the real library.
+    private func makeStore() -> (JobStore, URL) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("JobStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (JobStore(store: SavesStore(containerURL: root)), root)
+    }
+
     func testJobStoreMutationsDoNotLoseRetryBookkeepingDuringProgressUpdates() {
-        let store = JobStore()
+        let (store, root) = makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
         let id = UUID().uuidString
         let job = LiveMediaDownloadJob(
             id: id,
@@ -49,7 +59,8 @@ final class LiveMediaDownloadJobTests: XCTestCase {
     }
 
     func testJobStoreAtomicallyReusesAnExistingSourceJob() {
-        let store = JobStore()
+        let (store, root) = makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
         let sourceURLString = "https://example.com/\(UUID().uuidString)"
         defer {
             if let job = store.job(forSourceURLString: sourceURLString) {

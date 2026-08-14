@@ -1449,6 +1449,153 @@ public final class SavesStore {
         }
     }
 
+    // MARK: - Live media download jobs
+
+    /// Every download currently in flight. Active jobs only — the manager deletes
+    /// a row the moment one finishes, fails or expires — so this is normally a
+    /// handful of rows.
+    public func mediaDownloadJobs() -> [LiveMediaDownloadJob] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var jobs: [LiveMediaDownloadJob] = []
+                try db.query(MediaDownloadJobRow.selectSQL) { row in
+                    if let job = MediaDownloadJobRow.job(from: row) { jobs.append(job) }
+                }
+                return jobs
+            }
+        } catch {
+            record(error, "read download jobs")
+            return []
+        }
+    }
+
+    public func mediaDownloadJob(id: String) -> LiveMediaDownloadJob? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                var job: LiveMediaDownloadJob?
+                try db.query(
+                    "\(MediaDownloadJobRow.selectSQL) WHERE id = ?", { try $0.bind(1, id) }
+                ) { row in
+                    if job == nil { job = MediaDownloadJobRow.job(from: row) }
+                }
+                return job
+            }
+        } catch {
+            record(error, "read download job")
+            return nil
+        }
+    }
+
+    /// Every job recorded for `urlString`. The caller decides which of them count
+    /// as live, so "terminal" stays defined once, on the job.
+    public func mediaDownloadJobs(forSourceURLString urlString: String) -> [LiveMediaDownloadJob] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                var jobs: [LiveMediaDownloadJob] = []
+                try db.query(
+                    "\(MediaDownloadJobRow.selectSQL) WHERE source_url_string = ?",
+                    { try $0.bind(1, urlString) }
+                ) { row in
+                    if let job = MediaDownloadJobRow.job(from: row) { jobs.append(job) }
+                }
+                return jobs
+            }
+        } catch {
+            record(error, "read download jobs for url")
+            return []
+        }
+    }
+
+    /// Inserts or updates one job.
+    public func writeMediaDownloadJob(_ job: LiveMediaDownloadJob) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                try db.run(MediaDownloadJobRow.upsertSQL) {
+                    try MediaDownloadJobRow.bindUpsert(job, to: $0)
+                }
+            }
+        } catch {
+            record(error, "write download job")
+        }
+    }
+
+    public func deleteMediaDownloadJob(id: String) {
+        guard let database = database() else { return }
+        do {
+            try database.transaction { db in
+                try db.run("DELETE FROM media_download_jobs WHERE id = ?") { try $0.bind(1, id) }
+            }
+        } catch {
+            record(error, "delete download job")
+        }
+    }
+
+    /// Runs `body` over the jobs already recorded for `urlString` and inserts the
+    /// job it returns, all under one write lock.
+    ///
+    /// This is the "start a download unless one is already running for this link"
+    /// check. It has to be atomic across PROCESSES — the app, the share and action
+    /// extensions, the Live Activity widget and the App Clip all start downloads
+    /// through the same background session — and a transaction is what makes it so.
+    /// Returning nil from `body` means an existing job won, and nothing is written.
+    public func insertMediaDownloadJob(
+        forSourceURLString urlString: String,
+        resolving body: ([LiveMediaDownloadJob]) -> LiveMediaDownloadJob?
+    ) -> LiveMediaDownloadJob? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in
+                var existing: [LiveMediaDownloadJob] = []
+                try db.query(
+                    "\(MediaDownloadJobRow.selectSQL) WHERE source_url_string = ?",
+                    { try $0.bind(1, urlString) }
+                ) { row in
+                    if let job = MediaDownloadJobRow.job(from: row) { existing.append(job) }
+                }
+                guard let inserted = body(existing) else { return nil }
+                try db.run(MediaDownloadJobRow.upsertSQL) {
+                    try MediaDownloadJobRow.bindUpsert(inserted, to: $0)
+                }
+                return inserted
+            }
+        } catch {
+            record(error, "insert download job")
+            return nil
+        }
+    }
+
+    /// Reads one job, hands it to `body`, and writes back what `body` changed it
+    /// to — under one write lock, so two processes cannot each apply their edit to
+    /// the same starting value. `body` returning nil writes nothing.
+    public func mutateMediaDownloadJob(
+        id: String, _ body: (inout LiveMediaDownloadJob) -> Bool
+    ) -> LiveMediaDownloadJob? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in
+                var job: LiveMediaDownloadJob?
+                try db.query(
+                    "\(MediaDownloadJobRow.selectSQL) WHERE id = ?", { try $0.bind(1, id) }
+                ) { row in
+                    if job == nil { job = MediaDownloadJobRow.job(from: row) }
+                }
+                guard var found = job else { return nil }
+                guard body(&found) else { return found }
+                try db.run(MediaDownloadJobRow.upsertSQL) {
+                    try MediaDownloadJobRow.bindUpsert(found, to: $0)
+                }
+                return found
+            }
+        } catch {
+            record(error, "mutate download job")
+            return nil
+        }
+    }
+
     // MARK: - Spotlight index bookkeeping
 
     /// The save ids the last Spotlight sweep indexed.

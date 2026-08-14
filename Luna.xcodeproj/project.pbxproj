@@ -690,8 +690,8 @@
 				Reader/ArticleCardPresenter.swift,
 				Reader/ArticleCardsViewController.swift,
 				Reader/ScrollDirectionImmersionTracker.swift,
-				"Resources/Luna Video.shortcut",
 				"Resources/Luna Reader.shortcut",
+				"Resources/Luna Video.shortcut",
 				Resources/Luna.shortcut,
 				Settings/AudioSettingsScreen.swift,
 				Settings/AutoSendBySourceScreen.swift,
@@ -759,8 +759,8 @@
 				PriceTracker/ProductCardPresenter.swift,
 				PriceTracker/ProductIntentHandoff.swift,
 				ProductShellWiring.swift,
-				"Resources/Luna Video.shortcut",
 				"Resources/Luna Price Tracker.shortcut",
+				"Resources/Luna Video.shortcut",
 				Resources/Luna.shortcut,
 				Settings/DownloadsSettingsScreen.swift,
 				"Stage/StageCatalog+Media.swift",
@@ -822,9 +822,9 @@
 				"KindWiring+Reader.swift",
 				"Mail/Intents/LunaShortcuts+SaveOnly.swift",
 				PriceTracker/PriceTrackerOnboardingDemoSave.swift,
-				"Resources/Luna Video.shortcut",
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Reader.shortcut",
+				"Resources/Luna Video.shortcut",
 			);
 			target = F73C67777995F8F752A0056A /* Luna */;
 		};
@@ -2965,7 +2965,7 @@
 		023E20620BE250C369387843 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaDownloader.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -3089,7 +3089,7 @@
 		36BE64E58068B0FF635CA9AC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = DownloaderActionExtIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = VideoActionExtIcon;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -3154,7 +3154,7 @@
 		3A579C741B51DE45A7E87D13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = DownloaderActionExtIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = VideoActionExtIcon;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -3374,7 +3374,7 @@
 		5353B55D7367CE5C1A03EA6C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3462,7 +3462,7 @@
 		65686C7A8A0FBCDB65DD7149 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -4194,7 +4194,7 @@
 		BE6F0F191F208F7FEDC7D0B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaDownloader.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -4255,7 +4255,7 @@
 		C5863E0B66F8E9D9132F65C0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -4282,7 +4282,7 @@
 		D0EE387C77FBD5AA16E996A7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -4406,7 +4406,7 @@
 		LDCL0000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -4439,7 +4439,7 @@
 		LDCL0000000000000000000D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVideo;
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;

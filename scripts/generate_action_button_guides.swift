@@ -98,7 +98,7 @@ private let surfaces = [
         resourceStem: "ActionButtonGuideReader"),
     Surface(
         name: "Luna Video",
-        iconPath: "SharedIconAssets.xcassets/AppIconDownloader.appiconset/AppIconDownloader-1024.png",
+        iconPath: "SharedIconAssets.xcassets/AppIconVideo.appiconset/AppIconVideo-1024.png",
         resourceStem: "ActionButtonGuideDownloader"),
     Surface(
         name: "Luna Price Tracker",

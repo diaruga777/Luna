@@ -12,32 +12,19 @@
       "hidden" : false,
       "layers" : [
         {
-          "fill-specializations" : [
-            {
-              "value" : {
-                "linear-gradient" : [
-                  "srgb:1.00000,0.97257,0.38766,1.00000",
-                  "srgb:0.88613,0.72317,0.42922,1.00000"
-                ]
-              }
-            },
-            {
-              "appearance" : "tinted",
-              "value" : {
-                "linear-gradient" : [
-                  "srgb:1.00000,0.97257,0.38766,1.00000",
-                  "srgb:0.97725,0.80021,0.47950,1.00000"
-                ]
-              }
-            }
-          ],
-          "image-name" : "Arrow.svg",
-          "name" : "Arrow",
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:1.00000,0.97255,0.38824,1.00000",
+              "srgb:0.88627,0.72157,0.42745,1.00000"
+            ]
+          },
+          "image-name" : "Polygon 4.png",
+          "name" : "Polygon 4",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
-              0.028500000000008185,
-              107.6
+              44.7890625,
+              82.34799999999996
             ]
           }
         }

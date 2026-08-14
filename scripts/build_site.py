@@ -57,7 +57,7 @@ APPS = [
     (
         "video",
         "Downloader",
-        "AppIconDownloader.appiconset/AppIconDownloader-1024.png",
+        "AppIconVideo.appiconset/AppIconVideo-1024.png",
     ),
     (
         "price-tracker",

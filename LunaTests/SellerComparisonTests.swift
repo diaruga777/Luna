@@ -29,7 +29,6 @@ final class SellerComparisonTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = SavesStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
-        ingestor.indexRegenerator = SilentIndexRegenerator()
         snapshotStore = .temporary(directory: &snapshotDirectory)
         ingestor.snapshotStore = snapshotStore
         SellerComparisonRunner.snapshotStore = snapshotStore

@@ -597,14 +597,13 @@ compiler; it is gone.)
 Library/ProductSnapshots/
   snapshotIndex.json          identifier key -> record ids, plus record id -> day
   records/<record id>.json    one observation each
-  priceHistoryIndex.json      the tracked products' compact history
 ```
 
-`priceHistoryIndex.json` is the same arrangement for the products the user
-actually tracks: `PriceHistoryIndexWriter` (LunaPriceUI) regenerates it, and
-`PriceHistoryIndex` reads it back for the Safari extensions. Deciding whether a
-page IS one of these products, or one of the observations above, is
-`ProductPageMatching` — also here, for the same reachability reason.
+The products the user actually TRACKS are not mirrored here at all — they are
+their own rows in `saves.sqlite`, and the Safari extensions read them directly
+(see **The tracked products** below). Deciding whether a page IS one of those
+products, or one of the observations above, is `ProductPageMatching` — here too,
+for the same reachability reason.
 
 A lookup decodes the index — a flat string map with no observation bodies — and
 then opens **only** the record files its candidate's identifiers point at. The
@@ -728,7 +727,6 @@ the one thing that is not a resurrection.
 
 Existing trackers are **not** backfilled. Only new saves read the store.
 
-Immediately after persisting, ingestion regenerates `priceHistoryIndex.json` (see
 below) and fires a SINGLE-tracker refresh (`PriceRefresher.refreshTracker(itemID:)` /
 `PriceRefreshCoordinator.refreshTracker(itemID:)` — same `newlyAlerting`/notification
 semantics as a background cycle, scoped to one tracker) under a background task, so a
@@ -736,20 +734,31 @@ product seeded from history — or bounced back to Safari immediately after
 (`claudedocs/safari-extension.md`) — still gets a LIVE price without waiting up to
 12h for the next cycle.
 
-### The compact history index (`PriceHistoryIndexWriter`)
+### The tracked products
 
-The Safari extension does not open the saves database (the whole library is the
-wrong shape and size for one page load), so a product-handling app
-maintains a compact mirror, `priceHistoryIndex.json`, next to the snapshots file: per
-non-archived tracker, `{name, brand?, productID?, stores: [{url, host, points:
-[{day, price, currency}]}]}`, capped at the last 365 days per store. Regenerated
-whole-file (atomic) after `ProductTrackerIngestor` persists, after every
-`PriceRefreshCoordinator.refreshAndNotify`/`refreshTracker` cycle, and from the
-product apps' `KindWiring.appDidEnterBackground` (edits like clearing an alert
-threshold or archiving a tracker don't otherwise trigger a write). Presence of a
-matching product in this index is the extension's answer to "is this page already
-tracked" — see the history-pill flow in `claudedocs/safari-extension.md`. Only `Luna`
-and `LunaPriceTracker` link `LunaPriceUI`, so only those two ever write it.
+**There is no mirror file.** A Safari extension asks "is this page one of the
+products I track?" straight against the tracker rows:
+`SavesStore.activePriceTrackers()`, backed by
+`SavesReader.activePriceTrackers` — the three tracker tables and nothing else, so
+a page load does not hydrate every article and media row to reach them. All four
+Safari appexes link `LunaStorage` and carry the App Group entitlement, which is
+what makes that possible.
+
+`priceHistoryIndex.json` used to stand in for this: a whole-file mirror the two
+product apps regenerated after every ingest, every refresh cycle and every
+backgrounding, so that edits like archiving a tracker eventually reached the
+extension. It was also a LOSSY projection — it flattened the tracker's keyed
+identifiers (`gtin`/`mpn`/`sku`) into one `productID` string, which is why the
+matcher needs a fuzzy-name tier at the end. Reading the rows removes the
+regeneration entirely and leaves room to match on the real identifiers.
+
+What survives is the SHAPE the matcher asks questions in:
+`PriceHistoryIndexEntry` (LunaPriceCompare) is now built in memory from a
+`PriceTracker`, `{name, brand?, productID?, stores: [{url, host, points: [{day,
+price, currency}]}]}`. Its `UTCDay(point.dayStart)` conversion is deliberate — the
+stored instant is a LOCAL start-of-day and the pill has always shown a UTC day, so
+keeping the relabelling keeps the pill's text identical. See the history-pill flow
+in `claudedocs/safari-extension.md`.
 
 ## Background refresh (`AppDelegate`)
 

@@ -48,11 +48,6 @@ final class StubTrackerRefresher: SingleTrackerRefreshing {
     }
 }
 
-/// The index regeneration a test does not want to run against the real file.
-struct SilentIndexRegenerator: PriceHistoryIndexRegenerating {
-    func regenerate() {}
-}
-
 /// Artwork that answers `data` for any page (nil ⇒ no image at all) and records
 /// what it was asked for.
 final class StubArtworkLoader: ProductArtworkLoading, @unchecked Sendable {
@@ -88,7 +83,6 @@ final class ProductTrackerIngestorSnapshotSeedingTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         store = SavesStore(containerURL: tempDirectory)
         ingestor = ProductTrackerIngestor()
-        ingestor.indexRegenerator = SilentIndexRegenerator()
         // This suite is about SEEDING, so the fan-out is stubbed out at the
         // ingestor's own seam rather than left to whatever a previously-run
         // class left in `SellerComparisonRunner.installed`. With it live, a

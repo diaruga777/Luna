@@ -1449,6 +1449,19 @@ public final class SavesStore {
         }
     }
 
+    /// Every live price tracker, read without hydrating the rest of the library.
+    /// The Safari extensions' history and alternative-seller pills ask this on a
+    /// page load — see `SavesReader.activePriceTrackers`.
+    public func activePriceTrackers() -> [PriceTracker] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in try SavesReader.activePriceTrackers(in: db) }
+        } catch {
+            record(error, "read active price trackers")
+            return []
+        }
+    }
+
     // MARK: - Live media download jobs
 
     /// Every download currently in flight. Active jobs only — the manager deletes

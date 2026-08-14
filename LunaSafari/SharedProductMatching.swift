@@ -5,11 +5,12 @@
 
 import Foundation
 import LunaPriceCompare
+import LunaStorage
 
 /// Answers the "Was $X on <date>" history-pill query inside the extension
-/// process: matches the page's extracted product data against the app-written
-/// tracked-product index and the stored observations, then reduces the matches
-/// to the one line a pill can carry.
+/// process: matches the page's extracted product data against the user's own
+/// price trackers and the stored observations, then reduces the matches to the
+/// one line a pill can carry.
 ///
 /// The matching itself is `LunaPriceCompare.ProductPageMatching`, which the app
 /// links too; what lives here is the reduction — every point both sources hold
@@ -27,8 +28,11 @@ enum SharedProductMatching {
     /// The full answer for a page's extracted snapshot payload (the same shape
     /// `extractProductSnapshot()` sends as `productSnapshot`).
     static func historyAnswer(forPageSnapshot page: ProductSnapshot) -> HistoryAnswer {
-        let index = PriceHistoryIndex.load()
-        let trackedMatch = index.first { ProductPageMatching.matches(page: page, indexEntry: $0) }
+        // Straight from the tracker rows: this appex links `LunaStorage` and holds
+        // the App Group entitlement, so no index file sits in between.
+        let tracked = SavesStore.shared.activePriceTrackers()
+            .map { PriceHistoryIndexEntry(tracker: $0) }
+        let trackedMatch = tracked.first { ProductPageMatching.matches(page: page, indexEntry: $0) }
 
         var points: [(price: Decimal, currency: String, day: UTCDay)] = []
         if let trackedMatch {

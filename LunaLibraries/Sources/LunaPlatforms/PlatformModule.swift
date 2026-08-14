@@ -59,6 +59,11 @@ public extension PlatformModule {
 public struct PlatformMetadata {
     public var title: String?
     public var thumbnailData: Data?
+
+    public init(title: String? = nil, thumbnailData: Data? = nil) {
+        self.title = title
+        self.thumbnailData = thumbnailData
+    }
 }
 
 /// Fetches best-effort metadata for a recognized platform item.

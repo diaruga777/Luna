@@ -26,9 +26,8 @@ public final class PlatformItemIngestor {
         store: SavesStore
     ) async {
         let match = PlatformMatch(platform: platform, itemID: platformItemID)
-        let module = PlatformRegistry.shared.module(for: match.platform)
-        let metadata = await module?.metadataFetcher?.fetchMetadata(
-            for: match, urlString: item.urlString)
+        let metadata = await platformMetadata(
+            platform: platform, itemID: platformItemID, urlString: item.urlString)
 
         var thumbnailFileName: String?
         if let data = metadata?.thumbnailData, !data.isEmpty {
@@ -64,9 +63,17 @@ public final class PlatformItemIngestor {
     public func pasteboardPreviewArtData(
         platform: ContentPlatform, itemID: String?, urlString: String
     ) async -> Data? {
+        await platformMetadata(platform: platform, itemID: itemID, urlString: urlString)?.thumbnailData
+    }
+
+    /// Best-effort platform metadata for preview UI as well as persisted media
+    /// saves. Keeping this one dispatch point prevents the two surfaces from
+    /// disagreeing about which platforms can supply a title or thumbnail.
+    public func platformMetadata(
+        platform: ContentPlatform, itemID: String?, urlString: String
+    ) async -> PlatformMetadata? {
         let match = PlatformMatch(platform: platform, itemID: itemID)
         return await PlatformRegistry.shared.module(for: match.platform)?
-            .metadataFetcher?.fetchMetadata(for: match, urlString: urlString)?
-            .thumbnailData
+            .metadataFetcher?.fetchMetadata(for: match, urlString: urlString)
     }
 }

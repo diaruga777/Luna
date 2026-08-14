@@ -19,14 +19,24 @@ import UIKit
 /// class`, with everything else held constant, confirmed the cause. The seam
 /// is a protocol witness now, but `final class` is the form proven to link,
 /// so it stays.
-/// Preview art for a recognized social/video URL, drawn from the platform's own
-/// metadata. Installed by the media apps' shell over `PlatformRegistry`.
+/// Metadata for a recognized social/video URL, drawn from the platform's own
+/// resolver. Installed by the media apps' shell over `PlatformRegistry`.
+public struct PlatformPreviewMetadata {
+    public let title: String?
+    public let image: UIImage?
+
+    public init(title: String?, image: UIImage?) {
+        self.title = title
+        self.image = image
+    }
+}
+
 @MainActor
 public protocol PlatformPreviewArtProviding {
-    /// The art, or nil when the platform has none to give.
-    func previewArt(
+    /// The metadata, or nil when the platform has none to give.
+    func preview(
         platform: ContentPlatform, itemID: String?, urlString: String
-    ) async -> UIImage?
+    ) async -> PlatformPreviewMetadata?
 }
 
 public final class PasteboardSuggester {

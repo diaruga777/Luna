@@ -8,6 +8,7 @@ import LunaPlatforms
 import LunaURLClassification
 import XCTest
 @testable import Luna
+@testable import LunaPlatforms
 
 final class PlatformParsersTests: XCTestCase {
 
@@ -107,6 +108,22 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertEqual(
             PlatformRecognizer.recognize("https://fb.watch/abcdef/")?.platform, .facebook)
         XCTAssertNil(PlatformRecognizer.recognize("https://example.com/reel/1"))
+    }
+
+    func testYouTubeShortRegistersMetadataAndBuildsPublicEndpoints() throws {
+        let short = "https://youtube.com/shorts/FOKAYc5u5ws?si=zaOYqz9pQ75wNsNB"
+        let match = try XCTUnwrap(PlatformRecognizer.recognize(short))
+        XCTAssertEqual(match.platform, .youtube)
+        XCTAssertEqual(match.itemID, "FOKAYc5u5ws")
+        XCTAssertNotNil(PlatformRegistry.shared.module(for: .youtube)?.metadataFetcher)
+
+        let oEmbed = try XCTUnwrap(YouTubeMetadataFetcher.oEmbedURL(videoID: match.itemID))
+        XCTAssertEqual(
+            oEmbed.absoluteString,
+            "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v%3DFOKAYc5u5ws&format=json")
+        XCTAssertEqual(
+            YouTubeMetadataFetcher.thumbnailURL(videoID: match.itemID)?.absoluteString,
+            "https://i.ytimg.com/vi/FOKAYc5u5ws/hqdefault.jpg")
     }
 
 }

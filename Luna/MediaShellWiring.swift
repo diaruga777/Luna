@@ -132,14 +132,16 @@ enum MediaShellWiring {
     static let shareFileExporter: (any MediaShareFileExporting)? = DownloadedFileExporter()
 }
 
-/// A recent URL's preview art, from the platform's own metadata fetcher.
+/// A recent URL's preview metadata, from the platform's own metadata fetcher.
 private struct PlatformPreviewArt: PlatformPreviewArtProviding {
-    func previewArt(
+    func preview(
         platform: ContentPlatform, itemID: String?, urlString: String
-    ) async -> UIImage? {
-        await PlatformItemIngestor.shared.pasteboardPreviewArtData(
+    ) async -> PlatformPreviewMetadata? {
+        guard let metadata = await PlatformItemIngestor.shared.platformMetadata(
             platform: platform, itemID: itemID, urlString: urlString)
-            .flatMap { UIImage(data: $0) }
+        else { return nil }
+        return PlatformPreviewMetadata(
+            title: metadata.title, image: metadata.thumbnailData.flatMap(UIImage.init(data:)))
     }
 }
 

@@ -25,6 +25,7 @@ public final class PlatformRegistry {
             RedditPlatform(),
             InstagramPlatform(),
             FacebookPlatform(),
+            YouTubePlatform(),
         ]
     }
 

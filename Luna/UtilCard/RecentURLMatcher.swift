@@ -284,13 +284,15 @@ final class RecentURLMatcher {
                 kind: .article, imageData: await faviconData(for: result.url))
         case let .social(platform, itemID), let .video(platform, itemID):
             guard surface.handlesMedia else { return nil }
-            let image = await PasteboardSuggester.platformPreviewArt?.previewArt(
+            let metadata = await PasteboardSuggester.platformPreviewArt?.preview(
                 platform: platform, itemID: itemID,
                 urlString: result.url.absoluteString)
+            let fetchedTitle = metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             return RecentURLPreview(
                 urlString: result.url.absoluteString,
-                title: platform.displayName, subtitle: result.url.host,
-                kind: .media, imageData: compressedData(image))
+                title: fetchedTitle.flatMap { $0.isEmpty ? nil : $0 } ?? platform.displayName,
+                subtitle: result.url.host,
+                kind: .media, imageData: compressedData(metadata?.image))
         case let .product(product, _):
             guard surface.handlesProducts else { return nil }
             return RecentURLPreview(

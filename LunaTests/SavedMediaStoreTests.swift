@@ -1,5 +1,5 @@
 import LunaModels
-import LunaMediaDownload
+@testable import LunaMediaDownload
 import LunaStorage
 import SQLite3
 import UIKit
@@ -122,6 +122,74 @@ final class SavedMediaStoreTests: XCTestCase {
             sourceURLString: "https://redd.it/abc123", title: nil)
         XCTAssertEqual(second.id, first.id)
         XCTAssertEqual(store.items().count, 1)
+    }
+
+    func testMediaSaveBackingReservesShortLinkAndPermalinkAsOneIdentifiedSave() throws {
+        let postID = "abc123"
+        let short = "https://redd.it/\(postID)"
+        let permalink = "https://www.reddit.com/r/test/comments/\(postID)/title/"
+        let firstAttempt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let firstID = MediaSaveBacking.saveID(
+            for: short, dateSaved: firstAttempt, store: saves)
+        let secondID = MediaSaveBacking.saveID(
+            for: permalink, dateSaved: firstAttempt.addingTimeInterval(60), store: saves)
+
+        XCTAssertEqual(secondID, firstID)
+        XCTAssertEqual(saves.items().count, 1)
+        let saved = try XCTUnwrap(saves.item(withID: firstID))
+        XCTAssertEqual(saved.platform, .reddit)
+        XCTAssertEqual(saved.platformItemID, postID)
+        XCTAssertEqual(
+            saved.lastSaveAttemptDate, firstAttempt,
+            "a machine lookup must not masquerade as another user save press")
+    }
+
+    func testConcurrentMediaSaveBackingVariantsReserveOneSaveAcrossStores() {
+        let postID = "race123"
+        let variants = [
+            "https://redd.it/\(postID)",
+            "https://www.reddit.com/r/test/comments/\(postID)/title/",
+        ]
+        let stores = (0..<12).map { _ in SavesStore(containerURL: root) }
+        let resultLock = NSLock()
+        var ids: [UUID] = []
+        let completion = expectation(description: "all media reservations finished")
+        completion.expectedFulfillmentCount = stores.count
+
+        for (index, concurrentStore) in stores.enumerated() {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let id = MediaSaveBacking.saveID(
+                    for: variants[index % variants.count], store: concurrentStore)
+                resultLock.lock()
+                ids.append(id)
+                resultLock.unlock()
+                completion.fulfill()
+            }
+        }
+        wait(for: [completion], timeout: 10)
+
+        XCTAssertEqual(Set(ids).count, 1)
+        XCTAssertEqual(saves.items().count, 1)
+    }
+
+    func testMediaSaveBackingFindsWrapperSaveThroughItsCanonicalMediaIdentity() throws {
+        let postID = "wrapped123"
+        let wrapper = "https://www.reddit.com/r/test/s/opaque-token"
+        let permalink = "https://www.reddit.com/r/test/comments/\(postID)/title/"
+        let wrapperID = saves.reserveSaveAttempt(
+            urlString: wrapper, at: Date(timeIntervalSince1970: 1)).item.id
+        _ = try store.ensureUndownloaded(
+            id: wrapperID, sourceURLString: permalink, title: "Resolved")
+
+        let resolvedID = MediaSaveBacking.saveID(for: permalink, store: saves)
+
+        XCTAssertEqual(resolvedID, wrapperID)
+        XCTAssertEqual(saves.items().count, 1, "the permalink must not create a bare sibling save")
+        XCTAssertEqual(store.items().map(\.id), [wrapperID])
+        let parent = try XCTUnwrap(saves.item(withID: wrapperID))
+        XCTAssertEqual(parent.platform, .reddit)
+        XCTAssertEqual(parent.platformItemID, postID)
     }
 
     func testAddDownloadedFileDedupesByPlatformItemIDAndPreservesTitle() async throws {

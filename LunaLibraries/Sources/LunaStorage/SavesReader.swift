@@ -53,6 +53,47 @@ enum SavesReader {
         return saves.first
     }
 
+    /// The save already representing one durable platform item. A media child
+    /// wins because it is the row the downloader actually owns; the parent save
+    /// can still carry an older wrapper URL and no parsed identity of its own.
+    static func item(
+        forPlatform platform: ContentPlatform, itemID: String, in db: SavesDatabase
+    ) throws -> StoredSave? {
+        var mediaSaveID: UUID?
+        try db.query(
+            """
+            SELECT save_id FROM media_saves
+            WHERE platform = ? AND platform_item_id = ?
+            ORDER BY save_id ASC LIMIT 1
+            """,
+            { statement in
+                try statement.bind(1, platform.rawValue)
+                try statement.bind(2, itemID)
+            }
+        ) { row in
+            if mediaSaveID == nil {
+                mediaSaveID = row.string(0).flatMap(UUID.init(uuidString:))
+            }
+        }
+        if let mediaSaveID { return try item(id: mediaSaveID, in: db) }
+
+        var saveID: UUID?
+        try db.query(
+            """
+            SELECT id FROM saves
+            WHERE platform = ? AND platform_item_id = ?
+            ORDER BY seq DESC LIMIT 1
+            """,
+            { statement in
+                try statement.bind(1, platform.rawValue)
+                try statement.bind(2, itemID)
+            }
+        ) { row in
+            if saveID == nil { saveID = row.string(0).flatMap(UUID.init(uuidString:)) }
+        }
+        return try saveID.flatMap { try item(id: $0, in: db) }
+    }
+
     /// Whether some OTHER save already holds this URL — `updateURL`'s duplicate
     /// test.
     static func urlIsTaken(_ urlString: String, excluding itemID: UUID, in db: SavesDatabase) throws -> Bool {

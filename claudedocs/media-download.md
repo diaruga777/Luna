@@ -58,6 +58,16 @@ the saves list UUID as its stable identity. Existing legacy manifests with the o
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
 file disappears, store recovery changes the row back to `.undownloaded`.
 
+`MediaSaveBacking` parses `platform` + `platformItemID` before reserving that save.
+The reservation matches the durable identity in both `saves` and `media_saves` under
+one SQLite write lock, then uses normalized URL equality as a bounded fallback. A
+short/wrapper spelling and its permalink therefore reuse the media row's owning
+`save_id` instead of leaving a second pending save with no media behind it.
+This layer does not follow network redirects: an opaque wrapper such as Reddit's
+`/r/…/s/<token>` has no locally parseable post id, so the download start path must
+continue to pass the canonical URL returned by its resolver. Until then, only exact
+normalized-URL fallback is possible.
+
 Safari's in-page player is a direct-resolved exception to the ordinary ingest
 funnel, but not to this invariant: its queue drain calls `ensureUndownloaded`
 before creating the job, then awaits preflight until the named background task is

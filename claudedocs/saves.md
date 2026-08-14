@@ -65,8 +65,13 @@ writer's version of a struct to read a column it does know.
   every other save, which is what makes the save an article or a video instead.
   A price point's PK is `(store_id, day)`: a second observation on the same day
   lowers the row rather than adding one.
-- Every child table is `REFERENCES saves(id) ON DELETE CASCADE`, so deleting a
-  save is the row delete.
+- `product_snapshots` and `product_snapshot_keys` — passive product-page
+  observations and their indexed identifier/name buckets. They are independent
+  of saves: a page visit records an observation without creating a save. The
+  key table cascades when an observation is pruned; no snapshot JSON is stored.
+- Every save-owned child table is `REFERENCES saves(id) ON DELETE CASCADE`, so
+  deleting a save is the row delete. Passive snapshot rows are intentionally
+  independent of saves, while their key rows cascade from the snapshot.
 
 Three deliberate choices:
 
@@ -85,7 +90,8 @@ Indexes exist per query that exists and no others: `saves(seq DESC)` for
 `items()`, `saves(url_string)` for the URL dedup every surface runs, a partial
 index on `pending_archive_at`, `tracker_stores(url_string)` for the
 already-tracked-seller check, and the FK covering indexes SQLite does not create
-itself (`tracker_stores(save_id)`, `file_refs(save_id)`, `file_holders(holder_key)`).
+itself (`tracker_stores(save_id)`, `product_snapshot_keys(snapshot_id)`,
+`file_refs(save_id)`, `file_holders(holder_key)`).
 
 ## File ownership, in SQL
 

@@ -17,7 +17,7 @@ import LunaURLClassification
 /// Two legs run in this order:
 ///
 /// 1. **What Luna already knows.** The app-written price-history index and the
-///    passive snapshot file already sit in the App Group container, and
+///    passive snapshot tables already sit in the App Group database, and
 ///    `ProductPageMatching`'s tiers say which entries match this page. A price
 ///    another retailer was seen at in the last 24h is a real answer, and it
 ///    costs no network at all.

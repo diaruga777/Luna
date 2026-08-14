@@ -150,7 +150,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "productSnapshot":
             // Passive product-page data. It is persisted (Feature 1: seeds a
             // tracker's history at save time) and answered against the
-            // app-written tracked index and the snapshot file (Feature 3: the
+            // app-written tracker rows and snapshot tables (Feature 3: the
             // "Was $X" history pill) in the same round trip — one page-side
             // extraction, one message. This never saves anything: nothing here
             // schedules a refresh or writes a save row.

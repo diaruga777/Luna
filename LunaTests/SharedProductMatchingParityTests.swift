@@ -97,7 +97,7 @@ final class SharedProductMatchingParityTests: XCTestCase {
             //
             // The one deliberate difference is scope: the app's tier requires
             // the same retailer family or the same DECLARED brand, because its
-            // pool has to be retrievable from the snapshot index by key
+            // pool has to be retrievable from the snapshot-key table by key
             // (`ProductSnapshotKeys.nameKeys`), while the extension's runs over
             // a compact index it already holds. Both sides agree here — one
             // brand, declared on both.

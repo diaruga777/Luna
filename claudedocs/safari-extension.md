@@ -916,16 +916,16 @@ already knows about from `GoogleShoppingProductParser`.
 
 One message, `{type: "productSnapshot", snapshot}`, does BOTH jobs in a single round
 trip: the native handler (gated `hostHandlesProducts`) validates and PERSISTS the
-observation through `LunaPriceCompare.ProductSnapshotStore` — the SAME store the app,
+observation through `LunaStorage.ProductSnapshotStore` — the SAME store the app,
 the share extension and the action extension write, not a Safari-local copy
-(`Library/ProductSnapshots/`, an identifier index plus one record file per
-observation, deduped by (canonical url, day), pruned past 365 days / 5000 records;
+(`saves.sqlite`'s `product_snapshots` and `product_snapshot_keys` tables,
+deduped by (canonical url, day), pruned past 365 days / 5000 records;
 see `claudedocs/price-tracking.md`'s "Product snapshots"). Then it ANSWERS the
 history-pill query by matching the page against (a) the user's own price trackers,
 read straight out of `saves.sqlite` via `SavesStore.activePriceTrackers()` — this
 appex links `LunaStorage` and holds the App Group entitlement, so there is no
-mirror file and nothing to regenerate — and (b) the observations the store's index
-says share one of this page's identifiers, using the SAME precedence
+mirror file and nothing to regenerate — and (b) the observations whose keyed
+SQLite rows share one of this page's identifiers, using the SAME precedence
 `SnapshotMatcher` uses app-side (GTIN → retailer-id/host-family → mpn+brand →
 sku+host → canonical URL; no fuzzy name — a name is not an identifier), through
 `LunaPriceCompare.ProductPageMatching`, which is also where the tracker's
@@ -955,7 +955,7 @@ price record).
 A second message on the same product pages, `{type: "comparableSellers", snapshot}`,
 asks the one question the history pill cannot: **is this cheaper somewhere else right
 now?** It is deliberately a SECOND round trip rather than a rider on `productSnapshot`
-— that reply is answered from two local files and is instant, while this one may take
+— that reply is answered from local SQLite rows and is instant, while this one may take
 seconds, and a page should not wait to learn what Luna already knows.
 
 ```
@@ -963,7 +963,7 @@ content.js (after the productSnapshot reply)  → spinner pill + Track pill
   → runtime.sendMessage {type:"comparableSellers", snapshot}
   → background.js relay → sendNativeMessage
   → SafariWebExtensionHandler → ComparableSellerFinder.answer(forPageSnapshot:)
-      ├─ 1. the tracker rows + the snapshot index, <24h                     ← no network
+      ├─ 1. the tracker rows + the snapshot tables, <24h                    ← no network
       ├─ 2. else SellerFanOut(.constrained) over URLSession                 ← LunaPriceCompare
       │      └─ results written back via ProductSnapshotStore.record
       └─ reply {found, price, currency, sellerName, url}
@@ -975,7 +975,7 @@ Natively (`LunaSafari/ComparableSellerFinder.swift`, gated `hostHandlesProducts`
 runs two legs in order:
 
 1. **What is already stored.** The user's own tracker rows and the
-   passive snapshot file, matched to this page by `ProductPageMatching`'s tiers.
+   passive snapshot rows, matched to this page by `ProductPageMatching`'s tiers.
    Costs no network, and after one visit to a rival's page it is usually enough.
 2. **A constrained fan-out**, only if leg 1 has nothing: `SellerFanOut` with
    `.constrained` (6 candidate retailers, 3 results, no web-search layer, **no

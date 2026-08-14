@@ -264,6 +264,37 @@ enum SavesSchema {
             PRIMARY KEY (store_id, day)
         ) WITHOUT ROWID;
 
+        -- One passive product-page observation. The page + UTC day hash is the
+        -- stable identity: revisiting a page on the same day replaces the
+        -- observation rather than accumulating duplicates.
+        CREATE TABLE IF NOT EXISTS product_snapshots (
+            id               TEXT PRIMARY KEY NOT NULL,
+            name             TEXT NOT NULL,
+            price            TEXT NOT NULL,
+            currency         TEXT NOT NULL,
+            locale           TEXT,
+            url              TEXT NOT NULL,
+            host             TEXT NOT NULL,
+            day              TEXT NOT NULL,
+            captured_at      TEXT NOT NULL,
+            gtin             TEXT,
+            mpn              TEXT,
+            sku              TEXT,
+            product_id       TEXT,
+            retailer_item_id TEXT,
+            brand            TEXT,
+            image_url        TEXT
+        ) WITHOUT ROWID;
+
+        -- The identifier/name buckets that make a snapshot lookup a keyed join
+        -- rather than a scan of product_snapshots. Deleting a snapshot removes
+        -- every bucket that pointed to it in the same transaction.
+        CREATE TABLE IF NOT EXISTS product_snapshot_keys (
+            key         TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL REFERENCES product_snapshots(id) ON DELETE CASCADE,
+            PRIMARY KEY (key, snapshot_id)
+        ) WITHOUT ROWID;
+
         -- One row per on-disk artifact the library owns: an article's content
         -- JSON, its captured archive, an imported document, a thumbnail, a
         -- product photo, a downloaded article image. The path is relative to the
@@ -443,6 +474,15 @@ enum SavesSchema {
         -- price_trackers, tracker_rejected_sellers on save_id;
         -- tracker_price_points on store_id), so they are already covered.
         CREATE INDEX IF NOT EXISTS tracker_stores_save ON tracker_stores(save_id);
+
+        -- ProductSnapshotStore's hot lookup starts from an identifier bucket;
+        -- its primary key already covers key, and this covers cascade cleanup.
+        CREATE INDEX IF NOT EXISTS product_snapshot_keys_snapshot
+            ON product_snapshot_keys(snapshot_id);
+
+        -- Pruning and the bounded fuzzy-name pool keep newest days first.
+        CREATE INDEX IF NOT EXISTS product_snapshots_day
+            ON product_snapshots(day DESC, id ASC);
 
         -- job(forSourceURLString:) — "is a download already running for this
         -- link?", which every start path asks before it begins one.

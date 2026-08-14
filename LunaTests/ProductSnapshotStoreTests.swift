@@ -7,13 +7,15 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
 import LunaPriceUI
+import LunaStorage
+import SQLite3
 import XCTest
 
-/// The shared product-snapshot store: what it accepts, what the index retrieves,
-/// and what pruning evicts.
+/// The shared SQLite product-snapshot store: what it accepts, what keyed
+/// retrieval finds, and what pruning evicts.
 ///
 /// One implementation now serves the app, the share/action extensions AND the
-/// Safari appexes (`LunaPriceCompare` is the one kind module an appex links), so
+/// Safari appexes, so
 /// the hand-copied `LunaSafari/SharedProductSnapshots.swift` — and the source-text
 /// parity suite that pinned it — are gone. What remains of the Safari pins here
 /// is only what still IS a second artifact: the JS/handler message plumbing.
@@ -30,6 +32,7 @@ final class ProductSnapshotStoreTests: XCTestCase {
     }
 
     override func tearDown() {
+        store = nil
         try? FileManager.default.removeItem(at: directory)
         super.tearDown()
     }
@@ -178,33 +181,31 @@ final class ProductSnapshotStoreTests: XCTestCase {
         XCTAssertTrue(store.snapshots(forKeys: ProductSnapshotKeys.gtinKeys("9999999999999")).isEmpty)
     }
 
-    // MARK: - The persisted day representation
+    // MARK: - SQLite persistence
 
-    /// `UTCDay` is a Swift type over a string that four processes already have
-    /// records and an index full of. It must stay that bare string on disk, both
-    /// directions, or an installed app reads its own store as empty.
-    func testTheDayIsPersistedAndReadBackAsABareString() throws {
+    func testSnapshotsAreStoredInSQLiteWithoutJSONArtifacts() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let legacyDirectory = directory.appendingPathComponent("Library/ProductSnapshots")
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        try Data("obsolete".utf8).write(to: legacyDirectory.appendingPathComponent("snapshotIndex.json"))
         store.record(payload: payload(url: "https://shop.example/persisted"), now: now)
 
-        let records = try FileManager.default.contentsOfDirectory(
-            at: directory.appendingPathComponent("records"), includingPropertiesForKeys: nil)
-        let recordJSON = try XCTUnwrap(records.first.flatMap { try? String(contentsOf: $0, encoding: .utf8) })
-        XCTAssertTrue(
-            recordJSON.contains("\"day\":\"\(UTCDay(now).text)\""),
-            "the record encodes the day as the same string it always did: \(recordJSON)")
-        let indexJSON = try String(
-            contentsOf: directory.appendingPathComponent("snapshotIndex.json"), encoding: .utf8)
-        XCTAssertTrue(indexJSON.contains("\"\(UTCDay(now).text)\""), indexJSON)
+        let children = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil).map(\.lastPathComponent)
+        XCTAssertTrue(children.contains("saves.sqlite"))
+        XCTAssertFalse(children.contains("snapshotIndex.json"))
+        XCTAssertFalse(children.contains("records"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
 
-        // A record written before the type existed decodes unchanged.
-        let legacy = """
-            {"name":"Widget","price":"49.99","currency":"USD","url":"https://shop.example/p",\
-            "host":"shop.example","day":"2026-01-02","capturedAt":"2026-01-02T00:00:00Z"}
-            """
-        let decoded = try JSONDecoder().decode(ProductSnapshot.self, from: Data(legacy.utf8))
-        XCTAssertEqual(decoded.day, UTCDay(parsing: "2026-01-02"))
-        XCTAssertEqual(decoded.day.startOfDayUTC, ISO8601DateFormatter().date(from: "2026-01-02T00:00:00Z"))
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("saves.sqlite").path, &database), SQLITE_OK)
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(
+            database, "SELECT COUNT(*) FROM product_snapshots", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int64(statement, 0), 1)
     }
 
     /// The ordering every consumer relies on: a day compares as its text, so a
@@ -243,9 +244,7 @@ final class ProductSnapshotStoreTests: XCTestCase {
         store.record(payload: payload(url: "https://shop.example/recent"), now: now)
 
         XCTAssertEqual(store.allSnapshots().map(\.url), ["https://shop.example/recent"])
-        let records = (try? FileManager.default.contentsOfDirectory(
-            at: directory.appendingPathComponent("records"), includingPropertiesForKeys: nil)) ?? []
-        XCTAssertEqual(records.count, 1, "the evicted record's file must be deleted, not orphaned")
+        XCTAssertEqual(store.count(), 1, "the evicted row must be deleted, not left behind")
     }
 
     /// The count cap evicts the OLDEST day first, and the key index must lose

@@ -4,14 +4,12 @@
 //
 
 import Foundation
-import LunaModels
 
 /// A UTC calendar day written `yyyy-MM-dd`, whose LEXICOGRAPHIC order is its
 /// chronological order — which is why sorting, pruning and dedup all compare
 /// the text rather than parse a date.
 ///
-/// It encodes and decodes as that bare string, so a snapshot record or index
-/// written before this type existed reads back unchanged.
+/// It encodes and decodes as that bare string when it crosses an app boundary.
 public struct UTCDay: Codable, Comparable, Hashable, Sendable, CustomStringConvertible {
     /// The persisted form, read at a JSON or SQL boundary and nowhere else.
     public let text: String
@@ -67,10 +65,8 @@ public struct UTCDay: Codable, Comparable, Hashable, Sendable, CustomStringConve
 /// Deliberately light — identifiers, a price with its currency, a date, and the
 /// page it came from. No HTML, no images beyond a URL string.
 ///
-/// It lives in `LunaPriceCompare` because that is the one kind module the Safari
-/// appexes link: the extension, the app, and the share/action extensions all
-/// write through the SAME `ProductSnapshotStore` rather than through a
-/// hand-copied twin.
+/// It lives in `LunaModels` so both the comparison engine and the shared SQLite
+/// store can use one representation.
 public struct ProductSnapshot: Codable, Equatable, Sendable {
     /// Product display name at capture time.
     public var name: String

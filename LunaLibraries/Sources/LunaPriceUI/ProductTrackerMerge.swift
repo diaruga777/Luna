@@ -99,7 +99,7 @@ public enum ProductTrackerMerge {
     /// and no deferred job. A tracker is created with the history Luna already
     /// has, or it is created with none — never with none and then quietly
     /// gaining some at the next launch. The read is by identifier through
-    /// `ProductSnapshotStore`'s index, so it opens only the records that could
+    /// `ProductSnapshotStore`'s keyed SQLite index, so it reads only rows that could
     /// match rather than decoding the whole store.
     public static func seedHistoryFromSnapshots(
         into tracker: inout PriceTracker, candidate: ProductInfo, candidateURL: URL,

@@ -558,7 +558,7 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
 
 A **product snapshot** is one observation of one product: its identifiers, its
 price with the currency and locale it was read in, the page it came from, and
-the day. Nothing heavier — no page HTML, no image bytes. `LunaPriceCompare
+the day. Nothing heavier — no page HTML, no image bytes. `LunaModels
 .ProductSnapshot` is the one shape.
 
 ### Capture: everywhere, unconditionally
@@ -587,17 +587,15 @@ a single point no matter how many settings were on.
 
 ### The store is indexed, and it is one implementation
 
-`LunaPriceCompare` owns it, because that is the one kind module a Safari appex
-links — so the app, the share/action extensions and all four Safari extensions
-write and read the SAME code. (There used to be a hand-copied
+`LunaStorage` owns it in the shared `saves.sqlite` database, so the app, the
+share/action extensions and all four Safari extensions write and read the SAME
+rows. (There used to be a hand-copied
 `LunaSafari/SharedProductSnapshots.swift` with a parity suite standing in for a
 compiler; it is gone.)
 
-```
-Library/ProductSnapshots/
-  snapshotIndex.json          identifier key -> record ids, plus record id -> day
-  records/<record id>.json    one observation each
-```
+`product_snapshots` holds the observation columns; `product_snapshot_keys`
+holds its identifier and name-bucket keys. Both tables are in `saves.sqlite`;
+there is no snapshot JSON file or snapshot directory.
 
 The products the user actually TRACKS are not mirrored here at all — they are
 their own rows in `saves.sqlite`, and the Safari extensions read them directly
@@ -605,10 +603,9 @@ their own rows in `saves.sqlite`, and the Safari extensions read them directly
 products, or one of the observations above, is `ProductPageMatching` — here too,
 for the same reachability reason.
 
-A lookup decodes the index — a flat string map with no observation bodies — and
-then opens **only** the record files its candidate's identifiers point at. The
-cost is O(candidate identifiers + matched records), not O(store), which is what
-makes reading it synchronously on the save path affordable.
+A lookup joins the matching key rows to their snapshots, so the cost is
+O(candidate identifiers + matched rows), not O(store). That keeps the
+synchronous save-path read affordable.
 
 Keys carry their identifier's SCOPE, since the scopes are not interchangeable:
 
@@ -621,14 +618,12 @@ Keys carry their identifier's SCOPE, since the scopes are not interchangeable:
 | `u:<url, tracking params stripped>` | the page itself — the weak tier |
 | `n:b:<brand>:<token>` / `n:h:<registrable domain>:<token>` | one word of the NAME, scoped to a brand or a retailer family — the fuzzy tier's bucket |
 
-A record id is a hash of `<url>|<day>`, which is also the uniqueness rule:
+The row id is a hash of `<url>|<day>`, which is also the uniqueness rule:
 revisiting a page the same day updates that day's observation rather than
-accumulating duplicates. Records are individually addressable, so two processes
-observing two different pages never write the same file; only the index is
-read-modify-write, and it is written atomically. Pruning drops anything past 365
-days and caps the store at 5000 observations, oldest day evicted first — deleting
-the record files and the key entries that pointed at them together, so the index
-can never name a record that is gone.
+accumulating duplicates. Snapshot and key writes, plus pruning, share one SQLite
+transaction. Pruning drops anything past 365 days and caps the store at 5000
+observations, oldest day evicted first; foreign-key cascading removes the key
+rows at the same time.
 
 ### Consumption: blocking, and part of creating the save
 
@@ -795,8 +790,8 @@ notifies. See `social-sharing.md`.
   graph, and markup escaping.
 
 - `ProductSnapshotStoreTests` — what a snapshot payload must satisfy, what the
-  identifier index retrieves (and refuses to, off-host), the (url, day) identity,
-  and eviction removing the record FILE and every key that pointed at it.
+  SQLite key table retrieves (and refuses to, off-host), the (url, day) identity,
+  and eviction removing the snapshot row and every key that pointed at it.
 - `ProductIngestProcessorTests` — the app/share/action capture site: a classified
   product page is recorded, filed under every identifier it declared, and a page
   with no priced product leaves nothing behind.

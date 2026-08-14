@@ -37,13 +37,10 @@ Two consequences run through the whole design:
    were moved DOWN into `LunaModels` as `ProductIdentityMatching`, which every
    tier can share, and `ComparisonMatchingParityTests` pins them to
    `ProductMatcher`/`SnapshotMatcher`'s long-standing copies. The **product
-   snapshot store** (`ProductSnapshot`, `ProductSnapshotStore`,
-   `ProductSnapshotKeys`) lives in this module for the same reachability
-   reason and is NOT a copy of anything: it is the one implementation the app,
-   the share/action extensions and all four Safari extensions share. That is
-   the module's only dependency beyond the three named above — `LunaAppConfig`,
-   for the App Group container, which every appex that links this module
-   already links.
+   snapshot model** (`ProductSnapshot`, `ProductSnapshotKeys`) lives in
+   `LunaModels`, while `LunaStorage.ProductSnapshotStore` owns the shared SQLite
+   tables. Both are single implementations the app, the share/action extensions
+   and all four Safari extensions share; no snapshot JSON is involved.
 
 `DuckDuckGoSearch` moved `LunaIntents` → `LunaFetch` for the same reachability
 reason: only the four apps link LunaIntents, and the share/action extensions run
@@ -879,7 +876,7 @@ renderer of its own rather than a shared document builder.
 
 The constrained profile's one caller today. `LunaSafari/ComparableSellerFinder
 .swift` answers the extension's `comparableSellers` message: stored prices from
-the App Group first (the app-written history index + the passive snapshot file,
+the App Group first (the app-written tracker rows + passive snapshot tables,
 matched by the extension's existing tiers), then — only if those have nothing —
 the fan-out, fetched through a bare ephemeral `URLSession` carrying
 `WebFetchConstants.safariUserAgent`. Results are written back as
@@ -889,7 +886,7 @@ The APP's fan-out does the same, in `SellerComparisonRunner.run`, for every
 result — including the ones the tracker refuses to attach (a domain it already
 holds, a foreign currency): those are still real observations, and a tracker
 created in that market later deserves them. Both legs read through the store's
-identifier index rather than scanning the file.
+identifier-key table rather than scanning all snapshot rows.
 
 `FreshComparablePrices` is the answer rule, and every part of it is a refusal:
 older than **24h**, a different currency (there is no FX source), not strictly
@@ -961,7 +958,7 @@ All in `LunaTests/`:
 | `PriceComparisonBaselineTests` | median semantics, no badge at seeding, no `newlyAlerting` on the first refresh |
 | `ProductIdentifiersTests` | the keyed value type and its normalization |
 | `FreshComparablePricesTests` | the 24h window and the four refusals; a result's snapshot payload |
-| `ProductSnapshotStoreTests` | what the store accepts, what its identifier index retrieves (and refuses to, off-host), same-day overwrite, and eviction taking the record file AND its keys |
+| `ProductSnapshotStoreTests` | what the store accepts, what its SQLite key table retrieves (and refuses to, off-host), same-day overwrite, and eviction taking the snapshot row and its keys |
 | `ProductPageDetectorTests` / `ProductMatcherTests` | keyed extraction and the keyed-GTIN match tier |
 | `SellerComparisonTests` | the request, the pending marker's life, per-seller streaming, the median/no-badge seeding, the touched-threshold rule, the per-family refusal, the refusal to re-attach a seller the user removed, the new-tracker-only rule, the launch/refresh sweeps, the rendezvous, the two no-op states, and that EVERY result is recorded as an observation — including the ones the tracker refuses |
 | `LiveNetworkPolicyTests` | that the installed fan-out — and every other live fetcher — refuses to leave the machine from a test process |

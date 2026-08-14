@@ -75,15 +75,7 @@ let package = Package(
         // while the appex uses URLSession + the regex parser.
         .target(
             name: "LunaPriceCompare",
-            dependencies: [
-                "LunaModels", "LunaURLClassification", "LunaPriceMetadata",
-                // The shared product-snapshot store lives here (it is the one
-                // kind module the Safari appexes link), and it needs the App
-                // Group container — LunaAppConfig is the bottom-most,
-                // dependency-free, Foundation-only target and every appex that
-                // links LunaPriceCompare already links it.
-                "LunaAppConfig",
-            ],
+            dependencies: ["LunaModels", "LunaURLClassification", "LunaPriceMetadata"],
             resources: [.process("Resources")]),
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
@@ -101,11 +93,11 @@ let package = Package(
         // Product-kind pipeline processing (mandatory-price metadata
         // extraction) — linked ONLY by product-handling targets
         // (Price Tracker + central Luna).
-        // LunaPriceCompare: every product page the pipeline classifies is
-        // recorded as a product snapshot, in whichever process did the
+        // LunaStorage: every product page the pipeline classifies is recorded
+        // in the shared SQLite snapshot table, in whichever process did the
         // classifying (app, share extension, action extension).
         .target(name: "LunaPriceIngest", dependencies: [
-            "LunaIngest", "LunaHTMLClassification", "LunaPriceMetadata", "LunaURLClassification", "LunaModels", "LunaPriceCompare", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+            "LunaIngest", "LunaHTMLClassification", "LunaPriceMetadata", "LunaURLClassification", "LunaModels", "LunaPriceCompare", "LunaStorage", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         // SwiftSoup: EPUB and `.docx` are markup in a zip, and the `.html`
         // import is markup outright. Adds no link edge in practice — every

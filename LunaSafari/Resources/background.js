@@ -188,7 +188,7 @@ browser.runtime.onMessage.addListener(function (message) {
     if (message.type === "productSnapshot") {
         // One round trip: the native handler both records the passive
         // snapshot (Feature 1) and answers the history-pill query against the
-        // tracked index + snapshot file (Feature 3).
+        // tracked rows + snapshot tables (Feature 3).
         return browser.runtime.sendNativeMessage("application.id",
             { type: "productSnapshot", snapshot: message.snapshot })
             .then(function (resp) {

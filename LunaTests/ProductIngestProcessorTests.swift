@@ -7,6 +7,7 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
 import LunaPriceIngest
+import LunaStorage
 import XCTest
 
 /// The APP-side capture site: every page the shared ingest pipeline classifies

@@ -7,6 +7,7 @@ import LunaHTMLClassification
 import LunaIngest
 import LunaModels
 import LunaPriceCompare
+import LunaStorage
 import Foundation
 
 /// Supplies product metadata for a page whose own markup gave none: the

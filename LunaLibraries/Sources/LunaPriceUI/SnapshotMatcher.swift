@@ -58,7 +58,7 @@ import LunaPriceCompare
 /// `fuzzyCandidateLimit` records.
 public enum SnapshotMatcher {
 
-    /// The most record files a NAME lookup may open. A name bucket is a
+    /// The most snapshot rows a NAME lookup may read. A name bucket is a
     /// narrowed guess rather than an identifier hit, so it gets a hard ceiling
     /// on the save path — newest days first (decided from the index alone).
     public static let fuzzyCandidateLimit = 40

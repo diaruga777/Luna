@@ -7,6 +7,7 @@ import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
 import LunaPriceUI
+import LunaStorage
 import XCTest
 
 /// The rule behind the Safari alternative-seller pill: which stored or
@@ -14,7 +15,7 @@ import XCTest
 /// fetched one gets written back into the passive snapshot store.
 ///
 /// `LunaSafari/ComparableSellerFinder.swift` reads the App Group's index and
-/// snapshot file and runs the constrained fan-out, but the DECISION it makes
+/// snapshot tables and runs the constrained fan-out, but the DECISION it makes
 /// with what it finds lives here in `LunaPriceCompare` so it can be executed
 /// rather than only read as source text (the appex is not compiled into
 /// LunaTests — see `SharedProductMatchingParityTests`).

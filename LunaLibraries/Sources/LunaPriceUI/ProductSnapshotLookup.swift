@@ -9,15 +9,16 @@ import LunaModels
 import LunaPriceCompare
 import LunaPriceIngest
 import LunaPriceMetadata
+import LunaStorage
 import LunaURLClassification
 
 /// The app-tier reads of the shared product-snapshot store — the two questions
 /// only a target that links `LunaHTMLClassification` can ask, because both are
 /// phrased in `ProductInfo`.
 ///
-/// The store itself (and every WRITE) lives in `LunaPriceCompare`, which the
-/// Safari appexes link too. Nothing here scans: each call turns its subject into
-/// index keys and opens only the records those keys name.
+/// The store itself (and every WRITE) lives in shared SQLite storage. Nothing
+/// here scans: each call turns its subject into index keys and reads only their
+/// matching rows.
 extension ProductSnapshotStore {
 
     /// Every stored observation that is the same product as `candidate` —

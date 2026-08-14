@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 import LunaPriceCompare
 import LunaStorage
 

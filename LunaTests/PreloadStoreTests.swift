@@ -280,8 +280,9 @@ final class PreloadStoreTests: XCTestCase {
     /// `addOwner` extends ownership over a cached page. It never creates one, so a
     /// key the cache has never seen stays unowned.
     func testAddOwnerOnAnUnknownKeyRecordsNothing() {
-        XCTAssertNil(store.addOwner(makeSave(), toKey: PreloadStore.key(for: url("https://n.example/1"))))
-        XCTAssertNil(pageFile(url("https://n.example/1")))
+        let u = url("https://n.example/1")
+        XCTAssertNil(store.addOwner(makeSave(), toKey: PreloadStore.key(for: u)))
+        XCTAssertNil(pageFile(u))
     }
 
     func testUnrepresentableStoresNoFile() throws {

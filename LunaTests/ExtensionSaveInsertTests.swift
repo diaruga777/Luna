@@ -71,7 +71,7 @@ final class ExtensionSaveInsertTests: XCTestCase {
     func testASaveLeavesEveryOtherRowExactlyAsItWas() {
         let store = SavesStore(containerURL: container)
         let older = store.add(urlString: "https://example.com/older")
-        store.savePlatformMetadata(
+        _ = store.savePlatformMetadata(
             platform: .bluesky, platformItemID: "post-1", title: "Older",
             thumbnailFileName: nil, for: older.id)
         store.markReadState(.opened, for: older.id)

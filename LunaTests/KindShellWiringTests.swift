@@ -60,6 +60,16 @@ final class KindShellWiringTests: XCTestCase {
         }
     }
 
+    /// Pre-SQL development installs are wiped manually. Launch maintenance may
+    /// apply ordinary retention, but must never run a one-time library reset:
+    /// that async reset can race a fresh download and replace current SQL rows
+    /// with an empty table after the download has committed.
+    func testMediaLaunchDoesNotRunTheRetiredSQLMigrationReset() throws {
+        let mediaShell = try source("Luna/MediaShellWiring.swift")
+        XCTAssertFalse(mediaShell.contains("resetLibraryForSQLOwnershipOnce"))
+        XCTAssertTrue(mediaShell.contains("SavedMediaStore.shared.purgeExpired()"))
+    }
+
     /// A kind's shell file stays excluded from the targets that do not link the
     /// kind — a membership exception, not a runtime check
     /// (`claudedocs/surface-support.md`). A dropped exception fails as a

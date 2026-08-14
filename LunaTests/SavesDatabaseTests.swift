@@ -128,7 +128,8 @@ final class SavesDatabaseTests: XCTestCase {
             PRAGMA foreign_keys = ON;
             CREATE TABLE saves (
                 id TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL,
-                url_string TEXT NOT NULL, pending_archive_at REAL
+                url_string TEXT NOT NULL, pending_archive_at REAL,
+                platform TEXT, platform_item_id TEXT
             ) WITHOUT ROWID;
             CREATE TABLE files (
                 id INTEGER PRIMARY KEY, relative_path TEXT NOT NULL UNIQUE, kind TEXT

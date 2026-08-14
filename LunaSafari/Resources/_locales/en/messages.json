@@ -4,7 +4,7 @@
         "description": "Name of the Safari extension."
     },
     "extensionDescription": {
-        "message": "Tracks the page you're reading so Luna can save it to your reading list.",
+        "message": "Tracks the page you're reading so Luna can save it.",
         "description": "Description shown in Safari extension settings."
     },
     "unlockedWithLuna": {

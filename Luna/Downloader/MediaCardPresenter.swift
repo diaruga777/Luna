@@ -67,26 +67,25 @@ final class MediaCardPresenter: CardKindPresenting {
     /// The downloaded media behind a save, if Luna holds any.
     ///
     /// There is no `contentPlatform` guard: the registry has already routed this
-    /// item to the media presenter, and a stand-in item for an UNBACKED media row
-    /// (see `unbackedItems`) carries no platform to guard on. A URL with a media
-    /// row IS media.
+    /// item to the media presenter, and a defensive stand-in for an unbacked
+    /// media row (see `unbackedItems`) may carry no platform to guard on. The
+    /// owning save id is authoritative; exact URL equality is only a fallback
+    /// for old/inconsistent data.
     private func media(for item: SavedItem) -> SavedMediaItem? {
-        store.item(forURLString: item.urlString)
+        store.item(withID: item.id) ?? store.item(forURLString: item.urlString)
     }
 
-    /// Media Luna holds that the saves list has no row for. See the protocol's
-    /// `unbackedItems` for why these exist and why dropping them would delete
-    /// real user downloads from the deck.
+    /// Defensive recovery for a media row whose owning save cannot be read.
+    /// Valid databases should produce none because `media_saves.save_id` is a
+    /// cascading foreign key to `saves.id`.
     func unbackedItems() -> [SavedItem] {
         let saves = SavesStore.shared.items()
-        let backed = Set(saves.map(\.urlString))
+        let backed = Set(saves.map(\.id))
         return store.items()
-            .filter { !backed.contains($0.sourceURLString) }
+            .filter { !backed.contains($0.id) }
             .map { media in
-                // The stand-in carries the media store's id, so the slot, the
-                // centering ladder, and the archive tray all key off the row
-                // the user actually has, while everything else reads a
-                // normal item.
+                // The stand-in carries the media row's owning save id, so every
+                // consumer continues to use the same stable identity.
                 var item = SavedItem(urlString: media.sourceURLString, id: media.id)
                 item.title = media.title
                 item.dateAdded = media.dateSaved
@@ -159,11 +158,10 @@ final class MediaCardPresenter: CardKindPresenting {
         archiveDownloadProgress = archiveDownloadProgress.filter { archived.contains($0.key) }
     }
 
-    /// The id the DECK knows a media row by: its save row's when it has
-    /// one, its own when it does not (see `unbackedItems`). The archive tray's
-    /// cells are keyed by the slot, so its download bars must be too.
+    /// A media row's id is its owning `save_id`, so the deck and archive tray
+    /// always use it directly regardless of which URL spelling either row keeps.
     private func slotID(for media: SavedMediaItem) -> UUID {
-        SavesStore.shared.item(forURLString: media.sourceURLString)?.id ?? media.id
+        media.id
     }
 
     /// A reload that changed nothing is exactly when a Photos asset deleted
@@ -334,7 +332,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// to delete. Runs from the archive tray too, so deleting an archived
     /// media save there cleans up all of those as well.
     func deleteCompanionStorage(for item: SavedItem, host: CardPresenterHost?) {
-        guard let media = store.item(forURLString: item.urlString) else { return }
+        guard let media = media(for: item) else { return }
         MediaItemActions.release(
             media, saver: photoSaver, deletesSavedItem: false,
             onPhotosDeletionFailure: { [weak host] in
@@ -408,7 +406,7 @@ final class MediaCardPresenter: CardKindPresenting {
     func archiveTrayItem(for item: SavedItem, host: CardPresenterHost)
         -> ArchiveTrayItem?
     {
-        guard let media = store.item(forURLString: item.urlString) else { return nil }
+        guard let media = media(for: item) else { return nil }
         let available: Bool
         switch media.storageState {
         case .localFile, .photosReference: available = true

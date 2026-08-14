@@ -545,11 +545,15 @@ enum SavesSchema {
         CREATE INDEX IF NOT EXISTS media_download_jobs_url
             ON media_download_jobs(source_url_string);
 
-        -- mediaItem(forURLString:) — the "have I already downloaded this?" check
-        -- every media start path runs, against the download's own source URL.
-        -- The platform + item-id dedupe still runs in Swift over the whole list,
-        -- so it gets its index the day it becomes a query.
+        -- Exact URL fallback and durable platform-identity lookups used when a
+        -- media start reserves the save that will own its download.
         CREATE INDEX IF NOT EXISTS media_saves_url ON media_saves(source_url_string);
+        CREATE INDEX IF NOT EXISTS media_saves_platform_item
+            ON media_saves(platform, platform_item_id)
+            WHERE platform_item_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS saves_platform_item
+            ON saves(platform, platform_item_id)
+            WHERE platform_item_id IS NOT NULL;
 
         -- The FK covering index for file_refs.save_id, which is what a save's
         -- delete cascade and its ownership reconciliation both scan.

@@ -225,6 +225,11 @@ public final class SavesStore {
     /// closes the overlapping-App-Intent race where two runs could both observe
     /// "not saved" before either inserted the item. `at` is captured when the
     /// intent starts, not after extraction/ingest finishes.
+    ///
+    /// `MediaSaveBacking` also supplies a durable platform identity here so URL
+    /// variants serialize on the same row. Its machine-driven lookup passes
+    /// `recordExistingPress: false`: finding an existing download is not a second
+    /// user save press and must not arm double-save-to-send.
     public struct SaveAttemptReservation {
         public let item: SavedItem
         public let wasAdded: Bool
@@ -238,7 +243,9 @@ public final class SavesStore {
     }
 
     public func reserveSaveAttempt(
-        urlString: String, source: CaptureSource = .manual, at date: Date
+        urlString: String, source: CaptureSource = .manual, at date: Date,
+        platform: ContentPlatform? = nil, platformItemID: String? = nil,
+        recordExistingPress: Bool = true
     ) -> SaveAttemptReservation {
         var fresh = SavedItem(urlString: urlString)
         fresh.dateAdded = date
@@ -246,14 +253,30 @@ public final class SavesStore {
         // not the only durable record for a first save attempt.
         fresh.lastSaveAttemptDate = date
         fresh.captureSource = source
+        fresh.platform = platform
+        fresh.platformItemID = platformItemID
 
         let reservation: SaveAttemptReservation? = write { db in
-            if var stored = try SavesReader.item(forURLString: urlString, in: db) {
+            let identityMatch: StoredSave?
+            if let platform, let platformItemID {
+                identityMatch = try SavesReader.item(
+                    forPlatform: platform, itemID: platformItemID, in: db)
+            } else {
+                identityMatch = nil
+            }
+            if var stored = try identityMatch
+                ?? SavesReader.item(forURLString: urlString, in: db) {
                 let previousItem = stored.item
                 let previous = stored.item.lastSaveAttemptDate ?? stored.item.dateAdded
+                if stored.item.platform == nil { stored.item.platform = platform }
+                if stored.item.platformItemID == nil {
+                    stored.item.platformItemID = platformItemID
+                }
                 // Overlapping intents can reach this store in the opposite order
                 // from when they started. Never move the durable marker backward.
-                stored.item.lastSaveAttemptDate = max(previous, date)
+                if recordExistingPress {
+                    stored.item.lastSaveAttemptDate = max(previous, date)
+                }
                 if stored.item != previousItem {
                     try self.writeSave(stored, previous: previousItem, in: db)
                 }
@@ -1726,6 +1749,28 @@ public final class SavesStore {
             }
         } catch {
             record(error, "read media row")
+            return nil
+        }
+    }
+
+    /// The media row owned by one save. `save_id` is the table's primary key
+    /// and the only join key that remains stable when a wrapper URL resolves to
+    /// a differently-shaped permalink.
+    public func mediaItem(saveID: UUID) -> SavedMediaItem? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.perform { db in
+                var item: SavedMediaItem?
+                try db.query(
+                    "\(MediaSaveRow.selectSQL) WHERE save_id = ?",
+                    { try $0.bind(1, uuid: saveID) }
+                ) { row in
+                    if item == nil { item = MediaSaveRow.item(from: row) }
+                }
+                return item
+            }
+        } catch {
+            record(error, "read media row by save id")
             return nil
         }
     }

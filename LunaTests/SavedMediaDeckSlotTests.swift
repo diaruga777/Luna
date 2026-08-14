@@ -111,6 +111,30 @@ final class SavedMediaDeckSlotTests: XCTestCase {
         _ = window
     }
 
+    /// The saves row can retain the wrapper the user shared while its media row
+    /// records the resolved permalink. They are one object because `media_saves`
+    /// is keyed by `save_id`; joining by URL used to miss that relationship and
+    /// append a same-id stand-in as a second slot candidate.
+    @MainActor
+    func testWrapperSaveAndPermalinkMediaProduceOneSlotCandidate() throws {
+        let postID = "slot123"
+        let wrapper = "https://www.reddit.com/r/test/s/opaque-token"
+        let permalink = "https://www.reddit.com/r/test/comments/\(postID)/title/"
+        let save = SavedItem(
+            seed: "wrapper-permalink-slot", urlString: wrapper, title: "Wrapped",
+            dateAdded: Date(), state: .ready, platform: .reddit)
+        SavedMediaDeckFixtures.reseedSaves([save])
+        _ = try SavedMediaStore.shared.ensureUndownloaded(
+            id: save.id, sourceURLString: permalink, title: save.title)
+        let presenter = MediaCardPresenter()
+
+        XCTAssertTrue(presenter.hasContent(for: save), "save_id is the primary media join")
+        let candidates = SavesStore.shared.items() + presenter.unbackedItems()
+        XCTAssertEqual(
+            candidates.filter { $0.id == save.id }.count, 1,
+            "one save/media identity must contribute only one deck slot candidate")
+    }
+
     // MARK: - Fixtures
 
     @discardableResult

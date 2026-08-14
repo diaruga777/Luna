@@ -136,6 +136,11 @@ public final class SavedMediaStore {
         ownershipStore().mediaItem(forURLString: urlString)
     }
 
+    /// Finds media by its owning save — the stable join used by the card deck.
+    public func item(withID itemID: UUID) -> SavedMediaItem? {
+        ownershipStore().mediaItem(saveID: itemID)
+    }
+
     /// Finds the row for `urlString` by exact URL or, failing that, by
     /// platform + durable item id — so a share-link token and its resolved
     /// permalink (or any other differently-shaped URL for the same post) both

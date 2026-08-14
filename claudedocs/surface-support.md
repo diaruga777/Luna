@@ -234,16 +234,12 @@ enforces both by reading source:
 A presenter answers questions about a `SavedItem`, never about a slot
 index — slot arithmetic, the util-card offset, the fingerprint diff and the
 centering ladder stay in the host, which is the only thing that ever needed
-them. The one place that model bends is `unbackedItems()`: media rows are keyed
-by the MEDIA store's id and their `sourceURLString` is whatever the URL was when
-the download started, which is not always what the save row says (a
-Reddit `/r/…/s/` share link is network-resolved to its permalink inside
-`gateAndPrepare`; the share driver resolves a wrapper URL and then deletes the
-wrapper row). Those are real, downloaded user saves with nothing pointing at
-them — `SavedMediaStore.purgeExpired`'s own comment records that an earlier
-membership sweep was deleted for removing exactly these — so the media presenter
-hands the deck stand-in items for them and the deck routes those slots straight
-back to it.
+them. Media joins use `media_saves.save_id`, not URL text. The save may retain a
+Reddit `/r/…/s/` wrapper while its media row records the resolved permalink; the
+shared id still produces one card and one archive identity. `unbackedItems()` is
+only a defensive protocol escape hatch now: the foreign key makes every valid
+media row a child of a real save, and its id-based membership test prevents a
+differently-shaped URL from manufacturing a duplicate stand-in slot.
 
 A third registry, **`ShareKindPresenters` (LunaShareSurface)**, mirrors
 `IngestKindProcessors`/`IngestorKindHandlers` for extension PRESENTATION:

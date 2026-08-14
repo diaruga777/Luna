@@ -3,14 +3,13 @@
 //  LunaModels
 //
 
-import CryptoKit
 import Foundation
 
-/// Where a downloaded article image lives on disk, and how to find it again.
+/// Where a downloaded article image lives on disk.
 ///
-/// Images are keyed by a stable hash of their SOURCE URL, not by the item id, so
-/// one image is one file no matter how many saves, preloads or readers reference
-/// it (the saves database counts the ownership; see `SavedFileOwnership`).
+/// Image file names are generated independently of their source URL. The storage
+/// layer maps a URL to its current live copy when it can safely share one; a path
+/// queued for deletion is never mapped or reused.
 ///
 /// This lives in LunaModels — the bottom layer, beside `ArticleContent` whose
 /// `imageFileName` it resolves — because the two ends are in different link
@@ -20,12 +19,15 @@ import Foundation
 /// silently ships without pictures, which is precisely the bug this fixes.
 public enum ArticleImageFiles {
 
-    /// Every extension the downloader can store, in the order to probe them.
-    /// GIF first so an automatic repair's animation wins over the legacy
-    /// frame-zero JPEG left beside it.
-    public static let storedExtensions = [
-        "gif", "jpg", "png", "jpeg", "webp", "heic", "heif", "avif", "img",
-    ]
+    /// A fresh filename for a newly fetched image. The UUID is deliberately
+    /// unrelated to the source URL, so a retired path can never be recreated by
+    /// fetching that URL again.
+    public static func newFileName(fileExtension: String) -> String {
+        let ext = fileExtension.lowercased()
+        let safeExtension = ext.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+            && !ext.isEmpty ? ext : "img"
+        return "img-\(UUID().uuidString.lowercased()).\(safeExtension)"
+    }
 
     /// The downloaded files a piece of content points at — the images it owns
     /// while it exists. A block with no downloaded file yet contributes nothing.
@@ -33,35 +35,9 @@ public enum ArticleImageFiles {
         content.blocks.compactMap { $0.imageFileName }
     }
 
-    /// Stable, filesystem-safe filename stem for an image URL.
-    public static func stableBase(forImageURL rawURL: String) -> String {
-        let digest = SHA256.hash(data: Data(rawURL.utf8))
-        return "img-" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// An already-downloaded file for `base` (any stored extension), or nil.
-    public static func existingFileName(
-        base: String, in directory: URL, animatedGIFOnly: Bool = false
-    ) -> String? {
-        let candidates = animatedGIFOnly ? ["gif"] : storedExtensions
-        for ext in candidates {
-            let name = "\(base).\(ext)"
-            if FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent(name).path) {
-                return name
-            }
-        }
-        return nil
-    }
-
-    /// The on-disk file backing an image block: the name the content recorded
-    /// when that file is really there, else the URL-hash-keyed file some other
-    /// save/preload already downloaded. Nil when nothing is local yet.
-    ///
-    /// The fallback keeps an export honest. Content is persisted the moment an
-    /// article becomes readable, but its images finish downloading after that.
-    /// A stored `imageFileName` of nil means "not yet," not "never" — trusting
-    /// it alone would ship an export with no pictures.
+    /// The on-disk file backing an image block, when the content recorded one
+    /// and its bytes still exist. A missing name means the downloader must claim
+    /// a live copy transactionally or fetch a fresh, uniquely named one.
     public static func localFileName(
         for block: ArticleContent.Block, in directory: URL
     ) -> String? {
@@ -70,8 +46,7 @@ public enum ArticleImageFiles {
             atPath: directory.appendingPathComponent(recorded).path) {
             return recorded
         }
-        guard let rawURL = block.imageURLString, !rawURL.isEmpty else { return nil }
-        return existingFileName(base: stableBase(forImageURL: rawURL), in: directory)
+        return nil
     }
 
     /// `localFileName` as a URL.

@@ -34,10 +34,10 @@ final class ArticleExportImagePipelineTests: XCTestCase {
     // MARK: - Fixtures
 
     /// A realistic stored article image: what the downloader leaves on disk
-    /// after transcoding (a ≤2048px JPEG), under the URL-hash name.
+    /// after transcoding (a ≤2048px JPEG), under a fresh generated name.
     @discardableResult
     private func writeDownloadedImage() -> String {
-        let name = "\(ArticleImageFiles.stableBase(forImageURL: remoteImageURL)).jpg"
+        let name = ArticleImageFiles.newFileName(fileExtension: "jpg")
         let image = UIGraphicsImageRenderer(size: CGSize(width: 2048, height: 1365)).image { context in
             UIColor.red.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 2048, height: 1365))
@@ -117,29 +117,21 @@ final class ArticleExportImagePipelineTests: XCTestCase {
         XCTAssertGreaterThan(fraction, 0.05, "the photo is not on the page")
     }
 
-    /// The case that produced picture-less exports: the file is on disk (which
-    /// is why the scroll reader shows it — `resolveLocalImages` finds it by URL
-    /// hash in memory) but the PERSISTED content never recorded the name,
-    /// because content is saved before the images finish downloading.
-    func testExportedPDFShowsTheImageTheReaderShowsWhenTheNameWasNeverPersisted() throws {
-        let fileName = writeDownloadedImage()
+    /// An unrecorded file name cannot be reconstructed from a URL. The export
+    /// preparation path must download or transactionally claim a copy first.
+    func testExportDoesNotGuessAnImagePathFromAnUnrecordedURL() throws {
+        _ = writeDownloadedImage()
         let item = saveArticle(recordingFileName: nil)
 
-        // Precondition: this is exactly the split — the reader resolves it, the
-        // stored content does not carry it.
         let stored = try XCTUnwrap(SavesStore.shared.content(for: item))
         XCTAssertNil(stored.blocks.first(where: { $0.kind == .image })?.imageFileName)
         let asTheReaderSeesIt = ArticleImageDownloader.resolveLocalImages(
             stored, store: .shared)
-        XCTAssertEqual(
-            asTheReaderSeesIt.blocks.first(where: { $0.kind == .image })?.imageFileName,
-            fileName, "precondition: the scroll reader can see this image")
+        XCTAssertNil(asTheReaderSeesIt.blocks.first(where: { $0.kind == .image })?.imageFileName)
 
         let url = try ArticleExportService().write(.pdf, for: item)
         let fraction = try redFraction(of: Data(contentsOf: url))
-        XCTAssertGreaterThan(
-            fraction, 0.05,
-            "the reader shows this photo but the export dropped it")
+        XCTAssertEqual(fraction, 0, accuracy: 0.001)
     }
 
     /// Through the in-app share button's own closure, not the service directly:

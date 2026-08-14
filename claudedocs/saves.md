@@ -96,8 +96,9 @@ database, written in the same transaction as the row that made them. See
 `LunaStorage/SavedFileOwnership.swift` for the writes.
 
 - `files(id, relative_path UNIQUE, kind)` — one row per owned artifact. The path
-  is its identity, so one image downloaded once is one row however many saves
-  show it. `OwnedFileKind` says what it is (`content`, `archive`, `readerSource`,
+  is its identity. A live image may be shared by several saves, while a new
+  download always gets a fresh URL-independent filename. `OwnedFileKind` says
+  what it is (`content`, `archive`, `readerSource`,
   `document`, `thumbnail`, `productImage`, `image`), which is what lets a save
   reconcile one sort of artifact without disturbing the others.
 - `file_refs(file_id, save_id)` — which saves hold which files. **The reference
@@ -111,16 +112,23 @@ database, written in the same transaction as the row that made them. See
   `PreloadStore` releases its own keys.
 - `pending_deletes(relative_path, enqueued_at, attempts)` — files whose last
   holder is gone, waiting to be unlinked.
+- `retired_paths(relative_path, retired_at)` — permanent tombstones. A path is
+  inserted here in the same trigger that enqueues deletion and is never reused,
+  even after the queue row has been cleared.
+- `image_sources(source_url, file_id)` — the current live local copy of an image
+  URL. It is removed with its `files` row, so it never identifies a retired path.
 
 The invariant no Swift caller is trusted with — **a `files` row never sits at zero
 holders** — is enforced by triggers, because all four apps and their extensions
 write these tables. An `AFTER DELETE` on either edge table checks for remaining
 edges of both kinds and, when none are left, queues the path in `pending_deletes`
-and drops the `files` row. An `AFTER INSERT` on either edge table rescues a path
-back OUT of the queue: re-saving the same image re-inserts its `files` row (the
-path is unique, so it comes back as itself) and the edge that follows dequeues
-it. The release trigger fires for a cascade-driven delete too, pinned by
-`SavedFileOwnershipTests`.
+and drops the `files` row. A queued path is recorded in `retired_paths` as a
+permanent tombstone: no edge insert can claim it, even after reaping, and the
+reaper removes it even if a legacy inconsistent database still has a `files` row.
+A downloader can reuse an image only by atomically claiming its live
+`image_sources` mapping under SQLite's write lock; otherwise it downloads to a
+fresh UUID filename. The release trigger fires for a cascade-driven delete too,
+pinned by `SavedFileOwnershipTests`.
 
 **The reaper is the second commit.** A file system cannot join a transaction, so
 releasing an artifact is two commits: the transaction records the intent, and
@@ -130,8 +138,8 @@ queue something, at launch, and when an app backgrounds
 (`SavesStore.reapPendingDeletes`). Each path is handled in its own transaction,
 so two processes reaping at once is harmless: the second finds the row gone. The
 unlink happens INSIDE that transaction on purpose, holding the write lock across
-it, so another process cannot take a reference between the re-reference check and
-the delete. A crash between commit and unlink leaves the row, so the work is
+it, so every attempted claim serializes with the tombstone and delete. A crash
+between commit and unlink leaves the row, so the work is
 retried; `attempts` earns a log line after five failures and keeps the row.
 `enqueued_at` is UNIX seconds rather than reference-date seconds because a
 TRIGGER writes it and SQLite's own clock is the only one a trigger can read —

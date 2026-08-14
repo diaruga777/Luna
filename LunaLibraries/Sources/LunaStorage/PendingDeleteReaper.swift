@@ -20,12 +20,8 @@ import Foundation
 /// makes two processes reaping at once harmless: the second finds the row
 /// gone.
 ///
-/// The re-reference check inside that transaction closes the race this
-/// type exists for. Between the commit that queued a path and the unlink,
-/// another process can save an article that references the same image; the
-/// insert rescues the path out of the queue, but only a check taken under
-/// the write lock can be sure it happened BEFORE the unlink rather than
-/// during it.
+/// A queued path has a permanent tombstone. Nothing may claim it again, so the
+/// reaper deletes it under the write lock without a rescue path.
 enum PendingDeleteReaper {
 
     /// Failures tolerated in silence. A path failing this often is not a transient
@@ -66,8 +62,7 @@ enum PendingDeleteReaper {
     /// row is gone afterwards.
     ///
     /// The unlink happens INSIDE the transaction on purpose. Holding the write lock
-    /// across it is what stops another process from taking a reference to the file
-    /// between this check and the delete — and `removeItem` on a path that is
+    /// across it serializes competing reapers, and `removeItem` on a path that is
     /// already gone is a success here, so a retried transaction body is safe.
     private static func reap(
         path: String, in database: SavesDatabase, containerURL: URL, fileManager: FileManager
@@ -80,19 +75,11 @@ enum PendingDeleteReaper {
             ) { _ in queued = true }
             guard queued else { return false }
 
-            // A `files` row for this path means someone owns the file again. The
-            // rescue trigger normally clears the queue entry on the spot; clearing
-            // it here covers a row left behind by a process that crashed between
-            // the two.
-            var owned = false
-            try db.query(
-                "SELECT 1 FROM files WHERE relative_path = ?",
-                { try $0.bind(1, path) }
-            ) { _ in owned = true }
-            if owned {
-                try clear(path: path, in: db)
-                return true
-            }
+            // Current writers cannot create this state, but an interrupted older
+            // build may have left a `files` row beside the tombstone. The tombstone
+            // wins: drop that stale metadata before deleting its bytes so no save
+            // can later believe the retired path still exists.
+            try db.run("DELETE FROM files WHERE relative_path = ?") { try $0.bind(1, path) }
 
             guard let url = resolvedURL(forRelativePath: path, containerURL: containerURL) else {
                 // A path this cannot resolve to somewhere inside the container is

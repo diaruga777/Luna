@@ -25,9 +25,9 @@ import Foundation
 /// to the same `Date` it was written from — items compare by value and the decks
 /// sort on these. **Prices are TEXT** so a `Decimal` keeps its exact digits.
 ///
-/// The last four tables own the FILES beside the database — `files` /
-/// `file_refs` / `file_holders` / `pending_deletes`, with the triggers that keep
-/// them honest. See `SavedFileOwnership` for the writes and
+/// The file-ownership tables (`files` / `file_refs` / `file_holders` /
+/// `image_sources` / `pending_deletes` / `retired_paths`) own the FILES beside
+/// the database, with triggers that keep them honest. See `SavedFileOwnership` for the writes and
 /// `PendingDeleteReaper` for the unlink.
 enum SavesSchema {
 
@@ -48,6 +48,17 @@ enum SavesSchema {
                 let existing = try userVersion(in: database)
                 try database.execute(tables)
                 try database.execute(indexes)
+                // A queue row created by an older build is already a permanent
+                // retirement. Preserve that fact before a reaper clears it.
+                try database.execute("""
+                    INSERT OR IGNORE INTO retired_paths (relative_path, retired_at)
+                        SELECT relative_path, enqueued_at FROM pending_deletes
+                    """)
+                // Version 2 created these rescue triggers. They must be dropped
+                // explicitly because CREATE TRIGGER IF NOT EXISTS cannot replace
+                // an already-installed trigger on an existing shared database.
+                try database.execute("DROP TRIGGER IF EXISTS file_refs_rescue")
+                try database.execute("DROP TRIGGER IF EXISTS file_holders_rescue")
                 try database.execute(triggers)
                 if existing > 0 && existing < 2 {
                     try backfillFileOwnership(in: database)
@@ -239,6 +250,16 @@ enum SavesSchema {
             PRIMARY KEY (file_id, holder_key)
         ) WITHOUT ROWID;
 
+        -- The current, live local copy of an image URL. This is deliberately a
+        -- mapping rather than a filename convention: once a path is queued for
+        -- deletion it is retired forever, so a later download of the same URL
+        -- must receive a different path. Deleting a `files` row cascades this
+        -- mapping away with it.
+        CREATE TABLE IF NOT EXISTS image_sources (
+            source_url TEXT    PRIMARY KEY NOT NULL,
+            file_id    INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE
+        ) WITHOUT ROWID;
+
         -- Files whose last holder is gone, waiting to be unlinked. A file system
         -- cannot join a transaction, so the COMMIT records the intent and
         -- `PendingDeleteReaper` does the unlink afterwards; a process killed in
@@ -253,6 +274,14 @@ enum SavesSchema {
             relative_path TEXT    PRIMARY KEY NOT NULL,
             enqueued_at   REAL    NOT NULL,
             attempts      INTEGER NOT NULL DEFAULT 0
+        ) WITHOUT ROWID;
+
+        -- A path that has entered `pending_deletes` is permanently retired. The
+        -- reaper clears its queue row after unlinking, but this tombstone remains
+        -- so stale content can never recreate the same location later.
+        CREATE TABLE IF NOT EXISTS retired_paths (
+            relative_path TEXT PRIMARY KEY NOT NULL,
+            retired_at    REAL NOT NULL
         ) WITHOUT ROWID;
         """
 
@@ -308,6 +337,9 @@ enum SavesSchema {
         WHEN NOT EXISTS (SELECT 1 FROM file_refs WHERE file_id = OLD.file_id)
          AND NOT EXISTS (SELECT 1 FROM file_holders WHERE file_id = OLD.file_id)
         BEGIN
+            INSERT OR IGNORE INTO retired_paths (relative_path, retired_at)
+                SELECT relative_path, strftime('%s', 'now')
+                FROM files WHERE id = OLD.file_id;
             INSERT OR REPLACE INTO pending_deletes (relative_path, enqueued_at, attempts)
                 SELECT relative_path, strftime('%s', 'now'), 0
                 FROM files WHERE id = OLD.file_id;
@@ -318,25 +350,14 @@ enum SavesSchema {
         WHEN NOT EXISTS (SELECT 1 FROM file_refs WHERE file_id = OLD.file_id)
          AND NOT EXISTS (SELECT 1 FROM file_holders WHERE file_id = OLD.file_id)
         BEGIN
+            INSERT OR IGNORE INTO retired_paths (relative_path, retired_at)
+                SELECT relative_path, strftime('%s', 'now')
+                FROM files WHERE id = OLD.file_id;
             INSERT OR REPLACE INTO pending_deletes (relative_path, enqueued_at, attempts)
                 SELECT relative_path, strftime('%s', 'now'), 0
                 FROM files WHERE id = OLD.file_id;
             DELETE FROM files WHERE id = OLD.file_id;
         END;
 
-        -- A path referenced again before the reaper ran is rescued: re-saving the
-        -- same image re-inserts its `files` row (the path is unique, so it comes
-        -- back as itself) and the edge that follows takes it out of the queue.
-        CREATE TRIGGER IF NOT EXISTS file_refs_rescue AFTER INSERT ON file_refs
-        BEGIN
-            DELETE FROM pending_deletes WHERE relative_path
-                = (SELECT relative_path FROM files WHERE id = NEW.file_id);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS file_holders_rescue AFTER INSERT ON file_holders
-        BEGIN
-            DELETE FROM pending_deletes WHERE relative_path
-                = (SELECT relative_path FROM files WHERE id = NEW.file_id);
-        END;
         """
 }

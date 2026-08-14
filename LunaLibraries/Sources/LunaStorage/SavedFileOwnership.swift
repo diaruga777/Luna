@@ -25,8 +25,8 @@ enum OwnedFileKind: String {
     case thumbnail
     /// `Articles/<id>-product.jpg` — a tracked product's photo.
     case productImage
-    /// `Articles/img-<hash>.<ext>` — a downloaded article image, shared by every
-    /// save and preloaded page whose content references the same source URL.
+    /// `Articles/img-<UUID>.<ext>` — a downloaded article image. A live copy can
+    /// be shared, but a path queued for deletion is never reused.
     case image
 }
 
@@ -35,7 +35,7 @@ enum OwnedFileKind: String {
 struct OwnedFilePath: Hashable {
     let relativePath: String
 
-    fileprivate init(_ relativePath: String) { self.relativePath = relativePath }
+    init(_ relativePath: String) { self.relativePath = relativePath }
 }
 
 /// The writes to `files` / `file_refs` / `file_holders`: which saves and preloaded
@@ -64,7 +64,7 @@ enum SavedFileOwnership {
     /// The path of a downloaded article image, or nil for any name the image
     /// downloader would not have produced. Image names come out of article
     /// content, which came off the web, so they must look like the downloader's
-    /// own (`img-…`).
+    /// own (`img-…`). Image names are generated independently of their source URL.
     static func imagePath(_ fileName: String) -> OwnedFilePath? {
         guard fileName.hasPrefix("img-") else { return nil }
         return articlesPath(fileName)
@@ -140,6 +140,16 @@ enum SavedFileOwnership {
         }
     }
 
+    /// Whether `path` can be claimed in this transaction. A path that has reached
+    /// `retired_paths` is a permanent tombstone: it must never gain another owner,
+    /// even after the reaper has cleared its queue row.
+    static func canAttach(path: OwnedFilePath, in db: SavesDatabase) throws -> Bool {
+        try db.scalarInt(
+            "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM retired_paths WHERE relative_path = ?)",
+            { try $0.bind(1, path.relativePath) }
+        ) != nil
+    }
+
     /// The paths `saveID` holds in `kinds`.
     static func heldPaths(
         saveID: UUID, kinds: Set<OwnedFileKind>, in db: SavesDatabase
@@ -174,22 +184,52 @@ enum SavedFileOwnership {
             """
             INSERT INTO files (relative_path, kind)
                 SELECT ?, ? WHERE EXISTS (SELECT 1 FROM saves WHERE id = ?)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM retired_paths WHERE relative_path = ?
+                    )
                 ON CONFLICT (relative_path) DO NOTHING
             """
         ) {
             try $0.bind(1, path.relativePath)
             try $0.bind(2, kind.rawValue)
             try $0.bind(3, uuid: saveID)
+            try $0.bind(4, path.relativePath)
         }
         try db.run(
             """
             INSERT OR IGNORE INTO file_refs (file_id, save_id)
                 SELECT files.id, saves.id FROM files, saves
                 WHERE files.relative_path = ? AND saves.id = ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM retired_paths
+                        WHERE relative_path = files.relative_path
+                    )
             """
         ) {
             try $0.bind(1, path.relativePath)
             try $0.bind(2, uuid: saveID)
+        }
+    }
+
+    /// Records the current live copy for an image URL. A concurrent downloader
+    /// may have registered another live copy first; keeping that mapping is fine
+    /// because both paths are independently owned and neither can be resurrected.
+    static func registerImageSource(
+        _ sourceURL: String, for path: OwnedFilePath, in db: SavesDatabase
+    ) throws {
+        try db.run(
+            """
+            INSERT OR IGNORE INTO image_sources (source_url, file_id)
+                SELECT ?, id FROM files
+                WHERE relative_path = ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM retired_paths
+                        WHERE relative_path = files.relative_path
+                    )
+            """
+        ) {
+            try $0.bind(1, sourceURL)
+            try $0.bind(2, path.relativePath)
         }
     }
 
@@ -224,6 +264,10 @@ enum SavedFileOwnership {
                 """
                 INSERT OR IGNORE INTO file_holders (file_id, holder_key)
                     SELECT id, ? FROM files WHERE relative_path = ?
+                        AND NOT EXISTS (
+                            SELECT 1 FROM retired_paths
+                            WHERE relative_path = files.relative_path
+                        )
                 """
             ) {
                 try $0.bind(1, holderKey)
@@ -273,12 +317,16 @@ enum SavedFileOwnership {
     ) throws {
         try db.run(
             """
-            INSERT INTO files (relative_path, kind) VALUES (?, ?)
+            INSERT INTO files (relative_path, kind)
+                SELECT ?, ? WHERE NOT EXISTS (
+                    SELECT 1 FROM retired_paths WHERE relative_path = ?
+                )
                 ON CONFLICT (relative_path) DO NOTHING
             """
         ) {
             try $0.bind(1, path.relativePath)
             try $0.bind(2, kind.rawValue)
+            try $0.bind(3, path.relativePath)
         }
     }
 }

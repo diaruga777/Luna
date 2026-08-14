@@ -119,16 +119,14 @@ final class EpubBuilderImageTests: XCTestCase {
         XCTAssertTrue(text(in: jpegArchive).contains("media-type=\"image/jpeg\""))
     }
 
-    /// Content is persisted before its images finish downloading, so the file
-    /// is often on disk under its URL hash with nothing recorded on the block.
-    func testEmbedsImageResolvedByURLHashWhenFileNameIsUnrecorded() {
+    /// An unrecorded image cannot be found by deriving a path from its URL.
+    func testDoesNotGuessImagePathWhenFileNameIsUnrecorded() {
         let remote = "https://example.com/unrecorded.png"
-        let diskName = "\(ArticleImageFiles.stableBase(forImageURL: remote)).png"
+        let diskName = ArticleImageFiles.newFileName(fileExtension: "png")
         let archive = build([block(
             fileName: nil, remote: remote, bytes: encoded(as: .png)!, onDiskAs: diskName)])
-        XCTAssertTrue(entryPaths(in: archive).contains("OEBPS/images/\(diskName)"),
-                      "\(entryPaths(in: archive))")
-        XCTAssertTrue(text(in: archive).contains("<img src=\"images/\(diskName)\""))
+        XCTAssertFalse(entryPaths(in: archive).contains("OEBPS/images/\(diskName)"),
+                       "\(entryPaths(in: archive))")
     }
 
     /// EPUB is the ONE export format that can keep an animation, so the GIF

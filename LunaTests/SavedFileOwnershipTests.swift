@@ -139,10 +139,9 @@ final class SavedFileOwnershipTests: XCTestCase {
         XCTAssertEqual(Array(try pendingDeletes().keys), ["Articles/img-shared.jpg"])
     }
 
-    /// A path referenced again before the reaper ran is rescued out of the queue —
-    /// the same image saved into a second article, seconds after the first was
-    /// deleted.
-    func testReReferencingAQueuedPathRescuesItFromTheQueue() throws {
+    /// A path that reached the queue is retired permanently. A new owner cannot
+    /// revive it; a re-download must use a different generated image name.
+    func testReReferencingAQueuedPathDoesNotRescueIt() throws {
         let database = try openDatabase()
         let store = makeStore()
         let first = store.add(urlString: "https://example.com/first")
@@ -159,8 +158,45 @@ final class SavedFileOwnershipTests: XCTestCase {
                 path: image("img-rescued.jpg"), kind: .image, to: second.id, in: db)
         }
 
-        XCTAssertTrue(try pendingDeletes().isEmpty, "the new owner cancels the delete")
-        XCTAssertEqual(try knownPaths(), ["Articles/img-rescued.jpg"])
+        XCTAssertEqual(Array(try pendingDeletes().keys), ["Articles/img-rescued.jpg"])
+        XCTAssertTrue(try knownPaths().isEmpty)
+
+        makeImage("img-rescued.jpg")
+        store.reapPendingDeletes()
+        XCTAssertFalse(exists("img-rescued.jpg"))
+        try database.transaction { db in
+            try SavedFileOwnership.attach(
+                path: image("img-rescued.jpg"), kind: .image, to: second.id, in: db)
+        }
+        XCTAssertTrue(try knownPaths().isEmpty, "reaping does not forget the tombstone")
+    }
+
+    /// Reuse is an atomic database claim, not a filename lookup. Once the live
+    /// mapping is released, neither a queued nor a fully reaped path can be
+    /// claimed for a later save.
+    func testClaimingAnImageRejectsItsRetiredSourceMapping() throws {
+        let database = try openDatabase()
+        let store = makeStore()
+        let sourceURL = "https://images.example.com/hero.jpg"
+        let name = "img-\(UUID().uuidString).jpg"
+        makeImage(name)
+        let first = store.add(urlString: "https://example.com/first")
+        _ = store.saveContent(ArticleContent(
+            title: "First",
+            blocks: [.init(kind: .image, text: "", links: [],
+                           imageURLString: sourceURL, imageFileName: name)]), for: first)
+
+        try database.transaction { db in
+            try SavedFileOwnership.detach(path: image(name), from: first.id, in: db)
+        }
+        let second = store.add(urlString: "https://example.com/second")
+        XCTAssertNil(store.claimLiveImageCopy(
+            sourceURL: sourceURL, for: second.id, animatedGIFOnly: false))
+
+        store.reapPendingDeletes()
+        let third = store.add(urlString: "https://example.com/third")
+        XCTAssertNil(store.claimLiveImageCopy(
+            sourceURL: sourceURL, for: third.id, animatedGIFOnly: false))
     }
 
     /// The assumption the whole design rests on, tested rather than assumed:
@@ -396,10 +432,9 @@ final class SavedFileOwnershipTests: XCTestCase {
         XCTAssertFalse(exists("img-locked.jpg"))
     }
 
-    /// The double-commit race guard. A queue row left behind by a process that died
-    /// between its commit and the rescue insert must not delete a file something
-    /// owns again.
-    func testTheReaperLeavesAPathThatIsOwnedAgain() throws {
+    /// Even a malformed legacy state with both an owner and a tombstone must not
+    /// rescue the path: the tombstone wins and the bytes are removed.
+    func testTheReaperDoesNotRescueAQueuedPathThatStillHasAnOwnerRow() throws {
         let database = try openDatabase()
         let store = makeStore()
         makeImage("img-reowned.jpg")
@@ -418,8 +453,8 @@ final class SavedFileOwnershipTests: XCTestCase {
 
         store.reapPendingDeletes()
 
-        XCTAssertTrue(exists("img-reowned.jpg"), "an owned file is never unlinked")
-        XCTAssertTrue(try pendingDeletes().isEmpty, "and the stale row goes")
+        XCTAssertFalse(exists("img-reowned.jpg"))
+        XCTAssertTrue(try pendingDeletes().isEmpty)
     }
 
     /// The reaper only ever unlinks inside the container, whatever a path says.

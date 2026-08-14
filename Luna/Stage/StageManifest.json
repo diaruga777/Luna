@@ -570,14 +570,6 @@
       "apps": ["luna", "reader"]
     },
     {
-      "id": "social.pending-requests",
-      "screen": "Pending requests",
-      "variant": "empty",
-      "summary": "Incoming contact requests — the screen a tapped request notification routes to.",
-      "kind": "email",
-      "apps": ["luna", "reader"]
-    },
-    {
       "id": "social.recipient-picker",
       "screen": "Recipient picker",
       "variant": "empty",

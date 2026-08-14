@@ -10,7 +10,6 @@ public extension Notification.Name {
     /// Posted whenever the friends list changes (add/update/remove).
     static let friendsListChanged = Notification.Name("friendsListChanged")
     /// Posted whenever the pending-requests list changes.
-    static let pendingRequestsChanged = Notification.Name("pendingRequestsChanged")
 }
 
 /// A person the user shares with — identified solely by email address. A

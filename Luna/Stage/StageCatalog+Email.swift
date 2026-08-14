@@ -150,14 +150,6 @@ enum EmailStageCatalog {
                     UINavigationController(
                         rootViewController: RecipientPickerViewController(onComplete: { _ in }))
                 }),
-            StageDescriptor(
-                id: "social.pending-requests", screen: "Pending requests", variant: "empty",
-                summary: "Incoming contact requests — the screen a tapped request "
-                    + "notification routes to.",
-                kind: .email,
-                make: {
-                    UINavigationController(rootViewController: PendingRequestsViewController())
-                }),
         ]
     }
 }

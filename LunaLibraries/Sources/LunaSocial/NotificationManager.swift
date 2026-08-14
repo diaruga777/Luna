@@ -20,7 +20,6 @@ public enum NotificationManager {
     public static let typeKey = "lunaNotificationType"
     /// A new pending request from someone who isn't a friend yet — tapping it
     /// opens the Pending Requests screen.
-    public static let typePendingRequest = "pendingRequest"
     /// An accepted friend's share was imported — tapping it just opens the app;
     /// these are cleared when the user reaches the saves list.
     private static let typeShareReceived = "shareReceived"

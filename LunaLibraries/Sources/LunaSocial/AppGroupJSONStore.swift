@@ -8,7 +8,7 @@ import LunaStorage
 import Foundation
 
 /// The App-Group-JSON-file boilerplate shared by `FriendsStore`,
-/// `PendingRequestsStore`, and `RecentFriendRecipientsStore`: a file URL inside
+/// and `RecentFriendRecipientsStore`: a file URL inside
 /// the shared container, an element array on `CoordinatedJSONFile` (so sibling
 /// apps and extensions updating the same file at the same time cannot clobber
 /// each other), and a change notification per write.

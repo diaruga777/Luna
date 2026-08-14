@@ -10,15 +10,14 @@ import UIKit
 import LunaModels
 
 /// The Contacts screen (shared by all three apps): the saved email recipients,
-/// an entry to the pending-requests moderation queue (badged), and ways to add
+/// and ways to add
 /// a contact by email or from the system Contacts picker.
 public final class FriendsViewController: NavHeaderTableController, CNContactPickerDelegate {
 
     private var contacts: [Friend] = FriendsStore.shared.activeItems()
     private var blocked: [Friend] = FriendsStore.shared.blockedItems()
-    private var pendingCount = PendingRequestsStore.shared.count
 
-    private enum Section: Int, CaseIterable { case pending, add, contacts, blocked }
+    private enum Section: Int, CaseIterable { case add, contacts, blocked }
 
     public init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -30,9 +29,6 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload),
             name: .friendsListChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(reload),
-            name: .pendingRequestsChanged, object: nil)
     }
 
     public override func viewWillAppear(_ animated: Bool) {
@@ -43,7 +39,6 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     @objc private func reload() {
         contacts = FriendsStore.shared.activeItems()
         blocked = FriendsStore.shared.blockedItems()
-        pendingCount = PendingRequestsStore.shared.count
         tableView.reloadData()
     }
 
@@ -55,7 +50,6 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
 
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
-        case .pending: return pendingCount > 0 ? 1 : 0
         case .add: return 2
         case .contacts: return contacts.count
         case .blocked: return blocked.count
@@ -79,10 +73,6 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         var config = cell.defaultContentConfiguration()
         cell.accessoryType = .disclosureIndicator
         switch Section(rawValue: indexPath.section)! {
-        case .pending:
-            config.text = L10n.string("Sharing_friends_pendingRow")
-            config.secondaryText = "\(pendingCount) waiting"
-            config.image = UIImage(systemName: "tray.and.arrow.down")
         case .add:
             if indexPath.row == 0 {
                 config.text = L10n.string("Sharing_friends_add1ByEmail")
@@ -105,8 +95,6 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
-        case .pending:
-            navigationController?.pushViewController(PendingRequestsViewController(), animated: true)
         case .add:
             indexPath.row == 0 ? promptForEmail() : presentContactPicker()
         case .contacts, .blocked:

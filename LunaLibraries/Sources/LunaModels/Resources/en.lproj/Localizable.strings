@@ -1024,13 +1024,8 @@
 "Sharing_friends_add2FromContacts_Luna" = "Add from Phone Contacts";
 "Sharing_friends_addContactAlertTitle_Luna" = "Add contact";
 "Sharing_friends_blockedSectionHeader_Luna" = "Blocked";
-"Sharing_friends_pendingRow_Luna" = "Pending Requests";
 
 /* ===== Sharing — PendingRequestsViewController.swift (moderation queue) ===== */
-"Sharing_pendingRequests_action1AddAndImport_Luna" = "Add Contact & Import";
-"Sharing_pendingRequests_action2ImportOnce_Luna" = "Import Once";
-"Sharing_pendingRequests_screenTitle_Luna" = "Pending Requests";
-"Sharing_pendingRequests_sharedByMessage_Luna" = "Shared by %@";
 
 /* ===== Sharing — ReaderShareSheet.swift (reader share menu/sheet) ===== */
 "Sharing_readerShareSheet_1sendAsEmail_Luna" = "Send as email";

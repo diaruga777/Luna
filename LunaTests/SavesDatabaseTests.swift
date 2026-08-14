@@ -117,6 +117,8 @@ final class SavesDatabaseTests: XCTestCase {
                 VALUES (41, 'Preloads/legacy-page.json', 'preloadPage');
             INSERT INTO file_refs (file_id, save_id)
                 VALUES (41, '11111111-1111-1111-1111-111111111111');
+            INSERT INTO file_holders (file_id, holder_key)
+                VALUES (41, 'preload-owner:legacy-session');
             INSERT INTO preload_pages (url_key, file_id) VALUES ('legacy-key', 41);
             PRAGMA user_version = 6;
             """)
@@ -126,6 +128,8 @@ final class SavesDatabaseTests: XCTestCase {
             XCTAssertEqual(try SavesSchema.userVersion(in: db), 9)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM preload_pages"), 0)
             XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM files WHERE id = 41"), 0)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM file_refs WHERE file_id = 41"), 0)
+            XCTAssertEqual(try db.scalarInt("SELECT COUNT(*) FROM file_holders WHERE file_id = 41"), 0)
             XCTAssertEqual(
                 try db.scalarInt(
                     "SELECT COUNT(*) FROM pending_deletes WHERE relative_path = 'Preloads/legacy-page.json'"),

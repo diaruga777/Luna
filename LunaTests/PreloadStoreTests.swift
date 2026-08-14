@@ -126,6 +126,26 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
     }
 
+    func testFailedRerecordPreservesPriorContentAndRefreshAge() throws {
+        let u = url("https://example.com/failed-rerecord")
+        let root = makeSave()
+        store.record(url: u, rootID: root, kind: .article, content: article("Original"))
+        let before = try XCTUnwrap(store.entry(for: u))
+        let failingStore = PreloadStore(containerURL: dir) { _, _ in
+            throw InjectedWriteError.failed
+        }
+
+        let failed = try XCTUnwrap(failingStore.record(
+            url: u, rootID: root, kind: .article, content: article("Replacement")))
+
+        XCTAssertEqual(failed.contentFile, before.contentFile)
+        XCTAssertEqual(failed.lastLoadedAt, before.lastLoadedAt)
+        XCTAssertEqual(failingStore.articleContent(for: u)?.title, "Original")
+        XCTAssertTrue(failingStore.articleRefreshDue(
+            for: u, now: Date(timeIntervalSinceNow: 49 * 60 * 60),
+            minimumAge: 48 * 60 * 60))
+    }
+
     func testFailedRefreshPreservesPriorContentAndRefreshAge() throws {
         let u = url("https://example.com/failed-refresh")
         store.record(url: u, rootID: makeSave(), kind: .article, content: article("Original"))

@@ -624,7 +624,6 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
         guard renderCursor < script.spokenBlocks.count else { return }
 
         let block = script.spokenBlocks[renderCursor]
-        renderCursor += 1
         isPumping = true
         let token = sessionToken
         Task { [weak self] in
@@ -643,6 +642,12 @@ public final class AudioPlaybackCenter: AudioSessionCoordinatorDelegate,
             }
             await MainActor.run {
                 guard token == self.sessionToken else { return } // superseded session
+                // Advance only once the render has actually finished: bumping this
+                // before the render starts lets a slow last-block render race the
+                // second-to-last block's playback completion, which reads "every
+                // block rendered" as "the whole article is done" a beat early and
+                // fires the finish handler twice.
+                self.renderCursor += 1
                 self.isPumping = false
                 self.handleRendered(segment)
             }

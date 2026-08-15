@@ -224,6 +224,48 @@ final class CardEclipseTransitionCancellationTests: XCTestCase {
         XCTAssertEqual(outgoing.subviews.count, outgoingSubviewCount)
         XCTAssertEqual(opposite.subviews.count, oppositeSubviewCount)
     }
+
+    func testInterruptedEgressCommitsAndCleansEveryDressingViewExactlyOnce() async {
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let outgoing = CarouselCardView(frame: CGRect(x: 60, y: 40, width: 270, height: 480))
+        let incoming = CarouselCardView(frame: CGRect(x: 340, y: 40, width: 270, height: 480))
+        let opposite = CarouselCardView(frame: CGRect(x: -220, y: 40, width: 270, height: 480))
+        [opposite, outgoing, incoming].forEach(container.addSubview)
+        let outgoingSubviewCount = outgoing.subviews.count
+        let oppositeSubviewCount = opposite.subviews.count
+        var completions: [Bool] = []
+        let completed = expectation(description: "egress cancellation completed")
+        var transition: CardEclipseTransition!
+
+        transition = CardEclipseTransition(
+            in: container,
+            outgoing: outgoing,
+            incoming: incoming,
+            oppositePeek: opposite,
+            forward: true,
+            incomingTargetCenter: outgoing.center,
+            dimmingBounds: container.bounds,
+            duration: 0.1,
+            atZenith: {
+                // The transition creates and starts its retained egress animator
+                // immediately after this callback returns. The queued cancel
+                // therefore interrupts egress before its first display frame.
+                DispatchQueue.main.async { transition.cancel() }
+                return CardEclipseZenithResult(reappearingPeeks: [])
+            },
+            completion: {
+                completions.append($0)
+                completed.fulfill()
+            })
+        transition.animateToFinish()
+        await fulfillment(of: [completed], timeout: 1)
+        transition.cancel()
+
+        XCTAssertEqual(completions, [true])
+        XCTAssertEqual(container.subviews.count, 3)
+        XCTAssertEqual(outgoing.subviews.count, outgoingSubviewCount)
+        XCTAssertEqual(opposite.subviews.count, oppositeSubviewCount)
+    }
 }
 
 final class CardCarouselPagePanStartPolicyTests: XCTestCase {

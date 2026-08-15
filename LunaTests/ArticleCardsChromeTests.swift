@@ -434,6 +434,62 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(scroll.contentInset.top, stableInset, accuracy: 0.5)
     }
 
+    @MainActor
+    func testCrossKindEclipseIntoReaderRevealsATitleCopy() throws {
+        let installed = (
+            CardKindPresenters.article,
+            CardKindPresenters.media,
+            CardKindPresenters.product)
+        defer {
+            (CardKindPresenters.article, CardKindPresenters.media,
+             CardKindPresenters.product) = installed
+        }
+        CardKindPresenters.article = ArticleCardPresenter()
+        CardKindPresenters.media = MediaCardPresenter()
+        CardKindPresenters.product = ProductCardPresenter()
+
+        let fixture = UITestState.mixed.fixture
+        SavesStore.shared.seedForTesting(items: fixture.items, contents: fixture.contents)
+        let items = fixture.items
+        let ordered = KindDeckProvider.ordered(items)
+        let readerItem = try XCTUnwrap(ordered.first {
+            $0.title == "A Ready Article To Read"
+        })
+        let productItem = try XCTUnwrap(ordered.first { $0.priceTracker != nil })
+        let readerIndex = try XCTUnwrap(ordered.firstIndex { $0.id == readerItem.id }) + 1
+        let productIndex = try XCTUnwrap(ordered.firstIndex { $0.id == productItem.id }) + 1
+
+        let controller = ArticleCardsViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        controller.view.layoutIfNeeded()
+        controller.carousel.reloadData(centeringAt: productIndex)
+        controller.view.layoutIfNeeded()
+        XCTAssertTrue(
+            controller.carousel.contentController(at: productIndex)
+                is ProductCardContentViewController)
+
+        let scrubber = try XCTUnwrap(
+            firstSubview(of: CarouselScrubberView.self, in: controller.carousel.view))
+        scrubber.delegate?.scrubber(scrubber, didTap: readerIndex)
+        XCTAssertEqual(controller.carousel.currentIndex, productIndex)
+        RunLoop.current.run(
+            until: Date().addingTimeInterval(
+                CardEclipseTransition.scrubberTapDuration + 0.2))
+
+        let reader = try XCTUnwrap(
+            controller.carousel.contentController(at: readerIndex)
+                as? ReaderCardContentViewController)
+        let title = try XCTUnwrap(readerItem.title)
+        let headers = headerViews(labelled: title, in: reader.view)
+        XCTAssertTrue(headers.contains { header in
+            !header.isHidden && header.alpha > 0.01
+                && header.convert(header.bounds, to: reader.view).intersects(reader.view.bounds)
+        }, "cross-kind reveal must show one laid-out Reader title copy")
+    }
+
     func testNonAdjacentScrubberTapStagesTitleWithItsFinalInset() throws {
         let items = (0..<4).map { index in
             SavedItem(

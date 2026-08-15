@@ -163,7 +163,7 @@ protocol CardKindPresenting: AnyObject {
     func prefersThumbnailChip(for item: SavedItem) -> Bool
 
     /// How this card PRESENTS its content — whether it dissolves at the edges,
-    /// whether the scrub strip plays it, and whether a horizontal swipe across
+    /// whether a horizontal swipe across
     /// it pages the deck.
     ///
     /// A property of what the card SHOWS, not of the screen it is on: a
@@ -177,10 +177,6 @@ protocol CardKindPresenting: AnyObject {
     /// one deck are never three different rectangles that relayout the card
     /// when paging between kinds.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle
-    /// Whether the scrub strip may build this card's real content ahead of the
-    /// finger. A card backed by a video player answers false — sweeping the
-    /// strip must never spin up one player per chip.
-    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool
 
     // MARK: Verbs
 
@@ -292,7 +288,6 @@ extension CardKindPresenting {
     ) { completion(nil) }
     func prefersThumbnailChip(for item: SavedItem) -> Bool { false }
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle { .init() }
-    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool { true }
     func menuActions(for item: SavedItem, host: CardPresenterHost) -> [UIMenuElement] { [] }
     func shareMenu(for item: SavedItem, host: CardPresenterHost, sourceView: UIView)
         -> UIMenu? { nil }

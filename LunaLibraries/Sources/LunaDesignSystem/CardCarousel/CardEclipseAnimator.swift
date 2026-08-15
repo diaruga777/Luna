@@ -75,7 +75,18 @@ public final class CardEclipseTransition {
     private let flare: EclipseFlareView
     private let whitening: UIView
     private var oppositeVeil: UIView?
-    private var didStart = false
+    private var egress: UIViewPropertyAnimator?
+
+    /// One monotonic state is enough to make every exit path deterministic.
+    /// In particular, an interruption after totality is a finished page turn,
+    /// while an interruption before totality is a cancelled one.
+    private enum Phase: Equatable {
+        case ready
+        case ingress
+        case egress
+        case completed
+    }
+    private var phase: Phase = .ready
 
     /// - Parameters:
     ///   - container: the card area; dressing views are added to it.
@@ -215,11 +226,11 @@ public final class CardEclipseTransition {
         }
         ingress.addCompletion { [weak self] position in
             guard let self else { return }
+            guard self.phase == .ingress else { return }
             if position == .end {
                 self.runZenithAndEgress()
             } else {
-                self.removeDressing()
-                self.completion(false)
+                self.terminate(finished: false)
             }
         }
     }
@@ -227,7 +238,8 @@ public final class CardEclipseTransition {
     // MARK: - Automatic run (taps, scrub commits)
 
     public func animateToFinish() {
-        didStart = true
+        guard phase == .ready else { return }
+        phase = .ingress
         ingress.startAnimation()
     }
 
@@ -235,18 +247,23 @@ public final class CardEclipseTransition {
 
     /// Scrubs the ingress to `fraction` (clamped to 0...1) of the way to zenith.
     public func update(fraction: CGFloat) {
-        didStart = true
-        if ingress.state == .inactive { ingress.startAnimation() }
+        guard phase == .ready || phase == .ingress else { return }
+        if phase == .ready {
+            phase = .ingress
+            ingress.startAnimation()
+        }
         ingress.pauseAnimation()
         ingress.fractionComplete = min(max(fraction, 0), 0.999)
     }
 
     /// Plays the rest of the ingress, then the zenith swap and egress.
     public func finishInteractive() {
-        guard didStart else {
+        guard phase != .completed else { return }
+        guard phase != .ready else {
             animateToFinish()
             return
         }
+        guard phase == .ingress else { return }
         ingress.isReversed = false
         ingress.continueAnimation(
             withTimingParameters: UICubicTimingParameters(animationCurve: .easeIn),
@@ -255,20 +272,42 @@ public final class CardEclipseTransition {
 
     /// Plays the ingress backwards to rest; no swap happens.
     public func cancelInteractive() {
-        guard didStart else {
-            removeDressing()
-            completion(false)
+        guard phase != .completed else { return }
+        guard phase != .ready else {
+            terminate(finished: false)
             return
         }
+        guard phase == .ingress else { return }
         ingress.isReversed = true
         ingress.continueAnimation(
             withTimingParameters: UICubicTimingParameters(animationCurve: .easeOut),
             durationFactor: max(ingress.fractionComplete, 0.15))
     }
 
+    /// Stops the transition immediately and removes every dressing view. If
+    /// totality already swapped the cards, the page turn is settled as
+    /// successful; otherwise it is restored to its original card. Safe to call
+    /// repeatedly (for example from overlapping lifecycle callbacks).
+    public func cancel() {
+        switch phase {
+        case .ready:
+            terminate(finished: false)
+        case .ingress:
+            ingress.stopAnimation(true)
+            terminate(finished: false)
+        case .egress:
+            egress?.stopAnimation(true)
+            terminate(finished: true)
+        case .completed:
+            break
+        }
+    }
+
     // MARK: - Zenith + egress
 
     private func runZenithAndEgress() {
+        guard phase == .ingress else { return }
+        phase = .egress
         // Total coverage: re-stack the slots behind the veils.
         whitening.removeFromSuperview()
         oppositeVeil?.removeFromSuperview()
@@ -291,25 +330,20 @@ public final class CardEclipseTransition {
         let dimmer = self.dimmer
         let corona = self.corona
         let flare = self.flare
-        UIView.animateKeyframes(
-            withDuration: totalDuration - ingress.duration,
-            delay: 0,
-            options: [.calculationModeCubic]
-        ) {
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
-                dimmer.alpha = 0
-                corona.alpha = 0
-                incoming.transform = .identity
-                for slideIn in slideIns { slideIn.card.center = slideIn.restingCenter }
-            }
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.25) {
-                flare.alpha = 0
-                flare.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
-            }
-        } completion: { [weak self] _ in
-            self?.removeDressing()
-            self?.completion(true)
+        let egress = UIViewPropertyAnimator(
+            duration: max(totalDuration - ingress.duration, 0.01),
+            curve: .easeInOut)
+        egress.addAnimations {
+            dimmer.alpha = 0
+            corona.alpha = 0
+            incoming.transform = .identity
+            for slideIn in slideIns { slideIn.card.center = slideIn.restingCenter }
+            flare.alpha = 0
+            flare.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
         }
+        egress.addCompletion { [weak self] _ in self?.terminate(finished: true) }
+        self.egress = egress
+        egress.startAnimation()
     }
 
     /// The off-screen center a resting peek card slides in from: its outer edge
@@ -324,11 +358,26 @@ public final class CardEclipseTransition {
     }
 
     private func removeDressing() {
+        for view in [dimmer, corona, flare, whitening, oppositeVeil].compactMap({ $0 }) {
+            view.layer.removeAllAnimations()
+        }
         dimmer.removeFromSuperview()
         corona.removeFromSuperview()
         flare.removeFromSuperview()
         whitening.removeFromSuperview()
         oppositeVeil?.removeFromSuperview()
+    }
+
+    private func terminate(finished: Bool) {
+        guard phase != .completed else { return }
+        phase = .completed
+        ingress.stopAnimation(true)
+        egress?.stopAnimation(true)
+        egress = nil
+        incoming.layer.removeAllAnimations()
+        outgoing.layer.removeAllAnimations()
+        removeDressing()
+        completion(finished)
     }
 
     /// The corona around the sun's card-shaped silhouette. `EclipseCorona` draws

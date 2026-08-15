@@ -1269,17 +1269,6 @@ extension CardCarouselHostViewController: CardCarouselDataSource {
 
     func carousel(
         _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        if let slot = slotIndex(forCarouselIndex: index),
-           deckProvider?.deckAllowsPreparedPreview(forSlot: slot) == false {
-            return nil
-        }
-        return self.carousel(carousel, contentControllerForCardAt: index)
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {

@@ -240,8 +240,7 @@ final class MediaCardPresenter: CardKindPresenting {
         return !media.isArchived
     }
 
-    /// Hard-clipped, and played by the scrub strip under the finger, in every
-    /// app. The card's 9:16 frame is the whole deck's frame, since video is
+    /// Hard-clipped in every app. The card's 9:16 frame is the whole deck's frame, since video is
     /// what that shape was chosen for, and every other card matches it.
     ///
     /// `pagesOnInCardSwipes` stays false: a playable card's whole width is a
@@ -249,15 +248,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// paging for any playing card; this also holds while a card is still
     /// downloading and not yet playable.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
-        var style = CardCarouselCardStyle()
-        style.autoplaysScrubPreview = true
-        return style
-    }
-
-    /// Only media cards are expensive to build — each one is an AVPlayer, and
-    /// the mini-card strip prepares its whole visible window at once.
-    func allowsPreparedPreviewContent(for item: SavedItem) -> Bool {
-        media(for: item) == nil
+        CardCarouselCardStyle()
     }
 
     // MARK: - Verbs

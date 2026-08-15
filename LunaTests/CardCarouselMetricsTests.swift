@@ -148,6 +148,18 @@ final class CarouselScrubberMathTests: XCTestCase {
         XCTAssertEqual(imageView.frame, item.bounds)
     }
 
+    func testLargeCountKeepsOnlyAVisibleWindowOfReusableCells() throws {
+        let scrubber = CarouselScrubberView()
+        scrubber.frame = CGRect(x: 0, y: 0, width: 390, height: scrubber.preferredHeight)
+        scrubber.setThumbnailCount(10_000)
+        scrubber.layoutIfNeeded()
+
+        let collection = try XCTUnwrap(firstCollectionView(in: scrubber))
+        XCTAssertEqual(collection.numberOfItems(inSection: 0), 10_000)
+        XCTAssertGreaterThan(collection.visibleCells.count, 0)
+        XCTAssertLessThan(collection.visibleCells.count, 20)
+    }
+
     func testIndexMapsLocationAcrossThumbnails() {
         // 26pt thumbs, 5pt spacing: each slot spans 31pt.
         XCTAssertEqual(CarouselScrubberMath.index(
@@ -172,6 +184,45 @@ final class CarouselScrubberMathTests: XCTestCase {
     private func firstImageView(in view: UIView) -> UIImageView? {
         if let imageView = view as? UIImageView { return imageView }
         return view.subviews.lazy.compactMap { self.firstImageView(in: $0) }.first
+    }
+
+    private func firstCollectionView(in view: UIView) -> UICollectionView? {
+        if let collection = view as? UICollectionView { return collection }
+        return view.subviews.lazy.compactMap { self.firstCollectionView(in: $0) }.first
+    }
+}
+
+@MainActor
+final class CardEclipseTransitionCancellationTests: XCTestCase {
+
+    func testInterruptedIngressCleansEveryDressingViewAndCompletesOnce() {
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let outgoing = CarouselCardView(frame: CGRect(x: 60, y: 40, width: 270, height: 480))
+        let incoming = CarouselCardView(frame: CGRect(x: 340, y: 40, width: 270, height: 480))
+        let opposite = CarouselCardView(frame: CGRect(x: -220, y: 40, width: 270, height: 480))
+        [opposite, outgoing, incoming].forEach(container.addSubview)
+        let outgoingSubviewCount = outgoing.subviews.count
+        let oppositeSubviewCount = opposite.subviews.count
+        var completions: [Bool] = []
+
+        let transition = CardEclipseTransition(
+            in: container,
+            outgoing: outgoing,
+            incoming: incoming,
+            oppositePeek: opposite,
+            forward: true,
+            incomingTargetCenter: outgoing.center,
+            dimmingBounds: container.bounds,
+            atZenith: { CardEclipseZenithResult(reappearingPeeks: []) },
+            completion: { completions.append($0) })
+        transition.update(fraction: 0.92)
+        transition.cancel()
+        transition.cancel()
+
+        XCTAssertEqual(completions, [false])
+        XCTAssertEqual(container.subviews.count, 3)
+        XCTAssertEqual(outgoing.subviews.count, outgoingSubviewCount)
+        XCTAssertEqual(opposite.subviews.count, oppositeSubviewCount)
     }
 }
 
@@ -362,6 +413,11 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
         XCTAssertTrue(staged.parent === carousel)
         XCTAssertGreaterThan(staged.view.bounds.width, 0)
         XCTAssertGreaterThan(staged.view.bounds.height, 0)
+        XCTAssertEqual(staged.centerCount, 0,
+                       "centering work must wait until eclipse egress finishes")
+        let farIndex = target + (target > start ? 1 : -1)
+        XCTAssertNil(source.contentControllers[farIndex],
+                     "the new far peek must not be constructed under totality")
 
         let settled = expectation(description: "multi-card eclipse settled")
         DispatchQueue.main.asyncAfter(
@@ -375,6 +431,7 @@ final class CardCarouselScrubberTapPagingTests: XCTestCase {
         XCTAssertEqual(carousel.currentIndex, target)
         XCTAssertTrue(carousel.view.isUserInteractionEnabled)
         XCTAssertTrue(carousel.contentController(at: target) === staged)
+        XCTAssertGreaterThan(staged.centerCount, 0)
         XCTAssertNotNil(carousel.contentController(at: max(0, target - 1)))
         XCTAssertNotNil(carousel.contentController(at: min(source.cardCount - 1, target + 1)))
         window.isHidden = true
@@ -401,7 +458,7 @@ private final class NavigationTargetSpy: @preconcurrency CardCarouselDelegate {
 @MainActor
 private final class MiniCardPagingDataSource: @preconcurrency CardCarouselDataSource {
     let cardCount = 7
-    private(set) var contentControllers: [Int: CardContentViewController] = [:]
+    private(set) var contentControllers: [Int: CenteringSpyCardContentViewController] = [:]
 
     func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
 
@@ -409,7 +466,7 @@ private final class MiniCardPagingDataSource: @preconcurrency CardCarouselDataSo
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        let content = CardContentViewController()
+        let content = CenteringSpyCardContentViewController()
         contentControllers[index] = content
         return content
     }
@@ -422,69 +479,41 @@ private final class MiniCardPagingDataSource: @preconcurrency CardCarouselDataSo
 }
 
 @MainActor
-final class CardCarouselScrubPromotionTests: XCTestCase {
+final class CardCarouselScrubScalingTests: XCTestCase {
 
-    func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingItAndPreservesSoundState() throws {
-        let source = ScrubPromotionDataSource()
-        let delegate = NavigationTargetSpy()
+    func testLargeDeckRequestsArtworkOnlyForVisibleChips() throws {
+        let source = LargeScrubDataSource()
         let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.card.autoplaysScrubPreview = true
-        carousel.style = style
         carousel.dataSource = source
-        carousel.delegate = delegate
         carousel.loadViewIfNeeded()
         carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         carousel.view.layoutIfNeeded()
         carousel.reloadData(centeringAt: 0)
+        carousel.view.layoutIfNeeded()
 
-        let muteButton = try XCTUnwrap(firstButton(labelled: "Unmute", in: carousel.view))
-        muteButton.sendActions(for: .touchUpInside)
-
-        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
-        let centered = source.previews[1]
-        scrubber.delegate?.scrubber(scrubber, didPreview: 1)
-        XCTAssertEqual(delegate.targets, [1])
-        XCTAssertTrue(centered.isPlaying)
-        XCTAssertFalse(centered.isMuted)
-        XCTAssertEqual(centered.pauseCount, 0)
-
-        scrubber.delegate?.scrubber(scrubber, didCommit: 1)
-
-        XCTAssertEqual(carousel.currentIndex, 1)
-        XCTAssertTrue(centered.parent === carousel)
-        XCTAssertTrue(centered.isPlaying)
-        XCTAssertEqual(
-            centered.pauseCount, 0,
-            "promotion must hand the playing preview over, not pause and rebuild it")
-        XCTAssertEqual(source.normalRequestCounts[1], 1)
+        XCTAssertFalse(source.thumbnailRequests.isEmpty)
+        XCTAssertLessThan(source.thumbnailRequests.count, 20)
+        XCTAssertLessThan(source.thumbnailRequests.max() ?? .max, 20)
     }
 
-    func testMiniCardScrubberPreparesOnlyVisibleWindowAndPromotesExactPreview() throws {
-        let source = VisibleWindowScrubDataSource()
+    func testScrubPreviewDoesNotConstructRealContentUntilCommit() throws {
+        let source = LargeScrubDataSource()
         let carousel = CardCarouselViewController()
         carousel.dataSource = source
         carousel.loadViewIfNeeded()
         carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         carousel.view.layoutIfNeeded()
         carousel.reloadData(centeringAt: 0)
-        carousel.beginAppearanceTransition(true, animated: false)
-        carousel.endAppearanceTransition()
 
-        let preparedIndices = source.previewControllers.keys.sorted()
-        XCTAssertFalse(preparedIndices.isEmpty)
-        XCTAssertLessThan(preparedIndices.count, source.cardCount)
-
-        let target = try XCTUnwrap(preparedIndices.first(where: { $0 != 0 }))
-        let preview = try XCTUnwrap(source.previewControllers[target])
+        let target = 50
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
         scrubber.delegate?.scrubber(scrubber, didPreview: target)
-        scrubber.delegate?.scrubber(scrubber, didCommit: target)
+        XCTAssertNil(source.contentRequestCounts[target],
+                     "moving the finger must draw only lightweight chrome/poster")
 
+        scrubber.delegate?.scrubber(scrubber, didCommit: target)
+        XCTAssertEqual(source.contentRequestCounts[target], 1)
         XCTAssertEqual(carousel.currentIndex, target)
-        XCTAssertTrue(carousel.contentController(at: target) === preview)
-        XCTAssertEqual(preview.centerCount, 1)
-        XCTAssertLessThanOrEqual(source.previewRequestCounts[target] ?? 0, 2)
     }
 
     /// Releasing a mini-card scrub must settle in place even when the preview
@@ -493,7 +522,7 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
     /// Falling through to the eclipse here would play a page transition to a
     /// card already on screen.
     func testScrubSettleOnAPosterOnlyCardHandsOverWithoutTheEclipse() throws {
-        let source = PosterOnlyScrubDataSource()
+        let source = LargeScrubDataSource(cardCount: 7)
         let carousel = CardCarouselViewController()
         carousel.dataSource = source
 
@@ -529,17 +558,15 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
     }
 
-    private func firstButton(labelled label: String, in view: UIView) -> UIButton? {
-        if let button = view as? UIButton, button.accessibilityLabel == label { return button }
-        return view.subviews.lazy.compactMap { self.firstButton(labelled: label, in: $0) }.first
-    }
 }
 
 @MainActor
-private final class VisibleWindowScrubDataSource: @preconcurrency CardCarouselDataSource {
-    let cardCount = 40
-    var previewControllers: [Int: CenteringSpyCardContentViewController] = [:]
-    var previewRequestCounts: [Int: Int] = [:]
+private final class LargeScrubDataSource: @preconcurrency CardCarouselDataSource {
+    let cardCount: Int
+    var contentRequestCounts: [Int: Int] = [:]
+    var thumbnailRequests: [Int] = []
+
+    init(cardCount: Int = 10_000) { self.cardCount = cardCount }
 
     func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
 
@@ -547,52 +574,23 @@ private final class VisibleWindowScrubDataSource: @preconcurrency CardCarouselDa
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        CardContentViewController()
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? {
-        previewRequestCounts[index, default: 0] += 1
-        let content = CenteringSpyCardContentViewController()
-        previewControllers[index] = content
-        return content
+        contentRequestCounts[index, default: 0] += 1
+        return CenteringSpyCardContentViewController()
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
-    ) { completion(nil) }
-}
-
-/// A deck whose cards have no preview content to prepare — the shape the
-/// all-kinds deck takes for a media save (`allowsPreparedPreviewContent`
-/// false), which previews as a poster and has nothing to promote on release.
-@MainActor
-private final class PosterOnlyScrubDataSource: @preconcurrency CardCarouselDataSource {
-    let cardCount = 7
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { cardCount }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        CenteringSpyCardContentViewController()
+    ) {
+        thumbnailRequests.append(index)
+        completion(nil)
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { nil }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) { completion(nil) }
+        prefersThumbnailChipForCardAt index: Int
+    ) -> Bool { true }
 }
 
 @MainActor
@@ -602,61 +600,6 @@ private final class CenteringSpyCardContentViewController: CardContentViewContro
     override func cardDidBecomeCentered() {
         centerCount += 1
         super.cardDidBecomeCentered()
-    }
-}
-
-@MainActor
-private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
-    /// One preview controller PER CARD, matching what a real data source
-    /// supplies. The strip prepares its visible window for every deck, so a
-    /// shared instance would let a peek's "peeks never play" pause land on
-    /// the centre's own player, and the spy could no longer tell the two
-    /// apart.
-    let previews = [
-        PlaybackSpyCardContentViewController(),
-        PlaybackSpyCardContentViewController(),
-        PlaybackSpyCardContentViewController(),
-    ]
-    var normalRequestCounts: [Int: Int] = [:]
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { previews.count }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController {
-        normalRequestCounts[index, default: 0] += 1
-        return PlaybackSpyCardContentViewController()
-    }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { previews[index] }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) { completion(nil) }
-}
-
-@MainActor
-private final class PlaybackSpyCardContentViewController: CardContentViewController {
-    private(set) var playing = false
-    private(set) var pauseCount = 0
-    private(set) var isMuted = true
-
-    override var isPlayable: Bool { true }
-    override var isPlaying: Bool { playing }
-
-    override func setPlaying(_ playing: Bool) {
-        self.playing = playing
-        if !playing { pauseCount += 1 }
-    }
-
-    override func setMuted(_ muted: Bool) {
-        isMuted = muted
     }
 }
 

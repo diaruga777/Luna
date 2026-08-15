@@ -299,18 +299,21 @@ Consequences for the deck:
   plays forward and back, and on release finishes (past 50%, or with enough
   release velocity toward the target) or reverses back to rest. A tap on a
   peeked edge pages one card. The scrub strip scrolls natively like a
-  miniature carousel: the chip at its viewport center is the live selection —
+  virtualized `UICollectionView`: only the handful of chips intersecting its
+  viewport exist, regardless of save count. The chip at its viewport center is
+  the live selection —
   panning left brings chips (and cards) in from the right, each chip passing
   center previews its card over the centered card — and releasing decelerates
   (`decelerationRate = .fast`) to the nearest chip dead-center via a
-  `targetContentOffset` snap, then commits it. Symmetric content insets let
+  `targetContentOffset` snap, then commits it. Symmetric section insets let
   even the first and last chips center exactly; at rest the selected chip is
   always centered, whatever selected it (scrub, tap, or card swipe), with a
   selection haptic whenever a new chip crosses center during a drag. A tap on
   a chip commits it directly and always uses the same eclipse transition on
   both Reader mini cards and Downloader thumbnails, whether the target is
   adjacent or farther away. An unmounted target is staged at the incoming peek,
-  then its new neighboring window is laid out behind totality before the reveal.
+  while its new far neighboring window is not constructed until the eclipse has
+  visually settled.
   Chips
   alpha-fade out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
@@ -320,26 +323,23 @@ Consequences for the deck:
   and both peeks — as genuine `CarouselCardView`s built by the same
   `makeCardView(at:)` the mounted slots use and rested at the same geometry via
   the shared `applyRestingLayout(to:atSlotOffset:)`, so the glass rim, the mute
-  button, and the Photos badge stay put and the peeks track the finger instead
+  button position and the Photos badge stay put and the peeks track the finger instead
   of freezing on the committed card's neighbors. The real slots stay mounted
   (their content stays alive) but hide underneath for the gesture. Each preview
-  shows, in order of preference: its mounted real content, its thumbnail, its
-  title. Previews are recycled by CARD, not by position — advancing one chip
-  slides the center out to a peek with its content and thumbnail intact.
-  Peeks only mount content that is ALREADY prepared for the strip's visible
-  window (sweeping the finger must never spin up a player or a reader per chip)
-  and never play.
-  The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
-  reaches the strip's center, the center preview mounts that card's real content
-  immediately and autoplays it using the carousel's current mute state
-  (including looping videos and GIFs). Moving
-  to another thumbnail stops and replaces that temporary preview player. On
-  release, the selected preview controller is promoted into the centered card
-  without replacing its player or timestamp, so playback continues smoothly —
-  and the preview cards stay up until the real window is mounted and laid out
+  shows its thumbnail when available and its title otherwise. Previews are
+  recycled by CARD, not by position — advancing one chip slides the center out
+  to a peek with its thumbnail intact. They never construct or mount a reader,
+  player, or product editor. On release, the selected real card is mounted (or
+  the already-mounted adjacent card is reused), and the preview cards stay up
+  until the real window is laid out
   beneath them, so nothing blinks (there is no chrome fade-in any more: the
   chrome was never missing). The Photos control opens that Photos-backed asset
   in the Photos app.
+- **Strip artwork is visible-only.** A visible-index callback requests thumbnail,
+  badge, utility, and accessory visuals only for the current viewport window;
+  async completions carry the reload generation and can update only the cell
+  still representing that index. Reused cells reset their complete appearance,
+  so no all-saves image cache or all-item view tree grows with the database.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -411,13 +411,21 @@ and scrubber taps run the same transition non-interactively.
    forward, right edge paging backward), centered vertically — the last sliver of
    sun. Meanwhile the peek card on the *opposite* side fades to black, merging
    with the darkened background.
-2. **Zenith** — behind the veils, the carousel re-stacks slots
-   (`performZenithSwap`): the far peek is unmounted, the outgoing card moves to the
-   opposite peek slot (still veiled black), the next card mounts on the vacated side
-   at alpha 0, and the newly centered content starts playing.
+2. **Zenith** — behind the veils, the carousel does only the visual slot swap
+   (`performZenithSwap`): the old far peek is hidden and the outgoing card moves
+   to the opposite peek slot. No content lifecycle callback, store/delegate work,
+   reader Phase 2, or far-peek construction runs in peak frames.
 3. **Egress (~34%)** — dimmer/corona/flare fade, the incoming card settles from 1.03
    to 1.0, the opposite-side veil fades revealing the outgoing card now living
-   there (at the resting side-card dim), and the new far peek fades in.
+   there (at the resting side-card dim).
+
+After egress completion removes all eclipse dressing, the carousel constructs the
+new far peek, retires old slots, calls `cardDidBecomeCentered`, updates the
+scrubber/delegate, and starts any Reader Phase 2 work. Completion is driven by
+the retained property animator rather than a duration estimate. The transition's
+single monotonic phase makes cancellation idempotent: interruption before zenith
+restores the old page; interruption after zenith settles the new one; both paths
+remove dimmer, corona, flare, whitening, and the opposite veil exactly once.
 
 A reload arriving mid-transition is deferred until the transition settles
 (`pendingReload` in the carousel) — tearing slots down under a running transition
@@ -552,7 +560,7 @@ drift-and-spring animation stay Reader-only without the store write staying
 there too.
 
 **How a card PRESENTS its content is its KIND's answer, not this screen's.**
-`contentEdgeFadeHeight`, scrub-preview autoplay and in-card paging come from the
+`contentEdgeFadeHeight` and in-card paging come from the
 presenter per card (`CardKindStyle`), so a media card behaves the same in the
 central app as in the Downloader, which it did not when these were deck-level
 fields. `style.card` survives only as the default for the util card and for
@@ -602,20 +610,15 @@ The article kind's own answers:
   and web saves a globe until the favicon lands (the data-source callback may
   fire twice: instant fallback, then the fetched icon —
   `ArticleSourceBadge.fallback(for:)`, unit-tested in `SourceBadgeTests`).
-  Scrolling the strip shows the exact reader card that will be selected,
-  including its current mode, content hierarchy, and saved reading position.
-  The carousel prepares real card controllers only for chips intersecting the
-  scrubber viewport, releases prepared controllers as they leave that window,
-  and promotes the live preview controller directly into the centered slot on
-  commit. Reader previews remain on the scroll reader's Phase-1 prefix: only
-  enough text and inline images for the visible content window are laid out or
-  loaded. Promotion of that same controller permanently lifts the primary gate
-  and starts the seamless Phase-2 full-content swap. Programmatic offsets from
-  that swap are presentation-silent: they neither flash the horizon indicator
-  nor momentarily exchange the pinned and scrolling title copies. The preview
-  therefore cannot swap to different content when the strip settles, while
-  whole-article layout and image loading stay off the scrub path. A deep saved
-  position still renders enough content up front to restore its actual viewport.
+  Scrolling the strip shows lightweight card chrome with the article title (or
+  poster artwork for a media neighbour); it does not construct reader content.
+  The real Reader card mounts only when the scrub settles. Its initial content
+  remains the Phase-1 prefix, and `cardDidBecomeCentered` lifts the primary gate
+  only after any eclipse egress has completed. Programmatic offsets from the
+  later Phase-2 swap are presentation-silent: they neither flash the horizon
+  indicator nor momentarily exchange the pinned and scrolling title copies. On
+  reveal, queued title-handoff work is cancelled and both title copies are laid
+  out from the final card width before their visibility is reconciled.
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one
@@ -754,9 +757,9 @@ There is nothing special about it any more, and that is the point. A Downloader
 save is rendered here by `MediaCardPresenter` — the SAME object the Downloader
 installs — so it is not "the Downloader's card reproduced centrally", it is the
 media card, once: the looping player, the animated GIF, the full-resolution
-image, or the in-card download progress bar, plus its Photos badge, its platform
-logo in the strip, its red rim when a download failed, its Share / Save to
-Photos verbs, its `.aspectCentered` shape, its autoplaying centre preview, and
+  image, or the in-card download progress bar, plus its Photos badge, its platform
+  logo in the strip, its red rim when a download failed, its Share / Save to
+  Photos verbs, its `.aspectCentered` shape, and
 its archive row with a working tap. A tracked product is rendered by
 `ProductCardPresenter`, which is the same object Price Tracker installs, so the
 central app gets the real in-card price editor rather than the
@@ -764,8 +767,8 @@ central app gets the real in-card price editor rather than the
 
 The three questions that used to be per-deck and are now per-kind, everywhere:
 
-- **What a card looks like** — `contentEdgeFadeHeight`, scrub-preview autoplay
-  and in-card paging are answers the presenter gives per card, not fields the
+- **What a card looks like** — `contentEdgeFadeHeight` and in-card paging are
+  answers the presenter gives per card, not fields the
   screen sets, so a media card cannot behave one way in one app and another way
   next door. Its SIZE is nobody's answer but the deck's.
 - **What archiving and deleting mean.** One `setArchived` per kind writing every
@@ -789,8 +792,6 @@ Two consequences worth knowing:
   an extension's process, turns a placeholder card into a player. The
   fingerprint includes the presenter's thumbnail + storage-state key, so that
   change actually re-renders.
-- Media cards decline PREPARED scrub previews
-  (`allowsPreparedPreviewContent`): the strip prepares content for its whole
-  visible chip window, which would be an AVPlayer per chip. They preview as
-  their poster and build the real player on commit — while the CENTRE preview
-  still autoplays, which is how both invariants coexist.
+- Media cards preview as posters and build the real player only on settle; the
+  scrub path has no prepared-content API and therefore cannot create an
+  AVPlayer per visible chip.

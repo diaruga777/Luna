@@ -480,6 +480,14 @@ final class ArticleCardsChromeTests: XCTestCase {
             until: Date().addingTimeInterval(
                 CardEclipseTransition.scrubberTapDuration + 0.2))
 
+        XCTAssertEqual(controller.carousel.currentIndex, 3)
+        let revealedHeaders = headerViews(labelled: "Staged Article 1", in: stagedContent.view)
+        XCTAssertTrue(revealedHeaders.contains { header in
+            !header.isHidden && header.alpha > 0.01
+                && header.convert(header.bounds, to: stagedContent.view)
+                    .intersects(stagedContent.view.bounds)
+        }, "the revealed Reader must have one visible, fully laid-out title copy")
+
         let hostedIndicator = try XCTUnwrap(
             controller.view.subviews.compactMap { $0 as? HorizonScrollIndicator }.first)
         XCTAssertEqual(hostedIndicator.alpha, 0, accuracy: 0.001)

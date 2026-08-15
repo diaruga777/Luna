@@ -265,11 +265,6 @@ final class KindDeckProvider: CardDeckProviding {
             ?? CardContentViewController()
     }
 
-    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool {
-        guard let item = item(atSlot: slot) else { return true }
-        return presenter(for: item)?.allowsPreparedPreviewContent(for: item) ?? true
-    }
-
     /// Two kinds of broken wear the soft red rim: a failed SAVE, and a media item
     /// whose DOWNLOAD failed. The second is the kind's own answer, so it shows in
     /// every app that draws media, not only the Downloader.

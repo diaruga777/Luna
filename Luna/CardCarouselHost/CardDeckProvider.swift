@@ -155,10 +155,6 @@ protocol CardDeckProviding: AnyObject {
     // MARK: - Cards
 
     func deckContentController(forSlot slot: Int) -> CardContentViewController
-    /// Whether the scrub strip may build this slot's real content ahead of the
-    /// finger. A card backed by a video player answers false — sweeping the
-    /// strip must not spin up one player per chip.
-    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool
     func deckLoadThumbnail(forSlot slot: Int, completion: @escaping (UIImage?) -> Void)
     func deckTitle(forSlot slot: Int) -> String?
     func deckLoadSourceBadge(
@@ -168,7 +164,7 @@ protocol CardDeckProviding: AnyObject {
     /// Whether this slot's strip chip is its own full-bleed still rather than a
     /// mini card with a source badge.
     func deckPrefersThumbnailChip(forSlot slot: Int) -> Bool
-    /// This card's own shape (fit, edge fade, scrub-preview autoplay, in-card
+    /// This card's own shape (fit, edge fade, in-card
     /// paging). Nil leaves the deck's own default — which is what the util
     /// card, having no kind, always gets.
     func deckCardStyle(forSlot slot: Int) -> CardCarouselCardStyle?
@@ -221,7 +217,6 @@ extension CardDeckProviding {
     var deckActivationNotificationNames: [Notification.Name] { [] }
     func deckWillBeginObservingStores() {}
     func deckDidSettleReload() {}
-    func deckAllowsPreparedPreview(forSlot slot: Int) -> Bool { true }
     func deckTitle(forSlot slot: Int) -> String? { nil }
     func deckLoadSourceBadge(
         forSlot slot: Int, completion: @escaping (CarouselSourceBadge?) -> Void

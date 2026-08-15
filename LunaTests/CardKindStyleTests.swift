@@ -13,7 +13,7 @@ import XCTest
 /// How a card PRESENTS its content is a property of what it shows; how big it
 /// is is not.
 ///
-/// Presentation values — edge fade, scrub-preview autoplay, in-card paging —
+/// Presentation values — edge fade and in-card paging —
 /// stay per-kind. A deck-level value would force the one deck that mixes
 /// kinds to pick a single answer for all of them: the central app would
 /// dissolve every media card's video edges over the reader's 28pt fade and
@@ -67,12 +67,6 @@ final class CardKindStyleTests: XCTestCase {
         XCTAssertEqual(
             mediaStyle.contentEdgeFadeHeight, 0,
             "dissolving a video's own edges is the central app's old reader fade")
-        XCTAssertTrue(
-            mediaStyle.autoplaysScrubPreview,
-            "the Downloader played the centered preview; every app now does")
-        XCTAssertFalse(
-            articleStyle.autoplaysScrubPreview,
-            "a reader preview mounts but does not play")
     }
 
     /// The veto that keeps a horizontal drag from meaning two things at once.

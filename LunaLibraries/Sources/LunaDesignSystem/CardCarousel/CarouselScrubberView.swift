@@ -38,7 +38,7 @@ public protocol CarouselScrubberViewDelegate: AnyObject {
     /// scrub preview.
     func scrubber(_ scrubber: CarouselScrubberView, didTap index: Int)
     /// The chips intersecting the scroll viewport changed. The carousel uses
-    /// this bounded window to prepare exact card content for live previews.
+    /// this bounded window to request only the artwork that can be displayed.
     func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet)
 }
 
@@ -80,10 +80,11 @@ public final class CarouselScrubberView: UIView {
     /// live on a non-scrolling ancestor (a mask on the scroll view's own layer
     /// would ride along with its scrolled bounds).
     private let stripContainer = UIView()
-    private let scrollView = UIScrollView()
-    private let stack = UIStackView()
+    private let layout = UICollectionViewFlowLayout()
+    private lazy var collectionView = UICollectionView(
+        frame: .zero, collectionViewLayout: layout)
     private let fadeMask = GradientMaskView()
-    private var itemViews: [ScrubberItemView] = []
+    private var itemCount = 0
     private var selectedIndex = 0
     private var reportedVisibleIndices = IndexSet()
     private let selectionFeedback = UISelectionFeedbackGenerator()
@@ -92,7 +93,7 @@ public final class CarouselScrubberView: UIView {
     /// the deceleration it launched). Programmatic centering must stand aside,
     /// and only user-driven motion previews cards.
     private var isUserScrolling: Bool {
-        scrollView.isDragging || scrollView.isDecelerating
+        collectionView.isDragging || collectionView.isDecelerating
     }
 
     public init() {
@@ -103,34 +104,33 @@ public final class CarouselScrubberView: UIView {
         stripContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(stripContainer)
 
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        layout.scrollDirection = .horizontal
+        layout.minimumLineSpacing = spacing
+        layout.minimumInteritemSpacing = spacing
+
+        collectionView.backgroundColor = .clear
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
         // Native scrolling IS the scrub interaction; the fast deceleration
         // rate plus the targetContentOffset snap settles a chip dead-center.
-        scrollView.decelerationRate = .fast
-        scrollView.delegate = self
-        stripContainer.addSubview(scrollView)
-
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = spacing
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(stack)
+        collectionView.decelerationRate = .fast
+        collectionView.delegate = self
+        collectionView.dataSource = self
+        collectionView.register(
+            ScrubberItemCell.self,
+            forCellWithReuseIdentifier: ScrubberItemCell.reuseIdentifier)
+        stripContainer.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: stripContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: stripContainer.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: stripContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: stripContainer.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            stack.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+            collectionView.topAnchor.constraint(equalTo: stripContainer.topAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: stripContainer.bottomAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: stripContainer.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: stripContainer.trailingAnchor),
         ])
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        addGestureRecognizer(tap)
+        tap.cancelsTouchesInView = false
+        collectionView.addGestureRecognizer(tap)
     }
 
     @available(*, unavailable)
@@ -152,8 +152,10 @@ public final class CarouselScrubberView: UIView {
     /// the first and last — sit exactly at the viewport's center.
     private func updateContentInsets() {
         let inset = max(0, (bounds.width - itemSize.width) / 2)
-        scrollView.contentInset.left = inset
-        scrollView.contentInset.right = inset
+        let sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
+        guard layout.sectionInset != sectionInset else { return }
+        layout.sectionInset = sectionInset
+        layout.invalidateLayout()
     }
 
     private func layoutEdgeVeils() {
@@ -165,20 +167,12 @@ public final class CarouselScrubberView: UIView {
     // MARK: - Content
 
     public func setThumbnailCount(_ count: Int) {
-        while itemViews.count > count {
-            let view = itemViews.removeLast()
-            stack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-        while itemViews.count < count {
-            let view = ScrubberItemView(size: itemSize)
-            stack.addArrangedSubview(view)
-            itemViews.append(view)
-        }
+        itemCount = max(count, 0)
         selectedIndex = min(selectedIndex, max(0, count - 1))
-        applySelectionAppearance()
-        setNeedsLayout()
+        reportedVisibleIndices = []
+        collectionView.reloadData()
         layoutIfNeeded()
+        scrollSelectedToCenter(animated: false)
         reportVisibleIndicesIfNeeded()
     }
 
@@ -186,17 +180,15 @@ public final class CarouselScrubberView: UIView {
     /// non-nil image takes the whole chip, covering the mini card's badge and
     /// skeleton text, and nil restores them.
     public func setThumbnail(_ image: UIImage?, at index: Int) {
-        guard itemViews.indices.contains(index) else { return }
-        itemViews[index].setImage(image)
+        itemView(at: index)?.setImage(image)
     }
 
     /// Source badge for a `.miniCards` chip. nil shows the neutral placeholder.
     /// Setting a badge also clears any full-bleed image the chip carried, so a
     /// recycled chip reverts from a media still to a mini card.
     public func setBadge(_ badge: CarouselSourceBadge?, at index: Int) {
-        guard itemViews.indices.contains(index) else { return }
-        itemViews[index].setImage(nil)
-        itemViews[index].setBadge(badge)
+        itemView(at: index)?.setImage(nil)
+        itemView(at: index)?.setBadge(badge)
     }
 
     /// The permanent util card's chip. It is not a save, so it gets neither a
@@ -205,20 +197,19 @@ public final class CarouselScrubberView: UIView {
     /// standing in for the card's button — a shrunken copy of a card that holds
     /// a mark and a control rather than an article.
     public func setUtilityChip(icon: UIImage?, at index: Int) {
-        guard itemViews.indices.contains(index) else { return }
-        itemViews[index].setUtilityIcon(icon)
+        itemView(at: index)?.setUtilityIcon(icon)
     }
 
     /// Artwork layered over a `.miniCards` chip without replacing its thumbnail.
     public func setAccessoryImage(_ image: UIImage?, at index: Int) {
-        guard itemViews.indices.contains(index) else { return }
-        itemViews[index].setAccessoryImage(image)
+        itemView(at: index)?.setAccessoryImage(image)
     }
 
     public func setSelectedIndex(_ index: Int, animated: Bool) {
-        guard itemViews.indices.contains(index) else { return }
+        guard index >= 0, index < itemCount else { return }
+        let oldIndex = selectedIndex
         selectedIndex = index
-        applySelectionAppearance()
+        applySelectionAppearance(from: oldIndex, to: index)
         // While the user is scrolling the strip, their finger (or its
         // momentum) owns the offset; the settle commit re-centers.
         if !isUserScrolling { scrollSelectedToCenter(animated: animated) }
@@ -228,64 +219,70 @@ public final class CarouselScrubberView: UIView {
     /// symmetric content insets guarantee every chip can reach it exactly.
     private func scrollSelectedToCenter(animated: Bool) {
         guard let x = centeringOffsetX(forIndex: selectedIndex),
-              abs(scrollView.contentOffset.x - x) > 0.5 else { return }
-        scrollView.setContentOffset(CGPoint(x: x, y: 0), animated: animated)
+              abs(collectionView.contentOffset.x - x) > 0.5 else { return }
+        collectionView.setContentOffset(CGPoint(x: x, y: 0), animated: animated)
     }
 
     /// The content offset that puts chip `index`'s center at the viewport's
     /// center, or nil before layout can answer.
     private func centeringOffsetX(forIndex index: Int) -> CGFloat? {
-        guard itemViews.indices.contains(index), scrollView.bounds.width > 0
+        guard index >= 0, index < itemCount, collectionView.bounds.width > 0
         else { return nil }
-        let target = itemViews[index]
-        let chipCenterX = target.convert(
-            CGPoint(x: target.bounds.midX, y: 0), to: scrollView).x
-        return chipCenterX - scrollView.bounds.width / 2
+        // Symmetric section insets put item zero at offset zero; every later
+        // center is exactly one fixed pitch farther along.
+        return CGFloat(index) * (itemSize.width + spacing)
     }
 
-    private func applySelectionAppearance() {
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.allowUserInteraction, .curveEaseOut]) {
-            for (index, view) in self.itemViews.enumerated() {
-                view.setSelected(index == self.selectedIndex)
-            }
+    private func applySelectionAppearance(from oldIndex: Int, to newIndex: Int) {
+        guard oldIndex != newIndex else {
+            itemView(at: newIndex)?.setSelected(true)
+            return
         }
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.allowUserInteraction, .curveEaseOut]) {
+            self.itemView(at: oldIndex)?.setSelected(false)
+            self.itemView(at: newIndex)?.setSelected(true)
+        }
+    }
+
+    private func itemView(at index: Int) -> ScrubberItemView? {
+        guard index >= 0, index < itemCount else { return nil }
+        return (collectionView.cellForItem(at: IndexPath(item: index, section: 0))
+            as? ScrubberItemCell)?.itemView
     }
 
     // MARK: - Gestures
 
     private func index(atX x: CGFloat) -> Int {
-        let inStrip = convert(CGPoint(x: x, y: 0), to: stack)
         return CarouselScrubberMath.index(
-            forLocationX: inStrip.x,
+            forLocationX: x - layout.sectionInset.left,
             thumbnailWidth: itemSize.width,
             spacing: spacing,
-            count: itemViews.count)
+            count: itemCount)
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard !itemViews.isEmpty else { return }
-        delegate?.scrubber(self, didTap: index(atX: gesture.location(in: self).x))
+        guard itemCount > 0 else { return }
+        delegate?.scrubber(
+            self, didTap: index(atX: gesture.location(in: collectionView).x))
     }
 
     /// The chip whose centered position is closest to content offset `x` —
     /// i.e. the chip at (or nearest) the viewport's center at that offset.
     private func nearestIndex(toOffsetX x: CGFloat) -> Int {
-        guard !itemViews.isEmpty else { return 0 }
+        guard itemCount > 0 else { return 0 }
         let pitch = itemSize.width + spacing
-        // Chip i sits centered at offset i·pitch − leftInset (see
-        // updateContentInsets), so invert and round to the nearest chip.
-        let index = Int(((x + scrollView.contentInset.left) / pitch).rounded())
-        return min(max(index, 0), itemViews.count - 1)
+        let index = Int((x / pitch).rounded())
+        return min(max(index, 0), itemCount - 1)
     }
 
     private func reportVisibleIndicesIfNeeded() {
-        guard !itemViews.isEmpty, scrollView.bounds.width > 0 else { return }
+        guard itemCount > 0, collectionView.bounds.width > 0 else { return }
         let pitch = itemSize.width + spacing
         let radius = Int(ceil(
-            (scrollView.bounds.width / 2 + itemSize.width / 2) / pitch))
-        let center = nearestIndex(toOffsetX: scrollView.contentOffset.x)
+            (collectionView.bounds.width / 2 + itemSize.width / 2) / pitch))
+        let center = nearestIndex(toOffsetX: collectionView.contentOffset.x)
         let lower = max(0, center - radius)
-        let upper = min(itemViews.count - 1, center + radius)
+        let upper = min(itemCount - 1, center + radius)
         let visible = IndexSet(integersIn: lower...upper)
         guard visible != reportedVisibleIndices else { return }
         reportedVisibleIndices = visible
@@ -295,7 +292,31 @@ public final class CarouselScrubberView: UIView {
 
 // MARK: - Scroll-driven scrubbing
 
-extension CarouselScrubberView: UIScrollViewDelegate {
+extension CarouselScrubberView: UICollectionViewDataSource,
+    UICollectionViewDelegateFlowLayout {
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        numberOfItemsInSection section: Int
+    ) -> Int { itemCount }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        cellForItemAt indexPath: IndexPath
+    ) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: ScrubberItemCell.reuseIdentifier,
+            for: indexPath) as! ScrubberItemCell
+        cell.itemView.reset()
+        cell.itemView.setSelected(indexPath.item == selectedIndex)
+        return cell
+    }
+
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize { itemSize }
 
     public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         selectionFeedback.prepare()
@@ -308,8 +329,9 @@ extension CarouselScrubberView: UIScrollViewDelegate {
         guard isUserScrolling else { return }
         let index = nearestIndex(toOffsetX: scrollView.contentOffset.x)
         guard index != selectedIndex else { return }
+        let oldIndex = selectedIndex
         selectedIndex = index
-        applySelectionAppearance()
+        applySelectionAppearance(from: oldIndex, to: index)
         selectionFeedback.selectionChanged()
         selectionFeedback.prepare()
         delegate?.scrubber(self, didPreview: index)
@@ -340,9 +362,34 @@ extension CarouselScrubberView: UIScrollViewDelegate {
 
     /// The strip settled: commit whichever chip ended up at center.
     private func commitCenteredChip() {
-        guard !itemViews.isEmpty else { return }
-        delegate?.scrubber(self, didCommit: nearestIndex(toOffsetX: scrollView.contentOffset.x))
+        guard itemCount > 0 else { return }
+        delegate?.scrubber(
+            self, didCommit: nearestIndex(toOffsetX: collectionView.contentOffset.x))
     }
+}
+
+private final class ScrubberItemCell: UICollectionViewCell {
+    static let reuseIdentifier = "ScrubberItemCell"
+    let itemView = ScrubberItemView(size: CGSize(width: 44, height: 64))
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.addSubview(itemView)
+        NSLayoutConstraint.activate([
+            itemView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            itemView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            itemView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            itemView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+        ])
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        itemView.reset()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 }
 
 /// A view whose layer is a horizontal alpha gradient used as the strip's
@@ -566,6 +613,13 @@ private final class ScrubberItemView: UIView {
         accessoryImageView.image = image
         accessoryImageView.isHidden = image == nil
         if image != nil { bringSubviewToFront(accessoryImageView) }
+    }
+
+    func reset() {
+        setImage(nil)
+        setBadge(nil)
+        setAccessoryImage(nil)
+        setSelected(false)
     }
 
     func setSelected(_ selected: Bool) {

@@ -32,13 +32,6 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController
-    /// Content for the large scrub overlay. It must render identically to
-    /// `contentControllerForCardAt`; the exact instance may be promoted into
-    /// the centered card when the scrub settles.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController?
     /// Small preview for the scrub strip; call the completion on any queue.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -108,11 +101,6 @@ public protocol CardCarouselDataSource: AnyObject {
 public extension CardCarouselDataSource {
     func carousel(
         _ carousel: CardCarouselViewController,
-        previewContentControllerForCardAt index: Int
-    ) -> CardContentViewController? { nil }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? { nil }
 
@@ -169,12 +157,6 @@ public struct CardCarouselCardStyle: Hashable {
     /// as it approaches an edge. 0 keeps the hard clip, which is what a video
     /// or a product editor wants.
     public var contentEdgeFadeHeight: CGFloat = 0
-    /// Mount and autoplay this card's REAL content while the user scrolls the
-    /// scrub strip, rather than previewing it as a still. Only ever the
-    /// centered preview — a peek mounts content only if the strip already
-    /// prepared it, which is what keeps a sweep from spinning up one AVPlayer
-    /// per chip.
-    public var autoplaysScrubPreview = false
     /// Horizontal swipes INSIDE this card page to the neighbor, for content
     /// with no timeline of its own to scrub. Playable content overrides this
     /// at the moment of the gesture: its whole width IS a timeline.
@@ -564,6 +546,10 @@ public final class CardCarouselViewController: UIViewController {
         super.viewWillDisappear(animated)
         isViewVisible = false
         audioSession.stopVolumeObservation()
+        // A lifecycle interruption must not leave eclipse dressing frozen over
+        // the next appearance. `cancel()` settles according to whether totality
+        // already committed the page turn.
+        pagingTransition.transition?.cancel()
         slots[currentIndex]?.content.cardDidLeaveCenter()
         updatePlaybackControls()
     }
@@ -594,8 +580,8 @@ public final class CardCarouselViewController: UIViewController {
         currentIndex = target
         mountWindow()
         removeOrphanCardViews()
+        stripLoadGeneration += 1
         scrubber.setThumbnailCount(count)
-        loadAllThumbnails()
         guard count > 0 else {
             updatePlaybackControls()
             return
@@ -937,20 +923,13 @@ public final class CardCarouselViewController: UIViewController {
         guard let dataSource else { return nil }
         let content = dataSource.carousel(self, contentControllerForCardAt: index)
         addChild(content)
-        let slot = mount(index: index, existingContent: content)
-        content.didMove(toParent: self)
-        return slot
-    }
-
-    /// Wraps an already-created child content controller in normal card chrome.
-    /// Scrub-preview promotion uses this to preserve the exact live player.
-    private func mount(index: Int, existingContent content: CardContentViewController) -> Slot {
         let card = makeCardView(at: index)
         card.installContentView(content.view)
         content.setMuted(audioSession.isMuted)
         content.audioAvailabilityObserver = self
         content.playbackObserver = self
         cardArea.addSubview(card)
+        content.didMove(toParent: self)
         return Slot(index: index, card: card, content: content)
     }
 
@@ -1196,7 +1175,9 @@ public final class CardCarouselViewController: UIViewController {
         duration: TimeInterval = CardEclipseTransition.duration,
         completion: (() -> Void)? = nil
     ) {
-        guard let transition = makeEclipseTransition(to: target, duration: duration) else {
+        guard let transition = makeEclipseTransition(
+            to: target, duration: duration, completion: completion)
+        else {
             jump(to: target, completion: completion)
             return
         }
@@ -1204,14 +1185,6 @@ public final class CardCarouselViewController: UIViewController {
         // runs (handlePagePan) keep the driving pan alive instead.
         view.isUserInteractionEnabled = false
         transition.animateToFinish()
-        if let completion {
-            let delay = UIAccessibility.isReduceMotionEnabled
-                ? CarouselAnimationTiming.crossfadeDuration
-                : duration + 0.05
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + delay,
-                execute: completion)
-        }
     }
 
     /// Builds one eclipse page transition to `target`, staging an unmounted
@@ -1220,7 +1193,8 @@ public final class CardCarouselViewController: UIViewController {
     /// it settles.
     private func makeEclipseTransition(
         to target: Int,
-        duration: TimeInterval = CardEclipseTransition.duration
+        duration: TimeInterval = CardEclipseTransition.duration,
+        completion: (() -> Void)? = nil
     ) -> CardEclipseTransition? {
         guard let metrics,
               !isTransitioning,
@@ -1276,8 +1250,9 @@ public final class CardCarouselViewController: UIViewController {
                 }
                 return self.performZenithSwap(outgoing: outgoing, step: step, opposite: opposite)
             },
-            completion: { [weak self] _ in
-                self?.settleAfterTransition()
+            completion: { [weak self] finished in
+                self?.settleAfterTransition(
+                    finished: finished, outgoing: outgoing, completion: completion)
             })
         pagingTransition = .automatic(transition)
         return transition
@@ -1285,20 +1260,43 @@ public final class CardCarouselViewController: UIViewController {
 
     /// Runs after a transition finishes OR cancels: restores interactivity,
     /// applies resting layout, and picks up a reload that arrived mid-flight.
-    private func settleAfterTransition() {
+    private func settleAfterTransition(
+        finished: Bool,
+        outgoing: Slot,
+        completion: (() -> Void)?
+    ) {
         isTransitioning = false
         pagingTransition = .none
         view.isUserInteractionEnabled = true
+        if finished { outgoing.content.cardDidLeaveCenter() }
+
+        // Building/tearing down the new three-card window can construct a full
+        // reader or query a backing store. It happens only after the eclipse's
+        // egress is gone, never under its peak frames.
+        let keep = Set((currentIndex - 1)...(currentIndex + 1))
+        for slot in Array(slots.values) where !keep.contains(slot.index) {
+            unmount(slot)
+            slots[slot.index] = nil
+        }
+        mountWindow()
+        for slot in slots.values { slot.card.isHidden = false }
         for slot in slots.values { applyRestingLayout(to: slot) }
         removeOrphanCardViews()
         // Restores target-dependent chrome when an interactive page reverses,
         // and confirms the new target after a successful transition.
         reportNavigationTarget(currentIndex)
+        if finished {
+            applyMuteState()
+            if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
+            scrubber.setSelectedIndex(currentIndex, animated: true)
+            delegate?.carousel(self, didCenterCardAt: currentIndex)
+        }
         updatePlaybackControls()
         if case .pending(let centerIndex) = pendingReload {
             pendingReload = .none
             reloadData(centeringAt: centerIndex)
         }
+        completion?()
     }
 
     /// Behind the eclipse's total-coverage veil: retire the far peek, move the
@@ -1309,33 +1307,11 @@ public final class CardCarouselViewController: UIViewController {
         step: Int,
         opposite: Slot?
     ) -> CardEclipseZenithResult {
-        if let opposite {
-            unmount(opposite)
-            slots[opposite.index] = nil
-        }
+        opposite?.card.isHidden = true
         currentIndex += step
 
         applyRestingLayout(to: outgoing)
-        outgoing.content.cardDidLeaveCenter()
-
-        var enteringCard: UIView?
-        let enteringIndex = currentIndex + step
-        if enteringIndex >= 0, enteringIndex < count, slots[enteringIndex] == nil,
-           let entering = mount(index: enteringIndex) {
-            slots[enteringIndex] = entering
-            applyRestingLayout(to: entering)
-            enteringCard = entering.card
-        }
-
-        if let centered = slots[currentIndex] {
-            centered.content.setMuted(audioSession.isMuted)
-            if isViewVisible { centered.content.cardDidBecomeCentered() }
-        }
-        updateMuteUI()
-        scrubber.setSelectedIndex(currentIndex, animated: true)
-        delegate?.carousel(self, didCenterCardAt: currentIndex)
-        return CardEclipseZenithResult(
-            reappearingPeeks: [outgoing.card, enteringCard].compactMap { $0 })
+        return CardEclipseZenithResult(reappearingPeeks: [outgoing.card])
     }
 
     /// A non-adjacent target is already the moon crossing the current card.
@@ -1346,38 +1322,11 @@ public final class CardCarouselViewController: UIViewController {
         incoming: Slot,
         target: Int
     ) -> CardEclipseZenithResult {
-        outgoing.content.cardDidLeaveCenter()
-
-        let keep = Set((target - 1)...(target + 1))
-        for slot in Array(slots.values) where !keep.contains(slot.index) {
-            unmount(slot)
-            slots[slot.index] = nil
+        for slot in slots.values where slot.index != incoming.index {
+            slot.card.isHidden = true
         }
         currentIndex = target
-
-        var reappearingPeeks: [UIView] = []
-        for index in [target - 1, target + 1] where index >= 0 && index < count {
-            let slot: Slot
-            if let mounted = slots[index] {
-                slot = mounted
-            } else if let mounted = mount(index: index) {
-                slots[index] = mounted
-                slot = mounted
-            } else {
-                continue
-            }
-            applyRestingLayout(to: slot)
-            slot.card.layoutIfNeeded()
-            slot.content.view.layoutIfNeeded()
-            reappearingPeeks.append(slot.card)
-        }
-
-        incoming.content.setMuted(audioSession.isMuted)
-        if isViewVisible { incoming.content.cardDidBecomeCentered() }
-        updateMuteUI()
-        scrubber.setSelectedIndex(currentIndex, animated: true)
-        delegate?.carousel(self, didCenterCardAt: currentIndex)
-        return CardEclipseZenithResult(reappearingPeeks: reappearingPeeks)
+        return CardEclipseZenithResult(reappearingPeeks: [])
     }
 
     /// Non-eclipse move (Reduce Motion, off-window updates, and generic
@@ -1463,10 +1412,7 @@ public final class CardCarouselViewController: UIViewController {
             scrubber.setSelectedIndex(currentIndex, animated: true)
             return
         }
-        let live = scrubPreview.previewContentIndex == target
-            ? scrubPreview.takeContent()
-            : nil
-        promoteScrubPreview(live, to: target)
+        settleScrubPreview(to: target)
     }
 
     /// A direct chip tap always pages through the eclipse, on both the Reader's
@@ -1480,30 +1426,12 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    /// Commits a scrubbed preview with no content swap: the preview's live
-    /// content controller becomes the real centered slot and keeps playing at
-    /// its current timestamp. Passing nil — the preview never built this card's
-    /// content — mounts it fresh instead; either way the preview cards stay up
-    /// until the real window is mounted and laid out underneath them, so the
-    /// handover is invisible and needs no transition to cover it.
-    private func promoteScrubPreview(
-        _ content: CardContentViewController?,
-        to target: Int
-    ) {
+    /// Commits a lightweight scrub preview. The real target is mounted only
+    /// now that the strip has settled; the preview remains above it until the
+    /// new three-card window is laid out, keeping the handover visually quiet.
+    private func settleScrubPreview(to target: Int) {
         slots[currentIndex]?.content.cardDidLeaveCenter()
-
-        // Only a live controller displaces an already-mounted target slot; a
-        // fresh settle keeps whatever real card is standing there behind the
-        // preview and lets `mountWindow` fill in what's missing.
-        if content != nil, let replaced = slots[target] {
-            unmount(replaced)
-            slots[target] = nil
-        }
         currentIndex = target
-
-        if let content {
-            slots[target] = mount(index: target, existingContent: content)
-        }
 
         let keep = Set((target - 1)...(target + 1))
         for slot in Array(slots.values) where !keep.contains(slot.index) {
@@ -1520,11 +1448,10 @@ public final class CardCarouselViewController: UIViewController {
         delegate?.carousel(self, didCenterCardAt: target)
     }
 
-    private func loadAllThumbnails() {
+    private func loadStripVisuals(for indices: IndexSet) {
         guard let dataSource else { return }
-        stripLoadGeneration += 1
         let generation = stripLoadGeneration
-        for index in 0..<count {
+        for index in indices where index >= 0 && index < count {
             if dataSource.carousel(self, prefersUtilityChipForCardAt: index) {
                 loadUtilityChip(at: index, generation: generation)
                 continue
@@ -1757,7 +1684,6 @@ public final class CardCarouselViewController: UIViewController {
             slot.card.setMuteButtonVisible(isCenter && showsMuteButton(for: slot.content))
             slot.card.updateMuteIcon(muted: audioSession.isMuted)
         }
-        scrubPreview.updateMuteButtons()
     }
 }
 
@@ -1862,10 +1788,7 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
 extension CardCarouselViewController: CarouselScrubberViewDelegate {
 
     public func scrubber(_ scrubber: CarouselScrubberView, didShow indices: IndexSet) {
-        // Preparing is per-card self-limiting: a kind that declines prepared
-        // previews (media, whose content is an AVPlayer) returns no controller,
-        // so a sweep still never builds one player per chip.
-        scrubPreview.prepare(indices: indices, cardCount: count)
+        loadStripVisuals(for: indices)
     }
 
     public func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int) {

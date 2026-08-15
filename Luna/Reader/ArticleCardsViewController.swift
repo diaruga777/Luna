@@ -1374,6 +1374,7 @@ final class ReaderCardContentViewController: CardContentViewController,
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
+        settleTitleHandoffForReveal()
         immersionTracker.allowsScrollDrivenImmersion =
             !(delegate?.readerCardUsesTapOnlyScrollChrome(self) ?? false)
         immersionTracker.isActive = true
@@ -1384,8 +1385,26 @@ final class ReaderCardContentViewController: CardContentViewController,
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         isCentered = false
+        pendingProgrammaticTitleUpdate?.cancel()
+        pendingProgrammaticTitleUpdate = nil
+        titleHeader.layer.removeAllAnimations()
         immersionTracker.isActive = false
         setCardChromeVisible(true, animated: false)
+    }
+
+    /// A side card can receive provisional reader layout and queued content-
+    /// offset corrections while another kind is centered. Resolve both title
+    /// copies from the final card bounds before this reader is revealed, and
+    /// discard any handoff decision queued for its old state.
+    private func settleTitleHandoffForReveal() {
+        pendingProgrammaticTitleUpdate?.cancel()
+        pendingProgrammaticTitleUpdate = nil
+        guard isViewLoaded else { return }
+        titleHeader.layer.removeAllAnimations()
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        synchronizeScrollableTitleHeader()
+        updatePinnedTitleVisibility(animated: false)
     }
 
     private func embedReaderIfPossible() {
@@ -1653,6 +1672,11 @@ final class ReaderCardContentViewController: CardContentViewController,
 
     private func scrollOffsetDidChange(in scrollView: UIScrollView?) {
         guard let scrollView, scrollView === titleScrollView else { return }
+        guard isCentered else {
+            pendingProgrammaticTitleUpdate?.cancel()
+            pendingProgrammaticTitleUpdate = nil
+            return
+        }
         if !ScrollPresentationState.isSuppressed(for: scrollView)
             || scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating {
             pendingProgrammaticTitleUpdate?.cancel()

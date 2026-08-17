@@ -346,10 +346,15 @@ Consequences for the deck:
   a hardware volume key also unmutes (KVO on `AVAudioSession.outputVolume`). The
   carousel keeps the session `.ambient(mixWithOthers)` while muted and `.playback`
   when unmuted (`managesAudioSession` opts out for hosts with their own audio stack).
-  The Reader/Core article deck opts into a different immersed seat: when card chrome
-  is dismissed, the same control translates with the card animation to the safe
-  screen top-right, preserving its 12pt card inset; it returns to the card corner
-  as chrome returns. Other decks keep the card-local position.
+  Only video content reports `supportsAudio`, so this button never shows on a
+  reader card — the article deck's read-aloud circle is a screen-level control
+  (`ArticleCardsViewController.readerAudioButton`), and it is THAT circle that
+  parks at the safe screen top-right while the card is immersed
+  (`layoutReaderAudioToggle`): same 12pt corner inset against the screen edges
+  that it keeps against the card's, sliding on the immersion's own 0.32s curve
+  and returning to the card corner with the chrome. The chrome row extends hit
+  testing to the parked circle (`ReaderChromeRowView`), whose transform carries
+  it beyond the row's bounds.
 
 ## Content controllers
 

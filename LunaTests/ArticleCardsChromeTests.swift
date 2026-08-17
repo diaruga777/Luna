@@ -155,6 +155,44 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(audio.frame.width, 38, accuracy: 0.5)
     }
 
+    /// Dismissing the card chrome widens the card, which would run its text
+    /// under the read-aloud circle's card-corner seat. Immersion parks the
+    /// circle at the safe screen top-right with its usual 12pt corner inset,
+    /// keeps it tappable beyond the chrome row's bounds, and returns it to the
+    /// card corner with the chrome.
+    func testImmersionParksReadAloudCircleAtSafeScreenCornerAndRestoresIt() throws {
+        let controller = makeArticleController(seed: "audio-corner", title: "Audio Corner")
+        let card = try XCTUnwrap(
+            controller.carousel.restingCenteredCardFrame(in: controller.view))
+        let audio = try chromeButton(labelled: "Read Aloud", in: controller)
+
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        XCTAssertTrue(controller.carousel.isImmersed)
+        let parked = audio.convert(audio.bounds, to: controller.view)
+        XCTAssertEqual(parked.maxX, controller.view.bounds.maxX - 12, accuracy: 0.5)
+        XCTAssertEqual(
+            parked.minY, controller.view.safeAreaInsets.top + 12, accuracy: 0.5)
+        let hit = controller.view.hitTest(
+            CGPoint(x: parked.midX, y: parked.midY), with: nil)
+        XCTAssertTrue(
+            hit === audio || hit?.isDescendant(of: audio) == true,
+            "the parked circle must stay tappable beyond the chrome row's bounds")
+
+        controller.carousel(
+            controller.carousel, didTapCenteredCardAt: controller.carousel.currentIndex)
+
+        XCTAssertFalse(controller.carousel.isImmersed)
+        let restored = audio.convert(audio.bounds, to: controller.view)
+        XCTAssertEqual(restored.maxX, card.maxX - 12, accuracy: 0.5)
+        XCTAssertEqual(restored.minY, card.minY + 12, accuracy: 0.5)
+    }
+
     /// The footer veil is the one screen-level view that covers the scrub strip
     /// and nothing above it, and it is raised only from the immersion callbacks
     /// — so a card torn down while immersed strands it opaque and the strip

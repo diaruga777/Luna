@@ -191,11 +191,6 @@ public struct CardCarouselStyle {
     /// screen background. The centered card's rim fades with the rest of the
     /// carousel chrome during immersion.
     public var showsCardBorder = false
-    /// While immersed, moves the centered card's mute toggle from the card's
-    /// top-right corner to the screen's safe top-right corner. It keeps the
-    /// same 12pt card inset in both positions and translates with the card's
-    /// own immersion animation.
-    public var movesMuteButtonToScreenEdgeWhenImmersed = false
     /// How far the paused card's playback controls sit in from the card's
     /// bottom and side edges — the mute button's inset from the top, so the
     /// card's floating controls all keep the same margin.
@@ -843,26 +838,8 @@ public final class CardCarouselViewController: UIViewController {
         // same animation transaction. Reader text animates independently, but
         // its clipping viewport must share the card's exact interpolation.
         slot.card.layoutIfNeeded()
-        updateCenteredMuteButtonPosition()
         // The card must ride above its (fading) peeking neighbors.
         if isImmersed { cardArea.bringSubviewToFront(slot.card) }
-    }
-
-    /// The Reader's immersive viewport needs the audio control outside its
-    /// scrollable card. Calculate a translation from the card's destination
-    /// frame, rather than changing its constraints, so it interpolates in the
-    /// same transaction as the card frame and returns exactly with it.
-    private func updateCenteredMuteButtonPosition() {
-        guard let card = slots[currentIndex]?.card else { return }
-        guard isImmersed, style.movesMuteButtonToScreenEdgeWhenImmersed else {
-            card.setMuteButtonTranslation(.zero)
-            return
-        }
-
-        let cardFrame = card.convert(card.bounds, to: view)
-        card.setMuteButtonTranslation(CGPoint(
-            x: view.bounds.maxX - cardFrame.maxX,
-            y: view.safeAreaInsets.top - cardFrame.minY))
     }
 
     /// Resolve the destination frame before UIKit starts interpolating the
@@ -1008,7 +985,6 @@ public final class CardCarouselViewController: UIViewController {
             scaleX: metrics.scale(forSlotOffset: offset),
             y: metrics.scale(forSlotOffset: offset))
         card.dimAlpha = offset == 0 ? 0 : CarouselCardView.restingDimAlpha
-        card.setMuteButtonTranslation(.zero)
     }
 
     /// Removes any card view left in the hierarchy that no mounted slot owns —

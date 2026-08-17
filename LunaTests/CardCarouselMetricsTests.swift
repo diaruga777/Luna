@@ -777,29 +777,6 @@ private final class OneCardViewportDataSource: @preconcurrency CardCarouselDataS
 }
 
 @MainActor
-private final class AudioCardContent: CardContentViewController {
-    override var supportsAudio: Bool { true }
-}
-
-@MainActor
-private final class OneAudioCardDataSource: @preconcurrency CardCarouselDataSource {
-    let content = AudioCardContent()
-
-    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 1 }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        contentControllerForCardAt index: Int
-    ) -> CardContentViewController { content }
-
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        loadThumbnailForCardAt index: Int,
-        completion: @escaping (UIImage?) -> Void
-    ) { completion(nil) }
-}
-
-@MainActor
 final class CardCarouselExpandedImmersionTests: XCTestCase {
 
     private func makeCarousel() -> (CardCarouselViewController, OneCardViewportDataSource) {
@@ -846,47 +823,6 @@ final class CardCarouselExpandedImmersionTests: XCTestCase {
         wait(for: [completion], timeout: 1)
         XCTAssertEqual(source.content.completions.count, 1,
                        "the content must always retire its temporary presentation")
-    }
-
-    func testImmersionPinsOptedInMuteToggleToSafeScreenCornerAndRestoresIt() throws {
-        let source = OneAudioCardDataSource()
-        let carousel = CardCarouselViewController()
-        var style = CardCarouselStyle()
-        style.movesMuteButtonToScreenEdgeWhenImmersed = true
-        carousel.style = style
-        carousel.dataSource = source
-        carousel.loadViewIfNeeded()
-        carousel.view.frame = CGRect(x: 0, y: 0, width: 1_024, height: 1_366)
-        carousel.view.layoutIfNeeded()
-        carousel.reloadData()
-        carousel.view.layoutIfNeeded()
-
-        let button = try XCTUnwrap(Self.findButton(labelled: "Unmute", in: carousel.view))
-        let restingCard = try XCTUnwrap(carousel.restingCenteredCardFrame(in: carousel.view))
-        let resting = button.convert(button.bounds, to: carousel.view)
-        XCTAssertEqual(resting.maxX, restingCard.maxX - CarouselCardView.muteButtonInset, accuracy: 0.5)
-        XCTAssertEqual(resting.minY, restingCard.minY + CarouselCardView.muteButtonInset, accuracy: 0.5)
-
-        carousel.setImmersed(true, extendsCard: true, horizontalInset: 16, animated: false)
-        let immersed = button.convert(button.bounds, to: carousel.view)
-        XCTAssertEqual(
-            immersed.maxX,
-            carousel.view.bounds.maxX - CarouselCardView.muteButtonInset,
-            accuracy: 0.5)
-        XCTAssertEqual(
-            immersed.minY,
-            carousel.view.safeAreaInsets.top + CarouselCardView.muteButtonInset,
-            accuracy: 0.5)
-
-        carousel.setImmersed(false, animated: false)
-        let restored = button.convert(button.bounds, to: carousel.view)
-        XCTAssertEqual(restored.maxX, restingCard.maxX - CarouselCardView.muteButtonInset, accuracy: 0.5)
-        XCTAssertEqual(restored.minY, restingCard.minY + CarouselCardView.muteButtonInset, accuracy: 0.5)
-    }
-
-    private static func findButton(labelled label: String, in view: UIView) -> UIButton? {
-        if let button = view as? UIButton, button.accessibilityLabel == label { return button }
-        return view.subviews.lazy.compactMap { findButton(labelled: label, in: $0) }.first
     }
 }
 

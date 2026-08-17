@@ -41,7 +41,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
 
     private let store = SavesStore.shared
     // Screen-level reader chrome (see mountTopChrome / configureTrailingBottomButton).
-    private let readerChromeRow = UIView()
+    private let readerChromeRow = ReaderChromeRowView()
     /// The focused RSVP reader's eye-tracking toggle while this deck has
     /// adopted it into `readerChromeRow` (see `syncAdoptedEyeTrackingToggle`).
     private weak var adoptedEyeTrackingToggle: UIButton?
@@ -94,11 +94,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         // mode) read against a same-tone background; fades with the chrome on
         // immersion.
         style.showsCardBorder = true
-        // When a scroll reader dismisses its card chrome, its audio mute
-        // toggle follows the hosted scroll indicator to the safe screen edge.
-        // The shared ArticleCards controller backs both Luna Reader and Luna
-        // Core, so this one setting covers their identical reader surface.
-        style.movesMuteButtonToScreenEdgeWhenImmersed = true
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         // The cards themselves come from the ONE provider, exactly as the other
         // three apps' roots do. This class contributes screen chrome and nothing
@@ -316,6 +311,45 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
     /// indicator to its target and cut the animation short.
     private var isIndicatorSliding = false
 
+    /// The read-aloud circle's twin of `isIndicatorSliding`.
+    private var isAudioToggleSliding = false
+
+    /// Parks the read-aloud circle at the safe screen top-right while the card
+    /// is immersed: the widened card would otherwise run its text under the
+    /// circle's card-corner seat. It keeps `chromeCardCornerInset` against its
+    /// new edges (the same margin it keeps against the card's), slides on the
+    /// immersion's own 0.32s ease-in-out, and returns to the card corner with
+    /// the chrome. A transform, not a re-frame, so the row's layout stays the
+    /// single card-corner answer for every circle.
+    private func layoutReaderAudioToggle(animated: Bool) {
+        let target: CGAffineTransform
+        if carousel.isImmersed {
+            let inset = Self.chromeCardCornerInset
+            let diameter = Self.chromeButtonDiameter
+            // `center` and the row's frame ignore the button's own transform,
+            // so this is the circle's card-corner seat mid-slide too.
+            let seat = CGRect(
+                x: readerChromeRow.frame.minX + readerAudioButton.center.x - diameter / 2,
+                y: readerChromeRow.frame.minY + readerAudioButton.center.y - diameter / 2,
+                width: diameter, height: diameter)
+            target = CGAffineTransform(
+                translationX: view.bounds.maxX - inset - seat.maxX,
+                y: view.safeAreaInsets.top + inset - seat.minY)
+        } else {
+            target = .identity
+        }
+        guard readerAudioButton.transform != target else { return }
+        guard animated else {
+            readerAudioButton.transform = target
+            return
+        }
+        isAudioToggleSliding = true
+        UIView.animate(
+            withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
+            animations: { self.readerAudioButton.transform = target },
+            completion: { [weak self] _ in self?.isAudioToggleSliding = false })
+    }
+
     /// Places the reader's scroll indicator at the centered card's trailing edge,
     /// sliding it out to the screen edge while the card is immersed. Only the
     /// indicator moves — the reader keeps its inset, so nothing relayouts.
@@ -377,6 +411,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
             }
         }
         if !isIndicatorSliding { layoutCardScrollIndicator(animated: false) }
+        if !isAudioToggleSliding { layoutReaderAudioToggle(animated: false) }
         let fadeStart = settingsButton.frame.minY - Self.contentEdgeFade
         footerContentFade.frame = CGRect(
             x: 0, y: fadeStart, width: view.bounds.width,
@@ -591,6 +626,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController,
         archiveTray?.setChromeHidden(false, animated: false)
         updateBottomModeSwitcher(immersed: false, animated: false)
         layoutCardScrollIndicator(animated: false)
+        layoutReaderAudioToggle(animated: false)
     }
 
     // MARK: - Data
@@ -848,9 +884,11 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         ) {
             self.footerContentFade.alpha = immersed && extendsCard ? 1 : 0
         }
-        // Slide the scroll indicator between the card edge and the screen
-        // edge in step with the immersion (setImmersed's 0.32s ease-in-out).
+        // Slide the scroll indicator and the read-aloud circle between the
+        // card edge and the screen edge in step with the immersion
+        // (setImmersed's 0.32s ease-in-out).
         layoutCardScrollIndicator(animated: true)
+        layoutReaderAudioToggle(animated: true)
     }
 
     /// A mode switch under a dismissed chrome swaps the reader's content without
@@ -997,6 +1035,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // The card becomes a card again BEFORE it travels, so what slides left is
         // the resting footprint the right column is sized against.
         carousel.setImmersed(false, extendsCard: true, animated: true)
+        layoutReaderAudioToggle(animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
             options: [.curveEaseInOut, .allowUserInteraction]
@@ -2001,5 +2040,21 @@ private final class ReaderFooterContentFadeView: UIView {
             background.cgColor,
             background.cgColor,
         ]
+    }
+}
+
+/// The chrome row's frame hugs the resting card's top corners, but the
+/// read-aloud circle rides a transform out to the safe screen corner while the
+/// card is immersed (`layoutReaderAudioToggle`). Hit-test where a visible
+/// circle actually renders, so the parked circle stays tappable beyond the
+/// row's bounds.
+private final class ReaderChromeRowView: UIView {
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if super.point(inside: point, with: event) { return true }
+        return subviews.contains { subview in
+            !subview.isHidden && subview.alpha > 0.01
+                && subview.isUserInteractionEnabled
+                && subview.point(inside: convert(point, to: subview), with: event)
+        }
     }
 }

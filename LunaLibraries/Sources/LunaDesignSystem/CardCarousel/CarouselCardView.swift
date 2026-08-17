@@ -19,11 +19,8 @@ public protocol CarouselCardViewDelegate: AnyObject {
 
 public final class CarouselCardView: CardSurfaceView {
 
-    /// The geometry shared by every card-local floating control. Hosts that
-    /// temporarily move the mute button beyond the card use these values to
-    /// preserve its exact card-mode margin against their new edge.
-    public static let muteButtonInset: CGFloat = 12
-    public static let muteButtonDiameter: CGFloat = 36
+    private static let muteButtonInset: CGFloat = 12
+    private static let muteButtonDiameter: CGFloat = 36
 
     public weak var delegate: CarouselCardViewDelegate?
 
@@ -80,14 +77,6 @@ public final class CarouselCardView: CardSurfaceView {
 
     public func setMuteButtonVisible(_ visible: Bool) {
         muteButton.isHidden = !visible
-    }
-
-    /// Translates the mute toggle independently of its card. The carousel uses
-    /// this while a reader card sheds its surrounding chrome: the card can keep
-    /// animating its viewport while the toggle lands at the safe screen edge.
-    public func setMuteButtonTranslation(_ translation: CGPoint) {
-        muteButton.transform = CGAffineTransform(
-            translationX: translation.x, y: translation.y)
     }
 
     /// Hides the card's own surface tone (animatable). While immersed the

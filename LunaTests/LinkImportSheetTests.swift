@@ -191,7 +191,7 @@ final class LinkImportSheetTests: XCTestCase {
 
         XCTAssertEqual(sectionTitles(sheet), ["Summary"])
         XCTAssertEqual(
-            rowTitles(sheet, section: 0), ["1 imported", "1 couldn't be downloaded yet"])
+            rowTitles(sheet, section: 0), ["1 imported", "1 couldn't be fetched yet"])
     }
 
     func testTheSummaryReportsAlreadySavedLinks() async {

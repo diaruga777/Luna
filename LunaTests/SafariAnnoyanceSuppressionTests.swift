@@ -229,6 +229,134 @@ final class SafariAnnoyanceSuppressionTests: XCTestCase {
         XCTAssertEqual(evaluate(expression, html: html), "visible|consent|content|rejected")
     }
 
+    // MARK: - Pinned nag bars
+
+    /// A page whose viewport is filled the way a phone's is, so a bar's height maps
+    /// to the same fraction of the screen the production heuristics measure.
+    private static func pinnedBarPage(_ bar: String) -> String {
+        """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        </head><body style="margin:0">
+        <main><article><p>The story must survive whatever is pinned over it.</p></article></main>
+        \(bar)
+        </body></html>
+        """
+    }
+
+    /// Forces the pass rather than waiting out the sweep's throttle timer.
+    private static let suppressedState = """
+    (function () {
+      window.__lunaSuppressAnnoyancesNow();
+      return [document.querySelector('#bar').dataset.lunaSuppressed || 'visible',
+              document.querySelector('article') ? 'content' : 'gone'].join('|');
+    }())
+    """
+
+    /// The Forbes case. A subscription ribbon is held against the bottom of the
+    /// viewport for the whole article, but nothing about it is findable by name —
+    /// its class is "ribbon red", which matches no overlay probe — and at 90pt it
+    /// covers far too little of the screen for the area gate. It is reached by
+    /// hit-testing the viewport edges, and recognized by what it ASKS.
+    func testPinnedSubscriptionRibbonIsHidden() {
+        let html = Self.pinnedBarPage("""
+        <div id="bar" class="ribbon red"
+             style="position:fixed;left:0;right:0;bottom:0;height:90px;background:#c00">
+          <p>Less than $2/week. Become a Forbes Member.</p>
+          <a href="/subscribe">Subscribe Now</a>
+        </div>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "popover|content")
+    }
+
+    /// The other half of the same rule, and the line this layer does not cross: an
+    /// ad slot in the identical position, the identical size, pinned just as hard.
+    /// It carries no ask, so nothing hides it — a publisher keeps its advertising.
+    func testPinnedAdBarInTheSamePositionIsPreserved() {
+        let html = Self.pinnedBarPage("""
+        <div id="bar" class="ad-slot mobile-sticky"
+             style="position:fixed;left:0;right:0;bottom:0;height:90px">
+          <iframe src="about:blank" title="advertisement"></iframe>
+        </div>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "visible|content")
+    }
+
+    /// A publisher's pinned header sells things — "subscribe to our newsletter"
+    /// sits in the masthead of half the web. Hiding it would take the site's own
+    /// navigation away with it, so site chrome is exempt however it reads.
+    func testPinnedSiteHeaderWithMarketingCopyIsPreserved() {
+        let html = Self.pinnedBarPage("""
+        <header id="bar" style="position:fixed;left:0;right:0;top:0;height:90px">
+          <nav><a href="/news">News</a> <a href="/tech">Tech</a></nav>
+          <p>Subscribe to our newsletter.</p>
+        </header>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "visible|content")
+    }
+
+    /// The menu PANEL is the harder half: a nameless div inside the header, opened
+    /// over the whole viewport, whose copy reads like a nag because a masthead menu
+    /// always carries one. What separates it from a ribbon rendered in the same
+    /// header is that it is a cluster of links — it navigates.
+    func testHeaderMenuPanelIsPreservedEvenThoughItReadsLikeANag() {
+        let html = Self.pinnedBarPage("""
+        <header>
+          <div id="bar" style="position:fixed;inset:0">
+            <a href="/news">News</a> <a href="/tech">Tech</a>
+            <a href="/money">Money</a> <a href="/life">Life</a>
+            <p>Become a member. Get unlimited access.</p>
+          </div>
+        </header>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "visible|content")
+    }
+
+    /// A ribbon a publisher renders INSIDE its header is still a ribbon. It asks
+    /// one thing and links once, so the link cluster that exempts a menu does not
+    /// exempt it.
+    func testSubscriptionRibbonInsideTheHeaderIsStillHidden() {
+        let html = Self.pinnedBarPage("""
+        <header>
+          <div id="bar" class="promo"
+               style="position:fixed;left:0;right:0;bottom:0;height:90px">
+            <p>Become a member for less than $2 a week.</p>
+            <a href="/subscribe">Subscribe</a>
+          </div>
+        </header>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "popover|content")
+    }
+
+    /// The edge sweep must not become a back door around "Decline cookies for me".
+    /// A consent banner is very often a bar pinned to the bottom of the viewport —
+    /// exactly the shape the sweep hunts — so with the gate OFF, the pass that finds
+    /// nag bars has to leave this one alone and let the user answer it themselves.
+    func testPinnedConsentBannerIsLeftAloneWithCookieAutoDeclineOff() {
+        let html = Self.pinnedBarPage("""
+        <div id="bar" class="cookie-consent"
+             style="position:fixed;left:0;right:0;bottom:0;height:90px">
+          <p>We use cookies. Subscribe to our newsletter too.</p>
+          <button>Accept all</button>
+          <button onclick="document.body.dataset.choice='refused'">Reject all</button>
+        </div>
+        """)
+        XCTAssertEqual(
+            evaluate(Self.suppressedState, html: html, cookieAutoDecline: false),
+            "visible|content")
+    }
+
+    /// The bar rule is about what takes the screen, not about anything positioned.
+    /// A reading-progress rule is pinned and full width and must stay.
+    func testThinPinnedProgressBarIsNotAnOverlay() {
+        let html = Self.pinnedBarPage("""
+        <div id="bar" class="progress"
+             style="position:fixed;left:0;right:0;top:0;height:4px;background:#0a0">
+          <span>Become a member</span>
+        </div>
+        """)
+        XCTAssertEqual(evaluate(Self.suppressedState, html: html), "visible|content")
+    }
+
     // MARK: - The cookie auto-decline gate
 
     /// The shipped default, with the production stylesheet in the page: the banner
@@ -301,10 +429,16 @@ final class SafariAnnoyanceSuppressionTests: XCTestCase {
         XCTAssertEqual(
             evaluate(expression, html: html, cookieAutoDecline: false),
             "visible|none|popover")
-        // And with the gate on, the consent path owns the page: the banner is
-        // refused and hidden, and the pass stops there rather than second-guessing
-        // what else might be on top of it.
-        XCTAssertEqual(evaluate(expression, html: html), "consent|refused|visible")
+        // With the gate on, the consent path owns the BANNER — refused and hidden —
+        // and `scan` still ends its pass there rather than second-guessing what else
+        // sits on top of it. The newsletter overlay is reached anyway, by the
+        // viewport-edge sweep, which is a separate pass over what actually covers
+        // the reader and does not care where the scan stopped. That is the answer
+        // this page should give either way round: whether a newsletter modal gets
+        // suppressed is not a thing the cookie setting should decide. The sweep
+        // still skips consent UI itself (`considerEdgeElement` re-checks
+        // `semanticConsentRoot`), so nothing here reconsiders the banner.
+        XCTAssertEqual(evaluate(expression, html: html), "consent|refused|popover")
     }
 
     // MARK: - What counts as a refusal

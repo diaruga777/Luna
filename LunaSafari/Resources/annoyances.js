@@ -186,13 +186,28 @@
         /continue (?:reading )?in (?:our|the) app/,
         /download (?:our|the) app/,
         /take (?:our|a) (?:quick )?survey/,
-        /we'd love your feedback/,
+        // `normalizeLabel` strips the apostrophe, so the phrase arrives as "we d".
+        /we d love your feedback/,
         /disable (?:your )?ad ?block(?:er)?/,
         /turn off (?:your )?ad ?block(?:er)?/,
         /please whitelist (?:us|this site)/,
         /continue to (?:the )?(?:site|article|content)/,
         /close (?:this )?ad(?:vertisement)?/,
-        /skip (?:this )?ad(?:vertisement)?/
+        /skip (?:this )?ad(?:vertisement)?/,
+        // Subscription and membership nags — the standing "become a member" ribbon a
+        // publisher pins over its own article. Such a ribbon is an overlay by every
+        // other measure this layer uses; only its wording went unmatched, so a page
+        // could carry one permanently with nothing suppressed. Each pattern is an
+        // ASK, never the bare word "subscribe": a nav item reading "Subscribe", a
+        // footer link, or an article ABOUT subscriptions must not read as an
+        // annoyance. `normalizeLabel` has already removed the punctuation these
+        // phrases are usually written with ("$2/week." arrives as "2 week").
+        /become a (?:[a-z]+ )?member\b/,
+        /become a (?:[a-z]+ )?subscriber\b/,
+        /subscribe to (?:continue|read|keep reading|unlock)/,
+        /subscribe (?:now )?(?:for|from) (?:just|only|less than|as little as)/,
+        /start your (?:free )?(?:trial|subscription|membership)/,
+        /support (?:our|independent|trusted|quality) journalism/
     ];
 
     function normalizeLabel(value) {
@@ -423,6 +438,49 @@
             .test(identity + " " + text);
     }
 
+    // A bar shorter than this is page furniture — a reading-progress rule, a rank
+    // of breadcrumbs — rather than something that takes the screen.
+    var PINNED_BAR_MIN_HEIGHT = 40;
+    // How close to an edge still counts as held against it. Another pinned bar (an
+    // ad slot, a toolbar) commonly sits between a nag and the edge, so exact
+    // contact is too strict a test.
+    var PINNED_BAR_EDGE_FRACTION = 0.1;
+
+    // A full-width bar held against the top or bottom of the viewport. The area
+    // gate asks "does this cover enough of the screen", which is the wrong question
+    // for a bar: a nag ribbon follows the reader down the page and cannot be
+    // dismissed, and its area is small BECAUSE it is a bar. It still has to carry
+    // annoyance language before anything hides it, so an ad slot — which carries no
+    // copy at all — is unaffected by this branch.
+    function isPinnedBar(element, rect, viewportWidth, viewportHeight) {
+        if (rect.height < PINNED_BAR_MIN_HEIGHT) { return false; }
+        if (rect.width < viewportWidth * 0.95) { return false; }
+        // Scrolled out of the viewport: held against nothing.
+        if (rect.bottom <= 0 || rect.top >= viewportHeight) { return false; }
+        var slack = viewportHeight * PINNED_BAR_EDGE_FRACTION;
+        return rect.top <= slack || rect.bottom >= viewportHeight - slack;
+    }
+
+    // Site navigation is not an annoyance. A publisher's pinned header and its menu
+    // panel carry marketing copy often enough to match the text list, and hiding
+    // either takes the page's own controls away with it.
+    //
+    // Three shapes, because the menu PANEL is usually a nameless div INSIDE the
+    // <header> rather than the <header> itself: the element is chrome, it contains
+    // chrome, or it sits inside chrome and is itself a cluster of links. The link
+    // count is what separates that panel from a nag ribbon a publisher happens to
+    // render inside its header — a ribbon asks one thing and links once or twice.
+    var SITE_CHROME_SELECTOR = 'nav, header, [role="navigation"], [role="banner"]';
+    var MENU_LINK_COUNT = 4;
+
+    function holdsSiteChrome(element) {
+        if (element.matches && element.matches(SITE_CHROME_SELECTOR)) { return true; }
+        if (element.querySelector && element.querySelector(SITE_CHROME_SELECTOR)) { return true; }
+        if (!element.closest || !element.closest(SITE_CHROME_SELECTOR)) { return false; }
+        return !!element.querySelectorAll
+            && element.querySelectorAll("a[href]").length >= MENU_LINK_COUNT;
+    }
+
     function isOverlay(element) {
         if (!element || element.nodeType !== 1 || element === document.body || element === document.documentElement) {
             return false;
@@ -442,14 +500,16 @@
         if (!positioned) { return false; }
 
         var rect = element.getBoundingClientRect();
-        var viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-        return (rect.width * rect.height) / viewportArea >= 0.18;
+        var viewportWidth = Math.max(1, window.innerWidth);
+        var viewportHeight = Math.max(1, window.innerHeight);
+        if ((rect.width * rect.height) / (viewportWidth * viewportHeight) >= 0.18) { return true; }
+        return isPinnedBar(element, rect, viewportWidth, viewportHeight);
     }
 
     function processPopover(element) {
         if (!element || element.nodeType !== 1) { return false; }
         if (Date.now() - lastInteraction < 1500) { return false; }
-        if (!isOverlay(element) || isProtectedDialog(element)) { return false; }
+        if (!isOverlay(element) || isProtectedDialog(element) || holdsSiteChrome(element)) { return false; }
         if (!hasAnnoyanceLanguage(element) && !isEmailCaptureOverlay(element)) { return false; }
         if (hide(element, "popover")) {
             stats.popoversHidden++;
@@ -517,6 +577,79 @@
         discoverShadowRoots(root);
     }
 
+    // ---- The viewport-edge sweep ------------------------------------------
+    //
+    // `candidateOverlays` finds an annoyance by NAME — a class or id holding
+    // "modal", "popup", "overlay". A pinned nag bar routinely has no such name to
+    // find: under CSS modules its class is a content hash ("eL2b8AyM"), which says
+    // nothing about what the element is, and no selector can be written for it.
+    //
+    // What such a bar does have is a POSITION. It is held against an edge of the
+    // viewport, on top of the page, which is the whole reason it is worth
+    // suppressing. So look where the reader is actually being covered: hit-test a
+    // few points along the top and bottom edges and consider whatever is stacked
+    // there. The cost is a fixed handful of hit tests rather than a walk of the
+    // document, and it depends on no markup convention at all.
+    //
+    // Everything found still goes through the same ladder as any other candidate —
+    // overlay shape, no protected dialog, annoyance language, the page-content
+    // guard in `hide`. This only decides what gets LOOKED at.
+
+    // Rows as fractions of viewport height. The two inset from each edge clear a
+    // bar that is already pinned there (an ad slot, a toolbar) so a nag stacked
+    // above it is still found.
+    var EDGE_PROBE_ROWS = [0.005, 0.04, 0.90, 0.95, 0.99];
+    var EDGE_PROBE_COLUMNS = [0.2, 0.5, 0.8];
+    // A sticky bar moves with the page and appears on scroll without mutating, so
+    // the sweep answers to scrolling too. Trailing-throttled: this forces layout.
+    var EDGE_SWEEP_INTERVAL = 500;
+    var edgeSweepTimer = null;
+    var lastEdgeSweep = -Infinity;
+
+    function considerEdgeElement(element) {
+        if (!element || element.nodeType !== 1) { return; }
+        // The page itself is never a nag, and this is the cheap test — it keeps the
+        // subtree queries below off <body>, <html> and every content wrapper in the
+        // hit-test stack.
+        if (holdsPageContent(element)) { return; }
+        if (element.classList && element.classList.contains(HIDDEN_CLASS)) { return; }
+        // Consent UI has its own path and its own user switch. The generic popover
+        // pass must never reconsider it — least of all with auto-decline off, where
+        // hiding the dialog would take away the choice the user asked to make.
+        if (semanticConsentRoot(element)) { return; }
+        processPopover(element);
+    }
+
+    function sweepViewportEdges() {
+        lastEdgeSweep = Date.now();
+        if (!document.elementsFromPoint) { return; }
+        var width = window.innerWidth, height = window.innerHeight;
+        if (!width || !height) { return; }
+        var seen = [];
+        for (var r = 0; r < EDGE_PROBE_ROWS.length; r++) {
+            for (var c = 0; c < EDGE_PROBE_COLUMNS.length; c++) {
+                var stack;
+                try {
+                    stack = document.elementsFromPoint(
+                        EDGE_PROBE_COLUMNS[c] * width, EDGE_PROBE_ROWS[r] * height);
+                } catch (e) { continue; }
+                for (var i = 0; i < stack.length; i++) {
+                    if (seen.indexOf(stack[i]) < 0) { seen.push(stack[i]); }
+                }
+            }
+        }
+        for (var j = 0; j < seen.length; j++) { considerEdgeElement(seen[j]); }
+    }
+
+    function scheduleEdgeSweep() {
+        if (edgeSweepTimer !== null) { return; }
+        var wait = Math.max(0, EDGE_SWEEP_INTERVAL - (Date.now() - lastEdgeSweep));
+        edgeSweepTimer = setTimeout(function () {
+            edgeSweepTimer = null;
+            sweepViewportEdges();
+        }, wait);
+    }
+
     var observer = new MutationObserver(function (mutations) {
         for (var i = 0; i < mutations.length; i++) {
             if (mutations[i].type === "childList") {
@@ -527,6 +660,7 @@
                 scan(mutations[i].target);
             }
         }
+        scheduleEdgeSweep();
     });
 
     function observeRoot(root) {
@@ -692,11 +826,22 @@
         });
     }
 
-    document.addEventListener("DOMContentLoaded", function () { scan(document.documentElement); }, { once: true });
+    document.addEventListener("DOMContentLoaded", function () {
+        scan(document.documentElement);
+        scheduleEdgeSweep();
+    }, { once: true });
+    window.addEventListener("load", scheduleEdgeSweep, { once: true });
+    // A sticky bar reaches its pinned position by SCROLLING, with no mutation to
+    // observe — a nag that only shows up part-way down the article is reached here
+    // and nowhere else.
+    window.addEventListener("scroll", scheduleEdgeSweep, { passive: true });
 
     // Bare-WKWebView verification hooks. They are intentionally read-only except
     // for the explicit rescan function used by deterministic fixtures.
-    window.__lunaSuppressAnnoyancesNow = function () { scan(document.documentElement); };
+    window.__lunaSuppressAnnoyancesNow = function () {
+        scan(document.documentElement);
+        sweepViewportEdges();
+    };
     // The gate, without a background page to relay it: set
     // `window.__lunaCookieAutoDecline = false` BEFORE this script is evaluated to
     // start off, or call this to flip it afterwards (which reveals what was

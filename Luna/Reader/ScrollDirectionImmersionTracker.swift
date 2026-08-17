@@ -78,10 +78,11 @@ final class ScrollDirectionImmersionTracker: RSVPPlaybackObserving {
 
     /// Downward travel (pt) before the chrome fades away…
     private static let fadeOutTravel: CGFloat = 100
-    /// …and the smaller upward travel that deliberately signals surfacing.
-    /// This still absorbs line-height jitter, but makes chrome return promptly
-    /// without matching the longer downward dismissal gesture.
-    private static let fadeInTravel: CGFloat = 50
+    /// …and the upward travel that deliberately signals surfacing. Kept close
+    /// to `fadeOutTravel` rather than well under it: a value much smaller let a
+    /// brief correction scroll while reading on — or a decelerating scroll's
+    /// natural rebound — bring the chrome back unintentionally.
+    private static let fadeInTravel: CGFloat = 90
     /// A downward reading gesture this close to the bottom must not dismiss
     /// chrome. The position-driven bottom restore is about to take ownership,
     /// and letting the directional rule fire in the same region makes the two

@@ -956,10 +956,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        // Only relax for the sentence long-press so it doesn't fight the text view's
-        // built-in selection recognizers. Every other pairing keeps UIKit's defaults,
-        // so link/image handling is unchanged.
-        gestureRecognizer === sentenceLongPress || otherGestureRecognizer === sentenceLongPress
+        // Only relax the sentence long-press against textView's OWN recognizers
+        // (its built-in selection drivers) so it doesn't fight them. A recognizer
+        // on an ancestor view — the carousel's chrome-toggle tap, a card's
+        // context-menu hold — must NOT be allowed to fire alongside a text
+        // selection; keeping UIKit's default there is what stops a long-press
+        // selection from also toggling the card chrome on finger-lift.
+        guard gestureRecognizer === sentenceLongPress || otherGestureRecognizer === sentenceLongPress
+        else { return false }
+        let other = gestureRecognizer === sentenceLongPress ? otherGestureRecognizer : gestureRecognizer
+        return other.view === textView
     }
 
     @objc private func handleSentenceLongPress(_ gesture: UILongPressGestureRecognizer) {

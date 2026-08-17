@@ -1824,7 +1824,12 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
                 otherIsScrollViewPan: isScrollViewPan,
                 pagePanIsTrackingTheTouch: pagePan.state == .began || pagePan.state == .changed)
         }
+        // Additive only against other taps (a link, a button inside embedded
+        // content) — never against a long-press-family recognizer, so a content
+        // long-press (text selection, a card's own context menu) doesn't also
+        // let this tap fire on finger-lift and toggle the chrome.
         return gestureRecognizer is UITapGestureRecognizer
+            && otherGestureRecognizer is UITapGestureRecognizer
     }
 }
 

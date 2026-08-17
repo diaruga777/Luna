@@ -250,6 +250,36 @@ injection used by the Luna action pill.
   catches newsletter/email modals whose copy matches none of the text patterns (or is
   in an unmatched language); it stays safe because the protected-dialog guard has
   already excluded anything with a password/OTP or login/checkout/billing wording.
+- **Pinned nag bars, found by POSITION rather than by name.** A subscription ribbon a
+  publisher holds against the bottom of the viewport for the whole article fails both
+  halves of the test above: at ~90pt it covers far too little of the screen for the
+  coverage gate, and its class is either meaningless (`ribbon red`) or a CSS-module
+  content hash (`eL2b8AyM`), so no selector can be written for it. Forbes ships exactly
+  this, and the whole layer used to hide **nothing** on such a page. Two changes:
+  - `isOverlay` accepts a **pinned bar** — full width, at least 40pt tall, held within
+    10% of the viewport height of the top or bottom edge. Area is the wrong question
+    for a bar: it follows the reader down the page and cannot be dismissed, and its
+    area is small *because* it is a bar. The 10% slack is because another pinned bar
+    (an ad slot, a toolbar) commonly sits between the nag and the edge.
+  - `sweepViewportEdges` **hit-tests the viewport edges** — `elementsFromPoint` at
+    three columns across five rows — and considers whatever is stacked there. Fixed
+    cost, no dependence on markup convention. It is trailing-throttled to one pass per
+    500ms and answers to `scroll` as well as mutations, because a sticky bar reaches
+    its pinned position by scrolling with no mutation to observe.
+
+  Everything the sweep finds still goes through the same ladder as any other
+  candidate, so **the ads boundary is unchanged**: an ad slot pinned in the identical
+  position at the identical size carries no ask, matches no annoyance language, and is
+  left alone. What the bar rule adds is reach, not permission.
+- **Site chrome is exempt, checked at `processPopover`.** A publisher's pinned header
+  sells things — "subscribe to our newsletter" sits in half the web's masthead — and
+  its menu panel is usually a nameless div *inside* the `<header>`. Hiding either takes
+  the site's own navigation away. `holdsSiteChrome` therefore vetoes an element that
+  is `nav`/`header`/`[role=navigation]`/`[role=banner]`, contains one, or sits inside
+  one **and is itself a cluster of links** (4 or more). That last clause is what
+  separates a menu panel from a nag ribbon a publisher happens to render inside its
+  header: a ribbon asks one thing and links once or twice. Measured on Forbes, whose
+  full-viewport account/menu drawer lives inside `<header>` and reads like a nag.
 - **Never the page itself:** every identity signal above is a SUBSTRING match, and
   publishers put transient modal/overlay STATE classes on the document — NYT's consent
   vendor (Ethyca Fides) adds `fides-overlay-modal-link-shown` to `<body>`, Bootstrap adds

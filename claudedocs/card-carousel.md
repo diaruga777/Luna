@@ -663,7 +663,24 @@ The article kind's own answers:
   horizontal pan beginning in either screen-edge
   inset synchronously restores the resting card geometry and carousel chrome,
   then continues that same gesture into interactive paging — immersion never
-  requires a separate surfacing swipe. RSVP immerses with `extendsCard: false`:
+  requires a separate surfacing swipe.
+  **A page turn refuses immersion, and says so.** `setImmersed` returns whether
+  the deck adopted the state and answers false while a page turn owns the deck —
+  from the moment the pan is ACCEPTED (`isPagingGesture`), not from the
+  transition it creates one touch-move later, and on through the transition
+  itself. Surfacing is never refused (a reload asks for it unconditionally).
+  The reason is the card being paged away: the pan deliberately leaves an
+  earlier flick's momentum alone, and the card reports reading activity until
+  the transition settles — so a hard flick followed by a swipe reported
+  immersion again mid-turn. Two things went wrong, and both are covered by
+  `ArticleCardsChromeTests`: the deck faded the INCOMING card as a peek and it
+  then arrived at centre invisible (a black hole where the card should be), and
+  `ArticleCardsViewController` raised its own screen-level chrome — the opaque
+  footer veil above all — for a deck that was not immersed. A host must
+  therefore leave its screen chrome alone when `setImmersed` refuses.
+  Independently of that, immersion retires the deck's PEEKS through
+  `applyCardVisibility`, which resolves EVERY slot including the centered one,
+  so "the card at centre is visible" holds however the deck reached the state. RSVP immerses with `extendsCard: false`:
   its layout is fixed (focal word, controls), so playing must not move
   anything on screen — the card frame holds and only the chrome fades. The
   extension would also have pushed the RSVP playback controls below

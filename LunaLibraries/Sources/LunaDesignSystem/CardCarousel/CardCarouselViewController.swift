@@ -438,6 +438,11 @@ public final class CardCarouselViewController: UIViewController {
     /// Set when a page pan already paged non-interactively (Reduce Motion), so
     /// further .changed events in the same gesture don't page again.
     private var pagePanConsumed = false
+    /// True from the moment a page pan is accepted until the touch leaves. The
+    /// transition it drives is created one touch-move later, so `isTransitioning`
+    /// alone leaves a frame in which the deck still takes immersion changes from
+    /// a card the same gesture is already paging away.
+    private(set) var isPagingGesture = false
 
     private var scrubStartFraction: Double = 0
     private var wasPlayingBeforeScrub = false
@@ -687,17 +692,29 @@ public final class CardCarouselViewController: UIViewController {
         cardAreaTopConstraint.constant = inset
     }
 
+    /// Whether the carousel now carries `immersed`. It refuses — and answers
+    /// false — while a page turn owns the deck. A host that fades screen-level
+    /// chrome of its own MUST leave that chrome alone on a refusal: the deck
+    /// and the screen around it would otherwise disagree about the same state,
+    /// and the half the deck refused (the footer veil) stays raised over a deck
+    /// that is not immersed at all.
+    @discardableResult
     public func setImmersed(
         _ immersed: Bool,
         extendsCard: Bool = true,
         horizontalInset: CGFloat? = nil,
         animated: Bool = false
-    ) {
-        // A transition starts un-immersed: an edge page pan first surfaces the
-        // carousel synchronously. This drops any later spurious fade-out — e.g.
-        // a reader still decelerating while the user pages away — that would
-        // fight the eclipse's manipulation of the same card.
-        guard !isTransitioning else { return }
+    ) -> Bool {
+        // A page turn starts un-immersed: an edge page pan first surfaces the
+        // carousel synchronously. Immersing again mid-turn — a reader still
+        // decelerating from a flick keeps reporting its travel through the
+        // swipe that pages it away — would fight the eclipse over the same
+        // cards, so the deck refuses for as long as the turn owns it. The
+        // gesture counts from the moment it is accepted, not from the
+        // transition it creates one touch-move later: immersion landing in that
+        // gap fades the INCOMING card, which then arrives at centre invisible.
+        // Surfacing is never refused; a reload asks for it unconditionally.
+        guard !immersed || !(isPagingGesture || isTransitioning) else { return false }
         let resolvedHorizontalInset = immersed ? horizontalInset.map { max(0, $0) } : nil
         if immersed == isImmersed {
             // Already immersed but the extension mode changed (e.g. a mode
@@ -706,7 +723,7 @@ public final class CardCarouselViewController: UIViewController {
             guard immersed,
                   immersionExtendsCard != extendsCard
                     || immersionHorizontalInset != resolvedHorizontalInset
-            else { return }
+            else { return true }
             immersionExtendsCard = extendsCard
             immersionHorizontalInset = resolvedHorizontalInset
             if animated {
@@ -725,7 +742,7 @@ public final class CardCarouselViewController: UIViewController {
             } else {
                 applyImmersionLayout()
             }
-            return
+            return true
         }
         isImmersed = immersed
         immersionExtendsCard = extendsCard
@@ -749,6 +766,7 @@ public final class CardCarouselViewController: UIViewController {
         } else {
             applyImmersionLayout()
         }
+        return true
     }
 
     // MARK: - Column aside (making room for a second card)
@@ -790,8 +808,23 @@ public final class CardCarouselViewController: UIViewController {
     private func applyColumnAsideLayout() {
         cardArea.transform = CGAffineTransform(translationX: columnAsideShift, y: 0)
         applyScrubberTransform()
-        for other in slots.values where other.index != currentIndex {
-            other.card.alpha = isImmersed || isColumnAside ? 0 : 1
+        applyCardVisibility()
+    }
+
+    /// Which cards the deck shows in its current state. Immersion and the column
+    /// shift retire the PEEKS; the live scrub preview draws its own deck and
+    /// hides them all.
+    ///
+    /// Applied to every slot, the centered one included, so "the card at centre
+    /// is visible" holds however the deck arrived at this state. Written as the
+    /// peeks only, a card that faded as a peek and then became the centered card
+    /// under an immersed deck kept its alpha of 0 — a black hole where the card
+    /// should be, which nothing restored until it left centre again.
+    private func applyCardVisibility() {
+        let retiresPeeks = isImmersed || isColumnAside
+        for slot in slots.values {
+            let isCentered = slot.index == currentIndex
+            slot.card.alpha = isShowingScrubPreview || (retiresPeeks && !isCentered) ? 0 : 1
         }
     }
 
@@ -812,9 +845,7 @@ public final class CardCarouselViewController: UIViewController {
         // during immersion. A short downward drift makes that handoff read as
         // one control yielding the lane to the other instead of a hard swap.
         applyScrubberTransform()
-        for other in slots.values where other.index != currentIndex {
-            other.card.alpha = isImmersed || isColumnAside ? 0 : 1
-        }
+        applyCardVisibility()
         // The centered card's content stays fully visible while immersed — its
         // glass rim fades in step with the strip and side cards, and its
         // surface tone clears so the content edge fades dissolve into the
@@ -1123,6 +1154,12 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     #if DEBUG
+    /// Holds the deck in the state an ACCEPTED page swipe leaves it in — before
+    /// the transition that swipe creates exists. A test cannot synthesise the
+    /// touch that gets there, and that one frame is where a decelerating reader
+    /// used to immerse the deck into its own page turn.
+    func setPagingGestureForTesting(_ active: Bool) { isPagingGesture = active }
+
     /// The chrome is faded out before it is hidden (the flag lands in the fade's
     /// completion), so `alpha` — set on the model layer immediately — is what
     /// "showing" means synchronously.
@@ -1564,6 +1601,9 @@ public final class CardCarouselViewController: UIViewController {
             guard case .interactive(let activeTransition) = pagingTransition else { return }
             activeTransition.update(fraction: abs(translation) / interactiveTravel)
         case .ended, .cancelled, .failed:
+            // Cleared before the transition guard below: a pan that never
+            // became a page must still hand the deck back.
+            isPagingGesture = false
             guard case .interactive(let interactiveTransition) = pagingTransition
             else { return }
             let fraction = min(max(abs(translation) / interactiveTravel, 0), 1)
@@ -1736,6 +1776,8 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
+            // A new touch sequence: whatever the last one claimed is over.
+            isPagingGesture = false
             // A horizontal control under the finger — the RSVP scrubber, any
             // slider inside a card — owns horizontal drags outright. A scrub
             // toward either end of the track reads exactly like a page-worthy
@@ -1759,6 +1801,9 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
                 setImmersed(false, animated: false)
                 delegate?.carouselDidSurfaceForEdgePaging(self)
             }
+            // The deck belongs to this gesture from here until the touch leaves,
+            // whatever the pan turns out to do with it.
+            if decision != .reject { isPagingGesture = true }
             return decision != .reject
         }
         return true

@@ -826,12 +826,18 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         // so reading it must not fade the deck away or grow the card downward
         // over the column's own controls.
         guard inlineColumn == nil else { return }
-        card.setCardChromeVisible(!immersed, animated: true)
-        carousel.setImmersed(
+        // The deck answers first, and it refuses while a page turn owns it: a
+        // reader still decelerating from a flick keeps reporting its travel
+        // through the swipe that pages it away. Raising this screen's own
+        // immersion chrome on a refusal is what stranded the footer veil — a
+        // black band over the scrub strip of a deck that is not immersed.
+        guard carousel.setImmersed(
             immersed,
             extendsCard: extendsCard,
             horizontalInset: expandedReaderInset(for: card, immersed: immersed),
             animated: true)
+        else { return }
+        card.setCardChromeVisible(!immersed, animated: true)
         // The archive peek is card chrome too: it fades away with the
         // side-card peeks and returns with them.
         archiveTray?.setChromeHidden(immersed, animated: true)
@@ -856,11 +862,12 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         _ card: ReaderCardContentViewController, didChangeCardExtension extendsCard: Bool
     ) {
         guard card.isCentered, carousel.isImmersed, inlineColumn == nil else { return }
-        carousel.setImmersed(
+        guard carousel.setImmersed(
             true,
             extendsCard: extendsCard,
             horizontalInset: expandedReaderInset(for: card, immersed: true),
             animated: true)
+        else { return }
         UIView.animate(
             withDuration: 0.32, delay: 0,
             options: [.curveEaseInOut, .allowUserInteraction]

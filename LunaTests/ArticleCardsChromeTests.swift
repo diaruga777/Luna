@@ -5,12 +5,12 @@
 
 
 import LunaArchiveReader
-import LunaDesignSystem
 import LunaModels
 import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
+@testable import LunaDesignSystem
 @testable import LunaReaderUI
 
 final class ArticleCardsChromeTests: XCTestCase {
@@ -188,6 +188,135 @@ final class ArticleCardsChromeTests: XCTestCase {
         veil.alpha = 1
         NotificationCenter.default.post(name: .savesChanged, object: nil)
         XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+    }
+
+    /// A card paged away keeps reading activity for the whole turn: the pan
+    /// deliberately leaves an earlier flick's momentum alone, and the card only
+    /// stops reporting when the transition settles. The deck refuses immersion
+    /// for as long as the turn owns it, and this screen's own chrome — above
+    /// all the footer veil, which is opaque — must refuse with it. Applied to
+    /// half the state, the swipe ended on a black band over the scrub strip of
+    /// a deck that was never immersed.
+    @MainActor
+    func testDeckPagingIgnoresImmersionReportedByTheCardItIsPagingAway() throws {
+        let controller = try makePagedArticleController(seed: "page-decel")
+        let carousel = controller.carousel
+        let outgoing = try XCTUnwrap(
+            carousel.contentController(at: carousel.currentIndex)
+                as? ReaderCardContentViewController)
+        let veil = try footerVeil(in: controller)
+        let strip = try XCTUnwrap(
+            firstSubview(of: CarouselScrubberView.self, in: carousel.view))
+        let start = carousel.currentIndex
+
+        carousel.page(by: 1)
+        XCTAssertEqual(
+            carousel.currentIndex, start,
+            "the eclipse must be in flight — it swaps cards at its zenith, so an "
+                + "index that already moved means this ran the plain jump instead")
+
+        controller.readerCard(outgoing, didChangeImmersion: true, extendsCard: true)
+
+        XCTAssertFalse(carousel.isImmersed)
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+
+        RunLoop.current.run(until: Date().addingTimeInterval(CardEclipseTransition.duration + 0.4))
+
+        XCTAssertEqual(carousel.currentIndex, start + 1)
+        XCTAssertFalse(carousel.isImmersed)
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(strip.alpha, 1, accuracy: 0.001)
+    }
+
+    /// The transition exists only from the pan's first touch-move; the deck is
+    /// already committed to paging one frame earlier. A reader decelerating hard
+    /// reports every ~100pt of travel, so it lands in that frame often enough to
+    /// be the reproduction: it faded the INCOMING card as a peek, and the card
+    /// then arrived at centre invisible.
+    @MainActor
+    func testAcceptedPageSwipeRefusesImmersionBeforeItsTransitionExists() throws {
+        let controller = try makePagedArticleController(seed: "page-gesture")
+        let carousel = controller.carousel
+        let card = try XCTUnwrap(
+            carousel.contentController(at: carousel.currentIndex)
+                as? ReaderCardContentViewController)
+        let veil = try footerVeil(in: controller)
+        let peek = try XCTUnwrap(carousel.cardView(at: carousel.currentIndex + 1))
+
+        carousel.setPagingGestureForTesting(true)
+        defer { carousel.setPagingGestureForTesting(false) }
+        controller.readerCard(card, didChangeImmersion: true, extendsCard: true)
+
+        XCTAssertFalse(carousel.isImmersed)
+        XCTAssertEqual(veil.alpha, 0, accuracy: 0.001)
+        XCTAssertEqual(peek.alpha, 1, accuracy: 0.001)
+    }
+
+    /// Immersion retires the deck's PEEKS. The card at centre is not one of
+    /// them, whatever it was a moment ago — a card that faded as a peek and then
+    /// became the centered card under an immersed deck used to keep its alpha of
+    /// zero, leaving a black hole where the card should be.
+    @MainActor
+    func testCenteredCardIsVisibleUnderAnImmersedDeck() throws {
+        let controller = try makePagedArticleController(seed: "immersed-centre")
+        let carousel = controller.carousel
+        let animationsWereEnabled = UIView.areAnimationsEnabled
+        UIView.setAnimationsEnabled(false)
+        defer { UIView.setAnimationsEnabled(animationsWereEnabled) }
+
+        controller.carousel(carousel, didTapCenteredCardAt: carousel.currentIndex)
+        XCTAssertTrue(carousel.isImmersed)
+
+        let centered = try XCTUnwrap(carousel.cardView(at: carousel.currentIndex))
+        // Stand in for the card's own history as a faded peek.
+        centered.alpha = 0
+        carousel.view.setNeedsLayout()
+        carousel.view.layoutIfNeeded()
+
+        XCTAssertEqual(centered.alpha, 1, accuracy: 0.001)
+    }
+
+    private func footerVeil(in controller: ArticleCardsViewController) throws -> UIView {
+        try XCTUnwrap(
+            controller.view.subviews.first {
+                type(of: $0).description().contains("ReaderFooterContentFade")
+            },
+            "the footer veil should be mounted above the carousel")
+    }
+
+    /// A deck with room to page, in a window — the eclipse runs only on screen.
+    @MainActor
+    private func makePagedArticleController(
+        seed: String, size: CGSize = CGSize(width: 402, height: 874)
+    ) throws -> ArticleCardsViewController {
+        let items = (0..<3).map { index in
+            SavedItem(
+                seed: "\(seed)-\(index)",
+                urlString: "https://example.com/\(seed)-\(index)",
+                title: "Paged Article \(index)",
+                dateAdded: Date().addingTimeInterval(TimeInterval(index)),
+                state: .ready,
+                wordCount: 480)
+        }
+        var contents: [UUID: ArticleContent] = [:]
+        for item in items {
+            contents[item.id] = UITestFixtures.sampleArticleContent(title: item.title ?? "")
+        }
+        SavesStore.shared.seedForTesting(items: items, contents: contents)
+
+        let controller = ArticleCardsViewController()
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = controller
+        window.isHidden = false
+        addTeardownBlock { window.isHidden = true }
+        controller.view.layoutIfNeeded()
+        controller.beginAppearanceTransition(true, animated: false)
+        controller.endAppearanceTransition()
+        controller.view.layoutIfNeeded()
+        XCTAssertNotNil(
+            controller.carousel.cardView(at: controller.carousel.currentIndex + 1),
+            "these tests need a card to page to")
+        return controller
     }
 
     /// Scoped to the deck's own chrome row: the card's nested reader carries

@@ -100,6 +100,13 @@ open class CardContentViewController: UIViewController {
     /// over whitespace, letting the card present its context menu there.
     open func longPressSelectsContent(at point: CGPoint) -> Bool { false }
 
+    /// Whether a horizontal drag beginning at this content-local point belongs
+    /// to a narrowly-scoped interaction inside the card rather than carousel
+    /// paging. Keep this to controls that genuinely need a horizontal drag
+    /// (for example an embedded player or an interactive chart); the default
+    /// leaves the card's surrounding surface free to page.
+    open func ownsHorizontalDrag(at point: CGPoint) -> Bool { false }
+
     /// Gives content a chance to replace an ordinary bounds interpolation with
     /// a transition tailored to its rendering model. The Reader uses this to
     /// animate TextKit glyphs between their old and newly reflowed locations

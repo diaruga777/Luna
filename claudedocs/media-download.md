@@ -629,8 +629,10 @@ launch succeeds or not. The Downloader and central Luna decks load that same pla
 hosted in `WKWebView` through YouTube's documented iOS local-HTML integration: the HTML's HTTPS `baseURL`
 is the running bundle identifier, supplying the required Referer/client identity that a direct `/embed/`
 navigation omits (and which YouTube rejects as error 153). Only the player rectangle claims web gestures;
-blank space around it remains available for the card context menu. The poster is also used in the
-mini-carousel chip. Direct `/shorts/` URLs retain
+the rest of the card remains available for carousel paging and its blank space for the card context menu.
+The iframe starts transparent over the same cached, decoded poster used by the mini-carousel chip: fast
+card paging therefore keeps the correctly sized still visible, while a centered card overlays a spinner
+until the IFrame reports ready. Direct `/shorts/` URLs retain
 the existing downloader path. YouTube's developer policies also
 restrict downloading/offline playback without authorization; shipping this feature requires a
 separate product/legal review.

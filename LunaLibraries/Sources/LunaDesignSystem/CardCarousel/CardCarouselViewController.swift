@@ -158,9 +158,11 @@ public struct CardCarouselCardStyle: Hashable {
     /// as it approaches an edge. 0 keeps the hard clip, which is what a video
     /// or a product editor wants.
     public var contentEdgeFadeHeight: CGFloat = 0
-    /// Horizontal swipes INSIDE this card page to the neighbor. Playback cards
-    /// keep this enabled because seeking is reserved for their progress knob.
-    public var pagesOnInCardSwipes = false
+    /// Horizontal swipes INSIDE this card page to the neighbor. Individual
+    /// controls can reserve their own rectangle through
+    /// `CardContentViewController.ownsHorizontalDrag(at:)`; this keeps every
+    /// other part of every card consistently pageable.
+    public var pagesOnInCardSwipes = true
 
     public init() {}
 }
@@ -1061,17 +1063,19 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     /// Whether a horizontal drag starting at `point` (in `space`'s coordinates)
-    /// belongs to the centered card's own content. Screen-level drawers ask this
-    /// before starting a pull, so a video card's page gesture is never ALSO a
-    /// tray pull — the same gesture cannot mean two things at once.
+    /// belongs to the centered card rather than a screen-level drawer. This
+    /// includes both an in-card page swipe and a content control that reserved
+    /// its own horizontal interaction, so one gesture never also pulls a tray.
     public func centeredCardConsumesHorizontalDrag(at point: CGPoint, in space: UIView) -> Bool {
-        guard count > 0, !isTransitioning,
-              let slot = slots[currentIndex], slot.content.isPlayable
-        else { return false }
+        guard count > 0, !isTransitioning, let slot = slots[currentIndex] else { return false }
         // While immersed the centered card is bottom-extended past its resting
         // frame, so use its live frame (as the card tap does).
         let frame = isImmersed ? slot.card.frame : centeredCardFrame()
-        return frame.contains(space.convert(point, to: cardArea))
+        let cardPoint = space.convert(point, to: cardArea)
+        guard frame.contains(cardPoint) else { return false }
+        let contentPoint = slot.content.view.convert(cardPoint, from: cardArea)
+        return slot.content.ownsHorizontalDrag(at: contentPoint)
+            || cardStyle(at: currentIndex).pagesOnInCardSwipes
     }
 
     private func layoutPlaybackScrubProgress() {
@@ -1844,6 +1848,10 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
                    $0 is UISlider || $0 === playbackScrubProgress
                }) {
                 return false
+            }
+            if insideCenter, let content = slots[currentIndex]?.content {
+                let point = content.view.convert(location, from: cardArea)
+                if content.ownsHorizontalDrag(at: point) { return false }
             }
             let velocity = pagePan.velocity(in: cardArea)
             let decision = CardCarouselPagePanStartPolicy.decision(

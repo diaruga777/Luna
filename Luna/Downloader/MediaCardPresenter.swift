@@ -243,15 +243,8 @@ final class MediaCardPresenter: CardKindPresenting {
                 completion(nil)
                 return
             }
-            Task {
-                guard let (data, response) = try? await URLSession.shared.data(from: thumbnailURL),
-                      let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode)
-                else {
-                    completion(UIImage(systemName: "play.rectangle.fill"))
-                    return
-                }
-                completion(UIImage(data: data) ?? UIImage(systemName: "play.rectangle.fill"))
+            YouTubeThumbnailLoader.load(from: thumbnailURL) { image in
+                completion(image ?? UIImage(systemName: "play.rectangle.fill"))
             }
             return
         }
@@ -270,15 +263,11 @@ final class MediaCardPresenter: CardKindPresenting {
     /// Hard-clipped in every app. The card's 9:16 frame is the whole deck's frame, since video is
     /// what that shape was chosen for, and every other card matches it.
     ///
-    /// Video and audio cards page on horizontal drags that start in the card.
-    /// Seeking is reserved for the visible playback bar's progress head, so a
-    /// card swipe never accidentally changes playback position.
+    /// A card always pages from its non-control surface. Downloaded video
+    /// seeking remains reserved for the visible progress head, which the
+    /// carousel's control gate excludes before it considers card paging.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
-        var style = CardCarouselCardStyle()
-        if let kind = media(for: item)?.kind {
-            style.pagesOnInCardSwipes = kind == .video || kind == .audio
-        }
-        return style
+        CardCarouselCardStyle()
     }
 
     // MARK: - Verbs

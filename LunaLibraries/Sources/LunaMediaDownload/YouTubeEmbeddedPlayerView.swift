@@ -20,6 +20,44 @@ public extension YouTubeEmbeddedPlayerViewDelegate {
     func youTubeEmbeddedPlayerDidBecomeReady(_ player: YouTubeEmbeddedPlayerView) {}
 }
 
+/// Shared thumbnail loading for every surface that represents a YouTube link.
+/// The card's scrub-strip image and its full player placeholder therefore use
+/// one decoded image rather than briefly re-downloading/re-decoding a still as
+/// the carousel remounts a card.
+@MainActor
+public enum YouTubeThumbnailLoader {
+    private static let cache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 96
+        return cache
+    }()
+
+    public static func cachedImage(for url: URL) -> UIImage? {
+        cache.object(forKey: url as NSURL)
+    }
+
+    public static func load(
+        from url: URL, completion: @escaping (UIImage?) -> Void
+    ) {
+        if let image = cachedImage(for: url) {
+            completion(image)
+            return
+        }
+        Task {
+            guard let (data, response) = try? await URLSession.shared.data(from: url),
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let image = UIImage(data: data)
+            else {
+                completion(nil)
+                return
+            }
+            cache.setObject(image, forKey: url as NSURL)
+            completion(image)
+        }
+    }
+}
+
 /// An official YouTube IFrame Player hosted in the system `WKWebView`.
 ///
 /// YouTube requires embedded API clients to identify themselves through the
@@ -48,7 +86,10 @@ public final class YouTubeEmbeddedPlayerView: UIView, WKScriptMessageHandler {
         configuration.userContentController.add(
             WeakScriptMessageHandler(target: self), name: Self.messageName)
         webView.isOpaque = false
-        webView.backgroundColor = .black
+        // Until YouTube renders its iframe, this view must stay transparent so
+        // the card's cached thumbnail and centered-card spinner remain visible.
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -110,7 +151,7 @@ struct YouTubeEmbeddedPlayerDocument {
           <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
           <meta name="referrer" content="strict-origin-when-cross-origin">
           <style>
-            html, body, #player { width:100%; height:100%; margin:0; padding:0; overflow:hidden; background:#000; }
+            html, body, #player { width:100%; height:100%; margin:0; padding:0; overflow:hidden; background:transparent; }
           </style>
         </head>
         <body>

@@ -34,7 +34,20 @@ final class YouTubeEmbeddedPlaybackTests: XCTestCase {
         XCTAssertTrue(
             controller.longPressSelectsContent(at: playerCenter),
             "only the 16:9 player rectangle keeps its HTML interaction")
+        XCTAssertFalse(
+            controller.ownsHorizontalDrag(at: CGPoint(x: 20, y: 20)),
+            "the card pages from any space outside the embedded player")
+        XCTAssertTrue(
+            controller.ownsHorizontalDrag(at: playerCenter),
+            "the embedded player keeps its own horizontal controls")
         XCTAssertFalse(controller.allowsCardTap(at: CGPoint(x: 20, y: 20)))
+
+        controller.cardDidBecomeCentered()
+        let spinner = try XCTUnwrap(Self.activityIndicator(
+            identified: "YouTubeCard.loadingIndicator", in: controller.view))
+        XCTAssertTrue(spinner.isAnimating, "only a centered loading card shows the spinner")
+        controller.youTubeEmbeddedPlayerDidBecomeReady(player)
+        XCTAssertFalse(spinner.isAnimating, "the ready player covers the poster and spinner")
 
         let poster = try XCTUnwrap(Self.button(
             identified: "YouTubeCard.posterButton", in: controller.view))
@@ -62,11 +75,20 @@ final class YouTubeEmbeddedPlaybackTests: XCTestCase {
         XCTAssertTrue(document.html.contains(
             "origin: 'https://com.hsanabria.luna.downloader'"))
         XCTAssertTrue(document.html.contains("strict-origin-when-cross-origin"))
+        XCTAssertTrue(document.html.contains("background:transparent"))
     }
 
     private static func button(identified identifier: String, in root: UIView) -> UIButton? {
         views(in: root)
             .compactMap { $0 as? UIButton }
+            .first { $0.accessibilityIdentifier == identifier }
+    }
+
+    private static func activityIndicator(identified identifier: String, in root: UIView)
+        -> UIActivityIndicatorView?
+    {
+        views(in: root)
+            .compactMap { $0 as? UIActivityIndicatorView }
             .first { $0.accessibilityIdentifier == identifier }
     }
 

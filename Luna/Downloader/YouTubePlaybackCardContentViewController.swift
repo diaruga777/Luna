@@ -24,17 +24,17 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
     private let posterView = UIImageView()
     private let posterButton = UIButton(type: .custom)
     private let playGlyph = UIImageView()
+    private let loadingIndicator = UIActivityIndicatorView(style: .large)
     private let openButton = UIButton(type: .system)
     private var playerView: YouTubeEmbeddedPlayerView?
-    private var posterTask: Task<Void, Never>?
+    private var playerIsReady = false
+    private var isCentered = false
 
     init(sourceURL: URL, openSourceURL: ((URL) -> Void)? = nil) {
         self.sourceURL = sourceURL
         self.openSourceURL = openSourceURL ?? { url in UIApplication.shared.open(url) }
         super.init()
     }
-
-    deinit { posterTask?.cancel() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -45,7 +45,7 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
         mediaFrame.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(mediaFrame)
 
-        posterView.contentMode = .scaleAspectFit
+        posterView.contentMode = .scaleAspectFill
         posterView.clipsToBounds = true
         posterView.translatesAutoresizingMaskIntoConstraints = false
         mediaFrame.addSubview(posterView)
@@ -68,6 +68,12 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
         playGlyph.isUserInteractionEnabled = false
         playGlyph.translatesAutoresizingMaskIntoConstraints = false
         mediaFrame.addSubview(playGlyph)
+
+        loadingIndicator.accessibilityIdentifier = "YouTubeCard.loadingIndicator"
+        loadingIndicator.color = .white
+        loadingIndicator.hidesWhenStopped = true
+        loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
+        mediaFrame.addSubview(loadingIndicator)
 
         openButton.configuration = GlassStyle.actionButtonConfiguration(
             title: L10n.string("Downloader_media_preview_openInYouTubeButtonTitle"),
@@ -98,6 +104,8 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
             playGlyph.centerYAnchor.constraint(equalTo: mediaFrame.centerYAnchor),
             playGlyph.widthAnchor.constraint(equalToConstant: 60),
             playGlyph.heightAnchor.constraint(equalToConstant: 60),
+            loadingIndicator.centerXAnchor.constraint(equalTo: mediaFrame.centerXAnchor),
+            loadingIndicator.centerYAnchor.constraint(equalTo: mediaFrame.centerYAnchor),
             openButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             openButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             openButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -24),
@@ -119,7 +127,31 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
         return playerView.point(inside: view.convert(point, to: playerView), with: nil)
     }
 
-    func youTubeEmbeddedPlayerDidBecomeReady(_ player: YouTubeEmbeddedPlayerView) {}
+    /// The IFrame owns drags only in its visible 16:9 rectangle. The rest of
+    /// this card, including the native button beneath the player, pages like
+    /// every other card surface.
+    override func ownsHorizontalDrag(at point: CGPoint) -> Bool {
+        guard let playerView, !playerView.isHidden else { return false }
+        return playerView.point(inside: view.convert(point, to: playerView), with: nil)
+    }
+
+    override func cardDidBecomeCentered() {
+        super.cardDidBecomeCentered()
+        isCentered = true
+        updateLoadingIndicator()
+    }
+
+    override func cardDidLeaveCenter() {
+        super.cardDidLeaveCenter()
+        isCentered = false
+        updateLoadingIndicator()
+    }
+
+    func youTubeEmbeddedPlayerDidBecomeReady(_ player: YouTubeEmbeddedPlayerView) {
+        guard player === playerView else { return }
+        playerIsReady = true
+        updateLoadingIndicator()
+    }
 
     func youTubeEmbeddedPlayer(
         _ player: YouTubeEmbeddedPlayerView, didFailWithCode code: Int?
@@ -130,6 +162,7 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
         playerView = nil
         posterButton.isHidden = false
         playGlyph.isHidden = false
+        updateLoadingIndicator()
     }
 
     private func installPlayer() {
@@ -156,17 +189,10 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
             showPosterFallback()
             return
         }
-        posterTask = Task { [weak self] in
-            guard let (data, response) = try? await URLSession.shared.data(from: thumbnailURL),
-                  !Task.isCancelled,
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode),
-                  let image = UIImage(data: data)
-            else {
-                self?.showPosterFallback()
-                return
-            }
-            self?.posterView.image = image
+        YouTubeThumbnailLoader.load(from: thumbnailURL) { [weak self] image in
+            guard let self else { return }
+            if let image { self.posterView.image = image }
+            else { self.showPosterFallback() }
         }
     }
 
@@ -174,5 +200,11 @@ final class YouTubePlaybackCardContentViewController: CardContentViewController,
         posterView.image = UIImage(systemName: "play.rectangle.fill")
         posterView.tintColor = LunaColors.tertiaryText
         posterView.contentMode = .center
+    }
+
+    private func updateLoadingIndicator() {
+        let shouldShow = isCentered && playerView != nil && !playerIsReady
+        if shouldShow { loadingIndicator.startAnimating() }
+        else { loadingIndicator.stopAnimating() }
     }
 }

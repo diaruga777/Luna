@@ -262,16 +262,16 @@ Consequences for the deck:
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
   leaves center, keeping position.
-- **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
-  playback timestamp (one card-width ≈ full duration).
-  The card itself never pans — and on decks that page on in-card swipes (the
-  all-kinds deck's readers), a playable card is exempt: its whole width is a
-  timeline, so the drag scrubs and never ALSO pages
-  (`CardCarouselPagePanStartPolicy`, `centeredContentScrubs`). Edge swipes and
-  the strip stay the paging affordances. Playback starts the instant a card
-  centers: the player never waits to minimize stalling (everything is local),
-  and a neighbor card pre-decodes its first frame with a zero-tolerance seek at
-  install.
+- **Tap** the centered card: pause/play. **Horizontal drag inside the card**
+  pages to its neighbour just as an edge drag does. This is the rule for every
+  card kind, including the util card and an undownloaded media card. A content
+  controller may reserve only a specific interactive rectangle through
+  `CardContentViewController.ownsHorizontalDrag(at:)`: the visible downloaded-
+  video scrubber (its knob), an interactive price graph, or a YouTube IFrame.
+  Those controls never page the card from under a finger. Playback starts the
+  instant a card centers: the player never waits to minimize stalling
+  (everything is local), and a neighbor card pre-decodes its first frame with a
+  zero-tolerance seek at install.
 - **A PAUSED card shows its playback controls**, and they are a function of the
   paused state rather than of any gesture: a `MoonHorizonProgressBar` sits INSIDE
   the card's bottom edge (12pt up — the mute button's inset from the top), bare
@@ -303,12 +303,12 @@ Consequences for the deck:
   `AVPlayerViewController`) keeps the SYSTEM speed menu — Luna draws no second
   control there — but shares the same memory in both directions and offers
   Luna's five speeds.
-- **Paging** happens outside the card: a horizontal drag on the insets left/right of
-  the card drives the eclipse transition *interactively* — it tracks the finger,
-  with 1.5× horizontal movement on both the Reader and Downloader root screens,
-  plays forward and back, and on release finishes (past 50%, or with enough
-  release velocity toward the target) or reverses back to rest. A tap on a
-  peeked edge pages one card. The scrub strip scrolls natively like a
+- **Paging** happens from the card's non-control surface and from its outside
+  insets: the horizontal drag drives the eclipse transition *interactively* — it
+  tracks the finger, with 1.5× horizontal movement on both the Reader and
+  Downloader root screens, plays forward and back, and on release finishes
+  (past 50%, or with enough release velocity toward the target) or reverses
+  back to rest. A tap on a peeked edge pages one card. The scrub strip scrolls natively like a
   virtualized `UICollectionView`: only the handful of chips intersecting its
   viewport exist, regardless of save count. The chip at its viewport center is
   the live selection —
@@ -585,8 +585,8 @@ kinds relayout the card, so there is now one frame and no kind can state one.
 
 The article kind's own answers:
 
-- `contentEdgeFadeHeight` 28 and `pagesOnInCardSwipes` (horizontal swipes inside
-  the card page — readers have no timeline to scrub; the page pan recognizes
+- `contentEdgeFadeHeight` 28 (horizontal swipes inside every card page; the
+  page pan recognizes
   simultaneously with the reader's own gestures, gated to strongly-horizontal
   drags — EXCEPT over a `UISlider`: a drag that starts on a horizontal control
   (the RSVP scrubber) is a scrub, and near the track's ends it reads exactly like

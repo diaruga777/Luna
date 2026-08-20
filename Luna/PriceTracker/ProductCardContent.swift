@@ -58,6 +58,10 @@ final class ProductCardContentViewController: CardContentViewController {
                 equalTo: view.bottomAnchor, constant: -Self.inset),
         ])
     }
+
+    override func ownsHorizontalDrag(at point: CGPoint) -> Bool {
+        detail.ownsHorizontalDrag(at: point, in: view)
+    }
 }
 
 // MARK: - The Price Tracker app's root

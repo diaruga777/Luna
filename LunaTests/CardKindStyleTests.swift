@@ -49,6 +49,12 @@ final class CardKindStyleTests: XCTestCase {
 
     // MARK: - The point: one deck, one frame, two presentations
 
+    func testEveryCardPagesFromItsNonControlSurfaceByDefault() {
+        XCTAssertTrue(
+            CardCarouselCardStyle().pagesOnInCardSwipes,
+            "a card kind only opts out by reserving a specific control rectangle")
+    }
+
     func testAMediaCardAndAnArticleCardInOneDeckDifferOnlyInPresentation() throws {
         CardKindPresenters.article = ArticleCardPresenter()
         CardKindPresenters.media = MediaCardPresenter()
@@ -69,12 +75,10 @@ final class CardKindStyleTests: XCTestCase {
             "dissolving a video's own edges is the central app's old reader fade")
     }
 
-    /// The veto that keeps a horizontal drag from meaning two things at once.
-    /// A PLAYING card was already exempt from paging everywhere — the carousel
-    /// vetoes it for playable content — but a DOWNLOADING media card is not
-    /// playable yet, so it paged in the central app (whose deck paged on in-card
-    /// swipes for its readers) and stayed put in the Downloader.
-    func testADownloadingMediaCardNeverPagesOnAnInCardSwipe() throws {
+    /// A card always pages from its broad surface, regardless of whether its
+    /// media file is available yet. Narrow controls (the playback scrubber and
+    /// embedded player) reserve their own rectangles at gesture time.
+    func testADownloadingMediaCardPagesOutsideItsSpecificControls() throws {
         CardKindPresenters.media = MediaCardPresenter()
         SavedMediaDeckFixtures.seedMedia(count: 1, prefix: "downloading")
         let media = try XCTUnwrap(SavedMediaStore.shared.items().first)
@@ -82,9 +86,9 @@ final class CardKindStyleTests: XCTestCase {
             media.storageState, .undownloaded,
             "fixture precondition: this row has no file yet, so its card is not playable")
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             try style(for: mediaItem(for: media)).pagesOnInCardSwipes,
-            "a media card's width belongs to its timeline in every app, downloaded or not")
+            "an undownloaded card has no timeline and pages like every other card")
     }
 
     func testAProductCardScrollsInsideTheOneCardFrameAndPages() throws {

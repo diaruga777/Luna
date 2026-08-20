@@ -400,6 +400,14 @@ public final class ProductDetailViewController: UIViewController {
         presentPendingDeepLinkedSellerSearchIfPossible()
     }
 
+    /// The graph is the product card's one broad, data-inspection surface. A
+    /// horizontal drag there should never pull the surrounding carousel away
+    /// while the user is examining a point.
+    public func ownsHorizontalDrag(at point: CGPoint, in coordinateSpace: UIView) -> Bool {
+        let graphPoint = graphView.convert(point, from: coordinateSpace)
+        return graphView.point(inside: graphPoint, with: nil)
+    }
+
     @objc private func openContainingAppForSellerSearch() {
         addSellerHandoff?.openContainingApp(forAddingSellerTo: itemID)
     }

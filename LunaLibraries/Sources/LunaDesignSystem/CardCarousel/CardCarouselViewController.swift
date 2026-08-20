@@ -346,6 +346,20 @@ public final class CardCarouselViewController: UIViewController {
     /// Per-surface tuning. Set BEFORE the carousel's view loads.
     public var style = CardCarouselStyle()
 
+    /// Enables the one-time right-edge paging tutorial. Root card-deck hosts
+    /// opt in; onboarding and other embedded carousels remain deliberately
+    /// tutorial-free.
+    public var showsPullTabHint = false {
+        didSet { updatePullTabHint() }
+    }
+
+    /// The persistence seam is public so a host can use its own durable store
+    /// and tests can isolate their defaults. The default is App-Group backed,
+    /// which makes a swipe in one Luna app dismiss the hint in all of them.
+    public var pullTabHintStore: CardCarouselPullTabHintStoring = CardCarouselPullTabHintStore() {
+        didSet { updatePullTabHint() }
+    }
+
     public private(set) var currentIndex = 0
     var isSoundMuted: Bool { audioSession.isMuted }
     private lazy var audioSession: CarouselAudioSessionCoordinator = {
@@ -396,6 +410,7 @@ public final class CardCarouselViewController: UIViewController {
     private var pendingReload: PendingReload = .none
 
     private let cardArea = UIView()
+    private let pullTabHint = CardCarouselPullTabHintView()
     private var cardAreaTopConstraint: NSLayoutConstraint!
     private var scrubberLeadingConstraint: NSLayoutConstraint!
     private var scrubberTrailingConstraint: NSLayoutConstraint!
@@ -466,6 +481,8 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.clipsToBounds = false
         cardArea.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardArea)
+        pullTabHint.isHidden = true
+        cardArea.addSubview(pullTabHint)
         playbackScrubProgress.alpha = 0
         playbackScrubProgress.isHidden = true
         // The traveling activity pulse belongs to download progress, not
@@ -532,6 +549,7 @@ public final class CardCarouselViewController: UIViewController {
         scrubPreview.layout()
         layoutPlaybackScrubProgress()
         updatePlaybackControls()
+        updatePullTabHint()
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -540,6 +558,7 @@ public final class CardCarouselViewController: UIViewController {
         audioSession.startVolumeObservation()
         slots[currentIndex]?.content.cardDidBecomeCentered()
         updatePlaybackControls()
+        updatePullTabHint()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -552,6 +571,7 @@ public final class CardCarouselViewController: UIViewController {
         pagingTransition.transition?.cancel()
         slots[currentIndex]?.content.cardDidLeaveCenter()
         updatePlaybackControls()
+        updatePullTabHint()
     }
 
     // MARK: - Public surface
@@ -584,12 +604,14 @@ public final class CardCarouselViewController: UIViewController {
         scrubber.setThumbnailCount(count)
         guard count > 0 else {
             updatePlaybackControls()
+            updatePullTabHint()
             return
         }
         scrubber.setSelectedIndex(currentIndex, animated: false)
         applyMuteState()
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
         updatePlaybackControls()
+        updatePullTabHint()
         delegate?.carousel(self, didCenterCardAt: currentIndex)
     }
 
@@ -745,6 +767,7 @@ public final class CardCarouselViewController: UIViewController {
         scrubber.isUserInteractionEnabled = !immersed && !isColumnAside
         // Immersion hands the runway under the card to the reader's own chrome.
         updatePlaybackControls()
+        updatePullTabHint()
         if animated {
             prepareCenteredContentForImmersionLayout()
             let transitioningContent = slots[currentIndex]?.content
@@ -788,6 +811,7 @@ public final class CardCarouselViewController: UIViewController {
         columnAsideShift = shift
         scrubber.isUserInteractionEnabled = !isImmersed && !isColumnAside
         updatePlaybackControls()
+        updatePullTabHint()
         let changes = { self.applyColumnAsideLayout() }
         guard animated, !UIAccessibility.isReduceMotionEnabled else {
             changes()
@@ -1305,6 +1329,7 @@ public final class CardCarouselViewController: UIViewController {
             delegate?.carousel(self, didCenterCardAt: currentIndex)
         }
         updatePlaybackControls()
+        updatePullTabHint()
         if case .pending(let centerIndex) = pendingReload {
             pendingReload = .none
             reloadData(centeringAt: centerIndex)
@@ -1368,6 +1393,7 @@ public final class CardCarouselViewController: UIViewController {
         if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
         updatePlaybackControls()
         scrubber.setSelectedIndex(currentIndex, animated: true)
+        updatePullTabHint()
         delegate?.carousel(self, didCenterCardAt: currentIndex)
     }
 
@@ -1382,6 +1408,7 @@ public final class CardCarouselViewController: UIViewController {
         // The preview owns the deck for the duration of the gesture.
         for slot in slots.values { slot.card.alpha = 0 }
         updatePlaybackControls()
+        updatePullTabHint()
     }
 
     /// Tears the preview down and gives the real cards the deck back.
@@ -1391,6 +1418,7 @@ public final class CardCarouselViewController: UIViewController {
         isShowingScrubPreview = false
         for slot in slots.values { applyRestingLayout(to: slot) }
         updatePlaybackControls()
+        updatePullTabHint()
     }
 
     private func commitScrub(to index: Int, isDirectTap: Bool = false) {
@@ -1458,6 +1486,7 @@ public final class CardCarouselViewController: UIViewController {
         scrubPreview.remove()
         scrubber.setSelectedIndex(target, animated: true)
         if isViewVisible { slots[target]?.content.cardDidBecomeCentered() }
+        updatePullTabHint()
         delegate?.carousel(self, didCenterCardAt: target)
     }
 
@@ -1569,6 +1598,7 @@ public final class CardCarouselViewController: UIViewController {
         switch gesture.state {
         case .began:
             pagePanConsumed = false
+            recordCardPagingSwipeForPullTabHint()
             relinquishScrollingClaimedByPagePan()
         case .changed:
             if case .none = pagingTransition, !pagePanConsumed {
@@ -1649,6 +1679,38 @@ public final class CardCarouselViewController: UIViewController {
 
     private func reportNavigationTarget(_ index: Int) {
         delegate?.carousel(self, navigationTargetDidChangeTo: index)
+    }
+
+    // MARK: - One-time pull-tab tutorial
+
+    private func recordCardPagingSwipeForPullTabHint() {
+        guard showsPullTabHint, !pullTabHintStore.hasSeenCardPagingSwipe else { return }
+        pullTabHintStore.recordCardPagingSwipe()
+        updatePullTabHint()
+    }
+
+    private func updatePullTabHint() {
+        guard isViewLoaded else { return }
+        let shouldShow = showsPullTabHint
+            && isViewVisible
+            && !pullTabHintStore.hasSeenCardPagingSwipe
+            && count > 1
+            && currentIndex < count - 1
+            && !isImmersed
+            && !isColumnAside
+            && !isShowingScrubPreview
+
+        pullTabHint.isHidden = !shouldShow
+        pullTabHint.setHintAnimating(shouldShow)
+        guard shouldShow else { return }
+
+        let frame = centeredCardFrame()
+        guard frame.width > 0, frame.height > 0 else { return }
+        pullTabHint.bounds = CGRect(origin: .zero, size: CardCarouselPullTabHintView.size)
+        pullTabHint.center = CGPoint(
+            x: frame.maxX + CardCarouselPullTabHintView.size.width / 2 - 3,
+            y: frame.midY)
+        cardArea.bringSubviewToFront(pullTabHint)
     }
 
     @objc private func handleScrubPan(_ gesture: UIPanGestureRecognizer) {

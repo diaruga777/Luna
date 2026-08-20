@@ -218,6 +218,10 @@ Photos references remain governed by the user's Photos library.
   area, which is a SQUARE filled aspect-fit: its side follows the content column, not
   the still's proportions, so the media's vertical centre — and the Photos button
   anchored under it — is fixed from load.
+  If Save to Photos moves a video while its full-screen player is open, the player
+  swaps to PhotoKit's asset at the same playback position; the screen also changes to
+  the Photos-backed saved row, so later Play and Share actions never use the moved
+  temporary file.
   Before deciding to auto-download or wait for a tap, it checks
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no

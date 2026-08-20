@@ -1016,6 +1016,25 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         present(playerVC, animated: true) { player.play() }
     }
 
+    /// PhotoKit takes ownership of a freshly saved preview file. If its full-screen
+    /// player is already open, replace that player's item with the PhotoKit-backed
+    /// asset before the old URL becomes unusable. Preserve the viewing position and
+    /// whether playback was active, so this is invisible apart from a brief reload.
+    private func reloadActivePlayerFromPhotos(
+        identifier: String, kind: MediaAsset.Kind
+    ) async {
+        guard kind == .video, let player = activePlayer else { return }
+        let currentTime = player.currentTime()
+        let wasPlaying = player.rate != 0
+        guard let asset = await Self.photosVideoAsset(identifier: identifier),
+              activePlayer === player
+        else { return }
+        player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+        player.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+            if wasPlaying { player.play() }
+        }
+    }
+
     /// Presents the system share sheet with the downloaded source media file — the
     /// fresh temp file (`.ready`), the already-downloaded item's own local file, or
     /// (Photos-backed) a short-lived local export of the Photos asset. All local
@@ -1067,15 +1086,28 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
                 guard let self else { return }
                 do {
                     let identifier = try await self.downloadService.saveDownloadedMediaToPhotos(media)
+                    let savedItem: SavedMediaItem?
                     if let local = SavedMediaStore.shared.item(forURLString: self.articleURLString) {
-                        _ = try SavedMediaStore.shared.transitionToPhotosReference(
+                        savedItem = try SavedMediaStore.shared.transitionToPhotosReference(
                             local.id, localIdentifier: identifier, kind: media.kind)
+                    } else {
+                        savedItem = nil
                     }
                     // PhotoKit moved the file into the library — no temp file to clean up.
                     await MainActor.run { self.unsavedPreviewFileURL = nil }
                     AutoDownloadSettings.markDownloaded(self.articleURLString)
                     self.markItemRead()
-                    await MainActor.run { self.finishSave(success: true) }
+                    await self.reloadActivePlayerFromPhotos(
+                        identifier: identifier, kind: media.kind)
+                    await MainActor.run {
+                        // The temporary preview file was moved into Photos. Replace
+                        // the state too, so a later play/share tap never follows its
+                        // now-deleted URL.
+                        if let savedItem {
+                            self.applyMediaState(.alreadyDownloaded(savedItem))
+                        }
+                        self.finishSave(success: true)
+                    }
                 } catch {
                     let message = (error as? MediaDownloadError)?.message
                         ?? L10n.string("Downloader_media_error_saveMediaFailed")

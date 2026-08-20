@@ -219,7 +219,7 @@ final class UtilCardContentViewController: CardContentViewController {
         self.app = app
         self.now = now
         self.storageChoice = storageChoice
-        weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app, now: now)
+        weeklyHost = WeeklySaveRowHost(store: weeklyStore, app: app)
         headline = showsOnboarding
             ? OnboardingIntroHeadlineView(copy: configuration.introCopy)
             : nil
@@ -382,7 +382,7 @@ final class UtilCardContentViewController: CardContentViewController {
     }
 
     /// Starts the central app's label clock as the controls arrive instead of
-    /// holding it behind the Save of the Week. The first tick names Reader,
+    /// holding it behind the Luna team pick. The first tick names Reader,
     /// matching the weekly row's initial article slot.
     private func beginSetupTextCycling() {
         guard app == .luna, weeklyAppearanceDeferred else { return }
@@ -1124,9 +1124,9 @@ protocol UtilURLRowDelegate: AnyObject {
 /// banner.
 ///
 /// The two styles are deliberately NOT interchangeable dressings of one row.
-/// A recent is raw Safari history and stays neutral; the Save of the Week is
-/// Luna's own pick and carries the app's colour — a wash over the same black, a
-/// palette-tinted rim, and its "… of the week" line in the accent — so the two
+/// A recent is raw Safari history and stays neutral; the Luna team pick carries
+/// the app's colour — a wash over the same black, a palette-tinted rim, and its
+/// attribution line in the accent — so the two
 /// never read as one list of equals.
 final class UtilURLRow: UIControl {
     enum Style: Equatable { case saveOfTheWeek, recent }
@@ -1155,7 +1155,7 @@ final class UtilURLRow: UIControl {
     private let savedCheckmark = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    /// The weekly noun, on the Save of the Week row only: a tinted corner flag
+    /// The Luna team attribution, on the curated row only: a tinted corner flag
     /// instead of a phrase competing with the host for the subtitle's width.
     private let weeklyRibbon: WeeklyRibbonView?
     private let border = UtilURLRowGlassBorder()
@@ -1234,10 +1234,9 @@ final class UtilURLRow: UIControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    /// - Parameter weeklyLabel: The "… of the week/month" phrase, which is per
-    ///   app and per age tier (`WeeklySaveLabels`). It goes in the corner flag,
-    ///   which is why the subtitle is the host and nothing else. Ignored by
-    ///   history rows.
+    /// - Parameter weeklyLabel: The "From the Luna team" attribution. It goes
+    ///   in the corner flag, which is why the subtitle is the host and nothing
+    ///   else. Ignored by history rows.
     func configure(
         _ preview: RecentURLPreview,
         weeklyLabel: String? = nil,
@@ -1254,7 +1253,7 @@ final class UtilURLRow: UIControl {
         titleLabel.text = preview.title
         let host = URL(string: preview.urlString)?.host ?? preview.subtitle ?? preview.urlString
         subtitleLabel.text = host
-        weeklyRibbon?.text = weeklyLabel ?? WeeklySaveLabels.subtitle(monthTier: false)
+        weeklyRibbon?.text = weeklyLabel ?? WeeklySaveLabels.subtitle()
         setNeedsLayout()
         // The flag carries the noun now, so VoiceOver reads it first — the row
         // still announces everything it shows.
@@ -1465,7 +1464,7 @@ final class UtilURLRowGlassBorder: UIVisualEffectView {
         }
     }
 
-    /// Replaces the neutral glass rim. The Save of the Week row is the one
+    /// Replaces the neutral glass rim. The Luna team row is the one
     /// caller: everything else — the history rows, the save transition's growing
     /// shell — is a card in waiting and stays untinted.
     var rimTint: UIColor? {

@@ -351,8 +351,7 @@ enum SharedStageCatalog {
             newestSave: StagedNewestSave(date: saveDates.max()))
         if !showsOnboarding { onboarding.markCompleted() }
 
-        let weekly = WeeklySaveStore(
-            containerURL: scratchDirectory("weekly"), now: { StageFixtures.now })
+        let weekly = WeeklySaveStore(containerURL: scratchDirectory("weekly"))
         if let weeklyDaysOld {
             for kind in WeeklySaveKind.kinds(for: .current) {
                 weekly.setDisplay(

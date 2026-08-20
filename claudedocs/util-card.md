@@ -41,15 +41,15 @@ The bottom paste row is always present. It is the real `UIPasteControl`-backed
 control authorizes it. A valid URL runs the surface host's normal ingest path;
 invalid input resolves in the row.
 
-The Save of the Week row is CONDITIONAL: it exists whenever
-`WeeklySaveStore` holds a live signed entry for one of this app's kinds, and the
-card reclaims its slot when it doesn't. Its content is the signed, CloudKit-
-published weekly pick — see `claudedocs/save-of-the-week.md` for the record
-schema, the signing, the 9-day/30-day age rules and the deployment steps.
+The Luna team row is CONDITIONAL: it exists whenever
+`WeeklySaveStore` holds a signed entry for one of this app's kinds, and the card
+reclaims its slot when it doesn't. Its content is the signed, CloudKit-
+published Luna team pick — see `claudedocs/save-of-the-week.md` for the record
+schema, the signing, and the deployment steps.
 
-**The weekly row is dressed apart from the recent rows.** Both are the same black
+**The Luna team row is dressed apart from the recent rows.** Both are the same black
 `UtilURLRow` under the same Liquid Glass recipe (`GlassStyle.barEffect()` in
-`UtilURLRowGlassBorder`), but the pick of the week is Luna's own recommendation
+`UtilURLRowGlassBorder`), but the Luna team pick is Luna's own recommendation
 and carries the app's colour, three ways at once: a palette wash over the black
 (`UtilURLRow.weeklyWashAlpha`), the rim's stroke replaced by the palette
 (`UtilURLRowGlassBorder.rimTint` at `weeklyRimAlpha` — comparable in weight to
@@ -60,14 +60,14 @@ tint (`UtilCardSaveTransitionArtwork` carries both), so a weekly save opens from
 exactly the row that was tapped instead of flicking to neutral on its first
 frame.
 
-**The weekly noun is a CORNER FLAG, not a phrase in the subtitle.**
+**The Luna team attribution is a CORNER FLAG, not a phrase in the subtitle.**
 `WeeklyRibbonView` is a small tab flush to the row's top-left corner, 20pt tall
 so it clears the thumbnail instead of crossing it, closed by a single arc on its
 trailing edge, and filled with the app's colour dimmed into the row's own black —
 so each app still flies its own without outshining the pick it labels. It carries
-the app's noun (Save / Read / Download / Deal), which switches to "of the month"
-at nine days. The subtitle underneath is the URL host and NOTHING else: the noun
-used to share that line behind a bullet and truncate the host. The row is 96pt for
+the single label "From the Luna team" for every app and every entry age. The
+subtitle underneath is the URL host and NOTHING else: the attribution used to
+share that line behind a bullet and truncate the host. The row is 96pt for
 it (`UtilCardLayout.weeklyRowHeight`, against a history row's 74). See
 `claudedocs/save-of-the-week.md` for the flag's shape, its dimming and contrast
 rule, and its trait registration.

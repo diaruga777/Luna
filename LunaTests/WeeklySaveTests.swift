@@ -129,7 +129,7 @@ final class WeeklySaveTests: XCTestCase {
             .appendingPathComponent("WeeklySaveTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: container, withIntermediateDirectories: true)
-        store = WeeklySaveStore(containerURL: container, now: { self.clock })
+        store = WeeklySaveStore(containerURL: container)
 
         // WeeklySaveRefresherTests: the shell's metadata fetcher is `Sendable`
         // and called off the main actor, so the recording has to be
@@ -590,7 +590,7 @@ final class WeeklySaveTests: XCTestCase {
     private func makeHost(
         app: LunaApp, pacer: WeeklyCyclePacer = WeeklyCyclePacer()
     ) -> WeeklySaveRowHost {
-        WeeklySaveRowHost(store: store, app: app, now: { self.clock }, pacer: pacer)
+        WeeklySaveRowHost(store: store, app: app, pacer: pacer)
     }
 
     private func seed(_ kind: WeeklySaveKind, _ url: String) {
@@ -885,24 +885,22 @@ final class WeeklySaveTests: XCTestCase {
         XCTAssertNil(reopened.display(for: .media))
     }
 
-    func testAnEntryOneSecondPastThirtyDaysNoLongerExists() {
+    func testAnEntryRemainsLivePastThirtyDays() {
         let store = makeStore()
         store.setDisplay(display(daysOld: 0), for: .article)
         XCTAssertNotNil(store.display(for: .article))
 
         clock = clock.addingTimeInterval(29 * 86_400)
-        XCTAssertNotNil(makeStore().display(for: .article), "29 days is still live")
+        XCTAssertNotNil(makeStore().display(for: .article), "29 days is live")
 
-        clock = clock.addingTimeInterval(86_400 + 1)
-        XCTAssertNil(makeStore().display(for: .article), "30 days + 1s has aged out")
+        clock = clock.addingTimeInterval(3 * 86_400 + 1)
+        XCTAssertNotNil(makeStore().display(for: .article), "entries do not expire")
     }
 
-    func testMonthTierStartsAtNineDays() {
-        let eightDays = display(daysOld: 8).save
-        XCTAssertFalse(eightDays.isMonthTier(now: clock))
-        let nineDays = display(daysOld: 9).save
-        XCTAssertTrue(nineDays.isMonthTier(now: clock))
-        XCTAssertFalse(nineDays.isExpired(now: clock))
+    func testTeamLabelIsStableForEveryAppAndAge() {
+        for app in [LunaApp.luna, .reader, .downloader, .priceTracker] {
+            XCTAssertEqual(WeeklySaveLabels.subtitle(for: app), "From the Luna team")
+        }
     }
 
     func testSettingAndClearingPostDidChangeWithTheKind() {
@@ -1019,7 +1017,7 @@ final class WeeklySaveTests: XCTestCase {
     // MARK: WeeklySaveStoreTests helpers
 
     private func makeStore() -> WeeklySaveStore {
-        WeeklySaveStore(containerURL: container, now: { self.clock })
+        WeeklySaveStore(containerURL: container)
     }
 
     private func display(

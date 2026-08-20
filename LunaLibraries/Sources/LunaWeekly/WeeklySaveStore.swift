@@ -24,7 +24,7 @@ public struct WeeklySaveDisplay: Codable, Equatable, Sendable {
     /// Load-bearing, because the refresher skips an entry whose signed value it
     /// already holds: without this, ONE failed read (offline at launch, a
     /// timeout, a transient 5xx) parked the row on "www.example.com" plus the
-    /// generic glyph for the entry's whole 30-day life, and every later launch
+    /// generic glyph for the entry's whole lifetime, and every later launch
     /// looked at the matching URL/date and moved on. A `false` here is the
     /// refresher's cue to try again next launch.
     public var hasResolvedMetadata: Bool
@@ -55,12 +55,12 @@ public struct WeeklySaveDisplay: Codable, Equatable, Sendable {
     }
 }
 
-/// The single source of truth for "is there a save of the week, and what does
+/// The single source of truth for "is there a Luna team entry, and what does
 /// it say". Sidecar JSON in the App Group (`weeklySaves.json`) beside the
 /// saves list, same cheap-lock + atomic-write shape as `SaveFailureStore`.
 ///
-/// Expiry is evaluated on READ against the injected clock, so no sweep, no
-/// timer, and no migration: a 31-day-old entry simply stops being returned.
+/// Entries remain available until replaced or explicitly cleared. There is no
+/// age sweep, timer, or migration.
 public final class WeeklySaveStore {
     public static let shared = WeeklySaveStore()
 
@@ -110,12 +110,10 @@ public final class WeeklySaveStore {
     }
 
     private let fileURL: URL?
-    private let now: () -> Date
     private let lock = NSLock()
     private var payload = Payload(displays: [:], seenProposalIDs: [])
 
-    public init(containerURL: URL? = nil, now: @escaping () -> Date = Date.init) {
-        self.now = now
+    public init(containerURL: URL? = nil) {
         let base = containerURL ?? AppConfig.sharedContainerURL()
         self.fileURL = base?.appendingPathComponent("weeklySaves.json")
         loadFromDisk()
@@ -123,16 +121,13 @@ public final class WeeklySaveStore {
 
     // MARK: - Displays
 
-    /// The live entry for a kind, or nil when there is none or it has aged out.
+    /// The entry for a kind, or nil when there is none.
     public func display(for kind: WeeklySaveKind) -> WeeklySaveDisplay? {
         lock.lock(); defer { lock.unlock() }
-        guard let display = payload.displays[kind],
-              !display.save.isExpired(now: now())
-        else { return nil }
-        return display
+        return payload.displays[kind]
     }
 
-    /// Every live entry among `kinds`, in the order given — what the central
+    /// Every entry among `kinds`, in the order given — what the central
     /// app's cycle iterates.
     public func liveDisplays(for kinds: [WeeklySaveKind]) -> [WeeklySaveDisplay] {
         kinds.compactMap { display(for: $0) }

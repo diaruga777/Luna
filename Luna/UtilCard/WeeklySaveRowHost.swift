@@ -8,7 +8,7 @@ import LunaModels
 import LunaWeekly
 import UIKit
 
-/// What the Save of the Week slot reports to the card that holds it, plus the one
+/// What the Luna team slot reports to the card that holds it, plus the one
 /// thing it has to ask.
 @MainActor
 protocol WeeklySaveRowHostDelegate: AnyObject {
@@ -34,7 +34,7 @@ protocol WeeklySaveRowHostDelegate: AnyObject {
         _ host: WeeklySaveRowHost, isSavedURLString urlString: String) -> Bool
 }
 
-/// The util card's Save of the Week slot.
+/// The util card's Luna team slot.
 ///
 /// It owns whatever rows the local store currently has for THIS app's kinds —
 /// none (the slot collapses and the card reflows without it), one, or, in the
@@ -49,7 +49,6 @@ final class WeeklySaveRowHost: UIView {
 
     private let store: WeeklySaveStore
     private let app: LunaApp
-    private let now: () -> Date
 
     /// Rows live inside a clipping child so a slide reads as a row entering the
     /// slot. The HOST itself must not clip: the replacement corona overhangs it
@@ -93,12 +92,10 @@ final class WeeklySaveRowHost: UIView {
     init(
         store: WeeklySaveStore = .shared,
         app: LunaApp = .current,
-        now: @escaping () -> Date = Date.init,
         pacer: WeeklyCyclePacer = WeeklyCyclePacer()
     ) {
         self.store = store
         self.app = app
-        self.now = now
         self.pacer = pacer
         super.init(frame: .zero)
         accessibilityIdentifier = "utilCard.weeklyHost"
@@ -250,8 +247,7 @@ final class WeeklySaveRowHost: UIView {
                 subtitle: display.subtitleHost,
                 kind: Self.previewKind(display.save.kind),
                 imageData: display.imageData),
-            weeklyLabel: WeeklySaveLabels.subtitle(
-                for: app, monthTier: display.save.isMonthTier(now: now())),
+            weeklyLabel: WeeklySaveLabels.subtitle(for: app),
             weeklyTint: Self.softTint(for: display.save.kind))
         row.delegate = self
         row.setSaved(isSaved(display.save.urlString))

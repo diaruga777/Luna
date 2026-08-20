@@ -6,7 +6,7 @@
 import LunaDesignSystem
 import UIKit
 
-/// The corner flag a Save of the Week row wears.
+/// The corner flag a Luna team row wears.
 ///
 /// A small tab pinned to the row's top-left corner, filled with the running
 /// app's own tint dimmed into the row's black. The row clips to its rounded

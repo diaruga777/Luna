@@ -1,8 +1,9 @@
-# Save of the Week
+# From the Luna team
 
 One curated pick per save type, published to every Luna install through a
 public CloudKit database, signed so that only the curator can set it, and
-proposable by anyone. It replaces the util card's former hardcoded weekly link.
+proposable by anyone. Internally this remains the `LunaWeekly` feature and
+uses its existing weekly names for storage and workflow identifiers.
 
 Module: `LunaLibraries/Sources/LunaWeekly` (linked by the four APPS only — no
 extension reads or writes it). UI: `Luna/UtilCard/WeeklySaveRowHost.swift`,
@@ -12,18 +13,11 @@ extension reads or writes it). UI: `Luna/UtilCard/WeeklySaveRowHost.swift`,
 ## The value
 
 `WeeklySave` is `(kind, urlString, date, signature)`. The kinds are `article`,
-`media`, `product` — one live entry per kind at any time. `date` is when the
-entry became "of the week", and it drives both age rules:
-
-| age | meaning |
-| --- | --- |
-| < 9 days | "… of the week" |
-| ≥ 9 days | "… of the month" |
-| > 30 days | the entry does not exist |
-
-Both thresholds live on `WeeklySave` with an injected clock, and expiry is
-evaluated on READ (`WeeklySaveStore.display(for:)`) — no sweep, no timer, no
-migration.
+`media`, `product` — one live entry per kind at any time. `date` records when
+the current entry was published; it remains part of the signed value but no
+longer affects presentation or availability. Every app and every kind uses
+the single ribbon label **From the Luna team**. Entries remain live until a
+newer entry replaces them or the store explicitly clears them.
 
 Which kinds an app fetches and shows is `WeeklySaveKind.kinds(for:)`: the
 central Luna app takes all three, each faceted app takes its own. The shared
@@ -70,7 +64,7 @@ A read that FAILS still writes a row — the host for the title, no artwork —
 but the display records `hasResolvedMetadata: false`, and that is the flag the
 refresher's "I already hold this entry" skip consults. Without it one failed
 read (offline at launch, a timeout, a transient 5xx) parked the row on
-`www.example.com` plus the generic glyph for the entry's whole 30-day life,
+`www.example.com` plus the generic glyph for the entry's whole lifetime,
 because every later launch saw the same URL and date and moved on; the row that
 prompted this was showing a bare host while the very same link, tapped and
 saved, fetched its title in a second. A display decoded from a file written
@@ -109,7 +103,7 @@ minute, one in flight). The launch pull starts EARLY in `didFinishLaunching` —
 a `.userInitiated` task kicked off right after the metadata closure is
 installed, not the end-of-launch utility housekeeping block — because the util
 card wants the row the moment the deck appears. It fetches this app's kinds
-(one batched operation, see above), drops anything unverified or expired,
+(one batched operation, see above), drops anything unverified,
 resolves metadata BEFORE writing so the row animates in fully formed — each
 kind's metadata concurrently, writing per kind as it lands, so one slow page
 doesn't hold the other rows back — and clears a kind the cloud no longer has.
@@ -127,10 +121,10 @@ pick carries the app's colour — a palette wash over the shared black, a
 palette-tinted rim instead of the neutral glass one, and the corner flag below —
 so it never reads as the first entry of the recents list.
 
-**The weekly noun is a corner flag, not a phrase in the subtitle.**
+**The attribution is a corner flag, not a phrase in the subtitle.**
 `WeeklyRibbonView` is a small tinted tab pinned flush to the row's TOP-LEFT
-corner, carrying the app's own noun from `WeeklySaveLabels.subtitle` ("Read of
-the week", "Deal of the month", …). Three shape decisions, all of them
+corner, carrying `WeeklySaveLabels.subtitle` ("From the Luna team"). Three
+shape decisions, all of them
 corrections of a first pass that was a bright pennant across the artwork:
 
 - **it CLEARS the thumbnail** rather than overhanging it. 20pt tall against the

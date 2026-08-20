@@ -65,7 +65,7 @@ final class UtilCardTests: XCTestCase {
             .appendingPathComponent("UtilCardTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: container, withIntermediateDirectories: true)
-        weekly = WeeklySaveStore(containerURL: container, now: { self.clock })
+        weekly = WeeklySaveStore(containerURL: container)
         UIView.setAnimationsEnabled(false)
     }
 

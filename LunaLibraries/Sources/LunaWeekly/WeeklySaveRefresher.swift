@@ -61,7 +61,7 @@ public struct WeeklyLocalProposalNotifier: WeeklyProposalNotifying {
 }
 
 /// The launch/foreground orchestration: fetch this app's kinds, verify the
-/// signatures, drop what has aged out, and update the local store — resolving
+/// signatures, and update the local store — resolving
 /// display metadata BEFORE the write, so the util card only ever animates in a
 /// fully-formed row.
 @MainActor
@@ -130,7 +130,7 @@ public final class WeeklySaveRefresher {
 
         let live = Dictionary(
             fetched
-                .filter { verifier.isSignatureValid($0) && !$0.isExpired(now: now()) }
+                .filter { verifier.isSignatureValid($0) }
                 .map { ($0.kind, $0) },
             uniquingKeysWith: { first, _ in first })
 

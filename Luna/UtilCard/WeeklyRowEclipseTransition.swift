@@ -6,7 +6,7 @@
 import LunaDesignSystem
 import UIKit
 
-/// A new Save of the Week eclipsing the old one, in the row's own slot
+/// A new Luna team pick eclipsing the old one, in the row's own slot
 /// (`UtilCardLayout.weeklyRowHeight`).
 ///
 /// The choreography is the card carousel's (`CardEclipseAnimator`): the

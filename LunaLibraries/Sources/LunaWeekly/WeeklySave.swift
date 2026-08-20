@@ -7,7 +7,7 @@ import CryptoKit
 import Foundation
 import LunaModels
 
-/// The three save types a "of the week" entry can carry. One entry per kind
+/// The three save types a Luna team entry can carry. One entry per kind
 /// exists at any time; the central Luna app cycles all three, each faceted app
 /// shows only its own.
 public enum WeeklySaveKind: String, Codable, CaseIterable, Sendable {
@@ -43,13 +43,13 @@ public enum WeeklySaveKind: String, Codable, CaseIterable, Sendable {
     public var recordName: String { "weekly-" + rawValue }
 }
 
-/// One signed "of the week" entry. Only the holder of the private key can
+/// One signed Luna team entry. Only the holder of the private key can
 /// produce a `signature` the bundled public key accepts, so an unsigned or
 /// tampered record is indistinguishable from no record at all.
 public struct WeeklySave: Codable, Equatable, Sendable {
     public let kind: WeeklySaveKind
     public let urlString: String
-    /// When it became "of the week" — the age both display tiers key off.
+    /// When it became the current Luna team entry.
     public let date: Date
     /// Ed25519 signature over `canonicalMessage`.
     public let signature: Data
@@ -59,19 +59,6 @@ public struct WeeklySave: Codable, Equatable, Sendable {
         self.urlString = urlString
         self.date = date
         self.signature = signature
-    }
-
-    /// After this long an entry stops existing entirely.
-    static let expiryInterval: TimeInterval = 30 * 24 * 60 * 60
-    /// After this long the label stops saying "week" and starts saying "month".
-    static let monthTierInterval: TimeInterval = 9 * 24 * 60 * 60
-
-    public func isExpired(now: Date = Date()) -> Bool {
-        now.timeIntervalSince(date) > Self.expiryInterval
-    }
-
-    public func isMonthTier(now: Date = Date()) -> Bool {
-        now.timeIntervalSince(date) >= Self.monthTierInterval
     }
 
     /// The exact bytes that get signed and verified. ONE formatter for both
@@ -99,7 +86,7 @@ public struct WeeklySave: Codable, Equatable, Sendable {
     }()
 }
 
-/// A public "this should be the save of the week" submission. Anyone signed
+/// A public "this should be the Luna team entry" submission. Anyone signed
 /// into iCloud can write one; only the key-holder reads them.
 public struct WeeklyProposal: Codable, Equatable, Sendable {
     /// The CloudKit record name — `proposal-<hash of the url>`, which IS the

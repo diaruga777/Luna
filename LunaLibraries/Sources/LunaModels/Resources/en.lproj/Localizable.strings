@@ -106,16 +106,8 @@
 "UnsupportedSave_header_Luna" = "Unable to save this link in %@";
 "UnsupportedSave_upsell_Luna" = "Get the %@ app to save this link";
 
-/* ===================== Weekly — Save of the Week, faceted per app (each
- * app renames the noun it collects; see WeeklySaveLabels). ===================== */
-"Weekly_subtitle_week_Luna" = "Save of the week";
-"Weekly_subtitle_week_Reader" = "Read of the week";
-"Weekly_subtitle_week_Downloader" = "Video of the week";
-"Weekly_subtitle_week_PriceTracker" = "Deal of the week";
-"Weekly_subtitle_month_Luna" = "Save of the month";
-"Weekly_subtitle_month_Reader" = "Read of the month";
-"Weekly_subtitle_month_Downloader" = "Video of the month";
-"Weekly_subtitle_month_PriceTracker" = "Deal of the month";
+/* ===================== Weekly — From the Luna team ===================== */
+"Weekly_subtitle_Luna" = "From the Luna team";
 "Weekly_promoteMenuTitle_Luna" = "Promote to Save of the Week";
 "Weekly_promoteMenuTitle_Reader" = "Promote to Read of the Week";
 "Weekly_promoteMenuTitle_Downloader" = "Promote to Video of the Week";

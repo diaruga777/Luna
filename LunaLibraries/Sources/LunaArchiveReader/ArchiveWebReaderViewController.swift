@@ -820,7 +820,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                 'iframe[src*="captcha-delivery.com"], iframe[src*="geo.captcha-delivery"], '
                 + '#captcha__frame, iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
                 + 'iframe[src*="hcaptcha.com"], .g-recaptcha, [data-sitekey], .cf-turnstile, '
-                + '#cf-challenge-running')) { return 'challenge'; }
+                // Cloudflare's managed challenge begins as a tiny HTML bootstrap. The
+                // iframe is appended only after its challenge-platform script runs, so
+                // treating that first frame as a generic JavaScript-required page would
+                // send us to archive.today before Cloudflare can clear.
+                + '#challenge-form, #challenge-error-text, #cf-challenge-running, '
+                + 'script[src*="/cdn-cgi/challenge-platform/"]')) { return 'challenge'; }
             if (/verification required|verify (you are|you're)( a)? human|complete the security check|please verify you are (a )?human|checking your browser|why do i have to complete a captcha/i.test(t)) {
                 return 'challenge';
             }

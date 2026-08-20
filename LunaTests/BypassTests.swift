@@ -264,6 +264,23 @@ final class BypassTests: XCTestCase {
         XCTAssertEqual(result, "challenge")
     }
 
+    /// Cloudflare's managed challenge starts as a small HTML bootstrap before it
+    /// appends its challenge iframe. It also includes an "Enable JavaScript" fallback,
+    /// which must not make the direct-unlock stage abandon the page before the
+    /// challenge script gets a chance to clear.
+    func testCloudflareManagedChallengeBootstrapIsDetectedBeforeItsIframeRenders() {
+        let result = probeResult(for: """
+        <html><head>
+          <title>Just a moment...</title>
+          <script src="/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"></script>
+        </head><body><noscript><span id="challenge-error-text">
+          Enable JavaScript and cookies to continue
+        </span></noscript></body></html>
+        """)
+
+        XCTAssertEqual(result, "challenge")
+    }
+
     // MARK: - ArchiveWebPreStage
 
     func testRuleListedPaywalledArticlesUseDirectUnlockFirst() {

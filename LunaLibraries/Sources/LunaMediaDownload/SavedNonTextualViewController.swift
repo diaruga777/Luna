@@ -1085,14 +1085,21 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
             Task { [weak self] in
                 guard let self else { return }
                 do {
+                    // The in-app backing copy starts as soon as the preview is
+                    // ready. Let it finish before PhotoKit moves the preview file,
+                    // otherwise the two commits can race and leave the screen with
+                    // a stale local-file state.
+                    _ = await self.libraryPersistenceTask?.value
+                    let readingItem = SavesStore.shared.item(forURLString: self.articleURLString)
+                    let local = try SavedMediaStore.shared.ensureUndownloaded(
+                        id: readingItem?.id ?? MediaSaveBacking.saveID(
+                            for: self.articleURLString, title: readingItem?.title),
+                        sourceURLString: self.articleURLString,
+                        title: readingItem?.title,
+                        kind: media.kind)
                     let identifier = try await self.downloadService.saveDownloadedMediaToPhotos(media)
-                    let savedItem: SavedMediaItem?
-                    if let local = SavedMediaStore.shared.item(forURLString: self.articleURLString) {
-                        savedItem = try SavedMediaStore.shared.transitionToPhotosReference(
-                            local.id, localIdentifier: identifier, kind: media.kind)
-                    } else {
-                        savedItem = nil
-                    }
+                    let savedItem = try SavedMediaStore.shared.transitionToPhotosReference(
+                        local.id, localIdentifier: identifier, kind: media.kind)
                     // PhotoKit moved the file into the library — no temp file to clean up.
                     await MainActor.run { self.unsavedPreviewFileURL = nil }
                     AutoDownloadSettings.markDownloaded(self.articleURLString)

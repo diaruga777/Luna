@@ -270,12 +270,15 @@ final class MediaCardPresenter: CardKindPresenting {
     /// Hard-clipped in every app. The card's 9:16 frame is the whole deck's frame, since video is
     /// what that shape was chosen for, and every other card matches it.
     ///
-    /// `pagesOnInCardSwipes` stays false: a playable card's whole width is a
-    /// timeline, so a horizontal drag scrubs it. The carousel already vetoes
-    /// paging for any playing card; this also holds while a card is still
-    /// downloading and not yet playable.
+    /// Video and audio cards page on horizontal drags that start in the card.
+    /// Seeking is reserved for the visible playback bar's progress head, so a
+    /// card swipe never accidentally changes playback position.
     func cardStyle(for item: SavedItem) -> CardCarouselCardStyle {
-        CardCarouselCardStyle()
+        var style = CardCarouselCardStyle()
+        if let kind = media(for: item)?.kind {
+            style.pagesOnInCardSwipes = kind == .video || kind == .audio
+        }
+        return style
     }
 
     // MARK: - Verbs

@@ -310,6 +310,19 @@ public final class MoonHorizonProgressBar: UIView {
         CGSize(width: UIView.noIntrinsicMetric, height: 20)
     }
 
+    /// The visible progress head, exposed for controls that make the head the
+    /// only draggable part of a playback bar.
+    public var knobCenter: CGPoint {
+        MoonHorizonStyle.point(atFraction: CGFloat(progress), in: bounds)
+    }
+
+    /// Returns whether a touch is close enough to the visible head to count as
+    /// dragging the knob. The generous radius is the touch target; the artwork
+    /// remains the small sun point at `knobCenter`.
+    public func isPointInsideKnob(_ point: CGPoint, hitRadius: CGFloat = 24) -> Bool {
+        hypot(point.x - knobCenter.x, point.y - knobCenter.y) <= hitRadius
+    }
+
     public override func didMoveToWindow() {
         super.didMoveToWindow()
         updatePulseTimer()

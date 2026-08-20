@@ -302,34 +302,29 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
     private func decision(
         isImmersed: Bool,
         startsInsideCenteredCard: Bool,
-        centeredContentScrubs: Bool = false,
         velocity: CGPoint
     ) -> CardCarouselPagePanStartDecision {
         CardCarouselPagePanStartPolicy.decision(
-            isTransitioning: false,
-            isImmersed: isImmersed,
-            startsInsideCenteredCard: startsInsideCenteredCard,
-            pagesOnInCardSwipes: true,
-            centeredContentScrubs: centeredContentScrubs,
-            velocity: velocity)
+        isTransitioning: false,
+        isImmersed: isImmersed,
+        startsInsideCenteredCard: startsInsideCenteredCard,
+        pagesOnInCardSwipes: true,
+        velocity: velocity)
     }
 
-    /// A playable card's whole width is a timeline: the same drag scrubs it,
-    /// so it must never ALSO page — even on the decks that page on in-card
-    /// swipes for their readers. Edge swipes stay the paging affordance.
-    func testInCardPanOverPlayableContentScrubsInsteadOfPaging() {
+    /// A playable card pages on an in-card horizontal drag. Scrubbing is owned
+    /// by the separate progress-head recognizer, not by the card's whole width.
+    func testInCardPanOverPlayableContentPagesInsteadOfScrubbing() {
         XCTAssertEqual(
             decision(
                 isImmersed: false,
                 startsInsideCenteredCard: true,
-                centeredContentScrubs: true,
                 velocity: CGPoint(x: 500, y: 10)),
-            .reject)
+            .accept)
         XCTAssertEqual(
             decision(
                 isImmersed: false,
                 startsInsideCenteredCard: false,
-                centeredContentScrubs: true,
                 velocity: CGPoint(x: 500, y: 10)),
             .accept,
             "an edge swipe still pages past a video card")

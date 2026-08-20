@@ -123,7 +123,7 @@ final class CardPlaybackSpeedTests: XCTestCase {
     }
 
     @MainActor
-    func testResumingPlaybackTakesTheControlsBackDown() {
+    func testResumingPlaybackKeepsControlsBrieflyThenHidesThem() {
         let content = StubPlayableContent()
         let (carousel, _) = makeDeck(content)
         content.setPlaying(false)
@@ -131,7 +131,14 @@ final class CardPlaybackSpeedTests: XCTestCase {
 
         content.setPlaying(true)
 
-        XCTAssertFalse(carousel.isPlaybackPositionBarShowingForTesting)
+        XCTAssertTrue(
+            carousel.isPlaybackPositionBarShowingForTesting,
+            "resuming leaves the scrub bar available for a brief interaction window")
+
+        let hidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !carousel.isPlaybackPositionBarShowingForTesting },
+            object: nil)
+        XCTAssertEqual(XCTWaiter().wait(for: [hidden], timeout: 2), .completed)
         XCTAssertNil(carousel.playbackSpeedPillForTesting)
     }
 

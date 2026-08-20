@@ -4,7 +4,7 @@
 //
 //  The playback contract between a carousel card and whatever content it hosts.
 //  The carousel drives everything through this base class — autoplay/pause on
-//  centering, tap play/pause, in-card drag scrubbing, and the mute button — so
+//  centering, tap play/pause, scrub-bar seeking, and the mute button — so
 //  content implementations (video, animated image, static image, app-specific
 //  placeholders) stay interchangeable across the Luna apps.
 //
@@ -35,7 +35,7 @@ open class CardContentViewController: UIViewController {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
-    /// Whether the content is time-based (tap toggles playback, drag scrubs).
+    /// Whether the content is time-based (tap toggles playback).
     open var isPlayable: Bool { false }
 
     /// Whether the content can produce audio — controls the card's mute button.

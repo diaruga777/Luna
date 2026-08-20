@@ -7,8 +7,9 @@
 //  strip underneath. Interaction model:
 //
 //  - The centered card's content autoplays (looping) as soon as it is centered.
-//  - Tap on the centered card: pause/play. Horizontal drag inside it: scrub the
-//    playback timestamp (the card itself does not pan — paging happens outside).
+//  - Tap on the centered card: pause/play. A paused video exposes its playback
+//    bar; only dragging the bar's progress head seeks. Horizontal drags in the
+//    card page left or right like other card content.
 //  - Dragging on the side insets drives the eclipse page transition
 //    interactively (tracking the finger, playable forward and back); releasing
 //    finishes or cancels it. A tap on a peeked edge pages one card. Reduce
@@ -157,9 +158,8 @@ public struct CardCarouselCardStyle: Hashable {
     /// as it approaches an edge. 0 keeps the hard clip, which is what a video
     /// or a product editor wants.
     public var contentEdgeFadeHeight: CGFloat = 0
-    /// Horizontal swipes INSIDE this card page to the neighbor, for content
-    /// with no timeline of its own to scrub. Playable content overrides this
-    /// at the moment of the gesture: its whole width IS a timeline.
+    /// Horizontal swipes INSIDE this card page to the neighbor. Playback cards
+    /// keep this enabled because seeking is reserved for their progress knob.
     public var pagesOnInCardSwipes = false
 
     public init() {}
@@ -263,19 +263,15 @@ enum CardCarouselPagePanStartPolicy {
         isImmersed: Bool,
         startsInsideCenteredCard: Bool,
         pagesOnInCardSwipes: Bool,
-        centeredContentScrubs: Bool,
         velocity: CGPoint
     ) -> CardCarouselPagePanStartDecision {
         guard !isTransitioning else { return .reject }
         if startsInsideCenteredCard {
             // Immersed readers reserve in-card gestures for their content. A
             // screen-edge swipe remains the always-available paging affordance.
-            // So does playable content, whose whole width is a TIMELINE: the
-            // same drag already scrubs it, and one gesture cannot mean two
-            // things at once (the all-kinds deck pages on in-card swipes for
-            // its readers, but its video cards must scrub like the
-            // Downloader's).
-            guard !isImmersed, pagesOnInCardSwipes, !centeredContentScrubs,
+            // The scrub recognizer is attached only to a visible playback
+            // knob, so the rest of a playable card is free to page.
+            guard !isImmersed, pagesOnInCardSwipes,
                   abs(velocity.x) > abs(velocity.y) * 1.5
             else { return .reject }
             return .accept
@@ -423,7 +419,7 @@ public final class CardCarouselViewController: UIViewController {
     /// superseded item set can't land on the wrong chip.
     private var stripLoadGeneration = 0
 
-    private var playbackPan: UIPanGestureRecognizer!
+    private var playbackScrubPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
     private lazy var cardContextMenuInteraction = UIContextMenuInteraction(delegate: self)
     /// The in-flight eclipse, and whether the inset pan is driving it
@@ -454,14 +450,18 @@ public final class CardCarouselViewController: UIViewController {
     /// a card the same gesture is already paging away.
     private(set) var isPagingGesture = false
 
-    private var scrubStartFraction: Double = 0
-    private var wasPlayingBeforeScrub = false
     private let playbackScrubProgress = MoonHorizonProgressBar()
     private let playbackSpeedPill = PlaybackSpeedPillButton()
     private var playbackScrubPresentation = 0
+    private var playbackScrubHideTimer: Timer?
+    private static let playbackScrubHideDelay: TimeInterval = 1.25
 
     public init() {
         super.init(nibName: nil, bundle: nil)
+    }
+
+    deinit {
+        playbackScrubHideTimer?.invalidate()
     }
 
     @available(*, unavailable)
@@ -489,6 +489,7 @@ public final class CardCarouselViewController: UIViewController {
         // deterministic media playback position.
         playbackScrubProgress.showsActivityPulse = false
         playbackScrubProgress.accessibilityLabel = L10n.string("CardDeck_videoPositionAccessibilityLabel")
+        playbackScrubProgress.isUserInteractionEnabled = true
         cardArea.addSubview(playbackScrubProgress)
         playbackSpeedPill.alpha = 0
         playbackSpeedPill.isHidden = true
@@ -518,9 +519,10 @@ public final class CardCarouselViewController: UIViewController {
         tap.delegate = self
         cardArea.addGestureRecognizer(tap)
 
-        playbackPan = UIPanGestureRecognizer(target: self, action: #selector(handleScrubPan(_:)))
-        playbackPan.delegate = self
-        cardArea.addGestureRecognizer(playbackPan)
+        playbackScrubPan = UIPanGestureRecognizer(
+            target: self, action: #selector(handlePlaybackScrubPan(_:)))
+        playbackScrubPan.delegate = self
+        playbackScrubProgress.addGestureRecognizer(playbackScrubPan)
 
         pagePan = UIPanGestureRecognizer(target: self, action: #selector(handlePagePan(_:)))
         pagePan.delegate = self
@@ -1059,10 +1061,9 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     /// Whether a horizontal drag starting at `point` (in `space`'s coordinates)
-    /// belongs to the centered card's own content: playable content treats its
-    /// whole width as a timeline and scrubs there. Screen-level drawers ask this
-    /// before starting a pull, so a video card's scrub is never ALSO a tray pull
-    /// — the same gesture cannot mean two things at once.
+    /// belongs to the centered card's own content. Screen-level drawers ask this
+    /// before starting a pull, so a video card's page gesture is never ALSO a
+    /// tray pull — the same gesture cannot mean two things at once.
     public func centeredCardConsumesHorizontalDrag(at point: CGPoint, in space: UIView) -> Bool {
         guard count > 0, !isTransitioning,
               let slot = slots[currentIndex], slot.content.isPlayable
@@ -1092,34 +1093,39 @@ public final class CardCarouselViewController: UIViewController {
 
     // MARK: - Playback controls (paused card)
 
-    /// The centered card's content when it is a paused timeline at rest — the
-    /// one state that shows playback controls.
+    /// The centered card's content when its playback controls may be shown.
     ///
-    /// "At rest" is the point of the guards: a card paged away is paused too,
-    /// and a transition, a live scrub preview, immersion or a stepped-aside
-    /// column would all draw the controls over, or beside, a card that has left
-    /// its resting frame.
-    private func pausedPlaybackContent() -> CardContentViewController? {
+    /// The transition, a live scrub preview, immersion or a stepped-aside column
+    /// would all draw the controls over, or beside, a card that has left its
+    /// resting frame.
+    private func playbackControlsContent() -> CardContentViewController? {
         guard isViewVisible, !isTransitioning, !isShowingScrubPreview,
               !isImmersed, !isColumnAside,
               let content = slots[currentIndex]?.content,
-              content.isPlayable, !content.isPlaying,
+              content.isPlayable,
               content.showsPlaybackScrubProgress
         else { return nil }
         return content
     }
 
-    /// Brings the paused card's controls up (or takes them down) to match the
-    /// current state. Called from every point that can change it, including the
-    /// content's own play-state report.
+    /// Brings the card's controls up (or takes them down) to match the current
+    /// state. A resume leaves visible controls up briefly so the scrub knob can
+    /// still be grabbed; every interaction starts a fresh hide window.
     private func updatePlaybackControls() {
-        guard let content = pausedPlaybackContent() else {
+        guard let content = playbackControlsContent() else {
             hidePlaybackControls()
             return
         }
+        if content.isPlaying && playbackScrubProgress.isHidden { return }
         showPlaybackControls(
             at: content.playbackFraction,
             speed: content.supportsPlaybackSpeed ? content.playbackSpeed : nil)
+        if content.isPlaying {
+            schedulePlaybackControlsHide()
+        } else {
+            playbackScrubHideTimer?.invalidate()
+            playbackScrubHideTimer = nil
+        }
     }
 
     /// `speed` nil means this content plays at one rate only — no pill.
@@ -1187,7 +1193,19 @@ public final class CardCarouselViewController: UIViewController {
         playbackScrubProgress.setProgress(Float(min(max(fraction, 0), 1)), animated: false)
     }
 
+    private func schedulePlaybackControlsHide() {
+        playbackScrubHideTimer?.invalidate()
+        playbackScrubHideTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.playbackScrubHideDelay, repeats: false
+        ) { [weak self] _ in
+            self?.playbackScrubHideTimer = nil
+            self?.hidePlaybackControls()
+        }
+    }
+
     private func hidePlaybackControls() {
+        playbackScrubHideTimer?.invalidate()
+        playbackScrubHideTimer = nil
         guard !playbackScrubProgress.isHidden || !playbackSpeedPill.isHidden else { return }
         playbackScrubPresentation += 1
         let presentation = playbackScrubPresentation
@@ -1565,7 +1583,7 @@ public final class CardCarouselViewController: UIViewController {
         // button) handles its own tap — don't double-trigger card behavior.
         if let hit = cardArea.hitTest(location, with: nil),
            sequence(first: hit, next: { [weak cardArea] in $0 === cardArea ? nil : $0.superview })
-               .contains(where: { $0 is UIControl }) {
+               .contains(where: { $0 is UIControl || $0 === playbackScrubProgress }) {
             return
         }
         // While immersed the centered card is bottom-extended past its resting
@@ -1713,25 +1731,26 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.bringSubviewToFront(pullTabHint)
     }
 
-    @objc private func handleScrubPan(_ gesture: UIPanGestureRecognizer) {
-        guard let metrics, let content = slots[currentIndex]?.content, content.isPlayable
+    @objc private func handlePlaybackScrubPan(_ gesture: UIPanGestureRecognizer) {
+        guard let content = slots[currentIndex]?.content,
+              content.isPlayable, content.showsPlaybackScrubProgress,
+              playbackScrubProgress.bounds.width > 0
         else { return }
         switch gesture.state {
         case .began:
-            scrubStartFraction = content.playbackFraction
-            wasPlayingBeforeScrub = content.isPlaying
-            // Pausing brings the controls up on its own (they are a function of
-            // the paused state, whether the pause came from a tap or a drag).
+            // Pausing keeps the controls visible while the finger is on the
+            // knob. The explicit seek gesture always resumes on release.
             content.setPlaying(false)
             updatePlaybackControls()
         case .changed:
-            let translation = gesture.translation(in: cardArea).x
-            let fraction = scrubStartFraction + Double(translation / metrics.cardSize.width)
+            let point = gesture.location(in: playbackScrubProgress)
+            let fraction = Double(point.x / playbackScrubProgress.bounds.width)
             content.seek(toFraction: fraction)
             updatePlaybackScrubProgress(to: fraction)
         case .ended, .cancelled, .failed:
-            // Resuming takes them down again; a drag that ends paused keeps them.
-            if wasPlayingBeforeScrub { content.setPlaying(true) }
+            // Seeking is an explicit playback command: release resumes from the
+            // new timestamp, even when the card was paused before the drag.
+            if gesture.state != .failed { content.setPlaying(true) }
             updatePlaybackControls()
         default:
             break
@@ -1804,14 +1823,13 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         let location = gestureRecognizer.location(in: cardArea)
         let insideCenter = centeredCardFrame().contains(location)
-        if gestureRecognizer === playbackPan {
-            // Pans inside the centered card scrub playback — horizontal only,
-            // on scrubbable content.
-            guard insideCenter,
-                  let content = slots[currentIndex]?.content, content.isPlayable
+        if gestureRecognizer === playbackScrubPan {
+            guard let content = slots[currentIndex]?.content,
+                  content.isPlayable, content.showsPlaybackScrubProgress,
+                  !playbackScrubProgress.isHidden
             else { return false }
-            let velocity = playbackPan.velocity(in: cardArea)
-            return abs(velocity.x) > abs(velocity.y)
+            let point = playbackScrubPan.location(in: playbackScrubProgress)
+            return playbackScrubProgress.isPointInsideKnob(point)
         }
         if gestureRecognizer === pagePan {
             // A new touch sequence: whatever the last one claimed is over.
@@ -1822,7 +1840,9 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             // swipe, and paging mid-scrub yanks the card out from under the
             // thumb, so the pan must refuse rather than merely coexist.
             if let hit = cardArea.hitTest(gestureRecognizer.location(in: cardArea), with: nil),
-               sequence(first: hit, next: { $0.superview }).contains(where: { $0 is UISlider }) {
+               sequence(first: hit, next: { $0.superview }).contains(where: {
+                   $0 is UISlider || $0 === playbackScrubProgress
+               }) {
                 return false
             }
             let velocity = pagePan.velocity(in: cardArea)
@@ -1831,7 +1851,6 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
                 isImmersed: isImmersed,
                 startsInsideCenteredCard: insideCenter,
                 pagesOnInCardSwipes: cardStyle(at: currentIndex).pagesOnInCardSwipes,
-                centeredContentScrubs: slots[currentIndex]?.content.isPlayable == true,
                 velocity: velocity)
             if decision == .acceptAndSurface {
                 // Restore the resting card geometry before the same pan starts

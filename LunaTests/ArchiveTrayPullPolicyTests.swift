@@ -32,8 +32,8 @@ final class ArchiveTrayPullPolicyTests: XCTestCase {
     }
 
     /// The bug this policy was extracted for: on the last card the arc used to
-    /// open on the very drag a video card was scrubbing with, so one gesture
-    /// both seeked the timeline AND pulled the drawer in.
+    /// open on the same horizontal drag a video card owned for paging or its
+    /// playback control, so one gesture drove two surfaces at once.
     func testAVideoCardsScrubIsNeverAlsoAPull() {
         XCTAssertFalse(shouldBegin(
             cardClaimsDrag: true, velocity: CGPoint(x: -400, y: 20)))

@@ -24,9 +24,8 @@ enum ArchiveTrayPullPolicy {
         // An arc that is already out can always finish its interaction — that
         // includes closing it again — whatever the checks below would say.
         guard progress <= 0 else { return true }
-        // A video card's whole width is its timeline: a horizontal drag inside
-        // it scrubs, so the arc yields that region instead of opening under the
-        // scrubbing finger. One gesture, one meaning.
+        // A playable card owns horizontal drags for paging or its playback
+        // control, so the arc must not open under that same finger.
         guard !cardClaimsDrag else { return false }
         // Nothing to reveal — never start a pull for an empty arc (there is no
         // empty state to show) or away from the edge card it belongs to.

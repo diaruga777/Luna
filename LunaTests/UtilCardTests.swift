@@ -438,6 +438,33 @@ final class UtilCardTests: XCTestCase {
         XCTAssertEqual(host.startedApps, [.reader])
     }
 
+    func testLongSetupButtonTitleUsesAClippedTickerWithHalfWidthSpacing() {
+        let button = UtilCardSetupActionButton(type: .system)
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = OnboardingStrings.Intro.safariAction.value(for: .priceTracker)
+        configuration.image = UIImage(systemName: "safari.fill")
+        configuration.imagePadding = 10
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 13, leading: 20, bottom: 13, trailing: 20)
+        button.configuration = configuration
+        button.frame = CGRect(x: 0, y: 0, width: 150, height: 54)
+        let window = UIWindow(frame: button.bounds)
+        window.addSubview(button)
+        window.layoutIfNeeded()
+        button.layoutIfNeeded()
+
+        XCTAssertEqual(button.titleLabel?.alpha, 0, "an overflowing label is replaced by its ticker")
+        XCTAssertEqual(
+            UtilCardSetupActionButton.tickerSpacing(forTextWidth: 200), 100,
+            "the loop leaves a blank run equal to half the title width")
+
+        button.frame.size.width = 500
+        window.frame.size.width = 500
+        window.layoutIfNeeded()
+        button.layoutIfNeeded()
+        XCTAssertEqual(button.titleLabel?.alpha, 1, "a title that fits must not scroll")
+    }
+
     /// The cycling belongs to central Luna, not to its first run. The completed
     /// card keeps these two buttons stretched edge to edge — room reserved for
     /// a longer sibling phrase — so the phrases have to keep arriving.

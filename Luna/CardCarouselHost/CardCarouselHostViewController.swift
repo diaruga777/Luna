@@ -601,6 +601,9 @@ class CardCarouselHostViewController: UIViewController, ArchiveTrayDelegate {
     final func mountDeck() {
         carousel.dataSource = self
         carousel.delegate = self
+        // The shared host is every Luna app's root card deck. Other uses of
+        // CardCarousel (notably onboarding) never opt into this tutorial.
+        carousel.showsPullTabHint = true
         mountCarousel()
         deckWillMountBottomControls()
         mountDeckBottomControls()

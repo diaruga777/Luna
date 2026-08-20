@@ -208,6 +208,16 @@ Consequences for the deck:
 
 ## Interaction model
 
+- **One-time pull tab**: Every root card deck shows a small, non-interactive tab
+  on the right edge of the centered card whenever another card sits to its right.
+  Its left-facing chevron floats a few points right-to-left and back while the tab
+  gently scales with it, demonstrating that the cards can be pulled left. It never
+  appears on the left, in onboarding, while carousel chrome is retired, or at the
+  deck's rightmost card. The first recognized horizontal card-page swipe in any
+  Luna app writes the shared App-Group marker and retires this tutorial forever
+  across Reader, Downloader, and Price Tracker; taps and scrub-strip navigation do
+  not dismiss it.
+
 - **Archive arc**: Reader, Downloader, and Price Tracker each keep a distinct,
   non-card, chrome-less
   archive drawer just beyond the carousel's right edge — no background, no pull tab;

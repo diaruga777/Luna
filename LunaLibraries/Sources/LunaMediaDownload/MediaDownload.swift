@@ -57,7 +57,19 @@ public enum MediaDownloadablePlatform {
     public static func supports(_ urlString: String) -> Bool {
         if DirectMediaURL.kind(for: urlString) != nil { return true }
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
+        if platform == .youtube {
+            guard let link = URL(string: urlString).flatMap(YouTubeLink.init(url:)) else { return false }
+            return link.isShort || link.isClip
+        }
         return supported.contains(platform)
+    }
+
+    /// Long-form YouTube pages are saved and presented, but not handed to the
+    /// direct-download engine: their stream URLs now commonly require YouTube's
+    /// per-video Proof-of-Origin attestation. Shorts retain the supported path.
+    public static func isPlaybackOnlyYouTube(_ urlString: String) -> Bool {
+        guard let link = URL(string: urlString).flatMap(YouTubeLink.init(url:)) else { return false }
+        return !link.isShort && !link.isClip
     }
 }
 
@@ -153,4 +165,3 @@ public enum MediaDownloadStorage {
         for item in items { try? fm.removeItem(at: item) }
     }
 }
-

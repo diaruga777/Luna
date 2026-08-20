@@ -65,6 +65,11 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// construction; it is the one case the table cannot be asked about.
     private var showsInlineMedia: Bool {
         isPracticePreview || MediaDownloadablePlatform.supports(articleURLString)
+            || MediaDownloadablePlatform.isPlaybackOnlyYouTube(articleURLString)
+    }
+
+    private var isPlaybackOnlyYouTube: Bool {
+        MediaDownloadablePlatform.isPlaybackOnlyYouTube(articleURLString)
     }
 
     /// The app's own colour — the extensions inherit their host app's tint, so
@@ -384,7 +389,7 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
             title: L10n.string("Downloader_media_preview_downloadButtonTitle"), symbol: "arrow.down.circle",
             prominent: true, tint: Self.tint)
         downloadButton.addAction(
-            UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
+            UIAction { [weak self] _ in self?.primaryPreviewAction() }, for: .touchUpInside)
 
         setSaveButton(savedToPhotos: false)
         saveButton.addAction(
@@ -491,6 +496,10 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// otherwise rest in the pending state until the user taps Download.
     private func beginMediaFlow() {
         guard showsInlineMedia else { return }
+        if isPlaybackOnlyYouTube {
+            showPlaybackOnlyYouTubePreview()
+            return
+        }
         if let practiceVideoURL {
             // The result screen remains the real `SavedNonTextual` controller;
             // only its input is bundled mock data. Resolve it after the hosted
@@ -523,6 +532,58 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
             startMediaDownload()
         } else {
             applyMediaState(.pending)
+        }
+    }
+
+    private func primaryPreviewAction() {
+        if isPlaybackOnlyYouTube {
+            openPlaybackOnlyYouTube()
+        } else {
+            startMediaDownload()
+        }
+    }
+
+    /// Long-form YouTube media is still a useful saved link. Show its independently
+    /// fetchable poster and title rather than a failed download control; tapping
+    /// deliberately hands playback back to YouTube.
+    private func showPlaybackOnlyYouTubePreview() {
+        pendingIconView.isHidden = true
+        previewImageView.isHidden = false
+        playOverlay.isHidden = false
+        previewPlaceholder.isHidden = true
+        downloadProgress.isHidden = true
+        saveButton.isHidden = true
+        shareButton.isEnabled = false
+        downloadButton.isHidden = false
+        downloadButton.isEnabled = true
+        downloadButton.configuration = GlassStyle.actionButtonConfiguration(
+            title: L10n.string("Platform_youTube"), symbol: "arrow.up.forward.app",
+            prominent: true, tint: Self.tint)
+        let savedTitle = SavesStore.shared.item(forURLString: articleURLString)?.title
+        downloadStatus.text = savedTitle?.isEmpty == false ? savedTitle : L10n.string("Platform_youTube") + " video"
+        downloadStatus.textColor = LunaColors.secondaryText
+        downloadStatus.isHidden = false
+        guard let thumbnailURL = URL(string: articleURLString).flatMap(YouTubeLink.init(url:))?.thumbnailURL else {
+            previewImageView.image = UIImage(systemName: "play.rectangle.fill")
+            previewImageView.tintColor = LunaColors.tertiaryText
+            previewImageView.contentMode = .center
+            return
+        }
+        Task { [weak self] in
+            guard let (data, response) = try? await URLSession.shared.data(from: thumbnailURL),
+                  let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  let image = UIImage(data: data)
+            else { return }
+            await MainActor.run { self?.previewImageView.image = image }
+        }
+    }
+
+    private func openPlaybackOnlyYouTube() {
+        guard let url = URL(string: articleURLString) else { return }
+        if let host = delegate as? ExtensionHost {
+            host.openURL(url)
+        } else {
+            UIApplication.shared.open(url)
         }
     }
 
@@ -980,6 +1041,10 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// from the fresh temp file (`.ready`) or the already-downloaded item's own
     /// local file / Photos asset (`.alreadyDownloaded`).
     @objc private func previewTapped() {
+        if isPlaybackOnlyYouTube {
+            openPlaybackOnlyYouTube()
+            return
+        }
         switch mediaState {
         case .ready(let media) where media.kind == .video || media.kind == .audio:
             playVideo(url: media.fileURL)

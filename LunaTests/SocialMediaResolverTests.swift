@@ -542,6 +542,15 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(full.videoID, "JFryZD88SBo")
     }
 
+    func testOnlyYouTubeShortsReachTheDirectDownloadPath() throws {
+        let short = "https://youtube.com/shorts/bcHXFQIZ4lY?si=reported"
+        let full = "https://youtube.com/watch?v=lZC0QV4N3OU&si=reported"
+        XCTAssertTrue(MediaDownloadablePlatform.supports(short))
+        XCTAssertFalse(MediaDownloadablePlatform.isPlaybackOnlyYouTube(short))
+        XCTAssertFalse(MediaDownloadablePlatform.supports(full))
+        XCTAssertTrue(MediaDownloadablePlatform.isPlaybackOnlyYouTube(full))
+    }
+
     func testYouTubePlaybackBootstrapParsesVisitorAndPlayerJavaScript() throws {
         let page = #"""
         <script>

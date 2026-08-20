@@ -620,7 +620,11 @@ This deliberately does not embed `yt-dlp`, execute or decipher player JavaScript
 PO tokens, or bypass login/DRM/age/region/private-video controls. The JavaScript fetch is data-only
 and reads the published five-digit signature timestamp. Videos whose available formats still
 require a player challenge or [PO token](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
-fail explicitly when no public progressive stream is present. YouTube's developer policies also
+fail explicitly when no public progressive stream is present. Luna now treats ordinary YouTube watch
+pages as **playback-only** rather than launching a doomed transfer: the extensions show an independently
+fetched poster/title and open the original URL, while the Downloader and central Luna decks host the
+official embedded player and use the poster in their mini-carousel chip. Direct `/shorts/` URLs retain
+the existing downloader path. YouTube's developer policies also
 restrict downloading/offline playback without authorization; shipping this feature requires a
 separate product/legal review.
 

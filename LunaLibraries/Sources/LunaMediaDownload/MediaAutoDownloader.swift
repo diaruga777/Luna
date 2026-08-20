@@ -19,8 +19,7 @@ public enum MediaAutoDownloader {
     public static func isEnabled(forURLString urlString: String) -> Bool {
         guard isRunningInDownloader else { return false }
         if DirectMediaURL.kind(for: urlString) != nil { return true }
-        guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
-        return MediaDownloadablePlatform.supported.contains(platform)
+        return MediaDownloadablePlatform.supports(urlString)
     }
 
     /// Downloads the post's first media item if it hasn't already been downloaded.
@@ -75,8 +74,7 @@ public enum MediaAutoDownloader {
               MediaDownloadablePlatform.supports(urlString)
         else { return false }
         if DirectMediaURL.kind(for: urlString) != nil { return true }
-        guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
-        return MediaDownloadablePlatform.supported.contains(platform)
+        return MediaDownloadablePlatform.supports(urlString)
     }
 
     /// Starts the background transfer for an App Intent save, reporting WHY it

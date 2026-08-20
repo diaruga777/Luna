@@ -15,6 +15,9 @@ public struct YouTubeLink: Equatable {
     public let videoID: String?
     public let timeRange: MediaTimeRange?
     public let isClip: Bool
+    /// A first-party Shorts URL. Luna retains its existing direct-download path
+    /// for these compact clips; ordinary YouTube watch pages are playback-only.
+    public let isShort: Bool
 
     public init?(url: URL) {
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString),
@@ -22,7 +25,9 @@ public struct YouTubeLink: Equatable {
         else { return nil }
         sourceURL = url
         videoID = recognized.itemID
-        isClip = url.pathComponents.dropFirst().first == "clip"
+        let firstPathComponent = url.pathComponents.dropFirst().first?.lowercased()
+        isClip = firstPathComponent == "clip"
+        isShort = firstPathComponent == "shorts"
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let query = components?.queryItems ?? []

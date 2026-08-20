@@ -29,7 +29,8 @@ public final class ExtensionMediaPresenter: ShareMediaPresenting {
     /// `SavedMediaScreenDelegate` and answers there, with the reason.
     public func presentNonTextual(urlString: String, host: ExtensionHost) {
         let interactive = host.readerMode != nil
-        if interactive || MediaDownloadablePlatform.supports(urlString) {
+        if interactive || MediaDownloadablePlatform.supports(urlString)
+            || MediaDownloadablePlatform.isPlaybackOnlyYouTube(urlString) {
             host.presentModally(SavedNonTextualViewController(
                 articleURLString: urlString, showsSystemShare: interactive,
                 delegate: host))

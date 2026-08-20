@@ -110,7 +110,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// The central app and Reader still show it as a link card; the
     /// Downloader, which has no link card, gives it no slot.
     func hasContent(for item: SavedItem) -> Bool {
-        media(for: item) != nil
+        media(for: item) != nil || MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString)
     }
 
     /// Archived in either store means archived. `setArchived` writes both the
@@ -176,6 +176,10 @@ final class MediaCardPresenter: CardKindPresenting {
     func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
+        if MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString),
+           let url = item.url {
+            return YouTubePlaybackCardContentViewController(sourceURL: url)
+        }
         guard let media = media(for: item), !media.isArchived else { return nil }
         return MediaCardFactory.makeCard(
             for: media,
@@ -200,6 +204,13 @@ final class MediaCardPresenter: CardKindPresenting {
     }
 
     // MARK: - Strip and scrub preview
+
+    func title(for item: SavedItem) -> String? {
+        if MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString) {
+            return item.title?.isEmpty == false ? item.title : "YouTube video"
+        }
+        return media(for: item)?.title ?? item.title
+    }
 
     /// A platform save is identified by its platform, not by its host's favicon.
     func loadSourceBadge(
@@ -226,7 +237,22 @@ final class MediaCardPresenter: CardKindPresenting {
         completion: @escaping (UIImage?) -> Void
     ) {
         guard let media = media(for: item) else {
-            completion(nil)
+            guard MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString),
+                  let thumbnailURL = item.url.flatMap(YouTubeLink.init(url:))?.thumbnailURL
+            else {
+                completion(nil)
+                return
+            }
+            Task {
+                guard let (data, response) = try? await URLSession.shared.data(from: thumbnailURL),
+                      let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode)
+                else {
+                    completion(UIImage(systemName: "play.rectangle.fill"))
+                    return
+                }
+                completion(UIImage(data: data) ?? UIImage(systemName: "play.rectangle.fill"))
+            }
             return
         }
         MediaCardFactory.loadThumbnail(
@@ -236,6 +262,7 @@ final class MediaCardPresenter: CardKindPresenting {
     /// A media save's card is a picture, so its strip chip is that picture too.
     /// An unarchived save with no still yet falls back to a badge chip.
     func prefersThumbnailChip(for item: SavedItem) -> Bool {
+        if MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString) { return true }
         guard let media = media(for: item) else { return false }
         return !media.isArchived
     }

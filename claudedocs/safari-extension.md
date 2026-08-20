@@ -14,7 +14,7 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 ## Key files
 
-- `LunaSafari/Resources/manifest.json` — MV3; `background.page` (event page — iOS kills MV3 service workers) **with `"persistent": false`** and a numeric-keyed `icons` map — both are REQUIRED by App Store Connect upload validation (ITMS error 90849 otherwise); permissions `nativeMessaging`, `tabs`; `host_permissions: <all_urls>` (needed to read tab URLs; user grants "All Websites").
+- `LunaSafari/Resources/manifest.json` — MV3; `background.page` (event page — iOS kills MV3 service workers) **with `"persistent": false`** and a numeric-keyed `icons` map — both are REQUIRED by App Store Connect upload validation (ITMS error 90849 otherwise); permissions `nativeMessaging`, `tabs`, and `storage` (the latter keeps pill placement across sites); `host_permissions: <all_urls>` (needed to read tab URLs; user grants "All Websites").
 - `LunaSafari/Resources/background.js` — listens `tabs.onActivated` + `tabs.onUpdated` (active tab, url change or load complete), dedupes, sends native message.
 - `LunaSafari/Resources/annoyances.css` + `annoyances.js` — declarative, all-frame
   `document_start` suppression for cookie consent and intrusive popovers; intentionally
@@ -79,6 +79,21 @@ capture the **minimal raw input** and hand it to shared Swift, which does all th
 parsing and processing; and that JS piece must then be either generated from its
 Swift source or pinned by a parity test that fails on drift — never a silent
 hand-mirror.
+
+### Pill placement
+
+There is no side-swap chevron beside the in-page pills. Press and hold any visible
+Luna pill, then drag the group vertically; releasing on either half of the screen
+snaps it to that edge. The `lunaPillPosition` record in `browser.storage.local`
+stores the snapped side plus a normalized vertical position, so it survives page
+reloads and carries to every eligible site. A normalized value (rather than a
+pixel offset) preserves the intended height through rotation and different Safari
+viewport sizes. Each layout pass measures CSS `safe-area-inset-top` and
+`safe-area-inset-bottom`, then clamps the entire group inside those insets plus
+16pt padding. This applies to the two-high product stack as one unit, not just
+the pill that began the drag. `ProductHistoryPillRenderTests` covers the removed
+chevron, drag installation on both pill types, left/right placement, and the
+viewport clamp.
 
 ## The in-page setup confirmation
 

@@ -765,6 +765,21 @@ open class ShareViewController: UIViewController {
         extensionContext?.open(url, completionHandler: nil)
     }
 
+    /// Opening the URL and completing must be sequenced through the extension
+    /// context. Completing immediately after `open` can tear down the request
+    /// before the source app (notably YouTube opening YouTube) handles it.
+    public func openURLThenComplete(_ url: URL) {
+        guard let extensionContext else {
+            completeSilently()
+            return
+        }
+        extensionContext.open(url) { [weak self] _ in
+            // Closing is unconditional: even a denied/open-to-self handoff must
+            // not strand the action/share extension on screen.
+            self?.completeSilently()
+        }
+    }
+
     private func completeAfterDirectSave() {
         if isActionExtension {
             confirmSavedThenComplete()

@@ -921,6 +921,7 @@
 "Downloader_media_error_unsupported_Luna" = "This link has no playable video.";
 "Downloader_media_preview_deletingStatus_Luna" = "Deleting…";
 "Downloader_media_preview_downloadButtonTitle_Luna" = "Open in Luna";
+"Downloader_media_preview_openInYouTubeButtonTitle_Luna" = "Open in YouTube";
 "Downloader_media_preview_downloadingStatus_Luna" = "Fetching video…";
 "Downloader_media_preview_saveAccessibilityLabel_Luna" = "Save to Photos";
 "Downloader_media_preview_saveButtonTitleFormat_Luna" = "Save to %@ Photos";

@@ -91,9 +91,23 @@ public protocol ExtensionHost: AnyObject, UnsupportedSaveCardDelegate,
     /// Luna" step. A silent failure here is fine, because the card always
     /// shows manual fallback instructions too.
     func openURL(_ url: URL)
+
+    /// Attempts to leave the extension for `url`, then completes the extension
+    /// request whether the system accepted the launch or not. Media previews use
+    /// this instead of racing `openURL` against an immediate completion when the
+    /// source app is also the destination app.
+    func openURLThenComplete(_ url: URL)
 }
 
 public extension ExtensionHost {
+    /// Test and non-extension hosts have no asynchronous `NSExtensionContext`
+    /// handoff to await. The real host overrides this and completes from the
+    /// context's callback.
+    func openURLThenComplete(_ url: URL) {
+        openURL(url)
+        completeSilently()
+    }
+
     /// Nothing was saved, so the drop card's Done completes the request
     /// without a "Saved" checkmark. Every extension host gives this same
     /// answer.
@@ -118,4 +132,3 @@ public extension ExtensionHost {
         confirmSavedThenComplete()
     }
 }
-

@@ -32,7 +32,8 @@ import UIKit
 /// bottom — a full-width Done under a full-width Delete, with the system-share
 /// affordance a floating glass circle above them (action extension only; the
 /// share extension's sheet already sits inside a share flow).
-public final class SavedNonTextualViewController: UIViewController, HostedShareBeatReplaying {
+public final class SavedNonTextualViewController: UIViewController, HostedShareBeatReplaying,
+    YouTubeEmbeddedPlayerViewDelegate {
 
     private let articleURLString: String
     /// The surface that presented this screen. Weak, and it is the HOST itself
@@ -132,6 +133,8 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     private let playOverlay = UIView()
     /// Shown (grey box + message) when media exists but its preview couldn't render.
     private let previewPlaceholder = UILabel()
+    private var youTubePlayerView: YouTubeEmbeddedPlayerView?
+    private var previewTapRecognizer: UITapGestureRecognizer?
 
     /// The one column both stacks are laid out in: the view's margins, capped at
     /// the readable width so a wide iPad sheet doesn't stretch the media.
@@ -341,8 +344,9 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         // plays on this surface itself, so a demo never escapes into AVKit.
         previewContainer.isUserInteractionEnabled = !isPracticePreview
         if !isPracticePreview {
-            previewContainer.addGestureRecognizer(
-                UITapGestureRecognizer(target: self, action: #selector(previewTapped)))
+            let previewTap = UITapGestureRecognizer(target: self, action: #selector(previewTapped))
+            previewContainer.addGestureRecognizer(previewTap)
+            previewTapRecognizer = previewTap
         }
 
         // Square, by preference: the media's own proportions never move its
@@ -557,12 +561,13 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
         downloadButton.isHidden = false
         downloadButton.isEnabled = true
         downloadButton.configuration = GlassStyle.actionButtonConfiguration(
-            title: L10n.string("Platform_youTube"), symbol: "arrow.up.forward.app",
+            title: L10n.string("Downloader_media_preview_openInYouTubeButtonTitle"),
+            symbol: "arrow.up.forward.app",
             prominent: true, tint: Self.tint)
-        let savedTitle = SavesStore.shared.item(forURLString: articleURLString)?.title
-        downloadStatus.text = savedTitle?.isEmpty == false ? savedTitle : L10n.string("Platform_youTube") + " video"
-        downloadStatus.textColor = LunaColors.secondaryText
-        downloadStatus.isHidden = false
+        // The poster and explicit action say everything this state needs. A
+        // second "YouTube video"/title row only adds dead vertical chrome.
+        downloadStatus.text = nil
+        downloadStatus.isHidden = true
         guard let thumbnailURL = URL(string: articleURLString).flatMap(YouTubeLink.init(url:))?.thumbnailURL else {
             previewImageView.image = UIImage(systemName: "play.rectangle.fill")
             previewImageView.tintColor = LunaColors.tertiaryText
@@ -581,10 +586,49 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     private func openPlaybackOnlyYouTube() {
         guard let url = URL(string: articleURLString) else { return }
         if let host = delegate as? ExtensionHost {
-            host.openURL(url)
+            host.openURLThenComplete(url)
         } else {
             UIApplication.shared.open(url)
         }
+    }
+
+    /// Replaces the poster with the same officially identified iframe the app
+    /// card uses. The player is 16:9 inside the extension's stable square slot;
+    /// the square itself does not resize when playback begins.
+    private func showPlaybackOnlyYouTubePlayer() {
+        guard youTubePlayerView == nil,
+              let url = URL(string: articleURLString),
+              let player = YouTubeEmbeddedPlayerView(sourceURL: url)
+        else {
+            if youTubePlayerView == nil { openPlaybackOnlyYouTube() }
+            return
+        }
+        player.delegate = self
+        player.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(player)
+        NSLayoutConstraint.activate([
+            player.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
+            player.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
+            player.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
+            player.heightAnchor.constraint(equalTo: player.widthAnchor, multiplier: 9.0 / 16.0),
+        ])
+        // The container tap that revealed the player must not cancel the iframe's
+        // own subsequent play/control touches.
+        previewTapRecognizer?.isEnabled = false
+        youTubePlayerView = player
+    }
+
+    public func youTubeEmbeddedPlayerDidBecomeReady(_ player: YouTubeEmbeddedPlayerView) {}
+
+    public func youTubeEmbeddedPlayer(
+        _ player: YouTubeEmbeddedPlayerView, didFailWithCode code: Int?
+    ) {
+        player.removeFromSuperview()
+        youTubePlayerView = nil
+        previewTapRecognizer?.isEnabled = true
+        // A policy/private/unembeddable failure still leaves the user one tap
+        // from playback: launch the original URL, then close the extension.
+        openPlaybackOnlyYouTube()
     }
 
     // MARK: - Hosted (in-app rehearsal) pacing
@@ -1040,9 +1084,9 @@ public final class SavedNonTextualViewController: UIViewController, HostedShareB
     /// Tapping the preview plays the downloaded video in an AVPlayerViewController —
     /// from the fresh temp file (`.ready`) or the already-downloaded item's own
     /// local file / Photos asset (`.alreadyDownloaded`).
-    @objc private func previewTapped() {
+    @objc func previewTapped() {
         if isPlaybackOnlyYouTube {
-            openPlaybackOnlyYouTube()
+            showPlaybackOnlyYouTubePlayer()
             return
         }
         switch mediaState {

@@ -45,8 +45,8 @@ final class ProductHistoryPillRenderTests: XCTestCase {
     private var historyPillText: String? {
         js.string("(document.getElementById('queue-history-pill') || {}).textContent")
     }
-    private var moveButtonExists: Bool {
-        js.bool("!!document.getElementById(window.__lunaPillMoveButtonID)")
+    private var legacyMoveButtonExists: Bool {
+        js.bool("!!document.getElementById('luna-pill-move-button')")
     }
 
     func testUnsavedWithHistoryShowsBothPillsHistoryAboveTrack() {
@@ -65,7 +65,7 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         render(historyRespJSON: "{hasHistory: false, isTracked: true}")
         XCTAssertFalse(trackPillExists)
         XCTAssertFalse(historyPillExists)
-        XCTAssertFalse(moveButtonExists, "the move control only exists while a pill is visible")
+        XCTAssertFalse(legacyMoveButtonExists, "the legacy chevron must not be injected")
     }
 
     func testUnsavedWithNoHistoryShowsOnlyTheTrackPill() {
@@ -86,47 +86,50 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         XCTAssertTrue(text.contains("79.99") || text.contains("$79.99"), "pill text was: \(text)")
     }
 
-    /// Non-interactive: the pill must never be able to swallow a page tap.
-    func testHistoryPillIsPointerEventsNone() {
+    /// A history-only page still needs a long-press drag surface. It remains
+    /// informational because it has no tap handler.
+    func testHistoryPillReceivesPointerEventsForLongPressDragging() {
         render(historyRespJSON: #"{hasHistory: true, isTracked: false, amount: "79.99", currency: "USD", day: "2026-01-12"}"#)
         let pointerEvents = js.string(
             "getComputedStyle(document.getElementById('queue-history-pill')).pointerEvents")
-        XCTAssertEqual(pointerEvents, "none")
+        XCTAssertEqual(pointerEvents, "auto")
     }
 
-    func testMoveControlMirrorsEveryPillAndKeepsA44PointHitTarget() {
+    func testPillsAreLongPressDragHandlesAndClampTheStackToTheViewport() {
         render(historyRespJSON: #"{hasHistory: true, isTracked: false, amount: "79.99", currency: "USD", day: "2026-01-12"}"#)
 
-        XCTAssertTrue(moveButtonExists)
-        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).textContent"), "‹")
-        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).style.width"), "44px")
-        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).style.height"), "44px")
+        XCTAssertFalse(legacyMoveButtonExists, "dragging replaces the separate chevron control")
+        XCTAssertTrue(js.bool("document.getElementById('queue-read-button').__lunaPillDragInstalled === true"))
+        XCTAssertTrue(js.bool("document.getElementById('queue-history-pill').__lunaPillDragInstalled === true"))
         XCTAssertEqual(
-            js.string("document.getElementById(window.__lunaPillMoveButtonID).getAttribute('aria-label')"),
-            "Move Luna buttons to the left")
+            js.string("getComputedStyle(document.getElementById('queue-history-pill')).pointerEvents"),
+            "auto",
+            "a history-only page still needs a pill the user can long-press")
         XCTAssertTrue(js.bool("""
             (function () {
-                var button = document.getElementById(window.__lunaPillMoveButtonID).getBoundingClientRect();
-                var pill = document.getElementById(window.__lunaPillID).getBoundingClientRect();
-                return button.right <= pill.left - 7;
+                var pills = ['queue-read-button', 'queue-history-pill'].map(function (id) {
+                    return document.getElementById(id).getBoundingClientRect();
+                });
+                return pills.every(function (pill) {
+                    return pill.right <= window.innerWidth - 16 && pill.bottom <= window.innerHeight - 16;
+                });
             })()
-            """), "the initial left chevron sits to the left of the bottommost pill")
+            """), "the initial stack remains inside the bottom and trailing padding")
 
-        _ = js.evaluate("document.getElementById(window.__lunaPillMoveButtonID).click(); \"moved\"")
+        XCTAssertTrue(js.bool("window.__lunaSetPillPosition({ side: 'left', verticalFraction: 0 })"))
 
         XCTAssertEqual(js.string("document.getElementById('queue-read-button').style.left"), "16px")
         XCTAssertEqual(js.string("document.getElementById('queue-history-pill').style.left"), "16px")
-        XCTAssertEqual(js.string("document.getElementById(window.__lunaPillMoveButtonID).textContent"), "›")
-        XCTAssertEqual(
-            js.string("document.getElementById(window.__lunaPillMoveButtonID).getAttribute('aria-label')"),
-            "Move Luna buttons to the right")
         XCTAssertTrue(js.bool("""
             (function () {
-                var button = document.getElementById(window.__lunaPillMoveButtonID).getBoundingClientRect();
-                var pill = document.getElementById(window.__lunaPillID).getBoundingClientRect();
-                return button.left >= pill.right + 7;
+                var pills = ['queue-read-button', 'queue-history-pill'].map(function (id) {
+                    return document.getElementById(id).getBoundingClientRect();
+                });
+                return pills.every(function (pill) {
+                    return pill.left >= 16 && pill.top >= 16;
+                });
             })()
-            """), "the right chevron sits to the right of the bottommost pill after mirroring")
+            """), "the stack snaps to the leading edge and remains clear of the top padding")
     }
 
     // MARK: - The alternative-seller lookup
@@ -179,10 +182,11 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         XCTAssertFalse(historyPillExists, "history is held back until the lookup answers")
     }
 
-    /// It is a status, not a control — a tap must reach the page under it.
-    func testTheSpinnerIsNotTappable() {
+    /// It has no tap action, but it stays pointer-active as a long-press drag
+    /// handle so the stack can move while the lookup runs.
+    func testTheSpinnerCanReceiveTheLongPressDragGesture() {
         beginLookup()
-        XCTAssertEqual(sellerPillStyle("pointerEvents"), "none")
+        XCTAssertEqual(sellerPillStyle("pointerEvents"), "auto")
     }
 
     func testAFoundSellerReplacesTheSpinnerInPlace() {
@@ -278,11 +282,11 @@ final class ProductHistoryPillRenderTests: XCTestCase {
         XCTAssertTrue(trackPillExists)
     }
 
-    /// The empty state is a status, not a control.
-    func testTheNoBetterPriceStateIsNotTappable() {
+    /// The empty state has no tap action but remains a drag handle.
+    func testTheNoBetterPriceStateCanReceiveTheLongPressDragGesture() {
         beginLookup()
         finishLookup(sellerRespJSON: "{ found: false }")
-        XCTAssertEqual(sellerPillStyle("pointerEvents"), "none")
+        XCTAssertEqual(sellerPillStyle("pointerEvents"), "auto")
     }
 
     /// A lookup that FAILED outright — the native side rejected, died, or hit
@@ -295,7 +299,7 @@ final class ProductHistoryPillRenderTests: XCTestCase {
             sellerRespJSON: "{ found: false, failed: true }")
         XCTAssertEqual(sellerPillState, "failed")
         XCTAssertEqual(sellerPillText, "Unable to find better prices")
-        XCTAssertEqual(sellerPillStyle("pointerEvents"), "none")
+        XCTAssertEqual(sellerPillStyle("pointerEvents"), "auto")
         XCTAssertFalse(historyPillExists)
     }
 

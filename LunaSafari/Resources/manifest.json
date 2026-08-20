@@ -17,7 +17,7 @@
         "persistent": false
     },
     "permissions": [
-        "nativeMessaging", "tabs", "scripting",
+        "nativeMessaging", "tabs", "scripting", "storage",
         "declarativeNetRequest", "declarativeNetRequestWithHostAccess"
     ],
     "host_permissions": ["<all_urls>"],

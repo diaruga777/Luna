@@ -170,9 +170,14 @@ save at index one; only an empty store starts on the util card.
 On the central util card, the Safari and shortcut labels cycle through the
 Reader, Downloader, and Price Tracker labels in that same rank order. The
 buttons themselves stay fixed; only their clipped labels translate and fade.
-The labels and Save of the Week use one four-second clock, so their changes
+The labels and Save of the Week use one eight-second clock, so their changes
 start together. The central row cycles those three kinds in rank order; a
 missing kind is a fully empty turn, not a blank card.
+
+When a setup-button label is wider than its resolved title area (after the
+icon and insets), its visible text becomes a clipped, continuous ticker. The
+next copy begins after blank space equal to half the label's rendered width,
+then the loop resumes at the start. Labels that fit remain still.
 
 ## Launch artwork and reveal
 

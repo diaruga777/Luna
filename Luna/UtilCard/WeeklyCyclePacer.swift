@@ -25,7 +25,7 @@ protocol WeeklyCyclePacerDelegate: AnyObject {
 final class WeeklyCyclePacer {
     /// This is intentionally unhurried: the weekly pick is content to read,
     /// not a status ticker. The setup labels use this exact same clock.
-    static let interval: TimeInterval = 4.0
+    static let interval: TimeInterval = 8.0
 
     /// Starts a repeating tick and returns its canceller. Injected so tests
     /// drive the cadence by hand instead of waiting two seconds a time.
@@ -117,7 +117,7 @@ final class WeeklyCyclePacer {
         }
     }
 
-    /// A repeating `Timer` with generous tolerance — a two-second decorative
+    /// A repeating `Timer` with generous tolerance — an eight-second decorative
     /// cadence has no business waking the CPU precisely.
     static let timerScheduler: Scheduler = { interval, tick in
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
@@ -168,7 +168,7 @@ final class UtilCardSetupTextCycler {
     /// Stands in for the real timer in the cycler the util card builds for
     /// itself, which a test cannot reach to inject. Nothing in the app writes
     /// it; it exists so the fallback clock's behaviour can be asserted without
-    /// waiting out four-second turns.
+    /// waiting out eight-second turns.
     static var schedulerOverrideForTesting: Scheduler?
 
     init(
@@ -218,6 +218,8 @@ final class UtilCardSetupTextCycler {
 
     private func animate(_ button: UIButton?, to title: String) {
         guard let button, button.configuration?.title != title else { return }
+        let tickerButton = button as? UtilCardSetupActionButton
+        tickerButton?.suspendTicker()
         let outgoing = button.titleLabel
         let travel = max(button.bounds.width * 0.22, 34)
         UIView.animate(
@@ -242,6 +244,8 @@ final class UtilCardSetupTextCycler {
             ) {
                 incoming?.transform = .identity
                 incoming?.alpha = 1
+            } completion: { _ in
+                tickerButton?.resumeTickerIfNeeded()
             }
         }
     }
@@ -261,6 +265,8 @@ final class UtilCardSetupTextCycler {
             safariButton?.titleLabel?.alpha = 1
             shortcutButton?.titleLabel?.alpha = 1
         }
+        (safariButton as? UtilCardSetupActionButton)?.resumeTickerIfNeeded()
+        (shortcutButton as? UtilCardSetupActionButton)?.resumeTickerIfNeeded()
     }
 
     private func applyTitle(_ title: String, to button: UIButton) {

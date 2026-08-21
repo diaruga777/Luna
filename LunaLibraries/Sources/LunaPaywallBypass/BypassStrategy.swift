@@ -64,14 +64,40 @@ public enum BypassStrategy: Equatable {
     case archiveToday
 }
 
-/// Crawler identities a paywall may whitelist for SEO/social. `xForwardedFor`
-/// carries a real crawler IP so a server-side reverse-DNS-lite check can pass; many
-/// majors IP-verify crawlers, so this only helps sites that honor the UA.
-public enum CrawlerAgent: Equatable {
+/// Fetcher identities a paywall may serve full text to — search crawlers a
+/// publisher whitelists for SEO/social, and the assistant-side fetchers that
+/// retrieve one page for one user. `xForwardedFor` carries a real crawler IP so a
+/// server-side reverse-DNS-lite check can pass; many majors IP-verify crawlers, so
+/// this only helps sites that honor the UA.
+///
+/// The set is deliberately DIVERSE rather than ranked-best-first, because a site
+/// refuses identities one token at a time: measured over 28 paywalled hosts
+/// (2026-08-22, one residential IP, homepage GET), no identity reached more than
+/// 18 of them and the reachable sets do not nest. haaretz.com answers 403 to
+/// Googlebot, Bingbot and both Google fetchers while serving all three assistant
+/// fetchers; leparisien.fr answers 403 to everything except Claude-User;
+/// nbcnews.com refuses the Google/Bing crawler tokens and serves the assistant
+/// ones; telegraph.co.uk resets the connection for those same crawler tokens.
+/// `CrawlerIdentityLadder` is what turns that into an attempt order.
+public enum CrawlerAgent: Hashable, CaseIterable {
     case googlebotDesktop
     case googlebotMobile
     case bingbot
     case facebookbot
+    /// Google's Search Console fetcher. A Google identity that carries none of the
+    /// `Googlebot` token, so a blocklist keyed on that token lets it through.
+    case googleInspectionTool
+    /// Google's read-aloud fetcher — a mobile Chrome UA with a Google product token
+    /// appended, so it reads as a browser to a token-matching blocklist.
+    case googleReadAloud
+    /// Anthropic's user-initiated fetcher (Claude fetching one page a person asked
+    /// for). Widely refused by publishers, and the ONLY identity some sites accept.
+    case claudeUser
+    /// OpenAI's file-download fetcher, as it identifies itself: a bare product name
+    /// with no `bot` token and no crawler URL.
+    case openAIFileDownloader
+    /// xAI's image-fetch API client. The broadest reach of the set as measured.
+    case xaiImageFetch
 
     /// The literal User-Agent string to send.
     public var userAgent: String {
@@ -86,16 +112,34 @@ public enum CrawlerAgent: Equatable {
             return "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"
         case .facebookbot:
             return "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+        case .googleInspectionTool:
+            // The same string the bundled rule table already spoofs for one host, so
+            // the named identity and that rule cannot drift apart.
+            return "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)"
+        case .googleReadAloud:
+            return "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/59.0.3071.125 Mobile Safari/537.36 "
+                + "(compatible; Google-Read-Aloud; "
+                + "+https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers)"
+        case .claudeUser:
+            return "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; "
+                + "Claude-User/1.0; +Claude-User@anthropic.com)"
+        case .openAIFileDownloader:
+            return "OpenAI File Downloader"
+        case .xaiImageFetch:
+            return "XaiImageApiFetch/1.0"
         }
     }
 
-    /// A real crawler IP for the `X-Forwarded-For` header (Googlebot only; Bing and
-    /// Facebook don't benefit from an XFF claim).
+    /// A real crawler IP for the `X-Forwarded-For` header. Only the Google
+    /// identities send one: the header's only use is a reverse-proxy allowlist keyed
+    /// to Google's ranges, and claiming a Google IP under a non-Google token is a
+    /// contradiction a bot-management edge can match on.
     public var xForwardedFor: String? {
         switch self {
-        case .googlebotDesktop, .googlebotMobile:
+        case .googlebotDesktop, .googlebotMobile, .googleInspectionTool, .googleReadAloud:
             return "66.249.66.1"
-        case .bingbot, .facebookbot:
+        case .bingbot, .facebookbot, .claudeUser, .openAIFileDownloader, .xaiImageFetch:
             return nil
         }
     }

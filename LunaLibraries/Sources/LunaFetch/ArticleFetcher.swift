@@ -622,7 +622,11 @@ public struct ArticleFetcher: HTMLFetching {
     /// Names a request's identity without quoting it: the recognized crawler, or
     /// `safari` for Luna's own default, or a clipped tag for anything bespoke.
     static func userAgentLabel(_ userAgent: String) -> String {
-        let bots = ["Googlebot", "bingbot", "facebookexternalhit", "Twitterbot",
+        // Each entry is the product token that identifies one fetcher, matched as a
+        // substring, so the ladder's identities trace under their own names.
+        let bots = ["Google-InspectionTool", "Google-Read-Aloud", "Googlebot",
+                    "Claude-User", "OpenAI File Downloader", "XaiImageApiFetch",
+                    "bingbot", "facebookexternalhit", "Twitterbot",
                     "Applebot", "DuckDuckBot", "Slackbot"]
         if let bot = bots.first(where: {
             userAgent.range(of: $0, options: .caseInsensitive) != nil

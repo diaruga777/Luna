@@ -18,9 +18,11 @@ public enum BypassStrategySelector {
     /// (nil if the direct fetch failed) and, when it failed, why
     /// (`directFailure`). Pure — no I/O.
     ///
-    /// A supported site unlock rule always runs before archive.today. The
-    /// silent request leg (crawler/custom UA or spoofed Referer, JSON-LD
-    /// reconstruction) is run by the resolver, not emitted here.
+    /// A supported site unlock rule always runs before archive.today. A
+    /// rule's OWN request leg (its custom UA or spoofed Referer, plus the
+    /// forced JSON-LD reconstruction) is run by the resolver, not emitted
+    /// here; the generic fetcher-identity ladder is emitted here, and skips
+    /// whichever identity that rule leg is already spending.
     /// `silentTierExhausted` marks the caller as the browser tier itself —
     /// the archive reader, which is only ever opened for a page every
     /// silent strategy already failed to read. It answers a different
@@ -58,6 +60,18 @@ public enum BypassStrategySelector {
         if AMPQueryBypass.ampQueryURL(for: url) != nil {
             strategies.append(.ampQuery)
         }
+
+        // Re-ask the publisher as somebody it serves full text to, before any
+        // archive: each attempt is one silent GET of the article URL itself and
+        // returns the CURRENT, complete page, which a capture can only
+        // approximate. `CrawlerIdentityLadder` spends the attempts on identities
+        // that fail differently rather than on Googlebot alone — the token most
+        // publisher blocklists know best. When a site rule carries its own crawler
+        // identity, the resolver is already spending a request on it, so the
+        // ladder skips that one and fills the slot with the next.
+        strategies += CrawlerIdentityLadder
+            .identities(for: url, alreadyTried: rule?.userAgentSpoof?.identity)
+            .map { BypassStrategy.userAgent($0) }
 
         // The Wayback Machine, both ends of the capture history, before any
         // browser tier: it is silent, needs no CAPTCHA, and is the only

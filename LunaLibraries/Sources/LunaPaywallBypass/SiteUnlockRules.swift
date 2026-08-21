@@ -10,6 +10,19 @@ import Foundation
 public enum UserAgentSpoof: Equatable {
     case crawler(CrawlerAgent)
     case custom(String)
+
+    /// The named identity this spoof sends, matching a `custom` rule by its literal
+    /// UA string — the bundled table spells one identity out longhand rather than
+    /// naming it. Nil for a bespoke string no identity claims. Lets the
+    /// identity ladder skip whatever a rule's own request leg is already spending.
+    public var identity: CrawlerAgent? {
+        switch self {
+        case let .crawler(agent):
+            return agent
+        case let .custom(userAgent):
+            return CrawlerAgent.allCases.first { $0.userAgent == userAgent }
+        }
+    }
 }
 
 /// A named referer origin to spoof (reusing `RefererOrigin`, the same type the
@@ -135,14 +148,7 @@ public enum SiteUnlockRules {
     /// the `wsj.com` rule): host `==` domain OR host ends with `.`+domain. Nil when
     /// the site has no rule.
     public static func rule(for url: URL) -> SiteUnlockRule? {
-        guard let host = url.host?.lowercased() else { return nil }
-        if let rule = byDomain[host] { return rule }
-        var labels = host.split(separator: ".").map(String.init)
-        while labels.count > 2 {
-            labels.removeFirst()
-            if let rule = byDomain[labels.joined(separator: ".")] { return rule }
-        }
-        return nil
+        HostSuffixLookup.value(for: url, in: byDomain)
     }
 
     /// The global vendor-script block patterns (applied to every site except each
@@ -152,14 +158,7 @@ public enum SiteUnlockRules {
     /// True when the host is on the known-unfixable denylist, so we shouldn't waste a
     /// bypass attempt on it.
     public static func isNoFix(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        if noFixSet.contains(host) { return true }
-        var labels = host.split(separator: ".").map(String.init)
-        while labels.count > 2 {
-            labels.removeFirst()
-            if noFixSet.contains(labels.joined(separator: ".")) { return true }
-        }
-        return false
+        HostSuffixLookup.contains(url, in: noFixSet)
     }
 
     /// Total loaded rule count (diagnostics/tests).

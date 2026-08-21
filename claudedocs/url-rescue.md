@@ -16,7 +16,13 @@ hint, and applies ONE validated directive to recover the save.
 2. **Reroute** — a rewritten https URL (same registrable domain, or the fixed
    `web.archive.org`/`r.jina.ai` mirrors) plus an allowlisted header subset
    (User-Agent token / Referer / Accept-Language / X-Forwarded-For — **never**
-   Cookie/Authorization). Re-run once through `IngestPipeline`.
+   Cookie/Authorization). The UA token is a closed allowlist
+   (`RescueDirectiveValidator.userAgent(fromToken:)`): the two browsers, plus the
+   fetcher identities `googlebot`, `facebook_crawler`, `google_inspection`,
+   `claude_user`, `openai_file_downloader`, `xai_image_fetch` — the same
+   `CrawlerAgent` cases the paywall ladder ranks, so a rescue can reach a host that
+   refuses Googlebot (`claudedocs/readers.md`, "One spoof is not a strategy").
+   Re-run once through `IngestPipeline`.
 3. **WebJS** — JavaScript run in an off-screen, cookie-less `WKWebView` loading
    the (possibly rewritten) URL, returning HTML / JSON / a media URL fed back to
    extraction. Combines with (2).

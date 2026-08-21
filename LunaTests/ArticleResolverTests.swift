@@ -257,9 +257,13 @@ final class ArticleResolverTests: XCTestCase {
             return XCTFail("expected readable results, got \(result) / \(fallback)")
         }
         XCTAssertGreaterThan(unlocked, captured, "the silent unlock must win over the truncated capture")
-        // It used NYT's rule: a custom crawler User-Agent, not a plain re-fetch.
-        let uaCall = fetcher.calls.first { $0.kind == .userAgent }
-        XCTAssertEqual(uaCall?.userAgent, "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)")
+        // It used NYT's rule: a custom crawler User-Agent, not a plain re-fetch. The
+        // identity ladder fans out alongside it, so assert membership — and that the
+        // rule's identity was asked exactly once rather than duplicated by the ladder.
+        let identities = fetcher.calls.filter { $0.kind == .userAgent }.compactMap(\.userAgent)
+        XCTAssertEqual(
+            identities.filter { $0 == "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)" }.count,
+            1)
     }
 
     /// The capture is never LOST: when the rule's silent fetch fails outright, the
@@ -316,10 +320,14 @@ final class ArticleResolverTests: XCTestCase {
         } else {
             XCTFail("expected readable, got \(result)")
         }
-        // Exactly the two Wayback probes and nothing else — no re-fetch of the page.
-        // The tier runs them concurrently, so compare as a SET, not a sequence.
-        XCTAssertEqual(Set(fetcher.calls.map(\.kind)), [.waybackRaw, .waybackPrePaywall])
-        XCTAssertEqual(fetcher.calls.count, 2)
+        // The two Wayback probes plus the fetcher-identity ladder — a server-truncated
+        // body is exactly what an identity the publisher serves in full can fix, so the
+        // page IS re-asked, just never as the same client twice. The tier runs them
+        // concurrently, so compare as a SET, not a sequence.
+        XCTAssertEqual(Set(fetcher.calls.map(\.kind)), [.userAgent, .waybackRaw, .waybackPrePaywall])
+        let identities = fetcher.calls.filter { $0.kind == .userAgent }.compactMap(\.userAgent)
+        XCTAssertEqual(Set(identities).count, identities.count, "each identity is asked once")
+        XCTAssertEqual(fetcher.calls.count, 2 + identities.count)
     }
 
     /// The Paris Review case end to end: the live page serves a long readable preview cut
@@ -341,7 +349,8 @@ final class ArticleResolverTests: XCTestCase {
         // The direct read is still first; the silent tier behind it fans out, so its two
         // Wayback probes are compared as a set.
         XCTAssertEqual(fetcher.calls.first?.kind, .plain)
-        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)), [.waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)),
+                       [.userAgent, .waybackRaw, .waybackPrePaywall])
     }
 
     /// Same shape, but the archives only ever hold the walled version: the item parks for
@@ -411,7 +420,8 @@ final class ArticleResolverTests: XCTestCase {
         _ = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
         let elapsed = Date().timeIntervalSince(start)
 
-        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)), [.waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(Set(fetcher.calls.dropFirst().map(\.kind)),
+                       [.userAgent, .waybackRaw, .waybackPrePaywall])
         XCTAssertLessThan(elapsed, 0.7, "0.4s + 0.4s of independent fetches must overlap, not add up")
     }
 

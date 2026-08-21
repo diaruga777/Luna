@@ -46,7 +46,9 @@ deliberately bind no recorder.
 `SaveDiagnostics.snippet(_:limit:)` clamps a quoted fragment (default 200 chars)
 and flattens newlines so one record stays one line; `SaveDiagnostics.url(_:)`
 clamps a URL. Request identity is logged as header NAMES plus a user-agent LABEL
-(`ArticleFetcher.userAgentLabel` — `Googlebot`, `safari`, `custom(…)`), never as
+(`ArticleFetcher.userAgentLabel` — the fetcher's own product token, e.g. `Googlebot`,
+`Google-InspectionTool`, `Claude-User`, `XaiImageApiFetch`, plus `safari` for Luna's
+own default and `custom(…)` for anything bespoke), never as
 header values.
 
 ## Line format and the tag

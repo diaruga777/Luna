@@ -43,6 +43,15 @@ final class BypassTests: XCTestCase {
 
     private func url(_ string: String) -> URL { URL(string: string)! }
 
+    /// The fetcher-identity leg every plan below carries: the ranked ladder as a host
+    /// with no unlock-rule identity of its own and no measured refusal gets it. Spelled
+    /// out once so the ordering assertions stay readable; the policy that produces it
+    /// (refusals, rule dedupe, the cap) is asserted in the ladder section.
+    private let genericIdentities: [BypassStrategy] = [
+        .userAgent(.xaiImageFetch), .userAgent(.googleInspectionTool),
+        .userAgent(.googlebotDesktop), .userAgent(.claudeUser),
+    ]
+
     private let article = "https://www.theaustralian.com.au/wealth/retirement/"
         + "selffunded-retirees-hit-by-new-30pc-topup-tax-on-investments/news-story/"
         + "476176fcef46250d229a1612ce9f44d1"
@@ -91,21 +100,24 @@ final class BypassTests: XCTestCase {
         let locked = "<html><body>subscribe to continue reading</body></html>"
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-            [.ampQuery, .waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+            [.ampQuery] + genericIdentities
+                + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
         let plan = BypassPlan.make(for: url(article), directHTML: locked)
-        XCTAssertEqual(plan.silent, [.ampQuery, .waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(plan.silent.first, .ampQuery)
+        XCTAssertEqual(plan.silent.suffix(2), [.waybackRaw, .waybackPrePaywall])
         XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }
 
-    /// A host with a rule but no AMP-by-query rendering keeps the plan it had: the silent
-    /// archive pair, then the browser tier.
+    /// A host with a rule but no AMP-by-query rendering keeps the plan it had: the
+    /// identity ladder, the silent archive pair, then the browser tier. WSJ's rule
+    /// spoofs a Referer rather than an identity, so the ladder is the generic one.
     func testOtherRuleHostsAreUnchanged() {
         let locked = "<html><body>subscribe to continue reading</body></html>"
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: url("https://www.wsj.com/articles/x"),
                                               directHTML: locked),
-            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     // MARK: The live pages
@@ -295,7 +307,10 @@ final class BypassTests: XCTestCase {
     func testWSJUsesDirectUnlockThenArchive() {
         let url = URL(string: "https://www.wsj.com/articles/x")!
         let plan = BypassPlan.make(for: url, directHTML: "<html>subscribe to continue</html>")
-        XCTAssertEqual(plan.silent, [.waybackRaw, .waybackPrePaywall])
+        // Identity attempts lead the silent leg; WSJ's own rule spoofs a Referer, so
+        // its ladder is the generic one and the archives close the leg.
+        XCTAssertEqual(plan.silent.suffix(2), [.waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(plan.silent.dropLast(2).count, CrawlerIdentityLadder.maximumAttempts)
         XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }
@@ -312,8 +327,10 @@ final class BypassTests: XCTestCase {
     func testNYTUsesItsDirectUnlockRuleBeforeArchive() {
         let url = URL(string: "https://www.nytimes.com/2026/06/26/world/americas/x.html")!
         let plan = BypassPlan.make(for: url, directHTML: "<html>subscribe to continue reading</html>")
-        XCTAssertEqual(plan.silent, [.waybackRaw, .waybackPrePaywall])
+        XCTAssertEqual(plan.silent.suffix(2), [.waybackRaw, .waybackPrePaywall])
         XCTAssertFalse(plan.silent.contains(.trailingDotHost))
+        // NYT's rule already fetches as Google-InspectionTool, so the ladder does not.
+        XCTAssertFalse(plan.silent.contains(.userAgent(.googleInspectionTool)))
         XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }
@@ -442,6 +459,71 @@ final class BypassTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    // MARK: - CrawlerIdentityLadder
+
+    /// The point of the ladder: it does not spend every attempt on one family of
+    /// tokens. A host that refuses every search-crawler identity still gets the
+    /// assistant fetchers instead of four wasted requests.
+    func testACrawlerRefusingHostStillGetsTheAssistantFetchers() {
+        let haaretz = CrawlerIdentityLadder.identities(
+            for: url("https://www.haaretz.com/israel-news/2026-08-20/ty-article/x"))
+        XCTAssertEqual(haaretz, [.xaiImageFetch, .claudeUser, .openAIFileDownloader])
+    }
+
+    /// A freed slot is REFILLED from further down the rank, so trimming a refusal
+    /// costs nothing: NYT loses two identities (its rule spends one, the host
+    /// refuses the other) and still gets a full ladder.
+    func testFreedSlotsAreRefilledFromTheRank() {
+        let identities = CrawlerIdentityLadder.identities(
+            for: url("https://www.nytimes.com/2026/08/21/us/politics/story.html"),
+            alreadyTried: .googleInspectionTool)
+        XCTAssertEqual(identities.count, CrawlerIdentityLadder.maximumAttempts)
+        XCTAssertFalse(identities.contains(.googleInspectionTool))
+        XCTAssertFalse(identities.contains(.claudeUser))
+    }
+
+    /// A host measured serving exactly one identity gets exactly that one — the other
+    /// three requests would be refusals, and this is the case a single-spoof bypass
+    /// (Googlebot only) could never reach at all.
+    func testSingleIdentityHostGetsOnlyThatIdentity() {
+        XCTAssertEqual(
+            CrawlerIdentityLadder.identities(for: url("https://www.leparisien.fr/politique/x")),
+            [.claudeUser])
+    }
+
+    /// Never spend two of four attempts on the same identity: a rule that already
+    /// fetches as one of them takes it out of the ladder.
+    func testTheRulesOwnIdentityIsNotRepeated() {
+        let article = url("https://www.nytimes.com/2026/08/21/us/politics/story.html")
+        let rule = SiteUnlockRules.rule(for: article)
+        XCTAssertEqual(rule?.userAgentSpoof?.identity, .googleInspectionTool,
+                       "fixture host must carry a rule whose UA names a known identity")
+        XCTAssertFalse(
+            CrawlerIdentityLadder.identities(for: article, alreadyTried: .googleInspectionTool)
+                .contains(.googleInspectionTool))
+    }
+
+    /// The cap is what keeps one save from hammering one publisher, so it holds for
+    /// every host, and every attempt in a ladder is a distinct request.
+    func testLadderIsCappedAndCarriesNoDuplicates() {
+        for host in ["unknown.example", "www.haaretz.com", "www.nytimes.com",
+                     "www.leparisien.fr", "www.azcentral.com", "www.law.com"] {
+            let identities = CrawlerIdentityLadder.identities(for: url("https://\(host)/story"))
+            XCTAssertLessThanOrEqual(identities.count, CrawlerIdentityLadder.maximumAttempts, host)
+            XCTAssertEqual(Set(identities).count, identities.count, host)
+            XCTAssertEqual(Set(identities.map(\.userAgent)).count, identities.count,
+                           "\(host): two identities sending the same UA waste a slot")
+        }
+    }
+
+    /// A refusal is recorded for a registrable domain, so it covers the subdomains a
+    /// publisher actually serves articles from.
+    func testRefusalsCoverSubdomains() {
+        XCTAssertEqual(
+            CrawlerIdentityLadder.identities(for: url("https://edition.leparisien.fr/x")),
+            [.claudeUser])
+    }
+
     // MARK: - BypassStrategySelector
 
     private let locked = "<html><body>subscribe to continue reading</body></html>"
@@ -454,11 +536,19 @@ final class BypassTests: XCTestCase {
     }
 
     func testRuleHostTriesTheArchivesSilentlyThenDirectUnlock() {
-        for article in ["https://www.wsj.com/articles/x", "https://www.nytimes.com/story"] {
-            XCTAssertEqual(
-                BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-                [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday], article)
-        }
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(for: url("https://www.wsj.com/articles/x"),
+                                              directHTML: locked),
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+        // NYT's rule already spends Google-InspectionTool and the host refuses
+        // Claude-User, so its ladder is neither of those — the two freed slots go to
+        // the next identities down the rank.
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(for: url("https://www.nytimes.com/story"),
+                                              directHTML: locked),
+            [.userAgent(.xaiImageFetch), .userAgent(.googlebotDesktop),
+             .userAgent(.openAIFileDownloader), .userAgent(.googleReadAloud),
+             .waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     func testUnknownHostUsesArchive() {
@@ -467,7 +557,7 @@ final class BypassTests: XCTestCase {
         XCTAssertEqual(
             BypassStrategySelector.strategies(
                 for: url("https://unknown.example/story"), directHTML: locked),
-            [.waybackRaw, .waybackPrePaywall, .archiveToday])
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .archiveToday])
     }
 
     func testTruncatedGenerousPreviewGetsTheArchivePlan() {
@@ -487,7 +577,7 @@ final class BypassTests: XCTestCase {
             BypassStrategySelector.strategies(
                 for: url("https://www.theparisreview.org/interviews/3810/x"),
                 directHTML: truncated),
-            [.waybackRaw, .waybackPrePaywall, .archiveToday])
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .archiveToday])
     }
 
     func testRuleHostWithoutMarkersStillBypasses() {
@@ -498,7 +588,7 @@ final class BypassTests: XCTestCase {
         let known = url("https://www.delish.com/story")
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: known, directHTML: noEvidence),
-            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     func testUnknownHostWithoutMarkersIsNotBypassed() {
@@ -522,7 +612,8 @@ final class BypassTests: XCTestCase {
             XCTAssertEqual(
                 BypassStrategySelector.strategies(
                     for: article, directHTML: nil, directFailure: refusal),
-                [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday],
+                genericIdentities
+                    + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday],
                 "\(refusal)")
         }
     }
@@ -540,7 +631,7 @@ final class BypassTests: XCTestCase {
             XCTAssertEqual(
                 BypassStrategySelector.strategies(
                     for: article, directHTML: nil, directFailure: reason),
-                [.waybackRaw, .waybackPrePaywall, .archiveToday],
+                genericIdentities + [.waybackRaw, .waybackPrePaywall, .archiveToday],
                 "\(String(describing: reason))")
         }
     }
@@ -568,7 +659,7 @@ final class BypassTests: XCTestCase {
             BypassStrategySelector.strategies(
                 for: url("https://unknown.example/story"), directHTML: locked,
                 silentTierExhausted: true),
-            [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
+            genericIdentities + [.waybackRaw, .waybackPrePaywall, .directUnlock, .archiveToday])
     }
 
     /// …but not for a hard-paywall host (the wall is certain, so a live load would only

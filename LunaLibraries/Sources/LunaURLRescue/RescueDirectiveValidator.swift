@@ -280,6 +280,10 @@ public struct RescueDirectiveValidator {
         case "desktop_safari": return Self.desktopSafariUserAgent
         case "googlebot": return CrawlerAgent.googlebotDesktop.userAgent
         case "facebook_crawler": return CrawlerAgent.facebookbot.userAgent
+        case "google_inspection": return CrawlerAgent.googleInspectionTool.userAgent
+        case "claude_user": return CrawlerAgent.claudeUser.userAgent
+        case "openai_file_downloader": return CrawlerAgent.openAIFileDownloader.userAgent
+        case "xai_image_fetch": return CrawlerAgent.xaiImageFetch.userAgent
         default: return nil
         }
     }

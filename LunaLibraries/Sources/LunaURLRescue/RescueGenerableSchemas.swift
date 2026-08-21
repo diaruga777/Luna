@@ -41,8 +41,11 @@ struct RescuePlanDraft {
     @Guide(description: "For search: the web search query that would find this exact content, e.g. its headline plus the site name. Omit otherwise.")
     let searchQuery: String?
 
-    @Guide(description: "Browser identity for the re-fetch, only if a specific one is needed.",
-           .anyOf(["iphone_safari", "desktop_safari", "googlebot", "facebook_crawler"]))
+    @Guide(description: "Browser identity for the re-fetch, only if a specific one is needed. "
+            + "The assistant/inspection fetchers reach sites that refuse googlebot.",
+           .anyOf(["iphone_safari", "desktop_safari", "googlebot", "facebook_crawler",
+                   "google_inspection", "claude_user", "openai_file_downloader",
+                   "xai_image_fetch"]))
     let userAgentToken: String?
 
     @Guide(description: "https Referer to send, e.g. https://www.google.com/. Omit unless needed.")

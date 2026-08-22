@@ -8,19 +8,14 @@ import LunaModels
 import LunaStorage
 
 /// Send-to-Xteink configuration, persisted in the shared App-Group suite so the
-/// central app and the Reader push to one device. Delivery is a direct HTTP
-/// upload to the e-reader's own Wi-Fi file manager (`XteinkDeviceClient`), so
-/// there is no account and no email requirement here — one enable switch and
-/// an optional device address are the whole setup.
+/// central app and the Reader push to one device. Delivery goes over the
+/// CrossPoint BLE rendezvous or a same-network CrossPoint HTTP upload (see
+/// `XteinkCrossPointTransferRouter`), so there is no account and no email
+/// requirement here — one enable switch and BLE pairing are the whole setup.
 public enum XteinkSendSettings {
 
     private static let enabledKey = "xteinkEnabled"
-    private static let addressKey = "xteinkDeviceAddress"
     private static let modeKey = "xteinkSendMode"
-
-    /// The stock firmware's mDNS hostname. Tried last, after any address the
-    /// user typed, so a DHCP-reserved IP gets the faster path.
-    public static let defaultDeviceAddress = "E-Paper.local"
 
     /// Overridable so tests can drive both halves of the read-through without
     /// touching the real container. Production code never sets it.
@@ -35,34 +30,6 @@ public enum XteinkSendSettings {
     public static var isEnabled: Bool {
         get { defaults.bool(forKey: enabledKey) }
         set { defaults.set(newValue, forKey: enabledKey) }
-    }
-
-    /// The device hostname or IP the user typed. Empty means "use the default
-    /// mDNS name only".
-    public static var deviceAddress: String {
-        get { defaults.string(forKey: addressKey) ?? "" }
-        set { defaults.set(newValue, forKey: addressKey) }
-    }
-
-    /// Candidate hosts in probe order: each address the user typed (comma or
-    /// whitespace separated, pasted schemes and slashes stripped), then the
-    /// firmware's default mDNS name.
-    public static var candidateHosts: [String] {
-        var hosts = deviceAddress
-            .split(whereSeparator: { $0 == "," || $0.isWhitespace })
-            .map { piece -> String in
-                var host = String(piece)
-                for prefix in ["http://", "https://"] where host.lowercased().hasPrefix(prefix) {
-                    host = String(host.dropFirst(prefix.count))
-                }
-                while host.hasSuffix("/") { host = String(host.dropLast()) }
-                return host
-            }
-            .filter { !$0.isEmpty }
-        if !hosts.contains(defaultDeviceAddress) {
-            hosts.append(defaultDeviceAddress)
-        }
-        return hosts
     }
 
     /// The App Intents / in-app save mode. Defaults to `.allSaves`: the enable

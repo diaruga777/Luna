@@ -81,6 +81,10 @@ public enum XteinkSyncError: Error, Equatable {
 /// a normal sleeping X3 does not turn into a retry-consuming failure.
 public protocol XteinkBLETransporting: AnyObject {
     var isRendezvousActive: Bool { get }
+    /// Opens scanning for the X3's rendezvous advertisement. A "send now" that
+    /// finds no active rendezvous calls this to give BLE a chance before
+    /// falling back to a queued deferral.
+    func beginRendezvousScan()
     func send(
         _ epub: Data, fileName: String, title: String,
         progress: @escaping @Sendable (XteinkSyncProgress) -> Void

@@ -108,8 +108,10 @@ public struct XteinkDeviceClient {
         let destination = Self.pushDirectory + "/" + fileName
         try await ensurePushDirectory(host: host)
         try await upload(data, toPath: destination, host: host)
-        let listed = try? await entries(inDirectory: Self.pushDirectory, host: host)
-        let actual = listed?.first {
+        // A listing that dies on connection propagates as UnreachableError —
+        // the device slept mid-flow, which defers rather than fails the send.
+        let listed = try await entries(inDirectory: Self.pushDirectory, host: host)
+        let actual = listed.first {
             !$0.isDirectory && ($0.name == fileName || $0.name.hasSuffix("/" + fileName))
         }?.size
         guard actual == data.count else {

@@ -15,6 +15,7 @@ private final class MockDestination: ArticleDestination {
     struct AuthFailure: Error, CustomStringConvertible {
         var description: String { "AUTH failed" }
     }
+    struct DeferralFailure: Error, SendDeferralError {}
 
     let id: String
     let displayName = "Mock"
@@ -24,6 +25,9 @@ private final class MockDestination: ArticleDestination {
     var modeForSource: ((CaptureSource) -> ArticleSendMode)?
     var shouldFail = false
     var shouldHardFail = false
+    /// Simulates a receiver that is simply not reachable right now (an asleep
+    /// Xteink): the send throws a `SendDeferralError`.
+    var shouldDefer = false
     private(set) var sentTitles: [String] = []
 
     init(id: String) { self.id = id }
@@ -38,6 +42,7 @@ private final class MockDestination: ArticleDestination {
 
     func send(epubData: Data, fileName: String, title: String) async throws {
         if shouldHardFail { throw AuthFailure() }
+        if shouldDefer { throw DeferralFailure() }
         if shouldFail { throw SendFailure() }
         XCTAssertFalse(epubData.isEmpty)
         XCTAssertTrue(fileName.hasSuffix(".epub"))
@@ -264,5 +269,42 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         let fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)
         XCTAssertEqual(fresh?.sendFailureCounts[kindle.id], 3)
+    }
+
+    func testDeferralKeepsItemQueuedWithoutSpendingRetries() async {
+        kindle.shouldDefer = true
+        let item = makeReadyItem()
+        await coordinator.send(item, toDestinationID: kindle.id)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .queued)
+        XCTAssertNil(fresh?.sendFailureCounts[kindle.id])
+        XCTAssertNil(fresh?.sendNextAttemptDates[kindle.id])
+    }
+
+    func testDeferralNeverBecomesTerminalAndSendsWhenReachable() async {
+        kindle.shouldDefer = true
+        let item = makeReadyItem()
+        await coordinator.send(item, toDestinationID: kindle.id)
+
+        // Many sweeps against an asleep receiver: still queued, still no
+        // failure bookkeeping, no backoff gating the next sweep.
+        for _ in 0..<5 {
+            coordinator.retryPendingSends()
+            await drainDeliveries()
+        }
+        var fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .queued)
+        XCTAssertNil(fresh?.sendFailureCounts[kindle.id])
+        XCTAssertTrue(kindle.sentTitles.isEmpty)
+
+        // The receiver wakes: the very next sweep delivers, with no clock
+        // advance needed.
+        kindle.shouldDefer = false
+        coordinator.retryPendingSends()
+        await drainDeliveries()
+        fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .sent)
+        XCTAssertEqual(kindle.sentTitles, ["An Article"])
     }
 }

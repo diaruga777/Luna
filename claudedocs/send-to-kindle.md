@@ -2,13 +2,15 @@
 
 Background delivery of saved articles to an ereader. The article is rendered
 to EPUB on-device once, then delivered to each configured destination.
-Today there is exactly one destination:
+There are two destinations:
 
 - **Kindle** — emailed to the user's `@kindle.com` address through the
   connected Luna email account (the same account used for sign-in and friend
   sharing; `EmailAccountStore`). That account's address must be on Amazon's
   approved-sender list (amazon.com → Preferences → Personal Document
   Settings). There is no separate SMTP credential for Kindle.
+- **Xteink** — uploaded over local Wi-Fi straight to the e-reader's
+  stock-firmware file manager; see `claudedocs/xteink.md`.
 
 No UI taps needed once configured: an incoming article either goes out
 automatically per its capture source (below), or the user sends it explicitly

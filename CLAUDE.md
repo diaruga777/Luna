@@ -14,6 +14,8 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
   leaves the focal word — ARKit face tracking, `claudedocs/eye-tracking.md`);
   background-playback read-aloud with autoplay-next and on-device trimming (see
   `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account);
+  send-to-Xteink (EPUB uploaded over local Wi-Fi to the e-reader's stock-firmware
+  file manager, `claudedocs/xteink.md`);
   share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
   (`claudedocs/article-export.md`, shared with the central app); long-form X posts and
   self-threads read as articles (`claudedocs/x-posts.md`, shared with the central app —

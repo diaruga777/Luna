@@ -1,10 +1,41 @@
 # Send to Xteink
 
-Delivery of saved articles to an Xteink X3 pocket e-reader. The current
-transport is a direct Wi-Fi HTTP upload to the device's stock-firmware file
-manager. No account or email is involved. BLE delivery and X3 periodic wake
-are a forthcoming custom-firmware companion, not behavior provided by this
-stock-firmware client.
+Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
+email is involved. Luna builds an image-free, compressed Xteink EPUB then uses
+the CrossPoint BLE rendezvous when the reader advertises after wake; over-sized
+books escalate to CrossPoint Wi-Fi.
+
+## CrossPoint X3 transport
+
+Luna is the state-restorable CoreBluetooth central and the X3 is the
+peripheral. `XteinkSyncProtocol` uses v1 full UUIDs: service
+`6f9f0a00-9b1d-4d1f-9f53-5b6b8b3d0f10`, control `...0a01...`, data-in
+`...0a02...`, status `...0a03...`, and data-out `...0a04...`. `hello`
+authenticates a Keychain-persisted pairing secret using HMAC-SHA256 over
+`nonce|host_id|1`; Settings supplies a 32-byte random secret during first-use
+code pairing.
+
+Control operations await status `op_ack` rather than treating a successful
+GATT write as success. `start_put` supplies `chunk_size` and `resume: true`;
+status `resume_offset`/`next_sequence` checkpoints permit an interrupted
+transfer to resume. Data frames have a 4-byte LE sequence header and commit
+with SHA-256. Reader wiring retries the queued send sweep exactly when the
+GATT service becomes ready. iOS can restore this after normal termination but
+cannot relaunch Luna after an explicit user force-quit.
+
+When a rendezvous finds no queued Xteink saves, Reader authenticates then sends
+`no_work`, which lets the X3 leave its connected wake window immediately.
+
+`XteinkTransferSizePolicy` owns the inclusive 200 KiB ceiling. Small final
+Xteink EPUBs are BLE-only and defer while no rendezvous exists. Larger EPUBs
+ask `wifi_request` with `prefer_ap: true`; the custom X3 fork treats its own
+secured AP as the default so a remembered but unreachable home LAN cannot
+strand a travelling phone. STA offers remain protocol-compatible and upload
+directly, while an AP offer is joined immediately with `NEHotspotConfiguration`
+in the foreground and removed after transfer. Background AP offers cause a
+local open-Luna notification.
+CrossPoint upload is multipart `POST /upload?path=/Books`; Luna treats a 2xx
+response as authoritative and the custom X3 firmware rejects zero-byte files.
 
 ## The device protocol (stock firmware)
 
@@ -72,8 +103,7 @@ All in **LunaSend** (linked by the central Luna app and LunaReader only):
   switch is on, saves queue automatically, which also makes every other
   capture source default on through `SourceSendSettings.legacyDefault`).
 - `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
-  based on finalized Xteink EPUB bytes; the BLE and AP/Wi-Fi implementations
-  will consume it.
+  based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
 
 ## Deferral vs failure
 
@@ -96,15 +126,15 @@ everything pending uploads.
 
 - **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, compiled
   into Luna and LunaReader; membership-excluded from Downloader and Price
-  Tracker like the other article settings screens): enable switch (toggling
-  on fires one probe so the permission prompt appears while the user is
-  looking), device address field, Auto-Send by Source
+  Tracker like the other article settings screens): enable switch, code pairing,
+  Auto-Send by Source
   (`AutoSendBySourceScreen`, already destination-generic), Send Test
   Document, Transfer Pending Saves.
 - There is deliberately NO per-article "Send to Xteink" share-menu row
   (owner decision, 2026-08-22): auto-send plus the Settings screen's manual
   sweep cover delivery; the share menu stays link/export-only.
-- `NSLocalNetworkUsageDescription` lives in the shared `Luna/Info.plist`.
+- `NSBluetoothAlwaysUsageDescription`, `bluetooth-central`, and the Hotspot
+  Configuration entitlement are enabled only for the article-capable apps.
 
 ## What this deliberately does not do
 

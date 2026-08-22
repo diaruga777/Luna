@@ -20,6 +20,7 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
+    private static var xteinkRendezvousObserver: NSObjectProtocol?
     /// Migration only — onboarding stores nothing (see
     /// `OnboardingLegacyDemoSweeping`).
     private static let legacyOnboardingDemoSave: any OnboardingLegacyDemoSweeping =
@@ -107,6 +108,26 @@ enum KindWiring {
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
+        // The X3 advertises briefly after a power-button wake. Keep the central
+        // eligible for state restoration; it does no network work until that
+        // rendezvous actually appears.
+        XteinkBLECentral.shared.beginRendezvousScan()
+        if xteinkRendezvousObserver == nil {
+            xteinkRendezvousObserver = NotificationCenter.default.addObserver(
+                forName: .xteinkRendezvousReady, object: nil, queue: .main
+            ) { _ in
+                // A restored central can become ready long after launch's first
+                // sweep. This is the actual transfer trigger for a wake window.
+                let queued = SavesStore.shared.items().contains {
+                    $0.sendState(for: ArticleDestinationID.xteink) == .queued
+                }
+                if queued {
+                    ArticleShellWiring.retryPendingSends()
+                } else {
+                    Task { try? await XteinkBLECentral.shared.reportNoWork() }
+                }
+            }
+        }
     }
 
     static func appDidEnterBackground() {
@@ -115,6 +136,7 @@ enum KindWiring {
 
     static func sceneDidForeground() {
         ArticleShellWiring.sceneDidForeground()
+        XteinkBLECentral.shared.beginRendezvousScan()
     }
 
     static func savesDidChange() {}

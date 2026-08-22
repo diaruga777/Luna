@@ -567,6 +567,14 @@
 "Settings_xteink_notEnabledTitle_Luna" = "Xteink Is Off";
 "Settings_xteink_notReachableMessage_Luna" = "Luna could not reach the device. Connect it to the same Wi-Fi network as this device, keep it awake on Cloud or Settings → App Connect, then try again.";
 "Settings_xteink_notReachableTitle_Luna" = "Xteink Not Found";
+"Settings_xteink_pairRow_Luna" = "Pair Xteink";
+"Settings_xteink_pairDetail_Luna" = "Enter the code shown on the reader";
+"Settings_xteink_pairTitle_Luna" = "Pair Xteink";
+"Settings_xteink_pairMessage_Luna" = "Wake the reader, then enter its pairing code.";
+"Settings_xteink_pairCodePlaceholder_Luna" = "Pairing code";
+"Settings_xteink_pairConfirm_Luna" = "Pair";
+"Settings_xteink_pairSuccessTitle_Luna" = "Xteink Paired";
+"Settings_xteink_pairSuccessMessage_Luna" = "Luna will send articles when the reader wakes.";
 "Settings_xteink_sendTestRow_Luna" = "Send Test Document";
 "Settings_xteink_setupFooter_Luna" = "Luna sends saved articles to an Xteink e-reader over your Wi-Fi network. The device receives while it is awake on its Cloud screen or Settings → App Connect. If Luna cannot find it by name, enter its IP address.";
 "Settings_xteink_testSentMessage_Luna" = "Look for the test document on the device's Pushed Books shelf.";

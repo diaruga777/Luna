@@ -16,6 +16,7 @@ import LunaModels
 import LunaPriceUI
 import LunaReaderUI
 import LunaSaves
+import LunaSend
 import LunaSocialUI
 import LunaStorage
 import UIKit
@@ -125,6 +126,12 @@ enum KindWiring {
             ) {
                 KindleSettingsScreen()
             },
+            SettingsCategory(
+                title: L10n.string("Common_xteink"), symbol: "books.vertical",
+                detail: {
+                    XteinkSendSettings.isEnabled ? nil : L10n.string("Common_off")
+                }
+            ) { XteinkSettingsScreen() },
             SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
                 DownloadsSettingsScreen()
             },
@@ -162,6 +169,9 @@ enum KindWiring {
     static func wifiBecameAvailable() {
         MediaShellWiring.resumePendingWiFiDownloads()
         ArticleShellWiring.resumeIncompletePreloads()
+        // The Xteink receives over local Wi-Fi, so joining a network is a
+        // delivery opportunity for queued ereader sends.
+        ArticleShellWiring.retryPendingSends()
     }
 
     static func retryPendingArticleSends() {

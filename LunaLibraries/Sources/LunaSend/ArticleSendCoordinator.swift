@@ -32,6 +32,14 @@ public protocol ArticleDestination {
     func send(epubData: Data, fileName: String, title: String) async throws
 }
 
+/// A destination throws an error conforming to this when its receiver simply
+/// isn't reachable right now — the Xteink only serves while awake on its
+/// transfer screen, so absence is the normal state, not a delivery failure.
+/// The coordinator keeps the item queued without spending a soft-failure
+/// retry or scheduling backoff; the next sweep (launch, foreground,
+/// background, Wi-Fi available, mail BGTask) tries again.
+public protocol SendDeferralError: Error {}
+
 /// Supplies the `EmailTransport` for the connected account. LunaSend sits below
 /// LunaMailTransport (which builds the transport), so the conformer lives up
 /// there and the app installs it at launch.
@@ -163,7 +171,7 @@ public final class ArticleSendCoordinator {
         now: @escaping () -> Date = Date.init
     ) {
         self.store = store
-        self.destinations = destinations ?? [KindleDestination()]
+        self.destinations = destinations ?? [KindleDestination(), XteinkDestination()]
         self.retryPolicy = retryPolicy
         self.now = now
     }
@@ -179,6 +187,20 @@ public final class ArticleSendCoordinator {
     /// Whether a specific destination is configured (gates its menu row).
     public func isConfigured(destinationID: String) -> Bool {
         destination(id: destinationID)?.isConfigured ?? false
+    }
+
+    /// A configured destination, as the share menu presents it.
+    public struct DestinationDescriptor {
+        public let id: String
+        public let displayName: String
+    }
+
+    /// The configured destinations, for the share menu's per-destination
+    /// "Send to …" rows.
+    public func configuredDestinations() -> [DestinationDescriptor] {
+        destinations.filter(\.isConfigured).map {
+            DestinationDescriptor(id: $0.id, displayName: $0.displayName)
+        }
     }
 
     /// Configured destinations whose App Intents / in-app save mode is
@@ -300,13 +322,21 @@ public final class ArticleSendCoordinator {
             logger.info("Sent to \(destination.displayName, privacy: .public): \(built.title, privacy: .public)")
         } catch {
             recordFailure(error, itemID: itemID, built: built, destination: destination)
-            logger.error("Send to \(destination.displayName, privacy: .public) failed for \(built.title, privacy: .public): \(String(describing: error), privacy: .public)")
+            if error is SendDeferralError {
+                logger.info("Deferred send to \(destination.displayName, privacy: .public) (unreachable): \(built.title, privacy: .public)")
+            } else {
+                logger.error("Send to \(destination.displayName, privacy: .public) failed for \(built.title, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
     private func recordFailure(
         _ error: Error, itemID: UUID, built: BuiltEPUB, destination: ArticleDestination
     ) {
+        // Deferral: the receiver is just not reachable right now.
+        // `markSendAttemptStarted` already left the state `.queued`, so the
+        // next sweep retries at full strength — no failure count, no backoff.
+        if error is SendDeferralError { return }
         let message = Self.userVisibleErrorMessage(error)
         guard !Self.isHardFailure(error),
               let item = store.item(withID: itemID)

@@ -39,6 +39,7 @@ public enum SourceSendSettings {
     public static func appIntentsMode(forDestination id: String) -> ArticleSendMode {
         switch id {
         case ArticleDestinationID.kindle: return KindleSendSettings.sendMode
+        case ArticleDestinationID.xteink: return XteinkSendSettings.sendMode
         default: return .off
         }
     }
@@ -46,6 +47,7 @@ public enum SourceSendSettings {
     public static func setAppIntentsMode(_ mode: ArticleSendMode, forDestination id: String) {
         switch id {
         case ArticleDestinationID.kindle: KindleSendSettings.sendMode = mode
+        case ArticleDestinationID.xteink: XteinkSendSettings.sendMode = mode
         default: break
         }
     }

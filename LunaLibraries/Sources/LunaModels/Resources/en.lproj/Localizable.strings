@@ -64,6 +64,7 @@
 "Common_namePlaceholderExample_Luna" = "name@example.com";
 "Common_never_Luna" = "Never";
 "Common_notNow_Luna" = "Not Now";
+"Common_off_Luna" = "Off";
 "Common_ok_Luna" = "OK";
 "Common_openInSafari_Luna" = "Open in Safari";
 "Common_openLink_Luna" = "Open Link";
@@ -81,6 +82,7 @@
 "Common_saved_Luna" = "Saved";
 "Common_savedToLuna_Luna" = "Saved to Luna";
 "Common_sendToKindle_Luna" = "Send to Kindle";
+"Common_sendToXteink_Luna" = "Send to Xteink";
 "Common_settings_Luna" = "Settings";
 "Common_setUpEmailFirst_Luna" = "Set up email first";
 "Common_share_Luna" = "Share";
@@ -89,6 +91,7 @@
 "Common_signInRequired_Luna" = "Email sign-in required";
 "Common_untitled_Luna" = "Untitled";
 "Common_wpm_Luna" = "%lld wpm";
+"Common_xteink_Luna" = "Xteink";
 
 /* ===================== LunaApp — an app's own display name, used both for
  * the running app and (UnsupportedSaveCopy) to name a SIBLING app, so every
@@ -552,6 +555,26 @@
 "Settings_email_kindle_notConfiguredMessage_Luna" = "Enter your Kindle address first. You can find it at amazon.com → Manage Your Content & Devices → Preferences → Personal Document Settings";
 "Settings_email_kindle_testSentTitle_Luna" = "Test Sent";
 "Settings_email_kindle_testSentMessage_Luna" = "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.";
+
+/* ===== Settings_xteink — Settings → Xteink: enable switch, device address,
+ * per-source auto-send entry, test transfer and manual sweep.
+ * Luna/Settings/XteinkSettingsScreen.swift ===== */
+"Settings_xteink_addressLabel_Luna" = "Address";
+"Settings_xteink_autoSendRow_Luna" = "Auto-Send by Source";
+"Settings_xteink_nothingPendingMessage_Luna" = "Every save has already been sent to the Xteink.";
+"Settings_xteink_nothingPendingTitle_Luna" = "Nothing Pending";
+"Settings_xteink_notEnabledMessage_Luna" = "Turn on Send to Xteink first.";
+"Settings_xteink_notEnabledTitle_Luna" = "Xteink Is Off";
+"Settings_xteink_notReachableMessage_Luna" = "Luna could not reach the device. Connect it to the same Wi-Fi network as this device, keep it awake on Cloud or Settings → App Connect, then try again.";
+"Settings_xteink_notReachableTitle_Luna" = "Xteink Not Found";
+"Settings_xteink_sendTestRow_Luna" = "Send Test Document";
+"Settings_xteink_setupFooter_Luna" = "Luna sends saved articles to an Xteink e-reader over your Wi-Fi network. The device receives while it is awake on its Cloud screen or Settings → App Connect. If Luna cannot find it by name, enter its IP address.";
+"Settings_xteink_testSentMessage_Luna" = "Look for the test document on the device's Pushed Books shelf.";
+"Settings_xteink_testSentTitle_Luna" = "Test Sent";
+"Settings_xteink_transferNowRow_Luna" = "Transfer Pending Saves";
+"Settings_xteink_transferQueuedMessage_Luna" = "Saves queued: %lld. They upload while the device is awake on its Cloud screen.";
+"Settings_xteink_transferQueuedTitle_Luna" = "Transfer Started";
+"Settings_xteink_transferSectionHeader_Luna" = "Transfer";
 
 /* ===== Settings_importExport — Settings → Import & Export: export/import
  * buttons and their outcome alerts. Luna/Settings/ImportExportSettingsScreen.swift ===== */
@@ -1020,9 +1043,14 @@
 
 /* ===== Sharing — PendingRequestsViewController.swift (moderation queue) ===== */
 
-/* ===== Sharing — ReaderShareSheet.swift (reader share menu/sheet) ===== */
+/* ===== Sharing — ReaderShareSheet.swift (reader share menu/sheet), plus the
+ * per-destination ereader send rows AppReaderProviders builds for it ===== */
 "Sharing_readerShareSheet_1sendAsEmail_Luna" = "Send as email";
 "Sharing_readerShareSheet_2exportTitle_Luna" = "Export as…";
+"Sharing_readerShareSheet_sendQueuedGenericMessage_Luna" = "Luna will retry automatically.";
+"Sharing_readerShareSheet_sendQueuedTitle_Luna" = "Queued for %@";
+"Sharing_readerShareSheet_sendQueuedXteinkMessage_Luna" = "Luna sends it when the Xteink is awake on its Cloud screen or Settings → App Connect, on the same Wi-Fi network.";
+"Sharing_readerShareSheet_sendToDestination_Luna" = "Send to %@";
 
 /* ===== Sharing — RecipientPickerViewController.swift (pick email recipients) ===== */
 "Sharing_recipientPicker_action1EnterEmail_Luna" = "Enter email address…";

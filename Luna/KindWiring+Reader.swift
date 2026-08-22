@@ -93,6 +93,12 @@ enum KindWiring {
             ) {
                 KindleSettingsScreen()
             },
+            SettingsCategory(
+                title: L10n.string("Common_xteink"), symbol: "books.vertical",
+                detail: {
+                    XteinkSendSettings.isEnabled ? nil : L10n.string("Common_off")
+                }
+            ) { XteinkSettingsScreen() },
         ]
     }
 
@@ -115,6 +121,9 @@ enum KindWiring {
 
     static func wifiBecameAvailable() {
         ArticleShellWiring.resumeIncompletePreloads()
+        // The Xteink receives over local Wi-Fi, so joining a network is a
+        // delivery opportunity for queued ereader sends.
+        ArticleShellWiring.retryPendingSends()
     }
 
     static func retryPendingArticleSends() {

@@ -9,4 +9,5 @@
 /// needing the send machinery itself.
 public enum ArticleDestinationID {
     public static let kindle = "kindle"
+    public static let xteink = "xteink"
 }

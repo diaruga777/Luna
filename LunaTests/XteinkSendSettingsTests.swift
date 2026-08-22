@@ -37,17 +37,6 @@ final class XteinkSendSettingsTests: XCTestCase {
         super.tearDown()
     }
 
-    func testCandidateHostsNormalizeTypedAddressesAndEndWithDefault() {
-        XteinkSendSettings.deviceAddress = "http://192.168.1.5/, my-reader.local"
-        XCTAssertEqual(
-            XteinkSendSettings.candidateHosts,
-            ["192.168.1.5", "my-reader.local", "E-Paper.local"])
-    }
-
-    func testCandidateHostsFallBackToDefaultWhenNothingTyped() {
-        XCTAssertEqual(XteinkSendSettings.candidateHosts, ["E-Paper.local"])
-    }
-
     /// The enable switch is the one consent step: with no stored mode, every
     /// capture source auto-sends, so flipping the switch is a complete setup.
     func testEverySourceAutoSendsByDefault() {

@@ -60,7 +60,6 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         if let item, isArticle, !item.isShareable { return nil }
         return ReaderShareSheet.rows(
             includeExport: isArticle && item?.state == .ready,
-            ereaderRows: ereaderRows(for: item, isArticle: isArticle, from: presenter),
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.present(
@@ -83,43 +82,6 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 ArticleExportService().presentShareSheet(
                     format, for: item, from: presenter, sourceView: sourceView)
             })
-    }
-
-    /// One "Send to …" row per configured ereader destination, for ready
-    /// articles only — the same gate as file export, since both need the
-    /// extracted content.
-    private func ereaderRows(
-        for item: SavedItem?, isArticle: Bool, from presenter: UIViewController
-    ) -> [ReaderShareSheet.Row] {
-        guard let item, isArticle, item.state == .ready else { return [] }
-        return ArticleSendCoordinator.shared.configuredDestinations().map { destination in
-            .action(
-                title: L10n.string(
-                    "Sharing_readerShareSheet_sendToDestination", destination.displayName),
-                systemImage: destination.id == ArticleDestinationID.kindle
-                    ? "book.closed" : "books.vertical"
-            ) { [weak presenter] in
-                Task { @MainActor in
-                    await ArticleSendCoordinator.shared.send(item, toDestinationID: destination.id)
-                    guard let presenter,
-                          let updated = SavesStore.shared.item(withID: item.id),
-                          updated.sendState(for: destination.id) == .queued
-                    else { return }
-                    // Still queued: the receiver wasn't reachable. Say when it
-                    // will actually go out, so the silence reads as "later",
-                    // not "broken".
-                    let message = destination.id == ArticleDestinationID.xteink
-                        ? L10n.string("Sharing_readerShareSheet_sendQueuedXteinkMessage")
-                        : L10n.string("Sharing_readerShareSheet_sendQueuedGenericMessage")
-                    let alert = UIAlertController(
-                        title: L10n.string(
-                            "Sharing_readerShareSheet_sendQueuedTitle", destination.displayName),
-                        message: message, preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
-                    presenter.present(alert, animated: true)
-                }
-            }
-        }
     }
 
     /// A no-url text article (email/document) can only leave as a file, so skip

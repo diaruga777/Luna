@@ -189,20 +189,6 @@ public final class ArticleSendCoordinator {
         destination(id: destinationID)?.isConfigured ?? false
     }
 
-    /// A configured destination, as the share menu presents it.
-    public struct DestinationDescriptor {
-        public let id: String
-        public let displayName: String
-    }
-
-    /// The configured destinations, for the share menu's per-destination
-    /// "Send to …" rows.
-    public func configuredDestinations() -> [DestinationDescriptor] {
-        destinations.filter(\.isConfigured).map {
-            DestinationDescriptor(id: $0.id, displayName: $0.displayName)
-        }
-    }
-
     /// Configured destinations whose App Intents / in-app save mode is
     /// double-save (for `SavePressPolicy` — only active saves are double-pressed).
     public func doubleSaveDestinationIDs() -> [String] {

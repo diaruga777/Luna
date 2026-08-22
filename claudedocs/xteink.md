@@ -76,10 +76,9 @@ everything pending uploads.
   looking), device address field, Auto-Send by Source
   (`AutoSendBySourceScreen`, already destination-generic), Send Test
   Document, Transfer Pending Saves.
-- **Share menu**: `AppReaderShareProvider.ereaderRows` adds one "Send to …"
-  row per configured destination (Kindle too) for ready articles, between
-  the email row and the export submenu. A send that stays `.queued` (device
-  asleep) explains itself in an alert naming the wake steps.
+- There is deliberately NO per-article "Send to Xteink" share-menu row
+  (owner decision, 2026-08-22): auto-send plus the Settings screen's manual
+  sweep cover delivery; the share menu stays link/export-only.
 - `NSLocalNetworkUsageDescription` lives in the shared `Luna/Info.plist`.
 
 ## What this deliberately does not do

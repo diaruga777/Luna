@@ -3,10 +3,13 @@
 Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
 email is involved. Luna builds an image-free, compressed Xteink EPUB then uses
 the CrossPoint BLE rendezvous when the reader advertises — during a sleeping
-reader's hourly timer window, or the on-device **File Transfer → Luna Sync**
-menu entry (a power-button wake opens no window; a pre-UI window cost ~8 s of
-wake latency and was removed 2026-08-23). Over-sized books escalate to
-CrossPoint Wi-Fi.
+reader's hourly timer window, or on demand from the reader's HOME-menu
+**Luna Sync** row (visible once paired; shows progress and an outcome popup).
+First-time pairing lives in File Transfer → Luna Sync. A power-button wake
+opens no window; a pre-UI window cost ~8 s of wake latency and was removed
+2026-08-23. Over-sized books escalate to CrossPoint Wi-Fi. Luna needs no tap
+for a device-initiated sync: the restorable CBCentralManager scan reconnects
+in the background while the app is alive (a force-quit app cannot be woken).
 
 Status notifications are size-capped by BLE: one notification carries MTU−3
 bytes and NimBLE truncates the rest on air, so the reader keeps every status

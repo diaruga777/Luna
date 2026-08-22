@@ -58,18 +58,33 @@ public struct SystemXteinkWiFiJoiner: XteinkWiFiJoining {
     public init() {}
     public func join(_ offer: XteinkWiFiOffer) async throws {
         #if os(iOS)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let configuration = NEHotspotConfiguration(ssid: offer.ssid, passphrase: offer.passphrase, isWEP: false)
-            configuration.joinOnce = true
-            NEHotspotConfigurationManager.shared.apply(configuration) { error in
-                if let error { continuation.resume(throwing: error) }
-                else { continuation.resume() }
-            }
+        // The reader publishes credentials over BLE, releases BLE, and only
+        // then brings the AP up — a few seconds after this offer arrives. A
+        // first apply can race the SSID's appearance, so retry once.
+        do { try await apply(offer) } catch {
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+            try await apply(offer)
         }
         #else
         throw XteinkSyncError.unavailable
         #endif
     }
+
+    #if os(iOS)
+    private func apply(_ offer: XteinkWiFiOffer) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let configuration = NEHotspotConfiguration(ssid: offer.ssid, passphrase: offer.passphrase, isWEP: false)
+            configuration.joinOnce = true
+            NEHotspotConfigurationManager.shared.apply(configuration) { error in
+                if let error, (error as NSError).code != NEHotspotConfigurationError.alreadyAssociated.rawValue {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    #endif
     public func leave(_ offer: XteinkWiFiOffer) {
         #if os(iOS)
         NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: offer.ssid)
@@ -181,6 +196,7 @@ public final class XteinkCrossPointTransferRouter {
     /// active after kicking off a scan, before giving up and deferring.
     private let rendezvousWaitTimeout: TimeInterval
     private let rendezvousPollInterval: TimeInterval
+    private let uploadRetryPause: TimeInterval
 
     public init(
         ble: any XteinkBLETransporting = XteinkBLECentral.shared,
@@ -191,13 +207,15 @@ public final class XteinkCrossPointTransferRouter {
         isForeground: @escaping @Sendable () -> Bool = { XteinkAppState.isForeground },
         policy: XteinkTransferSizePolicy = XteinkTransferSizePolicy(),
         rendezvousWaitTimeout: TimeInterval = 12,
-        rendezvousPollInterval: TimeInterval = 0.2
+        rendezvousPollInterval: TimeInterval = 0.2,
+        uploadRetryPause: TimeInterval = 2
     ) {
         self.ble = ble; self.wifi = wifi; self.uploader = uploader
         self.notifier = notifier; self.lanProber = lanProber
         self.isForeground = isForeground; self.policy = policy
         self.rendezvousWaitTimeout = rendezvousWaitTimeout
         self.rendezvousPollInterval = rendezvousPollInterval
+        self.uploadRetryPause = uploadRetryPause
     }
 
     public func send(_ data: Data, fileName: String, title: String) async throws {
@@ -218,7 +236,15 @@ public final class XteinkCrossPointTransferRouter {
         let joinedAP = offer.mode == .ap
         if joinedAP { try await wifi.join(offer) }
         defer { if joinedAP { wifi.leave(offer) } }
-        try await uploader.upload(data, fileName: validName, host: offer.host)
+        do {
+            try await uploader.upload(data, fileName: validName, host: offer.host)
+        } catch {
+            guard joinedAP else { throw error }
+            // The reader binds its HTTP server moments after its AP accepts
+            // the phone; one early connect can land in that gap.
+            try await Task.sleep(nanoseconds: UInt64(max(0, uploadRetryPause) * 1_000_000_000))
+            try await uploader.upload(data, fileName: validName, host: offer.host)
+        }
     }
 
     /// The explicit "send now" path (an in-app share, not the ambient auto-send

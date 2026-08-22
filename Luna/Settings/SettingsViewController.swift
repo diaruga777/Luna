@@ -30,6 +30,16 @@ extension UITableViewController {
     }
 
     func presentInfoAlert(title: String, message: String) {
+        // UIKit drops a present() issued while another presentation is mid
+        // dismissal — e.g. an alert action handler reporting its own outcome.
+        // Wait for the presenter to become free while this screen is visible.
+        guard presentedViewController == nil else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, self.viewIfLoaded?.window != nil else { return }
+                self.presentInfoAlert(title: title, message: message)
+            }
+            return
+        }
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
         present(alert, animated: true)

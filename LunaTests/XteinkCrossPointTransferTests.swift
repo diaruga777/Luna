@@ -153,7 +153,9 @@ final class XteinkCrossPointTransferTests: XCTestCase {
     }
 
     /// The upload throwing must still leave the hotspot configuration removed
-    /// — `defer` at function scope, not scoped inside the join `if`.
+    /// — `defer` at function scope, not scoped inside the join `if`. A joined
+    /// AP gets one upload retry (the reader binds its server moments after
+    /// the AP accepts the phone), so a persistent failure uploads twice.
     func testAPIsLeftEvenWhenUploadFails() async {
         let ble = BLE(); let wifi = WiFi(); let notifier = Notifier()
         let order = OrderRecorder()
@@ -162,7 +164,8 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         let router = XteinkCrossPointTransferRouter(
             ble: ble, wifi: wifi,
             uploader: Uploader { _, _, _ in order.record("uploaded"); throw UploadFailure() },
-            notifier: notifier, isForeground: { true })
+            notifier: notifier, isForeground: { true },
+            uploadRetryPause: 0)
         do {
             try await router.send(
                 Data(repeating: 2, count: XteinkSyncProtocol.maximumBLEPayloadBytes + 1),
@@ -172,7 +175,7 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         } catch { XCTFail("unexpected error \(error)") }
         XCTAssertEqual(wifi.joined, [ble.offer])
         XCTAssertEqual(wifi.left, [ble.offer])
-        XCTAssertEqual(order.events, ["joined", "uploaded", "left"])
+        XCTAssertEqual(order.events, ["joined", "uploaded", "uploaded", "left"])
     }
 
     func testLargeBackgroundPayloadNotifiesInsteadOfJoiningAP() async {

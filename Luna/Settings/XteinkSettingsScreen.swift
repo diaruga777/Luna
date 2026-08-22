@@ -139,6 +139,9 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     }
 
     private func presentPairingPrompt() {
+        // Connecting takes a few seconds; start the scan while the user reads
+        // the reader's code, so the confirm below finds a live rendezvous.
+        XteinkBLECentral.shared.beginRendezvousScan()
         let alert = UIAlertController(
             title: L10n.string("Settings_xteink_pairTitle"),
             message: L10n.string("Settings_xteink_pairMessage"), preferredStyle: .alert)
@@ -149,11 +152,17 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("Settings_xteink_pairConfirm"), style: .default) {
             [weak self, weak alert] _ in
-            guard let self, let code = alert?.textFields?.first?.text,
-                  !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            guard let self,
+                  let code = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !code.isEmpty else { return }
             Task { @MainActor in
                 do {
+                    try await Self.waitForRendezvous()
                     try await XteinkBLECentral.shared.pair(code: code, pairSecret: Self.pairSecret())
+                    // Close the reader's rendezvous window now: it flips its
+                    // popup to "Luna paired" the moment no_work lands, instead
+                    // of holding the code popup until an idle timeout.
+                    try? await XteinkBLECentral.shared.reportNoWork()
                     XteinkSendSettings.isEnabled = true
                     self.tableView.reloadData()
                     self.presentInfoAlert(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
@@ -163,6 +172,17 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             }
         })
         present(alert, animated: true)
+    }
+
+    /// The scan begun when the prompt appeared needs a few seconds to find and
+    /// connect the reader. Waiting here turns "instant unavailable" into a
+    /// pairing attempt, and into a visible timeout error when no reader is up.
+    private static func waitForRendezvous(timeout: TimeInterval = 10) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !XteinkBLECentral.shared.isRendezvousActive {
+            guard Date() < deadline else { throw XteinkSyncError.unavailable }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
     }
 
     private static func pairSecret() -> String {

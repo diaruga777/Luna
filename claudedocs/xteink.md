@@ -37,29 +37,34 @@ local open-Luna notification.
 CrossPoint upload is multipart `POST /upload?path=/Books`; Luna treats a 2xx
 response as authoritative and the custom X3 firmware rejects zero-byte files.
 
-## The device protocol (stock firmware)
+### WiFi-first "send now" routing
 
-The X3 has no USB data port (its pogo pins only charge). While the device is
-awake on its **Cloud** screen or **Settings → App Connect**, the stock
-firmware serves plain HTTP on port 80, reachable by its mDNS name
-`E-Paper.local` or its DHCP IP. It sleeps off the network within seconds of
-leaving those screens, so delivery is opportunistic by design. The endpoints
-(community-documented; the same ones the official companion app and the
-open-source sync clients use):
+An explicit send (the share-menu row below, and the ambient auto-send sweep)
+goes through `XteinkCrossPointTransferRouter.sendNow`, not straight to `send`:
+it tries the local network first, since a phone already on the reader's LAN
+can deliver immediately without waiting for a BLE rendezvous.
 
-- `GET /status` — JSON with `device_type` (`ESP32…`), used as the probe.
-- `POST /edit` — multipart upload. Field name `data`; the multipart FILENAME
-  is the destination path. The firmware prepends that path to `/push.txt`,
-  its "Pushed Books" shelf manifest — that is what makes an upload appear on
-  the device's shelf.
-- `PUT /edit` with form `path=<dir>/` — mkdir (trailing slash required).
-- `GET /list?dir=<dir>` — listing (`type`/`name`/`size`), used to verify an
-  upload's byte count; the ESP32 truncates silently when interrupted.
-- `DELETE /edit` with form `path=<p>` — used to remove a truncated upload.
+1. `XteinkCrossPointLANProber` concurrently probes `GET http://<host>/api/status`
+   on `192.168.4.1` (the ESP32 softAP gateway — covers both a BLE-issued
+   `Luna-X3-*` hotspot and CrossPoint's own) and `crosspoint.local` (mDNS, for
+   when both devices already share a LAN), ~2 s timeout per host. A host wins
+   only on a 200 with JSON whose `device` is `X3`/`X4` or that carries a
+   `version` key — an arbitrary router login page can't win the race. First
+   confirmed host wins.
+2. On a hit (and `XteinkSendSettings.isEnabled`), the upload goes straight to
+   that host over HTTP — no BLE involved.
+3. On a miss, `sendNow` kicks `beginRendezvousScan()` and waits up to ~12 s
+   for `isRendezvousActive` before running the normal size-policy `send`
+   (BLE for ≤200 KiB, `wifi_request` escalation above).
+4. If neither path reaches the device, it throws `.unavailable`, which
+   `XteinkDestination` converts to `XteinkRendezvousUnavailableError` so the
+   coordinator queues the item for the next sweep.
 
-Uploads land in `/Pushed Books/` (`XteinkDeviceClient.pushDirectory`). The
-ESP32-C3 receives slowly: the upload timeout is 120 s + 45 s/MB. Article
-EPUBs are usually well under 1 MB.
+## The device protocol (stock firmware) — removed
+
+Luna no longer talks to the Xteink stock firmware's `/edit` Wi-Fi file
+manager. `XteinkDeviceClient` and the legacy `XteinkTransferQueue` actor were
+deleted 2026-08-22; the CrossPoint BLE/HTTP transport above is the only path.
 
 ## Xteink EPUB profile and routing seam
 
@@ -89,18 +94,17 @@ All in **LunaSend** (linked by the article-capable Reader app):
 - `XteinkBLECentral` — state-restorable BLE central, pairing/authentication,
   resumable streaming, delete control, and AP/STA offer negotiation.
 - `XteinkCrossPointTransferRouter` — applies the final-byte size policy, sends
-  small EPUBs over BLE, and joins/uploads over the X3 AP for larger EPUBs.
+  small EPUBs over BLE, joins/uploads over the X3 AP for larger EPUBs, and
+  exposes `sendNow` (LAN-probe-first routing, above).
+- `XteinkCrossPointLANProber` — the `sendNow` reachability probe.
 - `XteinkDestination: ArticleDestination` — participates in the coordinator's
   queue/retry/source-gating machinery and funnels sends through the CrossPoint
-  router.
+  router's `sendNow`.
 - `XteinkRendezvousTransferQueue` (actor, `.shared`) — serializes a coordinator
   sweep because one X3 GATT session accepts one operation/data stream at a time.
 - `XteinkSendSettings` — App-Group enable and per-source auto-send settings.
 - `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
   based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
-
-`XteinkDeviceClient` and `XteinkTransferQueue` document and test the stock
-firmware protocol, but the active destination no longer calls them.
 
 ## Deferral vs failure
 
@@ -121,13 +125,18 @@ wake.
 
 - **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, compiled
   into Luna and LunaReader; membership-excluded from Downloader and Price
-  Tracker like the other article settings screens): enable switch, code pairing,
-  Auto-Send by Source
-  (`AutoSendBySourceScreen`, already destination-generic), Send Test
-  Document, Transfer Pending Saves.
-- There is deliberately NO per-article "Send to Xteink" share-menu row
-  (owner decision, 2026-08-22): auto-send plus the Settings screen's manual
-  sweep cover delivery; the share menu stays link/export-only.
+  Tracker like the other article settings screens): enable switch, code
+  pairing, Auto-Send by Source (`AutoSendBySourceScreen`, already
+  destination-generic), Transfer Pending Saves. The old "Send Test Document"
+  row (and its stock-firmware-flavored copy) was removed 2026-08-22 along with
+  the stock client it exercised.
+- **Share menu row** (as of 2026-08-22): `AppReaderShareProvider.ereaderRows`
+  adds a "Send to Xteink" row (`books.vertical`) between the email row and the
+  export submenu, gated on `XteinkSendSettings.isEnabled` and the article
+  being `.ready`. It calls `ArticleSendCoordinator.send(_:toDestinationID:)`,
+  which routes through the WiFi-first `sendNow` above; if the item is still
+  `.queued` after the await (receiver unreachable on both paths), an alert
+  explains it will go out on the next BLE wake or Wi-Fi window.
 - `NSBluetoothAlwaysUsageDescription`, `bluetooth-central`, and the Hotspot
   Configuration entitlement are enabled only for the article-capable apps.
 
@@ -144,7 +153,8 @@ wake.
 ## Tests
 
 `XteinkCrossPointTransferTests` cover final-size routing, BLE-only deferral,
-foreground AP joining/removal, background notification, STA offers, multipart
-shape/nonempty payload, and non-2xx rejection. `XteinkTransferSizePolicyTests`
-cover the inclusive 200 KiB boundary. The legacy stock client retains its
-URLProtocol and queue tests.
+foreground AP join→upload→leave ordering and removal, background notification,
+STA offers, multipart shape/nonempty payload, non-2xx rejection, and `sendNow`
+routing (LAN-probe hit skips BLE, probe miss falls back to rendezvous-wait
+then BLE, and a total miss throws `.unavailable`). `XteinkTransferSizePolicyTests`
+cover the inclusive 200 KiB boundary.

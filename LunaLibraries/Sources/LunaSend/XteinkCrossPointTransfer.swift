@@ -43,37 +43,6 @@ public struct XteinkCrossPointClient: XteinkHTTPUploading {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw XteinkSyncError.transferFailed("CrossPoint upload was rejected")
         }
-        try await verifyUpload(fileName: fileName, expectedBytes: data.count, host: host)
-    }
-
-    private func verifyUpload(fileName: String, expectedBytes: Int, host: String) async throws {
-        var components = URLComponents()
-        components.scheme = "http"; components.host = host; components.path = "/api/files"
-        components.queryItems = [URLQueryItem(name: "path", value: "/Books")]
-        guard let url = components.url else { throw XteinkSyncError.protocolError("invalid Wi-Fi host") }
-        let (body, response) = try await session.data(for: URLRequest(url: url))
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw XteinkSyncError.transferFailed("CrossPoint could not verify upload")
-        }
-        let object = try JSONSerialization.jsonObject(with: body)
-        let entries: [[String: Any]]
-        if let array = object as? [[String: Any]] { entries = array }
-        else if let dictionary = object as? [String: Any], let files = dictionary["files"] as? [[String: Any]] { entries = files }
-        else { entries = [] }
-        let actual = entries.first { ($0["name"] as? String) == fileName }?["size"] as? Int
-        guard actual == expectedBytes, actual != 0 else {
-            try? await deleteCorruptUpload(fileName: fileName, host: host)
-            throw XteinkSyncError.transferFailed("CrossPoint upload was truncated")
-        }
-    }
-
-    private func deleteCorruptUpload(fileName: String, host: String) async throws {
-        var components = URLComponents()
-        components.scheme = "http"; components.host = host; components.path = "/api/files"
-        components.queryItems = [URLQueryItem(name: "path", value: "/Books/\(fileName)")]
-        guard let url = components.url else { return }
-        var request = URLRequest(url: url); request.httpMethod = "DELETE"
-        _ = try await session.data(for: request)
     }
 }
 

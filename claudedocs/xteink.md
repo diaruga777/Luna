@@ -23,14 +23,19 @@ with SHA-256. Reader wiring retries the queued send sweep exactly when the
 GATT service becomes ready. iOS can restore this after normal termination but
 cannot relaunch Luna after an explicit user force-quit.
 
+When a rendezvous finds no queued Xteink saves, Reader authenticates then sends
+`no_work`, which lets the X3 leave its connected wake window immediately.
+
 `XteinkTransferSizePolicy` owns the inclusive 200 KiB ceiling. Small final
 Xteink EPUBs are BLE-only and defer while no rendezvous exists. Larger EPUBs
-ask `wifi_request`; an STA offer uploads directly, while an AP offer is joined
-immediately with `NEHotspotConfiguration` in the foreground and removed after
-transfer. Background AP offers cause a local open-Luna notification.
-CrossPoint upload is multipart `POST /upload?path=/Books`, followed by
-`GET /api/files?path=/Books`; Luna requires the exact nonzero byte count and
-deletes a corrupt partial upload.
+ask `wifi_request` with `prefer_ap: true`; the custom X3 fork treats its own
+secured AP as the default so a remembered but unreachable home LAN cannot
+strand a travelling phone. STA offers remain protocol-compatible and upload
+directly, while an AP offer is joined immediately with `NEHotspotConfiguration`
+in the foreground and removed after transfer. Background AP offers cause a
+local open-Luna notification.
+CrossPoint upload is multipart `POST /upload?path=/Books`; Luna treats a 2xx
+response as authoritative and the custom X3 firmware rejects zero-byte files.
 
 ## The device protocol (stock firmware)
 

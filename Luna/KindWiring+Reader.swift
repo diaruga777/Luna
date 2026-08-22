@@ -118,7 +118,14 @@ enum KindWiring {
             ) { _ in
                 // A restored central can become ready long after launch's first
                 // sweep. This is the actual transfer trigger for a wake window.
-                ArticleShellWiring.retryPendingSends()
+                let queued = SavesStore.shared.items().contains {
+                    $0.sendState(for: ArticleDestinationID.xteink) == .queued
+                }
+                if queued {
+                    ArticleShellWiring.retryPendingSends()
+                } else {
+                    Task { try? await XteinkBLECentral.shared.reportNoWork() }
+                }
             }
         }
     }

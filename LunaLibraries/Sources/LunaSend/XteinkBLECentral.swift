@@ -93,12 +93,12 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         guard isRendezvousActive else { throw XteinkSyncError.unavailable }
         let digest = SHA256.hash(data: epub).map { String(format: "%02x", $0) }.joined()
         try await authenticatedHello()
+        let maximum = await maximumDataPayload()
         try await sendControl("start_put", values: [
             "kind": "book", "name": fileName, "size": epub.count, "sha256": digest,
-            "resume": true, "chunk_size": 180,
+            "resume": true, "chunk_size": maximum,
         ])
 
-        let maximum = await maximumDataPayload()
         let resume = await currentCheckpoint()
         var offset = min(resume.offset, epub.count)
         var sequence = resume.sequence
@@ -125,7 +125,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
                 guard let self else { return continuation.resume(throwing: XteinkSyncError.unavailable) }
                 self.pendingWiFi = continuation
                 Task { [weak self] in
-                    do { try await self?.sendControl("wifi_request") }
+                    do { try await self?.sendControl("wifi_request", values: ["prefer_ap": true]) }
                     catch { self?.resumeWiFi(throwing: error) }
                 }
             }
@@ -136,6 +136,16 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         guard isRendezvousActive else { throw XteinkSyncError.unavailable }
         try await sendControl("delete", values: ["name": remotePath])
     }
+
+    /// Ends a power-button rendezvous that found no queued reader work. This
+    /// follows an authenticated hello so the X3 never honours an unauthenticated
+    /// radio command.
+    public func reportNoWork() async throws {
+        guard isRendezvousActive else { throw XteinkSyncError.unavailable }
+        try await authenticatedHello()
+        try await sendControl("no_work")
+    }
+
 
     private func maximumDataPayload() async -> Int {
         await withCheckedContinuation { continuation in
@@ -277,12 +287,12 @@ extension XteinkBLECentral: CBPeripheralDelegate {
             switch characteristic.uuid {
             case XteinkSyncProtocol.control: control = characteristic
             case XteinkSyncProtocol.dataIn: dataIn = characteristic
-            case XteinkSyncProtocol.status: status = characteristic; peripheral.setNotifyValue(true, for: characteristic)
+            case XteinkSyncProtocol.status: status = characteristic
             default: break
             }
         }
         active = control != nil && dataIn != nil && status != nil
-        if active { DispatchQueue.main.async { NotificationCenter.default.post(name: .xteinkRendezvousReady, object: self) } }
+        if let status { peripheral.setNotifyValue(true, for: status) }
     }
     public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == XteinkSyncProtocol.control else { return }
@@ -293,6 +303,12 @@ extension XteinkBLECentral: CBPeripheralDelegate {
             pending?.continuation.resume(throwing: error)
         }
     }
+    public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == XteinkSyncProtocol.status, error == nil, characteristic.isNotifying else { return }
+        // The X3's initial nonce may have been emitted before iOS subscribed.
+        // An explicit read makes pairing deterministic after every reconnect.
+        peripheral.readValue(for: characteristic)
+    }
     public func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         let continuation = readyToWrite; readyToWrite = nil; continuation?.resume()
     }
@@ -301,11 +317,15 @@ extension XteinkBLECentral: CBPeripheralDelegate {
               let data = characteristic.value,
               let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
-        if let initialNonce = status["nonce"] as? String { nonce = initialNonce }
+        if let initialNonce = status["nonce"] as? String {
+            nonce = initialNonce
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .xteinkRendezvousReady, object: self) }
+        }
         if let received = status["received"] as? Int { checkpoint.offset = received }
         if let offset = status["resume_offset"] as? Int { checkpoint.offset = offset }
         if let next = status["next_sequence"] as? Int { checkpoint.sequence = UInt32(clamping: next) }
-        if let errorMessage = status["error"] as? String {
+        if status["ok"] as? Bool == false || ((status["error"] as? String)?.isEmpty == false) {
+            let errorMessage = status["error"] as? String ?? "reader rejected operation"
             let pending = pendingControl; pendingControl = nil
             pending?.continuation.resume(throwing: XteinkSyncError.protocolError(errorMessage))
             resumeWiFi(throwing: XteinkSyncError.protocolError(errorMessage))

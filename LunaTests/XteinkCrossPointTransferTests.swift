@@ -8,6 +8,34 @@ import XCTest
 @testable import LunaSend
 
 final class XteinkCrossPointTransferTests: XCTestCase {
+    private final class HTTPStub: URLProtocol {
+        struct RecordedRequest { let request: URLRequest; let body: Data }
+        static var requests: [RecordedRequest] = []
+        static var responses: [String: (Int, Data)] = [:]
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            Self.requests.append(RecordedRequest(request: request, body: Self.body(of: request)))
+            let key = request.url!.path + (request.url!.query.map { "?\($0)" } ?? "")
+            let response = Self.responses[key] ?? (404, Data())
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: response.0, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: response.1); client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+        private static func body(of request: URLRequest) -> Data {
+            if let body = request.httpBody { return body }
+            guard let stream = request.httpBodyStream else { return Data() }
+            stream.open(); defer { stream.close() }
+            var data = Data(); var buffer = [UInt8](repeating: 0, count: 16_384)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count > 0 else { break }
+                data.append(buffer, count: count)
+            }
+            return data
+        }
+    }
+    override func setUp() { HTTPStub.requests = []; HTTPStub.responses = [:] }
     private final class BLE: XteinkBLETransporting {
         var isRendezvousActive = true
         var sent: [(Data, String)] = []
@@ -103,5 +131,30 @@ final class XteinkCrossPointTransferTests: XCTestCase {
             uploader: Uploader { _, _, host in XCTAssertEqual(host, "192.168.1.30") }, notifier: Notifier(), isForeground: { true })
         try await staRouter.send(Data(repeating: 3, count: XteinkSyncProtocol.maximumBLEPayloadBytes + 1), fileName: "sta.epub", title: "STA")
         XCTAssertTrue(wifi.joined.isEmpty)
+    }
+
+    func testCrossPointUploadIsMultipartAndAcceptsSuccessfulResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [HTTPStub.self]
+        let client = XteinkCrossPointClient(session: URLSession(configuration: configuration))
+        HTTPStub.responses["/upload?path=/Books"] = (200, Data())
+        let epub = Data("nonempty-epub".utf8)
+        try await client.upload(epub, fileName: "book.epub", host: "x3.local")
+        XCTAssertEqual(HTTPStub.requests.map { $0.request.httpMethod ?? "" }, ["POST"])
+        let request = try XCTUnwrap(HTTPStub.requests.first)
+        let contentType = try XCTUnwrap(request.request.value(forHTTPHeaderField: "Content-Type"))
+        XCTAssertTrue(contentType.contains("multipart/form-data"))
+        let body = request.body
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.contains("filename=\"book.epub\""))
+        XCTAssertTrue(body.range(of: epub) != nil)
+        XCTAssertTrue(text.hasSuffix("--\r\n"))
+    }
+
+    func testCrossPointUploadRejectsNonSuccessResponse() async {
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [HTTPStub.self]
+        let client = XteinkCrossPointClient(session: URLSession(configuration: configuration))
+        HTTPStub.responses["/upload?path=/Books"] = (500, Data())
+        do { try await client.upload(Data("epub".utf8), fileName: "book.epub", host: "x3.local"); XCTFail("must fail") }
+        catch { }
     }
 }

@@ -20,22 +20,6 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     private enum SetupRow: Int, CaseIterable { case enable, pair, autoSend }
     private enum TransferRow: Int, CaseIterable { case sendTest, transferNow }
 
-    private lazy var addressField: UITextField = {
-        let field = UITextField()
-        field.placeholder = XteinkSendSettings.defaultDeviceAddress
-        field.text = XteinkSendSettings.deviceAddress
-        field.font = .preferredFont(forTextStyle: .body)
-        field.textColor = LunaColors.primaryText
-        field.keyboardType = .URL
-        field.autocapitalizationType = .none
-        field.autocorrectionType = .no
-        field.returnKeyType = .done
-        field.addTarget(self, action: #selector(addressEdited), for: .editingChanged)
-        field.addTarget(self, action: #selector(addressEdited), for: .editingDidEnd)
-        field.translatesAutoresizingMaskIntoConstraints = false
-        return field
-    }()
-
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
@@ -150,41 +134,12 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         return cell
     }
 
-    private func addressCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-        let label = UILabel()
-        label.text = L10n.string("Settings_xteink_addressLabel")
-        label.font = .preferredFont(forTextStyle: .body)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.setContentHuggingPriority(.required, for: .horizontal)
-
-        addressField.removeFromSuperview()
-        cell.contentView.addSubview(label)
-        cell.contentView.addSubview(addressField)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
-            label.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            addressField.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 12),
-            addressField.trailingAnchor.constraint(
-                equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            addressField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        ])
-        return cell
-    }
-
     // MARK: - Actions
 
     @objc private func enableToggled(_ toggle: UISwitch) {
         XteinkSendSettings.isEnabled = toggle.isOn
         guard toggle.isOn else { return }
         XteinkBLECentral.shared.beginRendezvousScan()
-    }
-
-    @objc private func addressEdited() {
-        XteinkSendSettings.deviceAddress = (addressField.text ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func presentPairingPrompt() {
@@ -203,6 +158,8 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             Task { @MainActor in
                 do {
                     try await XteinkBLECentral.shared.pair(code: code, pairSecret: Self.pairSecret())
+                    XteinkSendSettings.isEnabled = true
+                    self.tableView.reloadData()
                     self.presentInfoAlert(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
                 } catch {
                     self.presentInfoAlert(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")

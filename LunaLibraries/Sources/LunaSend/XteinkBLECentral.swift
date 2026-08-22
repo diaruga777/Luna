@@ -86,7 +86,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         _ epub: Data, fileName: String, title: String,
         progress: @escaping @Sendable (XteinkSyncProgress) -> Void
     ) async throws {
-        guard epub.count <= XteinkSyncProtocol.maximumBLEPayloadBytes else {
+        guard XteinkTransferSizePolicy().transport(forFinalXteinkEPUB: epub) == .bluetoothLowEnergy else {
             throw XteinkSyncError.protocolError("oversized BLE payload")
         }
         try Task.checkCancellation()
@@ -95,7 +95,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         try await authenticatedHello()
         try await sendControl("start_put", values: [
             "kind": "book", "name": fileName, "size": epub.count, "sha256": digest,
-            "resume": 0,
+            "resume": true, "chunk_size": 180,
         ])
 
         let maximum = await maximumDataPayload()

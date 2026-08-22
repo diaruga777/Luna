@@ -1,7 +1,8 @@
 # Send to Kindle
 
 Background delivery of saved articles to an ereader. The article is rendered
-to EPUB on-device once, then delivered to each configured destination.
+to EPUB on-device for each destination's output profile, then delivered to
+each configured destination.
 There are two destinations:
 
 - **Kindle** — emailed to the user's `@kindle.com` address through the
@@ -166,8 +167,10 @@ generation, delivery, and per-destination per-item state:
   `OEBPS/chapter.xhtml`), embedding the article's downloaded jpg/png/gif/webp
   images. This is the format Amazon recommends for Send to Kindle (converted
   to AZW3 on their side).
-- `ZipArchiveWriter` — a minimal stored-entry (uncompressed) ZIP writer with
-  its own CRC32, no external dependency.
+- `ZipArchiveWriter` — a minimal ZIP writer with its own CRC32 and stored
+  entries by default; selected text entries can use raw DEFLATE. The standard
+  Kindle/export profile remains stored, while the Xteink profile requests
+  DEFLATE when it reduces bytes.
 - `MIMEMessage` (`LunaLibraries/Sources/LunaEpub/MIMEMessage.swift`) — an RFC
   5322 message with one attachment, rendered `multipart/mixed`, CRLF
   throughout, RFC 2047-encoded subject via the shared `MIMEHeaderEncoding`.

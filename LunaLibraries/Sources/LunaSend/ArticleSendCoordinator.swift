@@ -28,8 +28,21 @@ public protocol ArticleDestination {
     /// The mode governing App Intents / in-app saves — the only source whose
     /// "double save" press is detected at save time.
     var appIntentsSendMode: ArticleSendMode { get }
+    /// The EPUB contract this destination accepts. The coordinator uses it both
+    /// to decide whether image preparation is appropriate and to build the
+    /// final bytes that reach the transport.
+    var epubBuildProfile: EpubBuilder.Profile { get }
     /// Delivers the EPUB. Throws on any configuration/connection/service failure.
     func send(epubData: Data, fileName: String, title: String) async throws
+}
+
+public extension ArticleDestination {
+    /// Existing third-party conformers remain standard EPUB destinations. The
+    /// built-in Xteink id is text-only even while its transport is evolving;
+    /// custom destinations can override this property explicitly.
+    var epubBuildProfile: EpubBuilder.Profile {
+        id == ArticleDestinationID.xteink ? .xteink : .standard
+    }
 }
 
 /// A destination throws an error conforming to this when its receiver simply
@@ -249,13 +262,14 @@ public final class ArticleSendCoordinator {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
             return
         }
-        // Fetch any images the article hasn't downloaded yet before building the
-        // book — an auto-send fires the moment an article becomes ready, which
-        // is BEFORE its pictures have finished arriving, and a Kindle EPUB with
-        // no illustrations is the wrong book.
-        await ArticleExportService(store: store).prepareImages(for: fresh)
+        // Kindle/export EPUBs wait for their illustrations; Xteink's profile
+        // is text-only by contract, so it must not trigger image downloads just
+        // to discard those bytes moments later.
+        if destination.epubBuildProfile.includesImages {
+            await ArticleExportService(store: store).prepareImages(for: fresh)
+        }
         guard let refreshed = store.item(withID: fresh.id),
-              let built = buildEPUB(for: refreshed) else {
+              let built = buildEPUB(for: refreshed, profile: destination.epubBuildProfile) else {
             store.markSendTerminalFailure(
                 for: fresh.id, destination: destination.id,
                 errorMessage: "Couldn't build the EPUB attachment.")
@@ -280,12 +294,12 @@ public final class ArticleSendCoordinator {
         let title: String
     }
 
-    private func buildEPUB(for item: SavedItem) -> BuiltEPUB? {
+    private func buildEPUB(for item: SavedItem, profile: EpubBuilder.Profile) -> BuiltEPUB? {
         guard let content = store.content(for: item) else { return nil }
         let title = item.title ?? item.urlString
         let data = EpubBuilder().build(
             content: content, sourceURLString: item.urlString,
-            imagesDirectory: store.articlesDirectory)
+            imagesDirectory: store.articlesDirectory, profile: profile)
         return BuiltEPUB(data: data, fileName: Self.epubFileName(forTitle: title), title: title)
     }
 
@@ -382,7 +396,8 @@ public final class ArticleSendCoordinator {
         let epub = EpubBuilder().build(
             content: content,
             sourceURLString: "https://luna.local/test",
-            imagesDirectory: store.articlesDirectory)
+            imagesDirectory: store.articlesDirectory,
+            profile: destination.epubBuildProfile)
         try await destination.send(
             epubData: epub,
             fileName: L10n.string("Reader_export_testDocumentFileName"),

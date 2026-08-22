@@ -66,4 +66,20 @@ final class ZipArchiveWriterTests: XCTestCase {
             | (UInt32(archive[16]) << 16) | (UInt32(archive[17]) << 24)
         XCTAssertEqual(crc, ZipArchiveWriter.crc32(of: payload))
     }
+
+    func testDeflatedEntryRoundTripsThroughTheArchiveReader() throws {
+        let text = String(repeating: "Compact EPUB chapter text. ", count: 500)
+        let payload = Data(text.utf8)
+        var writer = ZipArchiveWriter()
+        writer.addEntry(path: "chapter.xhtml", data: payload, compression: .deflate)
+        let archive = writer.archiveData()
+
+        // ZIP compression method at the local-header offset is DEFLATE (8).
+        XCTAssertEqual(archive[8], 8)
+        XCTAssertEqual(archive[9], 0)
+        XCTAssertLessThan(archive.count, payload.count)
+
+        let reader = try XCTUnwrap(ZipArchiveReader(data: archive))
+        XCTAssertEqual(reader.text(at: "chapter.xhtml"), text)
+    }
 }

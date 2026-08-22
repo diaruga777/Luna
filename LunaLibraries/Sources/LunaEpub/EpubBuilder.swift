@@ -15,6 +15,19 @@ public struct EpubBuilder {
 
     public init() {}
 
+    /// The output contract for a particular reading destination.
+    ///
+    /// `.standard` preserves the existing Kindle/export EPUB byte layout.
+    /// `.xteink` is deliberately text-only: it never reads article-image files,
+    /// emits no image entries or OPF manifest items, and uses DEFLATE for its
+    /// XML/XHTML entries to make the small BLE path practical.
+    public enum Profile: Sendable, Equatable {
+        case standard
+        case xteink
+
+        public var includesImages: Bool { self == .standard }
+    }
+
     /// Extensions a reading system is guaranteed to render: the EPUB 3 core
     /// image media types, minus SVG (which Luna never stores). An **animated
     /// GIF is embedded whole** — EPUB is the one export format that can keep the
@@ -55,28 +68,44 @@ public struct EpubBuilder {
     }
 
     /// Builds the EPUB and returns the bytes. `imagesDirectory` is where the
-    /// ingestor saved the blocks' `imageFileName` files.
+    /// ingestor saved the blocks' `imageFileName` files. The default profile
+    /// keeps existing Kindle and generic-export behavior intact.
     public func build(content: ArticleContent, sourceURLString: String,
-               imagesDirectory: URL) -> Data {
+               imagesDirectory: URL, profile: Profile = .standard) -> Data {
         var zip = ZipArchiveWriter()
         zip.addEntry(path: "mimetype", data: Data("application/epub+zip".utf8))
-        zip.addEntry(path: "META-INF/container.xml", data: Data(Self.containerXML.utf8))
+        let textCompression: ZipArchiveWriter.Compression = profile == .xteink ? .deflate : .stored
+        zip.addEntry(
+            path: "META-INF/container.xml", data: Data(Self.containerXML.utf8),
+            compression: textCompression)
 
-        let (images, entryNames) = embeddableImages(
-            in: content, imagesDirectory: imagesDirectory)
+        let (images, entryNames): ([EmbeddedImage], [String: String])
+        if profile.includesImages {
+            (images, entryNames) = embeddableImages(in: content, imagesDirectory: imagesDirectory)
+        } else {
+            // Do not even resolve image paths for Xteink: the caller may use a
+            // directory that lacks image permissions, and the no-image promise
+            // is a construction invariant rather than best-effort filtering.
+            (images, entryNames) = ([], [:])
+        }
         for image in images {
             zip.addEntry(path: "OEBPS/images/\(image.fileName)", data: image.data)
         }
 
         zip.addEntry(
             path: "OEBPS/content.opf",
-            data: Data(packageDocument(content: content, images: images).utf8))
-        zip.addEntry(path: "OEBPS/nav.xhtml", data: Data(Self.navXHTML.utf8))
+            data: Data(packageDocument(content: content, images: images).utf8),
+            compression: textCompression)
+        zip.addEntry(
+            path: "OEBPS/nav.xhtml", data: Data(Self.navXHTML.utf8),
+            compression: textCompression)
         zip.addEntry(
             path: "OEBPS/chapter.xhtml",
             data: Data(chapterXHTML(
                 content: content, sourceURLString: sourceURLString,
-                imageEntryNames: entryNames).utf8))
+                imageEntryNames: entryNames,
+                preservesImageAlternativeText: !profile.includesImages).utf8),
+            compression: textCompression)
 
         return zip.archiveData()
     }
@@ -200,7 +229,7 @@ public struct EpubBuilder {
 
     private func chapterXHTML(
         content: ArticleContent, sourceURLString: String,
-        imageEntryNames: [String: String]
+        imageEntryNames: [String: String], preservesImageAlternativeText: Bool
     ) -> String {
         var bodyParts: [String] = []
         bodyParts.append("<h1>\(Self.escapeXML(content.title))</h1>")
@@ -247,10 +276,15 @@ public struct EpubBuilder {
                 // a class name it doesn't know would render as ordinary body text.
                 bodyParts.append("<p\(id)><em>\(Self.escapeXML(block.text))</em></p>")
             case .image:
-                guard let key = Self.key(for: block),
-                      let entryName = imageEntryNames[key] else { break }
-                bodyParts.append(
-                    "<p><img src=\"images/\(Self.escapeXML(entryName))\" alt=\"\(Self.escapeXML(block.text))\"/></p>")
+                if let key = Self.key(for: block), let entryName = imageEntryNames[key] {
+                    bodyParts.append(
+                        "<p><img src=\"images/\(Self.escapeXML(entryName))\" alt=\"\(Self.escapeXML(block.text))\"/></p>")
+                } else if preservesImageAlternativeText {
+                    let alternative = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !alternative.isEmpty {
+                        bodyParts.append("<p\(id)><em>\(Self.escapeXML(alternative))</em></p>")
+                    }
+                }
             }
         }
         if openList { bodyParts.append("</ul>") }

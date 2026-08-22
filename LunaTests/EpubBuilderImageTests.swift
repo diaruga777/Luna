@@ -77,6 +77,13 @@ final class EpubBuilderImageTests: XCTestCase {
             sourceURLString: "https://example.com/a", imagesDirectory: scratch)
     }
 
+    private func buildXteink(_ blocks: [ArticleContent.Block]) -> Data {
+        EpubBuilder().build(
+            content: ArticleContent(title: "T", author: "A", blocks: blocks),
+            sourceURLString: "https://example.com/a", imagesDirectory: scratch,
+            profile: .xteink)
+    }
+
     /// The zip's stored entry paths, read straight out of the central directory
     /// (`ZipArchiveWriter` stores everything uncompressed).
     private func entryPaths(in archive: Data) -> [String] {
@@ -117,6 +124,24 @@ final class EpubBuilderImageTests: XCTestCase {
             fileName: "pic.jpg", remote: "https://example.com/pic.jpg",
             bytes: jpeg, onDiskAs: "pic.jpg")])
         XCTAssertTrue(text(in: jpegArchive).contains("media-type=\"image/jpeg\""))
+    }
+
+    func testXteinkProfileOmitsEveryImageButKeepsStandaloneCaptions() throws {
+        let png = encoded(as: .png)!
+        let archive = buildXteink([
+            block(
+                fileName: "pic.png", remote: "https://example.com/pic.png",
+                bytes: png, onDiskAs: "pic.png"),
+            ArticleContent.Block(kind: .caption, text: "A surviving caption", links: []),
+        ])
+        let reader = try XCTUnwrap(ZipArchiveReader(data: archive))
+        XCTAssertTrue(reader.paths.filter { $0.hasPrefix("OEBPS/images/") }.isEmpty)
+        let package = try XCTUnwrap(reader.text(at: "OEBPS/content.opf"))
+        let chapter = try XCTUnwrap(reader.text(at: "OEBPS/chapter.xhtml"))
+        XCTAssertFalse(package.contains("media-type=\"image/"))
+        XCTAssertFalse(chapter.contains("<img"))
+        XCTAssertTrue(chapter.contains("<em>Alt</em>"))
+        XCTAssertTrue(chapter.contains("<em>A surviving caption</em>"))
     }
 
     /// An unrecorded image cannot be found by deriving a path from its URL.

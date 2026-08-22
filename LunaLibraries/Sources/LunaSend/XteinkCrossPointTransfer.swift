@@ -134,22 +134,25 @@ public final class XteinkCrossPointTransferRouter {
     private let uploader: any XteinkHTTPUploading
     private let notifier: any XteinkTransferNotifying
     private let isForeground: @Sendable () -> Bool
+    private let policy: XteinkTransferSizePolicy
 
     public init(
         ble: any XteinkBLETransporting = XteinkBLECentral.shared,
         wifi: any XteinkWiFiJoining = SystemXteinkWiFiJoiner(),
         uploader: any XteinkHTTPUploading = XteinkCrossPointClient(),
         notifier: any XteinkTransferNotifying = SystemXteinkTransferNotifier(),
-        isForeground: @escaping @Sendable () -> Bool = { XteinkAppState.isForeground }
+        isForeground: @escaping @Sendable () -> Bool = { XteinkAppState.isForeground },
+        policy: XteinkTransferSizePolicy = XteinkTransferSizePolicy()
     ) {
         self.ble = ble; self.wifi = wifi; self.uploader = uploader
-        self.notifier = notifier; self.isForeground = isForeground
+        self.notifier = notifier; self.isForeground = isForeground; self.policy = policy
     }
 
     public func send(_ data: Data, fileName: String, title: String) async throws {
         guard ble.isRendezvousActive else { throw XteinkSyncError.unavailable }
-        if data.count <= XteinkSyncProtocol.maximumBLEPayloadBytes {
-            try await ble.send(data, fileName: fileName, title: title, progress: { _ in })
+        let validName = Self.x3FileName(fileName)
+        if policy.transport(forFinalXteinkEPUB: data) == .bluetoothLowEnergy {
+            try await ble.send(data, fileName: validName, title: title, progress: { _ in })
             return
         }
         let offer = try await ble.requestWiFi()
@@ -161,12 +164,21 @@ public final class XteinkCrossPointTransferRouter {
             try await wifi.join(offer)
             defer { wifi.leave(offer) }
         }
-        try await uploader.upload(data, fileName: fileName, host: offer.host)
+        try await uploader.upload(data, fileName: validName, host: offer.host)
     }
 
     public func delete(remotePath: String) async throws {
         guard ble.isRendezvousActive else { throw XteinkSyncError.unavailable }
         try await ble.delete(remotePath: remotePath)
+    }
+
+    /// CrossPoint's X3-side filename validator permits only this small ASCII
+    /// set. Luna's display title remains untouched; only the transport name is
+    /// normalized and kept deterministic for retries/resume.
+    static func x3FileName(_ name: String) -> String {
+        let permitted = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        let normalized = name.unicodeScalars.map { permitted.contains($0) ? String($0) : "-" }.joined()
+        return normalized.isEmpty ? "Luna.epub" : normalized
     }
 }
 

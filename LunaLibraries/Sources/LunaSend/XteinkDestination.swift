@@ -17,15 +17,18 @@ public final class XteinkDestination: ArticleDestination {
     private let client: XteinkDeviceClient
     private let queue: XteinkTransferQueue
     private let crossPoint: XteinkCrossPointTransferRouter
+    private let rendezvousQueue: XteinkRendezvousTransferQueue
 
     public init(
         client: XteinkDeviceClient = XteinkDeviceClient(),
         queue: XteinkTransferQueue = .shared,
-        crossPoint: XteinkCrossPointTransferRouter = XteinkCrossPointTransferRouter()
+        crossPoint: XteinkCrossPointTransferRouter = XteinkCrossPointTransferRouter(),
+        rendezvousQueue: XteinkRendezvousTransferQueue = .shared
     ) {
         self.client = client
         self.queue = queue
         self.crossPoint = crossPoint
+        self.rendezvousQueue = rendezvousQueue
     }
 
     public var isConfigured: Bool { XteinkSendSettings.isConfigured }
@@ -42,12 +45,35 @@ public final class XteinkDestination: ArticleDestination {
 
     public func send(epubData: Data, fileName: String, title: String) async throws {
         do {
-            try await crossPoint.send(epubData, fileName: fileName, title: title)
+            let router = crossPoint
+            try await rendezvousQueue.run {
+                try await router.send(epubData, fileName: fileName, title: title)
+            }
         } catch XteinkSyncError.unavailable {
             // A sleep/wake rendezvous is not a failed delivery. Keep the item
             // queued so the X3's next power-button or timed wake can collect it.
             throw XteinkRendezvousUnavailableError()
         }
+    }
+}
+
+/// One X3 accepts one control operation / data stream at a time. The article
+/// coordinator intentionally fans pending sends out concurrently, so this
+/// gate is mandatory rather than an optimization.
+public actor XteinkRendezvousTransferQueue {
+    public static let shared = XteinkRendezvousTransferQueue()
+    private var tail: Task<Void, Never>?
+    public init() {}
+
+    public func run<T: Sendable>(_ operation: @Sendable @escaping () async throws -> T) async throws -> T {
+        let previous = tail
+        let work = Task<Result<T, Error>, Never> {
+            await previous?.value
+            do { return .success(try await operation()) }
+            catch { return .failure(error) }
+        }
+        tail = Task { _ = await work.value }
+        return try await work.value.get()
     }
 }
 

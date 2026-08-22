@@ -26,7 +26,7 @@ public enum XteinkSyncProtocol {
     public static let dataOut = CBUUID(string: "6F9F0A04-9B1D-4D1F-9F53-5B6B8B3D0F10")
     /// The BLE payload limit. Larger EPUBs request the reader's Wi-Fi path.
     /// Kept here until the shared transfer-policy type lands.
-    public static let maximumBLEPayloadBytes = 200 * 1024
+    public static let maximumBLEPayloadBytes = XteinkTransferSizePolicy.defaultBLEMaximumBytes
 
     static func controlData(_ operation: String, values: [String: Any] = [:]) throws -> Data {
         var payload: [String: Any] = values

@@ -1,39 +1,36 @@
 # Send to Xteink
 
-Background delivery of saved articles to a custom-firmware **Xteink X3**. Luna
-is the Bluetooth LE central and CrossPoint is the peripheral; the reader's
-power-button wake is the primary rendezvous. No account or email is involved.
+Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
+email is involved. Luna builds an image-free, compressed Xteink EPUB then uses
+the CrossPoint BLE rendezvous when the reader advertises after wake; over-sized
+books escalate to CrossPoint Wi-Fi.
 
-## CrossPoint X3 sync
+## CrossPoint X3 transport
 
-`XteinkSyncProtocol` defines the stable v1 GATT UUIDs (service
-`6F9F0A00-9B1D-4D1F-9F53-5B6B8B3D0F10`, control `0A01`, data-in `0A02`, status
-`0A03`, data-out `0A04`) and v2 JSON controls: `hello`, `start_put`, `commit`,
-`cancel`, `delete`, and `wifi_request`. `hello` authenticates a trusted host
-with HMAC-SHA256(`nonce|host_id|1`); its secret is stored in the shared
-Keychain after first-use pairing. Data frames start with a 4-byte little-endian
-sequence. Luna chunks using the negotiated
-`maximumWriteValueLength(.withoutResponse)`, waits for
-`canSendWriteWithoutResponse`, resumes using `resume_offset` /
-`next_sequence` checkpoints, and commits with a SHA-256. GATT write completion
-is not a transfer ACK: every control awaits the matching status `op_ack`.
-CrossPoint writes to a `.part` file and atomically finalizes only after that
-hash matches.
+Luna is the state-restorable CoreBluetooth central and the X3 is the
+peripheral. `XteinkSyncProtocol` uses v1 full UUIDs: service
+`6f9f0a00-9b1d-4d1f-9f53-5b6b8b3d0f10`, control `...0a01...`, data-in
+`...0a02...`, status `...0a03...`, and data-out `...0a04...`. `hello`
+authenticates a Keychain-persisted pairing secret using HMAC-SHA256 over
+`nonce|host_id|1`; Settings supplies a 32-byte random secret during first-use
+code pairing.
 
-The temporary transport policy is one constant: EPUBs at or below **200 KiB**
-go over BLE only. If no rendezvous is active, that is a `SendDeferralError`,
-not a retry-consuming failure. Larger EPUBs ask the live reader for Wi-Fi;
-the X3 briefly tries remembered STA, then reports its secured AP SSID,
-passphrase and host. In the foreground Luna joins that AP with
-`NEHotspotConfiguration`, multipart-POSTs to CrossPoint
-`POST /upload?path=/Books`, and
-removes the temporary configuration afterwards. In the background it posts a
-local notification asking the user to open Luna.
+Control operations await status `op_ack` rather than treating a successful
+GATT write as success. `start_put` supplies `chunk_size` and `resume: true`;
+status `resume_offset`/`next_sequence` checkpoints permit an interrupted
+transfer to resume. Data frames have a 4-byte LE sequence header and commit
+with SHA-256. Reader wiring retries the queued send sweep exactly when the
+GATT service becomes ready. iOS can restore this after normal termination but
+cannot relaunch Luna after an explicit user force-quit.
 
-The central uses CoreBluetooth state restoration and scans on Reader launch /
-foreground. iOS can restore it after normal system termination, but **cannot**
-relaunch Luna after the user explicitly force-quits it; Bluetooth-off and
-permission denial are similarly unavoidable limitations.
+`XteinkTransferSizePolicy` owns the inclusive 200 KiB ceiling. Small final
+Xteink EPUBs are BLE-only and defer while no rendezvous exists. Larger EPUBs
+ask `wifi_request`; an STA offer uploads directly, while an AP offer is joined
+immediately with `NEHotspotConfiguration` in the foreground and removed after
+transfer. Background AP offers cause a local open-Luna notification.
+CrossPoint upload is multipart `POST /upload?path=/Books`, followed by
+`GET /api/files?path=/Books`; Luna requires the exact nonzero byte count and
+deletes a corrupt partial upload.
 
 ## The device protocol (stock firmware)
 
@@ -59,23 +56,37 @@ Uploads land in `/Pushed Books/` (`XteinkDeviceClient.pushDirectory`). The
 ESP32-C3 receives slowly: the upload timeout is 120 s + 45 s/MB. Article
 EPUBs are usually well under 1 MB.
 
+## Xteink EPUB profile and routing seam
+
+`EpubBuilder.Profile.xteink` is intentionally different from Kindle and
+generic-export EPUBs. It never resolves, reads, or embeds article-image files:
+there are no `OEBPS/images/` entries, image manifest items, or `<img>` elements.
+Nonempty image alternative text and standalone caption blocks remain ordinary
+italic text. Its XML/XHTML ZIP entries use DEFLATE when that makes them
+smaller, while the required first `mimetype` entry remains stored.
+
+`ArticleSendCoordinator` chooses that profile for the built-in Xteink
+destination and consequently skips `ArticleExportService.prepareImages` for
+that send. Kindle and generic EPUB exports retain their existing image-bearing,
+stored-entry profile.
+
+`XteinkTransferSizePolicy` is the shared route-decision API for the upcoming
+transport clients. It evaluates the **final Xteink-profile EPUB bytes** after
+image removal and compression: files at or below 200 KiB use
+`.bluetoothLowEnergy`; larger files use `.wifi`. The current stock Wi-Fi
+destination does not yet consume this decision, so it continues uploading all
+sizes over HTTP.
+
 ## Modules and types
 
 All in **LunaSend** (linked by the central Luna app and LunaReader only):
-
-- `XteinkBLECentral` — state-restorable, background-capable central; it owns
-  discovery/reconnect, GATT discovery, paced no-response writes and status
-  notifications. Pairing credentials live in the App-Group Keychain through
-  `XteinkKeychainPairingStore` (the first-use UI is a subsequent shell task).
-- `XteinkCrossPointTransferRouter` — testable BLE/secured-AP decision seam;
-  `XteinkCrossPointClient` is the documented CrossPoint HTTP uploader.
 
 - `XteinkDeviceClient` — the HTTP protocol above. Every connection-level
   `URLError` (timeout, cannot connect, DNS, connection lost) maps to
   `UnreachableError`, which conforms to `SendDeferralError`.
 - `XteinkDestination: ArticleDestination` — the second conformer beside
   `KindleDestination`. It inherits the coordinator's whole queue/retry/gating
-  machinery; `send` funnels through the CrossPoint router.
+  machinery; `send` funnels through `XteinkTransferQueue`.
 - `XteinkTransferQueue` (actor, `.shared`) — serializes transfers (the ESP32
   takes one upload at a time) and caches the reachability probe for 10 s, so
   a sweep of N queued articles against an asleep device costs one probe, not
@@ -86,6 +97,8 @@ All in **LunaSend** (linked by the central Luna app and LunaReader only):
   the default mDNS name), `xteinkSendMode` (defaults to `.allSaves`: once the
   switch is on, saves queue automatically, which also makes every other
   capture source default on through `SourceSendSettings.legacyDefault`).
+- `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
+  based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
 
 ## Deferral vs failure
 
@@ -108,16 +121,15 @@ everything pending uploads.
 
 - **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, compiled
   into Luna and LunaReader; membership-excluded from Downloader and Price
-  Tracker like the other article settings screens): enable switch (toggling
-  on fires one probe so the permission prompt appears while the user is
-  looking), device address field, Auto-Send by Source
+  Tracker like the other article settings screens): enable switch, code pairing,
+  Auto-Send by Source
   (`AutoSendBySourceScreen`, already destination-generic), Send Test
   Document, Transfer Pending Saves.
 - There is deliberately NO per-article "Send to Xteink" share-menu row
   (owner decision, 2026-08-22): auto-send plus the Settings screen's manual
   sweep cover delivery; the share menu stays link/export-only.
-- `NSLocalNetworkUsageDescription`, `NSBluetoothAlwaysUsageDescription`, and
-  `bluetooth-central` background mode live in the shared `Luna/Info.plist`.
+- `NSBluetoothAlwaysUsageDescription`, `bluetooth-central`, and the Hotspot
+  Configuration entitlement are enabled only for the article-capable apps.
 
 ## What this deliberately does not do
 

@@ -156,18 +156,38 @@ final class XteinkSettingsScreen: NavHeaderTableController {
                   let code = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !code.isEmpty else { return }
             Task { @MainActor in
+                let spinner = UIAlertController(
+                    title: L10n.string("Settings_xteink_pairingProgressTitle"),
+                    message: nil, preferredStyle: .alert)
+                var finished = false
+                // The code alert is still animating out when this Task starts;
+                // present the spinner once the presenter frees up, and only
+                // while the pairing is still in flight.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, !finished, self.presentedViewController == nil else { return }
+                    self.present(spinner, animated: true)
+                }
+                func settle(title: String, message: String) {
+                    finished = true
+                    if spinner.presentingViewController != nil { spinner.dismiss(animated: true) }
+                    self.presentInfoAlert(title: title, message: message)
+                }
                 do {
                     try await Self.waitForRendezvous()
                     try await XteinkBLECentral.shared.pair(code: code, pairSecret: Self.pairSecret())
                     // Close the reader's rendezvous window now: it flips its
                     // popup to "Luna paired" the moment no_work lands, instead
-                    // of holding the code popup until an idle timeout.
+                    // of holding the code popup until an idle timeout. Then
+                    // drop the link — a parked connection would otherwise ride
+                    // into the reader's BLE teardown.
                     try? await XteinkBLECentral.shared.reportNoWork()
+                    XteinkBLECentral.shared.endRendezvous()
                     XteinkSendSettings.isEnabled = true
                     self.tableView.reloadData()
-                    self.presentInfoAlert(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
+                    settle(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
                 } catch {
-                    self.presentInfoAlert(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+                    XteinkBLECentral.shared.endRendezvous()
+                    settle(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
                 }
             }
         })

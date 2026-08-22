@@ -2,8 +2,17 @@
 
 Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
 email is involved. Luna builds an image-free, compressed Xteink EPUB then uses
-the CrossPoint BLE rendezvous when the reader advertises after wake; over-sized
-books escalate to CrossPoint Wi-Fi.
+the CrossPoint BLE rendezvous when the reader advertises — during a sleeping
+reader's hourly timer window, or the on-device **File Transfer → Luna Sync**
+menu entry (a power-button wake opens no window; a pre-UI window cost ~8 s of
+wake latency and was removed 2026-08-23). Over-sized books escalate to
+CrossPoint Wi-Fi.
+
+Status notifications are size-capped by BLE: one notification carries MTU−3
+bytes and NimBLE truncates the rest on air, so the reader keeps every status
+message under ~180 bytes (`op_ack`/`ok`/`error` plus either transfer fields or
+the `wifi` block). A parser must never assume every field is present in every
+message.
 
 ## CrossPoint X3 transport
 
@@ -118,8 +127,8 @@ path.
 The decisive trigger is `.xteinkRendezvousReady`, posted only after the GATT
 service, notifications, and current nonce are ready. Existing launch,
 foreground, background, and mail-fetch sweeps may prepare or retry queued work,
-but they defer without penalty until the X3 advertises after a button or timer
-wake.
+but they defer without penalty until the X3 advertises from a timer window or
+the reader's Luna Sync menu entry.
 
 ## UI
 

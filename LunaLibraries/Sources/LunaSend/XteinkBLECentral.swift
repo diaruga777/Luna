@@ -56,6 +56,8 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// The subsequent `hello` reads it from the App-Group Keychain.
     public func savePairingSecret(_ secret: String) { pairingStore.save(secret, for: hostID) }
     public func forgetPairing() { pairingStore.removeCredential(for: hostID) }
+    /// Whether a pairing secret exists — the settings screen's paired badge.
+    public var isPaired: Bool { pairingStore.credential(for: hostID) != nil }
 
     /// First-use settings UI calls this while the X3 shows its short pairing
     /// code. The reader returns `op_ack: hello` only after persisting the host.

@@ -564,6 +564,7 @@
 "Settings_xteink_nothingPendingTitle_Luna" = "Nothing Pending";
 "Settings_xteink_pairRow_Luna" = "Pair Xteink";
 "Settings_xteink_pairDetail_Luna" = "Enter the code shown on the reader";
+"Settings_xteink_pairedDetail_Luna" = "Paired. Tap to pair again.";
 "Settings_xteink_pairTitle_Luna" = "Pair Xteink";
 "Settings_xteink_pairMessage_Luna" = "Open File Transfer → Luna Sync on the reader, then enter its code.";
 "Settings_xteink_pairCodePlaceholder_Luna" = "Pairing code";

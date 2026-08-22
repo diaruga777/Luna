@@ -68,9 +68,16 @@ final class XteinkSettingsScreen: NavHeaderTableController {
                 let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("Settings_xteink_pairRow")
-                content.secondaryText = L10n.string("Settings_xteink_pairDetail")
+                let paired = XteinkBLECentral.shared.isPaired
+                content.secondaryText = L10n.string(paired ? "Settings_xteink_pairedDetail" : "Settings_xteink_pairDetail")
+                if paired {
+                    let badge = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+                    badge.tintColor = .systemGreen
+                    cell.accessoryView = badge
+                } else {
+                    cell.accessoryType = .disclosureIndicator
+                }
                 cell.contentConfiguration = content
-                cell.accessoryType = .disclosureIndicator
                 return cell
             case .autoSend:
                 let cell = UITableViewCell(style: .default, reuseIdentifier: nil)

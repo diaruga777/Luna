@@ -45,11 +45,20 @@ public enum XteinkSendSettings {
     }
 
     /// Candidate hosts in probe order: each address the user typed (comma or
-    /// whitespace separated), then the firmware's default mDNS name.
+    /// whitespace separated, pasted schemes and slashes stripped), then the
+    /// firmware's default mDNS name.
     public static var candidateHosts: [String] {
         var hosts = deviceAddress
             .split(whereSeparator: { $0 == "," || $0.isWhitespace })
-            .map(String.init)
+            .map { piece -> String in
+                var host = String(piece)
+                for prefix in ["http://", "https://"] where host.lowercased().hasPrefix(prefix) {
+                    host = String(host.dropFirst(prefix.count))
+                }
+                while host.hasSuffix("/") { host = String(host.dropLast()) }
+                return host
+            }
+            .filter { !$0.isEmpty }
         if !hosts.contains(defaultDeviceAddress) {
             hosts.append(defaultDeviceAddress)
         }

@@ -74,9 +74,12 @@ public final class ReaderShareSheet: UIViewController {
         }
     }
 
-    /// Builds the ordered rows.
+    /// Builds the ordered rows. `ereaderRows` are the caller's per-destination
+    /// "Send to …" entries (Kindle, Xteink); they sit between the email row and
+    /// the export submenu, and only article apps pass any.
     public static func rows(
         includeExport: Bool,
+        ereaderRows: [Row] = [],
         onPickFriend: @escaping () -> Void,
         onShareLink: @escaping () -> Void,
         onCopyLink: @escaping () -> Void,
@@ -92,6 +95,7 @@ public final class ReaderShareSheet: UIViewController {
         rows.append(.action(
             title: L10n.string("Sharing_readerShareSheet_1sendAsEmail"), systemImage: "envelope",
             action: onPickFriend))
+        rows.append(contentsOf: ereaderRows)
         // File export only applies to readable articles, not media / platform posts.
         if includeExport {
             rows.append(.submenu(

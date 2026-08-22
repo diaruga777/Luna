@@ -21,7 +21,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Luna connects to your Xteink reader to deliver saved articles when it wakes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Luna connects to your e-reader on your Wi-Fi network to transfer saved articles.</string>
+	<string>Luna looks for your paired Xteink e-reader on your Wi-Fi network to transfer saved articles.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos from social posts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

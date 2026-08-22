@@ -556,17 +556,12 @@
 "Settings_email_kindle_testSentTitle_Luna" = "Test Sent";
 "Settings_email_kindle_testSentMessage_Luna" = "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.";
 
-/* ===== Settings_xteink — Settings → Xteink: enable switch, device address,
- * per-source auto-send entry, test transfer and manual sweep.
+/* ===== Settings_xteink — Settings → Xteink: enable switch, BLE pairing,
+ * per-source auto-send entry, and manual sweep of anything queued.
  * Luna/Settings/XteinkSettingsScreen.swift ===== */
-"Settings_xteink_addressLabel_Luna" = "Address";
 "Settings_xteink_autoSendRow_Luna" = "Auto-Send by Source";
 "Settings_xteink_nothingPendingMessage_Luna" = "Every save has already been sent to the Xteink.";
 "Settings_xteink_nothingPendingTitle_Luna" = "Nothing Pending";
-"Settings_xteink_notEnabledMessage_Luna" = "Turn on Send to Xteink first.";
-"Settings_xteink_notEnabledTitle_Luna" = "Xteink Is Off";
-"Settings_xteink_notReachableMessage_Luna" = "Luna could not reach the device. Connect it to the same Wi-Fi network as this device, keep it awake on Cloud or Settings → App Connect, then try again.";
-"Settings_xteink_notReachableTitle_Luna" = "Xteink Not Found";
 "Settings_xteink_pairRow_Luna" = "Pair Xteink";
 "Settings_xteink_pairDetail_Luna" = "Enter the code shown on the reader";
 "Settings_xteink_pairTitle_Luna" = "Pair Xteink";
@@ -575,12 +570,9 @@
 "Settings_xteink_pairConfirm_Luna" = "Pair";
 "Settings_xteink_pairSuccessTitle_Luna" = "Xteink Paired";
 "Settings_xteink_pairSuccessMessage_Luna" = "Luna will send articles when the reader wakes.";
-"Settings_xteink_sendTestRow_Luna" = "Send Test Document";
-"Settings_xteink_setupFooter_Luna" = "Luna sends saved articles to an Xteink e-reader over your Wi-Fi network. The device receives while it is awake on its Cloud screen or Settings → App Connect. If Luna cannot find it by name, enter its IP address.";
-"Settings_xteink_testSentMessage_Luna" = "Look for the test document on the device's Pushed Books shelf.";
-"Settings_xteink_testSentTitle_Luna" = "Test Sent";
+"Settings_xteink_setupFooter_Luna" = "Open File Transfer on the Xteink, then tap Pair Xteink and enter its code. Once paired, Luna sends saved articles over Bluetooth when the reader wakes, or over Wi-Fi while File Transfer is open or this phone is on the reader's own hotspot.";
 "Settings_xteink_transferNowRow_Luna" = "Transfer Pending Saves";
-"Settings_xteink_transferQueuedMessage_Luna" = "Saves queued: %lld. They upload while the device is awake on its Cloud screen.";
+"Settings_xteink_transferQueuedMessage_Luna" = "Saves queued: %lld. They go out over Bluetooth when the reader next wakes, or right away over Wi-Fi if it's reachable now.";
 "Settings_xteink_transferQueuedTitle_Luna" = "Transfer Started";
 "Settings_xteink_transferSectionHeader_Luna" = "Transfer";
 
@@ -1051,9 +1043,14 @@
 
 /* ===== Sharing — PendingRequestsViewController.swift (moderation queue) ===== */
 
-/* ===== Sharing — ReaderShareSheet.swift (reader share menu/sheet) ===== */
+/* ===== Sharing — ReaderShareSheet.swift (reader share menu/sheet), plus the
+ * per-destination ereader send rows AppReaderProviders builds for it ===== */
 "Sharing_readerShareSheet_1sendAsEmail_Luna" = "Send as email";
 "Sharing_readerShareSheet_2exportTitle_Luna" = "Export as…";
+"Sharing_readerShareSheet_sendQueuedGenericMessage_Luna" = "Luna will retry automatically.";
+"Sharing_readerShareSheet_sendQueuedTitle_Luna" = "Queued for %@";
+"Sharing_readerShareSheet_sendQueuedXteinkMessage_Luna" = "Luna sends it the next time the Xteink wakes and pairs over Bluetooth, or while it's open on File Transfer on the same Wi-Fi network.";
+"Sharing_readerShareSheet_sendToDestination_Luna" = "Send to %@";
 
 /* ===== Sharing — RecipientPickerViewController.swift (pick email recipients) ===== */
 "Sharing_recipientPicker_action1EnterEmail_Luna" = "Enter email address…";

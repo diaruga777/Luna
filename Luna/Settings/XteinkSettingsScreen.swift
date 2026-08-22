@@ -10,15 +10,15 @@ import LunaStorage
 import Security
 import UIKit
 
-/// Send-to-Xteink settings: the enable switch, the device address, per-source
-/// auto-send, a test transfer, and a manual sweep of everything queued. Unlike
-/// Kindle there is no email prerequisite — delivery is a direct upload to the
-/// e-reader's Wi-Fi file manager.
+/// Send-to-Xteink settings: the enable switch, BLE pairing, per-source
+/// auto-send, and a manual sweep of everything queued. Unlike Kindle there is
+/// no email prerequisite — delivery goes over the CrossPoint BLE rendezvous or
+/// a same-network Wi-Fi upload.
 final class XteinkSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case setup, transfer }
     private enum SetupRow: Int, CaseIterable { case enable, pair, autoSend }
-    private enum TransferRow: Int, CaseIterable { case sendTest, transferNow }
+    private enum TransferRow: Int, CaseIterable { case transferNow }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -85,9 +85,6 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             var content = cell.defaultContentConfiguration()
             content.textProperties.color = view.tintColor ?? .systemBlue
             switch TransferRow(rawValue: indexPath.row)! {
-            case .sendTest:
-                content.text = L10n.string("Settings_xteink_sendTestRow")
-                content.image = UIImage(systemName: "paperplane")
             case .transferNow:
                 content.text = L10n.string("Settings_xteink_transferNowRow")
                 content.image = UIImage(systemName: "arrow.up.doc")
@@ -113,7 +110,6 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             }
         case .transfer:
             switch TransferRow(rawValue: indexPath.row)! {
-            case .sendTest: sendTestDocument()
             case .transferNow: transferPendingNow()
             }
         }
@@ -173,31 +169,6 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         return bytes.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func sendTestDocument() {
-        guard XteinkSendSettings.isConfigured else {
-            presentInfoAlert(
-                title: L10n.string("Settings_xteink_notEnabledTitle"),
-                message: L10n.string("Settings_xteink_notEnabledMessage"))
-            return
-        }
-        Task { [weak self] in
-            do {
-                try await ArticleSendCoordinator.shared.sendTestDocument(
-                    toDestinationID: ArticleDestinationID.xteink)
-                self?.presentInfoAlert(
-                    title: L10n.string("Settings_xteink_testSentTitle"),
-                    message: L10n.string("Settings_xteink_testSentMessage"))
-            } catch is XteinkDeviceClient.UnreachableError {
-                self?.presentInfoAlert(
-                    title: L10n.string("Settings_xteink_notReachableTitle"),
-                    message: L10n.string("Settings_xteink_notReachableMessage"))
-            } catch {
-                self?.presentInfoAlert(
-                    title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
-            }
-        }
     }
 
     private func transferPendingNow() {

@@ -29,6 +29,7 @@ private final class MockDestination: ArticleDestination {
     /// Xteink): the send throws a `SendDeferralError`.
     var shouldDefer = false
     private(set) var sentTitles: [String] = []
+    private(set) var sentEPUBs: [Data] = []
 
     init(id: String) { self.id = id }
 
@@ -47,6 +48,7 @@ private final class MockDestination: ArticleDestination {
         XCTAssertFalse(epubData.isEmpty)
         XCTAssertTrue(fileName.hasSuffix(".epub"))
         sentTitles.append(title)
+        sentEPUBs.append(epubData)
     }
 }
 
@@ -148,6 +150,37 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertEqual(kindle.sentTitles, ["An Article"])
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertNotNil(store.item(withID: item.id)?.dateSent(for: kindle.id))
+    }
+
+    func testXteinkBuildIsTextOnlyEvenWithAnArticleImage() async throws {
+        let xteink = MockDestination(id: ArticleDestinationID.xteink)
+        coordinator = ArticleSendCoordinator(
+            store: store, destinations: [xteink],
+            retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
+            now: { self.currentDate })
+        coordinator.deliveryTaskObserver = self
+
+        let item = store.add(urlString: "https://example.com/image")
+        let imageName = "reader-image.png"
+        let image = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7PgAAAABJRU5ErkJggg==")!
+        try image.write(to: store.articlesDirectory.appendingPathComponent(imageName))
+        let content = ArticleContent(title: "An Image", blocks: [
+            .init(
+                kind: .image, text: "Image alt", links: [],
+                imageURLString: "https://example.com/image.png", imageFileName: imageName),
+            .init(kind: .caption, text: "Caption remains", links: []),
+        ])
+        let ready = store.saveContent(content, for: item)
+
+        await coordinator.send(ready, toDestinationID: xteink.id)
+        XCTAssertEqual(xteink.sentEPUBs.count, 1)
+        let epub = try XCTUnwrap(xteink.sentEPUBs.first)
+        let archive = try XCTUnwrap(ZipArchiveReader(data: epub))
+        XCTAssertTrue(archive.paths.filter { $0.hasPrefix("OEBPS/images/") }.isEmpty)
+        let chapter = try XCTUnwrap(archive.text(at: "OEBPS/chapter.xhtml"))
+        XCTAssertFalse(chapter.contains("<img"))
+        XCTAssertTrue(chapter.contains("Caption remains"))
     }
 
     func testSoftFailureQueuesRetryWithBackoff() async {

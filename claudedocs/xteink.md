@@ -1,9 +1,10 @@
 # Send to Xteink
 
-Background delivery of saved articles to an Xteink X3/X4 pocket e-reader over
-the local Wi-Fi network. The article becomes the same EPUB the Kindle path
-builds; delivery is a direct HTTP upload to the device's own stock-firmware
-file manager. No account, no email, no custom firmware.
+Delivery of saved articles to an Xteink X3 pocket e-reader. The current
+transport is a direct Wi-Fi HTTP upload to the device's stock-firmware file
+manager. No account or email is involved. BLE delivery and X3 periodic wake
+are a forthcoming custom-firmware companion, not behavior provided by this
+stock-firmware client.
 
 ## The device protocol (stock firmware)
 
@@ -29,6 +30,27 @@ Uploads land in `/Pushed Books/` (`XteinkDeviceClient.pushDirectory`). The
 ESP32-C3 receives slowly: the upload timeout is 120 s + 45 s/MB. Article
 EPUBs are usually well under 1 MB.
 
+## Xteink EPUB profile and routing seam
+
+`EpubBuilder.Profile.xteink` is intentionally different from Kindle and
+generic-export EPUBs. It never resolves, reads, or embeds article-image files:
+there are no `OEBPS/images/` entries, image manifest items, or `<img>` elements.
+Nonempty image alternative text and standalone caption blocks remain ordinary
+italic text. Its XML/XHTML ZIP entries use DEFLATE when that makes them
+smaller, while the required first `mimetype` entry remains stored.
+
+`ArticleSendCoordinator` chooses that profile for the built-in Xteink
+destination and consequently skips `ArticleExportService.prepareImages` for
+that send. Kindle and generic EPUB exports retain their existing image-bearing,
+stored-entry profile.
+
+`XteinkTransferSizePolicy` is the shared route-decision API for the upcoming
+transport clients. It evaluates the **final Xteink-profile EPUB bytes** after
+image removal and compression: files at or below 200 KiB use
+`.bluetoothLowEnergy`; larger files use `.wifi`. The current stock Wi-Fi
+destination does not yet consume this decision, so it continues uploading all
+sizes over HTTP.
+
 ## Modules and types
 
 All in **LunaSend** (linked by the central Luna app and LunaReader only):
@@ -49,6 +71,9 @@ All in **LunaSend** (linked by the central Luna app and LunaReader only):
   the default mDNS name), `xteinkSendMode` (defaults to `.allSaves`: once the
   switch is on, saves queue automatically, which also makes every other
   capture source default on through `SourceSendSettings.legacyDefault`).
+- `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
+  based on finalized Xteink EPUB bytes; the BLE and AP/Wi-Fi implementations
+  will consume it.
 
 ## Deferral vs failure
 

@@ -5,14 +5,30 @@
 
 import Foundation
 
-/// Minimal ZIP archive writer: stored (uncompressed) entries only, which is all
-/// an EPUB needs. Entries appear in the archive in the order they were added —
-/// EPUB requires `mimetype` to be the first, uncompressed entry.
+/// Minimal ZIP archive writer. Entries appear in the archive in the order they
+/// were added — EPUB requires `mimetype` to be the first, uncompressed entry.
 public struct ZipArchiveWriter {
+
+    /// ZIP's two broadly-supported payload encodings. `.stored` remains the
+    /// default for compatibility; callers opt into `.deflate` for text-heavy
+    /// archives such as a compact EPUB.
+    public enum Compression: Sendable, Equatable {
+        case stored
+        case deflate
+
+        fileprivate var zipMethod: UInt16 {
+            switch self {
+            case .stored: 0
+            case .deflate: 8
+            }
+        }
+    }
 
     private struct Entry {
         let path: String
-        let data: Data
+        let compressedData: Data
+        let uncompressedSize: UInt32
+        let compression: Compression
         let crc32: UInt32
         let localHeaderOffset: UInt32
     }
@@ -22,28 +38,45 @@ public struct ZipArchiveWriter {
 
     public init() {}
 
-    /// Appends one file to the archive. `path` uses forward slashes.
-    public mutating func addEntry(path: String, data: Data) {
+    /// Appends one file to the archive. `path` uses forward slashes. A failed
+    /// compression attempt safely falls back to a stored entry rather than
+    /// producing an unreadable archive.
+    public mutating func addEntry(
+        path: String, data: Data, compression requestedCompression: Compression = .stored
+    ) {
         let pathBytes = Data(path.utf8)
         let crc = Self.crc32(of: data)
         let offset = UInt32(body.count)
+        let compressed: Data
+        let compression: Compression
+        if requestedCompression == .deflate,
+           let deflated = try? (data as NSData).compressed(using: .zlib) as Data,
+           deflated.count < data.count {
+            compressed = deflated
+            compression = .deflate
+        } else {
+            compressed = data
+            compression = .stored
+        }
 
         // Local file header.
         body.appendLittleEndian(UInt32(0x04034b50))
         body.appendLittleEndian(UInt16(20))        // version needed to extract
         body.appendLittleEndian(UInt16(0))         // flags
-        body.appendLittleEndian(UInt16(0))         // method: stored
+        body.appendLittleEndian(compression.zipMethod)
         body.appendLittleEndian(UInt16(0))         // mod time
         body.appendLittleEndian(UInt16(0x21))      // mod date (1980-01-01)
         body.appendLittleEndian(crc)
-        body.appendLittleEndian(UInt32(data.count))  // compressed size
-        body.appendLittleEndian(UInt32(data.count))  // uncompressed size
+        body.appendLittleEndian(UInt32(compressed.count))
+        body.appendLittleEndian(UInt32(data.count))
         body.appendLittleEndian(UInt16(pathBytes.count))
         body.appendLittleEndian(UInt16(0))         // extra field length
         body.append(pathBytes)
-        body.append(data)
+        body.append(compressed)
 
-        entries.append(Entry(path: path, data: data, crc32: crc, localHeaderOffset: offset))
+        entries.append(Entry(
+            path: path, compressedData: compressed, uncompressedSize: UInt32(data.count),
+            compression: compression, crc32: crc, localHeaderOffset: offset))
     }
 
     /// The complete archive bytes (central directory built on each call).
@@ -57,12 +90,12 @@ public struct ZipArchiveWriter {
             archive.appendLittleEndian(UInt16(20))     // version made by
             archive.appendLittleEndian(UInt16(20))     // version needed
             archive.appendLittleEndian(UInt16(0))      // flags
-            archive.appendLittleEndian(UInt16(0))      // method: stored
+            archive.appendLittleEndian(entry.compression.zipMethod)
             archive.appendLittleEndian(UInt16(0))      // mod time
             archive.appendLittleEndian(UInt16(0x21))   // mod date
             archive.appendLittleEndian(entry.crc32)
-            archive.appendLittleEndian(UInt32(entry.data.count))
-            archive.appendLittleEndian(UInt32(entry.data.count))
+            archive.appendLittleEndian(UInt32(entry.compressedData.count))
+            archive.appendLittleEndian(entry.uncompressedSize)
             archive.appendLittleEndian(UInt16(pathBytes.count))
             archive.appendLittleEndian(UInt16(0))      // extra length
             archive.appendLittleEndian(UInt16(0))      // comment length

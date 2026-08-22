@@ -75,52 +75,47 @@ destination and consequently skips `ArticleExportService.prepareImages` for
 that send. Kindle and generic EPUB exports retain their existing image-bearing,
 stored-entry profile.
 
-`XteinkTransferSizePolicy` is the shared route-decision API for the upcoming
-transport clients. It evaluates the **final Xteink-profile EPUB bytes** after
+`XteinkTransferSizePolicy` is the shared route-decision API for both transports.
+It evaluates the **final Xteink-profile EPUB bytes** after
 image removal and compression: files at or below 200 KiB use
-`.bluetoothLowEnergy`; larger files use `.wifi`. The current stock Wi-Fi
-destination does not yet consume this decision, so it continues uploading all
-sizes over HTTP.
+`.bluetoothLowEnergy`; larger files use `.wifi`. The active CrossPoint router
+consumes this decision after EPUB generation, so the limit applies to the bytes
+actually sent rather than an estimate of the source article.
 
 ## Modules and types
 
-All in **LunaSend** (linked by the central Luna app and LunaReader only):
+All in **LunaSend** (linked by the article-capable Reader app):
 
-- `XteinkDeviceClient` — the HTTP protocol above. Every connection-level
-  `URLError` (timeout, cannot connect, DNS, connection lost) maps to
-  `UnreachableError`, which conforms to `SendDeferralError`.
-- `XteinkDestination: ArticleDestination` — the second conformer beside
-  `KindleDestination`. It inherits the coordinator's whole queue/retry/gating
-  machinery; `send` funnels through `XteinkTransferQueue`.
-- `XteinkTransferQueue` (actor, `.shared`) — serializes transfers (the ESP32
-  takes one upload at a time) and caches the reachability probe for 10 s, so
-  a sweep of N queued articles against an asleep device costs one probe, not
-  N. A transfer that dies mid-upload invalidates the cached probe.
-- `XteinkSendSettings` — App-Group defaults: `xteinkEnabled` (the one consent
-  switch, off by default — probing the LAN is what triggers the iOS local-
-  network permission prompt), `xteinkDeviceAddress` (optional; tried before
-  the default mDNS name), `xteinkSendMode` (defaults to `.allSaves`: once the
-  switch is on, saves queue automatically, which also makes every other
-  capture source default on through `SourceSendSettings.legacyDefault`).
+- `XteinkBLECentral` — state-restorable BLE central, pairing/authentication,
+  resumable streaming, delete control, and AP/STA offer negotiation.
+- `XteinkCrossPointTransferRouter` — applies the final-byte size policy, sends
+  small EPUBs over BLE, and joins/uploads over the X3 AP for larger EPUBs.
+- `XteinkDestination: ArticleDestination` — participates in the coordinator's
+  queue/retry/source-gating machinery and funnels sends through the CrossPoint
+  router.
+- `XteinkRendezvousTransferQueue` (actor, `.shared`) — serializes a coordinator
+  sweep because one X3 GATT session accepts one operation/data stream at a time.
+- `XteinkSendSettings` — App-Group enable and per-source auto-send settings.
 - `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
   based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
 
+`XteinkDeviceClient` and `XteinkTransferQueue` document and test the stock
+firmware protocol, but the active destination no longer calls them.
+
 ## Deferral vs failure
 
-`SendDeferralError` (declared next to `ArticleDestination`) is the contract
-for "the receiver isn't reachable right now, and that is normal". On a
-deferral the coordinator leaves the item `.queued` with NO failure count and
-NO backoff date — the next sweep retries at full strength. Real protocol
-failures (HTTP error, size-verification failure) still take the ordinary
-soft-failure backoff and terminal-failure path. Without this split, five
-sweeps past a sleeping e-reader would terminally fail every queued article.
+`SendDeferralError` (declared next to `ArticleDestination`) is the contract for
+"the reader is asleep and no rendezvous exists yet." On a deferral the
+coordinator leaves the item `.queued` with no failure count or backoff date;
+the next authenticated X3 advertisement retries it at full strength. Real
+protocol failures still use the ordinary soft-failure and terminal-failure
+path.
 
-Sweeps run at the existing trigger points (`ArticleShellWiring
-.retryPendingSends`): launch, foreground, background, the mail-fetch BGTask —
-plus `wifiBecameAvailable`, added for this feature in both article apps'
-`KindWiring` variants. The intended flow: saves queue as they become ready;
-the user wakes the X3 on its Cloud screen and opens (or foregrounds) Luna;
-everything pending uploads.
+The decisive trigger is `.xteinkRendezvousReady`, posted only after the GATT
+service, notifications, and current nonce are ready. Existing launch,
+foreground, background, and mail-fetch sweeps may prepare or retry queued work,
+but they defer without penalty until the X3 advertises after a button or timer
+wake.
 
 ## UI
 
@@ -141,16 +136,15 @@ everything pending uploads.
 - **No Xteink cloud sync.** The official cloud path requires patching the
   device firmware to point at a custom server. If direct Wi-Fi upload proves
   too fiddly, that is the revisit.
-- **No background LAN scanning.** iOS gives no way to probe the local network
-  from a suspended app; the background-enter sweep and BGTask sweeps are
-  best-effort, and the reliable path is "wake device, open app".
-- **No push-manifest rebuilding.** The firmware appends to `/push.txt` on
-  every upload; duplicates only accumulate on re-sends, and the resend
-  cooldown already guards that.
+- **No finished-reading deletion automation yet.** The authenticated BLE
+  protocol and router expose `delete`, but Luna does not yet persist a remote
+  filename/deletion queue and CrossPoint does not yet delete a Luna book when
+  its reading state reaches the end.
 
 ## Tests
 
-`XteinkDeviceClientTests` (URLProtocol-stubbed: multipart shape, probe
-filtering, truncation → delete + throw, connection error → unreachable,
-transfer-queue serialization and probe caching) and the deferral cases in
-`ArticleSendCoordinatorTests`.
+`XteinkCrossPointTransferTests` cover final-size routing, BLE-only deferral,
+foreground AP joining/removal, background notification, STA offers, multipart
+shape/nonempty payload, and non-2xx rejection. `XteinkTransferSizePolicyTests`
+cover the inclusive 200 KiB boundary. The legacy stock client retains its
+URLProtocol and queue tests.

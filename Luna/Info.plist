@@ -18,6 +18,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Luna tracks your eyes to pause playback automatically when you look away.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Luna connects to your Xteink reader to deliver saved articles when it wakes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Luna connects to your e-reader on your Wi-Fi network to transfer saved articles.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -89,6 +91,7 @@
 		<string>remote-notification</string>
 		<string>fetch</string>
 		<string>processing</string>
+		<string>bluetooth-central</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

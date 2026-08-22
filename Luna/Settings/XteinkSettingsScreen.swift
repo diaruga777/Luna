@@ -7,6 +7,7 @@ import LunaDesignSystem
 import LunaModels
 import LunaSend
 import LunaStorage
+import Security
 import UIKit
 
 /// Send-to-Xteink settings: the enable switch, the device address, per-source
@@ -16,7 +17,7 @@ import UIKit
 final class XteinkSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case setup, transfer }
-    private enum SetupRow: Int, CaseIterable { case enable, address, autoSend }
+    private enum SetupRow: Int, CaseIterable { case enable, pair, autoSend }
     private enum TransferRow: Int, CaseIterable { case sendTest, transferNow }
 
     private lazy var addressField: UITextField = {
@@ -79,7 +80,14 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         case .setup:
             switch SetupRow(rawValue: indexPath.row)! {
             case .enable: return enableCell()
-            case .address: return addressCell()
+            case .pair:
+                let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+                var content = cell.defaultContentConfiguration()
+                content.text = L10n.string("Settings_xteink_pairRow")
+                content.secondaryText = L10n.string("Settings_xteink_pairDetail")
+                cell.contentConfiguration = content
+                cell.accessoryType = .disclosureIndicator
+                return cell
             case .autoSend:
                 let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
                 var content = cell.defaultContentConfiguration()
@@ -109,12 +117,15 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
         case .setup:
-            if SetupRow(rawValue: indexPath.row) == .autoSend {
+            switch SetupRow(rawValue: indexPath.row)! {
+            case .pair: presentPairingPrompt()
+            case .autoSend:
                 navigationController?.pushViewController(
                     AutoSendBySourceScreen(
                         destinationID: ArticleDestinationID.xteink,
                         destinationName: L10n.string("Common_xteink")),
                     animated: true)
+            case .enable: break
             }
         case .transfer:
             switch TransferRow(rawValue: indexPath.row)! {
@@ -168,17 +179,43 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     @objc private func enableToggled(_ toggle: UISwitch) {
         XteinkSendSettings.isEnabled = toggle.isOn
         guard toggle.isOn else { return }
-        // Probe once right away: the first local-network access is what makes
-        // iOS show its permission prompt, and here the user is looking.
-        Task.detached(priority: .utility) {
-            _ = await XteinkDeviceClient().findDevice(
-                among: XteinkSendSettings.candidateHosts)
-        }
+        XteinkBLECentral.shared.beginRendezvousScan()
     }
 
     @objc private func addressEdited() {
         XteinkSendSettings.deviceAddress = (addressField.text ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func presentPairingPrompt() {
+        let alert = UIAlertController(
+            title: L10n.string("Settings_xteink_pairTitle"),
+            message: L10n.string("Settings_xteink_pairMessage"), preferredStyle: .alert)
+        alert.addTextField { field in
+            field.placeholder = L10n.string("Settings_xteink_pairCodePlaceholder")
+            field.keyboardType = .numberPad
+        }
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Settings_xteink_pairConfirm"), style: .default) {
+            [weak self, weak alert] _ in
+            guard let self, let code = alert?.textFields?.first?.text,
+                  !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            Task { @MainActor in
+                do {
+                    try await XteinkBLECentral.shared.pair(code: code, pairSecret: Self.pairSecret())
+                    self.presentInfoAlert(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
+                } catch {
+                    self.presentInfoAlert(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private static func pairSecret() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     private func sendTestDocument() {

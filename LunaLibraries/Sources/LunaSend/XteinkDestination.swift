@@ -16,13 +16,16 @@ public final class XteinkDestination: ArticleDestination {
 
     private let client: XteinkDeviceClient
     private let queue: XteinkTransferQueue
+    private let crossPoint: XteinkCrossPointTransferRouter
 
     public init(
         client: XteinkDeviceClient = XteinkDeviceClient(),
-        queue: XteinkTransferQueue = .shared
+        queue: XteinkTransferQueue = .shared,
+        crossPoint: XteinkCrossPointTransferRouter = XteinkCrossPointTransferRouter()
     ) {
         self.client = client
         self.queue = queue
+        self.crossPoint = crossPoint
     }
 
     public var isConfigured: Bool { XteinkSendSettings.isConfigured }
@@ -38,11 +41,18 @@ public final class XteinkDestination: ArticleDestination {
     }
 
     public func send(epubData: Data, fileName: String, title: String) async throws {
-        let client = self.client
-        try await queue.run(client: client, hosts: XteinkSendSettings.candidateHosts) { host in
-            try await client.uploadBook(epubData, fileName: fileName, host: host)
+        do {
+            try await crossPoint.send(epubData, fileName: fileName, title: title)
+        } catch XteinkSyncError.unavailable {
+            // A sleep/wake rendezvous is not a failed delivery. Keep the item
+            // queued so the X3's next power-button or timed wake can collect it.
+            throw XteinkRendezvousUnavailableError()
         }
     }
+}
+
+public struct XteinkRendezvousUnavailableError: Error, SendDeferralError {
+    public init() {}
 }
 
 /// Serializes transfers and shares one reachability probe across them. The

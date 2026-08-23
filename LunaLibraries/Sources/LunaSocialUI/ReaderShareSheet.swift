@@ -37,24 +37,29 @@ public final class ReaderShareSheet: UIViewController {
 
         public let title: String
         public let systemImage: String
+        /// A small filled circle drawn beside the title — e.g. the Xteink row's
+        /// live-connection indicator. Nil rows draw unchanged.
+        public let statusDotColor: UIColor?
         public let behavior: Behavior
 
-        private init(title: String, systemImage: String, behavior: Behavior) {
+        private init(title: String, systemImage: String, statusDotColor: UIColor?, behavior: Behavior) {
             self.title = title
             self.systemImage = systemImage
+            self.statusDotColor = statusDotColor
             self.behavior = behavior
         }
 
         public static func action(
-            title: String, systemImage: String, action: @escaping () -> Void
+            title: String, systemImage: String, statusDotColor: UIColor? = nil,
+            action: @escaping () -> Void
         ) -> Row {
-            Row(title: title, systemImage: systemImage, behavior: .tap(action))
+            Row(title: title, systemImage: systemImage, statusDotColor: statusDotColor, behavior: .tap(action))
         }
 
         public static func submenu(
             title: String, systemImage: String, children: [Row]
         ) -> Row {
-            Row(title: title, systemImage: systemImage, behavior: .submenu(children))
+            Row(title: title, systemImage: systemImage, statusDotColor: nil, behavior: .submenu(children))
         }
     }
 
@@ -201,6 +206,21 @@ public final class ReaderShareSheet: UIViewController {
         button.tag = tag
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         button.addTarget(self, action: #selector(rowTapped(_:)), for: .touchUpInside)
+
+        if let statusDotColor = row.statusDotColor {
+            let dot = UIView()
+            dot.backgroundColor = statusDotColor
+            dot.layer.cornerRadius = 4
+            dot.isUserInteractionEnabled = false
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(dot)
+            NSLayoutConstraint.activate([
+                dot.widthAnchor.constraint(equalToConstant: 8),
+                dot.heightAnchor.constraint(equalToConstant: 8),
+                dot.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                dot.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -16),
+            ])
+        }
         return button
     }
 

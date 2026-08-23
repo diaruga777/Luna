@@ -92,12 +92,18 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         for item: SavedItem?, isArticle: Bool, from presenter: UIViewController
     ) -> [ReaderShareSheet.Row] {
         guard let item, isArticle, item.state == .ready else { return [] }
+        // Gives the rendezvous a chance to be live before the row below reads
+        // `isRendezvousActive` for its dot.
+        XteinkBLECentral.shared.beginRendezvousScan()
         return ArticleSendCoordinator.shared.configuredDestinations().map { destination in
-            .action(
+            let isXteink = destination.id == ArticleDestinationID.xteink
+            return .action(
                 title: L10n.string(
                     "Sharing_readerShareSheet_sendToDestination", destination.displayName),
-                systemImage: destination.id == ArticleDestinationID.kindle
-                    ? "book.closed" : "books.vertical"
+                systemImage: isXteink ? "books.vertical" : "book.closed",
+                statusDotColor: isXteink
+                    ? (XteinkBLECentral.shared.isRendezvousActive ? .systemGreen : .tertiaryLabel)
+                    : nil
             ) { [weak presenter] in
                 Task { @MainActor in
                     await ArticleSendCoordinator.shared.send(item, toDestinationID: destination.id)

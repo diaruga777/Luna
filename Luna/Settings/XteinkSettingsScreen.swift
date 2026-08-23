@@ -222,7 +222,11 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             }
             do {
                 try await Self.waitForRendezvous()
-                try await XteinkBLECentral.shared.pair(pairSecret: Self.pairSecret())
+                // The reader accepts a pairing hello only once the link is
+                // encrypted, and encryption waits for the user to accept the
+                // iOS bonding sheet. Retry across that window instead of
+                // failing while the sheet is still on screen.
+                try await Self.pairAllowingBondingTime(pairSecret: Self.pairSecret())
                 // Close the reader's rendezvous window now: it flips its
                 // popup to "Luna paired" the moment no_work lands, instead
                 // of holding the popup until an idle timeout. Then drop the
@@ -236,6 +240,22 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             } catch {
                 XteinkBLECentral.shared.endRendezvous()
                 settle(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+            }
+        }
+    }
+
+    /// Retries the pairing hello while the user answers the iOS bonding
+    /// sheet: the reader answers `pairing_failed` until the link encrypts,
+    /// and the sheet has no completion callback Luna can await.
+    private static func pairAllowingBondingTime(
+        pairSecret: String, attempts: Int = 6, retryPause: TimeInterval = 3
+    ) async throws {
+        for attempt in 1...attempts {
+            do {
+                try await XteinkBLECentral.shared.pair(pairSecret: pairSecret)
+                return
+            } catch XteinkSyncError.protocolError(let reason) where reason == "pairing_failed" && attempt < attempts {
+                try await Task.sleep(nanoseconds: UInt64(retryPause * 1_000_000_000))
             }
         }
     }

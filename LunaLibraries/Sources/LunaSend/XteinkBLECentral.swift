@@ -59,12 +59,14 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// Whether a pairing secret exists — the settings screen's paired badge.
     public var isPaired: Bool { pairingStore.credential(for: hostID) != nil }
 
-    /// First-use settings UI calls this while the X3 shows its short pairing
-    /// code. The reader returns `op_ack: hello` only after persisting the host.
-    public func pair(code: String, pairSecret: String) async throws {
+    /// First-use settings UI calls this once AccessorySetupKit's system picker
+    /// has bonded the reader over BLE. The hello carries no shared code — the
+    /// bonded link is the proof of physical presence — and the reader returns
+    /// `op_ack: hello` only after persisting the host.
+    public func pair(pairSecret: String) async throws {
         guard isRendezvousActive else { throw XteinkSyncError.unavailable }
         try await sendControl("hello", values: [
-            "host_id": hostID, "code": code, "pair_secret": pairSecret,
+            "host_id": hostID, "pair_secret": pairSecret,
         ])
         pairingStore.save(pairSecret, for: hostID)
     }
@@ -73,6 +75,21 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// manager receives the same path through `willRestoreState`.
     public func beginRendezvousScan() {
         queue.async { [weak self] in self?.scanIfReady() }
+    }
+
+    /// Connects to the accessory AccessorySetupKit's picker just authorized,
+    /// bypassing the scan entirely. The system already resolved the identity;
+    /// re-scanning would just wait to re-discover an advertisement it already
+    /// found.
+    public func connect(toPeripheralIdentifier identifier: UUID) {
+        queue.async { [weak self] in
+            guard let self, let match = self.central.retrievePeripherals(withIdentifiers: [identifier]).first
+            else { return }
+            self.central.stopScan()
+            self.peripheral = match
+            match.delegate = self
+            self.central.connect(match)
+        }
     }
 
     public func endRendezvous() {

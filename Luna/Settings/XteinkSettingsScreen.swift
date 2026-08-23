@@ -3,6 +3,8 @@
 //  Luna
 //
 
+import AccessorySetupKit
+import CoreBluetooth
 import LunaDesignSystem
 import LunaModels
 import LunaSend
@@ -145,60 +147,97 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         XteinkBLECentral.shared.beginRendezvousScan()
     }
 
+    /// Activated on first use so the app isn't holding a BLE discovery session
+    /// open before the user ever opens this screen.
+    private lazy var accessorySession: ASAccessorySession = {
+        let session = ASAccessorySession()
+        session.activate(on: .main) { [weak self] event in
+            self?.handleAccessoryEvent(event)
+        }
+        return session
+    }()
+
     private func presentPairingPrompt() {
-        // Connecting takes a few seconds; start the scan while the user reads
-        // the reader's code, so the confirm below finds a live rendezvous.
-        XteinkBLECentral.shared.beginRendezvousScan()
         let alert = UIAlertController(
             title: L10n.string("Settings_xteink_pairTitle"),
             message: L10n.string("Settings_xteink_pairMessage"), preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = L10n.string("Settings_xteink_pairCodePlaceholder")
-            field.keyboardType = .numberPad
-        }
         alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("Settings_xteink_pairConfirm"), style: .default) {
-            [weak self, weak alert] _ in
-            guard let self,
-                  let code = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !code.isEmpty else { return }
-            Task { @MainActor in
-                let spinner = UIAlertController(
-                    title: L10n.string("Settings_xteink_pairingProgressTitle"),
-                    message: nil, preferredStyle: .alert)
-                var finished = false
-                // The code alert is still animating out when this Task starts;
-                // present the spinner once the presenter frees up, and only
-                // while the pairing is still in flight.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let self, !finished, self.presentedViewController == nil else { return }
-                    self.present(spinner, animated: true)
-                }
-                func settle(title: String, message: String) {
-                    finished = true
-                    if spinner.presentingViewController != nil { spinner.dismiss(animated: true) }
-                    self.presentInfoAlert(title: title, message: message)
-                }
-                do {
-                    try await Self.waitForRendezvous()
-                    try await XteinkBLECentral.shared.pair(code: code, pairSecret: Self.pairSecret())
-                    // Close the reader's rendezvous window now: it flips its
-                    // popup to "Luna paired" the moment no_work lands, instead
-                    // of holding the code popup until an idle timeout. Then
-                    // drop the link — a parked connection would otherwise ride
-                    // into the reader's BLE teardown.
-                    try? await XteinkBLECentral.shared.reportNoWork()
-                    XteinkBLECentral.shared.endRendezvous()
-                    XteinkSendSettings.isEnabled = true
-                    self.tableView.reloadData()
-                    settle(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
-                } catch {
-                    XteinkBLECentral.shared.endRendezvous()
-                    settle(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
-                }
-            }
+            [weak self] _ in
+            self?.showAccessoryPicker()
         })
         present(alert, animated: true)
+    }
+
+    /// Shows the system's AccessorySetupKit picker, scoped to the X3's sync
+    /// service so it lists only readers that are advertising and in a
+    /// bonding-ready state. Bonding itself happens automatically once the
+    /// picker's selection triggers `didConnect` on an encrypted link — the
+    /// reader initiates it, and iOS shows its native pairing sheet.
+    private func showAccessoryPicker() {
+        let descriptor = ASDiscoveryDescriptor()
+        descriptor.bluetoothServiceUUID = XteinkSyncProtocol.service
+        let item = ASPickerDisplayItem(
+            name: L10n.string("Settings_xteink_pickerAccessoryName"),
+            productImage: UIImage(systemName: "book.closed") ?? UIImage(),
+            descriptor: descriptor)
+        Task { @MainActor [weak self] in
+            do {
+                try await self?.accessorySession.showPicker(for: [item])
+            } catch {
+                self?.presentInfoAlert(
+                    title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+            }
+        }
+    }
+
+    /// The picker only reports a selection through this event — there is no
+    /// return value from `showPicker`. Pairing starts the moment the system
+    /// hands back an accessory with a resolved Bluetooth identifier.
+    private func handleAccessoryEvent(_ event: ASAccessoryEvent) {
+        guard event.eventType == .accessoryAdded,
+              let peripheralIdentifier = event.accessory?.bluetoothIdentifier
+        else { return }
+        beginPairing(peripheralIdentifier: peripheralIdentifier)
+    }
+
+    private func beginPairing(peripheralIdentifier: UUID) {
+        XteinkBLECentral.shared.connect(toPeripheralIdentifier: peripheralIdentifier)
+        Task { @MainActor in
+            let spinner = UIAlertController(
+                title: L10n.string("Settings_xteink_pairingProgressTitle"),
+                message: nil, preferredStyle: .alert)
+            var finished = false
+            // The picker sheet is still animating out when this Task starts;
+            // present the spinner once the presenter frees up, and only
+            // while the pairing is still in flight.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !finished, self.presentedViewController == nil else { return }
+                self.present(spinner, animated: true)
+            }
+            func settle(title: String, message: String) {
+                finished = true
+                if spinner.presentingViewController != nil { spinner.dismiss(animated: true) }
+                self.presentInfoAlert(title: title, message: message)
+            }
+            do {
+                try await Self.waitForRendezvous()
+                try await XteinkBLECentral.shared.pair(pairSecret: Self.pairSecret())
+                // Close the reader's rendezvous window now: it flips its
+                // popup to "Luna paired" the moment no_work lands, instead
+                // of holding the popup until an idle timeout. Then drop the
+                // link — a parked connection would otherwise ride into the
+                // reader's BLE teardown.
+                try? await XteinkBLECentral.shared.reportNoWork()
+                XteinkBLECentral.shared.endRendezvous()
+                XteinkSendSettings.isEnabled = true
+                self.tableView.reloadData()
+                settle(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
+            } catch {
+                XteinkBLECentral.shared.endRendezvous()
+                settle(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+            }
+        }
     }
 
     /// The scan begun when the prompt appeared needs a few seconds to find and

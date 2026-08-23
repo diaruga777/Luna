@@ -25,7 +25,24 @@ peripheral. `XteinkSyncProtocol` uses v1 full UUIDs: service
 `...0a02...`, status `...0a03...`, and data-out `...0a04...`. `hello`
 authenticates a Keychain-persisted pairing secret using HMAC-SHA256 over
 `nonce|host_id|1`; Settings supplies a 32-byte random secret during first-use
-code pairing.
+pairing.
+
+First-use pairing goes through AccessorySetupKit rather than a typed-in code.
+Settings → Pair Xteink shows an instruction alert ("Open File Transfer → Luna
+Sync on the reader, then continue"), then presents the system picker
+(`ASAccessorySession.showPicker(for:)`) scoped to the sync service UUID via
+`ASDiscoveryDescriptor.bluetoothServiceUUID`. The X3 initiates BLE bonding
+once selected, so iOS shows its own native pairing sheet — Luna has no code UI
+anywhere. On the session's `.accessoryAdded` event, `XteinkBLECentral
+.connect(toPeripheralIdentifier:)` connects directly to the resolved
+`ASAccessory.bluetoothIdentifier` (bypassing the scan, since AccessorySetupKit
+already found and authorized it), and once the rendezvous is active the
+settings screen sends an unauthenticated `hello` carrying `host_id` and a
+fresh random `pair_secret` with no `code` key — the bonded, encrypted link is
+the proof of physical presence. `Luna/Info.plist`'s `NSAccessorySetupKitSupports`
+(`Bluetooth`) and `NSAccessorySetupBluetoothServices` declare the sync service
+UUID so the picker can find advertising readers. The HMAC-authenticated hello
+for an already-paired device (below) is unchanged.
 
 Control operations await status `op_ack` rather than treating a successful
 GATT write as success. `start_put` supplies `chunk_size` and `resume: true`;
@@ -137,15 +154,20 @@ the reader's Luna Sync menu entry.
 
 - **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, compiled
   into Luna and LunaReader; membership-excluded from Downloader and Price
-  Tracker like the other article settings screens): enable switch, code
-  pairing, Auto-Send by Source (`AutoSendBySourceScreen`, already
-  destination-generic), Transfer Pending Saves. The old "Send Test Document"
-  row (and its stock-firmware-flavored copy) was removed 2026-08-22 along with
-  the stock client it exercised.
+  Tracker like the other article settings screens): enable switch,
+  AccessorySetupKit pairing (above), Auto-Send by Source
+  (`AutoSendBySourceScreen`, already destination-generic), Transfer Pending
+  Saves. The old "Send Test Document" row (and its stock-firmware-flavored
+  copy) was removed 2026-08-22 along with the stock client it exercised.
 - **Share menu row** (as of 2026-08-22): `AppReaderShareProvider.ereaderRows`
   adds a "Send to Xteink" row (`books.vertical`) between the email row and the
   export submenu, gated on `XteinkSendSettings.isEnabled` and the article
-  being `.ready`. It calls `ArticleSendCoordinator.send(_:toDestinationID:)`,
+  being `.ready`. Its `ReaderShareSheet.Row.statusDotColor` shows a small
+  green dot while `XteinkBLECentral.isRendezvousActive` and an unlit
+  (`.tertiaryLabel`) dot otherwise — `beginRendezvousScan()` runs at row-build
+  time so the state has a chance to be current. The native `UIMenu`
+  presentation of the same rows has no dot; only the sheet fallback draws it.
+  It calls `ArticleSendCoordinator.send(_:toDestinationID:)`,
   which routes through the WiFi-first `sendNow` above; if the item is still
   `.queued` after the await (receiver unreachable on both paths), an alert
   explains it will go out on the next BLE wake or Wi-Fi window.

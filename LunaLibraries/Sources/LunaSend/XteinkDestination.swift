@@ -6,12 +6,12 @@
 import Foundation
 import LunaModels
 
-/// The Xteink destination: delivers over the CrossPoint BLE rendezvous, or
-/// straight over Wi-Fi when the reader's File Transfer server is already
-/// reachable (`XteinkCrossPointTransferRouter.sendNow`). The device is only
-/// reachable while it's awake, so an unreachable device throws
-/// `SendDeferralError` — the item stays queued at no retry cost and goes out
-/// on a later sweep.
+/// The Xteink destination: enqueue-only. A send never waits for or probes for
+/// a rendezvous — it attempts delivery immediately over whichever BLE/Wi-Fi
+/// transport `XteinkCrossPointTransferRouter.send` is already active, and
+/// throws `SendDeferralError` the instant no rendezvous exists so the item
+/// stays queued at no retry cost. Actual delivery happens only when the
+/// reader opens a window and Luna's `.xteinkRendezvousReady` sweep runs.
 public final class XteinkDestination: ArticleDestination {
     public let id = ArticleDestinationID.xteink
     public let displayName = L10n.string("Common_xteink")
@@ -43,11 +43,11 @@ public final class XteinkDestination: ArticleDestination {
         do {
             let router = crossPoint
             try await rendezvousQueue.run {
-                try await router.sendNow(epubData, fileName: fileName, title: title)
+                try await router.send(epubData, fileName: fileName, title: title)
             }
         } catch XteinkSyncError.unavailable {
-            // A sleep/wake rendezvous is not a failed delivery. Keep the item
-            // queued so the X3's next power-button or timed wake can collect it.
+            // No live rendezvous is not a failed delivery. Keep the item
+            // queued so the reader's next Luna Sync window can collect it.
             throw XteinkRendezvousUnavailableError()
         }
     }

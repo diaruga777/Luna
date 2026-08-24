@@ -6,6 +6,7 @@
 import LunaSocialUI
 import LunaSaves
 import LunaModels
+import LunaDesignSystem
 import LunaReaderUI
 import LunaSend
 import LunaStorage
@@ -105,6 +106,18 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                     ? (XteinkBLECentral.shared.isRendezvousActive ? .systemGreen : .tertiaryLabel)
                     : nil
             ) { [weak presenter] in
+                // Xteink is enqueue-only: the device collects queued sends only
+                // when the reader opens a sync window, so there is nothing to
+                // await here — confirm the queue and stop.
+                guard !isXteink else {
+                    if let presenter {
+                        LunaToast.show(
+                            L10n.string("Sharing_readerShareSheet_xteinkQueuedToast"),
+                            from: presenter)
+                    }
+                    Task { await ArticleSendCoordinator.shared.send(item, toDestinationID: destination.id) }
+                    return
+                }
                 Task { @MainActor in
                     await ArticleSendCoordinator.shared.send(item, toDestinationID: destination.id)
                     guard let presenter,
@@ -114,13 +127,11 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                     // Still queued: the receiver wasn't reachable. Say when it
                     // will actually go out, so the silence reads as "later",
                     // not "broken".
-                    let message = destination.id == ArticleDestinationID.xteink
-                        ? L10n.string("Sharing_readerShareSheet_sendQueuedXteinkMessage")
-                        : L10n.string("Sharing_readerShareSheet_sendQueuedGenericMessage")
                     let alert = UIAlertController(
                         title: L10n.string(
                             "Sharing_readerShareSheet_sendQueuedTitle", destination.displayName),
-                        message: message, preferredStyle: .alert)
+                        message: L10n.string("Sharing_readerShareSheet_sendQueuedGenericMessage"),
+                        preferredStyle: .alert)
                     alert.addAction(UIAlertAction(title: L10n.string("Common_ok"), style: .default))
                     presenter.present(alert, animated: true)
                 }

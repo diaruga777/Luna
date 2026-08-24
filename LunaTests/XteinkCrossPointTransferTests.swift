@@ -100,10 +100,6 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         private(set) var events: [String] = []
         func record(_ event: String) { lock.withLock { events.append(event) } }
     }
-    private struct LANProber: XteinkLANProbing {
-        let host: String?
-        func reachableHost() async -> String? { host }
-    }
 
     func testSmallPayloadUsesBLEAndNeverAsksForWiFi() async throws {
         let ble = BLE(); let wifi = WiFi(); let notifier = Notifier()
@@ -235,66 +231,22 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         catch { }
     }
 
-    // MARK: - sendNow (WiFi-first "send now" routing)
-
-    func testSendNowUsesLANProbeHitOverBLE() async throws {
-        XteinkSendSettings.isEnabled = true
-        let ble = BLE(); let wifi = WiFi(); let notifier = Notifier()
-        var uploads: [(String, String)] = []
-        let router = XteinkCrossPointTransferRouter(
-            ble: ble, wifi: wifi,
-            uploader: Uploader { _, fileName, host in uploads.append((fileName, host)) },
-            notifier: notifier, lanProber: LANProber(host: "crosspoint.local"),
-            isForeground: { true }, rendezvousWaitTimeout: 0.05, rendezvousPollInterval: 0.01)
-        try await router.sendNow(Data("article".utf8), fileName: "a.epub", title: "A")
-        XCTAssertEqual(uploads.map(\.0), ["a.epub"])
-        XCTAssertEqual(uploads.map(\.1), ["crosspoint.local"])
-        XCTAssertTrue(ble.sent.isEmpty)
-        XCTAssertEqual(ble.wifiRequests, 0)
-        XCTAssertEqual(ble.scanCount, 0)
-    }
-
-    func testSendNowIgnoresLANProbeWhenXteinkNotEnabled() async throws {
-        XteinkSendSettings.isEnabled = false
-        let ble = BLE(); ble.isRendezvousActive = true
-        let router = XteinkCrossPointTransferRouter(
-            ble: ble, wifi: WiFi(),
-            uploader: Uploader { _, _, _ in XCTFail("must not upload while disabled") },
-            notifier: Notifier(), lanProber: LANProber(host: "crosspoint.local"),
-            isForeground: { true }, rendezvousWaitTimeout: 0.05, rendezvousPollInterval: 0.01)
-        try await router.sendNow(Data("article".utf8), fileName: "a.epub", title: "A")
-        XCTAssertEqual(ble.sent.count, 1)
-    }
-
-    func testSendNowFallsBackToBLEWhenAlreadyRendezvousedAfterProbeMiss() async throws {
-        XteinkSendSettings.isEnabled = true
-        let ble = BLE(); ble.isRendezvousActive = true
-        let router = XteinkCrossPointTransferRouter(
-            ble: ble, wifi: WiFi(),
-            uploader: Uploader { _, _, _ in XCTFail("small payload must go over BLE") },
-            notifier: Notifier(), lanProber: LANProber(host: nil),
-            isForeground: { true }, rendezvousWaitTimeout: 0.05, rendezvousPollInterval: 0.01)
-        try await router.sendNow(Data("article".utf8), fileName: "a.epub", title: "A")
-        XCTAssertEqual(ble.sent.count, 1)
-        // Already active: no need to kick a fresh scan.
-        XCTAssertEqual(ble.scanCount, 0)
-    }
-
-    func testSendNowThrowsUnavailableWhenNeitherLANNorRendezvousArrive() async {
-        XteinkSendSettings.isEnabled = true
+    /// Enqueue-only model: a destination-level send that finds no active
+    /// rendezvous fails instantly — no LAN probe, no scan-and-wait — so the
+    /// item is left `.queued` at no cost until the reader opens a window.
+    func testDestinationDefersInstantlyWithNoRendezvousActive() async {
         let ble = BLE(); ble.isRendezvousActive = false
         let router = XteinkCrossPointTransferRouter(
-            ble: ble, wifi: WiFi(),
-            uploader: Uploader { _, _, _ in XCTFail("nothing is reachable") },
-            notifier: Notifier(), lanProber: LANProber(host: nil),
-            isForeground: { true }, rendezvousWaitTimeout: 0.05, rendezvousPollInterval: 0.01)
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("nothing is reachable") },
+            notifier: Notifier(), isForeground: { true })
+        let destination = XteinkDestination(crossPoint: router)
+        let start = Date()
         do {
-            try await router.sendNow(Data("article".utf8), fileName: "a.epub", title: "A")
-            XCTFail("must throw when nothing answers")
-        } catch let error as XteinkSyncError {
-            XCTAssertEqual(error, .unavailable)
+            try await destination.send(epubData: Data("article".utf8), fileName: "a.epub", title: "A")
+            XCTFail("must defer instantly")
+        } catch is XteinkRendezvousUnavailableError {
         } catch { XCTFail("unexpected error \(error)") }
-        // A scan was kicked off to give BLE a chance before giving up.
-        XCTAssertGreaterThanOrEqual(ble.scanCount, 1)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1, "must not wait for a rendezvous to appear")
+        XCTAssertEqual(ble.scanCount, 0, "enqueue-only must never kick a scan on the phone's behalf")
     }
 }

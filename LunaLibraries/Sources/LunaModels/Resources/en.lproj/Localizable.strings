@@ -1051,8 +1051,8 @@
 "Sharing_readerShareSheet_2exportTitle_Luna" = "Export as…";
 "Sharing_readerShareSheet_sendQueuedGenericMessage_Luna" = "Luna will retry automatically.";
 "Sharing_readerShareSheet_sendQueuedTitle_Luna" = "Queued for %@";
-"Sharing_readerShareSheet_sendQueuedXteinkMessage_Luna" = "Luna sends it the next time the Xteink wakes and pairs over Bluetooth, or while it's open on File Transfer on the same Wi-Fi network.";
 "Sharing_readerShareSheet_sendToDestination_Luna" = "Send to %@";
+"Sharing_readerShareSheet_xteinkQueuedToast_Luna" = "Queued for Xteink";
 
 /* ===== Sharing — RecipientPickerViewController.swift (pick email recipients) ===== */
 "Sharing_recipientPicker_action1EnterEmail_Luna" = "Enter email address…";

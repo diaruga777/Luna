@@ -34,6 +34,10 @@ public protocol ArticleDestination {
     var epubBuildProfile: EpubBuilder.Profile { get }
     /// Delivers the EPUB. Throws on any configuration/connection/service failure.
     func send(epubData: Data, fileName: String, title: String) async throws
+    /// Delivers the EPUB with the save's identity and queue depth attached.
+    /// Destinations that report progress on a receiving device (Xteink's
+    /// "book i of n") override this; everything else keeps the plain form.
+    func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws
 }
 
 public extension ArticleDestination {
@@ -42,6 +46,26 @@ public extension ArticleDestination {
     /// custom destinations can override this property explicitly.
     var epubBuildProfile: EpubBuilder.Profile {
         id == ArticleDestinationID.xteink ? .xteink : .standard
+    }
+
+    /// Destinations that don't track a receiving-device queue (Kindle,
+    /// export) just ignore the context and keep their existing send.
+    func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws {
+        try await send(epubData: epubData, fileName: fileName, title: title)
+    }
+}
+
+/// The save identity and queue depth a delivery carries, for a destination
+/// that reports progress on its receiving device. `queuedRemaining` is the
+/// count of OTHER items still `.queued` for the same destination at the
+/// moment this one is handed to `send` — the coordinator's sweep is serial,
+/// so this decrements naturally as the queue drains.
+public struct ArticleSendContext {
+    public let itemID: UUID
+    public let queuedRemaining: Int?
+    public init(itemID: UUID, queuedRemaining: Int?) {
+        self.itemID = itemID
+        self.queuedRemaining = queuedRemaining
     }
 }
 
@@ -330,8 +354,12 @@ public final class ArticleSendCoordinator {
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
         store.markSendAttemptStarted(for: itemID, destination: destination.id)
         do {
+            let queuedRemaining = store.items().filter {
+                $0.id != itemID && $0.sendState(for: destination.id) == .queued
+            }.count
             try await destination.send(
-                epubData: built.data, fileName: built.fileName, title: built.title)
+                epubData: built.data, fileName: built.fileName, title: built.title,
+                context: ArticleSendContext(itemID: itemID, queuedRemaining: queuedRemaining))
             store.setSendState(.sent, for: itemID, destination: destination.id)
             logger.info("Sent to \(destination.displayName, privacy: .public): \(built.title, privacy: .public)")
         } catch {

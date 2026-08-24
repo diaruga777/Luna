@@ -136,11 +136,16 @@ public final class XteinkCrossPointTransferRouter {
         self.uploadRetryPause = uploadRetryPause
     }
 
-    public func send(_ data: Data, fileName: String, title: String) async throws {
+    public func send(
+        _ data: Data, fileName: String, title: String,
+        articleID: UUID? = nil, queuedRemaining: Int? = nil
+    ) async throws {
         guard ble.isRendezvousActive else { throw XteinkSyncError.unavailable }
         let validName = Self.x3FileName(fileName)
         if policy.transport(forFinalXteinkEPUB: data) == .bluetoothLowEnergy {
-            try await ble.send(data, fileName: validName, title: title, progress: { _ in })
+            try await ble.send(
+                data, fileName: validName, title: title,
+                articleID: articleID, queuedRemaining: queuedRemaining, progress: { _ in })
             return
         }
         let offer = try await ble.requestWiFi()

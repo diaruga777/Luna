@@ -103,6 +103,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
 
     public func send(
         _ epub: Data, fileName: String, title: String,
+        articleID: UUID? = nil, queuedRemaining: Int? = nil,
         progress: @escaping @Sendable (XteinkSyncProgress) -> Void
     ) async throws {
         guard XteinkTransferSizePolicy().transport(forFinalXteinkEPUB: epub) == .bluetoothLowEnergy else {
@@ -113,10 +114,13 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         let digest = SHA256.hash(data: epub).map { String(format: "%02x", $0) }.joined()
         try await authenticatedHello()
         let maximum = await maximumDataPayload()
-        try await sendControl("start_put", values: [
+        var startPutValues: [String: Any] = [
             "kind": "book", "name": fileName, "size": epub.count, "sha256": digest,
             "resume": true, "chunk_size": maximum,
-        ])
+        ]
+        if let articleID { startPutValues["article_id"] = articleID.uuidString.lowercased() }
+        if let queuedRemaining { startPutValues["queue_remaining"] = queuedRemaining }
+        try await sendControl("start_put", values: startPutValues)
 
         let resume = await currentCheckpoint()
         var offset = min(resume.offset, epub.count)

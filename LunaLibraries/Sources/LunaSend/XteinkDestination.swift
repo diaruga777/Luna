@@ -40,10 +40,26 @@ public final class XteinkDestination: ArticleDestination {
     }
 
     public func send(epubData: Data, fileName: String, title: String) async throws {
+        try await send(epubData: epubData, fileName: fileName, title: title, articleID: nil, queuedRemaining: nil)
+    }
+
+    public func send(
+        epubData: Data, fileName: String, title: String, context: ArticleSendContext
+    ) async throws {
+        try await send(
+            epubData: epubData, fileName: fileName, title: title,
+            articleID: context.itemID, queuedRemaining: context.queuedRemaining)
+    }
+
+    private func send(
+        epubData: Data, fileName: String, title: String, articleID: UUID?, queuedRemaining: Int?
+    ) async throws {
         do {
             let router = crossPoint
             try await rendezvousQueue.run {
-                try await router.send(epubData, fileName: fileName, title: title)
+                try await router.send(
+                    epubData, fileName: fileName, title: title,
+                    articleID: articleID, queuedRemaining: queuedRemaining)
             }
         } catch XteinkSyncError.unavailable {
             // No live rendezvous is not a failed delivery. Keep the item

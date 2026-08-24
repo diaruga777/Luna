@@ -60,14 +60,21 @@ final class XteinkCrossPointTransferTests: XCTestCase {
     private final class BLE: XteinkBLETransporting {
         var isRendezvousActive = true
         var sent: [(Data, String)] = []
+        var sentArticleIDs: [UUID?] = []
+        var sentQueuedRemaining: [Int?] = []
         var wifiRequests = 0
         var deleted: [String] = []
         private(set) var scanCount = 0
         let offer = XteinkWiFiOffer(mode: .ap, ssid: "Xteink-X3", passphrase: "secret-pass", host: "192.168.4.1")
         func beginRendezvousScan() { scanCount += 1 }
-        func send(_ epub: Data, fileName: String, title: String,
-                  progress: @escaping @Sendable (XteinkSyncProgress) -> Void) async throws {
+        func send(
+            _ epub: Data, fileName: String, title: String,
+            articleID: UUID?, queuedRemaining: Int?,
+            progress: @escaping @Sendable (XteinkSyncProgress) -> Void
+        ) async throws {
             sent.append((epub, fileName))
+            sentArticleIDs.append(articleID)
+            sentQueuedRemaining.append(queuedRemaining)
             progress(XteinkSyncProgress(completedBytes: epub.count, totalBytes: epub.count))
         }
         func requestWiFi() async throws -> XteinkWiFiOffer { wifiRequests += 1; return offer }
@@ -196,7 +203,11 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         final class STABLE: XteinkBLETransporting {
             var isRendezvousActive = true
             func beginRendezvousScan() {}
-            func send(_ epub: Data, fileName: String, title: String, progress: @escaping @Sendable (XteinkSyncProgress) -> Void) async throws {}
+            func send(
+                _ epub: Data, fileName: String, title: String,
+                articleID: UUID?, queuedRemaining: Int?,
+                progress: @escaping @Sendable (XteinkSyncProgress) -> Void
+            ) async throws {}
             func requestWiFi() async throws -> XteinkWiFiOffer { XteinkWiFiOffer(mode: .sta, host: "192.168.1.30") }
             func delete(remotePath: String) async throws {}
         }

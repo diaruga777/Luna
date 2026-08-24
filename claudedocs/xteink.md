@@ -117,7 +117,16 @@ holder dies — and the losing process stays completely silent (it does not
 even answer `no_work`; the owner concludes the window). For the same reason,
 `scanIfReady` asks `retrieveConnectedPeripherals(withServices:)` before
 scanning: a peripheral another process (or the system) already holds has
-stopped advertising and a scan can never find it.
+stopped advertising and a scan can never find it. It also keeps a
+**standing connect** to the known reader
+(`XteinkSendSettings.pairedPeripheralID`, persisted on every successful
+connection): CoreBluetooth holds a pending connect open indefinitely and
+completes it the instant the reader advertises, so a short wake window is
+never lost to a scan-discovery race — and state restoration re-issues the
+pending connect after an ordinary app termination (TN3115). The scan still
+runs alongside it, for a reader whose address changed or that this install
+has never seen. Unpair clears the stored identifier and cancels the
+standing connect.
 
 The winning sweep is a single sequential task:
 

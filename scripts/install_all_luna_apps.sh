@@ -148,14 +148,16 @@ STRINGS="LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings
 for app in $APPS; do
     bundle="$PRODUCTS/$app.app"
     [ -d "$bundle" ] || { echo "error: $bundle was not built." >&2; exit 1; }
-    # Each app's own "Verify bundled strings table" phase already checked this
+    # Each app's own "Verify bundled strings table" phase already repaired this
     # during the build above — but only for a build that RAN TO THE END. A
     # products directory left behind by an interrupted build (or holding an app
     # some earlier single-scheme build never refreshed) can still carry a
     # strings table older than the source, and installing that is how a copy
-    # edit silently "doesn't take". So check what is about to be installed.
+    # edit silently "doesn't take". So repair what is about to be installed too;
+    # this only still fails for the one thing rewriting bytes can't fix — a
+    # bundle root missing its own en.lproj copy entirely.
     python3 scripts/check_bundled_strings.py "$STRINGS" "$bundle" || {
-        echo "error: refusing to install a stale $app.app — see above." >&2
+        echo "error: refusing to install a broken $app.app — see above." >&2
         exit 1
     }
     echo "▸ Installing $app.app"

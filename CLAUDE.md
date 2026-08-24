@@ -297,10 +297,17 @@ stable Xcode 26.2.
 > phase (`scripts/check_bundled_strings.py`, installed by
 > `scripts/add_strings_check_phase.rb` — re-run after adding an app): every
 > `Localizable.strings` under the `.app` must parse to the SAME table as the
-> source or the build fails; always-out-of-date, ~0.1s. It guarantees a build
-> that ran to the END, so `install_all_luna_apps.sh` runs the same check before
-> each install — an interrupted build never reaches its last phase, and that
-> half-updated products dir is what a hand-run `simctl install` grabs.
+> source, and a copy that doesn't is REWRITTEN IN PLACE (redoing whichever copy
+> task produced it — a verbatim copy or a `plutil -convert binary1`, detected
+> from the file's own bytes) rather than merely reported, so the build ships
+> the real table instead of just detecting that it wouldn't have;
+> always-out-of-date, ~0.1s. The one case it can't fix by rewriting bytes is a
+> bundle root with no `en.lproj` copy of its own at all — that still fails the
+> build, since nothing would re-create the file on a later build either. The
+> phase guarantees a build that ran to the END, so `install_all_luna_apps.sh`
+> runs the same check-and-repair before each install — an interrupted build
+> never reaches its last phase, and that half-updated products dir is what a
+> hand-run `simctl install` grabs.
 > `LocalizableStringsTests` is NOT this guarantee: inside the test host it can
 > only compare two copies made from the same input, and two stale copies agree
 > perfectly. Staying in code: `AppShortcut` phrases/`shortTitle`s (they are

@@ -285,14 +285,24 @@ scripts/check_bundled_strings.py <the source> "$TARGET_BUILD_DIR/$WRAPPER_NAME"
 ```
 
 Every `Localizable.strings` anywhere under the `.app` must parse to the same
-key/value table as the source; a mismatch is an `error:` naming the file and
-the differing keys, and the build fails. Comments, ordering and storage format
-are not compared — a `.strings` file is an old-style plist and the app-root
-copies are binary plists, so both sides go through `plutil` and are compared as
-tables, which is what the app can actually read. Copies that are byte-identical
-to the source skip parsing entirely, so the whole check costs about 0.1s and it
-is deliberately **always out of date**: the thing it distrusts is exactly the
+key/value table as the source; a mismatch is REWRITTEN IN PLACE — the script
+redoes whichever copy task produced that file (a verbatim copy for the SwiftPM
+resource bundle, a `plutil -convert binary1` for the app-root `CopyStringsFile`
+output, detected from the file's own leading bytes) and prints a `note:` naming
+what it rewrote, so the build ships the real table instead of merely detecting
+that it wouldn't have. Comments, ordering and storage format are not compared —
+a `.strings` file is an old-style plist and the app-root copies are binary
+plists, so both sides go through `plutil` and are compared as tables, which is
+what the app can actually read. Copies that are byte-identical to the source
+skip parsing entirely, so the whole check costs about 0.1s and it is
+deliberately **always out of date**: the thing it distrusts is exactly the
 incremental logic that would let it be skipped.
+
+The one case it can't fix by rewriting bytes is a bundle root with no `en.lproj`
+copy of its own at all — that means the Resources build phase reference is
+missing, so nothing would re-create the file on the next build either. That
+stays an `error:` telling you to run `scripts/add_strings_to_app_bundles.rb`;
+everything else self-heals.
 
 Three things to know about it:
 
@@ -303,9 +313,9 @@ Three things to know about it:
 - **It only guarantees a build that ran to the END.** An interrupted build
   never reaches its last phase, and that half-updated products directory is
   exactly what a hand-run `simctl install` reaches for. So
-  `scripts/install_all_luna_apps.sh` runs the same check on each `.app`
-  immediately before installing it and refuses a stale one. If you install by
-  hand, run the checker by hand.
+  `scripts/install_all_luna_apps.sh` runs the same check-and-repair on each
+  `.app` immediately before installing it. If you install by hand, run the
+  checker by hand.
 - The unit-test bundle is **skipped** (`SKIPPED_SUFFIXES`): a plain
   `xcodebuild build` does not rebuild `LunaTests.xctest`, so in a derived-data
   path that has also run the suite it legitimately lags, and it is never

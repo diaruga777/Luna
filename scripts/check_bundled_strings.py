@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail the build when a built copy of the strings table isn't the source table.
+"""Repair a built copy of the strings table when it isn't the source table.
 
 Luna keeps every user-visible string in ONE file,
 
@@ -24,18 +24,30 @@ and none of them is observable from inside the app: a stale copy shows as
 right, and at worst ships a table nobody wrote. This script is the one place
 that checks the actual bytes on disk against the actual source, unconditionally,
 on every build — it distrusts precisely the incremental logic that could skip a
-copy.
+copy — and, when it finds a stale or corrupt copy, OVERWRITES it with the
+source table in the same on-disk format (binary plist or verbatim text) rather
+than just reporting it, so the build that runs this phase ships the real copy
+instead of merely detecting that it wouldn't have.
 
 Usage:
 
     check_bundled_strings.py <source.strings> <bundle-root> [<bundle-root>…]
 
 Every `Localizable.strings` anywhere under each bundle root must carry the same
-key/value table as the source. Comments, ordering and storage format are not
-compared (a `.strings` file is an old-style plist; the app-root copies are
-binary plists), so this compares what the app can actually READ.
+key/value table as the source; one that doesn't is rewritten in place. Comments,
+ordering and storage format are not compared (a `.strings` file is an old-style
+plist; the app-root copies are binary plists), so this compares what the app can
+actually READ.
 
-Exits 0 when every copy agrees, 1 with `error:` lines Xcode surfaces otherwise.
+A copy can be repaired directly, so those never fail the build — they print a
+`note:` naming what was rewritten. The one thing this script cannot fix by
+rewriting bytes is a bundle root that never got its OWN `en.lproj` copy at all
+(the Resources build phase reference is missing, so nothing will re-create the
+file on the next build either) — that is still an `error:` telling you to run
+`scripts/add_strings_to_app_bundles.rb`.
+
+Exits 0 when every copy agrees or was repaired, 1 with `error:` lines Xcode
+surfaces otherwise.
 """
 
 from __future__ import annotations
@@ -103,6 +115,27 @@ def copies_under(root: str) -> list[str]:
     return sorted(found)
 
 
+def repair(path: str, source_path: str, source_bytes: bytes) -> None:
+    """Overwrite a stale/corrupt copy with the source table, in-format.
+
+    The two legitimate copy tasks either copy the source verbatim (SwiftPM's
+    resource bundle) or run it through `plutil` into a binary plist (the
+    app-root `CopyStringsFile` task). Redoing whichever one produced this file
+    — detected from its own leading bytes — puts it back exactly where a
+    from-scratch build would have left it.
+    """
+    with open(path, "rb") as handle:
+        is_binary_plist = handle.read(8) == b"bplist00"
+    if is_binary_plist:
+        subprocess.run(
+            ["/usr/bin/plutil", "-convert", "binary1", "-o", path, "--", source_path],
+            check=True,
+        )
+    else:
+        with open(path, "wb") as handle:
+            handle.write(source_bytes)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
         print(f"usage: {os.path.basename(argv[0])} <source.strings> <bundle-root>…",
@@ -119,6 +152,7 @@ def main(argv: list[str]) -> int:
     source = read_table(source_path)
 
     failures: list[str] = []
+    repaired: list[str] = []
     checked = 0
     for root in roots:
         if not os.path.isdir(root):
@@ -128,7 +162,8 @@ def main(argv: list[str]) -> int:
         # The bundle's OWN copy, the one App Intents metadata resolves against.
         # A target that never got the resource reference has the LunaModels
         # bundle copies and nothing else, and every intent title silently shows
-        # as a raw key.
+        # as a raw key. Rewriting bytes can't fix this — nothing will re-create
+        # the file on the next build either, since no Resources phase names it.
         if not os.path.isfile(os.path.join(root, "en.lproj", TABLE_NAME)):
             failures.append(
                 f"{root}: has no en.lproj/{TABLE_NAME} of its own — App Intents "
@@ -141,22 +176,36 @@ def main(argv: list[str]) -> int:
                     continue  # verbatim copy — no need to parse either side
             try:
                 built = read_table(path)
+                stale = built != source
             except (subprocess.CalledProcessError, ValueError, plistlib.InvalidFileException):
-                failures.append(f"{path}: does not parse as a strings table")
+                built, stale = None, True
+            if not stale:
                 continue
-            if built != source:
-                failures.append(f"{path}: {describe(source, built)}")
+            reason = "does not parse as a strings table" if built is None else describe(source, built)
+            try:
+                repair(path, source_path, source_bytes)
+            except subprocess.CalledProcessError as exc:
+                failures.append(f"{path}: {reason}, and repair failed ({exc})")
+                continue
+            repaired.append(f"{path}: {reason}")
+
+    if repaired:
+        print(
+            f"note: rewrote {len(repaired)} of {checked} bundled copies of "
+            f"{source_path} to match the source — the build system reused a "
+            "stale copy instead of re-copying it:",
+            file=sys.stderr,
+        )
+        for note in repaired:
+            print(f"note: {note}", file=sys.stderr)
 
     if not failures:
         return 0
 
     print(
         f"error: a built bundle does not carry the table in {source_path} "
-        f"({len(failures)} of {checked} copies). Where a copy is merely STALE, "
-        "the build system reused it rather than re-copying, and the app would "
-        "show wording nobody wrote — delete the product and build again "
-        "(one app: rm -rf its .app in $BUILT_PRODUCTS_DIR; all of them: build "
-        "into a clean -derivedDataPath).",
+        f"({len(failures)} of {checked} copies) and could not be repaired in "
+        "place.",
         file=sys.stderr,
     )
     for failure in failures:

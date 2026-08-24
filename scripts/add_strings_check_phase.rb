@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Gives every app target a final build phase that refuses to finish a build
-# whose bundled strings table has gone stale.
+# Gives every app target a final build phase that repairs any bundled strings
+# table that has gone stale, so the build ships the real copy instead of just
+# reporting that it wouldn't have.
 #
 # The one strings file reaches a built app through several INDEPENDENT copy
 # tasks (LunaModels' SwiftPM resource bundle, embedded once per nested
@@ -11,7 +12,10 @@
 # build that is interrupted part-way — or a products directory holding an app
 # this build did not rebuild — leaves copies disagreeing with the source with
 # nothing to say so. A stale table reads as "my copy edit didn't take", which
-# invites re-editing copy that was already right.
+# invites re-editing copy that was already right, so the phase rewrites it in
+# place rather than only flagging it. The one case it can't fix this way — a
+# bundle root missing its OWN en.lproj copy, meaning the Resources phase
+# reference itself is missing — still fails the build with instructions.
 #
 # The phase runs `scripts/check_bundled_strings.py` over the app bundle after
 # every embed phase, on EVERY build (it is deliberately always-out-of-date —
@@ -31,9 +35,9 @@ PHASE_NAME = 'Verify bundled strings table'
 APPS = %w[Luna LunaReader LunaDownloader LunaPriceTracker].freeze
 
 SCRIPT = <<~SH
-  # Refuses to finish a build whose bundled copies of the one strings table
-  # have drifted from the source. See scripts/add_strings_check_phase.rb and
-  # claudedocs/strings.md ("The build-level guarantee").
+  # Rewrites any bundled copy of the one strings table that has drifted from
+  # the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md
+  # ("The build-level guarantee").
   python3 "${SRCROOT}/scripts/check_bundled_strings.py" \\
       "${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings" \\
       "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"

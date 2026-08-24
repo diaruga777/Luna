@@ -168,15 +168,21 @@ enum KindWiring {
                 // sweep. This is the actual transfer trigger for a wake window.
                 XteinkRendezvousSweepPolicy.rendezvousBecameReady(
                     isReadReportOnlyWindow: XteinkBLECentral.shared.isReadReportOnlyWindow,
+                    acquireSweepLock: { XteinkRendezvousSweepLock.shared.acquire() },
+                    releaseSweepLock: { XteinkRendezvousSweepLock.shared.release() },
                     reconcileReadState: { XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery() },
                     drainPendingDeletes: { await XteinkRemoteDeleteRunner.drainPendingDeletes() },
-                    hasQueuedSend: {
-                        SavesStore.shared.items().contains {
-                            $0.sendState(for: ArticleDestinationID.xteink) == .queued
-                        }
+                    deliverQueuedSends: {
+                        await ArticleSendCoordinator.shared.deliverQueuedSends(
+                            toDestinationID: ArticleDestinationID.xteink)
                     },
-                    retryPendingSends: { ArticleShellWiring.retryPendingSends() },
-                    reportNoWork: { try await XteinkBLECentral.shared.reportNoWork() })
+                    reportNoWork: {
+                        // Behind the transfer queue so a straggler send (an
+                        // auto-send landing mid-window) finishes first.
+                        try await XteinkRendezvousTransferQueue.shared.run {
+                            try await XteinkBLECentral.shared.reportNoWork()
+                        }
+                    })
             }
         }
     }

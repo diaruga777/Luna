@@ -183,6 +183,31 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertTrue(chapter.contains("Caption remains"))
     }
 
+    /// The rendezvous sweep's entry point must deliver a queued send even
+    /// when an earlier soft failure scheduled a future backoff date — the
+    /// receiving device holds a live window open RIGHT NOW, and skipping it
+    /// silently was what left the reader hanging with nothing sent.
+    func testDeliverQueuedSendsIgnoresBackoffAndDrainsEverything() async {
+        second.shouldFail = true
+        let first = makeReadyItem("https://example.com/one")
+        let another = makeReadyItem("https://example.com/two")
+        await coordinator.send(first, toDestinationID: second.id)
+        await coordinator.send(another, toDestinationID: second.id)
+        XCTAssertEqual(sendState(first, second.id), .queued)
+        XCTAssertNotNil(store.item(withID: first.id)?.sendNextAttemptDates[second.id])
+
+        // A plain backoff-respecting retry attempts nothing.
+        coordinator.retryPendingSends()
+        await drainDeliveries()
+        XCTAssertTrue(second.sentTitles.isEmpty)
+
+        second.shouldFail = false
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+        XCTAssertEqual(second.sentTitles.count, 2)
+        XCTAssertEqual(sendState(first, second.id), .sent)
+        XCTAssertEqual(sendState(another, second.id), .sent)
+    }
+
     func testSoftFailureQueuesRetryWithBackoff() async {
         kindle.shouldFail = true
         let item = makeReadyItem()

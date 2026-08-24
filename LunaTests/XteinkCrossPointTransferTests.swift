@@ -260,4 +260,45 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1, "must not wait for a rendezvous to appear")
         XCTAssertEqual(ble.scanCount, 0, "enqueue-only must never kick a scan on the phone's behalf")
     }
+
+    // MARK: - article_id / queue_remaining on the wire
+
+    func testRouterForwardsArticleIDAndQueuedRemainingToBLE() async throws {
+        let ble = BLE()
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must go over BLE") },
+            notifier: Notifier(), isForeground: { true })
+        let articleID = UUID()
+        try await router.send(
+            Data("article".utf8), fileName: "a.epub", title: "A",
+            articleID: articleID, queuedRemaining: 3)
+        XCTAssertEqual(ble.sentArticleIDs, [articleID])
+        XCTAssertEqual(ble.sentQueuedRemaining, [3])
+    }
+
+    func testRouterOmitsArticleIDAndQueuedRemainingWhenNotSupplied() async throws {
+        let ble = BLE()
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must go over BLE") },
+            notifier: Notifier(), isForeground: { true })
+        try await router.send(Data("article".utf8), fileName: "a.epub", title: "A")
+        XCTAssertEqual(ble.sentArticleIDs, [nil])
+        XCTAssertEqual(ble.sentQueuedRemaining, [nil])
+    }
+
+    /// The context form is what `ArticleSendCoordinator` actually calls —
+    /// this is the wire's real entry point for `article_id`/`queue_remaining`.
+    func testDestinationContextFormForwardsItemIDAndQueuedRemaining() async throws {
+        let ble = BLE()
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must go over BLE") },
+            notifier: Notifier(), isForeground: { true })
+        let destination = XteinkDestination(crossPoint: router)
+        let itemID = UUID()
+        try await destination.send(
+            epubData: Data("article".utf8), fileName: "a.epub", title: "A",
+            context: ArticleSendContext(itemID: itemID, queuedRemaining: 2))
+        XCTAssertEqual(ble.sentArticleIDs, [itemID])
+        XCTAssertEqual(ble.sentQueuedRemaining, [2])
+    }
 }

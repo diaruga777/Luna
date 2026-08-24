@@ -64,6 +64,7 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         var sentQueuedRemaining: [Int?] = []
         var wifiRequests = 0
         var deleted: [String] = []
+        var sendError: Error?
         private(set) var scanCount = 0
         let offer = XteinkWiFiOffer(mode: .ap, ssid: "Xteink-X3", passphrase: "secret-pass", host: "192.168.4.1")
         func beginRendezvousScan() { scanCount += 1 }
@@ -72,6 +73,7 @@ final class XteinkCrossPointTransferTests: XCTestCase {
             articleID: UUID?, queuedRemaining: Int?,
             progress: @escaping @Sendable (XteinkSyncProgress) -> Void
         ) async throws {
+            if let sendError { throw sendError }
             sent.append((epub, fileName))
             sentArticleIDs.append(articleID)
             sentQueuedRemaining.append(queuedRemaining)
@@ -259,6 +261,35 @@ final class XteinkCrossPointTransferTests: XCTestCase {
         } catch { XCTFail("unexpected error \(error)") }
         XCTAssertLessThan(Date().timeIntervalSince(start), 1, "must not wait for a rendezvous to appear")
         XCTAssertEqual(ble.scanCount, 0, "enqueue-only must never kick a scan on the phone's behalf")
+    }
+
+    /// The reader refuses to overwrite a file already in /Books ("exists").
+    /// The book IS on the device, so the destination must count the send
+    /// delivered — retrying could only ever fail the same way, and used to
+    /// burn soft-failure retries into a terminal failure.
+    func testExistsOnTheReaderCountsAsDelivered() async throws {
+        let ble = BLE(); ble.sendError = XteinkSyncError.protocolError("exists")
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must go over BLE") },
+            notifier: Notifier(), isForeground: { true })
+        let destination = XteinkDestination(crossPoint: router)
+        try await destination.send(epubData: Data("article".utf8), fileName: "a.epub", title: "A")
+    }
+
+    /// Enabled but unpaired is a missing setup step, not a broken delivery:
+    /// the send defers (item stays queued at no retry cost) instead of
+    /// accruing failures while the user hasn't paired yet.
+    func testMissingPairingDefersInsteadOfFailing() async {
+        let ble = BLE(); ble.sendError = XteinkSyncError.pairingRequired
+        let router = XteinkCrossPointTransferRouter(
+            ble: ble, wifi: WiFi(), uploader: Uploader { _, _, _ in XCTFail("must go over BLE") },
+            notifier: Notifier(), isForeground: { true })
+        let destination = XteinkDestination(crossPoint: router)
+        do {
+            try await destination.send(epubData: Data("article".utf8), fileName: "a.epub", title: "A")
+            XCTFail("must defer")
+        } catch is XteinkRendezvousUnavailableError {
+        } catch { XCTFail("unexpected error \(error)") }
     }
 
     // MARK: - article_id / queue_remaining on the wire

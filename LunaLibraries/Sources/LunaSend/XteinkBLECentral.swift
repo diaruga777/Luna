@@ -33,6 +33,11 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     private var pendingWiFi: CheckedContinuation<XteinkWiFiOffer, Error>?
     private var active = false
     private var cancelling = false
+    /// A pending connect to the known reader. CoreBluetooth keeps it open
+    /// indefinitely and completes it the instant the reader advertises, so a
+    /// wake window is never lost to a scan-discovery race. Retained because
+    /// an unretained CBPeripheral cancels its own pending connect.
+    private var standingConnect: CBPeripheral?
     /// Sticky for the current session once any status names a read-report
     /// window (`"win":"rr"`) — every status in such a window carries it, so
     /// one sighting is enough. Cleared on disconnect/session end.
@@ -70,7 +75,15 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// Settings' first-use pairing UI supplies the verified one-time secret.
     /// The subsequent `hello` reads it from the App-Group Keychain.
     public func savePairingSecret(_ secret: String) { pairingStore.save(secret, for: hostID) }
-    public func forgetPairing() { pairingStore.removeCredential(for: hostID) }
+    public func forgetPairing() {
+        pairingStore.removeCredential(for: hostID)
+        XteinkSendSettings.pairedPeripheralID = nil
+        queue.async { [weak self] in
+            guard let self, let standing = self.standingConnect else { return }
+            self.central.cancelPeripheralConnection(standing)
+            self.standingConnect = nil
+        }
+    }
     /// Whether a pairing secret exists — the settings screen's paired badge.
     public var isPaired: Bool { pairingStore.credential(for: hostID) != nil }
 
@@ -112,6 +125,10 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
             guard let self else { return }
             self.central.stopScan()
             if let peripheral = self.peripheral { self.central.cancelPeripheralConnection(peripheral) }
+            if let standing = self.standingConnect {
+                self.central.cancelPeripheralConnection(standing)
+                self.standingConnect = nil
+            }
             self.clearConnection()
         }
     }
@@ -290,6 +307,17 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
             central.connect(connected)
             return
         }
+        // Standing connect to the known reader (see `standingConnect`). The
+        // scan still runs alongside it, for a reader whose address changed or
+        // that this install has never seen.
+        if standingConnect == nil,
+           let stored = XteinkSendSettings.pairedPeripheralID,
+           let identifier = UUID(uuidString: stored),
+           let known = central.retrievePeripherals(withIdentifiers: [identifier]).first {
+            standingConnect = known
+            known.delegate = self
+            central.connect(known)
+        }
         central.scanForPeripherals(withServices: [XteinkSyncProtocol.service], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
 
@@ -328,6 +356,16 @@ extension XteinkBLECentral: CBCentralManagerDelegate {
         central.connect(peripheral)
     }
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        // The standing connect delivers here with `self.peripheral` still nil;
+        // adopt whichever path won and retire the other.
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        if let standing = standingConnect, standing !== peripheral {
+            central.cancelPeripheralConnection(standing)
+        }
+        standingConnect = nil
+        central.stopScan()
+        XteinkSendSettings.pairedPeripheralID = peripheral.identifier.uuidString
         peripheral.discoverServices([XteinkSyncProtocol.service])
     }
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {

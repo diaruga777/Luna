@@ -16,6 +16,7 @@ public enum XteinkSendSettings {
 
     private static let enabledKey = "xteinkEnabled"
     private static let modeKey = "xteinkSendMode"
+    private static let peripheralIDKey = "xteinkPeripheralID"
 
     /// Overridable so tests can drive both halves of the read-through without
     /// touching the real container. Production code never sets it.
@@ -41,6 +42,15 @@ public enum XteinkSendSettings {
                 .flatMap(ArticleSendMode.init(rawValue:)) ?? .allSaves
         }
         set { defaults.set(newValue.rawValue, forKey: modeKey) }
+    }
+
+    /// The reader's CoreBluetooth identifier from the last successful
+    /// connection. `XteinkBLECentral` keeps a standing connect to it, which
+    /// completes the instant the reader advertises — no scan-discovery race —
+    /// and survives ordinary app termination through state restoration.
+    public static var pairedPeripheralID: String? {
+        get { defaults.string(forKey: peripheralIDKey) }
+        set { defaults.set(newValue, forKey: peripheralIDKey) }
     }
 
     public static var isConfigured: Bool { isEnabled }

@@ -72,6 +72,8 @@ public final class XteinkDestination: ArticleDestination {
         } catch XteinkSyncError.unavailable {
             // No live rendezvous is not a failed delivery. Keep the item
             // queued so the reader's next Luna Sync window can collect it.
+            SharedDiagnosticLog.record(
+                "\(fileName) queued — no rendezvous active", category: "xteink")
             throw XteinkRendezvousUnavailableError()
         } catch XteinkSyncError.pairingRequired {
             // Enabled but not (yet) paired on this device. Not a failure

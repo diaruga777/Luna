@@ -63,6 +63,25 @@ public struct SavedItem: Identifiable, Equatable {
         case failed
     }
 
+    /// Lifecycle of the exact remote file a destination delivered, for a
+    /// destination that tracks one (Xteink). Absent (the dictionary key is
+    /// missing) means nothing has been delivered yet, or the destination
+    /// doesn't track remote files.
+    public enum RemoteDeleteStatus: String, Codable {
+        /// Delivered and not read since. An in-app read schedules its removal
+        /// unless the send was immune (queued while already read).
+        case delivered
+        /// The reader itself reported this article finished — it already
+        /// files the book away on its own, so Luna must never also queue a
+        /// remote delete for it.
+        case readOnDevice
+        /// The user finished it in Luna; the next non-read-report rendezvous
+        /// should send `delete` for the stored remote name.
+        case deletePending
+        /// The device confirmed removal (or reported the file already gone).
+        case deleted
+    }
+
     public let id: UUID
     public var urlString: String
     public var title: String?
@@ -136,6 +155,17 @@ public struct SavedItem: Identifiable, Equatable {
     public var sendNextAttemptDates: [String: Date]
     /// Last delivery error detail for each destination, used for diagnostics.
     public var sendLastErrors: [String: String]
+    /// Whether this item's `readState` was already `.read` at the moment a
+    /// destination's send was queued. A deliberate resend of an already-read
+    /// article is exempt from both dequeue-on-read and delete-on-read for
+    /// that destination — the user asked for it on purpose.
+    public var sendQueuedWhileRead: [String: Bool]
+    /// The exact basename delivered to each destination, after that
+    /// destination's own filename sanitization — the identity a later remote
+    /// delete targets.
+    public var sendRemoteNames: [String: String]
+    /// Lifecycle of the delivered remote file at each destination.
+    public var sendRemoteStatuses: [String: RemoteDeleteStatus]
     /// When the user last pressed save for this URL while it was already in the
     /// list (the double-save-to-send detection window).
     public var lastSaveAttemptDate: Date?
@@ -210,6 +240,13 @@ public struct SavedItem: Identifiable, Equatable {
     public func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
     /// Last delivery time for one destination.
     public func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
+    /// Whether this item was already `.read` when its current/last send to
+    /// this destination was queued. False when never recorded.
+    public func queuedWhileRead(for destinationID: String) -> Bool { sendQueuedWhileRead[destinationID] ?? false }
+    /// The exact remote basename delivered to this destination, if any.
+    public func remoteName(for destinationID: String) -> String? { sendRemoteNames[destinationID] }
+    /// Lifecycle of the delivered remote file at this destination, if any.
+    public func remoteDeleteStatus(for destinationID: String) -> RemoteDeleteStatus? { sendRemoteStatuses[destinationID] }
 
     public init(urlString: String, id: UUID = UUID()) {
         self.id = id
@@ -240,6 +277,9 @@ public struct SavedItem: Identifiable, Equatable {
         self.sendFailureCounts = [:]
         self.sendNextAttemptDates = [:]
         self.sendLastErrors = [:]
+        self.sendQueuedWhileRead = [:]
+        self.sendRemoteNames = [:]
+        self.sendRemoteStatuses = [:]
         self.lastSaveAttemptDate = nil
         self.platform = nil
         self.platformItemID = nil
@@ -300,6 +340,9 @@ public struct SavedItem: Identifiable, Equatable {
         self.sendFailureCounts = [:]
         self.sendNextAttemptDates = [:]
         self.sendLastErrors = [:]
+        self.sendQueuedWhileRead = [:]
+        self.sendRemoteNames = [:]
+        self.sendRemoteStatuses = [:]
         self.lastSaveAttemptDate = nil
         self.platform = platform
         self.platformItemID = platformItemID

@@ -66,6 +66,15 @@ enum SavesSchema {
                         "ALTER TABLE media_download_jobs "
                             + "ADD COLUMN background_session_identifier TEXT")
                 }
+                // Read-driven Xteink queue/delete tracking. CREATE TABLE above
+                // handles a fresh database; an existing `send_states` table
+                // needs the three additive columns explicitly, one ALTER per
+                // column since SQLite allows only one per statement.
+                if try sendStatesNeedRemoteDeleteBookkeeping(in: database) {
+                    try database.execute("ALTER TABLE send_states ADD COLUMN queued_while_read INTEGER")
+                    try database.execute("ALTER TABLE send_states ADD COLUMN remote_name TEXT")
+                    try database.execute("ALTER TABLE send_states ADD COLUMN remote_status TEXT")
+                }
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
                 // retirement. Preserve that fact before a reaper clears it.
@@ -144,6 +153,17 @@ enum SavesSchema {
         return !columns.contains("background_session_identifier")
     }
 
+    private static func sendStatesNeedRemoteDeleteBookkeeping(
+        in database: SavesDatabase
+    ) throws -> Bool {
+        var columns: Set<String> = []
+        try database.query("PRAGMA table_info(send_states)") { row in
+            if let name = row.string(1) { columns.insert(name) }
+        }
+        guard !columns.isEmpty else { return false }
+        return !columns.contains("remote_status")
+    }
+
     /// Whether an existing `preload_pages` table predates the full SQL index.
     /// Absence is a fresh/older database that `tables` creates normally; extra
     /// columns belong to a newer sibling and are deliberately tolerated.
@@ -217,18 +237,27 @@ enum SavesSchema {
             capture_source             TEXT
         ) WITHOUT ROWID;
 
-        -- The five per-destination send dictionaries, normalised: one row per
+        -- The per-destination send dictionaries, normalised: one row per
         -- destination a save has any send bookkeeping for. Each column is
         -- independently absent, which is what the dictionaries express (a
         -- delivered send clears its retry columns but keeps its date).
+        -- `queued_while_read`/`remote_name`/`remote_status` support a
+        -- destination that tracks a remote file's read/delete lifecycle
+        -- (Xteink); a destination that never records them leaves them NULL.
+        -- `remote_status` carries no CHECK constraint for the same reason no
+        -- enum column here does: an unrecognised value maps to "absent" in
+        -- Swift rather than failing a write from a newer sibling.
         CREATE TABLE IF NOT EXISTS send_states (
-            save_id           TEXT NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
-            destination       TEXT NOT NULL,
-            state             TEXT,
-            date_sent         REAL,
-            failure_count     INTEGER,
-            next_attempt_date REAL,
-            last_error        TEXT,
+            save_id            TEXT NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            destination        TEXT NOT NULL,
+            state              TEXT,
+            date_sent          REAL,
+            failure_count      INTEGER,
+            next_attempt_date  REAL,
+            last_error         TEXT,
+            queued_while_read  INTEGER,
+            remote_name        TEXT,
+            remote_status      TEXT,
             PRIMARY KEY (save_id, destination)
         ) WITHOUT ROWID;
 

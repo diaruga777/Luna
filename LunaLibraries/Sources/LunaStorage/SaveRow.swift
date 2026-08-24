@@ -134,15 +134,17 @@ enum SaveRow {
     // MARK: - send_states
 
     static let sendStateColumns =
-        "save_id, destination, state, date_sent, failure_count, next_attempt_date, last_error"
+        "save_id, destination, state, date_sent, failure_count, next_attempt_date, last_error, " +
+        "queued_while_read, remote_name, remote_status"
 
     static let insertSendStateSQL = """
-        INSERT INTO send_states (\(sendStateColumns)) VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO send_states (\(sendStateColumns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
-    /// Folds one `send_states` row into the five dictionaries the model exposes.
-    /// A state raw value this binary does not know leaves `sendStates` alone —
-    /// the destination's other bookkeeping still reads.
+    /// Folds one `send_states` row into the dictionaries the model exposes.
+    /// A raw value this binary does not know (a state, or `remote_status`)
+    /// leaves that one dictionary entry alone — the destination's other
+    /// bookkeeping still reads.
     static func applySendState(from row: SavesStatement, to item: inout SavedItem) {
         guard let destination = row.string(1) else { return }
         if let state = row.string(2).flatMap(SavedItem.SendState.init(rawValue:)) {
@@ -152,6 +154,11 @@ enum SaveRow {
         if let failureCount = row.int(4) { item.sendFailureCounts[destination] = failureCount }
         if let nextAttempt = row.date(5) { item.sendNextAttemptDates[destination] = nextAttempt }
         if let lastError = row.string(6) { item.sendLastErrors[destination] = lastError }
+        if let queuedWhileRead = row.int(7) { item.sendQueuedWhileRead[destination] = queuedWhileRead != 0 }
+        if let remoteName = row.string(8) { item.sendRemoteNames[destination] = remoteName }
+        if let remoteStatus = row.string(9).flatMap(SavedItem.RemoteDeleteStatus.init(rawValue:)) {
+            item.sendRemoteStatuses[destination] = remoteStatus
+        }
     }
 
     /// Every destination the save has any send bookkeeping for.
@@ -161,6 +168,9 @@ enum SaveRow {
         destinations.formUnion(item.sendFailureCounts.keys)
         destinations.formUnion(item.sendNextAttemptDates.keys)
         destinations.formUnion(item.sendLastErrors.keys)
+        destinations.formUnion(item.sendQueuedWhileRead.keys)
+        destinations.formUnion(item.sendRemoteNames.keys)
+        destinations.formUnion(item.sendRemoteStatuses.keys)
         return destinations.sorted()
     }
 
@@ -174,6 +184,9 @@ enum SaveRow {
         try row.bind(5, item.sendFailureCounts[destination])
         try row.bind(6, date: item.sendNextAttemptDates[destination])
         try row.bind(7, item.sendLastErrors[destination])
+        try row.bind(8, item.sendQueuedWhileRead[destination].map { $0 ? 1 : 0 })
+        try row.bind(9, item.sendRemoteNames[destination])
+        try row.bind(10, item.sendRemoteStatuses[destination]?.rawValue)
     }
 
     // MARK: - price_trackers

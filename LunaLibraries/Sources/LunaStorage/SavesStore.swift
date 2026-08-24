@@ -586,12 +586,20 @@ public final class SavesStore {
     }
 
     /// Updates a destination's delivery status; `.sent` also stamps the
-    /// destination's `datesSent` (the once-per-day resend guard).
+    /// destination's `datesSent` (the once-per-day resend guard). A fresh
+    /// transition into `.queued` (not already queued) stamps the immunity
+    /// flag from the item's CURRENT read state — a resend that starts from
+    /// some other state records whether the user is deliberately re-sending
+    /// something already read.
     public func setSendState(
         _ sendState: SavedItem.SendState, for itemID: UUID, destination: String
     ) {
         updateItem(itemID) { item in
+            let isFreshEnqueue = sendState == .queued && item.sendStates[destination] != .queued
             item.sendStates[destination] = sendState
+            if isFreshEnqueue {
+                item.sendQueuedWhileRead[destination] = item.readState == .read
+            }
             if sendState == .sent {
                 item.datesSent[destination] = Date()
                 item.sendFailureCounts[destination] = nil
@@ -604,10 +612,62 @@ public final class SavesStore {
 
     /// Marks a send as actively queued/in-flight without clearing accumulated
     /// retry metadata. If the app is killed mid-send, the queued state is retried
-    /// on a later sweep.
+    /// on a later sweep. See `setSendState` for the immunity-flag rule.
     public func markSendAttemptStarted(for itemID: UUID, destination: String) {
         updateItem(itemID) { item in
+            let isFreshEnqueue = item.sendStates[destination] != .queued
             item.sendStates[destination] = .queued
+            if isFreshEnqueue {
+                item.sendQueuedWhileRead[destination] = item.readState == .read
+            }
+            return true
+        }
+    }
+
+    /// Unqueues a still-pending send with no bookkeeping left behind — used
+    /// when the article was finished reading before delivery went out, so
+    /// there is nothing to retry.
+    public func clearSendState(for itemID: UUID, destination: String) {
+        updateItem(itemID) { item in
+            guard item.sendStates[destination] != nil else { return false }
+            item.sendStates[destination] = nil
+            item.sendFailureCounts[destination] = nil
+            item.sendNextAttemptDates[destination] = nil
+            item.sendLastErrors[destination] = nil
+            item.sendQueuedWhileRead[destination] = nil
+            return true
+        }
+    }
+
+    /// Records a successful delivery's exact remote basename, so a later
+    /// in-app read can target the same file for removal.
+    public func recordRemoteDelivery(for itemID: UUID, destination: String, remoteName: String) {
+        updateItem(itemID) { item in
+            item.sendRemoteNames[destination] = remoteName
+            item.sendRemoteStatuses[destination] = .delivered
+            return true
+        }
+    }
+
+    /// The reader itself reported this delivery's article finished — it
+    /// already filed the book away on its own, so the read reached by
+    /// `markFinishedReading` right after this call must never also queue a
+    /// remote delete. A no-op once the delivery has moved past `.delivered`
+    /// (already read on-device, already pending/deleted).
+    public func markRemoteDeliveryReadOnDevice(for itemID: UUID, destination: String) {
+        updateItem(itemID) { item in
+            guard item.sendRemoteStatuses[destination] == .delivered else { return false }
+            item.sendRemoteStatuses[destination] = .readOnDevice
+            return true
+        }
+    }
+
+    /// The device confirmed a pending remote delete (or reported the file
+    /// already gone, which counts the same).
+    public func markRemoteDeliveryDeleted(for itemID: UUID, destination: String) {
+        updateItem(itemID) { item in
+            guard item.sendRemoteStatuses[destination] != .deleted else { return false }
+            item.sendRemoteStatuses[destination] = .deleted
             return true
         }
     }
@@ -730,6 +790,18 @@ public final class SavesStore {
             }
             if item.archivedAt == nil, item.pendingArchiveAt == nil {
                 item.pendingArchiveAt = date
+                changed = true
+            }
+            // A delivered remote copy the user did not deliberately re-send
+            // while already read (the immunity flag) is now stale — schedule
+            // its removal on the reader's next window. A device-reported
+            // finish already moved the delivery to `.readOnDevice` before
+            // this call (see `markRemoteDeliveryReadOnDevice`), so it never
+            // matches `.delivered` here and is left alone: the reader already
+            // files that book away on its own.
+            let deliveredDestinations = item.sendRemoteStatuses.filter { $0.value == .delivered }.keys
+            for destination in deliveredDestinations where !item.queuedWhileRead(for: destination) {
+                item.sendRemoteStatuses[destination] = .deletePending
                 changed = true
             }
             return changed
@@ -2105,6 +2177,9 @@ public final class SavesStore {
             || lhs.sendFailureCounts != rhs.sendFailureCounts
             || lhs.sendNextAttemptDates != rhs.sendNextAttemptDates
             || lhs.sendLastErrors != rhs.sendLastErrors
+            || lhs.sendQueuedWhileRead != rhs.sendQueuedWhileRead
+            || lhs.sendRemoteNames != rhs.sendRemoteNames
+            || lhs.sendRemoteStatuses != rhs.sendRemoteStatuses
     }
 
     private func writeTracker(

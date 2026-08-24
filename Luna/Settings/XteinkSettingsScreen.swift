@@ -8,19 +8,23 @@ import CoreBluetooth
 import LunaDesignSystem
 import LunaModels
 import LunaSend
-import LunaStorage
 import Security
 import UIKit
 
-/// Send-to-Xteink settings: the enable switch, BLE pairing, per-source
-/// auto-send, and a manual sweep of everything queued. Unlike Kindle there is
-/// no email prerequisite — delivery goes over the CrossPoint BLE rendezvous or
-/// a same-network Wi-Fi upload.
+/// Send-to-Xteink settings: the enable switch, BLE pairing, and per-source
+/// auto-send. Delivery is device-initiated — the reader collects queued sends
+/// only when it opens a Luna Sync window — so there is no phone-side "transfer
+/// now" row.
 final class XteinkSettingsScreen: NavHeaderTableController {
 
-    private enum Section: Int, CaseIterable { case setup, transfer }
-    private enum SetupRow: Int, CaseIterable { case enable, pair, autoSend }
-    private enum TransferRow: Int, CaseIterable { case transferNow }
+    private enum Section: Int, CaseIterable { case setup }
+    private enum SetupRow: Equatable { case enable, pair, autoSend, unpair }
+
+    private var setupRows: [SetupRow] {
+        var rows: [SetupRow] = [.enable, .pair, .autoSend]
+        if XteinkBLECentral.shared.isPaired { rows.append(.unpair) }
+        return rows
+    }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -35,69 +39,53 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch Section(rawValue: section)! {
-        case .setup: return SetupRow.allCases.count
-        case .transfer: return TransferRow.allCases.count
-        }
+        setupRows.count
     }
 
     override func tableView(
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
-        switch Section(rawValue: section)! {
-        case .setup: return L10n.string("Common_sendToXteink")
-        case .transfer: return L10n.string("Settings_xteink_transferSectionHeader")
-        }
+        L10n.string("Common_sendToXteink")
     }
 
     override func tableView(
         _ tableView: UITableView, titleForFooterInSection section: Int
     ) -> String? {
-        switch Section(rawValue: section)! {
-        case .setup: return L10n.string("Settings_xteink_setupFooter")
-        case .transfer: return nil
-        }
+        L10n.string("Settings_xteink_setupFooter")
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        switch Section(rawValue: indexPath.section)! {
-        case .setup:
-            switch SetupRow(rawValue: indexPath.row)! {
-            case .enable: return enableCell()
-            case .pair:
-                let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-                var content = cell.defaultContentConfiguration()
-                content.text = L10n.string("Settings_xteink_pairRow")
-                let paired = XteinkBLECentral.shared.isPaired
-                content.secondaryText = L10n.string(paired ? "Settings_xteink_pairedDetail" : "Settings_xteink_pairDetail")
-                if paired {
-                    let badge = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
-                    badge.tintColor = .systemGreen
-                    cell.accessoryView = badge
-                } else {
-                    cell.accessoryType = .disclosureIndicator
-                }
-                cell.contentConfiguration = content
-                return cell
-            case .autoSend:
-                let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-                var content = cell.defaultContentConfiguration()
-                content.text = L10n.string("Settings_xteink_autoSendRow")
-                cell.contentConfiguration = content
+        switch setupRows[indexPath.row] {
+        case .enable: return enableCell()
+        case .pair:
+            let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("Settings_xteink_pairRow")
+            let paired = XteinkBLECentral.shared.isPaired
+            content.secondaryText = L10n.string(paired ? "Settings_xteink_pairedDetail" : "Settings_xteink_pairDetail")
+            if paired {
+                let badge = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+                badge.tintColor = .systemGreen
+                cell.accessoryView = badge
+            } else {
                 cell.accessoryType = .disclosureIndicator
-                return cell
             }
-        case .transfer:
+            cell.contentConfiguration = content
+            return cell
+        case .autoSend:
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             var content = cell.defaultContentConfiguration()
-            content.textProperties.color = view.tintColor ?? .systemBlue
-            switch TransferRow(rawValue: indexPath.row)! {
-            case .transferNow:
-                content.text = L10n.string("Settings_xteink_transferNowRow")
-                content.image = UIImage(systemName: "arrow.up.doc")
-            }
+            content.text = L10n.string("Settings_xteink_autoSendRow")
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
+            return cell
+        case .unpair:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("Settings_xteink_unpairRow")
+            content.textProperties.color = .systemRed
             cell.contentConfiguration = content
             return cell
         }
@@ -105,22 +93,16 @@ final class XteinkSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch Section(rawValue: indexPath.section)! {
-        case .setup:
-            switch SetupRow(rawValue: indexPath.row)! {
-            case .pair: presentPairingPrompt()
-            case .autoSend:
-                navigationController?.pushViewController(
-                    AutoSendBySourceScreen(
-                        destinationID: ArticleDestinationID.xteink,
-                        destinationName: L10n.string("Common_xteink")),
-                    animated: true)
-            case .enable: break
-            }
-        case .transfer:
-            switch TransferRow(rawValue: indexPath.row)! {
-            case .transferNow: transferPendingNow()
-            }
+        switch setupRows[indexPath.row] {
+        case .pair: presentPairingPrompt()
+        case .autoSend:
+            navigationController?.pushViewController(
+                AutoSendBySourceScreen(
+                    destinationID: ArticleDestinationID.xteink,
+                    destinationName: L10n.string("Common_xteink")),
+                animated: true)
+        case .unpair: presentUnpairConfirmation()
+        case .enable: break
         }
     }
 
@@ -186,7 +168,7 @@ final class XteinkSettingsScreen: NavHeaderTableController {
                 try await self?.accessorySession.showPicker(for: [item])
             } catch {
                 self?.presentInfoAlert(
-                    title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+                    title: L10n.string("Settings_xteink_pairFailedTitle"), message: "\(error)")
             }
         }
     }
@@ -239,7 +221,7 @@ final class XteinkSettingsScreen: NavHeaderTableController {
                 settle(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
             } catch {
                 XteinkBLECentral.shared.endRendezvous()
-                settle(title: L10n.string("Settings_email_testSendFailedTitle"), message: "\(error)")
+                settle(title: L10n.string("Settings_xteink_pairFailedTitle"), message: "\(error)")
             }
         }
     }
@@ -277,19 +259,21 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func transferPendingNow() {
-        let pending = SavesStore.shared.items().filter {
-            $0.sendState(for: ArticleDestinationID.xteink) == .queued
-        }.count
-        guard pending > 0 else {
-            presentInfoAlert(
-                title: L10n.string("Settings_xteink_nothingPendingTitle"),
-                message: L10n.string("Settings_xteink_nothingPendingMessage"))
-            return
-        }
-        ArticleSendCoordinator.shared.retryPendingSends()
-        presentInfoAlert(
-            title: L10n.string("Settings_xteink_transferQueuedTitle"),
-            message: L10n.string("Settings_xteink_transferQueuedMessage", pending))
+    private func presentUnpairConfirmation() {
+        let alert = UIAlertController(
+            title: L10n.string("Settings_xteink_unpairTitle"),
+            message: L10n.string("Settings_xteink_unpairMessage"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("Settings_xteink_unpairConfirm"), style: .destructive) {
+            [weak self] _ in
+            self?.unpair()
+        })
+        present(alert, animated: true)
+    }
+
+    private func unpair() {
+        XteinkBLECentral.shared.forgetPairing()
+        XteinkSendSettings.isEnabled = false
+        tableView.reloadData()
     }
 }

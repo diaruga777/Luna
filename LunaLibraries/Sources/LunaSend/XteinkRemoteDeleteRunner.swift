@@ -15,7 +15,9 @@ import LunaStorage
 public enum XteinkRemoteDeleteRunner {
 
     /// One at a time through the existing `delete` control op / op-ack
-    /// machinery. A delete left pending after a protocol error just waits for
+    /// machinery, riding `XteinkRendezvousTransferQueue` so a delete's
+    /// control op can never interleave with a transfer's on the one GATT
+    /// session. A delete left pending after a protocol error just waits for
     /// the next window — the caller does not need to know which ones stuck.
     public static func drainPendingDeletes(
         ble: any XteinkBLETransporting = XteinkBLECentral.shared,
@@ -27,8 +29,11 @@ public enum XteinkRemoteDeleteRunner {
                   let remoteName = item.remoteName(for: destination)
             else { continue }
             do {
-                try await ble.delete(remotePath: remoteName)
+                try await XteinkRendezvousTransferQueue.shared.run {
+                    try await ble.delete(remotePath: remoteName)
+                }
                 store.markRemoteDeliveryDeleted(for: item.id, destination: destination)
+                SharedDiagnosticLog.record("Deleted \(remoteName) from the reader", category: "xteink")
             } catch {
                 guard isMissingFileError(error) else { continue }
                 // The device treats a missing file as its own success ack, so

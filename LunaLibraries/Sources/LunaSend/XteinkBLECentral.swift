@@ -25,7 +25,10 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     private var control: CBCharacteristic?
     private var dataIn: CBCharacteristic?
     private var status: CBCharacteristic?
-    private var pendingControl: (operation: String, continuation: CheckedContinuation<Void, Error>)?
+    private var pendingControl: (token: UInt64, operation: String, continuation: CheckedContinuation<Void, Error>)?
+    /// Monotonic id for `pendingControl`, so a timed-out operation's deadline
+    /// closure can never fail a LATER operation that reused the same name.
+    private var controlToken: UInt64 = 0
     private var readyToWrite: CheckedContinuation<Void, Never>?
     private var pendingWiFi: CheckedContinuation<XteinkWiFiOffer, Error>?
     private var active = false
@@ -226,10 +229,20 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
                 guard let self, let peripheral = self.peripheral, let control = self.control else {
                     return continuation.resume(throwing: XteinkSyncError.unavailable)
                 }
-                self.pendingControl = (operation, continuation)
+                // One op_ack slot: overwriting an occupied slot would orphan
+                // the earlier continuation, hanging its task forever. Callers
+                // are serialized through `XteinkRendezvousTransferQueue`; this
+                // turns any residual race into a visible failure instead.
+                guard self.pendingControl == nil else {
+                    return continuation.resume(throwing: XteinkSyncError.protocolError(
+                        "control channel busy (\(self.pendingControl?.operation ?? "?") still pending)"))
+                }
+                self.controlToken &+= 1
+                let token = self.controlToken
+                self.pendingControl = (token, operation, continuation)
                 peripheral.writeValue(data, for: control, type: .withResponse)
                 self.queue.asyncAfter(deadline: .now() + Self.controlTimeout) { [weak self] in
-                    guard let self, self.pendingControl?.operation == operation else { return }
+                    guard let self, self.pendingControl?.token == token else { return }
                     let pending = self.pendingControl; self.pendingControl = nil
                     pending?.continuation.resume(throwing: XteinkSyncError.protocolError("timed out waiting for \(operation) ACK"))
                 }
@@ -267,6 +280,16 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
 
     private func scanIfReady() {
         guard central.state == .poweredOn, peripheral == nil else { return }
+        // The X3 stops advertising the moment ANY central holds its link —
+        // including the sibling Luna app's central or a system-restored
+        // connection — and a scan can never discover a connected peripheral.
+        // Ask the system for it directly before falling back to a scan.
+        if let connected = central.retrieveConnectedPeripherals(withServices: [XteinkSyncProtocol.service]).first {
+            peripheral = connected
+            connected.delegate = self
+            central.connect(connected)
+            return
+        }
         central.scanForPeripherals(withServices: [XteinkSyncProtocol.service], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
 
@@ -361,8 +384,19 @@ extension XteinkBLECentral: CBPeripheralDelegate {
         // sends, so it must land before that observer can fire off `nonce`.
         if status.isReadReportWindow { readReportOnlyWindow = true }
         if let initialNonce = status.nonce {
+            // The reader repeats the (constant per-connection) nonce in every
+            // transfer status, so ready must post only on the FIRST sighting —
+            // one sweep per rendezvous. `clearConnection` resets the nonce, so
+            // a reconnect inside the same reader window posts again.
+            let firstNonceThisConnection = nonce == nil
             nonce = initialNonce
-            DispatchQueue.main.async { NotificationCenter.default.post(name: .xteinkRendezvousReady, object: self) }
+            if firstNonceThisConnection {
+                SharedDiagnosticLog.record(
+                    readReportOnlyWindow
+                        ? "Rendezvous ready (read-report window)" : "Rendezvous ready",
+                    category: "xteink")
+                DispatchQueue.main.async { NotificationCenter.default.post(name: .xteinkRendezvousReady, object: self) }
+            }
         }
         if let received = status.received { checkpoint.offset = received }
         if let offset = status.resumeOffset { checkpoint.offset = offset }
@@ -391,6 +425,7 @@ extension XteinkBLECentral: CBPeripheralDelegate {
     /// `sendControl`'s `pendingControl` slot, which a concurrent sweep
     /// operation may already own.
     private func handleReadIDs(_ ids: [UUID]) {
+        SharedDiagnosticLog.record("Reader reported \(ids.count) finished book(s)", category: "xteink")
         for id in ids { SavesStore.shared.markRemoteDeliveryReadOnDevice(for: id, destination: ArticleDestinationID.xteink) }
         for id in ids { SavesStore.shared.markFinishedReading(id) }
         guard let data = try? XteinkSyncProtocol.controlData(

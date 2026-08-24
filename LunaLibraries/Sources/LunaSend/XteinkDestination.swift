@@ -68,10 +68,30 @@ public final class XteinkDestination: ArticleDestination {
                     epubData, fileName: fileName, title: title,
                     articleID: articleID, queuedRemaining: queuedRemaining)
             }
+            SharedDiagnosticLog.record("Delivered \(fileName)", category: "xteink")
         } catch XteinkSyncError.unavailable {
             // No live rendezvous is not a failed delivery. Keep the item
             // queued so the reader's next Luna Sync window can collect it.
+            SharedDiagnosticLog.record(
+                "\(fileName) queued — no rendezvous active", category: "xteink")
             throw XteinkRendezvousUnavailableError()
+        } catch XteinkSyncError.pairingRequired {
+            // Enabled but not (yet) paired on this device. Not a failure
+            // either: pairing is the missing setup step, not a broken send,
+            // so the item waits queued at no retry cost.
+            SharedDiagnosticLog.record(
+                "Send deferred: no pairing secret on this device", category: "xteink")
+            throw XteinkRendezvousUnavailableError()
+        } catch XteinkSyncError.protocolError(let message) where message == "exists" {
+            // The reader refuses to overwrite a file already in /Books — the
+            // book IS on the device (an earlier delivery Luna failed to
+            // record, or a deliberate re-send). Retrying can never succeed,
+            // so count it delivered.
+            SharedDiagnosticLog.record(
+                "\(fileName) already on the reader — recorded as delivered", category: "xteink")
+        } catch {
+            SharedDiagnosticLog.record("Send of \(fileName) failed: \(error)", category: "xteink")
+            throw error
         }
     }
 }

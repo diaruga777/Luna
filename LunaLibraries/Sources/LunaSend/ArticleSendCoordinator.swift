@@ -268,6 +268,23 @@ public final class ArticleSendCoordinator {
         }
     }
 
+    /// Delivers every still-queued send for one destination, one at a time,
+    /// and returns when the queue is drained — the Xteink rendezvous sweep's
+    /// entry point. Backoff dates are ignored: backoff exists to stop
+    /// unattended sweeps from hammering an unreachable receiver, and this
+    /// runs only while the receiving device holds a live window open.
+    /// (Terminal `.failed` items are not `.queued` and stay untouched.)
+    public func deliverQueuedSends(toDestinationID id: String) async {
+        guard let destination = destination(id: id), destination.isConfigured else { return }
+        let queued = store.items().filter { $0.sendState(for: id) == .queued }
+        guard !queued.isEmpty else { return }
+        SharedDiagnosticLog.record(
+            "Rendezvous sweep: delivering \(queued.count) queued send(s)", category: "xteink")
+        for item in queued {
+            await sendBuildingEPUB(item, to: destination, respectBackoff: false)
+        }
+    }
+
     /// Retries queued sends whose backoff has elapsed across all destinations.
     public func retryPendingSends() {
         for item in store.items() {

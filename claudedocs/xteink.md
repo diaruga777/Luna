@@ -65,7 +65,16 @@ offers **Unpair** (shown only once paired): a confirm alert clears the
 Keychain pairing and flips the enable switch off.
 
 Control operations await status `op_ack` rather than treating a successful
-GATT write as success. `start_put` supplies `chunk_size`, `resume: true`, and
+GATT write as success. The one in-flight `op_ack` slot refuses a second
+concurrent control op ("control channel busy") rather than orphaning the
+first continuation — callers are serialized through
+`XteinkRendezvousTransferQueue` (sends, deletes, and the sweep's `no_work`
+alike), so the refusal is a backstop that turns a residual race into a
+visible failure instead of a task hung forever. A `start_put` answered with
+`exists` counts as DELIVERED: the reader refuses to overwrite a file already
+in /Books, so the book is on the device and a retry could only fail the same
+way. A missing pairing secret defers (item stays queued, no retry cost) the
+same way a missing rendezvous does — pairing is setup, not a failed send. `start_put` supplies `chunk_size`, `resume: true`, and
 — new — optional `article_id` (the save's lowercase UUID string) and
 `queue_remaining` (how many OTHER items are still queued for this destination,
 computed by `ArticleSendCoordinator.deliver` and carried through
@@ -92,7 +101,25 @@ response as authoritative and the custom X3 firmware rejects zero-byte files.
 
 `XteinkRendezvousSweepPolicy.rendezvousBecameReady` is the ONE copy of the
 decision both `KindWiring+Luna` and `KindWiring+Reader` used to duplicate
-inline, registered on `.xteinkRendezvousReady`:
+inline, registered on `.xteinkRendezvousReady`. `.xteinkRendezvousReady`
+posts ONCE per connection — on the first status carrying the nonce, not on
+the later transfer statuses that repeat it — so exactly one sweep task runs
+per window.
+
+**One process sweeps a window.** The central Luna app and the Reader both run
+a live `XteinkBLECentral` against the one shared store, and iOS shares the
+one physical BLE link, so BOTH processes can see the same window become
+ready. Two concurrent sweeps interleave duplicate control ops and data
+frames on the one GATT session and the reader kills the transfer
+(`resume_mismatch`/`sequence`). The whole sweep therefore runs under
+`XteinkRendezvousSweepLock` — an App-Group `flock`, kernel-released if the
+holder dies — and the losing process stays completely silent (it does not
+even answer `no_work`; the owner concludes the window). For the same reason,
+`scanIfReady` asks `retrieveConnectedPeripherals(withServices:)` before
+scanning: a peripheral another process (or the system) already holds has
+stopped advertising and a scan can never find it.
+
+The winning sweep is a single sequential task:
 
 1. A **read-report-only window** (`XteinkBLECentral.isReadReportOnlyWindow`,
    sticky for the session once any status carries `"win":"rr"`) never
@@ -102,9 +129,22 @@ inline, registered on `.xteinkRendezvousReady`:
 2. Otherwise: `XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery`
    runs first (see "Read-driven queue and delete" below), then
    `XteinkRemoteDeleteRunner.drainPendingDeletes` runs UNCONDITIONALLY — a
-   pending delete is not gated behind "is there also a send" — and finally
-   the existing queued-send sweep (`ArticleShellWiring.retryPendingSends()`)
-   runs if anything is still queued, or `reportNoWork()` otherwise.
+   pending delete is not gated behind "is there also a send" — then
+   `ArticleSendCoordinator.deliverQueuedSends(toDestinationID:)` delivers
+   every still-queued Xteink send one at a time and **ignores backoff
+   dates**: backoff exists to stop unattended sweeps from hammering an
+   unreachable receiver, and this sweep only runs while the reader holds a
+   live window open. (A backoff-respecting sweep was the silent wedge: one
+   transient failure scheduled a 15-minute backoff, after which every window
+   found "work" but attempted nothing and told the reader nothing, hanging
+   it at "Connected" until its 30 s idle cap.) Finally the sweep ALWAYS
+   sends `reportNoWork()` — even after failures — so the reader closes its
+   window instead of idling; the firmware latches `no_work` and finishes
+   once its own pending reads drain.
+
+Every step records to the shared diagnostic log under the `xteink` category
+(Settings → Diagnostics): rendezvous ready, sweep skips, per-send delivery /
+deferral / failure, delete drains, and an undeliverable `no_work`.
 
 ## Read-state handback
 
@@ -218,6 +258,8 @@ All in **LunaSend** (linked by the article-capable Reader app):
 - `XteinkRemoteDeleteRunner` — drains pending remote deletes.
 - `XteinkRendezvousSweepPolicy` — the one rendezvous-ready decision, shared
   by both `KindWiring`s.
+- `XteinkRendezvousSweepLock` — App-Group `flock` so only one Luna process
+  sweeps a given window.
 - `XteinkSendSettings` — App-Group enable and per-source auto-send settings.
 - `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
   based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
@@ -287,6 +329,10 @@ immunity flag (stamped only on a fresh enqueue, not a retry), delivery
 recording, in-app-finish delete-pending, and the device-reported exemption.
 `XteinkReadStateReconcilerTests` and `XteinkRemoteDeleteRunnerTests` cover the
 dequeue and delete-drain decisions directly; `XteinkRendezvousSweepPolicyTests`
-pin the read-report-only skip and that delete draining runs regardless of
-whether a send is also queued. `XteinkTransferSizePolicyTests` cover the
-inclusive 200 KiB boundary.
+pin the read-report-only skip, the reconcile→drain→deliver→`no_work` order,
+that a denied sweep lock runs nothing, and that a failed `no_work` still
+releases the lock; `XteinkRendezvousSweepLockTests` pin the mutual exclusion
+(two instances, one file). `ArticleSendCoordinatorTests` pin that
+`deliverQueuedSends` ignores backoff and drains everything; the transfer
+tests pin `exists`-as-delivered and missing-pairing-as-deferral.
+`XteinkTransferSizePolicyTests` cover the inclusive 200 KiB boundary.

@@ -6,6 +6,8 @@
 import CoreBluetooth
 import CryptoKit
 import Foundation
+import LunaModels
+import LunaStorage
 
 /// Background-restorable CoreBluetooth central for the short X3 rendezvous.
 ///
@@ -28,6 +30,10 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     private var pendingWiFi: CheckedContinuation<XteinkWiFiOffer, Error>?
     private var active = false
     private var cancelling = false
+    /// Sticky for the current session once any status names a read-report
+    /// window (`"win":"rr"`) — every status in such a window carries it, so
+    /// one sighting is enough. Cleared on disconnect/session end.
+    private var readReportOnlyWindow = false
     /// Last durable application checkpoint reported by the reader. A new
     /// `start_put` resumes from this offset after a link interruption.
     private var checkpoint = (offset: 0, sequence: UInt32(0))
@@ -51,6 +57,12 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     }
 
     public var isRendezvousActive: Bool { queue.sync { active && peripheral != nil && control != nil && dataIn != nil } }
+
+    /// Whether the current rendezvous session is a read-report-only window —
+    /// the device opened it purely to hand back finished-reading ids, and has
+    /// no send capacity this session. Rendezvous-ready observers use this to
+    /// skip the queued-send sweep and just answer `reportNoWork()`.
+    public var isReadReportOnlyWindow: Bool { queue.sync { readReportOnlyWindow } }
 
     /// Settings' first-use pairing UI supplies the verified one-time secret.
     /// The subsequent `hello` reads it from the App-Group Keychain.
@@ -155,8 +167,12 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         }
     }
 
+    /// A pending-delete drain can be the only thing a rendezvous does this
+    /// session (no book to send), so this authenticates on its own rather
+    /// than relying on `send`/`reportNoWork` having already done it.
     public func delete(remotePath: String) async throws {
         guard isRendezvousActive else { throw XteinkSyncError.unavailable }
+        try await authenticatedHello()
         try await sendControl("delete", values: ["name": remotePath])
     }
 
@@ -257,6 +273,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     private func clearConnection() {
         active = false
         nonce = nil
+        readReportOnlyWindow = false
         peripheral?.delegate = nil
         peripheral = nil; control = nil; dataIn = nil; status = nil
         pendingControl?.continuation.resume(throwing: XteinkSyncError.unavailable); pendingControl = nil
@@ -338,30 +355,50 @@ extension XteinkBLECentral: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == XteinkSyncProtocol.status, error == nil,
               let data = characteristic.value,
-              let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+              let status = XteinkStatusMessage.parse(data)
         else { return }
-        if let initialNonce = status["nonce"] as? String {
+        // `win` gates whether the rendezvous-ready observer sweeps queued
+        // sends, so it must land before that observer can fire off `nonce`.
+        if status.isReadReportWindow { readReportOnlyWindow = true }
+        if let initialNonce = status.nonce {
             nonce = initialNonce
             DispatchQueue.main.async { NotificationCenter.default.post(name: .xteinkRendezvousReady, object: self) }
         }
-        if let received = status["received"] as? Int { checkpoint.offset = received }
-        if let offset = status["resume_offset"] as? Int { checkpoint.offset = offset }
-        if let next = status["next_sequence"] as? Int { checkpoint.sequence = UInt32(clamping: next) }
-        if status["ok"] as? Bool == false || ((status["error"] as? String)?.isEmpty == false) {
-            let errorMessage = status["error"] as? String ?? "reader rejected operation"
+        if let received = status.received { checkpoint.offset = received }
+        if let offset = status.resumeOffset { checkpoint.offset = offset }
+        if let next = status.nextSequence { checkpoint.sequence = next }
+        if status.isFailure {
+            let errorMessage = status.error ?? "reader rejected operation"
             let pending = pendingControl; pendingControl = nil
             pending?.continuation.resume(throwing: XteinkSyncError.protocolError(errorMessage))
             resumeWiFi(throwing: XteinkSyncError.protocolError(errorMessage))
             return
         }
-        if let ack = status["op_ack"] as? String, pendingControl?.operation == ack {
+        if let ack = status.opAck, pendingControl?.operation == ack {
             let pending = pendingControl; pendingControl = nil
             pending?.continuation.resume()
         }
-        if let wifi = status["wifi"] as? [String: Any], let mode = wifi["mode"] as? String,
-           let offerMode = XteinkWiFiOffer.Mode(rawValue: mode), let ip = wifi["ip"] as? String {
-            resumeWiFi(XteinkWiFiOffer(mode: offerMode, ssid: wifi["ssid"] as? String ?? "",
-                                       passphrase: wifi["password"] as? String ?? "", host: ip))
+        if let wifi = status.wifi {
+            resumeWiFi(wifi)
+        }
+        if !status.readIDs.isEmpty {
+            handleReadIDs(status.readIDs)
+        }
+    }
+
+    /// The device is handing back finished-reading ids. Luna marks each save
+    /// read locally, then fires the ack as a plain GATT write — NOT through
+    /// `sendControl`'s `pendingControl` slot, which a concurrent sweep
+    /// operation may already own.
+    private func handleReadIDs(_ ids: [UUID]) {
+        for id in ids { SavesStore.shared.markRemoteDeliveryReadOnDevice(for: id, destination: ArticleDestinationID.xteink) }
+        for id in ids { SavesStore.shared.markFinishedReading(id) }
+        guard let data = try? XteinkSyncProtocol.controlData(
+            "read_ack", values: ["ids": ids.map { $0.uuidString.lowercased() }])
+        else { return }
+        queue.async { [weak self] in
+            guard let self, let peripheral = self.peripheral, let control = self.control else { return }
+            peripheral.writeValue(data, for: control, type: .withResponse)
         }
     }
 }

@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaModels
+import LunaStorage
 
 /// The Xteink destination: enqueue-only. A send never waits for or probes for
 /// a rendezvous — it attempts delivery immediately over whichever BLE/Wi-Fi
@@ -49,6 +50,12 @@ public final class XteinkDestination: ArticleDestination {
         try await send(
             epubData: epubData, fileName: fileName, title: title,
             articleID: context.itemID, queuedRemaining: context.queuedRemaining)
+        // The exact sanitized basename the router put on the wire, recorded
+        // so a later in-app read can target the same remote file for
+        // removal (see `XteinkRemoteDeleteRunner`).
+        SavesStore.shared.recordRemoteDelivery(
+            for: context.itemID, destination: id,
+            remoteName: XteinkCrossPointTransferRouter.x3FileName(fileName))
     }
 
     private func send(

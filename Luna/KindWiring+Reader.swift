@@ -112,20 +112,24 @@ enum KindWiring {
         // eligible for state restoration; it does no network work until that
         // rendezvous actually appears.
         XteinkBLECentral.shared.beginRendezvousScan()
+        XteinkReadStateReconciler.startObservingSaveChanges()
         if xteinkRendezvousObserver == nil {
             xteinkRendezvousObserver = NotificationCenter.default.addObserver(
                 forName: .xteinkRendezvousReady, object: nil, queue: .main
             ) { _ in
                 // A restored central can become ready long after launch's first
                 // sweep. This is the actual transfer trigger for a wake window.
-                let queued = SavesStore.shared.items().contains {
-                    $0.sendState(for: ArticleDestinationID.xteink) == .queued
-                }
-                if queued {
-                    ArticleShellWiring.retryPendingSends()
-                } else {
-                    Task { try? await XteinkBLECentral.shared.reportNoWork() }
-                }
+                XteinkRendezvousSweepPolicy.rendezvousBecameReady(
+                    isReadReportOnlyWindow: XteinkBLECentral.shared.isReadReportOnlyWindow,
+                    reconcileReadState: { XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery() },
+                    drainPendingDeletes: { await XteinkRemoteDeleteRunner.drainPendingDeletes() },
+                    hasQueuedSend: {
+                        SavesStore.shared.items().contains {
+                            $0.sendState(for: ArticleDestinationID.xteink) == .queued
+                        }
+                    },
+                    retryPendingSends: { ArticleShellWiring.retryPendingSends() },
+                    reportNoWork: { try await XteinkBLECentral.shared.reportNoWork() })
             }
         }
     }

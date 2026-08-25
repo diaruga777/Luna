@@ -30,6 +30,11 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// closure can never fail a LATER operation that reused the same name.
     private var controlToken: UInt64 = 0
     private var readyToWrite: CheckedContinuation<Void, Never>?
+    /// One paced sender waiting for the reader's next durable-receipt
+    /// checkpoint (see `XteinkTransferFlowControl`). Resumed by any status
+    /// carrying `received`/`resume_offset`, failed by an error status, a
+    /// dropped link, or `checkpointTimeout`.
+    private var checkpointWaiter: (token: UInt64, continuation: CheckedContinuation<Void, Error>)?
     private var pendingWiFi: CheckedContinuation<XteinkWiFiOffer, Error>?
     private var active = false
     private var cancelling = false
@@ -49,6 +54,9 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     private let pairingStore: any XteinkPairingStoring
     private let hostID: String
     private static let controlTimeout: TimeInterval = 15
+    /// Generous next to the ~200 ms a checkpoint interval takes on a healthy
+    /// link; only a wedged or silently-failed reader reaches it.
+    private static let checkpointTimeout: TimeInterval = 10
 
     public override convenience init() {
         self.init(pairingStore: XteinkKeychainPairingStore(), hostID: "luna-ios")
@@ -161,6 +169,12 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
             do { try Task.checkCancellation() } catch {
                 try? await sendControl("cancel")
                 throw XteinkSyncError.cancelled
+            }
+            while XteinkTransferFlowControl.shouldPause(
+                sentBytes: offset, confirmedBytes: await currentCheckpoint().offset,
+                totalBytes: epub.count
+            ) {
+                try await waitForCheckpointAdvance()
             }
             let count = min(maximum, epub.count - offset)
             let frame = XteinkSyncProtocol.frame(
@@ -284,6 +298,36 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         }
     }
 
+    private func waitForCheckpointAdvance() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [weak self] in
+                guard let self, self.peripheral != nil else {
+                    return continuation.resume(throwing: XteinkSyncError.unavailable)
+                }
+                guard self.checkpointWaiter == nil else {
+                    return continuation.resume(throwing: XteinkSyncError.protocolError("checkpoint waiter busy"))
+                }
+                self.controlToken &+= 1
+                let token = self.controlToken
+                self.checkpointWaiter = (token, continuation)
+                self.queue.asyncAfter(deadline: .now() + Self.checkpointTimeout) { [weak self] in
+                    guard let self, self.checkpointWaiter?.token == token else { return }
+                    let waiter = self.checkpointWaiter; self.checkpointWaiter = nil
+                    waiter?.continuation.resume(throwing: XteinkSyncError.protocolError("timed out waiting for reader checkpoint"))
+                }
+            }
+        }
+    }
+
+    private func resumeCheckpointWaiter(throwing error: Error? = nil) {
+        let waiter = checkpointWaiter; checkpointWaiter = nil
+        if let error {
+            waiter?.continuation.resume(throwing: error)
+        } else {
+            waiter?.continuation.resume()
+        }
+    }
+
     private func waitUntilReadyToWrite() async {
         await withCheckedContinuation { continuation in
             queue.async { [weak self] in
@@ -328,6 +372,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         peripheral?.delegate = nil
         peripheral = nil; control = nil; dataIn = nil; status = nil
         pendingControl?.continuation.resume(throwing: XteinkSyncError.unavailable); pendingControl = nil
+        resumeCheckpointWaiter(throwing: XteinkSyncError.unavailable)
         resumeWiFi(throwing: XteinkSyncError.unavailable)
         readyToWrite?.resume(); readyToWrite = nil
     }
@@ -443,8 +488,14 @@ extension XteinkBLECentral: CBPeripheralDelegate {
             let errorMessage = status.error ?? "reader rejected operation"
             let pending = pendingControl; pendingControl = nil
             pending?.continuation.resume(throwing: XteinkSyncError.protocolError(errorMessage))
+            resumeCheckpointWaiter(throwing: XteinkSyncError.protocolError(errorMessage))
             resumeWiFi(throwing: XteinkSyncError.protocolError(errorMessage))
             return
+        }
+        // Every non-failure status carries the reader's durable offset, so
+        // any of them can release a sender paused on flow control.
+        if status.received != nil || status.resumeOffset != nil {
+            resumeCheckpointWaiter()
         }
         if let ack = status.opAck, pendingControl?.operation == ack {
             let pending = pendingControl; pendingControl = nil

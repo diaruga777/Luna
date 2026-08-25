@@ -81,6 +81,17 @@ computed by `ArticleSendCoordinator.deliver` and carried through
 `ArticleSendContext`); an older reader tolerates their absence. Status
 `resume_offset`/`next_sequence` checkpoints permit an interrupted transfer to
 resume. Data frames have a 4-byte LE sequence header and commit with SHA-256.
+**The data stream is paced to the reader's durable-receipt checkpoints**
+(`XteinkTransferFlowControl`): iOS's `canSendWriteWithoutResponse` is local
+backpressure only, and an unpaced stream outran the X3's SD writes, overflowed
+its frame pool, and starved its allocator into an OOM `abort()` (measured:
+`lock_init_generic`, newlib locks.c:77). The sender stays within one 8 KiB
+checkpoint interval plus a 1 KiB margin of the reader's last confirmed
+`resume_offset`; a pause is released by any status carrying the offset,
+failed by an error status or a dropped link, and times out after 10 s. The
+firmware's matching hardening (frame pool, one-shot data-error latch,
+`low_memory` refusal at `start_put`) lives in
+`CrossPoint-Luna-X3/src/LunaSyncRendezvous.cpp`.
 
 When a rendezvous finds no queued Xteink saves (and no pending remote
 deletes — below), Luna authenticates then sends `no_work`, which lets the X3

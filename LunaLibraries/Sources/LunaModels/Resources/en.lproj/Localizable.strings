@@ -563,7 +563,7 @@
 "Settings_xteink_pairDetail_Luna" = "Tap to pair over Bluetooth";
 "Settings_xteink_pairedDetail_Luna" = "Paired. Tap to pair again.";
 "Settings_xteink_pairTitle_Luna" = "Pair Xteink";
-"Settings_xteink_pairMessage_Luna" = "Open File Transfer → Luna Sync on the reader, then continue. iOS asks you to confirm pairing once the reader appears.";
+"Settings_xteink_pairMessage_Luna" = "Open File Transfer → Pair Luna on the reader, then continue. iOS asks you to confirm pairing once the reader appears.";
 "Settings_xteink_pairConfirm_Luna" = "Continue";
 "Settings_xteink_pickerAccessoryName_Luna" = "Luna X3";
 "Settings_xteink_pairingProgressTitle_Luna" = "Pairing…";

@@ -8,6 +8,7 @@ import CoreBluetooth
 import LunaDesignSystem
 import LunaModels
 import LunaSend
+import LunaStorage
 import Security
 import UIKit
 
@@ -151,11 +152,20 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         present(alert, animated: true)
     }
 
+    /// True from the moment the picker reports a selection until that pairing
+    /// settles, so the picker path can tell "cancelled" from "selection made".
+    private var pairingInFlight = false
+
     /// Shows the system's AccessorySetupKit picker, scoped to the X3's sync
     /// service so it lists only readers that are advertising and in a
     /// bonding-ready state. Bonding itself happens automatically once the
     /// picker's selection triggers `didConnect` on an encrypted link — the
     /// reader initiates it, and iOS shows its native pairing sheet.
+    ///
+    /// The picker refuses to appear while the process holds any live
+    /// CBManager (ASErrorDomain code 550, "CBManagers active with global
+    /// permissions"), so the central is released for the picker's lifetime
+    /// and rebuilt afterwards on every exit path.
     private func showAccessoryPicker() {
         let descriptor = ASDiscoveryDescriptor()
         descriptor.bluetoothServiceUUID = XteinkSyncProtocol.service
@@ -164,10 +174,25 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             productImage: UIImage(systemName: "book.closed") ?? UIImage(),
             descriptor: descriptor)
         Task { @MainActor [weak self] in
+            guard let self else { return }
+            XteinkBLECentral.shared.setPairingMode(true)
+            await XteinkBLECentral.shared.releaseForAccessoryPicker()
             do {
-                try await self?.accessorySession.showPicker(for: [item])
+                try await self.accessorySession.showPicker(for: [item])
+                // A selection continues in `handleAccessoryEvent`; a
+                // cancelled picker reports nothing at all. Rebuild the
+                // central either way (idempotent), and stand pairing mode
+                // down if no selection arrives shortly after dismissal.
+                XteinkBLECentral.shared.rebuildAfterAccessoryPicker()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, !self.pairingInFlight else { return }
+                    XteinkBLECentral.shared.setPairingMode(false)
+                }
             } catch {
-                self?.presentInfoAlert(
+                XteinkBLECentral.shared.rebuildAfterAccessoryPicker()
+                XteinkBLECentral.shared.setPairingMode(false)
+                SharedDiagnosticLog.record("Accessory picker failed: \(error)", category: "xteink")
+                self.presentInfoAlert(
                     title: L10n.string("Settings_xteink_pairFailedTitle"), message: "\(error)")
             }
         }
@@ -184,6 +209,10 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     }
 
     private func beginPairing(peripheralIdentifier: UUID) {
+        pairingInFlight = true
+        // The central was released for the picker; the connect below parks
+        // until the rebuilt manager reaches poweredOn.
+        XteinkBLECentral.shared.rebuildAfterAccessoryPicker()
         XteinkBLECentral.shared.connect(toPeripheralIdentifier: peripheralIdentifier)
         Task { @MainActor in
             let spinner = UIAlertController(
@@ -199,6 +228,8 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             }
             func settle(title: String, message: String) {
                 finished = true
+                self.pairingInFlight = false
+                XteinkBLECentral.shared.setPairingMode(false)
                 if spinner.presentingViewController != nil { spinner.dismiss(animated: true) }
                 self.presentInfoAlert(title: title, message: message)
             }
@@ -275,5 +306,14 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         XteinkBLECentral.shared.forgetPairing()
         XteinkSendSettings.isEnabled = false
         tableView.reloadData()
+        // Also drop the AccessorySetupKit authorization: a lingering entry
+        // would keep the accessory "already set up" and confuse the next
+        // pairing's picker.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for accessory in self.accessorySession.accessories {
+                try? await self.accessorySession.removeAccessory(accessory)
+            }
+        }
     }
 }

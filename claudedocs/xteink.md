@@ -46,23 +46,40 @@ authenticates a Keychain-persisted pairing secret using HMAC-SHA256 over
 pairing.
 
 First-use pairing goes through AccessorySetupKit rather than a typed-in code.
-Settings → Pair Xteink shows an instruction alert ("Open File Transfer → Luna
-Sync on the reader, then continue"), then presents the system picker
+Settings → Pair Xteink shows an instruction alert ("Open File Transfer → Pair
+Luna on the reader, then continue"), then presents the system picker
 (`ASAccessorySession.showPicker(for:)`) scoped to the sync service UUID via
-`ASDiscoveryDescriptor.bluetoothServiceUUID`. The X3 initiates BLE bonding
-once selected, so iOS shows its own native pairing sheet — Luna has no code UI
-anywhere. On the session's `.accessoryAdded` event, `XteinkBLECentral
-.connect(toPeripheralIdentifier:)` connects directly to the resolved
-`ASAccessory.bluetoothIdentifier` (bypassing the scan, since AccessorySetupKit
-already found and authorized it), and once the rendezvous is active the
-settings screen sends an unauthenticated `hello` carrying `host_id` and a
-fresh random `pair_secret` with no `code` key — the bonded, encrypted link is
-the proof of physical presence. `Luna/Info.plist`'s `NSAccessorySetupKitSupports`
-(`Bluetooth`) and `NSAccessorySetupBluetoothServices` declare the sync service
-UUID so the picker can find advertising readers. The HMAC-authenticated hello
-for an already-paired device (below) is unchanged. Settings → Xteink also
-offers **Unpair** (shown only once paired): a confirm alert clears the
-Keychain pairing and flips the enable switch off.
+`ASDiscoveryDescriptor.bluetoothServiceUUID`. **The picker cannot appear while
+the process holds any live CBManager** — once the app has the global Bluetooth
+permission, `showPicker` fails with ASErrorDomain code 550 ("CBManagers active
+with global permissions"), which is exactly what broke every re-pair while the
+standing central lived forever. `XteinkBLECentral.releaseForAccessoryPicker()`
+therefore tears the manager down (scan, live link, standing connect, then the
+manager itself) before `showPicker`, and `rebuildAfterAccessoryPicker()`
+recreates it on every exit path; a connect requested while the manager is
+still rebuilding parks in `pendingConnectIdentifier` until poweredOn. The X3
+initiates BLE bonding once selected, so iOS shows its own native pairing sheet
+— Luna has no code UI anywhere. On the session's `.accessoryAdded` event,
+`XteinkBLECentral.connect(toPeripheralIdentifier:)` connects directly to the
+resolved `ASAccessory.bluetoothIdentifier` (bypassing the scan, since
+AccessorySetupKit already found and authorized it), and once the rendezvous is
+active the settings screen sends an unauthenticated `hello` carrying `host_id`
+and a fresh random `pair_secret` with no `code` key — the bonded, encrypted
+link is the proof of physical presence. `Luna/Info.plist`'s
+`NSAccessorySetupKitSupports` (`Bluetooth`) and
+`NSAccessorySetupBluetoothServices` declare the sync service UUID so the
+picker can find advertising readers. The HMAC-authenticated hello for an
+already-paired device (below) is unchanged. Settings → Xteink also offers
+**Unpair** (shown only once paired): a confirm alert clears the Keychain
+pairing, flips the enable switch off, drops the live/standing connections, and
+removes the ASK authorization (`ASAccessorySession.removeAccessory`) so the
+next pairing starts from a clean picker.
+
+**An unpaired central stays silent.** `scanIfReady` refuses to scan or
+connect unless a pairing secret exists or the settings pairing flow raised
+`pairingMode`. Without this gate an unpaired Luna kept connecting to every
+reader window as a client that could never authenticate — the reader showed
+"Luna connected", sent nothing, and the window died on idle.
 
 Control operations await status `op_ack` rather than treating a successful
 GATT write as success. The one in-flight `op_ack` slot refuses a second
@@ -337,9 +354,14 @@ periodic background wake to piggyback on.
 - **Read-driven remote deletion is IN scope now** (above); what remains out
   is a device-initiated deletion policy of its own accord — the X3 never
   deletes a book on its own schedule, only in response to Luna's `delete`.
-- **No ASAccessorySession accessory removal on unpair.** Unpair clears
-  Luna's own Keychain pairing and disables the switch; it does not call
-  `ASAccessorySession.removeAccessory`.
+- **Reader-side pair vs sync are separate actions** (CrossPoint fork,
+  2026-08-27): "Pair Luna" lives only under File Transfer; "Luna Sync" is on
+  the home menu and File Transfer. A sync window never pairs and refuses up
+  front with "Not paired" when no trusted host is stored; the pairing window
+  clears the reader's NimBLE bond store at start so a re-pair after an iOS
+  unpair cannot wedge on a stale device-side bond. Outcome popups report a
+  synced-book count, the reader's own `low_memory` refusal, and
+  connected-but-unpaired distinctly.
 
 ## Tests
 

@@ -7,7 +7,7 @@ import XCTest
 @testable import LunaSend
 
 final class XteinkTransferFlowControlTests: XCTestCase {
-    private let interval = XteinkTransferFlowControl.checkpointIntervalBytes
+    private let interval = XteinkTransferFlowControl.defaultCheckpointIntervalBytes
     private let margin = XteinkTransferFlowControl.inFlightMarginBytes
 
     func testStreamsFreelyWithinOneIntervalPlusMargin() {
@@ -31,6 +31,17 @@ final class XteinkTransferFlowControlTests: XCTestCase {
             sentBytes: sent, confirmedBytes: 0, totalBytes: 100_000))
         XCTAssertFalse(XteinkTransferFlowControl.shouldPause(
             sentBytes: sent, confirmedBytes: interval, totalBytes: 100_000))
+    }
+
+    /// A reader that advertises its own stride ("ckpt", 2048 on current
+    /// firmware) tightens the cap so the paced window fits its frame pool.
+    func testAdvertisedIntervalOverridesTheDefault() {
+        XCTAssertTrue(XteinkTransferFlowControl.shouldPause(
+            sentBytes: 2048 + margin, confirmedBytes: 0, totalBytes: 100_000,
+            checkpointIntervalBytes: 2048))
+        XCTAssertFalse(XteinkTransferFlowControl.shouldPause(
+            sentBytes: 2048 + margin - 1, confirmedBytes: 0, totalBytes: 100_000,
+            checkpointIntervalBytes: 2048))
     }
 
     /// The tail of a file smaller than the pause threshold streams without

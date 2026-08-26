@@ -14,6 +14,10 @@ public struct XteinkStatusMessage {
     public let received: Int?
     public let resumeOffset: Int?
     public let nextSequence: UInt32?
+    /// The reader's durable-receipt confirmation stride ("ckpt"), for the
+    /// sender's flow control. Absent on the one firmware build that predates
+    /// the field (its stride was 8192).
+    public let checkpointIntervalBytes: Int?
     public let ok: Bool?
     public let error: String?
     public let opAck: String?
@@ -47,6 +51,7 @@ public struct XteinkStatusMessage {
             received: json["received"] as? Int,
             resumeOffset: json["resume_offset"] as? Int,
             nextSequence: (json["next_sequence"] as? Int).map { UInt32(clamping: $0) },
+            checkpointIntervalBytes: json["ckpt"] as? Int,
             ok: json["ok"] as? Bool,
             error: json["error"] as? String,
             opAck: json["op_ack"] as? String,

@@ -50,6 +50,10 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// Last durable application checkpoint reported by the reader. A new
     /// `start_put` resumes from this offset after a link interruption.
     private var checkpoint = (offset: 0, sequence: UInt32(0))
+    /// The reader's advertised confirmation stride ("ckpt"), for flow
+    /// control. Falls back to the pre-field firmware's 8192 until a status
+    /// carries it; reset per connection.
+    private var checkpointIntervalBytes = XteinkTransferFlowControl.defaultCheckpointIntervalBytes
     private var nonce: String?
     private let pairingStore: any XteinkPairingStoring
     private let hostID: String
@@ -170,10 +174,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
                 try? await sendControl("cancel")
                 throw XteinkSyncError.cancelled
             }
-            while XteinkTransferFlowControl.shouldPause(
-                sentBytes: offset, confirmedBytes: await currentCheckpoint().offset,
-                totalBytes: epub.count
-            ) {
+            while await shouldPauseForFlowControl(sentBytes: offset, totalBytes: epub.count) {
                 try await waitForCheckpointAdvance()
             }
             let count = min(maximum, epub.count - offset)
@@ -298,6 +299,18 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         }
     }
 
+    private func shouldPauseForFlowControl(sentBytes: Int, totalBytes: Int) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self else { return continuation.resume(returning: false) }
+                continuation.resume(returning: XteinkTransferFlowControl.shouldPause(
+                    sentBytes: sentBytes, confirmedBytes: self.checkpoint.offset,
+                    totalBytes: totalBytes,
+                    checkpointIntervalBytes: self.checkpointIntervalBytes))
+            }
+        }
+    }
+
     private func waitForCheckpointAdvance() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async { [weak self] in
@@ -369,6 +382,7 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         active = false
         nonce = nil
         readReportOnlyWindow = false
+        checkpointIntervalBytes = XteinkTransferFlowControl.defaultCheckpointIntervalBytes
         peripheral?.delegate = nil
         peripheral = nil; control = nil; dataIn = nil; status = nil
         pendingControl?.continuation.resume(throwing: XteinkSyncError.unavailable); pendingControl = nil
@@ -484,6 +498,9 @@ extension XteinkBLECentral: CBPeripheralDelegate {
         if let received = status.received { checkpoint.offset = received }
         if let offset = status.resumeOffset { checkpoint.offset = offset }
         if let next = status.nextSequence { checkpoint.sequence = next }
+        if let interval = status.checkpointIntervalBytes, interval > 0 {
+            checkpointIntervalBytes = interval
+        }
         if status.isFailure {
             let errorMessage = status.error ?? "reader rejected operation"
             let pending = pendingControl; pendingControl = nil

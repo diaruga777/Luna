@@ -28,6 +28,10 @@ private final class MockDestination: ArticleDestination {
     /// Simulates a receiver that is simply not reachable right now (an asleep
     /// Xteink): the send throws a `SendDeferralError`.
     var shouldDefer = false
+    /// Thrown verbatim when set — for errors with meaning of their own, like
+    /// the Xteink reader's `low_memory` refusal.
+    var errorToThrow: Error?
+    var attemptCount = 0
     private(set) var sentTitles: [String] = []
     private(set) var sentEPUBs: [Data] = []
 
@@ -42,6 +46,8 @@ private final class MockDestination: ArticleDestination {
     var appIntentsSendMode: ArticleSendMode { mode }
 
     func send(epubData: Data, fileName: String, title: String) async throws {
+        attemptCount += 1
+        if let errorToThrow { throw errorToThrow }
         if shouldHardFail { throw AuthFailure() }
         if shouldDefer { throw DeferralFailure() }
         if shouldFail { throw SendFailure() }
@@ -206,6 +212,41 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertEqual(second.sentTitles.count, 2)
         XCTAssertEqual(sendState(first, second.id), .sent)
         XCTAssertEqual(sendState(another, second.id), .sent)
+    }
+
+    /// A reader that refuses `start_put` with `low_memory` is reporting a
+    /// device-wide condition: every remaining book this window would be
+    /// refused the same way. The sweep must stop after the first refusal and
+    /// leave the rest queued for the next window.
+    func testDeliverQueuedSendsStopsAfterReaderLowMemoryRefusal() async {
+        let items = [
+            makeReadyItem("https://example.com/one"),
+            makeReadyItem("https://example.com/two"),
+            makeReadyItem("https://example.com/three"),
+        ]
+        for item in items { store.setSendState(.queued, for: item.id, destination: second.id) }
+        second.errorToThrow = XteinkSyncError.protocolError("low_memory")
+
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+
+        XCTAssertEqual(second.attemptCount, 1)
+        XCTAssertTrue(second.sentTitles.isEmpty)
+        for item in items { XCTAssertEqual(sendState(item, second.id), .queued) }
+    }
+
+    /// An ordinary per-book failure must NOT stop the sweep — only the
+    /// device-wide low-memory refusal does.
+    func testDeliverQueuedSendsContinuesPastOrdinaryFailures() async {
+        let items = [
+            makeReadyItem("https://example.com/one"),
+            makeReadyItem("https://example.com/two"),
+        ]
+        for item in items { store.setSendState(.queued, for: item.id, destination: second.id) }
+        second.shouldFail = true
+
+        await coordinator.deliverQueuedSends(toDestinationID: second.id)
+
+        XCTAssertEqual(second.attemptCount, 2)
     }
 
     func testSoftFailureQueuesRetryWithBackoff() async {

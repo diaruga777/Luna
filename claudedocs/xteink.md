@@ -85,12 +85,18 @@ resume. Data frames have a 4-byte LE sequence header and commit with SHA-256.
 (`XteinkTransferFlowControl`): iOS's `canSendWriteWithoutResponse` is local
 backpressure only, and an unpaced stream outran the X3's SD writes, overflowed
 its frame pool, and starved its allocator into an OOM `abort()` (measured:
-`lock_init_generic`, newlib locks.c:77). The sender stays within one 8 KiB
+`lock_init_generic`, newlib locks.c:77). The sender stays within one
 checkpoint interval plus a 1 KiB margin of the reader's last confirmed
-`resume_offset`; a pause is released by any status carrying the offset,
-failed by an error status or a dropped link, and times out after 10 s. The
-firmware's matching hardening (frame pool, one-shot data-error latch,
-`low_memory` refusal at `start_put`) lives in
+`resume_offset`. The interval is the READER'S to declare: every transfer
+status carries `"ckpt"` (2048 on current firmware, sized so the paced window
+fits its 16-slot frame pool), and the phone falls back to 8192 — the one
+pre-`ckpt` firmware build's stride — when the field is absent. A pause is
+released by any status carrying the offset, failed by an error status or a
+dropped link, and times out after 10 s. The firmware's matching hardening
+(frame pool allocated AFTER the pre-NimBLE heap gate — allocating before it
+effectively raised the gate's floor and refused every window with "Bluetooth
+init failed" on hardware near the floor — plus the one-shot data-error latch
+and the `low_memory` refusal at `start_put`) lives in
 `CrossPoint-Luna-X3/src/LunaSyncRendezvous.cpp`.
 
 When a rendezvous finds no queued Xteink saves (and no pending remote

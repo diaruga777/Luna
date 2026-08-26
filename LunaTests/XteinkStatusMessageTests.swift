@@ -26,6 +26,15 @@ final class XteinkStatusMessageTests: XCTestCase {
         XCTAssertFalse(message.isFailure)
         XCTAssertTrue(message.readIDs.isEmpty)
         XCTAssertFalse(message.isReadReportWindow)
+        XCTAssertNil(message.checkpointIntervalBytes, "absent on the pre-ckpt firmware")
+    }
+
+    /// The reader advertises its confirmation stride so the sender's flow
+    /// control can pace to it.
+    func testCheckpointIntervalParses() throws {
+        let data = json(["nonce": "abc123", "ckpt": 2048])
+        let message = try XCTUnwrap(XteinkStatusMessage.parse(data))
+        XCTAssertEqual(message.checkpointIntervalBytes, 2048)
     }
 
     func testWifiOfferParses() throws {

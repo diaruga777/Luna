@@ -263,7 +263,7 @@ public final class ArticleSendCoordinator {
             let shouldSend = state == .queued
                 || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
-            let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+            let task = Task { _ = await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
             deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
         }
     }
@@ -280,8 +280,17 @@ public final class ArticleSendCoordinator {
         guard !queued.isEmpty else { return }
         SharedDiagnosticLog.record(
             "Rendezvous sweep: delivering \(queued.count) queued send(s)", category: "xteink")
-        for item in queued {
-            await sendBuildingEPUB(item, to: destination, respectBackoff: false)
+        for (index, item) in queued.enumerated() {
+            let error = await sendBuildingEPUB(item, to: destination, respectBackoff: false)
+            // The reader's low_memory refusal is a device condition, not a
+            // per-book one: every remaining start_put this window would be
+            // refused the same way. Leave the rest queued for the next window.
+            if case XteinkSyncError.protocolError("low_memory")? = error {
+                SharedDiagnosticLog.record(
+                    "Reader refused start_put: low memory; leaving \(queued.count - index - 1) queued send(s) for the next window",
+                    category: "xteink")
+                break
+            }
         }
     }
 
@@ -294,7 +303,7 @@ public final class ArticleSendCoordinator {
                 guard shouldAttempt(item, destinationID: destination.id, respectBackoff: true) else {
                     continue
                 }
-                let task = Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                let task = Task { _ = await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
                 deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
             }
         }
@@ -302,20 +311,24 @@ public final class ArticleSendCoordinator {
 
     // MARK: - Delivery
 
-    /// Builds the EPUB (once) and delivers to one destination.
+    /// Builds the EPUB (once) and delivers to one destination. Returns the
+    /// transport error when the send itself failed, nil when it succeeded or
+    /// was not attempted — the rendezvous sweep reads it to recognize a
+    /// device-wide refusal.
+    @discardableResult
     private func sendBuildingEPUB(
         _ item: SavedItem, to destination: ArticleDestination, respectBackoff: Bool
-    ) async {
-        guard destination.isConfigured else { return }
-        guard let fresh = store.item(withID: item.id) else { return }
-        guard !fresh.isPlatformItem else { return } // platform items have no article EPUB
+    ) async -> Error? {
+        guard destination.isConfigured else { return nil }
+        guard let fresh = store.item(withID: item.id) else { return nil }
+        guard !fresh.isPlatformItem else { return nil } // platform items have no article EPUB
         guard shouldAttempt(fresh, destinationID: destination.id, respectBackoff: respectBackoff) else {
-            return
+            return nil
         }
 
         guard fresh.state == .ready else {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
-            return
+            return nil
         }
         // Kindle/export EPUBs wait for their illustrations; Xteink's profile
         // is text-only by contract, so it must not trigger image downloads just
@@ -328,9 +341,9 @@ public final class ArticleSendCoordinator {
             store.markSendTerminalFailure(
                 for: fresh.id, destination: destination.id,
                 errorMessage: "Couldn't build the EPUB attachment.")
-            return
+            return nil
         }
-        await deliver(itemID: fresh.id, built: built, to: destination)
+        return await deliver(itemID: fresh.id, built: built, to: destination)
     }
 
     private func shouldAttempt(
@@ -358,14 +371,16 @@ public final class ArticleSendCoordinator {
         return BuiltEPUB(data: data, fileName: Self.epubFileName(forTitle: title), title: title)
     }
 
-    private func deliver(itemID: UUID, built: BuiltEPUB, to destination: ArticleDestination) async {
+    /// Returns the error the transport threw, nil on success or when this
+    /// item's send is already in flight.
+    private func deliver(itemID: UUID, built: BuiltEPUB, to destination: ArticleDestination) async -> Error? {
         let key = "\(itemID.uuidString)|\(destination.id)"
         let alreadySending = lock.withLock {
             let sending = inFlight.contains(key)
             if !sending { inFlight.insert(key) }
             return sending
         }
-        guard !alreadySending else { return }
+        guard !alreadySending else { return nil }
         defer { lock.withLock { _ = inFlight.remove(key) } }
 
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
@@ -386,7 +401,9 @@ public final class ArticleSendCoordinator {
             } else {
                 logger.error("Send to \(destination.displayName, privacy: .public) failed for \(built.title, privacy: .public): \(String(describing: error), privacy: .public)")
             }
+            return error
         }
+        return nil
     }
 
     private func recordFailure(

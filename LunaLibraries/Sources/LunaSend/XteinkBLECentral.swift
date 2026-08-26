@@ -20,7 +20,19 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     public static let shared = XteinkBLECentral()
 
     private let queue = DispatchQueue(label: "com.hsanabria.luna.xteink.ble")
-    private var central: CBCentralManager!
+    /// nil only while AccessorySetupKit's picker is on screen — the picker
+    /// refuses to appear while the process holds ANY live CBManager once the
+    /// app has the global Bluetooth permission (ASErrorDomain code 550,
+    /// "CBManagers active with global permissions").
+    private var central: CBCentralManager?
+    /// While true, the central scans and connects with no stored pairing —
+    /// the settings pairing flow is underway. Everywhere else an unpaired
+    /// central stays silent, so it can never occupy the reader's window as a
+    /// client that cannot authenticate.
+    private var pairingMode = false
+    /// A connect requested while the central was released for the picker (or
+    /// not yet powered on). `scanIfReady` completes it at the next poweredOn.
+    private var pendingConnectIdentifier: UUID?
     private var peripheral: CBPeripheral?
     private var control: CBCharacteristic?
     private var dataIn: CBCharacteristic?
@@ -70,10 +82,54 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
         self.pairingStore = pairingStore
         self.hostID = hostID
         super.init()
-        central = CBCentralManager(
+        central = makeCentral()
+    }
+
+    private func makeCentral() -> CBCentralManager {
+        CBCentralManager(
             delegate: self, queue: queue,
             options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restorationIdentifier,
                       CBCentralManagerOptionShowPowerAlertKey: false])
+    }
+
+    /// Tears the central down for the duration of AccessorySetupKit's picker
+    /// (see `central`). Returns once the manager is released, so the caller
+    /// can safely show the picker.
+    public func releaseForAccessoryPicker() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async { [weak self] in
+                defer { continuation.resume() }
+                guard let self, let central = self.central else { return }
+                central.stopScan()
+                if let peripheral = self.peripheral { central.cancelPeripheralConnection(peripheral) }
+                if let standing = self.standingConnect {
+                    central.cancelPeripheralConnection(standing)
+                    self.standingConnect = nil
+                }
+                self.clearConnection()
+                central.delegate = nil
+                self.central = nil
+            }
+        }
+    }
+
+    /// Recreates the central after the picker dismisses. Safe to call when
+    /// one already exists.
+    public func rebuildAfterAccessoryPicker() {
+        queue.async { [weak self] in
+            guard let self, self.central == nil else { return }
+            self.central = self.makeCentral()
+        }
+    }
+
+    /// See `pairingMode`. The settings pairing flow raises this before the
+    /// picker and stands it down once the pairing settles either way.
+    public func setPairingMode(_ active: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.pairingMode = active
+            if active { self.scanIfReady() }
+        }
     }
 
     public var isRendezvousActive: Bool { queue.sync { active && peripheral != nil && control != nil && dataIn != nil } }
@@ -90,11 +146,11 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     public func forgetPairing() {
         pairingStore.removeCredential(for: hostID)
         XteinkSendSettings.pairedPeripheralID = nil
-        queue.async { [weak self] in
-            guard let self, let standing = self.standingConnect else { return }
-            self.central.cancelPeripheralConnection(standing)
-            self.standingConnect = nil
-        }
+        // Drop everything live, including a currently-connected reader: with
+        // the credential gone, `scanIfReady`'s pairing gate keeps this
+        // central silent until the next pairing, so the reader's windows no
+        // longer see a "connected" client that can never authenticate.
+        endRendezvous()
     }
     /// Whether a pairing secret exists — the settings screen's paired badge.
     public var isPaired: Bool { pairingStore.credential(for: hostID) != nil }
@@ -123,22 +179,29 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     /// found.
     public func connect(toPeripheralIdentifier identifier: UUID) {
         queue.async { [weak self] in
-            guard let self, let match = self.central.retrievePeripherals(withIdentifiers: [identifier]).first
-            else { return }
-            self.central.stopScan()
+            guard let self else { return }
+            guard let central = self.central, central.state == .poweredOn,
+                  let match = central.retrievePeripherals(withIdentifiers: [identifier]).first
+            else {
+                // The central may still be rebuilding after the picker
+                // teardown; `scanIfReady` completes this at poweredOn.
+                self.pendingConnectIdentifier = identifier
+                return
+            }
+            central.stopScan()
             self.peripheral = match
             match.delegate = self
-            self.central.connect(match)
+            central.connect(match)
         }
     }
 
     public func endRendezvous() {
         queue.async { [weak self] in
-            guard let self else { return }
-            self.central.stopScan()
-            if let peripheral = self.peripheral { self.central.cancelPeripheralConnection(peripheral) }
+            guard let self, let central = self.central else { return }
+            central.stopScan()
+            if let peripheral = self.peripheral { central.cancelPeripheralConnection(peripheral) }
             if let standing = self.standingConnect {
-                self.central.cancelPeripheralConnection(standing)
+                central.cancelPeripheralConnection(standing)
                 self.standingConnect = nil
             }
             self.clearConnection()
@@ -353,7 +416,23 @@ public final class XteinkBLECentral: NSObject, XteinkBLETransporting {
     }
 
     private func scanIfReady() {
-        guard central.state == .poweredOn, peripheral == nil else { return }
+        guard let central, central.state == .poweredOn, peripheral == nil else { return }
+        // A connect requested while the central was down (picker teardown)
+        // completes here, pairing or not.
+        if let pending = pendingConnectIdentifier {
+            pendingConnectIdentifier = nil
+            if let match = central.retrievePeripherals(withIdentifiers: [pending]).first {
+                central.stopScan()
+                peripheral = match
+                match.delegate = self
+                central.connect(match)
+                return
+            }
+        }
+        // Unpaired and not pairing: stay silent. A scan here would connect to
+        // any open reader window as a client that can never authenticate,
+        // occupying the window and reading as "Luna connected" on the device.
+        guard pairingMode || pairingStore.credential(for: hostID) != nil else { return }
         // The X3 stops advertising the moment ANY central holds its link —
         // including the sibling Luna app's central or a system-restored
         // connection — and a scan can never discover a connected peripheral.

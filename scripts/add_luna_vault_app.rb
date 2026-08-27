@@ -7,35 +7,7 @@
 # repository's system xcodeproj gem predates them. The small compatibility
 # declarations below let this topology helper preserve those objects while
 # adding conventional groups for Vault's intentionally slim shell.
-require "xcodeproj"
-
-module Xcodeproj
-  class Project
-    module Object
-      class XCLocalSwiftPackageReference < XCRemoteSwiftPackageReference
-        attribute :relative_path, String
-      end
-
-      class PBXFileSystemSynchronizedBuildFileExceptionSet < AbstractObject
-        attribute :membership_exceptions, Array, []
-        has_one :target, PBXNativeTarget
-      end
-
-      class PBXFileSystemSynchronizedRootGroup < PBXGroup
-        attribute :explicit_file_types, Hash, {}
-        attribute :explicit_folders, Array, []
-        has_many :exceptions, PBXFileSystemSynchronizedBuildFileExceptionSet
-      end
-
-      class PBXNativeTarget
-        has_many :file_system_synchronized_groups, PBXFileSystemSynchronizedRootGroup
-      end
-    end
-  end
-end
-
-Xcodeproj::Constants.send(:remove_const, :LAST_KNOWN_OBJECT_VERSION)
-Xcodeproj::Constants.const_set(:LAST_KNOWN_OBJECT_VERSION, 71)
+require_relative "xcodeproj_compat"
 
 PROJECT = File.expand_path("../Luna.xcodeproj", __dir__)
 project = Xcodeproj::Project.open(PROJECT)

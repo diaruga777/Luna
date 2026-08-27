@@ -23,7 +23,7 @@
 # It costs ~0.1s. Re-run this script after adding an app target; it is
 # idempotent, and it rewrites the phase in place if the recipe below changes.
 
-require 'xcodeproj'
+require_relative 'xcodeproj_compat'
 
 PROJECT = File.expand_path('../Luna.xcodeproj', __dir__)
 PHASE_NAME = 'Verify bundled strings table'

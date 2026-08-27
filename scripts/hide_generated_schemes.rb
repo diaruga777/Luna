@@ -15,7 +15,7 @@
 #     is no file to delete.
 
 require "fileutils"
-require "xcodeproj"
+require_relative "xcodeproj_compat"
 
 PROJECT = File.expand_path("../Luna.xcodeproj", __dir__)
 

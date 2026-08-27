@@ -12,7 +12,7 @@
 # Rather than keep a second file in step by hand, the app targets copy the one
 # file. Re-run after adding an app or widget target; it is idempotent.
 
-require 'xcodeproj'
+require_relative 'xcodeproj_compat'
 
 PROJECT = File.expand_path('../Luna.xcodeproj', __dir__)
 STRINGS = 'LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings'

@@ -15,7 +15,6 @@
 		0178ACF1757BE05C0E05600F /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 2512DB3DBE82BBB22A9061B7 /* LunaDesignSystem */; };
 		02EDA65C2CDD06C3B27432FD /* LunaEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LunaEpub */; };
 		0343DD00114AC7D4DF1D33C8 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
-		035ECC658E9BB72960F32C27 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6CF6D2587830FFDC23A98D58 /* Foundation.framework */; };
 		04325C8AF877D151D2D31605 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		052563327C0FB9DFEF55947D /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		056B75A640F952053F3EDC66 /* LunaSavesUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaSavesUI */; };
@@ -43,6 +42,7 @@
 		1B4BF2BBED4AEECB0291B083 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		1B6EC6CA4339522B2907A219 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		1BF30473450AA044575A4FE6 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
+		1C57142196686F86702DD62A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		1D82621EB1C0B1FE7D0B63E1 /* LunaURLRescue in Frameworks */ = {isa = PBXBuildFile; productRef = 1D44E4B30AB7A9074F5F6B0B /* LunaURLRescue */; };
 		1D9791BC850C101BD3B152AC /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 239B4BC2C21EA5A3A51F16EE /* LunaMailAccount */; };
@@ -317,7 +317,6 @@
 		DE66DCA327DA9E81723DC210 /* LunaDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LunaDocuments */; };
 		E11485B796D1461DB4810443 /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 182108EE181A9FAAB156FAD6 /* LunaMailAccount */; };
 		E1B697D0605CC79F52D8A2EB /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
-		E2A125EC9C12804950F5B30A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6CF6D2587830FFDC23A98D58 /* Foundation.framework */; };
 		E3099E1A7FF1005917B1442C /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = 346610A3376E7758E8C75578 /* LunaModels */; };
 		E31B09DF7960DE871F25EC71 /* LunaIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LunaIntents */; };
 		E539A58CA8B87B80ACCB6794 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
@@ -600,7 +599,6 @@
 		3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultAppDelegate.swift; sourceTree = "<group>"; };
 		3C0179E7326B416352FD04AE /* LunaPriceTrackerAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		645C0763C9762E92AE0E0A28 /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		6CF6D2587830FFDC23A98D58 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		746380049BFBCA632316E778 /* VaultShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultShareViewController.swift; sourceTree = "<group>"; };
@@ -1029,7 +1027,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				035ECC658E9BB72960F32C27 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1412,7 +1409,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E2A125EC9C12804950F5B30A /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1499,7 +1495,6 @@
 			isa = PBXGroup;
 			children = (
 				28A05766718F3AE456726816 /* Foundation.framework */,
-				6CF6D2587830FFDC23A98D58 /* Foundation.framework */,
 			);
 			name = iOS;
 			sourceTree = "<group>";
@@ -1598,6 +1593,8 @@
 				2DFABD3E619D0D9D257B2618 /* Frameworks */,
 				3A0F10FC004C2AA06EB94468 /* Resources */,
 				7073B85B8CEB9BEDFF550419 /* Embed Foundation Extensions */,
+				C0DE0000000000000000A001 /* Re-sign embedded extensions (debug) */,
+				0072B6167576B03FF13392A8 /* Verify bundled strings table */,
 			);
 			buildRules = (
 			);
@@ -2549,6 +2546,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5A80AAAB158C791FD6810795 /* Assets.xcassets in Resources */,
+				1C57142196686F86702DD62A /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2709,6 +2707,46 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		C0DE0000000000000000A001 /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		0072B6167576B03FF13392A8 /* Verify bundled strings table */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings",
+				"$(SRCROOT)/scripts/check_bundled_strings.py",
+			);
+			name = "Verify bundled strings table";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Rewrites any bundled copy of the one strings table that has drifted from\n# the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md\n# (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+		};
 		031920C1C9030BA614DE6540 /* Verify bundled strings table */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -2728,7 +2766,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+			shellScript = "# Rewrites any bundled copy of the one strings table that has drifted from\n# the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md\n# (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2768,7 +2806,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+			shellScript = "# Rewrites any bundled copy of the one strings table that has drifted from\n# the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md\n# (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2804,7 +2842,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+			shellScript = "# Rewrites any bundled copy of the one strings table that has drifted from\n# the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md\n# (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		F20000000000000000000001 /* Update Safari extension branding */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2924,7 +2962,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Refuses to finish a build whose bundled copies of the one strings table\n# have drifted from the source. See scripts/add_strings_check_phase.rb and\n# claudedocs/strings.md (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
+			shellScript = "# Rewrites any bundled copy of the one strings table that has drifted from\n# the source. See scripts/add_strings_check_phase.rb and claudedocs/strings.md\n# (\"The build-level guarantee\").\npython3 \"${SRCROOT}/scripts/check_bundled_strings.py\" \\\n    \"${SRCROOT}/LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings\" \\\n    \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\n";
 		};
 		FD503C80F76BB3778192472C /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;

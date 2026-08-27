@@ -46,9 +46,39 @@ def add_source_group(project, name, files)
   [group, refs]
 end
 
+def remove_implicit_sdk_framework_links(target)
+  removed_refs = []
+  target.frameworks_build_phase.files.dup.each do |build_file|
+    reference = build_file.file_ref
+    next unless reference&.source_tree == "DEVELOPER_DIR"
+    next unless reference.path&.end_with?(".framework")
+
+    removed_refs << reference
+    build_file.remove_from_project
+  end
+  removed_refs
+end
+
+def clone_shell_phase(project, source_target, destination, name)
+  source = source_target.build_phases.find do |phase|
+    phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase) && phase.name == name
+  end
+  abort "Missing '#{name}' on #{source_target.name}" unless source
+
+  phase = project.new(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
+  phase.name = source.name
+  phase.shell_path = source.shell_path
+  phase.shell_script = source.shell_script
+  phase.always_out_of_date = source.always_out_of_date
+  phase.input_paths = source.input_paths
+  phase.output_paths = source.output_paths
+  destination.build_phases << phase
+end
+
 # Vault host: no shared URL/reader/media shell files and no central package
 # graph. Feature services are introduced by later Vault stages.
 app = project.new_target(:application, "LunaVault", :ios, "18.0")
+generated_framework_refs = remove_implicit_sdk_framework_links(app)
 configure_target(app, '$(PRODUCT_BUNDLE_PREFIX).vault', "LunaVault/Info.plist", "LunaVault/LunaVault.entitlements", "AppIconVault")
 app.build_configurations.each { |configuration| configuration.build_settings["INFOPLIST_KEY_CFBundleDisplayName"] = "$(DISPLAY_NAME_PREFIX) Vault" }
 _group, refs = add_source_group(project, "LunaVault", %w[VaultAppDelegate.swift VaultSceneDelegate.swift KindWiring+Vault.swift])
@@ -58,10 +88,16 @@ app.add_file_references(refs)
 # AppIconVault; the other app icons remain unused by this host.
 asset_ref = project.main_group.new_file("Luna/Assets.xcassets")
 app.resources_build_phase.add_file_reference(asset_ref)
+strings_ref = project.files.find do |reference|
+  reference.path == "LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings"
+end
+abort "Missing shared Localizable.strings file reference" unless strings_ref
+app.resources_build_phase.add_file_reference(strings_ref)
 
 # Dedicated Share extension. It is a bounded handoff placeholder and does not
 # import Vault storage or initialise indexing/provider work in the extension.
 share = project.new_target(:app_extension, "LunaVaultShare", :ios, "18.0")
+generated_framework_refs.concat(remove_implicit_sdk_framework_links(share))
 configure_target(share, '$(PRODUCT_BUNDLE_PREFIX).vault.share', "LunaVaultShare/Info.plist", "LunaVaultShare/LunaVaultShare.entitlements")
 share.build_configurations.each do |configuration|
   configuration.build_settings["INFOPLIST_KEY_CFBundleDisplayName"] = "$(DISPLAY_NAME_PREFIX) Vault"
@@ -81,6 +117,22 @@ build_file.file_ref = share.product_reference
 build_file.settings = { "ATTRIBUTES" => ["RemoveHeadersOnCopy"] }
 embed.files << build_file
 app.build_phases << embed
+
+central = project.targets.find { |target| target.name == "Luna" }
+abort "Missing central Luna target" unless central
+clone_shell_phase(project, central, app, "Re-sign embedded extensions (debug)")
+clone_shell_phase(project, central, app, "Verify bundled strings table")
+
+# Swift imports system frameworks without explicit SDK-path references. Older
+# xcodeproj releases create brittle iPhoneOS14.0/18.0 file references when a
+# target is added; remove those generated references once no build phase uses
+# them so the project remains independent of the installed SDK version.
+generated_framework_refs.uniq.each do |reference|
+  still_linked = project.objects.any? do |object|
+    object.is_a?(Xcodeproj::Project::Object::PBXBuildFile) && object.file_ref == reference
+  end
+  reference.remove_from_project unless still_linked
+end
 
 project.save
 puts "Created LunaVault (#{app.uuid}) and LunaVaultShare (#{share.uuid})"

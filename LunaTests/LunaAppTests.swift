@@ -74,6 +74,16 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.vault.deepLinkScheme, "lunavault")
     }
 
+    func testLegacySiblingSystemsDoNotSelectVaultBeforeCentralIntegration() {
+        XCTAssertEqual(
+            LunaApp.onboardingRankedSiblings,
+            [.reader, .downloader, .priceTracker])
+        XCTAssertEqual(
+            LunaApp.legacyContentApps,
+            [.luna, .reader, .downloader, .priceTracker])
+        XCTAssertFalse(LunaApp.onboardingRankedSiblings.contains(.vault))
+    }
+
     // MARK: - current
 
     func testCurrentIsLunaInTheUnitTestHost() {

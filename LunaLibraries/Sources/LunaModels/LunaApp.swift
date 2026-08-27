@@ -25,7 +25,14 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// one representative lesson. Keep this separate from `allCases`: the
     /// central app is a host, not one of the sibling products being ranked.
     public static let onboardingRankedSiblings: [LunaApp] = [
-        .reader, .downloader, .priceTracker, .vault,
+        .reader, .downloader, .priceTracker,
+    ]
+
+    /// The URL/content-kind apps that share the legacy shell, onboarding and
+    /// staged-screen catalogs. Vault is a standalone file surface and joins
+    /// these systems only when central integration is implemented explicitly.
+    public static let legacyContentApps: [LunaApp] = [
+        .luna, .reader, .downloader, .priceTracker,
     ]
 
     public static func detect(bundleIdentifier: String?) -> LunaApp {

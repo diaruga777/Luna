@@ -4,12 +4,6 @@
 <dict>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
-	<key>LunaVaultAppGroupID</key>
-	<string>$(APP_GROUP_ID)</string>
-	<key>LunaVaultKeychainAccessGroup</key>
-	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).vault.keychain</string>
-	<key>LunaVaultDatabaseName</key>
-	<string>vault.sqlite</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

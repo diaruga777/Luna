@@ -129,7 +129,8 @@ struct StageDescriptor {
     /// apps could possibly show it. A stage cannot be in a wider set than its
     /// kind allows; `StageRegistryTests` enforces that.
     enum Kind: String, CaseIterable {
-        /// Every app: the deck itself, settings, appearance, the util card.
+        /// Every legacy URL/content app: the deck itself, settings, appearance,
+        /// and the util card. Vault has its own shell and no stages yet.
         case shared
         /// Article-handling apps: readers, audio, article cards.
         case article
@@ -145,7 +146,7 @@ struct StageDescriptor {
         /// The apps this kind is compiled into. The default `apps` for a stage.
         var apps: [LunaApp] {
             switch self {
-            case .shared: return LunaApp.allCases
+            case .shared: return LunaApp.legacyContentApps
             case .article: return LunaApp.allCases.filter(\.handlesArticles)
             case .email: return LunaApp.allCases.filter(\.sharesByEmail)
             case .media: return LunaApp.allCases.filter(\.handlesMedia)

@@ -74,10 +74,15 @@ mode adds no chrome of its own and therefore no copy.
 
 ## Screenshot guide
 
-`scripts/stage_screenshots.py` builds all four apps, boots a simulator,
+`scripts/stage_screenshots.py` builds the four legacy URL/content apps, boots a simulator,
 installs, asks each app for its own manifest, launches every stage in turn,
 screenshots it, and writes a Markdown guide grouping the lot by app → screen →
 state.
+
+Luna Vault is deliberately absent from this matrix in Stage 1A. Its standalone
+shell does not compile `LunaStage` or register fixtures yet, so including it
+would make the harness claim stages the app cannot launch. Add Vault only when
+its own stage catalog and fixtures land.
 
 ```sh
 scripts/stage_screenshots.py                    # everything (~10 min)

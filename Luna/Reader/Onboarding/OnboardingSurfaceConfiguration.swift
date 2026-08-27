@@ -130,9 +130,12 @@ struct OnboardingSurfaceConfiguration {
                 ShareSetupPractice.lunaURLString,
                 OnboardingStrings.Demo.lunaSeedTitle.value(), "moon.stars.fill")
         case .vault:
-            // Vault owns a separate setup flow; retain an exhaustive fallback
-            // until the shared legacy shell is excluded from that target.
-            return ([], .extensionExplainer, "", "Luna Vault", "lock.shield.fill")
+            // Vault owns a separate setup flow and is never selected by the
+            // legacy ranking. Keep the exhaustive fallback valid for direct
+            // debug/test construction without advertising a Vault lesson.
+            return (
+                [.lunaPage], .extensionExplainer, ShareSetupPractice.lunaURLString,
+                "Luna Vault", "lock.shield.fill")
         }
     }
 }

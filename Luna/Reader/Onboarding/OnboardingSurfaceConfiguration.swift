@@ -129,6 +129,10 @@ struct OnboardingSurfaceConfiguration {
                 OnboardingDemoPage.allCases, .extensionExplainer,
                 ShareSetupPractice.lunaURLString,
                 OnboardingStrings.Demo.lunaSeedTitle.value(), "moon.stars.fill")
+        case .vault:
+            // Vault owns a separate setup flow; retain an exhaustive fallback
+            // until the shared legacy shell is excluded from that target.
+            return ([], .extensionExplainer, "", "Luna Vault", "lock.shield.fill")
         }
     }
 }

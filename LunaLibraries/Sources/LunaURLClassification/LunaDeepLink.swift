@@ -15,6 +15,7 @@ import Foundation
 /// - `lunareader://` — Luna Reader
 /// - `lunadownloader://` — Luna Downloader
 /// - `lunapricetracker://` — Luna Price Tracker
+/// - `lunavault://` — Luna Vault (file/library routes; not URL-kind ingest)
 ///
 /// Parsing accepts ANY of the three: the OS only delivers schemes the running
 /// app registered, and a link saved through any app lands in the shared store
@@ -31,7 +32,8 @@ public enum LunaDeepLink {
     public static let readerScheme = "lunareader"
     public static let downloaderScheme = "lunadownloader"
     public static let priceTrackerScheme = "lunapricetracker"
-    public static let allSchemes = [lunaScheme, readerScheme, downloaderScheme, priceTrackerScheme]
+    public static let vaultScheme = "lunavault"
+    public static let allSchemes = [lunaScheme, readerScheme, downloaderScheme, priceTrackerScheme, vaultScheme]
 
     /// The scheme THIS bundle registers (its Info.plist `CFBundleURLTypes`),
     /// falling back to Reader's. Lets shared library code build links that
@@ -64,6 +66,7 @@ public enum LunaDeepLink {
         case "reader": return readerScheme
         case "downloader": return downloaderScheme
         case "pricetracker": return priceTrackerScheme
+        case "vault": return vaultScheme
         default: return nil
         }
     }
@@ -211,6 +214,7 @@ public extension LunaApp {
         case .reader: return LunaDeepLink.readerScheme
         case .downloader: return LunaDeepLink.downloaderScheme
         case .priceTracker: return LunaDeepLink.priceTrackerScheme
+        case .vault: return LunaDeepLink.vaultScheme
         }
     }
 }

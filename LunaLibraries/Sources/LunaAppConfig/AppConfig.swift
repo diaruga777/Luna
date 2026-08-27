@@ -63,6 +63,22 @@ public enum AppConfig {
     public static let cloudKitContainerID: String =
         string(forInfoKey: cloudKitContainerInfoKey) ?? defaultCloudKitContainerID
 
+    /// Vault's explicit configuration seam. Vault currently shares the App
+    /// Group container for handoff, but its database and encrypted objects are
+    /// namespaced independently (`vault.sqlite`). Keeping a dedicated Info.plist
+    /// key makes a future isolated container an additive configuration change.
+    public static let vaultAppGroupID: String =
+        string(forInfoKey: vaultAppGroupInfoKey) ?? appGroupID
+
+    /// Vault-only Keychain access group. The key is intentionally resolved from
+    /// the Vault host/extension bundle rather than shared with the URL apps.
+    public static let vaultKeychainAccessGroup: String? =
+        string(forInfoKey: vaultKeychainAccessGroupInfoKey)
+
+    /// The Vault database filename is deliberately not `saves.sqlite`.
+    public static let vaultDatabaseName: String =
+        string(forInfoKey: vaultDatabaseNameInfoKey) ?? "vault.sqlite"
+
     /// `true` when the identifier was resolved from the build-injected Info.plist
     /// (vs. the compiled-in fallback). Hosts should `assert(AppConfig.resolvedFromInfoPlist)`
     /// at launch in DEBUG to catch a broken xcconfig → Info.plist chain immediately.
@@ -89,6 +105,9 @@ public enum AppConfig {
 
     static let appGroupInfoKey = "LunaAppGroupID"
     static let cloudKitContainerInfoKey = "LunaCloudKitContainerID"
+    static let vaultAppGroupInfoKey = "LunaVaultAppGroupID"
+    static let vaultKeychainAccessGroupInfoKey = "LunaVaultKeychainAccessGroup"
+    static let vaultDatabaseNameInfoKey = "LunaVaultDatabaseName"
 
     /// Fallback must match the value derived in `Config/Luna.xcconfig` for the
     /// default `LUNA_NAMESPACE = luna`. Kept in sync by `LunaAppConfigTests`.

@@ -30,6 +30,7 @@ enum BundledShortcut {
         case .reader: return "Luna Reader"
         case .downloader: return "Luna Video"
         case .priceTracker: return "Luna Price Tracker"
+        case .vault: return "Luna Vault"
         }
     }
 

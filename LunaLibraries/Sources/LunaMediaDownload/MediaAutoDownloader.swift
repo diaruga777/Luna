@@ -281,7 +281,7 @@ public enum MediaAutoDownloader {
     public static var isRunningInDownloader: Bool {
         switch LunaApp.current {
         case .luna, .downloader: return true
-        case .reader, .priceTracker: return false
+        case .reader, .priceTracker, .vault: return false
         }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Which standalone Luna app a running process belongs to — the central
-/// all-content **Luna** app or one of the three single-content apps. Derived
+/// all-content **Luna** app or one of the four standalone apps. Derived
 /// from the bundle identifier, using contains-matching so it also resolves
 /// from inside an app's extensions (`…reader.share`, `…downloader.safari`, …).
 ///
@@ -14,6 +14,8 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     case reader
     case downloader
     case priceTracker
+    /// Standalone encrypted file vault; not a URL content-kind surface.
+    case vault
 
     public static var current: LunaApp {
         detect(bundleIdentifier: Bundle.main.bundleIdentifier)
@@ -23,7 +25,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     /// one representative lesson. Keep this separate from `allCases`: the
     /// central app is a host, not one of the sibling products being ranked.
     public static let onboardingRankedSiblings: [LunaApp] = [
-        .reader, .downloader, .priceTracker,
+        .reader, .downloader, .priceTracker, .vault,
     ]
 
     public static func detect(bundleIdentifier: String?) -> LunaApp {
@@ -31,6 +33,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         if identifier.contains(".downloader") { return .downloader }
         if identifier.contains(".pricetracker") { return .priceTracker }
         if identifier.contains(".reader") { return .reader }
+        if identifier.contains(".vault") { return .vault }
         return .luna
     }
 
@@ -42,6 +45,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         case .reader: return "reader"
         case .downloader: return "downloader"
         case .priceTracker: return "pricetracker"
+        case .vault: return "vault"
         }
     }
 
@@ -60,6 +64,8 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
     public var handlesArticles: Bool { self == .luna || self == .reader }
     public var handlesMedia: Bool { self == .luna || self == .downloader }
     public var handlesProducts: Bool { self == .luna || self == .priceTracker }
+    /// Vault owns arbitrary files rather than URL-classified saves.
+    public var handlesVaultFiles: Bool { self == .vault }
 
     /// Whether this app does email at all: connecting an account, sending saves to
     /// contacts, and importing shares/newsletters from a mailbox. Downloader and
@@ -86,6 +92,7 @@ public enum LunaApp: CaseIterable, Equatable, Hashable, Sendable {
         case .reader: return "Reader"
         case .downloader: return "Downloader"
         case .priceTracker: return "PriceTracker"
+        case .vault: return "Vault"
         }
     }
 
@@ -114,7 +121,7 @@ public enum DoubleSaveSurface: String, Codable, Equatable, Sendable {
         switch app {
         case .luna: self = .luna
         case .reader: self = .reader
-        case .downloader, .priceTracker: return nil
+        case .downloader, .priceTracker, .vault: return nil
         }
     }
 }

@@ -16,6 +16,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.reader"), .reader)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.downloader"), .downloader)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.pricetracker"), .priceTracker)
+        XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.vault"), .vault)
     }
 
     func testExtensionBundleIdentifierParsing() {
@@ -29,6 +30,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.pricetracker.share"), .priceTracker)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.pricetracker.action2"), .priceTracker)
         XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.pricetracker.safari"), .priceTracker)
+        XCTAssertEqual(LunaApp.detect(bundleIdentifier: "com.hsanabria.luna.vault.share"), .vault)
     }
 
     func testNilOrEmptyIdentifierDefaultsToLuna() {
@@ -49,6 +51,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.reader.installedMarkerKey, "lunaInstalled.reader")
         XCTAssertEqual(LunaApp.downloader.installedMarkerKey, "lunaInstalled.downloader")
         XCTAssertEqual(LunaApp.priceTracker.installedMarkerKey, "lunaInstalled.pricetracker")
+        XCTAssertEqual(LunaApp.vault.installedMarkerKey, "lunaInstalled.vault")
     }
 
     // MARK: - displayName
@@ -58,6 +61,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.reader.displayName, "Luna Reader")
         XCTAssertEqual(LunaApp.downloader.displayName, "Luna Video")
         XCTAssertEqual(LunaApp.priceTracker.displayName, "Luna Price Tracker")
+        XCTAssertEqual(LunaApp.vault.displayName, "Luna Vault")
     }
 
     // MARK: - deepLinkScheme
@@ -67,6 +71,7 @@ final class LunaAppTests: XCTestCase {
         XCTAssertEqual(LunaApp.reader.deepLinkScheme, "lunareader")
         XCTAssertEqual(LunaApp.downloader.deepLinkScheme, "lunadownloader")
         XCTAssertEqual(LunaApp.priceTracker.deepLinkScheme, "lunapricetracker")
+        XCTAssertEqual(LunaApp.vault.deepLinkScheme, "lunavault")
     }
 
     // MARK: - current

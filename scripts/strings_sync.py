@@ -42,7 +42,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRINGS_PATH = os.path.join(
     REPO, "LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings")
 
-SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker")
+SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault")
 
 # Directories holding shipping code. Tests are deliberately absent: a test may
 # reference copy, but it never DEFINES any.

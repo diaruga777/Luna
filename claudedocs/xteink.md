@@ -72,8 +72,18 @@ picker can find advertising readers. The HMAC-authenticated hello for an
 already-paired device (below) is unchanged. Settings → Xteink also offers
 **Unpair** (shown only once paired): a confirm alert clears the Keychain
 pairing, flips the enable switch off, drops the live/standing connections, and
-removes the ASK authorization (`ASAccessorySession.removeAccessory`) so the
-next pairing starts from a clean picker.
+removes the ASK authorization (`ASAccessorySession.removeAccessory`).
+
+**Pair means (re)pair, and it self-heals.** Before showing the picker, the
+flow removes every ASK accessory this app already set up: the picker never
+lists an accessory it considers already set up (a stale authorization reads
+as "iPhone can't find the reader"), and the bond iOS kept alongside it no
+longer matches the reader's cleared keys (reads as "pairing failed").
+Removal deletes that bond too, so both sides start clean regardless of what
+earlier builds left behind. Two traps here:
+`ASAccessorySession.accessories` is EMPTY until the session's `.activated`
+event lands — enumerate it only after `awaitSessionActivation()` — and the
+whole flow logs each step to the `xteink` diagnostics category.
 
 **An unpaired central stays silent.** `scanIfReady` refuses to scan or
 connect unless a pairing secret exists or the settings pairing flow raised

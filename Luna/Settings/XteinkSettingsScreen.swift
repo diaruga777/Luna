@@ -140,6 +140,46 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         return session
     }()
 
+    private var sessionActivated = false
+
+    /// `ASAccessorySession.accessories` is empty until the session finishes
+    /// activating, so anything that enumerates it must wait for the
+    /// `.activated` event first — reading it straight after first access
+    /// silently sees nothing. Bounded poll: activation is near-instant, and
+    /// the cap only guards against a session that never reports it.
+    private func awaitSessionActivation() async {
+        _ = accessorySession
+        for _ in 0..<50 where !sessionActivated {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    /// Removes every accessory this app has set up through AccessorySetupKit.
+    /// A stale authorization is what makes re-pairing impossible: the picker
+    /// never lists an accessory it considers already set up ("can't find the
+    /// reader"), and the bond iOS kept alongside it no longer matches the
+    /// reader's cleared keys ("pairing failed"). Removal also deletes that
+    /// bond, so a fresh pairing starts clean on both sides.
+    private func removeStaleAccessoryAuthorizations() async {
+        await awaitSessionActivation()
+        let accessories = accessorySession.accessories
+        guard !accessories.isEmpty else {
+            SharedDiagnosticLog.record("No prior accessory authorizations to remove", category: "xteink")
+            return
+        }
+        for accessory in accessories {
+            do {
+                try await accessorySession.removeAccessory(accessory)
+                SharedDiagnosticLog.record(
+                    "Removed prior accessory authorization: \(accessory.displayName)", category: "xteink")
+            } catch {
+                SharedDiagnosticLog.record(
+                    "Accessory authorization removal failed for \(accessory.displayName): \(error)",
+                    category: "xteink")
+            }
+        }
+    }
+
     private func presentPairingPrompt() {
         let alert = UIAlertController(
             title: L10n.string("Settings_xteink_pairTitle"),
@@ -176,7 +216,11 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         Task { @MainActor [weak self] in
             guard let self else { return }
             XteinkBLECentral.shared.setPairingMode(true)
+            // Pair means (re)pair: clear this app's own prior authorization
+            // first, or the picker will not list the reader at all.
+            await self.removeStaleAccessoryAuthorizations()
             await XteinkBLECentral.shared.releaseForAccessoryPicker()
+            SharedDiagnosticLog.record("Showing accessory picker", category: "xteink")
             do {
                 try await self.accessorySession.showPicker(for: [item])
                 // A selection continues in `handleAccessoryEvent`; a
@@ -202,9 +246,12 @@ final class XteinkSettingsScreen: NavHeaderTableController {
     /// return value from `showPicker`. Pairing starts the moment the system
     /// hands back an accessory with a resolved Bluetooth identifier.
     private func handleAccessoryEvent(_ event: ASAccessoryEvent) {
+        if event.eventType == .activated { sessionActivated = true }
         guard event.eventType == .accessoryAdded,
               let peripheralIdentifier = event.accessory?.bluetoothIdentifier
         else { return }
+        SharedDiagnosticLog.record(
+            "Accessory picker selected reader \(peripheralIdentifier)", category: "xteink")
         beginPairing(peripheralIdentifier: peripheralIdentifier)
     }
 
@@ -235,11 +282,13 @@ final class XteinkSettingsScreen: NavHeaderTableController {
             }
             do {
                 try await Self.waitForRendezvous()
+                SharedDiagnosticLog.record("Pairing: rendezvous up, sending hello", category: "xteink")
                 // The reader accepts a pairing hello only once the link is
                 // encrypted, and encryption waits for the user to accept the
                 // iOS bonding sheet. Retry across that window instead of
                 // failing while the sheet is still on screen.
                 try await Self.pairAllowingBondingTime(pairSecret: Self.pairSecret())
+                SharedDiagnosticLog.record("Pairing: reader accepted the hello", category: "xteink")
                 // Close the reader's rendezvous window now: it flips its
                 // popup to "Luna paired" the moment no_work lands, instead
                 // of holding the popup until an idle timeout. Then drop the
@@ -252,6 +301,7 @@ final class XteinkSettingsScreen: NavHeaderTableController {
                 settle(title: L10n.string("Settings_xteink_pairSuccessTitle"), message: L10n.string("Settings_xteink_pairSuccessMessage"))
             } catch {
                 XteinkBLECentral.shared.endRendezvous()
+                SharedDiagnosticLog.record("Pairing failed: \(error)", category: "xteink")
                 settle(title: L10n.string("Settings_xteink_pairFailedTitle"), message: "\(error)")
             }
         }
@@ -306,14 +356,11 @@ final class XteinkSettingsScreen: NavHeaderTableController {
         XteinkBLECentral.shared.forgetPairing()
         XteinkSendSettings.isEnabled = false
         tableView.reloadData()
-        // Also drop the AccessorySetupKit authorization: a lingering entry
-        // would keep the accessory "already set up" and confuse the next
-        // pairing's picker.
+        // Also drop the AccessorySetupKit authorization and its bond; the
+        // pair flow removes stale ones itself, so this is a courtesy, not a
+        // requirement.
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            for accessory in self.accessorySession.accessories {
-                try? await self.accessorySession.removeAccessory(accessory)
-            }
+            await self?.removeStaleAccessoryAuthorizations()
         }
     }
 }

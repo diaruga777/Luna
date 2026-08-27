@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LunaAppGroupID</key>
+	<string>$(APP_GROUP_ID)</string>
+	<key>LunaVaultAppGroupID</key>
+	<string>$(APP_GROUP_ID)</string>
+	<key>LunaVaultKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).vault.keychain</string>
+	<key>LunaVaultICloudContainerID</key>
+	<string>iCloud.$(PRODUCT_BUNDLE_PREFIX).vault</string>
+	<key>LunaVaultDatabaseName</key>
+	<string>vault.sqlite</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Luna Vault looks for your paired Mac on your local network to sync files.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.sync</string>
+		<string>$(PRODUCT_BUNDLE_PREFIX).vault.index</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_PREFIX).vault</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lunavault</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).VaultSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>

@@ -15,6 +15,7 @@
 		0178ACF1757BE05C0E05600F /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 2512DB3DBE82BBB22A9061B7 /* LunaDesignSystem */; };
 		02EDA65C2CDD06C3B27432FD /* LunaEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LunaEpub */; };
 		0343DD00114AC7D4DF1D33C8 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		035ECC658E9BB72960F32C27 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6CF6D2587830FFDC23A98D58 /* Foundation.framework */; };
 		04325C8AF877D151D2D31605 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		052563327C0FB9DFEF55947D /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		056B75A640F952053F3EDC66 /* LunaSavesUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaSavesUI */; };
@@ -33,6 +34,7 @@
 		130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		14D2AFFC19A169338A1147DD /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
 		15AEB5D55E2A97C4EF3F2EC1 /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
+		15C9B45A3E78445980FFF42E /* VaultSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */; };
 		164DC728A7C83E13375A08BA /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		166333B003B1CA56E9ECFAE4 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		17E518D87CDB4BF1B0B02FD4 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
@@ -89,6 +91,7 @@
 		3BF52B30E74A297E08A41982 /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		3EB986A4B023ACBE9D376F7B /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		3EE5E285E488168AC19BECB2 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
+		3F7F3136F480965FB7A218AE /* LunaVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 03209A3839713E5B2151D087 /* LunaVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3F984499DD8FB375FDE9BB96 /* LunaSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LunaSend */; };
 		408BAA99D147B5FF19864BCC /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		4142DF31BCC07DF42F077D2C /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
@@ -119,11 +122,13 @@
 		53FBAD67762D020D14FCEB00 /* LunaSaves in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* LunaSaves */; };
 		564D3AAC03C7A9A959BB013A /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		56770BAC6467F17943CE85B8 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
+		5797E264941DA0861AD0C231 /* KindWiring+Vault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */; };
 		57AC12F0DDEE1A912355E390 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		57BB44787AF321F127D724EA /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		57CE4CEC1B7E83451AFE6B55 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
 		59C336E6E016223659B23C6A /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		5A204F04F6FF6728F0A2E4A5 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
+		5A80AAAB158C791FD6810795 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 29F14A58F74AD046A0000536 /* Assets.xcassets */; };
 		5B169DB7D0A84FE6F0AFC513 /* LunaAppConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 41ADFC2E471B8A8F00733996 /* LunaAppConfig */; };
 		5C40C6B03BDD2E4B603C972A /* LunaURLRescue in Frameworks */ = {isa = PBXBuildFile; productRef = 6DD526C829477B25D521B5DA /* LunaURLRescue */; };
 		5C942F41F32AC814369DBF84 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
@@ -271,6 +276,7 @@
 		C2651D3DB2A545CDDEA3C458 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
 		C26534B9CC10C012BE3D43B6 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		C475B735E4CE89B206574DD2 /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
+		C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746380049BFBCA632316E778 /* VaultShareViewController.swift */; };
 		C4FCB8969CD2B9915D9F4EBD /* LunaPriceIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 292886352EFB923300D31884 /* LunaPriceIngest */; };
 		C52B4F5FC234914371C70778 /* LunaArticleIngest in Frameworks */ = {isa = PBXBuildFile; productRef = F7D535CDCC8DBE577FBBA9EF /* LunaArticleIngest */; };
 		C586707358D74315870A9DF6 /* LunaSavesUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaSavesUI */; };
@@ -294,6 +300,7 @@
 		D3376DB5E6C495F7AC1CD855 /* LunaAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2F9497B9CCD94E28698A4E6B /* LunaAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D3EA1630994091EEDD2F190E /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		D42B57E8D2EC0818A73B6FD4 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
+		D43E9CF4D30B404173C20E00 /* VaultAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */; };
 		D467F392C25AA4F4DE1C5D5F /* LunaSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LunaSocialUI */; };
 		D51185A738D87061659336B0 /* LunaSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LunaSocial */; };
 		D5AFE94D87296B201C34D805 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
@@ -310,6 +317,7 @@
 		DE66DCA327DA9E81723DC210 /* LunaDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LunaDocuments */; };
 		E11485B796D1461DB4810443 /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 182108EE181A9FAAB156FAD6 /* LunaMailAccount */; };
 		E1B697D0605CC79F52D8A2EB /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
+		E2A125EC9C12804950F5B30A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6CF6D2587830FFDC23A98D58 /* Foundation.framework */; };
 		E3099E1A7FF1005917B1442C /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = 346610A3376E7758E8C75578 /* LunaModels */; };
 		E31B09DF7960DE871F25EC71 /* LunaIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LunaIntents */; };
 		E539A58CA8B87B80ACCB6794 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
@@ -395,6 +403,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 8B037A04C4B57DCC3B52F210;
 			remoteInfo = LunaDownloaderSafari;
+		};
+		46798C8571FACDC2917EE8CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E30034D8CFBB706C24C9448;
+			remoteInfo = LunaVaultShare;
 		};
 		6733E376D16F3E63B8CEC461 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -496,6 +511,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7073B85B8CEB9BEDFF550419 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3F7F3136F480965FB7A218AE /* LunaVaultShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -562,20 +588,27 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		03209A3839713E5B2151D087 /* LunaVaultShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaVaultShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		062D53662477EEF9A388EF94 /* Localizable.strings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings; sourceTree = SOURCE_ROOT; };
 		17C57D675E0712054ACE6584 /* LunaPriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaPriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "KindWiring+Vault.swift"; sourceTree = "<group>"; };
 		28A05766718F3AE456726816 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		29F14A58F74AD046A0000536 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Luna/Assets.xcassets; sourceTree = "<group>"; };
 		2DCB0B589CD5F645564BBD14 /* LunaDownloaderLiveActivityWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LunaDownloaderLiveActivityWidget.swift; path = LunaDownloaderLiveActivity/LunaDownloaderLiveActivityWidget.swift; sourceTree = "<group>"; };
 		2F9497B9CCD94E28698A4E6B /* LunaAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		321A524CE357583A60D01100 /* LunaShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultAppDelegate.swift; sourceTree = "<group>"; };
 		3C0179E7326B416352FD04AE /* LunaPriceTrackerAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		645C0763C9762E92AE0E0A28 /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		6CF6D2587830FFDC23A98D58 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		746380049BFBCA632316E778 /* VaultShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultShareViewController.swift; sourceTree = "<group>"; };
 		79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CFBE7B0FE2FDF0DD3C246B2 /* LunaDownloaderLiveActivityBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LunaDownloaderLiveActivityBundle.swift; path = LunaDownloaderLiveActivity/LunaDownloaderLiveActivityBundle.swift; sourceTree = "<group>"; };
+		9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultSceneDelegate.swift; sourceTree = "<group>"; };
 		A57870A0D223D2CB75BC7281 /* Luna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000001 /* LunaReader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* LunaReaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaReaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -592,13 +625,14 @@
 		E34729A9C0FBABDE05C923C3 /* LunaPriceTrackerShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5EA7C469D9E6D3957CB93FA /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F70000000000000000000000 /* SharedIconAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = SharedIconAssets.xcassets; sourceTree = "<group>"; };
+		FF703AF04B63ED294953F60F /* LunaVault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		LDCL00000000000000000002 /* LunaDownloaderClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunaDownloaderClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		LDLA0000000000000000002 /* LunaDownloaderLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaDownloaderLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		QZ00000000000000000001 /* Luna.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Luna.xcconfig; path = Config/Luna.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0F6359E5F1947F76D1DC13EC /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		0F6359E5F1947F76D1DC13EC /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -608,7 +642,7 @@
 			);
 			target = 2746B738BB4967D72B4784AA /* LunaPriceTrackerShare */;
 		};
-		11BF6D0279EC0EB0310C162F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		11BF6D0279EC0EB0310C162F /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -618,7 +652,7 @@
 			);
 			target = 96905778435E3C7F63FA5E07 /* LunaDownloaderShare */;
 		};
-		1BA4AEE0B8443EEBE988E541 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		1BA4AEE0B8443EEBE988E541 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"ActionEntry+Luna.swift",
@@ -628,7 +662,7 @@
 			);
 			target = A2B18D43A980A2C17A48B019 /* LunaDownloaderAction */;
 		};
-		1CE7EDA84A9EF6FD416248DA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		1CE7EDA84A9EF6FD416248DA /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ArticleShellWiring.swift,
@@ -667,7 +701,7 @@
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
 		};
-		60BE25B026183D60EA23D207 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		60BE25B026183D60EA23D207 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ArticleShellWiring.swift,
@@ -709,14 +743,14 @@
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
 		};
-		70C08B3EB91494263C62F319 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		70C08B3EB91494263C62F319 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 914B0BF1DD6F590D135488AC /* LunaPriceTrackerSafari */;
 		};
-		79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		79583E0F2FE0BAD200C775CA /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"ActionEntry+Downloader.swift",
@@ -726,7 +760,7 @@
 			);
 			target = 79583DFB2FE0BAD100C775CA /* LunaReaderAction */;
 		};
-		83D9DA958F41E60A2CF03609 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		83D9DA958F41E60A2CF03609 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -736,14 +770,14 @@
 			);
 			target = 5E393E646C6A24066F73EE08 /* LunaShare */;
 		};
-		882C8351B7C877C0F5234404 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		882C8351B7C877C0F5234404 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 8B037A04C4B57DCC3B52F210 /* LunaDownloaderSafari */;
 		};
-		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000001 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Downloader/DownloaderOnboardingDemoSave.swift,
@@ -772,14 +806,14 @@
 			);
 			target = AAE000000000000000000000 /* LunaReader */;
 		};
-		AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000002 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE100000000000000000000 /* LunaReaderSafari */;
 		};
-		AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000003 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -789,14 +823,14 @@
 			);
 			target = AAE300000000000000000000 /* LunaReaderShare */;
 		};
-		D1D142500025E25B4A0A5B54 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		D1D142500025E25B4A0A5B54 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 3FD5F33FCDC0F220DB5FE276 /* LunaSafari */;
 		};
-		D667B7400D02129A1457006D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		D667B7400D02129A1457006D /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"ActionEntry+Downloader.swift",
@@ -806,7 +840,7 @@
 			);
 			target = BE0F0A63AC930FAA7923DDFC /* LunaPriceTrackerAction */;
 		};
-		D8198567C97F8AADEC1E6928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		D8198567C97F8AADEC1E6928 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"ActionEntry+Downloader.swift",
@@ -816,7 +850,7 @@
 			);
 			target = 892513B3F00DED1B930AD2AE /* LunaAction */;
 		};
-		EA354A2407FE8182155F337B /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		EA354A2407FE8182155F337B /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Downloader/DownloaderOnboardingDemoSave.swift,
@@ -832,14 +866,14 @@
 			);
 			target = F73C67777995F8F752A0056A /* Luna */;
 		};
-		LDCL00000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		LDCL00000000000000000007 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = LDCL00000000000000000001 /* LunaDownloaderClip */;
 		};
-		LDLA0000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		LDLA0000000000000000007 /* FileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -849,13 +883,115 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		79583E002FE0BAD100C775CA /* LunaAction */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 1BA4AEE0B8443EEBE988E541 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, D667B7400D02129A1457006D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, D8198567C97F8AADEC1E6928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaAction; sourceTree = "<group>"; };
-		AA0700000000000000000001 /* Luna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 1CE7EDA84A9EF6FD416248DA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 60BE25B026183D60EA23D207 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, EA354A2407FE8182155F337B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Luna; sourceTree = "<group>"; };
-		AA0700000000000000000002 /* LunaSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 882C8351B7C877C0F5234404 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 70C08B3EB91494263C62F319 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, D1D142500025E25B4A0A5B54 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaSafari; sourceTree = "<group>"; };
-		AA0700000000000000000003 /* LunaTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaTests; sourceTree = "<group>"; };
-		AA0700000000000000000004 /* LunaShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 11BF6D0279EC0EB0310C162F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 0F6359E5F1947F76D1DC13EC /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 83D9DA958F41E60A2CF03609 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaShare; sourceTree = "<group>"; };
-		LDCL00000000000000000008 /* LunaDownloaderClip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (LDCL00000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaDownloaderClip; sourceTree = "<group>"; };
-		LDLA0000000000000000008 /* LunaDownloaderLiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (LDLA0000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaDownloaderLiveActivity; sourceTree = "<group>"; };
+		79583E002FE0BAD100C775CA /* LunaAction */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				79583E0F2FE0BAD200C775CA /* FileSystemSynchronizedBuildFileExceptionSet */,
+				1BA4AEE0B8443EEBE988E541 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				D667B7400D02129A1457006D /* FileSystemSynchronizedBuildFileExceptionSet */,
+				D8198567C97F8AADEC1E6928 /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaAction;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000001 /* Luna */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				AA0600000000000000000001 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				1CE7EDA84A9EF6FD416248DA /* FileSystemSynchronizedBuildFileExceptionSet */,
+				60BE25B026183D60EA23D207 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				EA354A2407FE8182155F337B /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Luna;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000002 /* LunaSafari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				AA0600000000000000000002 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				882C8351B7C877C0F5234404 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				70C08B3EB91494263C62F319 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				D1D142500025E25B4A0A5B54 /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaSafari;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000003 /* LunaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaTests;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000004 /* LunaShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				AA0600000000000000000003 /* FileSystemSynchronizedBuildFileExceptionSet */,
+				11BF6D0279EC0EB0310C162F /* FileSystemSynchronizedBuildFileExceptionSet */,
+				0F6359E5F1947F76D1DC13EC /* FileSystemSynchronizedBuildFileExceptionSet */,
+				83D9DA958F41E60A2CF03609 /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaShare;
+			sourceTree = "<group>";
+		};
+		LDCL00000000000000000008 /* LunaDownloaderClip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				LDCL00000000000000000007 /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaDownloaderClip;
+			sourceTree = "<group>";
+		};
+		LDLA0000000000000000008 /* LunaDownloaderLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			children = (
+			);
+			exceptions = (
+				LDLA0000000000000000007 /* FileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaDownloaderLiveActivity;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -886,6 +1022,14 @@
 				5C40C6B03BDD2E4B603C972A /* LunaURLRescue in Frameworks */,
 				4911C008C9AEDE7D14A6B71A /* LunaPriceIngest in Frameworks */,
 				F336D098FB74C837E27A5981 /* LunaPriceCompare in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2DFABD3E619D0D9D257B2618 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				035ECC658E9BB72960F32C27 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1264,6 +1408,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E063288EB3439197D28AB52A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E2A125EC9C12804950F5B30A /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E8A1C231FD34FAB9D3079585 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1347,6 +1499,7 @@
 			isa = PBXGroup;
 			children = (
 				28A05766718F3AE456726816 /* Foundation.framework */,
+				6CF6D2587830FFDC23A98D58 /* Foundation.framework */,
 			);
 			name = iOS;
 			sourceTree = "<group>";
@@ -1369,6 +1522,9 @@
 				F70000000000000000000000 /* SharedIconAssets.xcassets */,
 				E0C07DF62CCF5297908EBD96 /* Shared Live Activity Sources */,
 				062D53662477EEF9A388EF94 /* Localizable.strings */,
+				C9AB4EE4BCCB87307D89635E /* LunaVault */,
+				29F14A58F74AD046A0000536 /* Assets.xcassets */,
+				FD2843812F73AFFCF36C5886 /* LunaVaultShare */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1396,8 +1552,21 @@
 				70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */,
 				86C669D3D9F162D390D90E7D /* LunaLiveActivity.appex */,
 				A57870A0D223D2CB75BC7281 /* Luna.app */,
+				FF703AF04B63ED294953F60F /* LunaVault.app */,
+				03209A3839713E5B2151D087 /* LunaVaultShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C9AB4EE4BCCB87307D89635E /* LunaVault */ = {
+			isa = PBXGroup;
+			children = (
+				3670A2349CD6A977F25C66DB /* VaultAppDelegate.swift */,
+				9F7E05E6C537E303DA866814 /* VaultSceneDelegate.swift */,
+				1B638042DC5E8AB780EF892E /* KindWiring+Vault.swift */,
+			);
+			name = LunaVault;
+			path = LunaVault;
 			sourceTree = "<group>";
 		};
 		E0C07DF62CCF5297908EBD96 /* Shared Live Activity Sources */ = {
@@ -1409,9 +1578,39 @@
 			name = "Shared Live Activity Sources";
 			sourceTree = "<group>";
 		};
+		FD2843812F73AFFCF36C5886 /* LunaVaultShare */ = {
+			isa = PBXGroup;
+			children = (
+				746380049BFBCA632316E778 /* VaultShareViewController.swift */,
+			);
+			name = LunaVaultShare;
+			path = LunaVaultShare;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0CEBC49567245F50D79EA991 /* LunaVault */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 12A4E3478FBC225B34CD5292 /* Build configuration list for PBXNativeTarget "LunaVault" */;
+			buildPhases = (
+				6026ECC9B5AD2EDB3BF5FF64 /* Sources */,
+				2DFABD3E619D0D9D257B2618 /* Frameworks */,
+				3A0F10FC004C2AA06EB94468 /* Resources */,
+				7073B85B8CEB9BEDFF550419 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D9E4EC7F3D2A03EFBB26C9D8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = LunaVault;
+			productName = LunaVault;
+			productReference = FF703AF04B63ED294953F60F /* LunaVault.app */;
+			productType = "com.apple.product-type.application";
+		};
 		2746B738BB4967D72B4784AA /* LunaPriceTrackerShare */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BBBAB49D7E42C2856846AF7C /* Build configuration list for PBXNativeTarget "LunaPriceTrackerShare" */;
@@ -1488,6 +1687,8 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
 			);
 			name = LunaReaderClip;
 			packageProductDependencies = (
@@ -1634,6 +1835,25 @@
 			);
 			productName = LunaReaderAction;
 			productReference = 79583DFC2FE0BAD100C775CA /* LunaReaderAction.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		7E30034D8CFBB706C24C9448 /* LunaVaultShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4C6831072B583EF0B92463DE /* Build configuration list for PBXNativeTarget "LunaVaultShare" */;
+			buildPhases = (
+				155E4DE308111E97031B1127 /* Sources */,
+				E063288EB3439197D28AB52A /* Frameworks */,
+				471D4408B9128169045200D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = LunaVaultShare;
+			productName = LunaVaultShare;
+			productReference = 03209A3839713E5B2151D087 /* LunaVaultShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		892513B3F00DED1B930AD2AE /* LunaAction */ = {
@@ -2087,6 +2307,8 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+			);
 			name = LunaLiveActivity;
 			packageProductDependencies = (
 				4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */,
@@ -2263,8 +2485,8 @@
 			);
 			mainGroup = AA0900000000000000000001;
 			packageReferences = (
-				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
-				C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */,
+				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */,
+				C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */,
 			);
 			productRefGroup = AA0900000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -2291,6 +2513,8 @@
 				3FD5F33FCDC0F220DB5FE276 /* LunaSafari */,
 				BE85547299B2176E2FF13621 /* LunaLiveActivity */,
 				F73C67777995F8F752A0056A /* Luna */,
+				0CEBC49567245F50D79EA991 /* LunaVault */,
+				7E30034D8CFBB706C24C9448 /* LunaVaultShare */,
 			);
 		};
 /* End PBXProject section */
@@ -2317,6 +2541,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				F70000000000000000000001 /* SharedIconAssets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3A0F10FC004C2AA06EB94468 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A80AAAB158C791FD6810795 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		471D4408B9128169045200D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2716,6 +2955,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		155E4DE308111E97031B1127 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C4F977E76E36AA3214E9C546 /* VaultShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		373A4FE3831DC2BDBE2A869D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2758,6 +3005,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6026ECC9B5AD2EDB3BF5FF64 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D43E9CF4D30B404173C20E00 /* VaultAppDelegate.swift in Sources */,
+				15C9B45A3E78445980FFF42E /* VaultSceneDelegate.swift in Sources */,
+				5797E264941DA0861AD0C231 /* KindWiring+Vault.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2932,6 +3189,12 @@
 			isa = PBXTargetDependency;
 			target = AAE300000000000000000000 /* LunaReaderShare */;
 			targetProxy = AA0400000000000000000003 /* PBXContainerItemProxy */;
+		};
+		D9E4EC7F3D2A03EFBB26C9D8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunaVaultShare;
+			target = 7E30034D8CFBB706C24C9448 /* LunaVaultShare */;
+			targetProxy = 46798C8571FACDC2917EE8CC /* PBXContainerItemProxy */;
 		};
 		F3B3FB92BBADF3F76F91D2B4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -3859,6 +4122,34 @@
 			};
 			name = Release;
 		};
+		955DDB3E83EFB13D881B0F09 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVault;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaVault/LunaVault.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaVault/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		A06A267FE792581B276EB885 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -4195,6 +4486,35 @@
 			};
 			name = Release;
 		};
+		BA8E4554347114CA8E3CE263 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaVaultShare/LunaVaultShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaVaultShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		BE6F0F191F208F7FEDC7D0B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -4253,6 +4573,36 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C2D761FD51748473FE9EED38 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaVaultShare/LunaVaultShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaVaultShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -4407,6 +4757,35 @@
 			};
 			name = Release;
 		};
+		F62052379B0F8215DE7E2A0A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconVault;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LunaVault/LunaVault.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LunaVault/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Vault";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).vault";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		LDCL0000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -4531,11 +4910,29 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		12A4E3478FBC225B34CD5292 /* Build configuration list for PBXNativeTarget "LunaVault" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F62052379B0F8215DE7E2A0A /* Release */,
+				955DDB3E83EFB13D881B0F09 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		28B8F23400C4B2873A2D78EF /* Build configuration list for PBXNativeTarget "LunaShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				90E6EB46A73966F6F0F81767 /* Debug */,
 				6697C60C2FF345D3A49D78C6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4C6831072B583EF0B92463DE /* Build configuration list for PBXNativeTarget "LunaVaultShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C2D761FD51748473FE9EED38 /* Release */,
+				BA8E4554347114CA8E3CE263 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -4732,14 +5129,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */ = {
+		C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LunaLibraries;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+		AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
 			requirement = {
@@ -4752,7 +5149,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaShareSurface;
 		};
 		0A5E4DC54DD727092F10D7B7 /* LunaPriceIngest */ = {
@@ -4761,12 +5158,12 @@
 		};
 		0A6EF471A0439863CF340788 /* LunaURLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLClassification;
 		};
 		0A75F804069AADDAD77A35B3 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		1737084DBE86A2783F8C4632 /* LunaArticleIngest */ = {
@@ -4775,52 +5172,52 @@
 		};
 		182108EE181A9FAAB156FAD6 /* LunaMailAccount */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailAccount;
 		};
 		1898F85E53C71F9475792360 /* LunaAppConfig */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAppConfig;
 		};
 		1994237BFADCA5EEADC9D18F /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		19DA8F59AD4226AC9DEA1736 /* LunaMediaResolve */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMediaResolve;
 		};
 		1D44E4B30AB7A9074F5F6B0B /* LunaURLRescue */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLRescue;
 		};
 		2142B82466A2D089FD99A42C /* LunaAppConfig */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAppConfig;
 		};
 		239B4BC2C21EA5A3A51F16EE /* LunaMailAccount */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailAccount;
 		};
 		23D539900BE01A2B18B7DF85 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		24EE758820598369692C40C1 /* LunaMediaResolve */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMediaResolve;
 		};
 		2512DB3DBE82BBB22A9061B7 /* LunaDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaDesignSystem;
 		};
 		292886352EFB923300D31884 /* LunaPriceIngest */ = {
@@ -4829,37 +5226,37 @@
 		};
 		2A8FB552EB09419C962A3746 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		2CB879EE971C7DBDDC25F478 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		2CE116DE1DC7FE19425ACEC3 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		2DCD27A395978060DB51497A /* LunaAudioPlayback */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAudioPlayback;
 		};
 		3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailAccount;
 		};
 		333A451D2F6E424BF2A01F84 /* LunaDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaDesignSystem;
 		};
 		346610A3376E7758E8C75578 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
 		};
 		36AD3BFA3EDB933B5E1555BC /* LunaArticleIngest */ = {
@@ -4872,27 +5269,27 @@
 		};
 		38C4D008FD98340A33203DA5 /* LunaMediaResolve */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMediaResolve;
 		};
 		3933ED17E10DC2C0C55B129C /* LunaSavesUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaSavesUI;
 		};
 		3A730A61461C658DA1DA02E5 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		3BC55B10C9DB9958928F665A /* LunaArchiveReader */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaArchiveReader;
 		};
 		3C1C5EEBEEE23956FF251A3B /* LunaMailAccount */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailAccount;
 		};
 		41709C14856C386FB0ECD70F /* LunaArticleIngest */ = {
@@ -4901,17 +5298,17 @@
 		};
 		41ADFC2E471B8A8F00733996 /* LunaAppConfig */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAppConfig;
 		};
 		436F1044DB2553FED3D9DB4C /* LunaReaderUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaReaderUI;
 		};
 		48455ED52E3622FE10B6DA75 /* LunaReaderEngine */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaReaderEngine;
 		};
 		4994C38CC878612A6833DB0B /* LunaPriceIngest */ = {
@@ -4920,12 +5317,12 @@
 		};
 		4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMediaDownload;
 		};
 		4E960E9AC07457DC10E6833B /* LunaMailTransport */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailTransport;
 		};
 		53C7C29F1A93B486D5B00938 /* LunaPriceIngest */ = {
@@ -4934,27 +5331,27 @@
 		};
 		57FF3B9C9B72CD1D8FEF8E90 /* LunaDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaDesignSystem;
 		};
 		59E17EB39B108E9054CCFBA3 /* LunaPriceUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceUI;
 		};
 		60BEF8B07087721AA6B42870 /* LunaMediaResolve */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMediaResolve;
 		};
 		64013D5A6E6E7F34528E3934 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		648405211A7DCF06041EDDB6 /* LunaAudioPlayback */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAudioPlayback;
 		};
 		69F563F26BDDD05573D2EF8D /* LunaArticleIngest */ = {
@@ -4963,62 +5360,62 @@
 		};
 		6B553416B89D53C4D81623D4 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		6BFF45ED325119736D0AE171 /* LunaMailTransport */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailTransport;
 		};
 		6DD526C829477B25D521B5DA /* LunaURLRescue */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLRescue;
 		};
 		6EDC1D9AE1F39D473CE9B129 /* LunaSaves */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaSaves;
 		};
 		7015D2D10A8C6E96F1AF0215 /* LunaAppConfig */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaAppConfig;
 		};
 		7076E0CE300BEBCC529280E0 /* LunaURLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLClassification;
 		};
 		72398B0845A005923290AE55 /* LunaPlatforms */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPlatforms;
 		};
 		7445361A6C10C9E25040C4AD /* LunaSocialUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaSocialUI;
 		};
 		74662FE2996754685063847E /* LunaArchiveReader */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaArchiveReader;
 		};
 		7B33BAF00CD2BE5E49340839 /* LunaMailTransport */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailTransport;
 		};
 		8909E25ED1F6D19133F69D41 /* LunaMailTransport */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaMailTransport;
 		};
 		96A6F703F2546295D09DFA79 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
 		};
 		9BC39160ECB9FC8E34463BE2 /* LunaArticleIngest */ = {
@@ -5027,107 +5424,107 @@
 		};
 		9EF9DCFE6045D550CCC45C80 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
 		};
 		A127D3C502F25C40A1B92693 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		A1AC9F7C74411AF59CC240DB /* LunaSend */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaSend;
 		};
 		A982CE2BE48B7474FDAD7A00 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		AA0300000000000000000002 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */;
 			productName = SwiftSoup;
 		};
 		AA0300000000000000000003 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */;
 			productName = SwiftSoup;
 		};
 		AA0300000000000000000004 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */;
 			productName = SwiftSoup;
 		};
 		AA824D3974D944B8BC077857 /* LunaEpub */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaEpub;
 		};
 		B42DA6A0DF4A07E7BA8BE70D /* LunaURLRescue */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLRescue;
 		};
 		C100000000000000000000011 /* LunaURLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLClassification;
 		};
 		C100000000000000000000012 /* LunaHTMLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaHTMLClassification;
 		};
 		C100000000000000000000013 /* LunaPaywallBypass */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPaywallBypass;
 		};
 		C100000000000000000000014 /* LunaPriceMetadata */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceMetadata;
 		};
 		C100000000000000000000016 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
 		};
 		C100000000000000000000017 /* LunaFetch */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaFetch;
 		};
 		C100000000000000000000018 /* LunaTransitions */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaTransitions;
 		};
 		C1W0000000000000000000001 /* LunaWeekly */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaWeekly;
 		};
 		D37EF8EA576B0A56307327E2 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		DE798ED2A5DA5A986EE4B864 /* LunaSocial */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaSocial;
 		};
 		DF70301FEEF23F3F893F8BFD /* LunaURLRescue */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLRescue;
 		};
 		E0EA44009AD0711239F49644 /* LunaURLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLClassification;
 		};
 		E4274F6DB74D20DE3EA07C54 /* LunaPriceIngest */ = {
@@ -5140,37 +5537,37 @@
 		};
 		E656FCBCB33D2B83A5BC2B9D /* LunaIngest */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaIngest;
 		};
 		E99C994F23213E8A67EC0B79 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaModels;
 		};
 		E9D7CF79A2B9469EB2C51741 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		EC12441B238CDC7A3EEDD1A0 /* LunaDocuments */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaDocuments;
 		};
 		ED4F60DD61842702BB1528D7 /* LunaStorage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaStorage;
 		};
 		EDDF3BD2FB6BC25A605EF0C4 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		F1D3242938BA3B48ED8EA6DD /* LunaIntents */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaIntents;
 		};
 		F2829C77D2AC5EAE048ADA73 /* LunaPriceIngest */ = {
@@ -5179,12 +5576,12 @@
 		};
 		F31A3AFA38CD4F4C0B020D99 /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		F58AF0A41218472B40C8B60E /* LunaPriceCompare */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaPriceCompare;
 		};
 		F7D535CDCC8DBE577FBBA9EF /* LunaArticleIngest */ = {
@@ -5193,7 +5590,7 @@
 		};
 		FB9A5782F945C8C87E9B588A /* LunaURLClassification */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaURLClassification;
 		};
 		FD5D60A882E8BE72AFD9155D /* LunaArticleIngest */ = {

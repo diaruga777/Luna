@@ -34,8 +34,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# scheme, bundle id, built product name, human name — the four apps, in the
-# order the guide should read.
+# scheme, bundle id, built product name, human name — the four legacy
+# URL/content apps, in the order the guide should read. Luna Vault is
+# intentionally excluded until its standalone shell has real stage catalogs
+# and fixtures; adding it here earlier would claim screens it cannot launch.
 APPS = [
     ("luna", "Luna", "com.hsanabria.luna", "Luna.app", "Luna (central)"),
     ("reader", "LunaReader", "com.hsanabria.luna.reader", "LunaReader.app", "Luna Reader"),

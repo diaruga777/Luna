@@ -11,7 +11,7 @@ references must have at least one entry
 
 which is the universal default `L10n` falls back to. Any app can override it
 by adding one more line for its own suffix — `_Core` (the central Luna app),
-`_Reader`, `_Downloader`, or `_PriceTracker` — with NO Swift change at all.
+`_Reader`, `_Downloader`, `_PriceTracker`, or `_Vault` — with NO Swift change at all.
 
 Grouping and the comments above each group are HAND-AUTHORED — that is the
 point of the file being organized by screen and reading order — so this
@@ -42,7 +42,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRINGS_PATH = os.path.join(
     REPO, "LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings")
 
-SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker")
+SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault")
 
 # Directories holding shipping code. Tests are deliberately absent: a test may
 # reference copy, but it never DEFINES any.
@@ -56,6 +56,8 @@ SOURCE_ROOTS = [
     "LunaSafari",
     "LunaDownloaderLiveActivity",
     "LunaLiveActivity",
+    "LunaVault",
+    "LunaVaultShare",
 ]
 
 # Where a key most likely belongs, for a human fixing up a --check/--write
@@ -79,6 +81,8 @@ SECTIONS = [
     ("LunaDownloaderClip", "App Clips"),
     ("LunaDownloaderLiveActivity", "Live Activity"),
     ("LunaLiveActivity", "Live Activity"),
+    ("LunaVault", "Vault"),
+    ("LunaVaultShare", "Vault Share Extension"),
     ("LunaShareSurface", "Share & Action Extensions"),
     ("LunaReaderUI", "Reader"),
     ("LunaArchiveReader", "Reader"),

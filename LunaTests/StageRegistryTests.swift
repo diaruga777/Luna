@@ -77,7 +77,7 @@ final class StageRegistryTests: XCTestCase {
     /// The kind → apps mapping, spelled out rather than derived, so a change to
     /// `LunaApp.handles*` has to be made deliberately in both places.
     func testKindAppSetsMatchTheDocumentedSplit() {
-        XCTAssertEqual(StageDescriptor.Kind.shared.apps, LunaApp.allCases)
+        XCTAssertEqual(StageDescriptor.Kind.shared.apps, LunaApp.legacyContentApps)
         XCTAssertEqual(StageDescriptor.Kind.article.apps, [.luna, .reader])
         XCTAssertEqual(StageDescriptor.Kind.email.apps, [.luna, .reader])
         XCTAssertEqual(StageDescriptor.Kind.media.apps, [.luna, .downloader])
@@ -87,15 +87,18 @@ final class StageRegistryTests: XCTestCase {
     /// Every app has at least the shared stages, and only the central app has
     /// all of them.
     func testEveryAppHasStagesAndOnlyTheCentralAppHasThemAll() {
-        for app in LunaApp.allCases {
+        for app in LunaApp.legacyContentApps {
             XCTAssertFalse(
                 StageRegistry.all(for: app).isEmpty,
                 "\(app.storageIdentifier) has no stages at all")
         }
         XCTAssertEqual(StageRegistry.all(for: .luna).count, stages.count)
-        for app in LunaApp.allCases where app != .luna {
+        for app in LunaApp.legacyContentApps where app != .luna {
             XCTAssertLessThan(StageRegistry.all(for: app).count, stages.count)
         }
+        XCTAssertTrue(
+            StageRegistry.all(for: .vault).isEmpty,
+            "Vault has no staged fixtures until its standalone UI catalogs land")
     }
 
     // MARK: - Composition roots

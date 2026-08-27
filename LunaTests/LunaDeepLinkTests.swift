@@ -78,6 +78,7 @@ final class LunaDeepLinkTests: XCTestCase {
         // (LUNA_URL_SCHEME). ownScheme reads the host bundle's CFBundleURLTypes, so
         // this is the one test that actually pins the Info.plist mirror.
         XCTAssertEqual(LunaDeepLink.ownScheme, "luna")
+        XCTAssertTrue(LunaDeepLink.allSchemes.contains(LunaDeepLink.vaultScheme))
     }
 
     // MARK: - Rescue

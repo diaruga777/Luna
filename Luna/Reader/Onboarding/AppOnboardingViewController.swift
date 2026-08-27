@@ -102,6 +102,7 @@ private extension LunaApp {
         case .reader: return "reader"
         case .downloader: return "downloader"
         case .priceTracker: return "price-tracker"
+        case .vault: return "vault"
         }
     }
 }
@@ -1927,7 +1928,7 @@ final class AppOnboardingViewController: UIViewController {
            arguments.indices.contains(flag + 1)
         {
             let identifier = arguments[flag + 1].lowercased()
-            if let requested = LunaApp.allCases.first(where: {
+            if let requested = LunaApp.legacyContentApps.first(where: {
                 $0.storageIdentifier == identifier && $0 != configuration.app
             }) {
                 return requested

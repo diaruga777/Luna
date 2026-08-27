@@ -1456,7 +1456,7 @@ final class ReaderOnboardingTests: XCTestCase {
     }
 
     func testEveryAppsHeadlineHoldsSomethingStillAcrossItsTwoBeats() {
-        for app in LunaApp.allCases {
+        for app in LunaApp.legacyContentApps {
             let copy = OnboardingStrings.introCopy(for: app)
             var hasSomethingToSay = false
             for line in copy.lines {
@@ -1684,7 +1684,7 @@ final class ReaderOnboardingTests: XCTestCase {
         // supported screen; these are the real ones, and a multi-line headline
         // has to hold every one of its lines inside them.
         for cardWidth: CGFloat in [272, 306, 382] {
-            for app in LunaApp.allCases {
+            for app in LunaApp.legacyContentApps {
                 let headline = OnboardingIntroHeadlineView(
                     copy: OnboardingStrings.introCopy(for: app))
                 headline.frame = CGRect(

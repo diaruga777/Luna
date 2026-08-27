@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # Write Luna.xcodeproj/xcuserdata/<user>.xcuserdatad/xcschemes/xcschememanagement.plist
-# so the Xcode scheme picker shows only the five real schemes.
+# so the Xcode scheme picker shows only the five app schemes and their
+# aggregate AllLunaApps scheme.
 #
 # Two separate mechanisms are at play and both live in this per-user file
 # (Xcode has no shared equivalent):
@@ -14,16 +15,16 @@
 #     is no file to delete.
 
 require "fileutils"
-require "xcodeproj"
+require_relative "xcodeproj_compat"
 
 PROJECT = File.expand_path("../Luna.xcodeproj", __dir__)
 
-APPS = ["Luna", "LunaReader", "LunaDownloader", "LunaPriceTracker"]
+APPS = ["Luna", "LunaReader", "LunaDownloader", "LunaPriceTracker", "LunaVault"]
 
-# The five schemes a human should ever pick.
+# The six schemes a human should ever pick.
 VISIBLE = APPS + ["AllLunaApps"]
 
-# Every native target that is NOT one of the four apps, read from the project so
+# Every native target that is NOT one of the five apps, read from the project so
 # adding or removing a target needs no edit here. LunaTests is deliberately in
 # this set: it has no scheme of its own by design (it hosts on the central Luna
 # app and runs from the Luna scheme).

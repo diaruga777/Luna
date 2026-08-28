@@ -24,12 +24,15 @@ Foundation-only. No SwiftSoup, no UIKit, no LunaFetch.
 
 Two consequences run through the whole design:
 
-1. **Every network call is injected.** The module defines
-   `SellerFanOut.Fetch`, `.WebSearch` and `.RichResolve` closures and makes no
-   request itself. The app can fetch through `ArticleFetcher` and route
-   candidate verification through the entire shared ingest pipeline; the appex
-   passes a bare `URLSession` and gets the regex parser. One orchestration, two
-   environments.
+1. **Every network call is injected.** The module defines one contract,
+   `SellerFanOutNetworking` — `fetch`, `webSearch`, `richResolve`,
+   `renderSearch`, plus an `availableLayers` declaration of which optional legs
+   the conformer actually runs — and makes no request itself. The two production
+   conformers are `PipelineSellerNetworking` (LunaPriceUI), which fetches
+   through `ArticleFetcher` and routes candidate verification through the entire
+   shared ingest pipeline, and `URLSessionSellerNetworking` (the Safari appex),
+   which has a bare `URLSession` and the regex parser and declares no optional
+   layer at all. One orchestration, two environments.
 2. **Small helpers are re-implemented rather than imported.** The URL rule
    tables (`LeanProductURLRules`) are a hand-copy of `ProductPageRules` +
    `ProductPageDetector`'s two URL predicates, pinned by
@@ -44,7 +47,9 @@ Two consequences run through the whole design:
 
 `DuckDuckGoSearch` moved `LunaIntents` → `LunaFetch` for the same reachability
 reason: only the four apps link LunaIntents, and the share/action extensions run
-the same fan-out.
+the same fan-out. `FirecrawlSearch`, `FirecrawlSearchCooldown` and
+`WebSearchChain` sit beside it there, which is also why LunaFetch depends on
+`LunaAppConfig`: the cooldown is App Group state.
 
 ---
 
@@ -311,12 +316,47 @@ foreign seller row either). Layer 1 is mostly in-market already (selection is
 per-region); the check matters most on Layer 2, which reaches storefronts in
 any country.
 
-**Layer 2 — keyless web search.** `DuckDuckGoSearch.results` (injected), which
+**Layer 2 — keyless web search.** `WebSearchChain.search` (injected), which
 reaches retailers the directory has never heard of. Same verification, same
 merge rule; it is a second opinion, not a replacement. Off in the constrained
 profile.
 
-`DuckDuckGoSearch` was measured DEAD: `html.duckduckgo.com` now serves every
+**Firecrawl first, DuckDuckGo second** (`LunaFetch/WebSearchChain.swift`).
+`FirecrawlSearch` POSTs the query to `https://api.firecrawl.dev/v2/search` with
+no Authorization header — `{"query", "limit": 10, "sources": ["web"], "timeout":
+10000}` — and reads `data.web[]` as ranked results. It leads because it answers
+structured JSON: nothing about a results page's MARKUP can drift under it, and
+there is no bot-challenge page to tell apart from an empty search. It reports
+failure in the body as well as the status, so a 200 carrying `"success": false`
+must not read as a search that found nothing.
+
+**The cost is a per-IP budget, and it is spent by every Luna process at once.**
+Keyless traffic is metered against two independent DAILY caps — requests and
+credits, where a ten-result search costs two credits — plus a per-minute cap.
+All three answer HTTP 429 with `{"success": false, "error": "Rate limit
+exceeded"}` and, when it can, a `Retry-After` header. `FirecrawlSearch.Outcome`
+therefore separates `.rateLimited(retryAfter:)` from `.unavailable`: only a 429
+says anything about the remaining budget, so 402 (out of credits), 408, a 5xx
+and a transport failure all mean the same "fall back for this run".
+
+**The cooldown is App Group state** (`FirecrawlSearchCooldown`, keys
+`firecrawl.search.cooldownUntil` / `.cooldownStep`). The app, the share
+extension and the action extension share one IP, so a 429 one of them met must
+stop the others asking — a save through the share sheet must not re-discover a
+daily cap the app already found. `Retry-After` is honoured verbatim; without one
+the wait escalates 60 s, doubling per consecutive refusal to a four-hour cap,
+which is short enough that a per-minute cap clears on its own and long enough
+that a daily cap is not probed all afternoon. A served search resets the
+escalation. While the stamp is live the chain does not even attempt Firecrawl.
+Both the defaults and the clock are injected, so `WebSearchChainTests` asserts
+the escalation without waiting for it or writing the user's real App Group.
+
+Nil out of the chain means BOTH providers failed, which the fan-out reads as
+"no search happened". Firecrawl's own empty answer is a search that DID happen,
+so it stands as `[]` even when the DuckDuckGo second opinion then fails.
+
+`DuckDuckGoSearch` stays as the fallback, and was once measured DEAD:
+`html.duckduckgo.com` now serves every
 result as a DIRECT href on `class="result__a"`, and the parser understood
 only the historical `…/l/?uddg=<percent-encoded-url>` redirect wrapper — a
 live 200 page full of results parsed to zero links, silently, with nothing
@@ -367,6 +407,20 @@ at the call sites, so the app and the appex say the same thing about the same ru
 shareable `DiagnosticLog` under the `SellerComparison` category; the Safari finder
 logs the one compact line an appex with a hard memory ceiling can afford. Tests
 assert on the rejections rather than on log text.
+
+**Layer 2's own line** goes to the same category, from
+`PipelineSellerNetworking.webSearch` (`WebSearchChainOutcome.logLine`):
+
+```
+web-search firecrawl=served served=firecrawl results=7
+web-search firecrawl=ratelimited(cooldown=90s) served=duckDuckGo results=9
+web-search firecrawl=cooling(3200s) served=duckDuckGo results=9
+web-search firecrawl=unavailable served=none results=0
+```
+
+The search leg had no trace at all before. It needs its own line because a
+search that never RAN produces no candidate, so it is indistinguishable in the
+per-candidate attempts from a search that found nothing.
 
 This value-with-a-`logLine` shape is now the pattern the rest of the pipeline
 follows: `BypassAttempt` (`LunaPaywallBypass/BypassRunner.swift`) reports one
@@ -627,7 +681,9 @@ halves of the app side.
 **`SellerComparisonRunner`** is the wiring: `ArticleFetcher` for pages (its
 `FetchError.badResponse(status:)` is what carries a bot wall's status back into
 the engine, so a refusal stays a RESULT rather than becoming an error),
-`DuckDuckGoSearch.results` for Layer 2, and `ProductPageSuggestion.resolve` — the
+`WebSearchChain.search` — Firecrawl, then DuckDuckGo — for Layer 2, whose
+provider and cooldown state it logs under the same `SellerComparison` category,
+and `ProductPageSuggestion.resolve` — the
 whole `IngestPipeline`, WKWebView render tier included — as the rich resolver, so
 a seller whose price only exists after client-side rendering still counts. The
 resolver is raced against twice the profile's per-fetch allowance, because it may

@@ -18,11 +18,13 @@ file. Files are marked `completeUntilFirstUserAuthentication`, relying on iOS
 Data Protection for local-at-rest protection. Remote copies must be produced by
 the crypto layer before transport. The database stores no extracted plaintext;
 the indexing stage owns its local schema and encrypted artifact projection.
-Replacement keeps recoverable staging/previous states and writes a protected
-generation token only after the new final has passed Data Protection. A final
-protection failure removes the candidate and restores the protected previous
-generation; startup rolls back any final that lacks its committed generation
-token rather than applying protection after the fact. Deletions enqueue durable
+Replacement keeps recoverable staging/previous states. Content and its generation
+token are fully written, fsynced, and protected while still staged; the protection
+attribute survives their atomic renames, and the token is installed only after the
+protected content. Startup verifies the token, current revision, and required file
+protection attributes before accepting a final. It restores a verified previous
+generation or deletes the candidate rather than applying protection after the fact.
+Deletions enqueue durable
 cleanup markers scoped to object revision and content-generation token in the
 logical transaction. Startup retries residual cleanup, but discards an obsolete
 marker without touching bytes if either scope has advanced. Data Protection application is

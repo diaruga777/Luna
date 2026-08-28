@@ -262,6 +262,9 @@ let package = Package(
             "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
             "LunaVaultSetup",
         ]),
+        .testTarget(name: "LunaVaultSearchTests", dependencies: [
+            "LunaVaultSearch", "LunaVaultEmbeddings", "LunaVaultModels",
+        ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

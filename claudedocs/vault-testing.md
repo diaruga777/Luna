@@ -56,3 +56,13 @@ Required later gates include offline restart/reindex, ciphertext-only backend
 requests, index model
 versioning, symbolic-link deduplication, iCloud eviction, Mac reconnect and
 conflict handling, and power-aware background work.
+
+Stage 4A adds deterministic backend coverage in `VaultBackendTests`: local
+Data-Protection-backed reads and ranges, iCloud unavailable-without-fallback,
+opaque UUID paths/ciphertext, confirmed-versus-pending eviction, and exact
+durable upload idempotency. `VaultICloudBackend` is tested through an injected
+`InMemoryVaultUbiquitousCoordinator`; no iCloud account or ubiquity entitlement
+is required for the deterministic suite. A live iCloud run must explicitly
+exercise a provisioned entitlement and record both download and eviction
+resource values; a successful API call alone is not evidence that local bytes
+were evicted.

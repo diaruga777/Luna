@@ -35,13 +35,14 @@ public struct VaultObjectRecord: Codable, Hashable, Sendable {
     public let updatedAt: Date
     public let accessedAt: Date
     public let isTombstone: Bool
+    public let deviceID: String
 
     public init(id: VaultObjectID, revision: UUID, logicalTime: Int64, size: Int64,
                 contentType: String? = nil, createdAt: Date, updatedAt: Date,
-                accessedAt: Date, isTombstone: Bool = false) {
+                accessedAt: Date, isTombstone: Bool = false, deviceID: String = "") {
         self.id = id; self.revision = revision; self.logicalTime = logicalTime; self.size = size
         self.contentType = contentType; self.createdAt = createdAt; self.updatedAt = updatedAt
-        self.accessedAt = accessedAt; self.isTombstone = isTombstone
+        self.accessedAt = accessedAt; self.isTombstone = isTombstone; self.deviceID = deviceID
     }
 }
 
@@ -50,8 +51,9 @@ public struct VaultTombstone: Codable, Hashable, Sendable {
     public let revision: UUID
     public let logicalTime: Int64
     public let deletedAt: Date
-    public init(id: VaultObjectID, revision: UUID, logicalTime: Int64, deletedAt: Date) {
-        self.id = id; self.revision = revision; self.logicalTime = logicalTime; self.deletedAt = deletedAt
+    public let deviceID: String
+    public init(id: VaultObjectID, revision: UUID, logicalTime: Int64, deletedAt: Date, deviceID: String = "") {
+        self.id = id; self.revision = revision; self.logicalTime = logicalTime; self.deletedAt = deletedAt; self.deviceID = deviceID
     }
 }
 
@@ -73,11 +75,16 @@ public struct VaultJob: Codable, Hashable, Sendable {
     public let id: UUID; public let kind: VaultJobKind; public let objectID: VaultObjectID?
     public var state: VaultJobState; public var attempts: Int; public var nextAttemptAt: Date?
     public var lastError: String?; public let createdAt: Date; public var updatedAt: Date
+    public let idempotencyKey: String
+    public var leaseOwner: String?
+    public var leaseExpiresAt: Date?
     public init(id: UUID = UUID(), kind: VaultJobKind, objectID: VaultObjectID? = nil, state: VaultJobState = .queued,
                 attempts: Int = 0, nextAttemptAt: Date? = nil, lastError: String? = nil,
-                createdAt: Date = Date(), updatedAt: Date = Date()) {
+                createdAt: Date = Date(), updatedAt: Date = Date(), idempotencyKey: String? = nil,
+                leaseOwner: String? = nil, leaseExpiresAt: Date? = nil) {
         self.id=id; self.kind=kind; self.objectID=objectID; self.state=state; self.attempts=attempts
         self.nextAttemptAt=nextAttemptAt; self.lastError=lastError; self.createdAt=createdAt; self.updatedAt=updatedAt
+        self.idempotencyKey=idempotencyKey ?? id.uuidString; self.leaseOwner=leaseOwner; self.leaseExpiresAt=leaseExpiresAt
     }
 }
 

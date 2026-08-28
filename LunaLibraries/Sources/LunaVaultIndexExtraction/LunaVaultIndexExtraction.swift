@@ -289,16 +289,135 @@ public struct VaultExtractionPipeline: Sendable {
     }
 }
 
-private func withTimeout<T: Sendable>(_ interval: TimeInterval,
-                                      operation: @escaping @Sendable () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(max(0.001, interval) * 1_000_000_000))
-            throw VaultExtractionError.timedOut
-        }
-        guard let value = try await group.next() else { throw VaultExtractionError.cancelled }
-        group.cancelAll()
-        return value
+/// Owns the continuation and the two unstructured tasks used by
+/// `withTimeout`.  A throwing task group is deliberately not used here:
+/// groups await every child while unwinding, which turns cancellation of an
+/// OCR/export operation that ignores Swift cancellation into a second timeout
+/// equal to the operation's remaining runtime.
+private final class VaultTimeoutState<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    private var continuation: CheckedContinuation<T, Error>?
+    private var pendingResult: Result<T, Error>?
+    private var operationTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+    private var cancellationAction: (@Sendable () -> Void)?
+    private var didCancelOperation = false
+
+    init(cancellationAction: @escaping @Sendable () -> Void) {
+        self.cancellationAction = cancellationAction
     }
+
+    func installOperation(_ task: Task<Void, Never>) -> Bool {
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return true
+        }
+        operationTask = task
+        lock.unlock()
+        return false
+    }
+
+    func installDeadline(_ task: Task<Void, Never>) -> Bool {
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return true
+        }
+        deadlineTask = task
+        lock.unlock()
+        return false
+    }
+
+    func installContinuation(_ continuation: CheckedContinuation<T, Error>) {
+        var result: Result<T, Error>?
+        lock.lock()
+        if let pendingResult {
+            self.pendingResult = nil
+            result = pendingResult
+        } else if finished {
+            // Every terminal transition stores a result. This fallback keeps
+            // the continuation one-shot even if a future transition changes
+            // that invariant.
+            result = .failure(CancellationError())
+        } else {
+            self.continuation = continuation
+        }
+        lock.unlock()
+        if let result { continuation.resume(with: result) }
+    }
+
+    func finish(_ result: Result<T, Error>, cancelOperation: Bool) {
+        var continuation: CheckedContinuation<T, Error>?
+        var deadline: Task<Void, Never>?
+        var operation: Task<Void, Never>?
+        var cancellationAction: (@Sendable () -> Void)?
+
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        continuation = self.continuation
+        self.continuation = nil
+        if continuation == nil { pendingResult = result }
+        deadline = deadlineTask
+        deadlineTask = nil
+        if cancelOperation && !didCancelOperation {
+            didCancelOperation = true
+            operation = operationTask
+            operationTask = nil
+            cancellationAction = self.cancellationAction
+            self.cancellationAction = nil
+        }
+        lock.unlock()
+
+        deadline?.cancel()
+        cancellationAction?()
+        operation?.cancel()
+        continuation?.resume(with: result)
+    }
+
+    func cancel() {
+        finish(.failure(CancellationError()), cancelOperation: true)
+    }
+
+    func timeout() {
+        finish(.failure(VaultExtractionError.timedOut), cancelOperation: true)
+    }
+}
+
+private func withTimeout<T: Sendable>(_ interval: TimeInterval,
+                                      onCancel: @escaping @Sendable () -> Void = {},
+                                      operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    let state = VaultTimeoutState<T>(cancellationAction: onCancel)
+    let work = Task.detached(priority: .utility) { [weak state] in
+        do {
+            let value = try await operation()
+            state?.finish(.success(value), cancelOperation: false)
+        } catch {
+            state?.finish(.failure(error), cancelOperation: false)
+        }
+    }
+    if state.installOperation(work) { work.cancel() }
+
+    let nanoseconds = UInt64(max(0.001, interval) * 1_000_000_000)
+    let deadline = Task.detached(priority: .utility) { [weak state] in
+        do { try await Task.sleep(nanoseconds: nanoseconds) }
+        catch { return }
+        state?.timeout()
+    }
+    if state.installDeadline(deadline) { deadline.cancel() }
+
+    // The handler is registered around the continuation, so cancellation
+    // before or during setup is handled by the same one-shot state machine.
+    return try await withTaskCancellationHandler(operation: {
+        try await withCheckedThrowingContinuation { continuation in
+            state.installContinuation(continuation)
+        }
+    }, onCancel: {
+        state.cancel()
+    })
 }

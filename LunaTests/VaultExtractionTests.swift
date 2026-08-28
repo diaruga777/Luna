@@ -147,8 +147,28 @@ final class VaultExtractionTests: XCTestCase {
                                                ocr: slow, imagePreparer: TestImagePreparer())
         do { _ = try await pipeline.extract(request(name: "scan.png", data: Data([1]))); XCTFail("slow OCR completed") }
         catch let error as VaultExtractionError { XCTAssertEqual(error, .timedOut) }
+        // Cancellation is delivered to the detached operation immediately,
+        // but the actor records it on its next turn.
+        try? await Task.sleep(nanoseconds: 20_000_000)
         let wasCancelled = await slow.wasCancelled
         XCTAssertTrue(wasCancelled)
+    }
+
+    func testTimeoutReturnsAtDeadlineForNonCooperativeOCRAndInvokesCancellationHandle() async throws {
+        let slow = NonCooperativeOCR()
+        let pipeline = VaultExtractionPipeline(policy: VaultExtractionPolicy(maximumWorkInterval: 0.1),
+                                                ocr: slow, imagePreparer: TestImagePreparer())
+        let started = ContinuousClock.now
+        do {
+            _ = try await pipeline.extract(request(name: "scan.png", data: Data([1])))
+            XCTFail("non-cooperative OCR completed")
+        } catch let error as VaultExtractionError {
+            XCTAssertEqual(error, .timedOut)
+        }
+        let elapsed = started.duration(to: .now).components
+        let elapsedSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+        XCTAssertLessThan(elapsedSeconds, 0.5, "timeout waited for non-cooperative OCR")
+        XCTAssertTrue(slow.wasCancelled, "timeout did not invoke the underlying cancellation handle")
     }
 
     func testVideoDemuxSeamReceivesVideoAndSpeechPreservesSegments() async throws {
@@ -216,6 +236,32 @@ final class VaultExtractionTests: XCTestCase {
         func recognizeText(from data: Data, contentType: String?) async throws -> [VaultOCRObservation] {
             do { try await Task.sleep(nanoseconds: 10_000_000_000); return [] }
             catch { wasCancelled = true; throw error }
+        }
+    }
+    private final class NonCooperativeOCR: VaultVisionOCR, @unchecked Sendable {
+        private let lock = NSLock()
+        private var cancellationCount = 0
+
+        var wasCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return cancellationCount == 1
+        }
+
+        func recognizeText(from data: Data, contentType: String?) async throws -> [VaultOCRObservation] {
+            try await withTaskCancellationHandler(operation: {
+                await withCheckedContinuation { continuation in
+                    // This deliberately ignores task cancellation. The
+                    // timeout must abandon this isolated operation after its
+                    // deadline while its explicit handle still runs.
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25) {
+                        continuation.resume(returning: [VaultOCRObservation]())
+                    }
+                }
+            }, onCancel: {
+                self.lock.lock()
+                self.cancellationCount += 1
+                self.lock.unlock()
+            })
         }
     }
     private final class TestCoordinator: VaultExtractionJobCoordinating, @unchecked Sendable {

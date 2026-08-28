@@ -1,6 +1,6 @@
 # Luna — three weblink apps over one shared store (experiment)
 
-Luna is a family of **three standalone iOS apps** (UIKit, deployment target iOS 26)
+Luna is a family of **three standalone link apps plus Luna Vault** (UIKit, deployment target iOS 26)
 that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
 
 - **Luna Reader** (`com.hsanabria.luna.reader`, Xcode target `Luna`) — articles,
@@ -10,6 +10,15 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
   social / video / audio links + friend-sharing (CloudKit public-DB, `iCloud.com.hsanabria.luna`).
 - **Luna Price Tracker** (`com.hsanabria.luna.pricetracker`, target `LunaPriceTracker`) —
   product price tracking.
+- **Luna Vault** (`com.hsanabria.luna.vault`, target `LunaVault`) — an encrypted,
+  search-first arbitrary-file surface. Vault v1 stores on device, in iCloud
+  (with optional local eviction), or on a user-owned Mac. AWS/S3-compatible
+  providers and hosted Luna infrastructure are deferred.
+
+Vault-to-Mac reachability may use the user's separately installed Tailscale
+client (MagicDNS/Tailscale IP) or same-LAN discovery. Tailscale is transport
+and discovery only; Vault still pairs/authenticates an app-level encrypted
+protocol and does not embed a Tailscale SDK or relay service.
 
 **`luna` is a placeholder namespace** — rename it by editing the two top lines of
 `Config/Luna.xcconfig` (`LUNA_NAMESPACE`, `COMPANY_PREFIX`). Everything derives from

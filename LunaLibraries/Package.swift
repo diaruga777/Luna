@@ -46,6 +46,17 @@ let package = Package(
         .library(name: "LunaSocialUI", targets: ["LunaSocialUI"]),
         .library(name: "LunaIntents", targets: ["LunaIntents"]),
         .library(name: "LunaSavesUI", targets: ["LunaSavesUI"]),
+        .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
+        .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
+        .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
+        .library(name: "LunaVaultIndexExtraction", targets: ["LunaVaultIndexExtraction"]),
+        .library(name: "LunaVaultEmbeddings", targets: ["LunaVaultEmbeddings"]),
+        .library(name: "LunaVaultSearch", targets: ["LunaVaultSearch"]),
+        .library(name: "LunaVaultBackend", targets: ["LunaVaultBackend"]),
+        .library(name: "LunaVaultSync", targets: ["LunaVaultSync"]),
+        .library(name: "LunaVaultSetup", targets: ["LunaVaultSetup"]),
+        .library(name: "LunaVaultUI", targets: ["LunaVaultUI"]),
+        .library(name: "VaultTestKit", targets: ["VaultTestKit"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -205,6 +216,52 @@ let package = Package(
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
         .target(name: "LunaSaves", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
+        // Luna Vault is deliberately layered independently from the legacy
+        // URL-save graph. The extraction, embedding and search tiers have no
+        // dependency path to a backend or networking target, so their work can
+        // remain provably on-device as later implementations land.
+        .target(name: "LunaVaultModels"),
+        .target(name: "LunaVaultCrypto", dependencies: [
+            "LunaVaultModels", "LunaAppConfig",
+        ]),
+        .target(name: "LunaVaultStorage", dependencies: [
+            "LunaVaultModels", "LunaVaultCrypto", "LunaAppConfig",
+        ]),
+        .target(name: "LunaVaultIndexExtraction", dependencies: [
+            "LunaVaultModels",
+        ]),
+        .target(name: "LunaVaultEmbeddings", dependencies: [
+            "LunaVaultModels",
+        ]),
+        .target(name: "LunaVaultSearch", dependencies: [
+            "LunaVaultModels", "LunaVaultStorage", "LunaVaultEmbeddings",
+            "LunaVaultIndexExtraction",
+        ]),
+        .target(name: "LunaVaultBackend", dependencies: [
+            "LunaVaultModels", "LunaVaultCrypto",
+        ]),
+        .target(name: "LunaVaultSync", dependencies: [
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
+            "LunaVaultBackend",
+        ]),
+        .target(name: "LunaVaultSetup", dependencies: [
+            "LunaVaultModels", "LunaVaultBackend", "LunaVaultCrypto",
+            "LunaVaultStorage",
+        ]),
+        .target(name: "LunaVaultUI", dependencies: [
+            "LunaDesignSystem", "LunaVaultModels", "LunaVaultCrypto",
+            "LunaVaultStorage", "LunaVaultIndexExtraction",
+            "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
+            "LunaVaultSync", "LunaVaultSetup",
+        ]),
+        // Test support is a product so the existing app-hosted LunaTests bundle
+        // can exercise the same public seams. Production targets never link it.
+        .target(name: "VaultTestKit", dependencies: [
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
+            "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
+            "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
+            "LunaVaultSetup",
+        ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

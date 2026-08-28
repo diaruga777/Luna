@@ -14,7 +14,9 @@ public struct VaultCryptoConfiguration: Equatable, Sendable {
     }
 }
 
-/// Narrow seam for the later synchronizable-Keychain implementation.
+/// Narrow seam for the later synchronizable-Keychain implementation. The
+/// production key store will use the Vault access group and kSecAttrSynchronizable;
+/// test implementations must never substitute the user's real Keychain.
 public protocol VaultKeyStoring: Sendable {
     func data(forKey key: String) throws -> Data?
     func setData(_ data: Data, forKey key: String) throws
@@ -22,6 +24,7 @@ public protocol VaultKeyStoring: Sendable {
 }
 
 /// Envelope operations remain injected until the encrypted format is specified.
+/// Implementations must authenticate ciphertext before returning plaintext.
 public protocol VaultCrypting: Sendable {
     func seal(_ plaintext: Data) throws -> Data
     func open(_ ciphertext: Data) throws -> Data

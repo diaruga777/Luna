@@ -9,9 +9,9 @@ public enum LunaVaultSetupModule {
 }
 
 public struct VaultSetupConfiguration: Equatable, Sendable {
-    public let backendIdentifier: String?
+    public let storagePolicy: VaultStoragePolicy?
 
-    public init(backendIdentifier: String? = nil) {
-        self.backendIdentifier = backendIdentifier
+    public init(storagePolicy: VaultStoragePolicy? = nil) {
+        self.storagePolicy = storagePolicy
     }
 }

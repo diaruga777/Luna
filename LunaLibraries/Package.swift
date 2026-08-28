@@ -260,7 +260,7 @@ let package = Package(
             "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
             "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
             "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
-            "LunaVaultSetup", "LunaVaultUI",
+            "LunaVaultSetup",
         ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural

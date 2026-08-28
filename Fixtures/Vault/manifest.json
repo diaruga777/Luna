@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Stage 1B deterministic Vault scaffolding fixtures",
+  "network": "forbidden",
+  "storageLocations": ["device", "icloud", "mac"],
+  "files": [
+    {"id": "00000000-0000-0000-0000-000000000001", "contentType": "text/plain", "text": "local fixture"},
+    {"id": "00000000-0000-0000-0000-000000000002", "contentType": "image/png", "text": "OCR fixture placeholder"},
+    {"id": "00000000-0000-0000-0000-000000000003", "contentType": "video/mp4", "text": "transcript fixture placeholder"}
+  ]
+}

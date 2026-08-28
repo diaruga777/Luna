@@ -108,6 +108,8 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^Luna/Resources/", ["ReaderOnboardingTests", "OnboardingSaveDemoTests"]),
     # Test inputs: whichever test names the fixture is the one that reads it.
     (r"^LunaTests/Fixtures/", "SYMBOL"),
+    (r"^Fixtures/Vault/manifest\.json$", ["VaultScaffoldTests"]),
+    (r"^LunaLibraries/Sources/LunaVault", ["VaultScaffoldTests"]),
     (r"^LunaTests/ReferenceImages/", "SYMBOL"),
     # Inputs that cannot move a test result.
     (r"^claudedocs/", None),

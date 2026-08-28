@@ -75,6 +75,22 @@ def clone_shell_phase(project, source_target, destination, name)
   destination.build_phases << phase
 end
 
+def link_local_package_product(project, target, product_name)
+  package_ref = project.objects
+                       .select { |object| object.isa == "XCLocalSwiftPackageReference" }
+                       .find { |object| object.relative_path.to_s.include?("LunaLibraries") }
+  abort "Missing LunaLibraries local package reference" unless package_ref
+
+  dependency = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+  dependency.package = package_ref
+  dependency.product_name = product_name
+  target.package_product_dependencies << dependency
+
+  build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+  build_file.product_ref = dependency
+  target.frameworks_build_phase.files << build_file
+end
+
 # Vault host: no shared URL/reader/media shell files and no central package
 # graph. Feature services are introduced by later Vault stages.
 app = project.new_target(:application, "LunaVault", :ios, "18.0")
@@ -83,6 +99,7 @@ configure_target(app, '$(PRODUCT_BUNDLE_PREFIX).vault', "LunaVault/Info.plist", 
 app.build_configurations.each { |configuration| configuration.build_settings["INFOPLIST_KEY_CFBundleDisplayName"] = "$(DISPLAY_NAME_PREFIX) Vault" }
 _group, refs = add_source_group(project, "LunaVault", %w[VaultAppDelegate.swift VaultSceneDelegate.swift KindWiring+Vault.swift])
 app.add_file_references(refs)
+link_local_package_product(project, app, "LunaVaultUI")
 # Add the catalog (rather than the child appiconset) so Xcode runs actool and
 # emits the Vault icon into Assets.car. The target's icon setting selects only
 # AppIconVault; the other app icons remain unused by this host.

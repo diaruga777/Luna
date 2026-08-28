@@ -9,9 +9,14 @@ public enum LunaVaultStorageModule {
 
 public struct VaultStorageConfiguration: Equatable, Sendable {
     public let databaseName: String
+    public let policy: VaultStoragePolicy
 
-    public init(databaseName: String = "vault.sqlite") {
+    public init(
+        databaseName: String = "vault.sqlite",
+        policy: VaultStoragePolicy = VaultStoragePolicy(location: .device)
+    ) {
         self.databaseName = databaseName
+        self.policy = policy
     }
 }
 

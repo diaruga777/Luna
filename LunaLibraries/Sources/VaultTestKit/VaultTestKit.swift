@@ -7,7 +7,6 @@ import LunaVaultSearch
 import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
-import LunaVaultUI
 
 public enum VaultTestKitModule {
     public static let identifier = "VaultTestKit"
@@ -24,6 +23,5 @@ public enum VaultTestKitModule {
         LunaVaultBackendModule.identifier,
         LunaVaultSyncModule.identifier,
         LunaVaultSetupModule.identifier,
-        LunaVaultUIModule.identifier,
     ]
 }

@@ -16,9 +16,12 @@ public enum LunaVaultCryptoModule { public static let identifier = "LunaVaultCry
 public struct VaultCryptoConfiguration: Equatable, Sendable {
     public let keychainAccessGroup: String
     public let vaultID: String
-    public init(keychainAccessGroup: String, vaultID: String = "default") {
+    public let keychainService: String
+    public init(keychainAccessGroup: String, vaultID: String = "default", keychainService: String? = nil) {
         self.keychainAccessGroup = keychainAccessGroup
         self.vaultID = vaultID
+        let namespace = Bundle.main.bundleIdentifier ?? AppConfig.vaultAppGroupID
+        self.keychainService = keychainService ?? "\(namespace).keys"
     }
 }
 
@@ -47,7 +50,12 @@ public struct SystemVaultRandomBytes: VaultRandomBytesGenerating {
     public init() {}
     public func bytes(count: Int) throws -> Data {
         guard count >= 0 else { throw VaultCryptoError.invalidLength }
-        return Data((0..<count).map { _ in UInt8.random(in: 0...255) })
+        var output = Data(); output.reserveCapacity(count)
+        while output.count < count {
+            let key = SymmetricKey(size: .bits256)
+            key.withUnsafeBytes { output.append(contentsOf: $0.prefix(count - output.count)) }
+        }
+        return output
     }
 }
 
@@ -148,7 +156,7 @@ public final class VaultRootKeyManager: @unchecked Sendable {
     public init(configuration: VaultCryptoConfiguration, store: VaultKeyStoring = VaultKeychainStore(), random: VaultRandomBytesGenerating = SystemVaultRandomBytes(), lifecycleLockURL: URL? = AppConfig.sharedContainerURL()?.appendingPathComponent(".vault-key-lifecycle.lock")) {
         self.store = store; self.random = random
         self.lifecycleLockURL = lifecycleLockURL
-        descriptor = VaultKeyDescriptor(service: "com.hsanabria.luna.vault.keys", account: configuration.vaultID,
+        descriptor = VaultKeyDescriptor(service: configuration.keychainService, account: configuration.vaultID,
             accessGroup: configuration.keychainAccessGroup, synchronizable: true, accessibility: .whenUnlocked)
     }
     /// Setup-only. Launch and recovery paths must call `loadRequired`.
@@ -170,6 +178,7 @@ public final class VaultRootKeyManager: @unchecked Sendable {
     public func rotate() throws -> VaultRootKey { try synchronized {
         guard let before = try store.data(for: descriptor) else { throw VaultCryptoError.keyUnavailable }
         var ring = try decodeRing(before); guard ring.count < 64 else { throw VaultCryptoError.corruptRootKey }
+        guard ring.last!.version < UInt32.max else { throw VaultCryptoError.corruptRootKey }
         let next = try VaultRootKey(version: ring.last!.version + 1, key: random.bytes(count: 32)); ring.append(next)
         try store.setData(try JSONEncoder().encode(ring), for: descriptor)
         guard let after = try store.data(for: descriptor), try decodeRing(after).contains(next) else { throw VaultCryptoError.keyUnavailable }
@@ -210,14 +219,17 @@ public struct VaultChunkEnvelope: Sendable, Equatable {
         self.chunkIndex=chunkIndex; self.plaintextLength=plaintextLength; self.nonce=nonce; self.ciphertext=ciphertext
     }
     public func encoded() throws -> Data {
-        guard rootVersion > 0, nonce.count == 12, ciphertext.count >= 16 else { throw VaultCryptoError.malformedEnvelope }
+        guard rootVersion > 0, plaintextLength <= 100_000_000_000, nonce.count == 12,
+              ciphertext.count >= 16, ciphertext.count <= 8_388_608 + 16 else { throw VaultCryptoError.malformedEnvelope }
         var data = Data([Self.version, role.rawValue]); data.append(contentsOf: be(rootVersion)); data.append(objectID.rawValue.uuidData)
         data.append(revision.uuidData); data.append(contentsOf: be(chunkIndex)); data.append(contentsOf: be(plaintextLength)); data.append(nonce); data.append(ciphertext); return data
     }
     public static func decode(_ data: Data, maximumBytes: Int = 1_048_576 + headerSize + 16) throws -> VaultChunkEnvelope {
-        guard data.count >= headerSize + 16, data.count <= maximumBytes, data[0] == version, let role = VaultEnvelopeRole(rawValue: data[1]) else { throw VaultCryptoError.malformedEnvelope }
+        guard maximumBytes >= headerSize + 16, data.count >= headerSize + 16, data.count <= maximumBytes,
+              data[0] == version, let role = VaultEnvelopeRole(rawValue: data[1]) else { throw VaultCryptoError.malformedEnvelope }
         var i=2; let root=try read32(data,&i); guard root > 0 else { throw VaultCryptoError.malformedEnvelope }
         let object=try readUUID(data,&i), revision=try readUUID(data,&i), index=try read32(data,&i), length=try read64(data,&i)
+        guard length <= 100_000_000_000 else { throw VaultCryptoError.inputTooLarge }
         let nonce=Data(data[i..<i+12]); i += 12
         return VaultChunkEnvelope(role: role, rootVersion: root, objectID: VaultObjectID(rawValue: object), revision: revision, chunkIndex: index, plaintextLength: length, nonce: nonce, ciphertext: Data(data[i...]))
     }
@@ -239,10 +251,11 @@ public struct VaultChunkedCryptor: Sendable {
     public func seal(_ plaintext: Data, objectID: VaultObjectID, revision: UUID, root: VaultRootKey, role: VaultEnvelopeRole = .content) throws -> [Data] {
         guard role != .dek, UInt64(plaintext.count) <= Self.maximumObjectBytes else { throw VaultCryptoError.inputTooLarge }
         let dek=try random.bytes(count:32); guard dek.count == 32 else { throw VaultCryptoError.invalidLength }
-        var result=[try wrap(dek,root,objectID,revision)]; let key=SymmetricKey(data:dek)
+        var nonces=Set<Data>(); let wrapNonce=try uniqueNonce(&nonces)
+        var result=[try wrap(dek,root,objectID,revision,wrapNonce)]; let key=SymmetricKey(data:dek)
         let count=max(1,(plaintext.count + chunkSize - 1) / chunkSize); guard count <= Int(UInt32.max) else { throw VaultCryptoError.tooManyChunks }
         for number in 0..<count {
-            let start=min(plaintext.count,number*chunkSize), end=min(plaintext.count,start+chunkSize); let nonceData=try random.bytes(count:12); guard nonceData.count == 12 else { throw VaultCryptoError.invalidLength }
+            let start=min(plaintext.count,number*chunkSize), end=min(plaintext.count,start+chunkSize); let nonceData=try uniqueNonce(&nonces)
             let aad=associatedData(role,root.version,objectID,revision,UInt32(number),UInt64(plaintext.count))
             let box=try AES.GCM.seal(Data(plaintext[start..<end]),using:key,nonce:try AES.GCM.Nonce(data:nonceData),authenticating:aad)
             result.append(try VaultChunkEnvelope(role:role,rootVersion:root.version,objectID:objectID,revision:revision,chunkIndex:UInt32(number),plaintextLength:UInt64(plaintext.count),nonce:nonceData,ciphertext:box.ciphertext+box.tag).encoded())
@@ -255,7 +268,7 @@ public struct VaultChunkedCryptor: Sendable {
     }
     public func openRange(_ frames:[Data], range:Range<Int>, objectID:VaultObjectID, revision:UUID, role:VaultEnvelopeRole = .content, rootKey:(UInt32)throws->VaultRootKey)throws->Data {
         let parsed=try validate(frames,objectID,revision,role); guard parsed.length <= UInt64(Int.max), range.lowerBound >= 0, range.upperBound >= range.lowerBound, UInt64(range.upperBound) <= parsed.length else { throw VaultCryptoError.invalidRange }
-        if range.isEmpty { return Data() }
+        if range.isEmpty { _ = try open(frames, objectID: objectID, revision: revision, role: role, rootKey: rootKey); return Data() }
         return try decrypt(frames,parsed,range,rootKey)
     }
     public func planRange(_ range:Range<Int>,plaintextLength:Int)throws->Range<Int>{guard plaintextLength>=0,range.lowerBound>=0,range.upperBound<=plaintextLength,range.lowerBound<=range.upperBound else{throw VaultCryptoError.invalidRange};if range.isEmpty{return 0..<0};return (range.lowerBound/chunkSize)..<((range.upperBound-1)/chunkSize+1)}
@@ -286,8 +299,10 @@ public struct VaultChunkedCryptor: Sendable {
         }
         guard output.count == range.count else { throw VaultCryptoError.invalidLength }; return output
     }
-    private func wrap(_ dek:Data,_ root:VaultRootKey,_ object:VaultObjectID,_ revision:UUID)throws->Data { let nonce=try random.bytes(count:12);guard nonce.count==12 else{throw VaultCryptoError.invalidLength};let box=try AES.GCM.seal(dek,using:SymmetricKey(data:root.key),nonce:try AES.GCM.Nonce(data:nonce),authenticating:associatedData(.dek,root.version,object,revision,0,32));return Data([1])+Data(be(root.version))+nonce+box.ciphertext+box.tag }
-    private func unwrap(_ frame:Data,_ root:VaultRootKey,_ object:VaultObjectID,_ revision:UUID)throws->Data { guard frame.count==65,frame[0]==1 else{throw VaultCryptoError.malformedEnvelope};var i=1;let version=try read32(frame,&i);guard version==root.version else{throw VaultCryptoError.wrongRootVersion};let nonce=try AES.GCM.Nonce(data:frame[i..<i+12]);i+=12;let body=frame[i...];let box=try AES.GCM.SealedBox(nonce:nonce,ciphertext:body.dropLast(16),tag:body.suffix(16));do{let key=try AES.GCM.open(box,using:SymmetricKey(data:root.key),authenticating:associatedData(.dek,root.version,object,revision,0,32));guard key.count==32 else{throw VaultCryptoError.invalidLength};return key}catch let e as VaultCryptoError{throw e}catch{throw VaultCryptoError.authenticationFailed} }
+    private func uniqueNonce(_ seen: inout Set<Data>) throws -> Data { let nonce=try random.bytes(count:12);guard nonce.count==12 else{throw VaultCryptoError.invalidLength};guard seen.insert(nonce).inserted else{throw VaultCryptoError.authenticationFailed};return nonce }
+    private func wrap(_ dek:Data,_ root:VaultRootKey,_ object:VaultObjectID,_ revision:UUID,_ nonce:Data)throws->Data {let box=try AES.GCM.seal(dek,using:SymmetricKey(data:root.key),nonce:try AES.GCM.Nonce(data:nonce),authenticating:associatedData(.dek,root.version,object,revision,0,32));return Data([1])+Data(be(root.version))+vaultFingerprint()+object.rawValue.uuidData+revision.uuidData+nonce+box.ciphertext+box.tag }
+    private func unwrap(_ frame:Data,_ root:VaultRootKey,_ object:VaultObjectID,_ revision:UUID)throws->Data { guard frame.count==113,frame[0]==1 else{throw VaultCryptoError.malformedEnvelope};var i=1;let version=try read32(frame,&i);guard version==root.version else{throw VaultCryptoError.wrongRootVersion};guard Data(frame[i..<i+16])==vaultFingerprint()else{throw VaultCryptoError.wrongVault};i+=16;guard try readUUID(frame,&i)==object.rawValue else{throw VaultCryptoError.wrongObject};guard try readUUID(frame,&i)==revision else{throw VaultCryptoError.wrongRevision};let nonce=try AES.GCM.Nonce(data:frame[i..<i+12]);i+=12;let body=frame[i...];let box=try AES.GCM.SealedBox(nonce:nonce,ciphertext:body.dropLast(16),tag:body.suffix(16));do{let key=try AES.GCM.open(box,using:SymmetricKey(data:root.key),authenticating:associatedData(.dek,root.version,object,revision,0,32));guard key.count==32 else{throw VaultCryptoError.invalidLength};return key}catch let e as VaultCryptoError{throw e}catch{throw VaultCryptoError.authenticationFailed} }
+    private func vaultFingerprint()->Data{Data(SHA256.hash(data:Data(vaultID.utf8)).prefix(16))}
     private func sealedBox(_ e:VaultChunkEnvelope)throws->AES.GCM.SealedBox{guard e.ciphertext.count>=16 else{throw VaultCryptoError.malformedEnvelope};return try AES.GCM.SealedBox(nonce:try AES.GCM.Nonce(data:e.nonce),ciphertext:e.ciphertext.dropLast(16),tag:e.ciphertext.suffix(16))}
     private func associatedData(_ role:VaultEnvelopeRole,_ version:UInt32,_ object:VaultObjectID,_ revision:UUID,_ index:UInt32,_ length:UInt64)->Data{var d=Data("LunaVault-v1".utf8);let vault=Data(vaultID.utf8);d.append(contentsOf:be(UInt32(vault.count)));d.append(vault);d.append(role.rawValue);d.append(contentsOf:be(version));d.append(object.rawValue.uuidData);d.append(revision.uuidData);d.append(contentsOf:be(index));d.append(contentsOf:be(length));return d}
 }

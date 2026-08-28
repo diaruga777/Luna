@@ -17,11 +17,16 @@ public struct VaultCryptoConfiguration: Equatable, Sendable {
     public let keychainAccessGroup: String
     public let vaultID: String
     public let keychainService: String
-    public init(keychainAccessGroup: String, vaultID: String = "default", keychainService: String? = nil) {
+    public init(keychainAccessGroup: String, vaultID: String = "default", keychainService: String? = nil, appGroupID: String = AppConfig.provisionedAppGroupID) {
         self.keychainAccessGroup = keychainAccessGroup
         self.vaultID = vaultID
-        let namespace = Bundle.main.bundleIdentifier ?? AppConfig.vaultAppGroupID
-        self.keychainService = keychainService ?? "\(namespace).keys"
+        self.keychainService = keychainService ?? Self.defaultKeychainService(appGroupID: appGroupID)
+    }
+    /// Stable across the Vault host and any future explicitly-authorized host.
+    /// App-extension bundle identifiers are intentionally not part of this identity.
+    public static func defaultKeychainService(appGroupID: String) -> String {
+        let namespace = appGroupID.hasPrefix("group.") ? String(appGroupID.dropFirst("group.".count)) : appGroupID
+        return "\(namespace).vault.keys"
     }
 }
 

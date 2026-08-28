@@ -1,7 +1,8 @@
 # Luna Vault cryptography
 
 Vault keeps the root key in one synchronizable Keychain generic-password item
-(a service derived from the configured Luna namespace, account `default`, Vault access group,
+(a service derived from the stable App Group/build namespace rather than the
+current process bundle identifier, account `default`, Vault access group,
 `kSecAttrSynchronizable=true`, `kSecAttrAccessibleWhenUnlocked`). A missing or
 malformed item is an explicit recovery error; the app never creates a replacement
 without the setup flow asking the user. The serialized value is a JSON key ring
@@ -20,6 +21,11 @@ file in the App Group. The lock carries no key material; it only prevents two
 Vault host processes from losing a Keychain ring update. The initial Keychain
 write still uses `SecItemAdd`, so creation remains atomic if the lock file is
 lost or recreated.
+
+The Vault Share extension intentionally has no root-key access-group entitlement
+and performs no key operations. Stable service naming only lets the Vault host
+and a future explicitly authorized host refer to the same synchronizable item;
+it does not broaden Keychain authorization.
 
 Each object receives a random 256-bit DEK. The DEK is wrapped by AES-GCM under
 the selected root version. Its versioned frame binds the vault, object, revision,

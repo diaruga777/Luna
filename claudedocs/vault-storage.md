@@ -4,7 +4,7 @@ Vault owns `vault.sqlite` in the shared App Group and never opens the legacy
 `saves.sqlite`. `VaultRepository` uses one serialized SQLite connection per
 process, enables WAL, `synchronous=FULL`, and foreign keys, and creates the
 objects, durable tombstones, cache, jobs, and encrypted-artifacts tables at
-schema version 2. Migrations acquire an exclusive transaction, re-read the
+schema version 3. Migrations acquire an exclusive transaction, re-read the
 version under that lock, and retry bounded SQLite busy races so concurrent first
 opens cannot partially initialize the store. Object IDs and revisions are opaque UUIDs. Upserts are
 latest-only using logical time, device id, then revision UUID as a total order.
@@ -18,9 +18,14 @@ file. Files are marked `completeUntilFirstUserAuthentication`, relying on iOS
 Data Protection for local-at-rest protection. Remote copies must be produced by
 the crypto layer before transport. The database stores no extracted plaintext;
 the indexing stage owns its local schema and encrypted artifact projection.
-Replacement keeps recoverable staging/previous states, while deletions enqueue
-durable cleanup markers in the logical transaction. Startup repairs interrupted
-replacements and retries residual cleanup. Data Protection application is
+Replacement keeps recoverable staging/previous states and writes a protected
+generation token only after the new final has passed Data Protection. A final
+protection failure removes the candidate and restores the protected previous
+generation; startup rolls back any final that lacks its committed generation
+token rather than applying protection after the fact. Deletions enqueue durable
+cleanup markers scoped to object revision and content-generation token in the
+logical transaction. Startup retries residual cleanup, but discards an obsolete
+marker without touching bytes if either scope has advanced. Data Protection application is
 throwing and failures surface to the caller for directories, database sidecars,
 staging, and final files.
 
@@ -38,6 +43,8 @@ expired lease is reclaimable after a crash. Completion/failure transitions use
 a conditional update matching the current nonexpired lease owner, so a reclaimed
 stale worker cannot mutate the new owner's job. A unique idempotency key prevents
 the same durable operation from being queued twice.
+Heartbeats use the same nonexpired-lease condition; an owner cannot revive its
+lease after the expiry instant and must instead compete for a new atomic claim.
 
 The production initializer fails closed if the App Group container cannot be
 resolved. The explicit scratch-directory initializer is test-only. SQLite tables

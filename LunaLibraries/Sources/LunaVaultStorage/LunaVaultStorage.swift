@@ -165,6 +165,18 @@ public final class VaultRepository: @unchecked Sendable {
     private func removeFullCacheLocked(_ id:VaultObjectID)throws{try transaction{try enqueueCleanupLocked(id);try run("DELETE FROM cache WHERE object_id=? AND full_content=1",[.text(id.rawValue.uuidString)])};try drainPendingCleanup()}
 
     public func enqueue(_ job:VaultJob)throws{try sync{try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_expires) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",[.text(job.id.uuidString),.text(job.idempotencyKey),.text(job.kind.rawValue),job.objectID.map{$0.rawValue.uuidString}.map(SQLiteValue.text) ?? .null,.text(job.state.rawValue),.int(Int64(job.attempts)),job.nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.lastError.map(SQLiteValue.text) ?? .null,.double(job.createdAt.timeIntervalSinceReferenceDate),.double(job.updatedAt.timeIntervalSinceReferenceDate),job.leaseOwner.map(SQLiteValue.text) ?? .null,job.leaseExpiresAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null])}}
+    public func job(_ id:UUID)throws->VaultJob?{try sync{try jobLocked(id)}}
+    public func job(idempotencyKey:String)throws->VaultJob?{try sync{var result:VaultJob?;try query("SELECT id FROM jobs WHERE idempotency_key=?",[.text(idempotencyKey)]){r in if let raw=r.text(0),let id=UUID(uuidString:raw){result=try jobLocked(id)}};return result}}
+    /// Claims exactly `id`, unlike `claimNextJob`, so two different durable
+    /// operations cannot be accidentally crossed when callers share a queue.
+    public func claimJob(id:UUID,owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
+        guard let job=try jobLocked(id) else{return nil}
+        let nowValue=now.timeIntervalSinceReferenceDate
+        let eligible=(job.state == .queued || job.state == .retrying) && (job.nextAttemptAt == nil || job.nextAttemptAt! <= now) || (job.state == .running && (job.leaseExpiresAt ?? .distantFuture) <= now)
+        guard eligible else{return nil}
+        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_expires=?,updated_at=? WHERE id=?",[.text(owner),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(nowValue),.text(id.uuidString)])
+        guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(id)
+    }}}
     public func claimNextJob(owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
         var candidate:UUID?;try query("SELECT id FROM jobs WHERE (state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?) ORDER BY created_at LIMIT 1",[.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)]){r in candidate=r.text(0).flatMap{UUID(uuidString:$0)}};guard let candidate else{return nil}
         try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?))",[.text(owner),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)])

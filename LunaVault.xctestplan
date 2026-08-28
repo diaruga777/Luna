@@ -1,10 +1,10 @@
 {
   "configurations" : [
     {
-      "testOptions" : {
+      "options" : {
         "performanceMetrics" : [ ]
       },
-      "id" : "vault-deterministic",
+      "id" : "51B87D5A-2079-4D93-BF9C-6C8C49F72C7D",
       "name" : "Deterministic Vault"
     }
   ],
@@ -13,6 +13,7 @@
   },
   "testTargets" : [
     {
+      "parallelizable" : false,
       "target" : {
         "containerPath" : "container:Luna.xcodeproj",
         "identifier" : "AAE200000000000000000000",

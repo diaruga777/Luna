@@ -42,6 +42,11 @@ if [[ "$PROVIDER" != "device" && "$LIVE" -ne 1 ]]; then
   echo "provider '$PROVIDER' requires explicit --live-provider consent" >&2
   exit 2
 fi
+if [[ "$PROVIDER" == "icloud" || "$PROVIDER" == "mac" ]]; then
+  echo "NOT IMPLEMENTED: live '$PROVIDER' Vault tests do not exist yet" >&2
+  echo "No deterministic substitute was run." >&2
+  exit 3
+fi
 
 if [[ "$MODE" == "unit" ]]; then
   exec swift build --package-path "$REPO/LunaLibraries" --target VaultTestKit ${EXTRA[@]+"${EXTRA[@]}"}
@@ -69,7 +74,7 @@ fi
 export LUNA_VAULT_TEST_PROVIDER="$PROVIDER"
 DESTINATION="platform=iOS Simulator,id=$DEVICE"
 [[ "$MODE" == "device" ]] && DESTINATION="platform=iOS,id=$DEVICE"
-exec xcodebuild test -scheme Luna \
+exec xcodebuild test -scheme LunaVaultTests -testPlan LunaVault \
   -destination "$DESTINATION" \
   -only-testing:LunaTests/VaultScaffoldTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \

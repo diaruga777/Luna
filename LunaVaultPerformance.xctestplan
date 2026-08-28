@@ -1,0 +1,32 @@
+{
+  "configurations" : [
+    {
+      "options" : {
+        "environmentVariableEntries" : [
+          {
+            "enabled" : true,
+            "key" : "LUNA_VAULT_PERFORMANCE",
+            "value" : "1"
+          }
+        ],
+        "performanceMetrics" : [ ]
+      },
+      "id" : "4F20F0C4-8E85-42D6-9F01-1D3B6A7A17C6",
+      "name" : "Vault performance"
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Luna.xcodeproj",
+        "identifier" : "AAE200000000000000000000",
+        "name" : "LunaTests"
+      }
+    }
+  ],
+  "version" : 1
+}

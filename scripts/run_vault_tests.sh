@@ -8,11 +8,13 @@ MODE="emulator"
 DEVICE=""
 PROVIDER="device"
 LIVE=0
+PERFORMANCE=0
+TEST_PLAN="LunaVault"
 EXTRA=()
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID]
+Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID] [--performance]
        [--provider device|icloud|mac] [--live-provider device|icloud|mac] [-- ...]
 
 The iCloud and Mac provider modes require --live-provider explicitly. Device
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --device) MODE="device"; DEVICE="${2:?missing UDID}"; shift 2 ;;
     --provider) PROVIDER="${2:?missing provider}"; shift 2 ;;
     --live-provider) PROVIDER="${2:?missing provider}"; LIVE=1; shift 2 ;;
+    --performance) PERFORMANCE=1; TEST_PLAN="LunaVaultPerformance"; shift ;;
     --) shift; EXTRA+=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -72,9 +75,12 @@ fi
 [[ -n "$DEVICE" ]] || { echo "no iPhone simulator/device available" >&2; exit 2; }
 
 export LUNA_VAULT_TEST_PROVIDER="$PROVIDER"
+if [[ "$PERFORMANCE" -eq 1 ]]; then
+  export LUNA_VAULT_PERFORMANCE=1
+fi
 DESTINATION="platform=iOS Simulator,id=$DEVICE"
 [[ "$MODE" == "device" ]] && DESTINATION="platform=iOS,id=$DEVICE"
-exec xcodebuild test -scheme LunaVaultTests -testPlan LunaVault \
+exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
   -destination "$DESTINATION" \
   -only-testing:LunaTests/VaultScaffoldTests \
   -only-testing:LunaTests/VaultCryptoStorageTests \

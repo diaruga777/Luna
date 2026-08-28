@@ -6,6 +6,9 @@ import LunaVaultSearch
 import LunaVaultStorage
 import VaultTestKit
 import XCTest
+#if canImport(Darwin)
+import Darwin
+#endif
 
 final class VaultSearchTests: XCTestCase {
     private func makeIndex(_ name: String = "search") throws -> (VaultSearchIndex, VaultTemporaryDirectory, RecordingSearchProtection) {
@@ -44,6 +47,15 @@ final class VaultSearchTests: XCTestCase {
         let(index,_,_)=try makeIndex();try index.upsert(doc(1,filename:"source",vector:[1,0]));let group=try index.createGroup(label:"Tax records");let first=try index.addManualMembership(objectID:id(1),toGroup:group.id,modelVersion:"v1"),second=try index.addManualMembership(objectID:id(1),toGroup:group.id,modelVersion:"v1");XCTAssertEqual(first.id,second.id);XCTAssertEqual(try index.resolveCanonical(VaultObjectID(rawValue:first.id)),id(1));XCTAssertEqual(try index.groups().first{$0.id==group.id}?.memberIDs,[id(1)]);let lexical=try index.search("Tax records");XCTAssertEqual(lexical.count,1);XCTAssertEqual(lexical.first?.canonicalObjectID,id(1));XCTAssertTrue(lexical.first?.isSymbolicAlias == true);let semantic=try index.search("unrelated",embedding:VaultEmbedding(values:[1,0],modelVersion:"v1"));XCTAssertEqual(Set(semantic.map(\.canonicalObjectID)),[id(1)]);XCTAssertEqual(semantic.count,1)
     }
 
+    func testVectorAndHybridSearchDeduplicateCanonicalObjectAndPreferHigherScoringAlias() throws {
+        let(index,_,_)=try makeIndex();try index.upsert(doc(1,filename:"source",body:"source",vector:[1,0]));try index.upsert(doc(2,filename:"other",body:"other",vector:[0,1]))
+        let group=try index.createGroup(label:"Tax records",members:[id(2)]);let alias=try index.addManualMembership(objectID:id(1),toGroup:group.id,modelVersion:"v1")
+        let query=alias.embedding
+        let vector=try index.cosineSearch(query,limit:10);XCTAssertEqual(Set(vector.map { $0.0 }).count,vector.count);XCTAssertEqual(vector.first?.0, VaultObjectID(rawValue:alias.id))
+        let hybrid=try index.search("no lexical match",embedding:query,limit:10);let canonicalHits=hybrid.filter{$0.canonicalObjectID == id(1)};XCTAssertEqual(canonicalHits.count,1);XCTAssertEqual(canonicalHits.first?.objectID,VaultObjectID(rawValue:alias.id));XCTAssertEqual(canonicalHits.first?.canonicalObjectID,id(1));XCTAssertTrue(canonicalHits.first?.isSymbolicAlias == true);XCTAssertTrue(canonicalHits.first?.matchedFields.contains("vector") == true)
+        let label=try index.search("Tax records");XCTAssertEqual(label.count,1);XCTAssertEqual(label.first?.objectID,VaultObjectID(rawValue:alias.id));XCTAssertTrue(label.first?.isSymbolicAlias == true)
+    }
+
     func testSnapshotsRejectDuplicatesAndTombstonesWhileLiveGroupsRefresh() throws {
         let(index,_,_)=try makeIndex();try index.upsert(doc(1,body:"mars"));XCTAssertThrowsError(try index.createQueryGroup(query:"mars",members:[id(1),id(1)]));let snapshot=try index.createQueryGroup(query:"mars",members:[id(1)]);let live=try index.createQueryGroup(query:"mars",members:[],live:true);try index.upsert(doc(2,body:"mars"));XCTAssertEqual(try index.queryGroup(snapshot.id)?.memberIDs,[id(1)]);XCTAssertEqual(Set(try XCTUnwrap(index.queryGroup(live.id)).memberIDs),[id(1),id(2)]);try index.delete(id(1),stamp:VaultIndexRevision(logicalTime:50,deviceID:"p"));XCTAssertEqual(try index.queryGroup(snapshot.id)?.memberIDs,[]);XCTAssertThrowsError(try index.createQueryGroup(query:"mars",members:[id(1)]))
     }
@@ -60,13 +72,41 @@ final class VaultSearchTests: XCTestCase {
         let(index,directory,protection)=try makeIndex("search-export");try index.upsert(doc(1,body:"highly confidential phrase",vector:[1,0]));let root=try VaultRootKey(version:1,key:Data(repeating:7,count:32)),cryptor=VaultChunkedCryptor(chunkSize:128,vaultID:"search-tests",random:VaultTestRandomBytes(seed:99)),object=id(500),revision=revision(500);let artifact=try index.encryptedExport(cryptor:cryptor,root:root,objectID:object,revision:revision);XCTAssertFalse(artifact.encryptedFrames.contains{String(data:$0,encoding:.utf8)?.contains("highly confidential") == true});let restored=directory.url.appendingPathComponent("restored.sqlite");try VaultSearchIndex.restoreEncryptedExport(artifact,cryptor:cryptor,to:restored,protectionApplier:protection){_ in root};let reopened=try VaultSearchIndex(databaseURL:restored,protectionApplier:protection);XCTAssertEqual(try reopened.search("confidential").count,1)
     }
 
-    func testHundredThousandExactVectorBaselineIsMeasuredWithoutFlakyThreshold() {
-        let measurement=VaultSearchPerformanceProbe.measureExactVectorBaseline(objectCount:100_000,dimension:32);XCTAssertEqual(measurement.objectCount,100_000);XCTAssertEqual(measurement.dimension,32);XCTAssertGreaterThanOrEqual(measurement.bestIndex,0);XCTAssertGreaterThan(measurement.elapsed,0);XCTContext.runActivity(named:"100k exact vector baseline: \(measurement.elapsed)s") { _ in }
+    func testEncryptedExportFailsClosedWhenWALCheckpointIsBusy() throws {
+        let(index,_,_)=try makeIndex("search-export-busy");let root=try VaultRootKey(version:1,key:Data(repeating:7,count:32)),cryptor=VaultChunkedCryptor(vaultID:"search-tests",random:VaultTestRandomBytes(seed:99))
+        index.walCheckpointOverride={ 5 /* SQLITE_BUSY */ }
+        XCTAssertThrowsError(try index.encryptedExport(cryptor:cryptor,root:root,objectID:id(500),revision:revision(500))) { error in
+            guard case let VaultSearchError.sqlite(message)=error else { return XCTFail("unexpected error: \(error)") }
+            XCTAssertTrue(message.contains("WAL checkpoint failed"))
+        }
+    }
+
+    func testHundredThousandSQLiteRecordsPerformanceNightly() throws {
+        guard ProcessInfo.processInfo.environment["LUNA_VAULT_PERFORMANCE"] == "1" else { throw XCTSkip("set LUNA_VAULT_PERFORMANCE=1 for the 100k SQLite benchmark") }
+        let(index,directory,_)=try makeIndex("search-performance-100k");let documents=(1...100_000).map{value in doc(value,filename:"document-\(value).txt",body:"benchmark payload \(value)")};let start=ProcessInfo.processInfo.systemUptime
+        XCTAssertEqual(try index.upsertBatch(documents),100_000)
+        let buildSeconds=ProcessInfo.processInfo.systemUptime-start
+        var queryDurations:[Double]=[];queryDurations.reserveCapacity(40)
+        for value in stride(from:1,through:100_000,by:2_500) { let queryStart=ProcessInfo.processInfo.systemUptime;XCTAssertEqual(try index.search("document-\(value)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-queryStart) }
+        let sorted=queryDurations.sorted();let p50=sorted[sorted.count/2],p95=sorted[Int(Double(sorted.count-1)*0.95)]
+        let dbBytes=["","-wal","-shm"].compactMap{try? FileManager.default.attributesOfItem(atPath:directory.url.appendingPathComponent("vault-index.sqlite").path+$0)[.size] as? NSNumber}.reduce(Int64(0)){ $0+$1.int64Value }
+        let memory=residentBytes();XCTContext.runActivity(named:"100k SQLite records: build=\(buildSeconds)s p50=\(p50)s p95=\(p95)s resident=\(memory)B db=\(dbBytes)B") { _ in }
+        XCTAssertEqual(try index.allDocuments().count,100_000)
     }
 
     func testSearchTierSourceHasNoNetworkOrBackendDependency() throws {
         let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent();let source=root.appendingPathComponent("LunaLibraries/Sources/LunaVaultSearch");let text=try FileManager.default.contentsOfDirectory(at:source,includingPropertiesForKeys:nil).filter{$0.pathExtension=="swift"}.map{try String(contentsOf:$0,encoding:.utf8)}.joined();XCTAssertFalse(text.contains("URLSession"));XCTAssertFalse(text.contains("LunaVaultBackend"));XCTAssertFalse(text.contains("Network.framework"))
     }
+}
+
+private func residentBytes() -> Int64 {
+#if canImport(Darwin)
+    var info=mach_task_basic_info();var count=mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size/MemoryLayout<integer_t>.size)
+    let status=withUnsafeMutablePointer(to:&info){ pointer in pointer.withMemoryRebound(to:integer_t.self,capacity:Int(count)){ task_info(mach_task_self_,task_flavor_t(MACH_TASK_BASIC_INFO),$0,&count) } }
+    return status == KERN_SUCCESS ? Int64(info.resident_size) : 0
+#else
+    return 0
+#endif
 }
 
 private final class RecordingSearchProtection: VaultFileProtectionApplying,@unchecked Sendable { private let lock=NSLock();private var storage:[String]=[];var paths:[String]{lock.withLock{storage}};func apply(to url:URL)throws{lock.withLock{storage.append(url.path)}};func hasRequiredProtection(at url:URL)throws->Bool{true} }

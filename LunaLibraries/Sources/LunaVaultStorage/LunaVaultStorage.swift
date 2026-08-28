@@ -1,28 +1,60 @@
 import Foundation
+import SQLite3
 import LunaAppConfig
 import LunaVaultCrypto
 import LunaVaultModels
 
-public enum LunaVaultStorageModule {
-    public static let identifier = "LunaVaultStorage"
-}
-
+public enum LunaVaultStorageModule { public static let identifier = "LunaVaultStorage" }
 public struct VaultStorageConfiguration: Equatable, Sendable {
-    public let databaseName: String
-    public let policy: VaultStoragePolicy
-
-    public init(
-        databaseName: String = "vault.sqlite",
-        policy: VaultStoragePolicy = VaultStoragePolicy(location: .device)
-    ) {
-        self.databaseName = databaseName
-        self.policy = policy
-    }
+ public let databaseName: String; public let policy: VaultStoragePolicy; public let cacheQuotaBytes: Int64
+ public init(databaseName:String="vault.sqlite", policy:VaultStoragePolicy=VaultStoragePolicy(location:.device), cacheQuotaBytes:Int64=2_000_000_000) { self.databaseName=databaseName; self.policy=policy; self.cacheQuotaBytes=min(max(cacheQuotaBytes,2_000_000_000),20_000_000_000) }
+}
+public enum VaultStorageError: Error, Equatable, Sendable { case sqlite(String); case missingObject; case invalidTransition }
+public protocol VaultObjectStoring: Sendable {
+ func data(for id: VaultObjectID) throws -> Data?
+ func setData(_ data: Data, for id: VaultObjectID) throws
+ func removeData(for id: VaultObjectID) throws
 }
 
-/// A minimal persistence seam; the Stage 1 scaffold has no database owner.
-public protocol VaultObjectStoring: Sendable {
-    func data(for id: VaultObjectID) throws -> Data?
-    func setData(_ data: Data, for id: VaultObjectID) throws
-    func removeData(for id: VaultObjectID) throws
+/// Isolated, one-connection-per-process repository. It never opens `saves.sqlite`.
+public final class VaultRepository: @unchecked Sendable {
+ public let databaseURL: URL; public let contentDirectory: URL
+ private var handle: OpaquePointer?; private let queue=DispatchQueue(label:"com.hsanabria.luna.vault.sqlite"); private let config:VaultStorageConfiguration
+ public init(configuration:VaultStorageConfiguration=VaultStorageConfiguration(), containerURL:URL?=nil)throws {
+  self.config=configuration;let base=containerURL ?? AppConfig.sharedContainerURL() ?? FileManager.default.temporaryDirectory.appendingPathComponent("LunaVault");databaseURL=base.appendingPathComponent(configuration.databaseName);contentDirectory=base.appendingPathComponent("VaultObjects",isDirectory:true);try FileManager.default.createDirectory(at:base,withIntermediateDirectories:true);try FileManager.default.createDirectory(at:contentDirectory,withIntermediateDirectories:true);var h:OpaquePointer?;guard sqlite3_open_v2(databaseURL.path,&h,SQLITE_OPEN_CREATE|SQLITE_OPEN_READWRITE|SQLITE_OPEN_FULLMUTEX,nil)==SQLITE_OK,let h else{throw VaultStorageError.sqlite("open")};handle=h;try queue.sync{try exec("PRAGMA journal_mode=WAL");try exec("PRAGMA synchronous=NORMAL");try exec("PRAGMA foreign_keys=ON");try migrate()};protect(databaseURL)
+ }
+ deinit{if let handle{sqlite3_close_v2(handle)}}
+ public func perform<T>(_ body:()throws->T)throws->T{try queue.sync{try body()}}
+ public func object(_ id:VaultObjectID)throws->VaultObjectRecord?{try perform{var r:VaultObjectRecord?;try query("SELECT revision,logical_time,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects WHERE id=?",[id.rawValue.uuidString]){s in r=try self.record(id,s)};return r}}
+ public func objects(includeDeleted:Bool=false)throws->[VaultObjectRecord]{try perform{var a=[VaultObjectRecord]();let q=includeDeleted ? "SELECT id,revision,logical_time,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects ORDER BY updated_at DESC":"SELECT id,revision,logical_time,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects WHERE tombstone=0 ORDER BY updated_at DESC";try query(q,[]){s in guard let u=UUID(uuidString:col(s,0) ?? "")else{return};a.append(try self.record(VaultObjectID(rawValue:u),s,offset:1))};return a}}
+ @discardableResult public func upsert(_ value:VaultObjectRecord)throws->Bool{try perform{try exec("BEGIN IMMEDIATE");do{if let old=try self.locked(value.id),old.logicalTime>value.logicalTime{try exec("ROLLBACK");return false};try run("INSERT INTO objects(id,revision,logical_time,size,content_type,created_at,updated_at,accessed_at,tombstone) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,size=excluded.size,content_type=excluded.content_type,created_at=excluded.created_at,updated_at=excluded.updated_at,accessed_at=excluded.accessed_at,tombstone=excluded.tombstone",[value.id.rawValue.uuidString,value.revision.uuidString,value.logicalTime,value.size,value.contentType ?? NSNull(),value.createdAt.timeIntervalSinceReferenceDate,value.updatedAt.timeIntervalSinceReferenceDate,value.accessedAt.timeIntervalSinceReferenceDate,value.isTombstone ? 1:0]);try exec("COMMIT");return true}catch{try?exec("ROLLBACK");throw error}}}
+ public func tombstone(_ t:VaultTombstone)throws{let d=VaultObjectRecord(id:t.id,revision:t.revision,logicalTime:t.logicalTime,size:0,createdAt:t.deletedAt,updatedAt:t.deletedAt,accessedAt:t.deletedAt,isTombstone:true);_ = try upsert(d);try perform{try run("INSERT OR REPLACE INTO tombstones(id,revision,logical_time,deleted_at) VALUES(?,?,?,?)",[t.id.rawValue.uuidString,t.revision.uuidString,t.logicalTime,t.deletedAt.timeIntervalSinceReferenceDate])}}
+ public func writeContent(_ data:Data,for id:VaultObjectID)throws->URL{try perform{let d=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try FileManager.default.createDirectory(at:d,withIntermediateDirectories:true);let tmp=d.appendingPathComponent(".staging-\(UUID().uuidString)");try data.write(to:tmp,options:.atomic);try FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:tmp.path);let f=d.appendingPathComponent("content");if FileManager.default.fileExists(atPath:f.path){try FileManager.default.removeItem(at:f)};try FileManager.default.moveItem(at:tmp,to:f);return f}}
+ public func readContent(for id:VaultObjectID)throws->Data?{try perform{FileManager.default.contents(atPath:contentDirectory.appendingPathComponent(id.rawValue.uuidString).appendingPathComponent("content").path)}}
+ public func removeContent(for id:VaultObjectID)throws{try perform{let u=contentDirectory.appendingPathComponent(id.rawValue.uuidString);if FileManager.default.fileExists(atPath:u.path){try FileManager.default.removeItem(at:u)}}}
+ public func putCache(_ e:VaultCacheEntry)throws{try perform{try run("INSERT INTO cache(object_id,bytes,full_content,last_accessed,created_at,pinned) VALUES(?,?,?,?,?,?) ON CONFLICT(object_id) DO UPDATE SET bytes=excluded.bytes,full_content=excluded.full_content,last_accessed=excluded.last_accessed,pinned=excluded.pinned",[e.objectID.rawValue.uuidString,e.byteCount,e.fullContent ? 1:0,e.lastAccessedAt.timeIntervalSinceReferenceDate,e.createdAt.timeIntervalSinceReferenceDate,e.pinned ? 1:0]);try evictLocked(now:Date())}}
+ public func cacheEntries()throws->[VaultCacheEntry]{try perform{var a=[VaultCacheEntry]();try query("SELECT object_id,bytes,full_content,last_accessed,created_at,pinned FROM cache ORDER BY last_accessed DESC",[]){s in guard let u=UUID(uuidString:col(s,0) ?? ""),let b=Int64(col(s,1) ?? "")else{return};a.append(VaultCacheEntry(objectID:VaultObjectID(rawValue:u),byteCount:b,fullContent:sqlite3_column_int64(s,2) != 0,lastAccessedAt:Date(timeIntervalSinceReferenceDate:Double(col(s,3) ?? "0") ?? 0),createdAt:Date(timeIntervalSinceReferenceDate:Double(col(s,4) ?? "0") ?? 0),pinned:sqlite3_column_int64(s,5) != 0))};return a}}
+ public func setPinned(_ id:VaultObjectID,pinned:Bool)throws{try perform{try run("UPDATE cache SET pinned=? WHERE object_id=?",[pinned ? 1:0,id.rawValue.uuidString])}}
+ public func enqueue(_ j:VaultJob)throws{try perform{try run("INSERT OR IGNORE INTO jobs(id,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",[j.id.uuidString,j.kind.rawValue,j.objectID?.rawValue.uuidString ?? NSNull(),j.state.rawValue,j.attempts,j.nextAttemptAt?.timeIntervalSinceReferenceDate ?? NSNull(),j.lastError ?? NSNull(),j.createdAt.timeIntervalSinceReferenceDate,j.updatedAt.timeIntervalSinceReferenceDate])}}
+ public func claimNextJob(now:Date=Date())->VaultJob?{try?perform{var j:VaultJob?;try query("SELECT id,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at FROM jobs WHERE state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?) ORDER BY created_at LIMIT 1",[now.timeIntervalSinceReferenceDate]){s in j=self.job(s)};if let j{try self.run("UPDATE jobs SET state='running',updated_at=? WHERE id=?",[now.timeIntervalSinceReferenceDate,j.id.uuidString])};return j}.flatMap{$0}}
+ public func transitionJob(id:UUID,state:VaultJobState,error:String?=nil,nextAttemptAt:Date?=nil)throws{try perform{guard scalar("SELECT count(*) FROM jobs WHERE id=?",[id.uuidString])>0 else{throw VaultStorageError.missingObject};try run("UPDATE jobs SET state=?,attempts=attempts+1,last_error=?,next_attempt=?,updated_at=? WHERE id=?",[state.rawValue,error ?? NSNull(),nextAttemptAt?.timeIntervalSinceReferenceDate ?? NSNull(),Date().timeIntervalSinceReferenceDate,id.uuidString])}}
+ public func evictExpired(now:Date=Date())throws{try perform{try evictLocked(now:now)}}
+ private func evictLocked(now:Date)throws{let cutoff=now.addingTimeInterval(-7*86400);try run("DELETE FROM cache WHERE pinned=0 AND last_accessed<?",[cutoff.timeIntervalSinceReferenceDate]);let total=scalar("SELECT COALESCE(SUM(bytes),0) FROM cache",[]);if total>config.cacheQuotaBytes{try run("DELETE FROM cache WHERE object_id IN (SELECT object_id FROM cache WHERE pinned=0 ORDER BY last_accessed ASC)",[])}}
+ private func migrate()throws{if scalar("PRAGMA user_version",[])<1{try exec("CREATE TABLE IF NOT EXISTS objects(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL,size INTEGER NOT NULL,content_type TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,tombstone INTEGER NOT NULL DEFAULT 0);CREATE TABLE IF NOT EXISTS tombstones(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL,deleted_at REAL NOT NULL);CREATE TABLE IF NOT EXISTS cache(object_id TEXT PRIMARY KEY,bytes INTEGER NOT NULL,full_content INTEGER NOT NULL,last_accessed REAL NOT NULL,created_at REAL NOT NULL,pinned INTEGER NOT NULL DEFAULT 0);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,kind TEXT NOT NULL,object_id TEXT,state TEXT NOT NULL,attempts INTEGER NOT NULL,next_attempt REAL,last_error TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL);CREATE TABLE IF NOT EXISTS encrypted_artifacts(kind TEXT PRIMARY KEY,payload BLOB NOT NULL,revision TEXT NOT NULL,updated_at REAL NOT NULL);CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(state,next_attempt);PRAGMA user_version=1")}}
+ private func locked(_ id:VaultObjectID)throws->VaultObjectRecord?{var r:VaultObjectRecord?;try query("SELECT revision,logical_time,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects WHERE id=?",[id.rawValue.uuidString]){s in r=try self.record(id,s)};return r}
+ private func record(_ id:VaultObjectID,_ s:OpaquePointer,offset:Int=0)throws->VaultObjectRecord{guard let r=UUID(uuidString:col(s,offset) ?? "")else{throw VaultStorageError.sqlite("revision")};return VaultObjectRecord(id:id,revision:r,logicalTime:Int64(col(s,offset+1) ?? "0") ?? 0,size:Int64(col(s,offset+2) ?? "0") ?? 0,contentType:col(s,offset+3),createdAt:Date(timeIntervalSinceReferenceDate:Double(col(s,offset+4) ?? "0") ?? 0),updatedAt:Date(timeIntervalSinceReferenceDate:Double(col(s,offset+5) ?? "0") ?? 0),accessedAt:Date(timeIntervalSinceReferenceDate:Double(col(s,offset+6) ?? "0") ?? 0),isTombstone:sqlite3_column_int64(s,Int32(offset+7)) != 0)}
+ private func job(_ s:OpaquePointer)->VaultJob?{guard let i=UUID(uuidString:col(s,0) ?? ""),let k=VaultJobKind(rawValue:col(s,1) ?? ""),let st=VaultJobState(rawValue:col(s,3) ?? "")else{return nil};return VaultJob(id:i,kind:k,objectID:col(s,2).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:st,attempts:Int(col(s,4) ?? "0") ?? 0,nextAttemptAt:col(s,5).flatMap{Double($0)}.map{Date(timeIntervalSinceReferenceDate:$0)},lastError:col(s,6),createdAt:Date(timeIntervalSinceReferenceDate:Double(col(s,7) ?? "0") ?? 0),updatedAt:Date(timeIntervalSinceReferenceDate:Double(col(s,8) ?? "0") ?? 0))}
+ private func exec(_ sql:String)throws{guard sqlite3_exec(handle,sql,nil,nil,nil)==SQLITE_OK else{throw VaultStorageError.sqlite(String(cString:sqlite3_errmsg(handle)))}}
+ private func scalar(_ sql:String,_ v:[Any])->Int64{var n:Int64=0;try?query(sql,v){s in n=sqlite3_column_int64(s,0)};return n}
+ private func run(_ sql:String,_ v:[Any])throws{var s:OpaquePointer?;guard sqlite3_prepare_v2(handle,sql,-1,&s,nil)==SQLITE_OK,let s else{throw VaultStorageError.sqlite("prepare")};defer{sqlite3_finalize(s)};try bind(s,v);guard sqlite3_step(s)==SQLITE_DONE else{throw VaultStorageError.sqlite(String(cString:sqlite3_errmsg(handle)))}}
+ private func query(_ sql:String,_ v:[Any],_ body:(OpaquePointer)throws->Void)throws{var s:OpaquePointer?;guard sqlite3_prepare_v2(handle,sql,-1,&s,nil)==SQLITE_OK,let s else{throw VaultStorageError.sqlite("prepare")};defer{sqlite3_finalize(s)};try bind(s,v);while sqlite3_step(s)==SQLITE_ROW{try body(s)}}
+ private func bind(_ s:OpaquePointer,_ v:[Any])throws{for(i,x)in v.enumerated(){let n=Int32(i+1);let z:Int32;if x is NSNull{z=sqlite3_bind_null(s,n)}else{z=sqlite3_bind_text(s,n,String(describing:x),-1,unsafeBitCast(-1,to:sqlite3_destructor_type.self))};guard z==SQLITE_OK else{throw VaultStorageError.sqlite("bind")}}}
+ private func protect(_ u:URL){try?FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:u.path)}
+}
+private func col(_ s:OpaquePointer,_ i:Int)->String?{guard let p=sqlite3_column_text(s,Int32(i))else{return nil};return String(cString:p)}
+
+extension VaultRepository: VaultObjectStoring {
+ public func data(for id: VaultObjectID) throws -> Data? { try readContent(for: id) }
+ public func setData(_ data: Data, for id: VaultObjectID) throws { _ = try writeContent(data, for: id) }
+ public func removeData(for id: VaultObjectID) throws { try removeContent(for: id) }
 }

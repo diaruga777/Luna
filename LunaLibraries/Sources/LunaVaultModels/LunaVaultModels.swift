@@ -147,6 +147,21 @@ public protocol VaultExtractionJobScheduling: Sendable {
     func enqueueExtractionJob(objectID: VaultObjectID, revision: UUID, modelVersion: String) throws
 }
 
+public struct VaultExtractionJobLease: Equatable, Sendable {
+    public let jobID: UUID
+    public let owner: String
+    public init(jobID: UUID, owner: String) { self.jobID = jobID; self.owner = owner }
+}
+
+/// Durable lifecycle for one extraction attempt. Implementations must claim a
+/// lease atomically and reject completion by a stale or different owner.
+public protocol VaultExtractionJobCoordinating: Sendable {
+    func beginExtractionJob(objectID: VaultObjectID, revision: UUID, modelVersion: String,
+                            owner: String, now: Date, leaseDuration: TimeInterval) throws -> VaultExtractionJobLease
+    func transitionExtractionJob(_ lease: VaultExtractionJobLease, to state: VaultJobState,
+                                 error: String?, retryAt: Date?, now: Date) throws
+}
+
 public enum VaultScaffoldError: Error, Equatable, Sendable {
     case invalidByteCount(Int)
     case missingValue(String)

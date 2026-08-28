@@ -15,25 +15,34 @@ public struct VaultEmbeddingModel: Codable, Equatable, Sendable {
     public let identifier: String
     public let version: String
     public let dimension: Int
-    public init(identifier: String, version: String, dimension: Int) {
+    /// SHA-256 of the bundled model artifact when one exists, otherwise the
+    /// canonical model configuration. It never depends on a generated vector.
+    public let checksum: String
+    public init(identifier: String, version: String, dimension: Int, artifactData: Data? = nil) {
         self.identifier = identifier; self.version = version; self.dimension = max(1, dimension)
+        let canonical = artifactData ?? Data("\(identifier)\u{0}\(version)\u{0}\(max(1, dimension))".utf8)
+        self.checksum = SHA256.hash(data: canonical).map { String(format: "%02x", $0) }.joined()
     }
 }
 
 public struct VaultEmbedding: Equatable, Codable, Sendable {
     public let values: [Float]
     public let modelVersion: String
-    public let checksum: String
+    public let modelChecksum: String
+    public let vectorChecksum: String
 
-    public init(values: [Float], modelVersion: String, checksum: String? = nil) {
+    public init(values: [Float], modelVersion: String, modelChecksum: String = "unversioned",
+                vectorChecksum: String? = nil) {
         self.values = values; self.modelVersion = modelVersion
-        self.checksum = checksum ?? Self.checksum(for: values)
+        self.modelChecksum = modelChecksum
+        self.vectorChecksum = vectorChecksum ?? Self.checksum(for: values)
     }
 
     public var dimension: Int { values.count }
     public func validated(for model: VaultEmbeddingModel) throws -> VaultEmbedding {
         guard dimension == model.dimension else { throw VaultEmbeddingError.invalidDimension(expected: model.dimension, actual: dimension) }
-        guard checksum == Self.checksum(for: values) else { throw VaultEmbeddingError.invalidChecksum }
+        guard modelVersion == model.version, modelChecksum == model.checksum,
+              vectorChecksum == Self.checksum(for: values) else { throw VaultEmbeddingError.invalidChecksum }
         return self
     }
 
@@ -74,6 +83,6 @@ public struct DeterministicVaultEmbeddingGenerator: VaultEmbeddingGenerating {
         }
         let length = sqrt(values.reduce(Float.zero) { $0 + $1 * $1 })
         if length > 0 { values = values.map { $0 / length } }
-        return VaultEmbedding(values: values, modelVersion: model.version)
+        return VaultEmbedding(values: values, modelVersion: model.version, modelChecksum: model.checksum)
     }
 }

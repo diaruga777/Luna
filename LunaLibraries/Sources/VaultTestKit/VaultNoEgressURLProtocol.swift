@@ -1,4 +1,5 @@
 import Foundation
+import LunaVaultBackend
 import LunaVaultModels
 
 /// Install this as the first protocol class on a test URLSession. Every request
@@ -23,5 +24,13 @@ public final class VaultNoEgressURLProtocol: URLProtocol, @unchecked Sendable {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [VaultNoEgressURLProtocol.self]
         return configuration
+    }
+}
+
+public struct VaultNoEgressNetworkSessionProvider: VaultBackendNetworkSessionProviding, @unchecked Sendable {
+    public let session: URLSession
+
+    public init() {
+        session = URLSession(configuration: VaultNoEgressURLProtocol.sessionConfiguration())
     }
 }

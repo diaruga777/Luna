@@ -1,5 +1,6 @@
 import Foundation
 import LunaVaultBackend
+import LunaVaultCrypto
 import LunaVaultEmbeddings
 import LunaVaultIndexExtraction
 import LunaVaultModels
@@ -8,6 +9,20 @@ import VaultTestKit
 import XCTest
 
 final class VaultScaffoldTests: XCTestCase {
+    private struct FixtureManifest: Decodable {
+        struct FileEntry: Decodable {
+            let id: UUID
+            let contentType: String
+            let text: String
+        }
+
+        let schemaVersion: Int
+        let purpose: String
+        let network: String
+        let storageLocations: [String]
+        let files: [FileEntry]
+    }
+
     func testV1StorageLocationsAndPolicies() {
         XCTAssertEqual(VaultStorageLocation.allCases, [.device, .iCloud, .mac])
         XCTAssertTrue(VaultStoragePolicy(location: .device, keepLocalCopy: false).keepLocalCopy)
@@ -33,6 +48,66 @@ final class VaultScaffoldTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.url.path))
         try directory.cleanUp()
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.url.path))
+    }
+
+    func testTemporaryDirectoriesAreUniqueAndPreserveExistingData() async throws {
+        let base = try VaultTemporaryDirectory(name: "base")
+        let sentinel = base.url.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: sentinel)
+
+        let directories = try await withThrowingTaskGroup(of: VaultTemporaryDirectory.self) { group in
+            for _ in 0..<8 {
+                group.addTask { try VaultTemporaryDirectory(name: "parallel", baseURL: base.url) }
+            }
+            var values: [VaultTemporaryDirectory] = []
+            for try await directory in group { values.append(directory) }
+            return values
+        }
+        XCTAssertEqual(Set(directories.map(\.url)).count, directories.count)
+        XCTAssertEqual(try Data(contentsOf: sentinel), Data("keep".utf8))
+    }
+
+    func testFixtureManifestIsDecodableAndMatchesV1Contract() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let manifestURL = repositoryRoot.appendingPathComponent("Fixtures/Vault/manifest.json")
+        let manifest = try JSONDecoder().decode(
+            FixtureManifest.self,
+            from: Data(contentsOf: manifestURL))
+        XCTAssertEqual(manifest.schemaVersion, 1)
+        XCTAssertEqual(manifest.network, "forbidden")
+        XCTAssertEqual(manifest.storageLocations, ["device", "icloud", "mac"])
+        XCTAssertEqual(Set(manifest.files.map(\.id)).count, manifest.files.count)
+        XCTAssertTrue(manifest.files.allSatisfy { !$0.contentType.isEmpty && !$0.text.isEmpty })
+        XCTAssertTrue(manifest.purpose.contains("deterministic"))
+    }
+
+    func testKeyStoreModelsKeychainIdentityLossAndRotation() throws {
+        let synchronizable = VaultKeyDescriptor(
+            service: "com.hsanabria.luna.vault.keys",
+            account: "root",
+            accessGroup: "team.com.hsanabria.luna.vault.keychain",
+            synchronizable: true,
+            accessibility: .afterFirstUnlock)
+        let local = VaultKeyDescriptor(
+            service: synchronizable.service,
+            account: "device-cache",
+            accessGroup: synchronizable.accessGroup,
+            synchronizable: false,
+            accessibility: .whenUnlocked)
+        let store = InMemoryVaultKeyStore()
+        try store.setData(Data([1]), for: synchronizable)
+        try store.setData(Data([2]), for: local)
+        XCTAssertEqual(store.rotateData(Data([3]), for: synchronizable), Data([1]))
+        XCTAssertEqual(try store.data(for: synchronizable), Data([3]))
+        XCTAssertEqual(Set(store.descriptors), [synchronizable, local])
+
+        store.simulateDeviceLoss()
+        XCTAssertEqual(try store.data(for: synchronizable), Data([3]))
+        XCTAssertNil(try store.data(for: local))
+        store.removeAll()
+        XCTAssertTrue(store.descriptors.isEmpty)
     }
 
     func testInMemoryFakesRoundTripOpaqueData() async throws {
@@ -63,10 +138,32 @@ final class VaultScaffoldTests: XCTestCase {
         XCTAssertEqual(extracted.text, "on-device text")
         XCTAssertEqual(transcript.text, "on-device speech")
         XCTAssertEqual(embedding.values, [1, 0, 1])
+        XCTAssertEqual(extractor.calls, [VaultExtractionCall(data: data, contentType: nil)])
+        XCTAssertEqual(transcriber.calls, [VaultExtractionCall(data: data, contentType: "video/mp4")])
+        XCTAssertEqual(embedder.calls, [VaultEmbeddingCall(text: "query")])
+
+        let failure = VaultFakeTextExtractor(
+            control: .failure(VaultFakeInjectedError("fixture failure")))
+        do {
+            _ = try await failure.extractText(from: data, contentType: "text/plain")
+            XCTFail("Injected failure unexpectedly succeeded")
+        } catch let error as VaultFakeInjectedError {
+            XCTAssertEqual(error, VaultFakeInjectedError("fixture failure"))
+        }
+        XCTAssertEqual(failure.calls.count, 1)
+
+        let cancellation = VaultFakeEmbedder(
+            control: VaultFakeControl<VaultEmbedding>.cancellation)
+        do {
+            _ = try await cancellation.embedding(for: "cancel")
+            XCTFail("Injected cancellation unexpectedly succeeded")
+        } catch is CancellationError {
+            XCTAssertEqual(cancellation.calls, [VaultEmbeddingCall(text: "cancel")])
+        }
     }
 
     func testNoEgressProtocolAndRedactingLogger() async throws {
-        let session = URLSession(configuration: VaultNoEgressURLProtocol.sessionConfiguration())
+        let session = VaultNoEgressNetworkSessionProvider().session
         let request = URLRequest(url: URL(string: "https://example.invalid/egress")!)
         do {
             _ = try await session.data(for: request)
@@ -78,9 +175,18 @@ final class VaultScaffoldTests: XCTestCase {
             XCTAssertEqual((error as NSError).code, 2)
         }
 
-        let logger = VaultRedactingLoggerSpy(secrets: ["secret-token", "root-key"])
-        logger.log("token=secret-token key=root-key")
-        XCTAssertEqual(logger.records.first?.message, "token=<redacted> key=<redacted>")
+        let secret = "root/key+?"
+        let encoded = Data(secret.utf8).base64EncodedString()
+        let percentEncoded = try XCTUnwrap(
+            secret.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+        let logger = VaultRedactingLoggerSpy(secrets: [secret])
+        logger.log(
+            "{\"token\":\"\(encoded)\"}",
+            metadata: ["authorization": "Bearer \(percentEncoded)", "raw": secret])
+        let record = try XCTUnwrap(logger.records.first)
+        XCTAssertEqual(record.message, "{\"token\":\"<redacted>\"}")
+        XCTAssertEqual(record.metadata["authorization"], "Bearer <redacted>")
+        XCTAssertEqual(record.metadata["raw"], "<redacted>")
     }
 
     func testMacUsesTailscaleAsTransportOnly() {

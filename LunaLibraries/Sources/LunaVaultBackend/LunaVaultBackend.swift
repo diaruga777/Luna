@@ -6,6 +6,13 @@ public enum LunaVaultBackendModule {
     public static let identifier = "LunaVaultBackend"
 }
 
+/// Every future network-backed transport (the Mac path in v1) receives its
+/// session from the composition root. This makes no-egress tests enforceable;
+/// adapters must not construct or reach for URLSession.shared internally.
+public protocol VaultBackendNetworkSessionProviding: Sendable {
+    var session: URLSession { get }
+}
+
 /// Tailscale is an optional transport path for the user's paired Mac. The
 /// app still authenticates the Mac and encrypts every protocol message; a
 /// Tailscale IP or MagicDNS name is never treated as identity or storage.

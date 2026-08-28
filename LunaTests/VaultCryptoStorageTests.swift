@@ -92,6 +92,33 @@ final class VaultCryptoStorageTests: XCTestCase {
         let directory=try VaultTemporaryDirectory(name:"artifact");let repo=try VaultRepository(testContainerURL:directory.url);try repo.putEncryptedArtifact(artifact);XCTAssertEqual(try repo.encryptedArtifact(.index),artifact)
         XCTAssertThrowsError(try VaultEncryptedArtifact(kind:.manifest,revision:revision,rootVersion:1,encryptedFrames:frames))
     }
+
+    func testMalformedFramesFailClosedBeforeDecrypt() throws {
+        let root=try VaultRootKey(version:1,key:Data(repeating:3,count:32));let cryptor=VaultChunkedCryptor(chunkSize:4,vaultID:"strict",random:VaultTestRandomBytes(seed:19));let frames=try cryptor.seal(Data("123456789".utf8),objectID:objectID,revision:revision,root:root)
+        XCTAssertThrowsError(try cryptor.open(Array(frames.dropLast()),objectID:objectID,revision:revision){_ in root})
+        var reordered=frames;reordered.swapAt(1,2);XCTAssertThrowsError(try cryptor.open(reordered,objectID:objectID,revision:revision){_ in root})
+        var truncated=frames;truncated[1].removeLast();XCTAssertThrowsError(try cryptor.open(truncated,objectID:objectID,revision:revision){_ in root})
+        var wrap=frames;wrap[0].append(0);XCTAssertThrowsError(try cryptor.open(wrap,objectID:objectID,revision:revision){_ in root})
+        XCTAssertThrowsError(try cryptor.openRange(frames,range:-1..<1,objectID:objectID,revision:revision){_ in root})
+        XCTAssertThrowsError(try cryptor.openRange(frames,range:0..<10,objectID:objectID,revision:revision){_ in root})
+    }
+
+    func testTotalOrderingCacheExpiryAndSavesDatabaseIsolation() throws {
+        let directory=try VaultTemporaryDirectory(name:"ordering-cache");let saves=directory.url.appendingPathComponent("saves.sqlite");let canary=Data("legacy-canary".utf8);try canary.write(to:saves)
+        let repo=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:10_000)
+        let low=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000001")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"a")
+        let high=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000002")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"b")
+        XCTAssertTrue(try repo.upsert(low));XCTAssertTrue(try repo.upsert(high));XCTAssertFalse(try repo.upsert(low));XCTAssertEqual(try repo.object(objectID)?.deviceID,"b")
+        _=try repo.writeContent(Data("old".utf8),for:objectID);try repo.putCache(VaultCacheEntry(objectID:objectID,byteCount:3,fullContent:true,lastAccessedAt:now.addingTimeInterval(-8*86400),createdAt:now,pinned:true),now:now);XCTAssertNotNil(try repo.readContent(for:objectID))
+        try repo.setPinned(objectID,pinned:false);try repo.evictExpired(now:now);XCTAssertNil(try repo.readContent(for:objectID));XCTAssertTrue(try repo.cacheEntries().isEmpty)
+        XCTAssertEqual(try Data(contentsOf:saves),canary,"Vault must never open or mutate saves.sqlite")
+    }
+
+    func testTwoConnectionsAtomicallyClaimOneJob() throws {
+        let directory=try VaultTemporaryDirectory(name:"two-connection");let first=try VaultRepository(testContainerURL:directory.url);let second=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:42);try first.enqueue(VaultJob(kind:.download,createdAt:now,updatedAt:now,idempotencyKey:"one-claim"))
+        let claims=LockedResults();DispatchQueue.concurrentPerform(iterations:2){index in let repo=index==0 ? first:second;if let _=try?repo.claimNextJob(owner:"worker-\(index)",now:now){claims.append("\(index)")}}
+        XCTAssertEqual(claims.values.count,1)
+    }
 }
 
 private final class LockedResults: @unchecked Sendable { private let lock=NSLock();private var storage=[String]();func append(_ value:String){lock.withLock{storage.append(value)}};var values:[String]{lock.withLock{storage}} }

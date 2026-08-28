@@ -68,54 +68,196 @@ public final class VaultSearchIndex: @unchecked Sendable {
     /// same durable SQLite work without paying one BEGIN/COMMIT per record.
     @discardableResult
     public func upsertBatch(_ documents: [VaultIndexedDocument]) throws -> Int {
-        try sync { try retryBusy { try transaction {
+        try sync { try retryBusy {
+            let prepared = try PreparedBulkStatements(database: db)
+            return try transaction {
             var inserted = 0
             for document in documents {
-                if try upsertLocked(document) { inserted += 1 }
+                if try upsertLocked(document, prepared: prepared) { inserted += 1 }
             }
             return inserted
-        } } }
+            }
+        } }
+    }
+
+    /// Indexes a lazy sequence without materializing its entire input. Each
+    /// batch is one SQLite transaction, so a failure leaves a durable prefix
+    /// and never leaves documents/FTS/embeddings partially committed. Callers
+    /// may replay the source after a failure: revision stamps make that resume
+    /// idempotent and the callback is emitted only after COMMIT succeeds.
+    @discardableResult
+    public func upsertStreaming<S: Sequence>(
+        _ documents: S,
+        batchSize: Int = 256,
+        progress: ((VaultIndexBatchProgress) -> Void)? = nil
+    ) throws -> VaultIndexBulkResult where S.Element == VaultIndexedDocument {
+        try validateBatchSize(batchSize)
+        var batch: [VaultIndexedDocument] = []
+        batch.reserveCapacity(batchSize)
+        var totals = BulkTotals()
+        for document in documents {
+            batch.append(document)
+            if batch.count == batchSize {
+                try consumeBulkBatch(&batch, batchNumber: totals.batchesCommitted + 1,
+                                     totals: &totals, progress: progress)
+            }
+        }
+        if !batch.isEmpty {
+            try consumeBulkBatch(&batch, batchNumber: totals.batchesCommitted + 1,
+                                 totals: &totals, progress: progress)
+        }
+        return totals.result
+    }
+
+    /// AsyncSequence counterpart for importers that read file metadata or
+    /// extraction output asynchronously. Only `batchSize` documents are held
+    /// between commits; no task group or result array is retained.
+    @discardableResult
+    public func upsertStreaming<S: AsyncSequence>(
+        _ documents: S,
+        batchSize: Int = 256,
+        progress: ((VaultIndexBatchProgress) -> Void)? = nil
+    ) async throws -> VaultIndexBulkResult where S.Element == VaultIndexedDocument {
+        try validateBatchSize(batchSize)
+        var batch: [VaultIndexedDocument] = []
+        batch.reserveCapacity(batchSize)
+        var totals = BulkTotals()
+        for try await document in documents {
+            batch.append(document)
+            if batch.count == batchSize {
+                try consumeBulkBatch(&batch, batchNumber: totals.batchesCommitted + 1,
+                                     totals: &totals, progress: progress)
+            }
+        }
+        if !batch.isEmpty {
+            try consumeBulkBatch(&batch, batchNumber: totals.batchesCommitted + 1,
+                                 totals: &totals, progress: progress)
+        }
+        return totals.result
+    }
+
+    /// Chunk-producer form for importers whose source naturally produces
+    /// bounded pages. The producer must return at most `batchSize` elements;
+    /// violating that contract fails before any part of the oversized page is
+    /// committed. Returning nil marks end of input.
+    @discardableResult
+    public func upsertStreaming(
+        batchSize: Int = 256,
+        nextBatch: () throws -> [VaultIndexedDocument]?,
+        progress: ((VaultIndexBatchProgress) -> Void)? = nil
+    ) throws -> VaultIndexBulkResult {
+        try validateBatchSize(batchSize)
+        var totals = BulkTotals()
+        while let page = try nextBatch() {
+            guard !page.isEmpty else { continue }
+            guard page.count <= batchSize else { throw VaultSearchError.invalidBatchSize(page.count) }
+            var boundedPage = page
+            try consumeBulkBatch(&boundedPage, batchNumber: totals.batchesCommitted + 1,
+                                 totals: &totals, progress: progress)
+        }
+        return totals.result
+    }
+
+    private func validateBatchSize(_ batchSize: Int) throws {
+        guard (1...4_096).contains(batchSize) else { throw VaultSearchError.invalidBatchSize(batchSize) }
+    }
+
+    private func consumeBulkBatch(
+        _ batch: inout [VaultIndexedDocument],
+        batchNumber: Int,
+        totals: inout BulkTotals,
+        progress: ((VaultIndexBatchProgress) -> Void)?
+    ) throws {
+        let sourceCount = batch.count
+        let applied = try upsertBatch(batch)
+        // Release every document (and its potentially large extracted text or
+        // embedding) before asking the source for the next batch.
+        batch.removeAll(keepingCapacity: true)
+        totals.batchesCommitted += 1
+        totals.documentsProcessed += sourceCount
+        totals.documentsApplied += applied
+        totals.documentsSkipped += sourceCount - applied
+        progress?(VaultIndexBatchProgress(batchNumber: batchNumber,
+            documentsProcessed: totals.documentsProcessed,
+            documentsApplied: totals.documentsApplied,
+            documentsSkipped: totals.documentsSkipped))
+    }
+
+    private struct BulkTotals {
+        var batchesCommitted = 0
+        var documentsProcessed = 0
+        var documentsApplied = 0
+        var documentsSkipped = 0
+        var result: VaultIndexBulkResult {
+            VaultIndexBulkResult(batchesCommitted: batchesCommitted,
+                documentsProcessed: documentsProcessed,
+                documentsApplied: documentsApplied,
+                documentsSkipped: documentsSkipped)
+        }
     }
 
     @discardableResult
-    private func upsertLocked(_ document: VaultIndexedDocument) throws -> Bool {
-        if let old = try stampLocked(document.id), old >= document.stamp { return false }
+    private func upsertLocked(_ document: VaultIndexedDocument,
+                              prepared: PreparedBulkStatements? = nil) throws -> Bool {
+        if prepared == nil, let old = try stampLocked(document.id), old >= document.stamp { return false }
         if let embedding = document.embedding {
             _ = try embedding.validated()
-            try ensureModelSpace(embedding.modelVersion, dimension: embedding.dimension)
+            if let prepared {
+                try prepared.ensureModelSpace(embedding.modelVersion, dimension: embedding.dimension)
+            } else {
+                try ensureModelSpace(embedding.modelVersion, dimension: embedding.dimension)
+            }
         }
-        try run("""
+        let values: [SQLiteValue] = [
+            .text(document.id.rawValue.uuidString), .text(document.revision.uuidString),
+            .int(document.logicalTime), .text(document.deviceID), .text(document.filename),
+            .text(document.bodyText), .text(document.ocrText), .text(document.transcriptText),
+            .double(document.createdAt.timeIntervalSinceReferenceDate),
+            .double(document.updatedAt.timeIntervalSinceReferenceDate),
+            .double(document.accessedAt.timeIntervalSinceReferenceDate),
+            .text(document.source.rawValue), .int(document.isTombstone ? 1 : 0),
+        ]
+        if let prepared {
+            // The revision predicate is evaluated by SQLite, avoiding a
+            // prepare/step/finalize lookup for every imported document.
+            guard try prepared.upsert.executeReturningChanges(values) > 0 else { return false }
+        } else {
+            try run("""
             INSERT INTO documents(id,revision,logical_time,device_id,filename,body,ocr,transcript,created_at,updated_at,accessed_at,source,tombstone)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,
             device_id=excluded.device_id,filename=excluded.filename,body=excluded.body,ocr=excluded.ocr,
             transcript=excluded.transcript,created_at=excluded.created_at,updated_at=excluded.updated_at,
             accessed_at=excluded.accessed_at,source=excluded.source,tombstone=excluded.tombstone
-            """, [
-                .text(document.id.rawValue.uuidString), .text(document.revision.uuidString),
-                .int(document.logicalTime), .text(document.deviceID), .text(document.filename),
-                .text(document.bodyText), .text(document.ocrText), .text(document.transcriptText),
-                .double(document.createdAt.timeIntervalSinceReferenceDate),
-                .double(document.updatedAt.timeIntervalSinceReferenceDate),
-                .double(document.accessedAt.timeIntervalSinceReferenceDate),
-                .text(document.source.rawValue), .int(document.isTombstone ? 1 : 0),
-            ])
-        try removeProjectionsLocked(document.id)
+            """, values)
+        }
+        try removeProjectionsLocked(document.id, prepared: prepared)
         if !document.isTombstone {
-            try run("INSERT INTO vault_fts(id,filename,body,ocr,transcript) VALUES(?,?,?,?,?)", [
+            let ftsValues: [SQLiteValue] = [
                 .text(document.id.rawValue.uuidString), .text(document.filename), .text(document.bodyText),
                 .text(document.ocrText), .text(document.transcriptText),
-            ])
+            ]
+            if let prepared { try prepared.insertFTS.execute(ftsValues) }
+            else { try run("INSERT INTO vault_fts(id,filename,body,ocr,transcript) VALUES(?,?,?,?,?)", ftsValues) }
             if let embedding = document.embedding {
-                try run("INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)", [
+                let embeddingValues: [SQLiteValue] = [
                     .text(document.id.rawValue.uuidString), .text(embedding.modelVersion),
                     .int(Int64(embedding.dimension)), .blob(Self.encode(embedding.values)),
-                ])
+                ]
+                if let prepared { try prepared.insertEmbedding.execute(embeddingValues) }
+                else { try run("INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)", embeddingValues) }
             }
         } else {
-            try run("DELETE FROM group_members WHERE object_id=?", [.text(document.id.rawValue.uuidString)])
-            try run("DELETE FROM query_group_members WHERE object_id=?", [.text(document.id.rawValue.uuidString)])
-            try run("DELETE FROM aliases WHERE original_id=?", [.text(document.id.rawValue.uuidString)])
+            let id: [SQLiteValue] = [.text(document.id.rawValue.uuidString)]
+            if let prepared {
+                try prepared.deleteGroupMembers.execute(id)
+                try prepared.deleteQueryGroupMembers.execute(id)
+                try prepared.deleteAliases.execute(id)
+            } else {
+                try run("DELETE FROM group_members WHERE object_id=?", id)
+                try run("DELETE FROM query_group_members WHERE object_id=?", id)
+                try run("DELETE FROM aliases WHERE original_id=?", id)
+            }
         }
         return true
     }
@@ -145,6 +287,29 @@ public final class VaultSearchIndex: @unchecked Sendable {
 
     public func allDocuments(includeTombstones: Bool = false) throws -> [VaultIndexedDocument] {
         try sync { try documentsLocked(includeTombstones: includeTombstones) }
+    }
+
+    /// Returns a count without decoding or retaining document rows. Import and
+    /// performance callers should use this instead of `allDocuments()` when
+    /// they only need a cardinality check.
+    public func documentCount(includeTombstones: Bool = false) throws -> Int {
+        try sync {
+            Int(try scalar(includeTombstones
+                ? "SELECT COUNT(*) FROM documents"
+                : "SELECT COUNT(*) FROM documents WHERE tombstone=0"))
+        }
+    }
+
+    /// Truncates the WAL after a durable batch import. This is intentionally a
+    /// small public maintenance seam so diagnostics can report the actual
+    /// checkpointed database footprint without reading every row.
+    public func checkpointWAL() throws {
+        try sync {
+            let status = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            guard status == SQLITE_OK else {
+                throw VaultSearchError.sqlite("WAL checkpoint failed (status \(status)): \(String(cString: sqlite3_errmsg(db)))")
+            }
+        }
     }
 
     public func search(_ text: String, embedding: VaultEmbedding? = nil, limit: Int? = nil) throws -> [VaultSearchHit] {
@@ -338,7 +503,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
             let status = walCheckpointOverride?() ?? sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
             guard status == SQLITE_OK else {
                 let message = String(cString: sqlite3_errmsg(db))
-                throw VaultSearchError.sqlite("WAL checkpoint failed (status (status)): (message)")
+                throw VaultSearchError.sqlite("WAL checkpoint failed (status \(status)): \(message)")
             }
             guard let plaintext = FileManager.default.contents(atPath: databaseURL.path) else {
                 throw VaultSearchError.invalidArtifact
@@ -520,7 +685,28 @@ public final class VaultSearchIndex: @unchecked Sendable {
         if let expected = try modelDimension(query.modelVersion), expected != query.dimension {
             throw VaultSearchError.dimensionMismatch(expected: expected, actual: query.dimension)
         }
-        var result: [VaultObjectID: VectorCandidate] = [:]
+        // Keep only the best `limit` canonical candidates while SQLite streams
+        // rows. The previous dictionary retained one vector for every object,
+        // which made a 100k-file search allocate hundreds of megabytes even
+        // though the caller requested at most a few dozen hits.
+        var result: [VectorCandidate] = []
+        func consider(_ candidate: VectorCandidate) {
+            if let index = result.firstIndex(where: { $0.canonicalID == candidate.canonicalID }) {
+                if Self.preferred(candidate, over: result[index]) { result[index] = candidate }
+            } else {
+                result.append(candidate)
+            }
+            if result.count > limit {
+                result.sort {
+                    if $0.score != $1.score { return $0.score > $1.score }
+                    if $0.displayedID.rawValue.uuidString != $1.displayedID.rawValue.uuidString {
+                        return $0.displayedID.rawValue.uuidString < $1.displayedID.rawValue.uuidString
+                    }
+                    return $0.canonicalID.rawValue.uuidString < $1.canonicalID.rawValue.uuidString
+                }
+                result.removeLast()
+            }
+        }
         try queryRows("""
             SELECT e.object_id,e.dimension,e.\"values\" FROM embeddings e
             JOIN documents d ON d.id=e.object_id
@@ -532,7 +718,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
             let candidate = VectorCandidate(displayedID: VaultObjectID(rawValue: uuid),
                 canonicalID: VaultObjectID(rawValue: uuid), alias: false,
                 score: Self.cosine(query.values, values))
-            if Self.preferred(candidate, over: result[candidate.canonicalID]) { result[candidate.canonicalID] = candidate }
+            consider(candidate)
         }
         try queryRows("""
             SELECT a.id,a.original_id,a.dimension,a.\"values\" FROM aliases a
@@ -546,9 +732,9 @@ public final class VaultSearchIndex: @unchecked Sendable {
             let candidate = VectorCandidate(displayedID: VaultObjectID(rawValue: alias),
                 canonicalID: VaultObjectID(rawValue: original), alias: true,
                 score: Self.cosine(query.values, values))
-            if Self.preferred(candidate, over: result[candidate.canonicalID]) { result[candidate.canonicalID] = candidate }
+            consider(candidate)
         }
-        return result.values.sorted {
+        return result.sorted {
             if $0.score != $1.score { return $0.score > $1.score }
             if $0.displayedID.rawValue.uuidString != $1.displayedID.rawValue.uuidString {
                 return $0.displayedID.rawValue.uuidString < $1.displayedID.rawValue.uuidString
@@ -570,9 +756,16 @@ public final class VaultSearchIndex: @unchecked Sendable {
         var value: Int?; try queryRows("SELECT dimension FROM model_spaces WHERE model_version=?", [.text(version)]) { value = Int($0.int(0)) }; return value
     }
 
-    private func removeProjectionsLocked(_ id: VaultObjectID) throws {
-        try run("DELETE FROM vault_fts WHERE id=?", [.text(id.rawValue.uuidString)])
-        try run("DELETE FROM embeddings WHERE object_id=?", [.text(id.rawValue.uuidString)])
+    private func removeProjectionsLocked(_ id: VaultObjectID,
+                                         prepared: PreparedBulkStatements? = nil) throws {
+        let values: [SQLiteValue] = [.text(id.rawValue.uuidString)]
+        if let prepared {
+            try prepared.deleteFTS.execute(values)
+            try prepared.deleteEmbeddings.execute(values)
+        } else {
+            try run("DELETE FROM vault_fts WHERE id=?", values)
+            try run("DELETE FROM embeddings WHERE object_id=?", values)
+        }
     }
 
     private func stampLocked(_ id: VaultObjectID) throws -> VaultIndexRevision? {
@@ -740,6 +933,149 @@ public final class VaultSearchIndex: @unchecked Sendable {
     private func run(_ sql:String,_ values:[SQLiteValue]=[])throws{try statement(sql,values){guard sqlite3_step($0)==SQLITE_DONE else{throw VaultSearchError.sqlite(String(cString:sqlite3_errmsg(db)))}}}
     private func queryRows(_ sql:String,_ values:[SQLiteValue]=[],body:(SQLiteRow)throws->Void)throws{try statement(sql,values){statement in while true{let status=sqlite3_step(statement);if status==SQLITE_DONE{return};guard status==SQLITE_ROW else{throw VaultSearchError.sqlite(String(cString:sqlite3_errmsg(db)))};try body(SQLiteRow(statement))}}}
     private func statement<T>(_ sql:String,_ values:[SQLiteValue],body:(OpaquePointer)throws->T)throws->T{var statement:OpaquePointer?;guard sqlite3_prepare_v2(db,sql,-1,&statement,nil)==SQLITE_OK,let statement else{throw VaultSearchError.sqlite(String(cString:sqlite3_errmsg(db)))};defer{sqlite3_finalize(statement)};for(index,value)in values.enumerated(){try value.bind(statement,Int32(index+1))};return try body(statement)}
+
+    /// Statements shared for the lifetime of one bounded transaction. The
+    /// normal single-document path intentionally remains simple; bulk imports
+    /// avoid preparing/finalizing five statements for every document.
+    private final class PreparedBulkStatements {
+        let upsert: PreparedStatement
+        let modelDimension: PreparedStatement
+        let insertModelSpace: PreparedStatement
+        let deleteFTS: PreparedStatement
+        let deleteEmbeddings: PreparedStatement
+        let insertFTS: PreparedStatement
+        let insertEmbedding: PreparedStatement
+        let deleteGroupMembers: PreparedStatement
+        let deleteQueryGroupMembers: PreparedStatement
+        let deleteAliases: PreparedStatement
+        private var modelDimensions: [String: Int] = [:]
+
+        init(database: OpaquePointer?) throws {
+            guard let database else { throw VaultSearchError.sqlite("database closed") }
+            upsert = try PreparedStatement(database: database, sql: """
+                INSERT INTO documents(id,revision,logical_time,device_id,filename,body,ocr,transcript,created_at,updated_at,accessed_at,source,tombstone)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,
+                device_id=excluded.device_id,filename=excluded.filename,body=excluded.body,ocr=excluded.ocr,
+                transcript=excluded.transcript,created_at=excluded.created_at,updated_at=excluded.updated_at,
+                accessed_at=excluded.accessed_at,source=excluded.source,tombstone=excluded.tombstone
+                WHERE excluded.logical_time > documents.logical_time
+                   OR (excluded.logical_time = documents.logical_time AND
+                       (excluded.device_id > documents.device_id OR
+                        (excluded.device_id = documents.device_id AND excluded.revision > documents.revision)))
+                """)
+            modelDimension = try PreparedStatement(database: database, sql: "SELECT dimension FROM model_spaces WHERE model_version=?")
+            insertModelSpace = try PreparedStatement(database: database, sql: "INSERT INTO model_spaces(model_version,dimension) VALUES(?,?)")
+            deleteFTS = try PreparedStatement(database: database, sql: "DELETE FROM vault_fts WHERE id=?")
+            deleteEmbeddings = try PreparedStatement(database: database, sql: "DELETE FROM embeddings WHERE object_id=?")
+            insertFTS = try PreparedStatement(database: database, sql: "INSERT INTO vault_fts(id,filename,body,ocr,transcript) VALUES(?,?,?,?,?)")
+            insertEmbedding = try PreparedStatement(database: database, sql: "INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)")
+            deleteGroupMembers = try PreparedStatement(database: database, sql: "DELETE FROM group_members WHERE object_id=?")
+            deleteQueryGroupMembers = try PreparedStatement(database: database, sql: "DELETE FROM query_group_members WHERE object_id=?")
+            deleteAliases = try PreparedStatement(database: database, sql: "DELETE FROM aliases WHERE original_id=?")
+        }
+
+        func ensureModelSpace(_ version: String, dimension: Int) throws {
+            guard !version.isEmpty, dimension > 0 else { throw VaultSearchError.mixedModelSpace }
+            let existing: Int?
+            if let cached = modelDimensions[version] {
+                existing = cached
+            } else {
+                existing = try modelDimension.fetchInt([.text(version)])
+                if let existing { modelDimensions[version] = existing }
+            }
+            if let existing, existing != dimension {
+                throw VaultSearchError.dimensionMismatch(expected: existing, actual: dimension)
+            }
+            if existing == nil {
+                try insertModelSpace.execute([.text(version), .int(Int64(dimension))])
+                modelDimensions[version] = dimension
+            }
+        }
+    }
+
+    private final class PreparedStatement {
+        private let database: OpaquePointer
+        private let statement: OpaquePointer
+
+        init(database: OpaquePointer, sql: String) throws {
+            self.database = database
+            var prepared: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &prepared, nil) == SQLITE_OK,
+                  let prepared else {
+                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
+            }
+            statement = prepared
+        }
+
+        deinit { sqlite3_finalize(statement) }
+
+        func execute(_ values: [SQLiteValue]) throws {
+            defer {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+            }
+            for (index, value) in values.enumerated() {
+                try value.bind(statement, Int32(index + 1))
+            }
+            let status = sqlite3_step(statement)
+            guard status == SQLITE_DONE else {
+                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
+            }
+        }
+
+        func executeReturningChanges(_ values: [SQLiteValue]) throws -> Int {
+            defer {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+            }
+            for (index, value) in values.enumerated() {
+                try value.bind(statement, Int32(index + 1))
+            }
+            let status = sqlite3_step(statement)
+            guard status == SQLITE_DONE else {
+                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
+            }
+            return Int(sqlite3_changes(database))
+        }
+
+        func fetchInt(_ values: [SQLiteValue]) throws -> Int? {
+            defer {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+            }
+            for (index, value) in values.enumerated() {
+                try value.bind(statement, Int32(index + 1))
+            }
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return nil }
+            guard status == SQLITE_ROW else {
+                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
+            }
+            return Int(sqlite3_column_int64(statement, 0))
+        }
+
+        func fetchRevision(_ values: [SQLiteValue]) throws -> VaultIndexRevision? {
+            defer {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+            }
+            for (index, value) in values.enumerated() {
+                try value.bind(statement, Int32(index + 1))
+            }
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return nil }
+            guard status == SQLITE_ROW else {
+                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
+            }
+            guard let revision = UUID(uuidString: SQLiteRow(statement).text(2) ?? "") else {
+                throw VaultSearchError.sqlite("revision")
+            }
+            return VaultIndexRevision(logicalTime: sqlite3_column_int64(statement, 0),
+                                      deviceID: SQLiteRow(statement).text(1) ?? "",
+                                      revision: revision)
+        }
+    }
 
     private struct HitSeed{let document:VaultIndexedDocument;var displayedID:VaultObjectID;var alias:Bool;var lexical:Double;var exact:Double;var vector:Double;var fields:[VaultSearchField];var displayScore:Double = 0;var score:Double{exact*4+lexical+vector*2}}
     private struct VectorCandidate{let displayedID:VaultObjectID;let canonicalID:VaultObjectID;let alias:Bool;let score:Double}

@@ -81,23 +81,97 @@ final class VaultSearchTests: XCTestCase {
         }
     }
 
+    func testStreamingBatchesCommitBoundedPrefixAndResumeIdempotently() throws {
+        let (index, _, _) = try makeIndex("search-streaming-resume")
+        var next = 1
+        var progress: [VaultIndexBatchProgress] = []
+        XCTAssertThrowsError(try index.upsertStreaming(batchSize: 10, nextBatch: {
+            guard next <= 100 else { return nil }
+            let start = next
+            next += 10
+            if start > 20 { throw StreamFailure.injected }
+            return (start..<min(start + 10, 101)).map { self.doc($0, filename: "streamrecord\($0)", body: "resumeidentifier\($0)") }
+        }, progress: { progress.append($0) }))
+        XCTAssertEqual(progress.last?.documentsProcessed, 20)
+        XCTAssertEqual(try index.documentCount(), 20)
+
+        var resume = 1
+        let result = try index.upsertStreaming(batchSize: 10, nextBatch: {
+            guard resume <= 100 else { return nil }
+            let start = resume
+            resume += 10
+            return (start..<min(start + 10, 101)).map { self.doc($0, filename: "streamrecord\($0)", body: "resumeidentifier\($0)") }
+        })
+        XCTAssertEqual(result.documentsProcessed, 100)
+        XCTAssertEqual(result.documentsApplied, 80)
+        XCTAssertEqual(result.documentsSkipped, 20)
+        XCTAssertEqual(try index.documentCount(), 100)
+        XCTAssertEqual(try index.search("resumeidentifier77").count, 1)
+    }
+
+    func testStreamingBatchIsAtomicAcrossDocuments() throws {
+        let (index, _, _) = try makeIndex("search-streaming-atomic")
+        try index.upsert(doc(1, filename: "before", body: "before", vector: [1, 0]))
+        var emitted = false
+        XCTAssertThrowsError(try index.upsertStreaming(batchSize: 3, nextBatch: {
+            if emitted { return nil }
+            emitted = true
+            return [
+                self.doc(2, filename: "good", body: "good"),
+                self.doc(3, filename: "bad", body: "bad", vector: [1, 0, 0]),
+                self.doc(4, filename: "also-good", body: "also-good")
+            ]
+        }))
+        XCTAssertEqual(try index.documentCount(), 1)
+        XCTAssertTrue(try index.search("good").isEmpty)
+        XCTAssertTrue(try index.search("also-good").isEmpty)
+        XCTAssertEqual(try index.search("before").count, 1)
+    }
+
     func testHundredThousandSQLiteRecordsPerformanceNightly() throws {
         guard ProcessInfo.processInfo.environment["LUNA_VAULT_PERFORMANCE"] == "1" else { throw XCTSkip("set LUNA_VAULT_PERFORMANCE=1 for the 100k SQLite benchmark") }
-        let(index,directory,_)=try makeIndex("search-performance-100k");let documents=(1...100_000).map{value in doc(value,filename:"document-\(value).txt",body:"benchmark payload \(value)")};let start=ProcessInfo.processInfo.systemUptime
-        XCTAssertEqual(try index.upsertBatch(documents),100_000)
+        let(index,directory,_)=try makeIndex("search-performance-100k");let start=ProcessInfo.processInfo.systemUptime
+        // 4,096 is the measured sweet spot on the iPhone 17 Pro simulator:
+        // it keeps source material bounded while avoiding hundreds of WAL
+        // commits. The API still caps callers at this batch size.
+        let result = try index.upsertStreaming(performanceDocuments(count: 100_000), batchSize: 4_096)
+        XCTAssertEqual(result.documentsApplied,100_000)
         let buildSeconds=ProcessInfo.processInfo.systemUptime-start
-        var queryDurations:[Double]=[];queryDurations.reserveCapacity(40)
-        for value in stride(from:1,through:100_000,by:2_500) { let queryStart=ProcessInfo.processInfo.systemUptime;XCTAssertEqual(try index.search("document-\(value)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-queryStart) }
+        var queryDurations:[Double]=[];queryDurations.reserveCapacity(80);var vectorDurations:[Double]=[];vectorDurations.reserveCapacity(40);var hybridDurations:[Double]=[];hybridDurations.reserveCapacity(40)
+        let queryVector = VaultEmbedding(values: [1,2,3,4,5,6,7,8].map(Float.init), modelVersion: "v1")
+        // Ten samples per query family are enough for stable p50/p95
+        // diagnostics while keeping the nightly plan comfortably bounded.
+        for value in stride(from:1,through:100_000,by:10_000) {
+            let marker = String(format: "%06d", value);let queryStart=ProcessInfo.processInfo.systemUptime
+            XCTAssertEqual(try index.search("vaultrecord\(marker)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-queryStart)
+            let ftsStart=ProcessInfo.processInfo.systemUptime
+            XCTAssertEqual(try index.search("payloadmarker\(marker)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-ftsStart)
+            let vectorStart=ProcessInfo.processInfo.systemUptime
+            XCTAssertFalse(try index.cosineSearch(queryVector,limit:10).isEmpty);vectorDurations.append(ProcessInfo.processInfo.systemUptime-vectorStart)
+            let hybridStart=ProcessInfo.processInfo.systemUptime
+            XCTAssertFalse(try index.search("payloadmarker\(marker)",embedding:queryVector,limit:10).isEmpty);hybridDurations.append(ProcessInfo.processInfo.systemUptime-hybridStart)
+        }
         let sorted=queryDurations.sorted();let p50=sorted[sorted.count/2],p95=sorted[Int(Double(sorted.count-1)*0.95)]
+        let vectorSorted=vectorDurations.sorted();let vectorP50=vectorSorted[vectorSorted.count/2],vectorP95=vectorSorted[Int(Double(vectorSorted.count-1)*0.95)]
+        let hybridSorted=hybridDurations.sorted();let hybridP50=hybridSorted[hybridSorted.count/2],hybridP95=hybridSorted[Int(Double(hybridSorted.count-1)*0.95)]
+        try index.checkpointWAL()
         let dbBytes=["","-wal","-shm"].compactMap{try? FileManager.default.attributesOfItem(atPath:directory.url.appendingPathComponent("vault-index.sqlite").path+$0)[.size] as? NSNumber}.reduce(Int64(0)){ $0+$1.int64Value }
         let memory=residentBytes();XCTContext.runActivity(named:"100k SQLite records: build=\(buildSeconds)s p50=\(p50)s p95=\(p95)s resident=\(memory)B db=\(dbBytes)B") { _ in }
-        XCTAssertEqual(try index.allDocuments().count,100_000)
+        XCTContext.runActivity(named:"100k query metrics: lexical p50=\(p50)s p95=\(p95)s vector p50=\(vectorP50)s p95=\(vectorP95)s hybrid p50=\(hybridP50)s p95=\(hybridP95)s checkpointed db+wal+shm=\(dbBytes)B resident=\(memory)B") { _ in }
+        if memory > 0 { XCTAssertLessThan(memory,768*1024*1024,"streaming index must not retain the 100k-document input") }
+        XCTAssertEqual(try index.documentCount(),100_000)
+    }
+
+    private func performanceDocuments(count: Int) -> AnySequence<VaultIndexedDocument> {
+        AnySequence { var value=1;return AnyIterator<VaultIndexedDocument> { guard value<=count else{return nil};defer{value += 1};let marker=String(format:"%06d",value);return self.doc(value,filename:"vaultrecord\(marker).txt",body:"payloadmarker\(marker)",vector:[1,2,3,4,5,6,7,8].map(Float.init)) } }
     }
 
     func testSearchTierSourceHasNoNetworkOrBackendDependency() throws {
         let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent();let source=root.appendingPathComponent("LunaLibraries/Sources/LunaVaultSearch");let text=try FileManager.default.contentsOfDirectory(at:source,includingPropertiesForKeys:nil).filter{$0.pathExtension=="swift"}.map{try String(contentsOf:$0,encoding:.utf8)}.joined();XCTAssertFalse(text.contains("URLSession"));XCTAssertFalse(text.contains("LunaVaultBackend"));XCTAssertFalse(text.contains("Network.framework"))
     }
 }
+
+private enum StreamFailure: Error { case injected }
 
 private func residentBytes() -> Int64 {
 #if canImport(Darwin)

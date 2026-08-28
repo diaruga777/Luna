@@ -16,6 +16,44 @@ public struct VaultSearchConfiguration: Equatable, Sendable {
     }
 }
 
+/// Progress reported after a durable bulk-index batch has committed.  The
+/// callback is deliberately post-commit so a caller can persist this cursor
+/// and safely resume by replaying the source.  Replayed revisions are
+/// idempotently skipped by the index.
+public struct VaultIndexBatchProgress: Equatable, Sendable {
+    public let batchNumber: Int
+    public let documentsProcessed: Int
+    public let documentsApplied: Int
+    public let documentsSkipped: Int
+
+    public init(batchNumber: Int, documentsProcessed: Int,
+                documentsApplied: Int, documentsSkipped: Int) {
+        self.batchNumber = batchNumber
+        self.documentsProcessed = documentsProcessed
+        self.documentsApplied = documentsApplied
+        self.documentsSkipped = documentsSkipped
+    }
+}
+
+/// Totals for a completed streaming index operation.  `documentsProcessed`
+/// counts source elements, while `documentsApplied` counts revisions that
+/// changed the index.  A failed operation does not return a result; callbacks
+/// received before the failure describe the committed prefix.
+public struct VaultIndexBulkResult: Equatable, Sendable {
+    public let batchesCommitted: Int
+    public let documentsProcessed: Int
+    public let documentsApplied: Int
+    public let documentsSkipped: Int
+
+    public init(batchesCommitted: Int, documentsProcessed: Int,
+                documentsApplied: Int, documentsSkipped: Int) {
+        self.batchesCommitted = batchesCommitted
+        self.documentsProcessed = documentsProcessed
+        self.documentsApplied = documentsApplied
+        self.documentsSkipped = documentsSkipped
+    }
+}
+
 public enum VaultDocumentSource: String, Codable, CaseIterable, Sendable { case device, iCloud, mac }
 
 public struct VaultIndexRevision: Codable, Hashable, Sendable, Comparable {
@@ -157,6 +195,7 @@ public enum VaultSearchError: Error, Equatable, Sendable {
     case tombstonedDocument
     case invalidSnapshotMember
     case invalidArtifact
+    case invalidBatchSize(Int)
 }
 
 public protocol VaultSearching: Sendable {

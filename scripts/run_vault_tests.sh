@@ -78,5 +78,6 @@ exec xcodebuild test -scheme LunaVaultTests -testPlan LunaVault \
   -destination "$DESTINATION" \
   -only-testing:LunaTests/VaultScaffoldTests \
   -only-testing:LunaTests/VaultCryptoStorageTests \
+  -only-testing:LunaTests/VaultExtractionTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
   ${EXTRA[@]+"${EXTRA[@]}"}

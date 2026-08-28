@@ -1,7 +1,7 @@
 # Luna Vault testing contract
 
-Stage 1B establishes the test seams before any real crypto, SQLite schema,
-index, or provider implementation lands.
+Stage 2 exercises the production crypto and isolated SQLite repository in
+addition to the Stage 1 scaffold seams.
 
 `VaultTestKit` is the only test-support product. It provides deterministic
 clock/UUID/random-byte generators, a temporary-directory helper, in-memory
@@ -33,8 +33,10 @@ Use `--device <UDID>` for a physical-device destination. `--unit` compiles the
 Foundation-only `VaultTestKit` package target (the package also contains
 UIKit-only legacy targets, so a plain `swift build` on macOS is not expected to
 pass). `LunaVault.xctestplan` is registered by the shared `LunaVaultTests`
-scheme, while the scheme's explicit `-only-testing:LunaTests/VaultScaffoldTests`
-invocation keeps the Stage 1B inner loop small.
+scheme. The runner selects both `VaultScaffoldTests` and
+`VaultCryptoStorageTests` to cover deterministic encryption ranges/tampering,
+strict key-ring recovery, migrations/reopen/integrity, tombstones, cache expiry,
+job leases, encrypted artifacts, and legacy-store isolation.
 
 `Fixtures/Vault/manifest.json` intentionally lives at the repository root: it
 is test input, not an app resource. `VaultScaffoldTests` decodes it from the
@@ -51,6 +53,6 @@ fail before a socket opens. Network.framework transports will require an
 equivalent injected connection-factory trap before they are added.
 
 Required later gates include offline restart/reindex, ciphertext-only backend
-requests, Keychain recovery/rotation, cache quota and expiry, index model
+requests, index model
 versioning, symbolic-link deduplication, iCloud eviction, Mac reconnect and
 conflict handling, and power-aware background work.

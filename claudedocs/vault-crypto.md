@@ -7,7 +7,13 @@ malformed item is an explicit recovery error; the app never creates a replacemen
 without the setup flow asking the user. The serialized value is a JSON key ring
 containing 256-bit keys, monotonically increasing versions, and SHA-256
 fingerprints. Rotation appends a new version and old versions remain available
-for rewrapping existing objects.
+for rewrapping existing objects. Decoding rejects empty or oversized rings,
+zero/duplicate/out-of-order versions, non-32-byte keys, and fingerprints that
+do not recompute. `createFirstRun` is the only creation entry point; normal
+launch calls `loadRequired` and enters recovery if iCloud Keychain has not yet
+restored the item. Creation uses an atomic Keychain add so racing setup callers
+converge on one key. Reset deletes only this Vault descriptor after explicit
+confirmation.
 
 Each object receives a random 256-bit DEK. The DEK is wrapped by AES-GCM under
 the selected root version. Content, metadata, and index artifacts use the same
@@ -19,7 +25,10 @@ chunk from being moved between objects, revisions, or artifact types. No padding
 or cross-file deduplication is performed.
 
 The `VaultChunkedCryptor` accepts an injected random source for deterministic
-tests, validates object/revision/chunk ordering, and exposes a chunk range plan
-for random-access readers. Remote transports must only receive the encoded
+tests. It caps objects at 100 GB and chunks at 8 MiB, validates every frame's
+exact length/count/order/version and consistent identity before allocation, and
+provides authenticated `openRange` reads. The vault identifier is length-bound
+inside AAD, so even two local vaults with matching object UUIDs cannot exchange
+chunks. Remote transports must only receive the encoded
 envelopes and opaque IDs; plaintext names, metadata, indexes, and key material
 must never be logged or sent.

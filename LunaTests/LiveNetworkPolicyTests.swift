@@ -100,6 +100,13 @@ final class LiveNetworkPolicyTests: XCTestCase {
             LiveNetworkPolicy.recordedRefusals.map(\.context), ["DuckDuckGoSearch.results"])
     }
 
+    func testFirecrawlSearchRefusesRatherThanSearching() async {
+        let outcome = await FirecrawlSearch.results(forQuery: "live network guard")
+        XCTAssertEqual(outcome, .unavailable)
+        XCTAssertEqual(
+            LiveNetworkPolicy.recordedRefusals.map(\.context), ["FirecrawlSearch.results"])
+    }
+
     /// The scare that started all of this: `SellerComparisonRunner.installed` is
     /// filled at app launch and the test host IS an app, so a test that drives a
     /// product save would otherwise fan out across a dozen real retailers.

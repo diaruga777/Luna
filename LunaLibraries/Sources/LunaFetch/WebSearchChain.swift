@@ -102,20 +102,18 @@ public enum WebSearchChain {
         cooldown: FirecrawlSearchCooldown = .shared
     ) async -> WebSearchChainOutcome {
         let report: FirecrawlSearchLeg
-        let firecrawlAnswered: Bool
         switch await firecrawlLeg(query: query, provider: firecrawl, cooldown: cooldown) {
         case let .servedURLs(urls):
             return WebSearchChainOutcome(
                 urls: urls, servedBy: .firecrawl, firecrawl: .served(count: urls.count))
-        case let .fellThrough(leg, answered):
+        case let .fellThrough(leg):
             report = leg
-            firecrawlAnswered = answered
         }
         guard case let .results(urls) = await duckDuckGo.search(query: query) else {
             // Firecrawl's own empty answer is a search that happened, so it
-            // stands rather than becoming "no search".
+            // stands as an empty result rather than becoming "no search".
             return WebSearchChainOutcome(
-                urls: firecrawlAnswered ? [] : nil, servedBy: nil, firecrawl: report)
+                urls: report == .empty ? [] : nil, servedBy: nil, firecrawl: report)
         }
         return WebSearchChainOutcome(urls: urls, servedBy: .duckDuckGo, firecrawl: report)
     }
@@ -124,16 +122,14 @@ public enum WebSearchChain {
     /// go on to DuckDuckGo carrying what happened.
     private enum FirecrawlLeg {
         case servedURLs([URL])
-        /// `firecrawlAnswered` is true only for a successful but empty search —
-        /// the one fall-through that is not a failure.
-        case fellThrough(FirecrawlSearchLeg, firecrawlAnswered: Bool)
+        case fellThrough(FirecrawlSearchLeg)
     }
 
     private static func firecrawlLeg(
         query: String, provider: any WebSearchProviding, cooldown: FirecrawlSearchCooldown
     ) async -> FirecrawlLeg {
         if let remaining = cooldown.remaining() {
-            return .fellThrough(.cooling(remaining: remaining), firecrawlAnswered: false)
+            return .fellThrough(.cooling(remaining: remaining))
         }
         switch await provider.search(query: query) {
         case let .results(urls) where !urls.isEmpty:
@@ -141,12 +137,12 @@ public enum WebSearchChain {
             return .servedURLs(urls)
         case .results:
             cooldown.recordSuccess()
-            return .fellThrough(.empty, firecrawlAnswered: true)
+            return .fellThrough(.empty)
         case let .rateLimited(retryAfter):
             let wait = cooldown.recordRateLimit(retryAfter: retryAfter)
-            return .fellThrough(.rateLimited(cooldown: wait), firecrawlAnswered: false)
+            return .fellThrough(.rateLimited(cooldown: wait))
         case .unavailable:
-            return .fellThrough(.unavailable, firecrawlAnswered: false)
+            return .fellThrough(.unavailable)
         }
     }
 }

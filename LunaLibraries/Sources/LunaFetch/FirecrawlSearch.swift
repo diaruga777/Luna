@@ -79,7 +79,7 @@ public enum FirecrawlSearch {
 
     /// The request body. `sources: ["web"]` drops the news and image tiers,
     /// which cost credits the fan-out has no use for.
-    static func requestBody(forQuery query: String, location: String?) -> Data? {
+    public static func requestBody(forQuery query: String, location: String?) -> Data? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         var payload: [String: Any] = [
@@ -95,7 +95,7 @@ public enum FirecrawlSearch {
     /// Status + headers + body → one outcome. Pure, so the mapping is asserted
     /// without a server: only `results(forQuery:location:)` above touches the
     /// network.
-    static func outcome(
+    public static func outcome(
         statusCode: Int, retryAfterHeader: String?, body: Data?, now: Date = Date()
     ) -> Outcome {
         if statusCode == rateLimitStatusCode {

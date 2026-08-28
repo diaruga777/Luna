@@ -24,11 +24,20 @@ public struct VaultStorageConfiguration: Equatable, Sendable {
     }
 }
 
-public protocol VaultFileProtectionApplying: Sendable { func apply(to url: URL) throws }
+public protocol VaultFileProtectionApplying: Sendable {
+    func apply(to url: URL) throws
+    func hasRequiredProtection(at url: URL) throws -> Bool
+}
 public struct SystemVaultFileProtectionApplier: VaultFileProtectionApplying {
     public init() {}
     public func apply(to url: URL) throws {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+    }
+    public func hasRequiredProtection(at url: URL) throws -> Bool {
+        let value = try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey]
+        if let protection = value as? FileProtectionType { return protection == .completeUntilFirstUserAuthentication }
+        if let rawValue = value as? String { return rawValue == FileProtectionType.completeUntilFirstUserAuthentication.rawValue }
+        return false
     }
 }
 
@@ -121,13 +130,15 @@ public final class VaultRepository: @unchecked Sendable {
         guard Int64(data.count)<=cacheQuotaBytes+stagingAllowanceBytes else{throw VaultStorageError.stagingLimit}
         do{
             try data.write(to:staging,options:[.atomic]);try protect(staging);let handle=try FileHandle(forWritingTo:staging);try handle.closeAfterSynchronize()
-            try Data("\(object.revision.uuidString):\(token)".utf8).write(to:stagingGeneration,options:[.atomic]);try protect(stagingGeneration)
+            try Data("\(object.revision.uuidString):\(token)".utf8).write(to:stagingGeneration,options:[.atomic]);try protect(stagingGeneration);let generationHandle=try FileHandle(forWritingTo:stagingGeneration);try generationHandle.closeAfterSynchronize()
             for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
             if fileManager.fileExists(atPath:final.path){try fileManager.moveItem(at:final,to:backup)}
             if fileManager.fileExists(atPath:generation.path){try fileManager.moveItem(at:generation,to:backupGeneration)}
             do{
-                try fileManager.moveItem(at:staging,to:final);try protect(final)
-                try fileManager.moveItem(at:stagingGeneration,to:generation);try protect(generation)
+                // Data Protection attributes were applied and fsynced on staging and
+                // survive rename. Never install first and protect afterward.
+                try fileManager.moveItem(at:staging,to:final)
+                try fileManager.moveItem(at:stagingGeneration,to:generation)
                 for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
             }catch{
                 if fileManager.fileExists(atPath:final.path){try?fileManager.removeItem(at:final)}
@@ -193,7 +204,33 @@ public final class VaultRepository: @unchecked Sendable {
             try run("DELETE FROM pending_file_cleanup WHERE marker_id=?",[.text(marker)])
         }
     }
-    private func repairFileLayout()throws{guard let children=try?fileManager.contentsOfDirectory(at:contentDirectory,includingPropertiesForKeys:nil)else{return};for dir in children{let final=dir.appendingPathComponent("content"),generation=dir.appendingPathComponent(".content-generation"),previous=dir.appendingPathComponent(".previous"),previousGeneration=dir.appendingPathComponent(".previous-generation");let items=(try?fileManager.contentsOfDirectory(at:dir,includingPropertiesForKeys:nil)) ?? [];for item in items where item.lastPathComponent.hasPrefix(".staging-") || item.lastPathComponent.hasPrefix(".generation-staging-"){try fileManager.removeItem(at:item)};if fileManager.fileExists(atPath:previous.path){if fileManager.fileExists(atPath:final.path) && fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:previous);if fileManager.fileExists(atPath:previousGeneration.path){try fileManager.removeItem(at:previousGeneration)}}else{if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)};if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)};try fileManager.moveItem(at:previous,to:final);if fileManager.fileExists(atPath:previousGeneration.path){try fileManager.moveItem(at:previousGeneration,to:generation)}}}else if fileManager.fileExists(atPath:final.path) && !fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:final)}}}
+    private func repairFileLayout()throws{
+        guard let children=try?fileManager.contentsOfDirectory(at:contentDirectory,includingPropertiesForKeys:nil)else{return}
+        for dir in children{
+            guard let rawID=UUID(uuidString:dir.lastPathComponent)else{continue};let id=VaultObjectID(rawValue:rawID)
+            let final=dir.appendingPathComponent("content"),generation=dir.appendingPathComponent(".content-generation"),previous=dir.appendingPathComponent(".previous"),previousGeneration=dir.appendingPathComponent(".previous-generation")
+            let items=(try?fileManager.contentsOfDirectory(at:dir,includingPropertiesForKeys:nil)) ?? []
+            for item in items where item.lastPathComponent.hasPrefix(".staging-") || item.lastPathComponent.hasPrefix(".generation-staging-"){try fileManager.removeItem(at:item)}
+            let currentRevision=try objectLocked(id)?.revision.uuidString
+            let finalValid=try installedGenerationIsValid(content:final,generation:generation,expectedRevision:currentRevision)
+            if fileManager.fileExists(atPath:previous.path){
+                if finalValid{
+                    try fileManager.removeItem(at:previous);if fileManager.fileExists(atPath:previousGeneration.path){try fileManager.removeItem(at:previousGeneration)}
+                }else{
+                    if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)};if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)}
+                    let previousValid=try installedGenerationIsValid(content:previous,generation:previousGeneration,expectedRevision:nil)
+                    if previousValid{try fileManager.moveItem(at:previous,to:final);try fileManager.moveItem(at:previousGeneration,to:generation)}
+                    else{try fileManager.removeItem(at:previous);if fileManager.fileExists(atPath:previousGeneration.path){try fileManager.removeItem(at:previousGeneration)}}
+                }
+            }else if !finalValid{
+                if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)};if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)}
+            }
+        }
+    }
+    private func installedGenerationIsValid(content:URL,generation:URL,expectedRevision:String?)throws->Bool{
+        guard fileManager.fileExists(atPath:content.path),fileManager.fileExists(atPath:generation.path),try protectionApplier.hasRequiredProtection(at:content),try protectionApplier.hasRequiredProtection(at:generation),let marker=try?String(contentsOf:generation,encoding:.utf8),let separator=marker.firstIndex(of:":"),!marker[marker.index(after:separator)...].isEmpty else{return false}
+        return expectedRevision.map{String(marker[..<separator])==$0} ?? true
+    }
     private func protect(_ url:URL)throws{try protectionApplier.apply(to:url)}
     private func protectDatabaseFiles()throws{for suffix in ["","-wal","-shm"]{let u=URL(fileURLWithPath:databaseURL.path+suffix);if fileManager.fileExists(atPath:u.path){try protect(u)}}}
     private func sync<T>(_ body:()throws->T)throws->T{try queue.sync{let result=try body();try protectDatabaseFiles();return result}}

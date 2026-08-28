@@ -77,5 +77,6 @@ DESTINATION="platform=iOS Simulator,id=$DEVICE"
 exec xcodebuild test -scheme LunaVaultTests -testPlan LunaVault \
   -destination "$DESTINATION" \
   -only-testing:LunaTests/VaultScaffoldTests \
+  -only-testing:LunaTests/VaultCryptoStorageTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
   ${EXTRA[@]+"${EXTRA[@]}"}

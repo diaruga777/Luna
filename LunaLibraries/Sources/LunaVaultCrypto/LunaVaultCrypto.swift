@@ -5,6 +5,11 @@ import LunaVaultModels
 #if canImport(Security)
 import Security
 #endif
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public enum LunaVaultCryptoModule { public static let identifier = "LunaVaultCrypto" }
 
@@ -139,13 +144,15 @@ public final class VaultRootKeyManager: @unchecked Sendable {
     public let descriptor: VaultKeyDescriptor
     private let store: VaultKeyStoring
     private let random: VaultRandomBytesGenerating
-    public init(configuration: VaultCryptoConfiguration, store: VaultKeyStoring = VaultKeychainStore(), random: VaultRandomBytesGenerating = SystemVaultRandomBytes()) {
+    private let lifecycleLockURL: URL?
+    public init(configuration: VaultCryptoConfiguration, store: VaultKeyStoring = VaultKeychainStore(), random: VaultRandomBytesGenerating = SystemVaultRandomBytes(), lifecycleLockURL: URL? = AppConfig.sharedContainerURL()?.appendingPathComponent(".vault-key-lifecycle.lock")) {
         self.store = store; self.random = random
+        self.lifecycleLockURL = lifecycleLockURL
         descriptor = VaultKeyDescriptor(service: "com.hsanabria.luna.vault.keys", account: configuration.vaultID,
             accessGroup: configuration.keychainAccessGroup, synchronizable: true, accessibility: .whenUnlocked)
     }
     /// Setup-only. Launch and recovery paths must call `loadRequired`.
-    public func createFirstRun() throws -> VaultRootKey { try Self.lock.withLock {
+    public func createFirstRun() throws -> VaultRootKey { try synchronized {
         if let existing = try store.data(for: descriptor) { return try decodeRing(existing).last! }
         let root = try VaultRootKey(version: 1, key: random.bytes(count: 32))
         let bytes = try JSONEncoder().encode([root])
@@ -160,7 +167,7 @@ public final class VaultRootKeyManager: @unchecked Sendable {
     public func loadOrCreate() throws -> VaultRootKey { try createFirstRun() }
     public func loadRequired() throws -> VaultRootKey { guard let data = try store.data(for: descriptor) else { throw VaultCryptoError.keyUnavailable }; return try decodeRing(data).last! }
     public func key(version: UInt32) throws -> VaultRootKey { guard let data = try store.data(for: descriptor), let key = try decodeRing(data).first(where: { $0.version == version }) else { throw VaultCryptoError.keyUnavailable }; return key }
-    public func rotate() throws -> VaultRootKey { try Self.lock.withLock {
+    public func rotate() throws -> VaultRootKey { try synchronized {
         guard let before = try store.data(for: descriptor) else { throw VaultCryptoError.keyUnavailable }
         var ring = try decodeRing(before); guard ring.count < 64 else { throw VaultCryptoError.corruptRootKey }
         let next = try VaultRootKey(version: ring.last!.version + 1, key: random.bytes(count: 32)); ring.append(next)
@@ -169,7 +176,17 @@ public final class VaultRootKeyManager: @unchecked Sendable {
         return next
     }}
     /// Deletes only this Vault's root-ring item. Callers must separately confirm destructive reset.
-    public func resetConfirmed() throws { try Self.lock.withLock { try store.removeData(for: descriptor) } }
+    public func resetConfirmed() throws { try synchronized { try store.removeData(for: descriptor) } }
+    private func synchronized<T>(_ body: () throws -> T) throws -> T {
+        try Self.lock.withLock {
+            guard let lifecycleLockURL else { return try body() }
+            let descriptor = open(lifecycleLockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+            guard descriptor >= 0 else { throw VaultCryptoError.keyUnavailable }
+            defer { _ = flock(descriptor, LOCK_UN); _ = close(descriptor) }
+            guard flock(descriptor, LOCK_EX) == 0 else { throw VaultCryptoError.keyUnavailable }
+            return try body()
+        }
+    }
     private func decodeRing(_ data: Data) throws -> [VaultRootKey] {
         guard data.count <= 16_384, let ring = try? JSONDecoder().decode([VaultRootKey].self, from: data), !ring.isEmpty, ring.count <= 64 else { throw VaultCryptoError.corruptRootKey }
         var previous: UInt32 = 0

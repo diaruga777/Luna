@@ -14,6 +14,11 @@ launch calls `loadRequired` and enters recovery if iCloud Keychain has not yet
 restored the item. Creation uses an atomic Keychain add so racing setup callers
 converge on one key. Reset deletes only this Vault descriptor after explicit
 confirmation.
+Root creation, rotation, and reset are also serialized with a zero-byte lock
+file in the App Group. The lock carries no key material; it only prevents two
+Vault host processes from losing a Keychain ring update. The initial Keychain
+write still uses `SecItemAdd`, so creation remains atomic if the lock file is
+lost or recreated.
 
 Each object receives a random 256-bit DEK. The DEK is wrapped by AES-GCM under
 the selected root version. Content, metadata, and index artifacts use the same

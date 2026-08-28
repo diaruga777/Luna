@@ -81,7 +81,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
                             .text(document.ocrText), .text(document.transcriptText),
                         ])
                         if let embedding = document.embedding {
-                            try run("INSERT INTO embeddings(object_id,model_version,dimension,values) VALUES(?,?,?,?)", [
+                            try run("INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)", [
                                 .text(document.id.rawValue.uuidString), .text(embedding.modelVersion),
                                 .int(Int64(embedding.dimension)), .blob(Self.encode(embedding.values)),
                             ])
@@ -278,7 +278,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
             // Keep a deterministic, non-zero displacement for a single-member group.
             if values == original.values, !values.isEmpty { values[0] = values[0].nextUp }
             let aliasID = UUID(), embedding = VaultEmbedding(values: values, modelVersion: modelVersion)
-            try run("INSERT INTO aliases(id,original_id,group_id,model_version,dimension,values) VALUES(?,?,?,?,?,?)", [
+            try run("INSERT INTO aliases(id,original_id,group_id,model_version,dimension,\"values\") VALUES(?,?,?,?,?,?)", [
                 .text(aliasID.uuidString), .text(canonical.rawValue.uuidString), .text(groupID.uuidString),
                 .text(modelVersion), .int(Int64(values.count)), .blob(Self.encode(values)),
             ])
@@ -296,7 +296,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
             let canonical = try canonicalLocked(objectID)
             guard let doc = try documentLocked(canonical), !doc.isTombstone else { return [] }
             var result: [VaultSymbolicAlias] = []
-            try queryRows("SELECT id,group_id,model_version,dimension,values FROM aliases WHERE original_id=? ORDER BY id", [.text(canonical.rawValue.uuidString)]) { row in
+            try queryRows("SELECT id,group_id,model_version,dimension,\"values\" FROM aliases WHERE original_id=? ORDER BY id", [.text(canonical.rawValue.uuidString)]) { row in
                 guard let aliasID = UUID(uuidString: row.text(0) ?? ""),
                       let groupID = UUID(uuidString: row.text(1) ?? ""),
                       let values = Self.decodeFinite(row.blob(4), count: Int(row.int(3))) else { return }
@@ -357,12 +357,12 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 CREATE TABLE documents(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL,device_id TEXT NOT NULL,filename TEXT NOT NULL,body TEXT NOT NULL,ocr TEXT NOT NULL,transcript TEXT NOT NULL,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,source TEXT NOT NULL,tombstone INTEGER NOT NULL CHECK(tombstone IN(0,1)));
                 CREATE VIRTUAL TABLE vault_fts USING fts5(id UNINDEXED,filename,body,ocr,transcript);
                 CREATE TABLE model_spaces(model_version TEXT PRIMARY KEY,dimension INTEGER NOT NULL CHECK(dimension>0));
-                CREATE TABLE embeddings(object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),values BLOB NOT NULL,PRIMARY KEY(object_id,model_version));
+                CREATE TABLE embeddings(object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,PRIMARY KEY(object_id,model_version));
                 CREATE TABLE groups(id TEXT PRIMARY KEY,label TEXT NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),automatic INTEGER NOT NULL CHECK(automatic IN(0,1)),created_at REAL NOT NULL,updated_at REAL NOT NULL,model_version TEXT,dimension INTEGER,centroid BLOB,member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count>=0));
                 CREATE TABLE group_members(group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
                 CREATE TABLE query_groups(id TEXT PRIMARY KEY,query TEXT NOT NULL,live INTEGER NOT NULL CHECK(live IN(0,1)),created_at REAL NOT NULL);
                 CREATE TABLE query_group_members(group_id TEXT NOT NULL REFERENCES query_groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
-                CREATE TABLE aliases(id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),values BLOB NOT NULL,UNIQUE(original_id,group_id,model_version));
+                CREATE TABLE aliases(id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,UNIQUE(original_id,group_id,model_version));
                 CREATE INDEX embeddings_model ON embeddings(model_version);
                 CREATE INDEX aliases_model ON aliases(model_version);
                 PRAGMA user_version=2;
@@ -470,7 +470,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
         }
         var result: [VectorCandidate] = []
         try queryRows("""
-            SELECT e.object_id,e.dimension,e.values FROM embeddings e
+            SELECT e.object_id,e.dimension,e.\"values\" FROM embeddings e
             JOIN documents d ON d.id=e.object_id
             WHERE e.model_version=? AND d.tombstone=0
             """, [.text(query.modelVersion)]) { row in
@@ -482,7 +482,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 score: Self.cosine(query.values, values)))
         }
         try queryRows("""
-            SELECT a.id,a.original_id,a.dimension,a.values FROM aliases a
+            SELECT a.id,a.original_id,a.dimension,a.\"values\" FROM aliases a
             JOIN documents d ON d.id=a.original_id
             WHERE a.model_version=? AND d.tombstone=0
             """, [.text(query.modelVersion)]) { row in
@@ -595,7 +595,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
 
     private func vectorLocked(_ id: VaultObjectID, modelVersion: String) throws -> VaultEmbedding? {
         var result: VaultEmbedding?
-        try queryRows("SELECT e.dimension,e.values FROM embeddings e JOIN documents d ON d.id=e.object_id WHERE e.object_id=? AND e.model_version=? AND d.tombstone=0", [.text(id.rawValue.uuidString),.text(modelVersion)]) { row in
+        try queryRows("SELECT e.dimension,e.\"values\" FROM embeddings e JOIN documents d ON d.id=e.object_id WHERE e.object_id=? AND e.model_version=? AND d.tombstone=0", [.text(id.rawValue.uuidString),.text(modelVersion)]) { row in
             let count=Int(row.int(0)); if let values=Self.decodeFinite(row.blob(1),count:count) { result=VaultEmbedding(values:values,modelVersion:modelVersion) }
         }
         return result
@@ -607,7 +607,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
 
     private func aliasLocked(originalID: VaultObjectID, groupID: UUID, modelVersion: String) throws -> VaultSymbolicAlias? {
         var result: VaultSymbolicAlias?
-        try queryRows("SELECT id,dimension,values FROM aliases WHERE original_id=? AND group_id=? AND model_version=?", [.text(originalID.rawValue.uuidString),.text(groupID.uuidString),.text(modelVersion)]) { row in
+        try queryRows("SELECT id,dimension,\"values\" FROM aliases WHERE original_id=? AND group_id=? AND model_version=?", [.text(originalID.rawValue.uuidString),.text(groupID.uuidString),.text(modelVersion)]) { row in
             guard let id=UUID(uuidString:row.text(0) ?? ""),let values=Self.decodeFinite(row.blob(2),count:Int(row.int(1)))else{return};result=VaultSymbolicAlias(id:id,originalObjectID:originalID,groupID:groupID,embedding:VaultEmbedding(values:values,modelVersion:modelVersion))
         }
         return result
@@ -615,13 +615,13 @@ public final class VaultSearchIndex: @unchecked Sendable {
 
     private func groupVectors(groupID: UUID, modelVersion: String) throws -> [VaultEmbedding] {
         var result: [VaultEmbedding] = []
-        try queryRows("SELECT e.dimension,e.values FROM group_members gm JOIN embeddings e ON e.object_id=gm.object_id JOIN documents d ON d.id=gm.object_id WHERE gm.group_id=? AND e.model_version=? AND d.tombstone=0", [.text(groupID.uuidString),.text(modelVersion)]) { row in let count=Int(row.int(0));if let values=Self.decodeFinite(row.blob(1),count:count){result.append(VaultEmbedding(values:values,modelVersion:modelVersion))} }
+        try queryRows("SELECT e.dimension,e.\"values\" FROM group_members gm JOIN embeddings e ON e.object_id=gm.object_id JOIN documents d ON d.id=gm.object_id WHERE gm.group_id=? AND e.model_version=? AND d.tombstone=0", [.text(groupID.uuidString),.text(modelVersion)]) { row in let count=Int(row.int(0));if let values=Self.decodeFinite(row.blob(1),count:count){result.append(VaultEmbedding(values:values,modelVersion:modelVersion))} }
         return result
     }
 
     private func liveVectors(modelVersion: String) throws -> [(id: VaultObjectID, values: [Float])] {
         var result: [(VaultObjectID,[Float])] = []
-        try queryRows("SELECT e.object_id,e.dimension,e.values FROM embeddings e JOIN documents d ON d.id=e.object_id WHERE e.model_version=? AND d.tombstone=0 ORDER BY e.object_id", [.text(modelVersion)]) { row in guard let uuid=UUID(uuidString:row.text(0) ?? ""),let values=Self.decodeFinite(row.blob(2),count:Int(row.int(1)))else{return};result.append((VaultObjectID(rawValue:uuid),values)) }
+        try queryRows("SELECT e.object_id,e.dimension,e.\"values\" FROM embeddings e JOIN documents d ON d.id=e.object_id WHERE e.model_version=? AND d.tombstone=0 ORDER BY e.object_id", [.text(modelVersion)]) { row in guard let uuid=UUID(uuidString:row.text(0) ?? ""),let values=Self.decodeFinite(row.blob(2),count:Int(row.int(1)))else{return};result.append((VaultObjectID(rawValue:uuid),values)) }
         return result
     }
 
@@ -651,7 +651,10 @@ public final class VaultSearchIndex: @unchecked Sendable {
     }
     private static func tokens(_ text:String)->[String]{text.lowercased().split(whereSeparator:{!$0.isLetter && !$0.isNumber}).map(String.init).filter{!$0.isEmpty}}
     private static func escapeLike(_ text:String)->String{text.replacingOccurrences(of:"\\",with:"\\\\").replacingOccurrences(of:"%",with:"\\%").replacingOccurrences(of:"_",with:"\\_")}
-    private static func bm25Score(_ rank:Double)->Double{guard rank.isFinite else{return 0};return 1/(1+max(0,abs(rank)))}
+    // SQLite FTS5's bm25() is ordered ascending: a more-negative value is a
+    // stronger match. Convert it to a monotonic higher-is-better score without
+    // reversing that order during hybrid ranking.
+    private static func bm25Score(_ rank:Double)->Double{guard rank.isFinite else{return 0};return max(0,-rank)}
     private static func cosine(_ lhs:[Float],_ rhs:[Float])->Double{guard lhs.count==rhs.count,!lhs.isEmpty,lhs.allSatisfy(\.isFinite),rhs.allSatisfy(\.isFinite)else{return 0};var dot=0.0,lm=0.0,rm=0.0;for index in lhs.indices{let l=Double(lhs[index]),r=Double(rhs[index]);dot += l*r;lm += l*l;rm += r*r};guard dot.isFinite,lm.isFinite,rm.isFinite,lm>0,rm>0 else{return 0};let result=dot/(sqrt(lm)*sqrt(rm));return result.isFinite ? max(-1,min(1,result)):0}
     private static func centroid(_ vectors:[VaultEmbedding])->VaultEmbedding{guard let first=vectors.first else{return VaultEmbedding(values:[],modelVersion:"")};var sums=Array(repeating:0.0,count:first.dimension);for vector in vectors where vector.dimension==first.dimension{for index in sums.indices{sums[index]+=Double(vector.values[index])}};return VaultEmbedding(values:sums.map{Float($0/Double(vectors.count))},modelVersion:first.modelVersion)}
     private static func encode(_ values:[Float])->Data{values.withUnsafeBufferPointer{Data(buffer:$0)}}

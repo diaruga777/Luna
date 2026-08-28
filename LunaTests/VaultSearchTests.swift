@@ -11,6 +11,9 @@ final class VaultSearchTests: XCTestCase {
     private func makeIndex(_ name: String = "search") throws -> (VaultSearchIndex, VaultTemporaryDirectory, RecordingSearchProtection) {
         let directory = try VaultTemporaryDirectory(name: name)
         let protection = RecordingSearchProtection()
+        // Keep the fixture owner alive even when a test intentionally ignores the
+        // tuple's directory element. Its deinit removes the SQLite files.
+        addTeardownBlock { _ = directory }
         return (try VaultSearchIndex(databaseURL: directory.url.appendingPathComponent("vault-index.sqlite"), protectionApplier: protection), directory, protection)
     }
     private func id(_ value: Int) -> VaultObjectID { VaultObjectID(rawValue: UUID(uuidString: String(format:"00000000-0000-0000-0000-%012d",value))!) }
@@ -46,7 +49,7 @@ final class VaultSearchTests: XCTestCase {
     }
 
     func testPunctuationLimitsReopenAndFTSOrderAreSafe() throws {
-        let(index,directory,protection)=try makeIndex();try index.upsert(doc(1,filename:"2026-report.pdf",body:"budget budget budget"));try index.upsert(doc(2,filename:"other.pdf",body:"budget"));XCTAssertNoThrow(try index.search("?! budget — 2026"));XCTAssertThrowsError(try index.search("budget",limit:0));XCTAssertEqual(try index.search("budget").first?.objectID,id(1));XCTAssertTrue(protection.paths.contains{ $0.hasSuffix("vault-index.sqlite") });let reopened=try VaultSearchIndex(databaseURL:directory.url.appendingPathComponent("vault-index.sqlite"),protectionApplier:protection);XCTAssertEqual(try reopened.search("budget").count,2);XCTAssertEqual(try reopened.integrityCheck(),"ok")
+        let(index,directory,protection)=try makeIndex();try index.upsert(doc(1,filename:"2026-report.pdf",body:"budget forecast"));try index.upsert(doc(2,filename:"other.pdf",body:"budget"));XCTAssertNoThrow(try index.search("?! budget — 2026"));XCTAssertThrowsError(try index.search("budget",limit:0));XCTAssertEqual(try index.search("budget forecast").first?.objectID,id(1));XCTAssertTrue(protection.paths.contains{ $0.hasSuffix("vault-index.sqlite") });let reopened=try VaultSearchIndex(databaseURL:directory.url.appendingPathComponent("vault-index.sqlite"),protectionApplier:protection);XCTAssertEqual(try reopened.search("budget").count,2);XCTAssertEqual(try reopened.integrityCheck(),"ok")
     }
 
     func testConcurrentConnectionsUseBusyRetry() throws {

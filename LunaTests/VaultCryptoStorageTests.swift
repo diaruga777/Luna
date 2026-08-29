@@ -28,6 +28,40 @@ final class VaultCryptoStorageTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: output), Data())
     }
 
+    func testAuthenticatedEnvelopeReadsStableInodeAfterReplacementAndUnlink() throws {
+        let directory = try VaultTemporaryDirectory(name: "stable-envelope-inode")
+        defer { try? directory.cleanUp() }
+        let firstPlaintext = directory.url.appendingPathComponent("first.txt")
+        let secondPlaintext = directory.url.appendingPathComponent("second.txt")
+        let envelope = directory.url.appendingPathComponent("payload.lvf")
+        let replacement = directory.url.appendingPathComponent("replacement.lvf")
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 6, count: 32))
+        XCTAssertTrue(FileManager.default.createFile(atPath: firstPlaintext.path,
+                                                      contents: Data("first payload".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: secondPlaintext.path,
+                                                      contents: Data("second payload".utf8)))
+        let first = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: firstPlaintext, fileURL: envelope, vaultID: "stable",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 101))
+        _ = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: secondPlaintext, fileURL: replacement, vaultID: "stable",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 102))
+
+        try FileManager.default.removeItem(at: envelope)
+        try FileManager.default.moveItem(at: replacement, to: envelope)
+        XCTAssertEqual(try first.decrypt(to: directory.url.appendingPathComponent("out"),
+                                          rootKey: { _ in root }),
+                       UInt64(Data("first payload".utf8).count))
+        XCTAssertEqual(try Data(contentsOf: directory.url.appendingPathComponent("out")),
+                       Data("first payload".utf8))
+
+        try FileManager.default.removeItem(at: envelope)
+        let digest = try first.digest()
+        XCTAssertFalse(digest.isEmpty, "the authenticated descriptor remains readable after unlink")
+    }
+
     func testAuthenticatedGenerationCarriesCompleteEnvelopeIdentity() throws {
         let root = try VaultRootKey(version: 1, key: Data(repeating: 8, count: 32))
         let cryptor = VaultChunkedCryptor(chunkSize: 8, vaultID: "bound",

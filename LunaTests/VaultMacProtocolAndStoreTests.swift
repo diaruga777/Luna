@@ -151,9 +151,14 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let revision = VaultRevision(objectID: objectID,
             revision: UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
             logicalTime: 1, deviceID: "phone")
-        let chunks = [Data([1, 2, 3]), Data([4, 5]), Data([6, 7, 8, 9])]
+        let fixture = try makeFixture(root: root, plaintext: Data([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                                      revision: revision.revision)
+        let bytes = fixture.bytes
+        let chunks = [Data(bytes[0..<3]), Data(bytes[3..<5]), Data(bytes[5..<bytes.count])]
         for (index, chunk) in chunks.enumerated() {
-            let request = putRequest(revision: revision, index: index, chunks: chunks, body: chunk)
+            let request = putRequest(revision: revision, index: index, chunks: chunks, body: chunk,
+                                     kind: fixture.payload.identity.kind,
+                                     generation: fixture.payload.identity.generation)
             let response = try await store.handle(request)
             XCTAssertEqual(response.status, index == chunks.count - 1 ? .accepted : .partial)
             let replayedResponse = try await store.handle(request)
@@ -161,16 +166,18 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             var mismatch = request
             mismatch = VaultMacRequest(operation: .putChunk, objectID: objectID, revision: revision,
                 chunkIndex: UInt32(index), totalChunks: UInt32(chunks.count), totalCiphertextBytes: 9,
-                idempotencyKey: request.idempotencyKey, ciphertext: Data([0]))
+                idempotencyKey: request.idempotencyKey, ciphertext: Data([0]),
+                objectKind: fixture.payload.identity.kind,
+                payloadGeneration: fixture.payload.identity.generation)
             do { _ = try await store.handle(mismatch); XCTFail("idempotency mismatch accepted") }
             catch { XCTAssertEqual(error as? VaultMacCompanionError, .conflict) }
         }
         let range = try await store.handle(VaultMacRequest(operation: .readRange, objectID: objectID,
             offset: 2, length: 5, idempotencyKey: "read-1"))
-        XCTAssertEqual(range.ciphertext, Data([3, 4, 5, 6, 7]))
+        XCTAssertEqual(range.ciphertext, Data(bytes[2..<7]))
         do {
             _ = try await store.handle(VaultMacRequest(operation: .readRange, objectID: objectID,
-                offset: 8, length: 2, idempotencyKey: "past-end"))
+                offset: UInt64(bytes.count - 1), length: 2, idempotencyKey: "past-end"))
             XCTFail("out-of-bounds range accepted")
         } catch { XCTAssertEqual(error as? VaultMacCompanionError, .invalidRange) }
         let orphan = root.appendingPathComponent("objects")
@@ -181,8 +188,8 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let reopened = try VaultMacCompanionStore(rootURL: root, credential: credential)
         XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
         let full = try await reopened.handle(VaultMacRequest(operation: .readRange, objectID: objectID,
-            offset: 0, length: 9, idempotencyKey: "read-2"))
-        XCTAssertEqual(full.ciphertext, Data([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+            offset: 0, length: UInt64(bytes.count), idempotencyKey: "read-2"))
+        XCTAssertEqual(full.ciphertext, bytes)
         let manifest = try Data(contentsOf: root.appendingPathComponent("manifest.v2"))
         XCTAssertFalse(String(decoding: manifest, as: UTF8.self).contains("phone"))
         XCTAssertThrowsError(try VaultMacCompanionStore(rootURL: root, credential: makeCredential(now: Date(), fill: 3)))
@@ -210,7 +217,8 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let revision = VaultRevision(objectID: objectID, logicalTime: 1, deviceID: "phone")
         let request = VaultMacRequest(operation: .putChunk, objectID: objectID, revision: revision,
             chunkIndex: 0, totalChunks: 1, totalCiphertextBytes: 5,
-            idempotencyKey: "quota", ciphertext: Data(repeating: 1, count: 5))
+            idempotencyKey: "quota", ciphertext: Data(repeating: 1, count: 5),
+            objectKind: .content, payloadGeneration: String(repeating: "a", count: 64))
         do { _ = try await store.handle(request); XCTFail("quota exceeded") }
         catch { XCTAssertEqual(error as? VaultMacCompanionError, .quotaExceeded) }
         let objects = root.appendingPathComponent("objects").appendingPathComponent(objectID.rawValue.uuidString)
@@ -224,9 +232,12 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let root = temporary("tombstone"); defer { try? FileManager.default.removeItem(at: root) }
         let store = try VaultMacCompanionStore(rootURL: root, credential: makeCredential(now: Date()))
         let first = VaultRevision(objectID: objectID, logicalTime: 1, deviceID: "phone")
+        let firstFixture = try makeFixture(root: root, plaintext: Data([9]), revision: first.revision)
         _ = try await store.handle(VaultMacRequest(operation: .putChunk, objectID: objectID,
-            revision: first, chunkIndex: 0, totalChunks: 1, totalCiphertextBytes: 1,
-            idempotencyKey: "first", ciphertext: Data([9])))
+            revision: first, chunkIndex: 0, totalChunks: 1,
+            totalCiphertextBytes: UInt64(firstFixture.bytes.count), idempotencyKey: "first",
+            ciphertext: firstFixture.bytes, objectKind: .content,
+            payloadGeneration: firstFixture.payload.identity.generation))
         let tombstone = VaultRevision(objectID: objectID, logicalTime: 2, deviceID: "phone")
         let deleteResponse = try await store.handle(VaultMacRequest(operation: .delete, objectID: objectID,
             revision: tombstone, expectedRevision: first.revision, idempotencyKey: "delete"))
@@ -237,12 +248,16 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let stale = VaultRevision(objectID: objectID, logicalTime: 1, deviceID: "other")
         let staleResponse = try await store.handle(VaultMacRequest(operation: .putChunk, objectID: objectID,
             revision: stale, expectedRevision: tombstone.revision, chunkIndex: 0, totalChunks: 1,
-            totalCiphertextBytes: 1, idempotencyKey: "stale", ciphertext: Data([1])))
+            totalCiphertextBytes: 1, idempotencyKey: "stale", ciphertext: Data([1]),
+            objectKind: .content, payloadGeneration: String(repeating: "b", count: 64)))
         XCTAssertEqual(staleResponse.status, .conflict)
         let replacement = VaultRevision(objectID: objectID, logicalTime: 3, deviceID: "phone")
+        let replacementFixture = try makeFixture(root: root, plaintext: Data([2]), revision: replacement.revision)
         let replacementResponse = try await store.handle(VaultMacRequest(operation: .putChunk, objectID: objectID,
             revision: replacement, expectedRevision: tombstone.revision, chunkIndex: 0, totalChunks: 1,
-            totalCiphertextBytes: 1, idempotencyKey: "replacement", ciphertext: Data([2])))
+            totalCiphertextBytes: UInt64(replacementFixture.bytes.count), idempotencyKey: "replacement",
+            ciphertext: replacementFixture.bytes, objectKind: .content,
+            payloadGeneration: replacementFixture.payload.identity.generation))
         XCTAssertEqual(replacementResponse.status, .accepted)
     }
 
@@ -251,9 +266,12 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let credential = try makeCredential(now: Date())
         let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
         let live = VaultRevision(objectID: objectID, logicalTime: 10, deviceID: "phone")
+        let liveFixture = try makeFixture(root: root, plaintext: Data([1]), revision: live.revision)
         _ = try await store.handle(VaultMacRequest(operation: .putChunk, objectID: objectID,
-            revision: live, chunkIndex: 0, totalChunks: 1, totalCiphertextBytes: 1,
-            idempotencyKey: "restart-live", ciphertext: Data([1])))
+            revision: live, chunkIndex: 0, totalChunks: 1,
+            totalCiphertextBytes: UInt64(liveFixture.bytes.count), idempotencyKey: "restart-live",
+            ciphertext: liveFixture.bytes, objectKind: .content,
+            payloadGeneration: liveFixture.payload.identity.generation))
         let tombstone = VaultRevision(objectID: objectID, logicalTime: 11, deviceID: "phone")
         _ = try await store.handle(VaultMacRequest(operation: .delete, objectID: objectID,
             revision: tombstone, expectedRevision: live.revision, idempotencyKey: "restart-delete"))
@@ -274,6 +292,24 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         #endif
     }
 
+    func testIntermediateSymlinkIsRejectedBeforeVaultDirectoryCreation() throws {
+        #if canImport(Darwin)
+        let parent = temporary("intermediate-symlink")
+        let real = parent.appendingPathComponent("real")
+        let link = parent.appendingPathComponent("link")
+        defer { try? FileManager.default.removeItem(at: parent) }
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        let escapedChild = link.appendingPathComponent("objects")
+        XCTAssertThrowsError(try VaultMacCompanionStore(
+            rootURL: escapedChild, credential: makeCredential(now: Date()))) { error in
+            XCTAssertEqual(error as? VaultMacCompanionError, .symlinkRejected)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: real.appendingPathComponent("objects").path))
+        #endif
+    }
+
     func testRemoteBackendUsesFreshAuthenticatedSessionsEndToEnd() async throws {
         let root = temporary("remote"); defer { try? FileManager.default.removeItem(at: root) }
         let credential = try makeCredential(now: Date())
@@ -285,10 +321,12 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
             random: DeterministicMacRandom(seed: 9))
-        let ciphertext = Data((0..<100).map(UInt8.init))
-        try await backend.putCiphertext(ciphertext, for: objectID)
+        let fixture = try makeFixture(root: root, plaintext: Data((0..<100).map(UInt8.init)),
+                                      revision: UUID())
+        try await backend.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
+                              expectedRevision: nil)
         let downloadedCiphertext = try await backend.ciphertext(for: objectID)
-        XCTAssertEqual(downloadedCiphertext, ciphertext)
+        XCTAssertEqual(downloadedCiphertext, fixture.bytes)
         try await backend.removeCiphertext(for: objectID)
         let deletedCiphertext = try await backend.ciphertext(for: objectID)
         XCTAssertNil(deletedCiphertext)
@@ -296,10 +334,11 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
             random: DeterministicMacRandom(seed: 10),
             uploadStateStore: VaultMacFileUploadStateStore(fileURL: root.appendingPathComponent("retry-state.json")))
-        let replacement = Data([4, 3, 2, 1])
-        try await restartedBackend.putCiphertext(replacement, for: objectID)
+        let replacement = try makeFixture(root: root, plaintext: Data([4, 3, 2, 1]), revision: UUID())
+        try await restartedBackend.put(try replacement.payload.verified(rootKey: { _ in replacement.root }),
+                                       expectedRevision: nil)
         let restartedCiphertext = try await restartedBackend.ciphertext(for: objectID)
-        XCTAssertEqual(restartedCiphertext, replacement)
+        XCTAssertEqual(restartedCiphertext, replacement.bytes)
         let connectionCount = await connector.connectionCount
         XCTAssertGreaterThanOrEqual(connectionCount, 4)
     }
@@ -351,10 +390,13 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
             random: DeterministicMacRandom(seed: 22), uploadStateStore: state)
         let size = VaultMacProtocol.maximumTransferBytes * 2 + 7
-        let bytes = Data((0..<size).map { UInt8($0 % 251) })
-        try await backend.putCiphertext(bytes, for: objectID)
+        let fixture = try makeFixture(root: root,
+                                      plaintext: Data((0..<size).map { UInt8($0 % 251) }),
+                                      revision: UUID())
+        try await backend.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
+                              expectedRevision: nil)
         let downloaded = try await backend.ciphertext(for: objectID)
-        XCTAssertEqual(downloaded, bytes)
+        XCTAssertEqual(downloaded, fixture.bytes)
         let manifestSize = try FileManager.default.attributesOfItem(
             atPath: root.appendingPathComponent("manifest.v2").path)[.size] as? NSNumber
         XCTAssertLessThan(manifestSize?.intValue ?? .max, 256 * 1024,
@@ -371,12 +413,19 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             failAfterFirstPutChunkOnce: true)
         let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
         let stateURL = root.appendingPathComponent("client-state.json")
-        let bytes = Data(repeating: 0x5a, count: VaultMacProtocol.maximumTransferBytes + 1)
+        let fixture = try makeFixture(root: root,
+                                      plaintext: Data(repeating: 0x5a,
+                                                      count: VaultMacProtocol.maximumTransferBytes + 1),
+                                      revision: UUID())
         let first = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
             random: DeterministicMacRandom(seed: 32),
             uploadStateStore: VaultMacFileUploadStateStore(fileURL: stateURL))
-        do { try await first.putCiphertext(bytes, for: objectID); XCTFail("upload was not interrupted") }
+        do {
+            try await first.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
+                                expectedRevision: nil)
+            XCTFail("upload was not interrupted")
+        }
         catch { XCTAssertEqual(error as? VaultMacProtocolError, .unavailable) }
         let pendingBeforeRestart = try await VaultMacFileUploadStateStore(fileURL: stateURL)
             .pendingUpload(for: objectID)
@@ -385,11 +434,12 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
             random: DeterministicMacRandom(seed: 33),
             uploadStateStore: VaultMacFileUploadStateStore(fileURL: stateURL))
-        try await restarted.putCiphertext(bytes, for: objectID)
+        try await restarted.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
+                                expectedRevision: nil)
         let storedRevision = await store.currentRevision(for: objectID)
         XCTAssertEqual(storedRevision, pendingBeforeRestart?.revision)
         let downloaded = try await restarted.ciphertext(for: objectID)
-        XCTAssertEqual(downloaded, bytes)
+        XCTAssertEqual(downloaded, fixture.bytes)
     }
 
     func testClientConnectTimeoutIsBounded() async throws {
@@ -405,6 +455,29 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 2.5)
     }
 
+    private struct AuthenticatedFixture {
+        let payload: VaultAuthenticatedCiphertextFile
+        let root: VaultRootKey
+        let bytes: Data
+    }
+
+    private func makeFixture(root: URL, plaintext: Data, revision: UUID,
+                             kind: VaultRemoteObjectKind = .content) throws -> AuthenticatedFixture {
+        let plaintextURL = root.appendingPathComponent("fixture-\(UUID().uuidString).plain")
+        let envelopeURL = root.appendingPathComponent("fixture-\(UUID().uuidString).lvf")
+        let rootKey = try VaultRootKey(version: 1, key: Data(repeating: 0x42, count: 32))
+        guard FileManager.default.createFile(atPath: plaintextURL.path, contents: plaintext) else {
+            throw VaultMacProtocolError.unavailable
+        }
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: plaintextURL, fileURL: envelopeURL, vaultID: "default", kind: kind,
+            objectID: objectID, revision: revision, root: rootKey, chunkSize: 8,
+            random: DeterministicMacRandom(seed: 91))
+        try? FileManager.default.removeItem(at: plaintextURL)
+        return AuthenticatedFixture(payload: payload, root: rootKey,
+                                    bytes: try Data(contentsOf: envelopeURL))
+    }
+
     private func makeCredential(now: Date, fill: UInt8 = 7) throws -> VaultMacPairingCredential {
         try VaultMacPairingCredential(pairingID: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
             secret: VaultMacPairingSecret(rawValue: Data(repeating: fill, count: 32)),
@@ -414,12 +487,14 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
     private func temporary(_ name: String) -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("vault-mac-\(name)-\(UUID().uuidString)")
     }
-    private func putRequest(revision: VaultRevision, index: Int, chunks: [Data], body: Data) -> VaultMacRequest {
+    private func putRequest(revision: VaultRevision, index: Int, chunks: [Data], body: Data,
+                            kind: VaultRemoteObjectKind, generation: String) -> VaultMacRequest {
         VaultMacRequest(operation: .putChunk, objectID: objectID, revision: revision,
             chunkIndex: UInt32(index), totalChunks: UInt32(chunks.count),
             totalCiphertextBytes: UInt64(chunks.reduce(0) { $0 + $1.count }),
             idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: objectID,
-                revision: revision.revision, chunkIndex: UInt32(index)), ciphertext: body)
+                revision: revision.revision, chunkIndex: UInt32(index)), ciphertext: body,
+            objectKind: kind, payloadGeneration: generation)
     }
 }
 

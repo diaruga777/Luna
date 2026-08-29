@@ -223,6 +223,11 @@ public final class VaultRepository: @unchecked Sendable {
                 // survive rename. Never install first and protect afterward.
                 try fileManager.moveItem(at:staging,to:final)
                 try fileManager.moveItem(at:stagingGeneration,to:generation)
+                // The simulator cannot report the protection class after a
+                // rename, so carry the authenticated inode into its final
+                // paths for same-process reads and previews.
+                VaultSimulatorProtectionLedger.record(final)
+                VaultSimulatorProtectionLedger.record(generation)
                 for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
             }catch{
                 if fileManager.fileExists(atPath:final.path){try?fileManager.removeItem(at:final)}
@@ -277,6 +282,8 @@ public final class VaultRepository: @unchecked Sendable {
                 if fileManager.fileExists(atPath: generation.path) { try fileManager.moveItem(at: generation, to: backupGeneration) }
                 try fileManager.moveItem(at: staging, to: final)
                 try fileManager.moveItem(at: stagingGeneration, to: generation)
+                VaultSimulatorProtectionLedger.record(final)
+                VaultSimulatorProtectionLedger.record(generation)
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
                     try fileManager.removeItem(at: old)
                 }
@@ -648,7 +655,11 @@ public final class VaultRepository: @unchecked Sendable {
                 }else{
                     if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)};if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)}
                     let previousValid=try installedGenerationIsValid(content:previous,generation:previousGeneration,expectedRevision:nil)
-                    if previousValid{try fileManager.moveItem(at:previous,to:final);try fileManager.moveItem(at:previousGeneration,to:generation)}
+                    if previousValid{
+                        try fileManager.moveItem(at:previous,to:final);try fileManager.moveItem(at:previousGeneration,to:generation)
+                        VaultSimulatorProtectionLedger.record(final)
+                        VaultSimulatorProtectionLedger.record(generation)
+                    }
                     else{try fileManager.removeItem(at:previous);if fileManager.fileExists(atPath:previousGeneration.path){try fileManager.removeItem(at:previousGeneration)}}
                 }
             }else if !finalValid{
@@ -660,7 +671,11 @@ public final class VaultRepository: @unchecked Sendable {
         guard fileManager.fileExists(atPath:content.path),fileManager.fileExists(atPath:generation.path),try protectionApplier.hasRequiredProtection(at:content),try protectionApplier.hasRequiredProtection(at:generation),let contentValues=try?content.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey]),contentValues.isDirectory != true,contentValues.isSymbolicLink != true,let markerData=try?readBoundedFile(generation,maximumBytes:256),let marker=String(data:markerData,encoding:.utf8),let separator=marker.firstIndex(of:":") else{return false}
         let digest=String(marker[marker.index(after:separator)...])
         guard digest.count == 64, digest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else{return false}
-        return expectedRevision.map{String(marker[..<separator])==$0} ?? true
+        guard expectedRevision.map({String(marker[..<separator])==$0}) ?? true else{return false}
+        // The generation marker authenticates the revision, but it must not
+        // be trusted as a content digest until the installed bytes agree.
+        guard (try? digestFile(content)) == digest else{return false}
+        return true
     }
     /// Data Protection is a required postcondition. An attribute being
     /// present (or `.none`) is not sufficient: only the exact class accepted

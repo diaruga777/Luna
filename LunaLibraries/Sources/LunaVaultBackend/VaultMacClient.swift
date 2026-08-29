@@ -605,8 +605,19 @@ extension VaultMacRemoteBackend {
 
     public func state(for identity: VaultRemoteObjectIdentity) async throws
         -> VaultRemoteObjectState {
-        guard let payload = try await payloadFile(for: identity) else { return .missing }
-        return payload.identity == identity ? .current : .conflicted
+        let client = try await makeClient()
+        defer { Task { await client.close() } }
+        let stat = try await timedRequest(VaultMacRequest(operation: .stat,
+            objectID: identity.objectID, idempotencyKey: UUID().uuidString), client: client)
+        guard stat.status == .accepted else {
+            return stat.status == .notFound ? .missing : .failed
+        }
+        guard let revision = stat.revision else { return .conflicted }
+        guard revision.revision == identity.revision else { return .conflicted }
+        guard stat.totalCiphertextBytes.map({ $0 > 0 && $0 <= VaultMacProtocol.maximumObjectBytes }) == true else {
+            return .failed
+        }
+        return .current
     }
 
     private static func readFile(_ fileURL: URL, range: Range<Int>) throws -> Data {

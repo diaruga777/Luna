@@ -55,8 +55,9 @@ public protocol VaultPreviewDownloadRequesting: Sendable {
 }
 
 /// Strict preview downloads return the repository-issued capability produced
-/// by authenticated local installation. The request-only protocol remains
-/// source-compatible for older app compositions, but cannot attest a generation.
+/// by authenticated local installation. A request-only downloader is not
+/// sufficient: without the capability there is no proof that the requested
+/// generation was installed.
 public protocol VaultPreviewDownloadResultProviding: VaultPreviewDownloadRequesting {
     func requestDownloadResult(for identity: VaultRemoteObjectIdentity) async throws
         -> VaultLocalContentCapability
@@ -166,7 +167,11 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                 throw VaultPreviewError.downloadUnavailable
             }
         } else {
-            try await downloadRequester.requestDownload(for: identity)
+            // Keep the request-only protocol source-compatible for callers,
+            // but fail closed. A notification that a download was requested
+            // is not an authenticated installation result and must never make
+            // bytes eligible for preview.
+            throw VaultPreviewError.downloadUnavailable
         }
         return try await plan(objectID: objectID, remoteIdentity: identity)
     }

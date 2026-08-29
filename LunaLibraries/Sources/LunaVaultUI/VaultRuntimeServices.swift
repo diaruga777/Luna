@@ -20,6 +20,19 @@ public final class VaultRuntimeServices: @unchecked Sendable {
     /// The app-owned encryption policy used when a document import also
     /// schedules a remote upload. Extensions never receive this capability.
     public let remoteImportConfiguration: VaultImportRemoteConfiguration?
+    /// The selected remote backend key is retained even while its credential
+    /// is missing or revoked. A non-nil key with no configuration is an
+    /// explicit unavailable-remote selection; import must fail closed instead
+    /// of silently falling back to device-only storage.
+    public let remoteImportBackendKey: String?
+    /// The import capsule consumed by the app-owned coordinator. Keeping the
+    /// unavailable selection in this value makes the downgrade guard a single
+    /// composition-root invariant shared by foreground and repair paths.
+    public var importConfiguration: VaultImportConfiguration {
+        VaultImportConfiguration(uploadBackendKey: remoteImportBackendKey ??
+                                 remoteImportConfiguration?.backendKey,
+                                 remote: remoteImportConfiguration)
+    }
     public var availability: VaultBackendAvailability {
         remoteBackend?.currentAvailability ?? (policy.location == .device ? .available : .unavailable)
     }
@@ -32,11 +45,13 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                 deviceBackend: VaultDeviceBackend,
                 remoteBackend: VaultBackendTransport?,
                 syncCoordinator: VaultSyncCoordinator?,
-                remoteImportConfiguration: VaultImportRemoteConfiguration? = nil) {
+                remoteImportConfiguration: VaultImportRemoteConfiguration? = nil,
+                remoteImportBackendKey: String? = nil) {
         self.policy = policy; self.repository = repository
         self.deviceBackend = deviceBackend; self.remoteBackend = remoteBackend
         self.syncCoordinator = syncCoordinator
         self.remoteImportConfiguration = remoteImportConfiguration
+        self.remoteImportBackendKey = remoteImportBackendKey
     }
 
     public static func production(policy: VaultStoragePolicy) throws -> VaultRuntimeServices {

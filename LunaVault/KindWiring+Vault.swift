@@ -81,9 +81,7 @@ import LunaVaultUI
                 repository: services.repository)
             let coordinator = try VaultImportCoordinator(
                 repository: services.repository, metadataStore: metadata,
-                configuration: VaultImportConfiguration(
-                    uploadBackendKey: services.remoteImportConfiguration?.backendKey,
-                    remote: services.remoteImportConfiguration))
+                configuration: services.importConfiguration)
             let scheduler = VaultBackgroundTaskScheduler(
                 identifierPrefix: Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault")
             scheduler.register(kind: .importRepair) { [weak coordinator] in
@@ -159,7 +157,7 @@ import LunaVaultUI
                     rootKey: { try rootKeys.key(version: $0) },
                     payloadDirectory: repository.contentDirectory.deletingLastPathComponent()
                         .appendingPathComponent("VaultSyncCiphertext/uploads", isDirectory: true))
-            })
+            }, remoteImportBackendKey: backend?.identity.stableKey ?? "mac:unavailable")
     }
 }
 

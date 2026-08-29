@@ -78,6 +78,33 @@ final class VaultStage5Tests: XCTestCase {
         try assertRemoteDuplicateIsIdempotent(backendKey: "mac:paired")
     }
 
+    func testSelectedMacWithoutCredentialNeverDowngradesImportToDevice() throws {
+        let directory = try VaultTemporaryDirectory(name: "stage5-unpaired-mac")
+        defer { try? directory.cleanUp() }
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory.url,
+                                              protectionApplier: protection)
+        let services = VaultRuntimeServices(
+            policy: VaultStoragePolicy(location: .mac), repository: repository,
+            deviceBackend: VaultDeviceBackend(store: repository), remoteBackend: nil,
+            syncCoordinator: nil, remoteImportConfiguration: nil,
+            remoteImportBackendKey: "mac:unavailable")
+        let configuration = services.importConfiguration
+        XCTAssertEqual(configuration.uploadBackendKey, "mac:unavailable")
+        XCTAssertNil(configuration.remote)
+
+        let source = directory.url.appendingPathComponent("should-not-import.txt")
+        try Data("remote is required".utf8).write(to: source)
+        let coordinator = try VaultImportCoordinator(repository: repository,
+                                                      configuration: configuration,
+                                                      protectionApplier: protection)
+        XCTAssertThrowsError(try coordinator.importFile(VaultImportSource(fileURL: source))) {
+            XCTAssertEqual($0 as? VaultImportError, .remoteConfigurationRequired)
+        }
+        XCTAssertTrue(try repository.objects().isEmpty,
+                      "an unavailable selected Mac must not create a device-only object")
+    }
+
     /// A completed upload is the reconciliation record for a content-addressed
     /// object. Replaying the same bytes must not reseal them with a fresh
     /// generation, enqueue a second upload, or leave an orphaned upload file.

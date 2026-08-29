@@ -668,7 +668,8 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             remoteIdentity = nil
             authenticatedGeneration = nil
         }
-        if let duplicate = try existingDuplicateResult(for: journal, stagedURL: stagedURL) {
+        if let duplicate = try existingDuplicateResult(for: journal, stagedURL: stagedURL,
+                                                       initialRemoteIdentity: remoteIdentity) {
             return duplicate
         }
         let record = VaultObjectRecord(id: journal.objectID, revision: journal.revision,
@@ -729,7 +730,8 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     /// already-installed object instead of being mistaken for a conflicting
     /// update by the atomic insert boundary.
     private func existingDuplicateResult(for journal: VaultImportJournal,
-                                         stagedURL: URL) throws -> VaultImportResult? {
+                                         stagedURL: URL,
+                                         initialRemoteIdentity: VaultRemoteObjectIdentity?) throws -> VaultImportResult? {
         guard let current = try repository.object(journal.objectID),
               !current.isTombstone, current.revision != journal.revision,
               let capability = try repository.localContentCapability(for: journal.objectID),
@@ -750,6 +752,17 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             try metadataStore.put(recovered)
             metadata = recovered
         }
+        // The replay's first sealed payload uses its throwaway revision. It
+        // is never the payload for the already-installed object, so remove it
+        // from the upload staging area once the duplicate path is selected.
+        // The replacement below is either an already-valid current-revision
+        // payload or a freshly resealed one.
+        defer {
+            if let initialRemoteIdentity {
+                try? removeStagedRemotePayload(initialRemoteIdentity,
+                                               remote: configuration.remote)
+            }
+        }
         try repository.setObjectReady(journal.objectID)
 
         let jobs = try repository.jobs().filter {
@@ -769,6 +782,14 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         let backendKey = configuration.remote?.backendKey
         var uploadJob = jobs.first(where: { $0.kind == .upload &&
                                             $0.backendKey == backendKey })
+        if let existing = uploadJob, let remote = configuration.remote,
+           !isUsableStagedUpload(existing, objectID: journal.objectID,
+                                 revision: current.revision, remote: remote) {
+            // A stale job may reference the replay revision or an LVF that a
+            // crash left incomplete. Do not pair that job with the current
+            // object; create a generation-bound replacement below.
+            uploadJob = nil
+        }
         if let backendKey, uploadJob == nil {
             guard let remote = configuration.remote else {
                 throw VaultImportError.remoteConfigurationRequired
@@ -884,11 +905,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         try VaultSecureFileAccess.ensureDirectory(at: directory)
         try protection.apply(to: directory)
         guard isProtected(directory) else { throw VaultImportError.protectedStaging }
-        let filename = [payload.identity.kind.rawValue,
-                        payload.identity.objectID.rawValue.uuidString,
-                        payload.identity.revision.uuidString,
-                        payload.identity.generation].joined(separator: "-") + ".vault"
-        let destination = directory.appendingPathComponent(filename)
+        let destination = remotePayloadURL(payload.identity, in: directory)
         let staging = directory.appendingPathComponent(".import-upload-\(UUID().uuidString)")
         var stagingCreated = false
         defer {
@@ -917,6 +934,49 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             try? VaultSecureFileAccess.removeRegularFile(at: staging)
             throw error
         }
+    }
+
+    private func remotePayloadDirectory(_ remote: VaultImportRemoteConfiguration) -> URL {
+        remote.payloadDirectory ?? stagingDirectory.deletingLastPathComponent()
+            .appendingPathComponent("VaultSyncCiphertext/uploads", isDirectory: true)
+    }
+
+    private func remotePayloadURL(_ identity: VaultRemoteObjectIdentity, in directory: URL) -> URL {
+        let filename = [identity.kind.rawValue,
+                        identity.objectID.rawValue.uuidString,
+                        identity.revision.uuidString,
+                        identity.generation].joined(separator: "-") + ".vault"
+        return directory.appendingPathComponent(filename)
+    }
+
+    private func removeStagedRemotePayload(_ identity: VaultRemoteObjectIdentity,
+                                           remote: VaultImportRemoteConfiguration?) throws {
+        guard let remote else { return }
+        try VaultSecureFileAccess.removeRegularFile(
+            at: remotePayloadURL(identity, in: remotePayloadDirectory(remote)))
+    }
+
+    private func isUsableStagedUpload(_ job: VaultJob, objectID: VaultObjectID,
+                                     revision: UUID,
+                                     remote: VaultImportRemoteConfiguration) -> Bool {
+        guard job.revision == revision,
+              job.remoteObjectKind == "content",
+              let generation = job.payloadGeneration,
+              generation.count == 64,
+              generation.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+              let identity = try? VaultRemoteObjectIdentity(objectID: objectID,
+                                                              revision: revision,
+                                                              kind: .content,
+                                                              generation: generation) else {
+            return false
+        }
+        let url = remotePayloadURL(identity, in: remotePayloadDirectory(remote))
+        guard isProtected(url), isRegularFile(url),
+              let payload = try? VaultAuthenticatedCiphertextFile(
+                fileURL: url, expectedIdentity: identity, vaultID: remote.vaultID) else {
+            return false
+        }
+        return (try? payload.verified(rootKey: remote.rootKey)) != nil
     }
 
     private func valid(_ journal: VaultImportJournal) -> Bool {

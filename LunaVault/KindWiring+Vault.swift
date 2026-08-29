@@ -1,8 +1,11 @@
 import Foundation
 import UIKit
+import LunaAppConfig
 import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultModels
+import LunaVaultSearch
+import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
 import LunaVaultUI
@@ -13,9 +16,30 @@ import LunaVaultUI
 @MainActor enum VaultWiring {
     private static var services: VaultRuntimeServices?
     private static var syncRuntime: VaultSyncRuntimeController?
+    /// Bumps on explicit credential lifecycle changes. This keeps a save of
+    /// an otherwise identical credential from reusing a live backend actor.
+    private static var runtimeGeneration: UInt64 = 0
+    private static let setupCoordinator = VaultSetupCoordinator(
+        configuration: VaultSetupConfiguration(
+            keychainAccessGroup: Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String),
+        store: UserDefaultsVaultSetupStore(
+            defaults: UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard))
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
+    /// The host owns import implementation. The UI only exposes the seam.
+    static var importHandler: (() -> Void)?
+    /// The host owns preview/rendering. The UI only forwards canonical IDs.
+    static var openHandler: ((VaultObjectID) -> Void)?
+    /// Optional host handoff for the one-use enrollment material. The UI also
+    /// keeps a visible copy/share/export affordance for the user.
+    static var enrollmentPreparedHandler: ((VaultMacPairingEnrollment) -> Void)?
+    static var storagePolicyChangedHandler: ((VaultStoragePolicy) -> Void)?
+    static var credentialSavedHandler: ((VaultMacPairingCredential) -> Void)?
+    static var credentialUnpairedHandler: ((VaultMacRemoteRevocationOutcome) -> Void)?
 
-    static func install() { _ = makeServices() }
+    static func install() {
+        _ = setupCoordinator.load()
+        _ = makeServices()
+    }
 
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
@@ -26,19 +50,87 @@ import LunaVaultUI
     }
 
     static func makeRootViewController() -> UIViewController {
-        let root = VaultRootViewController(services: makeServices())
+        // Index/storage construction is intentionally deferred until setup is
+        // ready. The provider callbacks let the root lazily recover after a
+        // first-run completion or a transient provider failure.
+        let index = setupCoordinator.state.isReady ? makeSearchIndex() : nil
+        let root = VaultRootViewController(
+            services: makeServices(), setupCoordinator: setupCoordinator,
+            searchIndex: index, searchIndexProvider: makeSearchIndex,
+            servicesProvider: makeServices, importHandler: importHandler,
+            openHandler: openHandler, settingsActions: makeSettingsActions())
         identityConfirmer.attach(to: root)
         return root
     }
 
+    private static func makeSettingsActions() -> VaultSettingsActions {
+        VaultSettingsActions(
+            storagePolicyChanged: { storagePolicyChangedHandler?($0) },
+            clearCache: {
+                guard let value = services ?? makeServices() else {
+                    throw VaultRuntimeError.providerUnavailable
+                }
+                try value.repository.evictExpired()
+            },
+            rebuildIndex: {
+                guard let index = makeSearchIndex() else {
+                    throw VaultSearchError.sqlite("Vault index is unavailable")
+                }
+                try index.rebuild()
+            },
+            // Eviction is an object-scoped backend operation. Settings keeps
+            // this callback honest until a file-level picker is presented;
+            // it must never claim that a local copy was removed.
+            requestICloudEviction: { .unavailable },
+            reconfigureRuntime: {
+                invalidateRuntime()
+                _ = makeServices()
+            },
+            enrollmentPrepared: { enrollmentPreparedHandler?($0) },
+            credentialSaved: { credentialSavedHandler?($0) },
+            revokeMacCredential: { _ in
+                // Vault's wire protocol has no unauthenticated revoke call.
+                // Drop the local runtime immediately; the UI reports the
+                // remote operation as local-only and instructs the user to
+                // revoke the companion before pairing again.
+                invalidateRuntime()
+                return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
+            },
+            credentialUnpaired: { credentialUnpairedHandler?($0) }
+        )
+    }
+
     private static func makeServices() -> VaultRuntimeServices? {
-        if let services { return services }
-        let location = UserDefaults.standard.string(forKey: "LunaVault.storageLocation")
-            .flatMap(VaultStorageLocation.init(rawValue:)) ?? .device
+        guard let policy = setupCoordinator.state.policy else {
+            services = nil
+            syncRuntime = nil
+            return nil
+        }
+        let credential: VaultMacPairingCredential?
+        do {
+            credential = policy.location == .mac ? try loadMacCredential() : nil
+        } catch {
+            services = nil
+            syncRuntime = nil
+            return nil
+        }
+        let runtimeIdentity = makeRuntimeIdentity(policy: policy, credential: credential)
+        if let services, services.runtimeIdentity == runtimeIdentity { return services }
+        // A Settings policy or credential change must rebuild the provider.
+        // Keeping the previous service here would make a newly-selected Mac
+        // or credential appear ready until the next process launch.
+        services = nil
+        syncRuntime = nil
         do {
             let value: VaultRuntimeServices
-            if location == .mac { value = try makeMacServices() }
-            else { value = try VaultRuntimeServices.productionFromDefaults() }
+            if policy.location == .mac {
+                value = try makeMacServices(policy: policy, credential: credential,
+                    runtimeIdentity: runtimeIdentity)
+            }
+            else {
+                value = try VaultRuntimeServices.production(policy: policy,
+                    runtimeIdentity: runtimeIdentity)
+            }
             services = value
             syncRuntime = VaultSyncRuntimeController(services: value)
             return value
@@ -47,16 +139,50 @@ import LunaVaultUI
         }
     }
 
-    private static func makeMacServices() throws -> VaultRuntimeServices {
+    private static func invalidateRuntime() {
+        runtimeGeneration &+= 1
+        services = nil
+        syncRuntime = nil
+    }
+
+    private static func loadMacCredential() throws -> VaultMacPairingCredential? {
+        guard let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String,
+              !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
+        let store = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
+            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
+        return try store.load()
+    }
+
+    private static func makeRuntimeIdentity(policy: VaultStoragePolicy,
+                                             credential: VaultMacPairingCredential?) -> VaultRuntimeIdentity {
+        let backendIdentity: VaultBackendIdentity?
+        switch policy.location {
+        case .device:
+            backendIdentity = nil
+        case .iCloud:
+            backendIdentity = VaultBackendIdentity(location: .iCloud,
+                containerIdentifier: AppConfig.vaultICloudContainerID, vaultID: "default")
+        case .mac:
+            backendIdentity = credential.map {
+                VaultBackendIdentity(location: .mac,
+                    containerIdentifier: $0.endpointBinding, vaultID: "default")
+            }
+        }
+        return VaultRuntimeIdentity(policy: policy, backendIdentity: backendIdentity,
+            credentialGeneration: credential?.epoch,
+            credentialFingerprint: credential?.fingerprint,
+            runtimeGeneration: runtimeGeneration)
+    }
+
+    private static func makeMacServices(policy: VaultStoragePolicy,
+                                        credential: VaultMacPairingCredential?,
+                                        runtimeIdentity: VaultRuntimeIdentity) throws -> VaultRuntimeServices {
         let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String
         guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let rootKeys = VaultRootKeyManager(configuration:
             VaultCryptoConfiguration(keychainAccessGroup: accessGroup))
         let repository = try VaultRepository()
         let device = VaultDeviceBackend(store: repository)
-        let credentialStore = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
-            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
-        let credential = try credentialStore.load()
         let backend: (any VaultBackendTransport)?
         if let credential, credential.revokedAt == nil {
             backend = try VaultMacRemoteBackend(
@@ -80,8 +206,14 @@ import LunaVaultUI
             sync = nil
         }
         return VaultRuntimeServices(
-            policy: VaultStoragePolicy(location: .mac), repository: repository,
-            deviceBackend: device, remoteBackend: backend, syncCoordinator: sync)
+            policy: policy, repository: repository,
+            deviceBackend: device, remoteBackend: backend, syncCoordinator: sync,
+            runtimeIdentity: runtimeIdentity)
+    }
+
+    private static func makeSearchIndex() -> VaultSearchIndex? {
+        guard let container = AppConfig.sharedContainerURL() else { return nil }
+        return try? VaultSearchIndex(databaseURL: container.appendingPathComponent("vault-index.sqlite"))
     }
 }
 
@@ -112,7 +244,7 @@ private final class VaultMacIdentityConfirmationPresenter:
                 })
                 alert.addAction(UIAlertAction(title: "Fingerprints Match", style: .default) { [weak self] _ in
                     if let self {
-                        self.lock.withLock {
+                        _ = self.lock.withLock {
                             self.confirmedBindings.insert("\(fingerprint)|\(endpointBinding)")
                         }
                     }

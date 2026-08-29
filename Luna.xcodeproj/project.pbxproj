@@ -1311,6 +1311,7 @@
 				A3037871876F73287152BA9F /* LunaPriceCompare in Frameworks */,
 				40FC28B283DC74F6D4CD213E /* VaultTestKit in Frameworks */,
 				4B0000000000000000000001 /* LunaVaultMac in Frameworks */,
+				720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2183,6 +2184,8 @@
 				64013D5A6E6E7F34528E3934 /* LunaPriceCompare */,
 				AA3816329641750C54CDDCBC /* VaultTestKit */,
 				4B0000000000000000000002 /* LunaVaultMac */,
+				4C1000000000000000000015 /* LunaVaultSetup */,
+				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;
@@ -5547,6 +5550,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultSync;
+		};
+		4C1000000000000000000015 /* LunaVaultSetup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaVaultSetup;
 		};
 		AA824D3974D944B8BC077857 /* LunaEpub */ = {
 			isa = XCSwiftPackageProductDependency;

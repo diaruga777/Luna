@@ -99,3 +99,21 @@ wire, storage, client adapter, replay behavior, permissions, quotas, ranges, and
 revisions without a live network. They do **not** establish a real Tailscale,
 DERP, MagicDNS, or Bonjour connection; those require a later two-device manual
 validation matrix before shipping.
+
+The iOS Stage 5 Settings flow accepts either a base64/JSON pairing capsule or
+manually entered endpoint, server binding, nonce, expiry, and one-time code.
+Endpoint and challenge sizes are validated before `prepareEnrollment` runs.
+The server-binding fingerprint is shown in an explicit out-of-band confirmation
+alert. Enrollment output is returned to the host for file/QR/paste exchange;
+the UI deliberately has no unauthenticated network-enrollment fallback. A
+successful credential is saved through the host's Keychain store, and Unpair
+revokes the credential and removes the local record. Actual transport and
+eviction remain injected backend seams.
+
+The manual-entry path accepts only a canonical UUID pairing ID, a valid
+Tailscale/Bonjour endpoint, 32-byte base64 server binding/nonce/one-time code,
+and an ISO-8601 expiry still within the protocol's short offer lifetime.
+Decoded JSON capsules are reconstructed through the same throwing validators so
+Codable decoding cannot bypass those checks. Prepared enrollment is exposed
+through copy, share, and document export; the host may additionally observe
+the prepared value and rebuild its Mac runtime after credential persistence.

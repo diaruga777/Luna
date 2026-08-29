@@ -130,7 +130,7 @@ final class VaultSearchTests: XCTestCase {
 
     func testHundredThousandSQLiteRecordsPerformanceNightly() throws {
         guard ProcessInfo.processInfo.environment["LUNA_VAULT_PERFORMANCE"] == "1" else { throw XCTSkip("set LUNA_VAULT_PERFORMANCE=1 for the 100k SQLite benchmark") }
-        let(index,directory,_)=try makeIndex("search-performance-100k");let start=ProcessInfo.processInfo.systemUptime
+        let(index,directory,protection)=try makeIndex("search-performance-100k");let start=ProcessInfo.processInfo.systemUptime
         // 4,096 is the measured sweet spot on the iPhone 17 Pro simulator:
         // it keeps source material bounded while avoiding hundreds of WAL
         // commits. The API still caps callers at this batch size.
@@ -146,11 +146,11 @@ final class VaultSearchTests: XCTestCase {
         XCTAssertEqual(result.documentsApplied,100_000)
         let buildSeconds=ProcessInfo.processInfo.systemUptime-start
         XCTContext.runActivity(named: "100k index phase: build=\(buildSeconds)s batches=\(lastProgress.batchNumber) processed=\(lastProgress.documentsProcessed) resident=\(residentBytes())B") { _ in }
-        var queryDurations:[Double]=[];queryDurations.reserveCapacity(80);var vectorDurations:[Double]=[];vectorDurations.reserveCapacity(40);var hybridDurations:[Double]=[];hybridDurations.reserveCapacity(40)
+        var queryDurations:[Double]=[];queryDurations.reserveCapacity(6);var vectorDurations:[Double]=[];vectorDurations.reserveCapacity(3);var hybridDurations:[Double]=[];hybridDurations.reserveCapacity(3)
         let queryVector = VaultEmbedding(values: [1,2,3,4,5,6,7,8].map(Float.init), modelVersion: "v1")
         // Three samples per family provide p50/p95 diagnostics while bounding
         // the O(N) exact-vector scan against the 100k-record fixture.
-        for value in stride(from:1,through:100_000,by:50_000) {
+        for value in [1, 50_000, 100_000] {
             let marker = String(format: "%06d", value);let queryStart=ProcessInfo.processInfo.systemUptime
             XCTAssertEqual(try index.search("vaultrecord\(marker)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-queryStart)
             let ftsStart=ProcessInfo.processInfo.systemUptime
@@ -164,16 +164,26 @@ final class VaultSearchTests: XCTestCase {
         let sorted=queryDurations.sorted();let p50=sorted[sorted.count/2],p95=sorted[Int(Double(sorted.count-1)*0.95)]
         let vectorSorted=vectorDurations.sorted();let vectorP50=vectorSorted[vectorSorted.count/2],vectorP95=vectorSorted[Int(Double(vectorSorted.count-1)*0.95)]
         let hybridSorted=hybridDurations.sorted();let hybridP50=hybridSorted[hybridSorted.count/2],hybridP95=hybridSorted[Int(Double(hybridSorted.count-1)*0.95)]
-        try index.checkpointWAL()
         let group = try index.createGroup(label: "performance group", members: [id(1)])
         let alias = try index.addManualMembership(objectID: id(1), toGroup: group.id, modelVersion: "v1")
         XCTAssertEqual(try index.groups().first(where: { $0.id == group.id })?.memberIDs, [id(1)])
         XCTAssertTrue(try index.aliases(for: id(1)).contains(where: { $0.id == alias.id }))
+        try index.checkpointWAL()
+        let reopened = try VaultSearchIndex(
+            databaseURL: directory.url.appendingPathComponent("vault-index.sqlite"),
+            protectionApplier: protection
+        )
+        XCTAssertEqual(try reopened.documentCount(), 100_000)
+        XCTAssertEqual(try reopened.integrityCheck(), "ok")
+        XCTAssertEqual(try reopened.groups().first(where: { $0.id == group.id })?.memberIDs, [id(1)])
+        XCTAssertTrue(try reopened.aliases(for: id(1)).contains(where: { $0.id == alias.id }))
         let dbBytes=["","-wal","-shm"].compactMap{try? FileManager.default.attributesOfItem(atPath:directory.url.appendingPathComponent("vault-index.sqlite").path+$0)[.size] as? NSNumber}.reduce(Int64(0)){ $0+$1.int64Value }
         let memory=residentBytes(); peakResident = max(peakResident, memory)
+        let totalSeconds = ProcessInfo.processInfo.systemUptime - start
         XCTContext.runActivity(named:"100k SQLite records: build=\(buildSeconds)s p50=\(p50)s p95=\(p95)s resident=\(memory)B peakResident=\(peakResident)B db=\(dbBytes)B") { _ in }
         XCTContext.runActivity(named:"100k query metrics: lexical p50=\(p50)s p95=\(p95)s vector p50=\(vectorP50)s p95=\(vectorP95)s hybrid p50=\(hybridP50)s p95=\(hybridP95)s checkpointed db+wal+shm=\(dbBytes)B resident=\(memory)B peakResident=\(peakResident)B") { _ in }
         if peakResident > 0 { XCTAssertLessThan(peakResident,768*1024*1024,"streaming index must not retain the 100k-document input") }
+        XCTAssertLessThan(totalSeconds, 15 * 60, "the simulator 100k stress gate must complete within its documented 15-minute budget")
         XCTAssertEqual(try index.documentCount(),100_000)
     }
 

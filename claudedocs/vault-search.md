@@ -37,8 +37,19 @@ by a symbolic alias vector (label centroid plus a small offset toward the
 original). Alias resolution is canonical and global result presentation
 deduplicates the original object.
 
-The vector scan is intentionally a measurable limitation for v1. The iOS test
-plan records a deterministic 100,000-vector exact-search measurement without a
-flaky wall-clock threshold. Release profiling should additionally record p50,
-p95, and memory on supported devices. Any HNSW replacement must preserve the
-model-version, tombstone, and canonical-dedupe tests unchanged.
+The vector scan is intentionally a measurable limitation for v1. The dedicated
+`LunaVaultPerformance` test plan gives its single 100,000-record simulator
+stress test up to 20 minutes of XCTest execution allowance; the benchmark
+itself has a 15-minute budget. It records bulk-build time, p50/p95 lexical,
+exact-vector and hybrid latency, checkpointed database size, and resident
+memory, then reopens the checkpointed database and verifies its count,
+integrity, groups, and symbolic alias. The normal test plan keeps its existing
+timeouts and does not inherit this exception.
+
+This bulk-build measurement is a recovery/import stress gate, not Luna Vault's
+normal write path or a promise that a foreground user waits for 100,000 files.
+Production indexing is incremental: each inserted or revised file commits a
+small durable batch as it arrives, and background import/reindex jobs resume
+from post-commit progress. Release profiling should additionally record p50,
+p95, and memory on supported physical devices. Any HNSW replacement must
+preserve the model-version, tombstone, and canonical-dedupe tests unchanged.

@@ -118,6 +118,20 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         }
         guard metadata.frameCount >= 2,
               offset == fileSize,
+              // The file format has exactly one wrapped-DEK frame followed by
+              // the canonical number of plaintext chunks.  In particular an
+              // empty plaintext has one (empty) chunk, not an arbitrary run of
+              // additional valid empty frames.  Keeping this check identical
+              // to VaultAuthenticatedCiphertext's in-memory parser prevents
+              // a trailing frame from becoming an unauthenticated extension
+              // of an otherwise valid LVF.
+              chunkSize.map({
+                  let divisor = max(UInt64(1), $0)
+                  let chunks = metadata.plaintextByteCount == 0
+                      ? UInt64(1)
+                      : (metadata.plaintextByteCount + divisor - 1) / divisor
+                  return metadata.frameCount == chunks + 1
+              }) == true,
               Self.generation(digest) == metadata.generation,
               frameBytes == fileSize - UInt64(Self.headerByteCount) else {
             throw VaultCryptoError.malformedEnvelope
@@ -266,12 +280,8 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         guard !Self.hasSymlinkComponent(destinationURL.path) else {
             throw VaultCryptoError.malformedEnvelope
         }
-        let manager = FileManager.default
-        guard manager.createFile(atPath: destinationURL.path, contents: nil) else {
-            throw VaultCryptoError.malformedEnvelope
-        }
+        let output = try Self.createAnchoredWriter(destinationURL.path)
         do {
-            let output = try FileHandle(forWritingTo: destinationURL)
             defer { try? output.close() }
             var offset: UInt64 = 0
             while offset < stableFile.fileSize {
@@ -283,7 +293,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
             try output.synchronize()
             return offset
         } catch {
-            try? manager.removeItem(at: destinationURL)
+            try? Self.removeAnchoredFile(destinationURL.path)
             throw error
         }
     }
@@ -534,6 +544,46 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
             if lstat(current, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK { return true }
         }
         return false
+    }
+
+    /// Creates the LVF destination through an open parent descriptor. This
+    /// module intentionally does not depend on Storage, so keep the tiny
+    /// no-follow primitive local to the file-envelope implementation.
+    private static func createAnchoredWriter(_ path: String) throws -> FileHandle {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let name = components.last,
+              !components.contains("."), !components.contains("..") else {
+            throw VaultCryptoError.malformedEnvelope
+        }
+        var parent = open(path.hasPrefix("/") ? "/" : ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard parent >= 0 else { throw VaultCryptoError.malformedEnvelope }
+        for component in components.dropLast() {
+            let next = component.withCString { openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) }
+            guard next >= 0 else { close(parent); throw VaultCryptoError.malformedEnvelope }
+            close(parent); parent = next
+        }
+        let descriptor = name.withCString {
+            openat(parent, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        }
+        close(parent)
+        guard descriptor >= 0 else { throw VaultCryptoError.malformedEnvelope }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    private static func removeAnchoredFile(_ path: String) throws {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let name = components.last,
+              !components.contains("."), !components.contains("..") else { return }
+        let parentPath = path.hasPrefix("/")
+            ? "/" + components.dropLast().joined(separator: "/")
+            : components.dropLast().joined(separator: "/")
+        let parent = open(parentPath.isEmpty ? "." : parentPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard parent >= 0 else { return }
+        defer { close(parent) }
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
+              (info.st_mode & S_IFMT) == S_IFREG else { return }
+        _ = name.withCString { unlinkat(parent, $0, 0) }
     }
 }
 

@@ -322,6 +322,22 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         return try Self(fileURL: fileURL, vaultID: vaultID)
     }
 
+    /// Seals bytes from an already-open regular-file descriptor.  The caller
+    /// retains ownership of `plaintextHandle`; this method only advances its
+    /// cursor while preserving the descriptor's inode binding.
+    public static func seal(plaintextHandle: FileHandle, plaintextByteCount: UInt64,
+                            fileURL: URL, vaultID: String, kind: VaultRemoteObjectKind,
+                            objectID: VaultObjectID, revision: UUID,
+                            root: VaultRootKey, chunkSize: Int = 1_048_576,
+                            random: VaultRandomBytesGenerating = SystemVaultRandomBytes()) throws
+        -> VaultAuthenticatedCiphertextFile {
+        let cryptor = VaultChunkedCryptor(chunkSize: chunkSize, vaultID: vaultID, random: random)
+        try cryptor.sealFile(plaintextHandle: plaintextHandle,
+                             plaintextByteCount: plaintextByteCount, fileURL: fileURL,
+                             kind: kind, objectID: objectID, revision: revision, root: root)
+        return try Self(fileURL: fileURL, vaultID: vaultID)
+    }
+
     fileprivate struct Metadata: Codable {
         let vaultID: String
         let objectID: VaultObjectID
@@ -615,6 +631,71 @@ public struct VaultVerifiedCiphertextFile: Equatable, Sendable {
 }
 
 public extension VaultChunkedCryptor {
+    /// Streams bytes from an already-open, caller-owned descriptor into the
+    /// bounded frame-file format.  The descriptor is never reopened by path;
+    /// callers use this when a prior validation step must remain bound to the
+    /// same inode for the whole operation (for example, duplicate import
+    /// reconciliation).
+    func sealFile(plaintextHandle: FileHandle, plaintextByteCount: UInt64,
+                  fileURL: URL, kind: VaultRemoteObjectKind,
+                  objectID: VaultObjectID, revision: UUID, root: VaultRootKey) throws {
+        let size = plaintextByteCount
+        guard size <= Self.maximumObjectBytes else { throw VaultCryptoError.inputTooLarge }
+        try plaintextHandle.seek(toOffset: 0)
+        let output = try VaultAuthenticatedCiphertextFile.writePlaceholder(to: fileURL)
+        defer { try? output.close() }
+        var digest = SHA256()
+        var frameCount: UInt32 = 0
+        func appendFrame(_ frame: Data) throws {
+            try VaultAuthenticatedCiphertextFile.writeFrame(frame, to: output)
+            var length = UInt64(frame.count).bigEndian
+            withUnsafeBytes(of: &length) { digest.update(data: Data($0)) }
+            digest.update(data: frame)
+            guard frameCount < UInt32.max else { throw VaultCryptoError.tooManyChunks }
+            frameCount += 1
+        }
+        let dek = try random.bytes(count: 32)
+        guard dek.count == 32 else { throw VaultCryptoError.invalidLength }
+        try appendFrame(try wrap(dek, root, objectID, revision, try randomNonce()))
+        let key = SymmetricKey(data: dek)
+        var remaining = size
+        var index: UInt32 = 0
+        while remaining > 0 || (size == 0 && index == 0) {
+            if Task.isCancelled { throw VaultCryptoError.invalidLength }
+            let count = size == 0 ? 0 : Int(min(UInt64(chunkSize), remaining))
+            let bytes: Data
+            if count == 0 { bytes = Data() }
+            else {
+                guard let read = try plaintextHandle.read(upToCount: count), read.count == count else {
+                    throw VaultCryptoError.invalidLength
+                }
+                bytes = read
+            }
+            let nonce = try randomNonce()
+            let aad = associatedData(kind.envelopeRole, root.version, objectID, revision,
+                                     index, size)
+            let box = try AES.GCM.seal(bytes, using: key,
+                                       nonce: try AES.GCM.Nonce(data: nonce), authenticating: aad)
+            try appendFrame(try VaultChunkEnvelope(role: kind.envelopeRole,
+                rootVersion: root.version, objectID: objectID, revision: revision,
+                chunkIndex: index, plaintextLength: size, nonce: nonce,
+                ciphertext: box.ciphertext + box.tag).encoded())
+            if size > 0 { remaining -= UInt64(count) }
+            index += 1
+            if size == 0 { break }
+        }
+        guard try plaintextHandle.read(upToCount: 1)?.isEmpty != false else {
+            throw VaultCryptoError.invalidLength
+        }
+        try output.synchronize()
+        let metadata = VaultAuthenticatedCiphertextFile.Metadata(
+            vaultID: vaultID, objectID: objectID, revision: revision, kind: kind,
+            rootVersion: root.version, plaintextByteCount: size,
+            frameCount: frameCount, generation: digest.finalize()
+                .map { String(format: "%02x", $0) }.joined())
+        try VaultAuthenticatedCiphertextFile.rewriteHeader(metadata, at: fileURL)
+    }
+
     /// Streams a plaintext regular file into the bounded frame-file format.
     /// The source descriptor is held open throughout the copy, so replacing
     /// the source pathname cannot switch bytes midway through sealing.

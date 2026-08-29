@@ -669,6 +669,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             authenticatedGeneration = nil
         }
         if let duplicate = try existingDuplicateResult(for: journal, stagedURL: stagedURL,
+                                                       stagedHandle: stagedHandle,
                                                        initialRemoteIdentity: remoteIdentity) {
             return duplicate
         }
@@ -731,6 +732,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     /// update by the atomic insert boundary.
     private func existingDuplicateResult(for journal: VaultImportJournal,
                                          stagedURL: URL,
+                                         stagedHandle: FileHandle,
                                          initialRemoteIdentity: VaultRemoteObjectIdentity?) throws -> VaultImportResult? {
         guard let current = try repository.object(journal.objectID),
               !current.isTombstone, current.revision != journal.revision,
@@ -782,6 +784,18 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         let backendKey = configuration.remote?.backendKey
         var uploadJob = jobs.first(where: { $0.kind == .upload &&
                                             $0.backendKey == backendKey })
+        // A completed remote upload is already the durable reconciliation
+        // record.  Its ciphertext is intentionally gone from the local
+        // staging area after the sync worker succeeds, so do not reseal the
+        // duplicate and manufacture a new generation that can conflict with
+        // the provider's existing revision.
+        if let existing = uploadJob, existing.state == .succeeded,
+           existing.revision == current.revision {
+            return VaultImportResult(objectID: journal.objectID, revision: current.revision,
+                                     logicalTime: current.logicalTime, fileName: metadata.fileName,
+                                     byteCount: current.size, indexJobID: indexJob?.id,
+                                     uploadJobID: existing.id)
+        }
         if let existing = uploadJob, let remote = configuration.remote,
            !isUsableStagedUpload(existing, objectID: journal.objectID,
                                  revision: current.revision, remote: remote) {
@@ -809,8 +823,10 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             let resealed = stagingDirectory
                 .appendingPathComponent("duplicate-ciphertext-\(UUID().uuidString).lvf")
             defer { try? VaultSecureFileAccess.removeRegularFile(at: resealed) }
-            let payload = try sealRemotePayload(stagedURL, to: resealed,
-                                                journal: duplicateJournal, remote: remote)
+            let payload = try sealRemotePayload(stagedHandle,
+                                                plaintextByteCount: UInt64(current.size),
+                                                to: resealed, journal: duplicateJournal,
+                                                remote: remote)
             let payloadDirectory = remote.payloadDirectory ??
                 stagingDirectory.deletingLastPathComponent()
                     .appendingPathComponent("VaultSyncCiphertext/uploads", isDirectory: true)
@@ -887,6 +903,42 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                 root: remote.root, chunkSize: remote.chunkSize)
             _ = try payload.verified(rootKey: remote.rootKey)
             guard payload.plaintextByteCount == UInt64(journal.byteCount) else {
+                throw VaultImportError.interrupted
+            }
+            VaultSimulatorProtectionLedger.record(destination)
+            return payload
+        } catch let error as VaultImportError {
+            try? VaultSecureFileAccess.removeRegularFile(at: destination)
+            throw error
+        } catch {
+            try? VaultSecureFileAccess.removeRegularFile(at: destination)
+            throw VaultImportError.interrupted
+        }
+    }
+
+    private func sealRemotePayload(_ plaintextHandle: FileHandle,
+                                   plaintextByteCount: UInt64,
+                                   to destination: URL,
+                                   journal: VaultImportJournal,
+                                   remote: VaultImportRemoteConfiguration)
+        throws -> VaultAuthenticatedCiphertextFile {
+        guard remote.vaultID.isEmpty == false,
+              remote.backendKey.isEmpty == false,
+              plaintextByteCount == UInt64(journal.byteCount) else {
+            throw VaultImportError.remoteConfigurationRequired
+        }
+        do {
+            let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+            try created.close()
+            try protection.apply(to: destination)
+            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
+            let payload = try VaultAuthenticatedCiphertextFile.seal(
+                plaintextHandle: plaintextHandle, plaintextByteCount: plaintextByteCount,
+                fileURL: destination, vaultID: remote.vaultID, kind: .content,
+                objectID: journal.objectID, revision: journal.revision, root: remote.root,
+                chunkSize: remote.chunkSize)
+            _ = try payload.verified(rootKey: remote.rootKey)
+            guard payload.plaintextByteCount == plaintextByteCount else {
                 throw VaultImportError.interrupted
             }
             VaultSimulatorProtectionLedger.record(destination)

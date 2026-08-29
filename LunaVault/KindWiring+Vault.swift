@@ -24,6 +24,14 @@ import LunaVaultUI
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
     /// The host owns import implementation. The UI only exposes the seam.
     static var importHandler: (() -> Void)?
+    /// The host owns preview/rendering. The UI only forwards canonical IDs.
+    static var openHandler: ((VaultObjectID) -> Void)?
+    /// Optional host handoff for the one-use enrollment material. The UI also
+    /// keeps a visible copy/share/export affordance for the user.
+    static var enrollmentPreparedHandler: ((VaultMacPairingEnrollment) -> Void)?
+    static var storagePolicyChangedHandler: ((VaultStoragePolicy) -> Void)?
+    static var credentialSavedHandler: ((VaultMacPairingCredential) -> Void)?
+    static var credentialUnpairedHandler: ((VaultMacRemoteRevocationOutcome) -> Void)?
 
     static func install() {
         _ = setupCoordinator.load()
@@ -39,12 +47,54 @@ import LunaVaultUI
     }
 
     static func makeRootViewController() -> UIViewController {
+        // Index/storage construction is intentionally deferred until setup is
+        // ready. The provider callbacks let the root lazily recover after a
+        // first-run completion or a transient provider failure.
+        let index = setupCoordinator.state.isReady ? makeSearchIndex() : nil
         let root = VaultRootViewController(
             services: makeServices(), setupCoordinator: setupCoordinator,
-            searchIndex: makeSearchIndex(), searchIndexProvider: makeSearchIndex,
-            servicesProvider: makeServices, importHandler: importHandler)
+            searchIndex: index, searchIndexProvider: makeSearchIndex,
+            servicesProvider: makeServices, importHandler: importHandler,
+            openHandler: openHandler, settingsActions: makeSettingsActions())
         identityConfirmer.attach(to: root)
         return root
+    }
+
+    private static func makeSettingsActions() -> VaultSettingsActions {
+        VaultSettingsActions(
+            storagePolicyChanged: { storagePolicyChangedHandler?($0) },
+            clearCache: {
+                guard let value = services ?? makeServices() else {
+                    throw VaultRuntimeError.providerUnavailable
+                }
+                try value.repository.evictExpired()
+            },
+            rebuildIndex: {
+                guard let index = makeSearchIndex() else {
+                    throw VaultSearchError.sqlite("Vault index is unavailable")
+                }
+                try index.rebuild()
+            },
+            // Eviction is an object-scoped backend operation. Settings keeps
+            // this callback honest until a file-level picker is presented;
+            // it must never claim that a local copy was removed.
+            requestICloudEviction: { .unavailable },
+            reconfigureRuntime: {
+                _ = makeServices()
+            },
+            enrollmentPrepared: { enrollmentPreparedHandler?($0) },
+            credentialSaved: { credentialSavedHandler?($0) },
+            revokeMacCredential: { _ in
+                // Vault's wire protocol has no unauthenticated revoke call.
+                // Drop the local runtime immediately; the UI reports the
+                // remote operation as local-only and instructs the user to
+                // revoke the companion before pairing again.
+                services = nil
+                syncRuntime = nil
+                return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
+            },
+            credentialUnpaired: { credentialUnpairedHandler?($0) }
+        )
     }
 
     private static func makeServices() -> VaultRuntimeServices? {

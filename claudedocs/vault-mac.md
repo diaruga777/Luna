@@ -109,3 +109,11 @@ the UI deliberately has no unauthenticated network-enrollment fallback. A
 successful credential is saved through the host's Keychain store, and Unpair
 revokes the credential and removes the local record. Actual transport and
 eviction remain injected backend seams.
+
+The manual-entry path accepts only a canonical UUID pairing ID, a valid
+Tailscale/Bonjour endpoint, 32-byte base64 server binding/nonce/one-time code,
+and an ISO-8601 expiry still within the protocol's short offer lifetime.
+Decoded JSON capsules are reconstructed through the same throwing validators so
+Codable decoding cannot bypass those checks. Prepared enrollment is exposed
+through copy, share, and document export; the host may additionally observe
+the prepared value and rebuild its Mac runtime after credential persistence.

@@ -46,3 +46,12 @@ including explicit iCloud local-eviction states. `VaultTestKit` supplies determi
 clock/UUID/randomness, in-memory stores, fake extraction/transcription/
 embeddings, a no-egress URL protocol, temporary directories, and redacting
 logging for later stages.
+
+The Stage 5 root forwards import and canonical-object-open callbacks to the
+Vault host; it does not construct media previews or renderers. Setup and
+recovery panels remain actionable when the provider or index is unavailable,
+and every retry reports the failure without silently changing storage policy.
+Settings callbacks are host-owned: policy changes and Mac credential changes
+rebuild the runtime/sync controller, while unpairing drops the local runtime
+and reports remote revocation as local-only when the paired companion cannot
+be reached.

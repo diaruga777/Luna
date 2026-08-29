@@ -9,6 +9,9 @@ public enum VaultEmbeddingError: Error, Equatable, Sendable {
     case invalidDimension(expected: Int, actual: Int)
     case invalidChecksum
     case emptyInput
+    case emptyModelVersion
+    case emptyVector
+    case nonFiniteValue
 }
 
 public struct VaultEmbeddingModel: Codable, Equatable, Sendable {
@@ -50,6 +53,24 @@ public struct VaultEmbedding: Equatable, Codable, Sendable {
         var bytes = Data(capacity: values.count * MemoryLayout<Float>.size)
         for value in values { var bitPattern = value.bitPattern.bigEndian; withUnsafeBytes(of: &bitPattern) { bytes.append(contentsOf: $0) } }
         return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A normalized copy suitable for cosine search. Zero vectors remain zero.
+    /// Preserve the model checksum so the copy remains tied to the same model.
+    public var normalized: VaultEmbedding {
+        let magnitude = sqrt(values.reduce(Float(0)) { $0 + ($1 * $1) })
+        guard magnitude > 0 else { return self }
+        return VaultEmbedding(values: values.map { $0 / magnitude }, modelVersion: modelVersion,
+                              modelChecksum: modelChecksum)
+    }
+}
+
+public extension VaultEmbedding {
+    func validated() throws -> VaultEmbedding {
+        guard !modelVersion.isEmpty else { throw VaultEmbeddingError.emptyModelVersion }
+        guard !values.isEmpty else { throw VaultEmbeddingError.emptyVector }
+        guard values.allSatisfy({ $0.isFinite }) else { throw VaultEmbeddingError.nonFiniteValue }
+        return self
     }
 }
 

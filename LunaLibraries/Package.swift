@@ -237,7 +237,7 @@ let package = Package(
             "LunaVaultModels",
         ]),
         .target(name: "LunaVaultSearch", dependencies: [
-            "LunaVaultModels", "LunaVaultStorage", "LunaVaultEmbeddings",
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage", "LunaVaultEmbeddings",
             "LunaVaultIndexExtraction",
         ]),
         .target(name: "LunaVaultBackend", dependencies: [
@@ -264,6 +264,9 @@ let package = Package(
             "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
             "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
             "LunaVaultSetup",
+        ]),
+        .testTarget(name: "LunaVaultSearchTests", dependencies: [
+            "LunaVaultSearch", "LunaVaultEmbeddings", "LunaVaultModels",
         ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural

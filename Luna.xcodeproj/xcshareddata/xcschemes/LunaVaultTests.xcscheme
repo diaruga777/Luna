@@ -35,6 +35,9 @@
             reference = "container:LunaVault.xctestplan"
             default = "YES">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:LunaVaultPerformance.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <AnalyzeAction buildConfiguration = "Debug">

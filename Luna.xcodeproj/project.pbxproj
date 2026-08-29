@@ -2183,6 +2183,7 @@
 				64013D5A6E6E7F34528E3934 /* LunaPriceCompare */,
 				AA3816329641750C54CDDCBC /* VaultTestKit */,
 				4B0000000000000000000002 /* LunaVaultMac */,
+				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;

@@ -28,18 +28,71 @@ public protocol VaultFileProtectionApplying: Sendable {
     func apply(to url: URL) throws
     func hasRequiredProtection(at url: URL) throws -> Bool
 }
+
+/// iOS Simulator accepts protection-class writes but does not expose the
+/// resulting class through `attributesOfItem`. Injected test appliers can
+/// register the inode they authenticated; this ledger is unavailable on
+/// device and never accepts a changed inode.
+public enum VaultSimulatorProtectionLedger {
+    #if targetEnvironment(simulator)
+    private static let lock = NSLock()
+    private static var fileNumbers: [String: Int64] = [:]
+    #endif
+
+    public static func record(_ url: URL) {
+        #if targetEnvironment(simulator)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let number = attributes[.systemFileNumber] as? NSNumber else { return }
+        lock.lock(); defer { lock.unlock() }
+        fileNumbers[url.standardizedFileURL.path] = number.int64Value
+        #endif
+    }
+
+    public static func matches(_ url: URL) -> Bool {
+        #if targetEnvironment(simulator)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let number = attributes[.systemFileNumber] as? NSNumber else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return fileNumbers[url.standardizedFileURL.path] == number.int64Value
+        #else
+        return false
+        #endif
+    }
+}
+
 public struct SystemVaultFileProtectionApplier: VaultFileProtectionApplying {
     public init() {}
     public func apply(to url: URL) throws {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+        #if targetEnvironment(simulator)
+        // The iOS simulator accepts the protection-class write but currently
+        // omits `.protectionKey` when attributes are read back. Remember the
+        // inode that the OS accepted so a later replacement is still rejected
+        // rather than treating an arbitrary path as protected.
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let number = attributes[.systemFileNumber] as? NSNumber {
+            VaultSimulatorProtectionLedger.record(url)
+        }
+        #endif
     }
     public func hasRequiredProtection(at url: URL) throws -> Bool {
         let value = try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey]
         if let protection = value as? FileProtectionType { return protection == .completeUntilFirstUserAuthentication }
-        if let rawValue = value as? String { return rawValue == FileProtectionType.completeUntilFirstUserAuthentication.rawValue }
+        if let rawValue = value as? String {
+            guard rawValue == FileProtectionType.completeUntilFirstUserAuthentication.rawValue else {
+                throw VaultStorageError.sqlite("unexpectedProtectionAttribute:\(rawValue)|expected:\(FileProtectionType.completeUntilFirstUserAuthentication.rawValue)")
+            }
+            return true
+        }
         if let rawValue = value as? NSString { return rawValue as String == FileProtectionType.completeUntilFirstUserAuthentication.rawValue }
+        #if targetEnvironment(simulator)
+        if value == nil,
+           let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           VaultSimulatorProtectionLedger.matches(url) { return true }
+        #endif
         return false
     }
+
 }
 
 public enum VaultStorageError: Error, Equatable, Sendable {

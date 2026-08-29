@@ -1,5 +1,4 @@
 import Foundation
-import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultModels
 import LunaVaultStorage

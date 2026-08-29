@@ -1,5 +1,5 @@
 import Foundation
-import LunaVaultBackend
+import CryptoKit
 import LunaVaultCrypto
 import LunaVaultEmbeddings
 import LunaVaultIndexExtraction
@@ -33,20 +33,36 @@ public struct VaultImportConfiguration: Equatable, Sendable {
                 uploadBackendKey: String? = nil) {
         self.deviceID = deviceID
         self.modelVersion = modelVersion
-        self.maximumBytes = max(1, maximumBytes)
+        self.maximumBytes = min(max(1, maximumBytes), 100_000_000_000)
         self.uploadBackendKey = uploadBackendKey
     }
 }
 
 public protocol VaultImportIdentityGenerating: Sendable {
     func nextObjectID() -> VaultObjectID
+    /// Returns the stable object identity for identical bytes. Legacy/custom
+    /// generators may keep their existing identity behavior via the default.
+    func objectID(forContentDigest digest: String) -> VaultObjectID
     func nextRevision() -> UUID
     func nextLogicalTime(now: Date) -> Int64
+}
+
+public extension VaultImportIdentityGenerating {
+    func objectID(forContentDigest digest: String) -> VaultObjectID { nextObjectID() }
 }
 
 public struct SystemVaultImportIdentityGenerator: VaultImportIdentityGenerating {
     public init() {}
     public func nextObjectID() -> VaultObjectID { VaultObjectID(rawValue: UUID()) }
+    public func objectID(forContentDigest digest: String) -> VaultObjectID {
+        let hash = SHA256.hash(data: Data("luna-vault-object-id:\(digest)".utf8))
+        let bytes = Array(hash.prefix(16))
+        return VaultObjectID(rawValue: UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+            (bytes[6] & 0x0f) | 0x50, bytes[7],
+            (bytes[8] & 0x3f) | 0x80, bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15])))
+    }
     public func nextRevision() -> UUID { UUID() }
     public func nextLogicalTime(now: Date) -> Int64 {
         Int64((now.timeIntervalSince1970 * 1_000).rounded(.down))
@@ -99,6 +115,11 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
         self.protection = protectionApplier
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try protection.apply(to: rootURL)
+        guard (try? protection.hasRequiredProtection(at: rootURL)) == true else {
+            throw VaultImportError.protectedStaging
+        }
+        VaultSimulatorProtectionLedger.record(rootURL)
+        try repairFiles()
     }
 
     public func put(_ metadata: VaultImportedFileMetadata) throws {
@@ -106,17 +127,32 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
             let directory = directoryURL(for: metadata.objectID)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try protection.apply(to: directory)
+            guard (try? protection.hasRequiredProtection(at: directory)) == true else {
+                throw VaultImportError.protectedStaging
+            }
+            VaultSimulatorProtectionLedger.record(directory)
             let destination = fileURL(for: metadata.objectID, revision: metadata.revision)
             let staging = directory.appendingPathComponent(".staging-\(UUID().uuidString)")
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             do {
-                try encoder.encode(metadata).write(to: staging, options: [.atomic])
-                try protection.apply(to: staging)
-                if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.removeItem(at: destination)
+                guard fileManager.createFile(atPath: staging.path, contents: nil) else {
+                    throw VaultImportError.protectedStaging
                 }
-                try fileManager.moveItem(at: staging, to: destination)
+                try protection.apply(to: staging)
+                guard (try? protection.hasRequiredProtection(at: staging)) == true else {
+                    throw VaultImportError.protectedStaging
+                }
+                VaultSimulatorProtectionLedger.record(staging)
+                let handle = try FileHandle(forWritingTo: staging)
+                try handle.write(contentsOf: encoder.encode(metadata))
+                try handle.synchronize(); try handle.close()
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.replaceItemAt(destination, withItemAt: staging)
+                } else {
+                    try fileManager.moveItem(at: staging, to: destination)
+                }
+                VaultSimulatorProtectionLedger.record(destination)
             } catch {
                 try? fileManager.removeItem(at: staging)
                 throw error
@@ -127,8 +163,17 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
     public func metadata(objectID: VaultObjectID, revision: UUID) throws -> VaultImportedFileMetadata? {
         try lock.withLock {
             let url = fileURL(for: objectID, revision: revision)
-            guard fileManager.fileExists(atPath: url.path) else { return nil }
-            return try JSONDecoder().decode(VaultImportedFileMetadata.self, from: Data(contentsOf: url))
+            guard fileManager.fileExists(atPath: url.path), isRegularProtected(url) else { return nil }
+            let attrs = try fileManager.attributesOfItem(atPath: url.path)
+            guard let size = (attrs[.size] as? NSNumber)?.int64Value, size <= 1_048_576 else {
+                throw VaultImportError.malformedJournal
+            }
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            guard let data = try handle.read(upToCount: Int(size)), Int64(data.count) == size else {
+                throw VaultImportError.malformedJournal
+            }
+            return try JSONDecoder().decode(VaultImportedFileMetadata.self, from: data)
         }
     }
 
@@ -152,6 +197,40 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
     private func fileURL(for objectID: VaultObjectID, revision: UUID) -> URL {
         directoryURL(for: objectID).appendingPathComponent(revision.uuidString + ".json")
     }
+
+    private func isRegularProtected(_ url: URL) -> Bool {
+        guard (try? protection.hasRequiredProtection(at: url)) == true,
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              values.isDirectory != true, values.isSymbolicLink != true else { return false }
+        return true
+    }
+
+    private func repairFiles() throws {
+        let children = (try? fileManager.contentsOfDirectory(at: rootURL,
+                                                              includingPropertiesForKeys: nil)) ?? []
+        for child in children {
+            guard UUID(uuidString: child.lastPathComponent) != nil else {
+                try? fileManager.removeItem(at: child)
+                continue
+            }
+            guard let files = try? fileManager.contentsOfDirectory(at: child,
+                                                                    includingPropertiesForKeys: nil) else {
+                try? fileManager.removeItem(at: child); continue
+            }
+            for file in files {
+                let revision = file.deletingPathExtension().lastPathComponent
+                let attrs = try? fileManager.attributesOfItem(atPath: file.path)
+                let size = (attrs?[.size] as? NSNumber)?.int64Value ?? Int64.max
+                guard file.pathExtension == "json",
+                      UUID(uuidString: revision) != nil,
+                      size <= 1_048_576,
+                      isRegularProtected(file) else {
+                    try? fileManager.removeItem(at: file)
+                    continue
+                }
+            }
+        }
+    }
 }
 
 public enum VaultImportError: Error, Equatable, Sendable {
@@ -163,6 +242,8 @@ public enum VaultImportError: Error, Equatable, Sendable {
     case interrupted
     case missingObject
     case invalidSource
+    case securityScopeRequired
+    case malformedJournal
 }
 
 public struct VaultImportResult: Equatable, Sendable {
@@ -197,6 +278,37 @@ private struct VaultImportJournal: Codable, Sendable {
     let createdAt: Date
     let updatedAt: Date
     let sourceName: String
+    let contentDigest: String
+
+    private enum CodingKeys: String, CodingKey {
+        case objectID, revision, logicalTime, deviceID, fileName, contentType,
+             byteCount, createdAt, updatedAt, sourceName, contentDigest
+    }
+
+    init(objectID: VaultObjectID, revision: UUID, logicalTime: Int64,
+         deviceID: String, fileName: String, contentType: String?, byteCount: Int64,
+         createdAt: Date, updatedAt: Date, sourceName: String, contentDigest: String) {
+        self.objectID = objectID; self.revision = revision; self.logicalTime = logicalTime
+        self.deviceID = deviceID; self.fileName = fileName; self.contentType = contentType
+        self.byteCount = byteCount; self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.sourceName = sourceName
+        self.contentDigest = contentDigest
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        objectID = try c.decode(VaultObjectID.self, forKey: .objectID)
+        revision = try c.decode(UUID.self, forKey: .revision)
+        logicalTime = try c.decode(Int64.self, forKey: .logicalTime)
+        deviceID = try c.decode(String.self, forKey: .deviceID)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        contentType = try c.decodeIfPresent(String.self, forKey: .contentType)
+        byteCount = try c.decode(Int64.self, forKey: .byteCount)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        sourceName = try c.decode(String.self, forKey: .sourceName)
+        contentDigest = try c.decode(String.self, forKey: .contentDigest)
+    }
 }
 
 /// Imports a security-scoped file through a protected, opaque staging journal.
@@ -239,15 +351,27 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         try lock.withLock {
             guard source.fileURL.isFileURL else { throw VaultImportError.invalidURL }
             let scoped = source.fileURL.startAccessingSecurityScopedResource()
+            // URLs created by the app itself are already authorized. Every
+            // external document-provider URL must carry a live security scope;
+            // this avoids a TOCTOU read after the picker lease expires.
+            let appOwned = isInsideRepositoryContainer(source.fileURL)
+            guard scoped || appOwned else { throw VaultImportError.securityScopeRequired }
             defer { if scoped { source.fileURL.stopAccessingSecurityScopedResource() } }
+            guard isRegularFile(source.fileURL) else { throw VaultImportError.notAFile }
             let values = try source.fileURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .nameKey])
             guard values.isDirectory != true else { throw VaultImportError.notAFile }
             guard values.isSymbolicLink != true else { throw VaultImportError.symbolicLink }
-            let byteCount = Int64(values.fileSize ?? 0)
+            let attrs = try fileManager.attributesOfItem(atPath: source.fileURL.path)
+            guard let rawSize = (attrs[.size] as? NSNumber)?.int64Value else { throw VaultImportError.invalidSource }
+            let byteCount = rawSize
             guard byteCount >= 0 else { throw VaultImportError.invalidSource }
             guard byteCount <= configuration.maximumBytes else { throw VaultImportError.inputTooLarge(byteCount) }
 
-            let objectID = identity.nextObjectID()
+            // Hash through the source descriptor before choosing its opaque
+            // identity. This is streaming-only and makes retries of identical
+            // bytes converge on one object without retaining plaintext.
+            let contentDigest = try digestFile(source.fileURL, expectedByteCount: byteCount)
+            let objectID = identity.objectID(forContentDigest: contentDigest)
             let revision = identity.nextRevision()
             let logicalTime = identity.nextLogicalTime(now: now)
             let fileName = sanitizedFileName(source.fileName ?? values.name ?? source.fileURL.lastPathComponent)
@@ -256,12 +380,16 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                              logicalTime: logicalTime, deviceID: configuration.deviceID,
                                              fileName: fileName, contentType: source.contentType,
                                              byteCount: byteCount, createdAt: now, updatedAt: now,
-                                             sourceName: source.fileURL.lastPathComponent)
+                                             sourceName: source.fileURL.lastPathComponent,
+                                             contentDigest: contentDigest)
             let token = UUID().uuidString
             let staged = stagingDirectory.appendingPathComponent("payload-\(token)")
             let marker = stagingDirectory.appendingPathComponent("journal-\(token).json")
-            try stage(source.fileURL, to: staged)
+            // The journal is the recovery anchor and is durably written before
+            // any plaintext enters Vault's staging area.
             try writeJournal(journal, to: marker)
+            try stage(source.fileURL, to: staged, expectedByteCount: byteCount,
+                      expectedDigest: contentDigest)
 
             do {
                 let result = try finalize(journal, stagedURL: staged, journalURL: marker)
@@ -284,17 +412,34 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             let files = (try? fileManager.contentsOfDirectory(at: stagingDirectory,
                                                                includingPropertiesForKeys: nil)) ?? []
             var results: [VaultImportResult] = []
+            var livePayloadTokens = Set<String>()
             for journalURL in files where journalURL.lastPathComponent.hasPrefix("journal-") && journalURL.pathExtension == "json" {
-                guard let data = try? Data(contentsOf: journalURL),
-                      let journal = try? JSONDecoder().decode(VaultImportJournal.self, from: data) else {
-                    continue
-                }
-                let token = journalURL.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "journal-", with: "")
-                let payload = stagingDirectory.appendingPathComponent("payload-\(token)")
-                guard fileManager.fileExists(atPath: payload.path) else {
+                let token = journalURL.deletingPathExtension().lastPathComponent
+                    .dropFirst("journal-".count)
+                guard UUID(uuidString: String(token)) != nil,
+                      isProtected(journalURL), isRegularFile(journalURL),
+                      let attrs = try? fileManager.attributesOfItem(atPath: journalURL.path),
+                      let journalSize = (attrs[.size] as? NSNumber)?.int64Value,
+                      journalSize <= 1_048_576,
+                      let journalData = try? readBounded(journalURL, maximumBytes: 1_048_576),
+                      let journal = try? JSONDecoder().decode(VaultImportJournal.self, from: journalData),
+                      valid(journal) else {
                     try? fileManager.removeItem(at: journalURL)
+                    let tokenString = String(token)
+                    if UUID(uuidString: tokenString) != nil {
+                        try? fileManager.removeItem(at: stagingDirectory.appendingPathComponent("payload-\(tokenString)"))
+                    }
                     continue
                 }
+                let tokenString = String(token)
+                let payload = stagingDirectory.appendingPathComponent("payload-\(tokenString)")
+                guard fileManager.fileExists(atPath: payload.path), isProtected(payload),
+                      isRegularFile(payload) else {
+                    try? fileManager.removeItem(at: journalURL)
+                    try? fileManager.removeItem(at: payload)
+                    continue
+                }
+                livePayloadTokens.insert(tokenString)
                 do {
                     let result = try finalize(journal, stagedURL: payload, journalURL: journalURL)
                     try? fileManager.removeItem(at: payload)
@@ -306,16 +451,38 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                     continue
                 }
             }
+            // A crash can leave a payload, malformed journal, or an old
+            // temporary file behind. The staging directory is private to this
+            // coordinator, so sweep everything not paired with a valid live
+            // journal rather than retaining unbounded plaintext.
+            for file in files {
+                let name = file.lastPathComponent
+                if name.hasPrefix("payload-") {
+                    let token = String(name.dropFirst("payload-".count))
+                    if UUID(uuidString: token) == nil || !livePayloadTokens.contains(token) {
+                        try? fileManager.removeItem(at: file)
+                    }
+                } else if name.hasPrefix(".staging-") || name.hasPrefix("tmp-") {
+                    try? fileManager.removeItem(at: file)
+                }
+            }
             return results
         }
     }
 
     private func finalize(_ journal: VaultImportJournal, stagedURL: URL, journalURL: URL) throws -> VaultImportResult {
-        guard fileManager.fileExists(atPath: stagedURL.path), isProtected(stagedURL) else {
+        guard fileManager.fileExists(atPath: stagedURL.path), isProtected(stagedURL),
+              isRegularFile(stagedURL) else {
             throw VaultImportError.protectedStaging
         }
-        let data = try Data(contentsOf: stagedURL)
-        guard Int64(data.count) == journal.byteCount else { throw VaultImportError.interrupted }
+        let attrs = try fileManager.attributesOfItem(atPath: stagedURL.path)
+        guard let stagedSize = (attrs[.size] as? NSNumber)?.int64Value,
+              stagedSize == journal.byteCount else { throw VaultImportError.interrupted }
+        guard journal.contentDigest.count == 64,
+              journal.contentDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+              try digestFile(stagedURL, expectedByteCount: journal.byteCount) == journal.contentDigest else {
+            throw VaultImportError.interrupted
+        }
         let record = VaultObjectRecord(id: journal.objectID, revision: journal.revision,
                                        logicalTime: journal.logicalTime, size: journal.byteCount,
                                        contentType: journal.contentType, createdAt: journal.createdAt,
@@ -328,20 +495,21 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         var jobs = [indexJob]
         var uploadID: UUID?
         if let backendKey = configuration.uploadBackendKey {
-            // A content generation is produced by the crypto layer. The
-            // all-zero placeholder keeps this durable job opaque; the upload
-            // worker replaces it with the authenticated generation before use.
-            let generation = String(repeating: "0", count: 64)
+            // The content generation is filled by the authenticated content
+            // install. The upload worker must still bind its request to this
+            // revision; it may not use a random or all-zero dedupe token.
+            let generation = journal.contentDigest
             let upload = VaultJob(kind: .upload, objectID: journal.objectID,
                                   createdAt: journal.updatedAt, updatedAt: journal.updatedAt,
                                   idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(journal.revision.uuidString)",
                                   revision: journal.revision, backendKey: backendKey,
-                                  payloadGeneration: generation, remoteObjectKind: VaultRemoteObjectKind.content.rawValue)
+                                  payloadGeneration: generation, remoteObjectKind: "content")
             jobs.append(upload)
             uploadID = upload.id
         }
         _ = try repository.insertAtomically(VaultAtomicObjectInsertRequest(record: record,
-                                                                            content: data,
+                                                                            contentURL: stagedURL,
+                                                                            contentByteCount: journal.byteCount,
                                                                             jobs: jobs))
         guard let current = try repository.object(journal.objectID), current.revision == journal.revision,
               !current.isTombstone else { throw VaultImportError.missingObject }
@@ -358,26 +526,104 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                  uploadJobID: uploadID)
     }
 
-    private func stage(_ source: URL, to destination: URL) throws {
+    private func stage(_ source: URL, to destination: URL, expectedByteCount: Int64,
+                       expectedDigest: String) throws {
+        guard isRegularFile(source) else { throw VaultImportError.invalidSource }
         do {
-            try fileManager.copyItem(at: source, to: destination)
-            try protection.apply(to: destination)
-            guard isProtected(destination) else {
+            guard fileManager.createFile(atPath: destination.path, contents: nil) else {
                 throw VaultImportError.protectedStaging
             }
+            try protection.apply(to: destination)
+            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
+            // Keep the source descriptor open for the whole copy. A later
+            // replacement of the source pathname cannot switch the bytes
+            // being copied midway through the import.
+            let input = try FileHandle(forReadingFrom: source)
+            let output = try FileHandle(forWritingTo: destination)
+            defer { try? input.close(); try? output.close() }
+            var copied: Int64 = 0
+            var hasher = SHA256()
+            while copied < expectedByteCount {
+                guard let chunk = try input.read(upToCount: Int(min(1_048_576, expectedByteCount - copied))),
+                      !chunk.isEmpty else { throw VaultImportError.interrupted }
+                try output.write(contentsOf: chunk)
+                hasher.update(data: chunk)
+                copied += Int64(chunk.count)
+            }
+            guard (try input.read(upToCount: 1)?.isEmpty != false) else {
+                throw VaultImportError.interrupted
+            }
+            try output.synchronize()
+            let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+            guard digest == expectedDigest else { throw VaultImportError.interrupted }
+            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
         } catch {
             try? fileManager.removeItem(at: destination)
             throw error
         }
     }
 
+    private func valid(_ journal: VaultImportJournal) -> Bool {
+        guard journal.byteCount >= 0, journal.byteCount <= configuration.maximumBytes,
+              !journal.deviceID.isEmpty, journal.deviceID.utf8.count <= 256,
+              !journal.fileName.isEmpty, journal.fileName.utf8.count <= 4_096,
+              sanitizedFileName(journal.fileName) == journal.fileName,
+              journal.sourceName.utf8.count <= 4_096,
+              journal.contentDigest.count == 64,
+              journal.contentDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return false }
+        return true
+    }
+
+    private func digestFile(_ url: URL, expectedByteCount: Int64) throws -> String {
+        guard expectedByteCount >= 0 else { throw VaultImportError.invalidSource }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var remaining = expectedByteCount
+        var hasher = SHA256()
+        while remaining > 0 {
+            guard let chunk = try handle.read(upToCount: Int(min(1_048_576, remaining))),
+                  !chunk.isEmpty else { throw VaultImportError.interrupted }
+            hasher.update(data: chunk)
+            remaining -= Int64(chunk.count)
+        }
+        guard (try handle.read(upToCount: 1)?.isEmpty != false) else {
+            throw VaultImportError.invalidSource
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func readBounded(_ url: URL, maximumBytes: Int64) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var data = Data()
+        var remaining = maximumBytes
+        while remaining > 0 {
+            guard let chunk = try handle.read(upToCount: Int(min(1_048_576, remaining))),
+                  !chunk.isEmpty else { break }
+            data.append(chunk)
+            remaining -= Int64(chunk.count)
+        }
+        guard (try handle.read(upToCount: 1)?.isEmpty != false) else {
+            throw VaultImportError.malformedJournal
+        }
+        return data
+    }
+
     private func writeJournal(_ journal: VaultImportJournal, to destination: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(journal).write(to: destination, options: [.atomic])
-        try protection.apply(to: destination)
-        guard isProtected(destination) else {
+        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
             throw VaultImportError.protectedStaging
+        }
+        do {
+            try protection.apply(to: destination)
+            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
+            let handle = try FileHandle(forWritingTo: destination)
+            try handle.write(contentsOf: encoder.encode(journal))
+            try handle.synchronize(); try handle.close()
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
         }
     }
 
@@ -387,12 +633,24 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     }
 
     private func isProtected(_ url: URL) -> Bool {
-        if (try? protection.hasRequiredProtection(at: url)) == true { return true }
-        // Some simulator SDKs bridge NSFileProtectionKey as NSString rather
-        // than FileProtectionType. The attribute's presence still proves the
-        // applier installed a Data Protection class; `apply` itself remains
-        // throwing and is the fail-closed operation.
-        return (try? fileManager.attributesOfItem(atPath: url.path)[.protectionKey]) != nil
+        (try? protection.hasRequiredProtection(at: url)) == true
+    }
+
+    private func isRegularFile(_ url: URL) -> Bool {
+        guard url.isFileURL,
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              values.isDirectory != true, values.isSymbolicLink != true,
+              let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let type = attributes[.type] as? FileAttributeType,
+              type == .typeRegular else { return false }
+        return true
+    }
+
+    private func isInsideRepositoryContainer(_ source: URL) -> Bool {
+        let base = repository.contentDirectory.deletingLastPathComponent()
+            .standardizedFileURL.path
+        let candidate = source.standardizedFileURL.path
+        return candidate == base || candidate.hasPrefix(base + "/")
     }
 }
 
@@ -484,7 +742,15 @@ public final class VaultIndexWorker: @unchecked Sendable {
                                              error: "missing-metadata", now: now)
                 return VaultIndexWorkResult(state: .failed, objectID: objectID, jobID: job.id, errorCode: "missing-metadata")
             }
-            guard let data = try repository.readContent(for: objectID) else {
+            let data: Data
+            if record.size > extractor.policy.maximumMaterializedInputBytes {
+                // The extractor has an explicit metadata-only route for valid
+                // objects larger than its in-memory budget. Do not read a
+                // multi-gigabyte object just to discover that limit.
+                data = Data()
+            } else if let local = try repository.readContent(for: objectID) {
+                data = local
+            } else {
                 try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .retrying,
                                              error: "download-needed", nextAttemptAt: now.addingTimeInterval(60), now: now)
                 return VaultIndexWorkResult(state: .downloadNeeded, objectID: objectID, jobID: job.id, errorCode: "download-needed")
@@ -497,6 +763,14 @@ public final class VaultIndexWorker: @unchecked Sendable {
                                                  fileName: metadata.fileName, contentType: metadata.contentType,
                                                  byteCount: metadata.byteCount, createdAt: metadata.createdAt,
                                                  updatedAt: metadata.updatedAt)
+            let heartbeat = Task { [repository] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                    catch { break }
+                    try? repository.heartbeatJob(id: job.id, leaseToken: leaseToken, now: Date(), leaseDuration: 120)
+                }
+            }
+            defer { heartbeat.cancel() }
             let extraction = try await extractor.extract(VaultExtractionRequest(descriptor: descriptor, data: data))
             var body = ""
             var ocr = ""

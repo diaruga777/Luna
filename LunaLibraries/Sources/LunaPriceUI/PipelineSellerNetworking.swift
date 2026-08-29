@@ -8,6 +8,7 @@ import LunaFetch
 import LunaHTMLClassification
 import LunaModels
 import LunaPriceCompare
+import LunaStorage
 
 /// The fan-out's networking as the APP surfaces have it: the app's own fetcher,
 /// a keyless web search, the whole shared ingest pipeline, and a WKWebView
@@ -62,9 +63,18 @@ struct PipelineSellerNetworking: SellerFanOutNetworking {
     }
 
     /// Layer 2 — the keyless search that reaches retailers the bundled directory
-    /// has never heard of.
+    /// has never heard of. Firecrawl first, DuckDuckGo when Firecrawl's per-IP
+    /// budget is spent (`WebSearchChain`).
+    ///
+    /// The line it logs is the only trace this layer leaves: a Layer-2 run that
+    /// searched nothing looks exactly like one that found nothing in the
+    /// per-candidate attempts, because a search that never happened produces no
+    /// candidate to report.
     func webSearch(query: String) async -> [URL]? {
-        await DuckDuckGoSearch.results(forQuery: query)
+        let outcome = await WebSearchChain.search(forQuery: query)
+        DiagnosticLog.shared.record(
+            outcome.logLine, category: SellerComparisonRunner.logCategory)
+        return outcome.urls
     }
 
     /// A candidate page through the SHARED pipeline, bounded.

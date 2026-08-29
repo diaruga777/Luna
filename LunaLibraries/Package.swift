@@ -89,7 +89,10 @@ let package = Package(
             dependencies: ["LunaModels", "LunaURLClassification", "LunaPriceMetadata"],
             resources: [.process("Resources")]),
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
-        .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // LunaAppConfig: the Firecrawl search cooldown is App-Group state, so
+        // every process that spends the one per-IP keyless budget reads the
+        // same refusal.
+        .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", "LunaAppConfig", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         // The ONE shared classification pipeline every app bundles: unwrap +
         // classify (URL table + HTML heuristics) + the per-kind PROCESSOR
         // REGISTRY. The actual per-kind processing lives in the link-optional

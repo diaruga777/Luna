@@ -24,8 +24,8 @@ public struct SellerFanOutLayers: OptionSet, Sendable {
 
 /// Everything the fan-out needs from the network, as one contract with two
 /// production conformers: `PipelineSellerNetworking` (LunaPriceUI) routes
-/// through `ArticleFetcher`, DuckDuckGo, the shared ingest pipeline and a
-/// WKWebView; `URLSessionSellerNetworking` (the Safari appex) has a plain
+/// through `ArticleFetcher`, the keyless web-search chain, the shared ingest
+/// pipeline and a WKWebView; `URLSessionSellerNetworking` (the Safari appex) has a plain
 /// ephemeral `URLSession` and this module's regex parser and nothing else.
 ///
 /// The engine makes no request of its own because those two environments have
@@ -40,8 +40,9 @@ public protocol SellerFanOutNetworking: Sendable {
     /// returning a page with a blocked status is how a bot wall is reported.
     func fetch(_ url: URL) async -> FetchedPage?
 
-    /// Layer 2: candidate result URLs in rank order
-    /// (`DuckDuckGoSearch.results`). Only called with `.webSearch` declared.
+    /// Layer 2: candidate result URLs in rank order. Nil means no search
+    /// happened; an empty array means one did and found nothing. Only called
+    /// with `.webSearch` declared.
     func webSearch(query: String) async -> [URL]?
 
     /// Richer candidate resolution — the full profile routes pages through

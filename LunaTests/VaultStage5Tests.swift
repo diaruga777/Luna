@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import XCTest
+import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultEmbeddings
 import LunaVaultModels
@@ -67,6 +68,78 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(first.revision, second.revision)
         XCTAssertEqual(try repository.objects().count, 1)
         XCTAssertEqual(try repository.jobs().filter { $0.kind == .index }.count, 1)
+    }
+
+    func testIdenticalICloudImportAfterSuccessfulUploadIsIdempotent() throws {
+        try assertRemoteDuplicateIsIdempotent(backendKey: "icloud:default")
+    }
+
+    func testIdenticalMacImportAfterSuccessfulUploadIsIdempotent() throws {
+        try assertRemoteDuplicateIsIdempotent(backendKey: "mac:paired")
+    }
+
+    /// A completed upload is the reconciliation record for a content-addressed
+    /// object. Replaying the same bytes must not reseal them with a fresh
+    /// generation, enqueue a second upload, or leave an orphaned upload file.
+    private func assertRemoteDuplicateIsIdempotent(backendKey: String) throws {
+        let directory = try VaultTemporaryDirectory(name: "stage5-remote-dedupe")
+        defer { try? directory.cleanUp() }
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory.url,
+                                              protectionApplier: protection)
+        let source = directory.url.appendingPathComponent("fixture.txt")
+        let bytes = Data("remote duplicate bytes".utf8)
+        try bytes.write(to: source)
+        let remoteRoot = try VaultRootKey(version: 1, key: Data(repeating: 9, count: 32))
+        let uploadDirectory = directory.url.appendingPathComponent("uploads", isDirectory: true)
+        let remote = VaultImportRemoteConfiguration(
+            backendKey: backendKey, vaultID: "stage5",
+            root: remoteRoot, rootKey: { version in
+                guard version == remoteRoot.version else { throw VaultCryptoError.missingRootKey }
+                return remoteRoot
+            }, payloadDirectory: uploadDirectory)
+        let coordinator = try VaultImportCoordinator(
+            repository: repository,
+            configuration: VaultImportConfiguration(deviceID: "test", modelVersion: "fixture",
+                                                     uploadBackendKey: backendKey, remote: remote),
+            protectionApplier: protection)
+
+        let first = try coordinator.importFile(VaultImportSource(fileURL: source),
+                                                now: Date(timeIntervalSinceReferenceDate: 100))
+        let firstUpload = try XCTUnwrap(first.uploadJobID.flatMap { try? repository.job($0) })
+        let firstGeneration = try XCTUnwrap(firstUpload.payloadGeneration)
+        let firstPayload = uploadDirectory.appendingPathComponent(
+            ["content", first.objectID.rawValue.uuidString, first.revision.uuidString,
+             firstGeneration].joined(separator: "-") + ".vault")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstPayload.path))
+
+        let claimed = try XCTUnwrap(try repository.claimJob(id: firstUpload.id,
+                                                              owner: "test",
+                                                              now: Date(timeIntervalSinceReferenceDate: 101)))
+        try repository.transitionJob(id: claimed.id, leaseToken: claimed.leaseToken,
+                                     state: .succeeded,
+                                     now: Date(timeIntervalSinceReferenceDate: 102))
+        // A real sync worker removes the upload payload once the provider has
+        // acknowledged it. Keep only the durable succeeded job for replay.
+        try VaultSecureFileAccess.removeRegularFile(at: firstPayload)
+
+        let second = try coordinator.importFile(VaultImportSource(fileURL: source,
+                                                                    fileName: "renamed.txt"),
+                                                 now: Date(timeIntervalSinceReferenceDate: 103))
+        XCTAssertEqual(second.objectID, first.objectID)
+        XCTAssertEqual(second.revision, first.revision)
+        XCTAssertEqual(second.uploadJobID, first.uploadJobID)
+        XCTAssertEqual(try repository.objects().count, 1)
+        let uploadJobs = try repository.jobs().filter { $0.kind == .upload }
+        XCTAssertEqual(uploadJobs.count, 1)
+        XCTAssertEqual(uploadJobs.first?.state, .succeeded)
+        XCTAssertEqual(uploadJobs.first?.payloadGeneration, firstGeneration)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(at: uploadDirectory,
+                                                                    includingPropertiesForKeys: nil)
+            .isEmpty, "a successful duplicate must not leave a resealed payload")
+        let stagingFiles = try FileManager.default.contentsOfDirectory(
+            at: coordinator.stagingDirectory, includingPropertiesForKeys: nil)
+        XCTAssertTrue(stagingFiles.isEmpty, "duplicate replay left staged/orphan files")
     }
 
     func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {

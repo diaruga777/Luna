@@ -62,6 +62,32 @@ final class VaultCryptoStorageTests: XCTestCase {
         XCTAssertFalse(digest.isEmpty, "the authenticated descriptor remains readable after unlink")
     }
 
+    func testHandleBasedSealReadsStablePlaintextAfterPathReplacement() throws {
+        let directory = try VaultTemporaryDirectory(name: "stable-plaintext-handle")
+        defer { try? directory.cleanUp() }
+        let source = directory.url.appendingPathComponent("selected.txt")
+        let envelope = directory.url.appendingPathComponent("payload.lvf")
+        let output = directory.url.appendingPathComponent("output")
+        let original = Data("original selected bytes".utf8)
+        let replacement = Data("replacement bytes".utf8)
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 12, count: 32))
+        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: original))
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: source)
+        defer { try? handle.close() }
+
+        // Replace the pathname after the descriptor is held. The seal must
+        // consume the selected inode, never reopen the substituted pathname.
+        try FileManager.default.removeItem(at: source)
+        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: replacement))
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextHandle: handle, plaintextByteCount: UInt64(original.count),
+            fileURL: envelope, vaultID: "stable-handle", kind: .content,
+            objectID: objectID, revision: revision, root: root, chunkSize: 8,
+            random: VaultTestRandomBytes(seed: 103))
+        XCTAssertEqual(try payload.decrypt(to: output, rootKey: { _ in root }), UInt64(original.count))
+        XCTAssertEqual(try Data(contentsOf: output), original)
+    }
+
     func testAuthenticatedGenerationCarriesCompleteEnvelopeIdentity() throws {
         let root = try VaultRootKey(version: 1, key: Data(repeating: 8, count: 32))
         let cryptor = VaultChunkedCryptor(chunkSize: 8, vaultID: "bound",

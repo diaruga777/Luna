@@ -714,10 +714,10 @@ public final class VaultSearchIndex: @unchecked Sendable {
             """, [.text(query.modelVersion)]) { row in
             guard Int(row.int(1)) == query.dimension,
                   let uuid = UUID(uuidString: row.text(0) ?? ""),
-                  let values = Self.decodeFinite(row.blob(2), count: query.dimension) else { return }
+                  let score = row.withBlob(2, body: { Self.cosine(query.values, bytes: $0, count: query.dimension) }) else { return }
             let candidate = VectorCandidate(displayedID: VaultObjectID(rawValue: uuid),
                 canonicalID: VaultObjectID(rawValue: uuid), alias: false,
-                score: Self.cosine(query.values, values))
+                score: score)
             consider(candidate)
         }
         try queryRows("""
@@ -728,10 +728,10 @@ public final class VaultSearchIndex: @unchecked Sendable {
             guard Int(row.int(2)) == query.dimension,
                   let alias = UUID(uuidString: row.text(0) ?? ""),
                   let original = UUID(uuidString: row.text(1) ?? ""),
-                  let values = Self.decodeFinite(row.blob(3), count: query.dimension) else { return }
+                  let score = row.withBlob(3, body: { Self.cosine(query.values, bytes: $0, count: query.dimension) }) else { return }
             let candidate = VectorCandidate(displayedID: VaultObjectID(rawValue: alias),
                 canonicalID: VaultObjectID(rawValue: original), alias: true,
-                score: Self.cosine(query.values, values))
+                score: score)
             consider(candidate)
         }
         return result.sorted {
@@ -919,6 +919,22 @@ public final class VaultSearchIndex: @unchecked Sendable {
         return displayID(candidate.displayedID, alias: candidate.alias,
                          beats: incumbent.displayedID, currentAlias: incumbent.alias)
     }
+    private static func cosine(_ lhs:[Float], bytes: UnsafeRawBufferPointer, count: Int)->Double? {
+        guard count == lhs.count, count > 0,
+              bytes.count == count * MemoryLayout<Float>.size,
+              let rhs = bytes.baseAddress?.assumingMemoryBound(to: Float.self) else { return nil }
+        var dot = 0.0, lhsMagnitude = 0.0, rhsMagnitude = 0.0
+        for index in 0..<count {
+            let left = lhs[index], right = rhs[index]
+            guard left.isFinite, right.isFinite else { return nil }
+            let l = Double(left), r = Double(right)
+            dot += l * r; lhsMagnitude += l * l; rhsMagnitude += r * r
+        }
+        guard dot.isFinite, lhsMagnitude.isFinite, rhsMagnitude.isFinite,
+              lhsMagnitude > 0, rhsMagnitude > 0 else { return nil }
+        let result = dot / (sqrt(lhsMagnitude) * sqrt(rhsMagnitude))
+        return result.isFinite ? max(-1, min(1, result)) : nil
+    }
     private static func cosine(_ lhs:[Float],_ rhs:[Float])->Double{guard lhs.count==rhs.count,!lhs.isEmpty,lhs.allSatisfy(\.isFinite),rhs.allSatisfy(\.isFinite)else{return 0};var dot=0.0,lm=0.0,rm=0.0;for index in lhs.indices{let l=Double(lhs[index]),r=Double(rhs[index]);dot += l*r;lm += l*l;rm += r*r};guard dot.isFinite,lm.isFinite,rm.isFinite,lm>0,rm>0 else{return 0};let result=dot/(sqrt(lm)*sqrt(rm));return result.isFinite ? max(-1,min(1,result)):0}
     private static func centroid(_ vectors:[VaultEmbedding])->VaultEmbedding{guard let first=vectors.first else{return VaultEmbedding(values:[],modelVersion:"")};var sums=Array(repeating:0.0,count:first.dimension);for vector in vectors where vector.dimension==first.dimension{for index in sums.indices{sums[index]+=Double(vector.values[index])}};return VaultEmbedding(values:sums.map{Float($0/Double(vectors.count))},modelVersion:first.modelVersion)}
     private static func encode(_ values:[Float])->Data{values.withUnsafeBufferPointer{Data(buffer:$0)}}
@@ -1081,5 +1097,5 @@ public final class VaultSearchIndex: @unchecked Sendable {
     private struct VectorCandidate{let displayedID:VaultObjectID;let canonicalID:VaultObjectID;let alias:Bool;let score:Double}
     private struct AutomaticCentroid{let id:UUID;let frozen:Bool;var values:[Float];var count:Int;let modelVersion:String;mutating func add(_ vector:[Float]){guard vector.count==values.count else{return};let next=Double(count+1);for index in values.indices{values[index]=Float((Double(values[index])*Double(count)+Double(vector[index]))/next)};count += 1}}
     private enum SQLiteValue{case null,text(String),int(Int64),double(Double),blob(Data);func bind(_ statement:OpaquePointer,_ index:Int32)throws{let status:Int32;switch self{case .null:status=sqlite3_bind_null(statement,index);case .text(let value):status=sqlite3_bind_text(statement,index,value,-1,vaultSearchSQLiteTransient);case .int(let value):status=sqlite3_bind_int64(statement,index,value);case .double(let value):status=sqlite3_bind_double(statement,index,value);case .blob(let value):status=value.withUnsafeBytes{sqlite3_bind_blob(statement,index,$0.baseAddress,Int32(value.count),vaultSearchSQLiteTransient)}};guard status==SQLITE_OK else{throw VaultSearchError.sqlite("bind")}}}
-    private struct SQLiteRow{let statement:OpaquePointer;init(_ statement:OpaquePointer){self.statement=statement};func text(_ index:Int)->String?{guard let value=sqlite3_column_text(statement,Int32(index))else{return nil};return String(cString:value)};func int(_ index:Int)->Int64{sqlite3_column_int64(statement,Int32(index))};func double(_ index:Int)->Double{sqlite3_column_double(statement,Int32(index))};func blob(_ index:Int)->Data?{guard sqlite3_column_type(statement,Int32(index)) != SQLITE_NULL,let value=sqlite3_column_blob(statement,Int32(index))else{return nil};return Data(bytes:value,count:Int(sqlite3_column_bytes(statement,Int32(index))))}}
+    private struct SQLiteRow{let statement:OpaquePointer;init(_ statement:OpaquePointer){self.statement=statement};func text(_ index:Int)->String?{guard let value=sqlite3_column_text(statement,Int32(index))else{return nil};return String(cString:value)};func int(_ index:Int)->Int64{sqlite3_column_int64(statement,Int32(index))};func double(_ index:Int)->Double{sqlite3_column_double(statement,Int32(index))};func blob(_ index:Int)->Data?{guard sqlite3_column_type(statement,Int32(index)) != SQLITE_NULL,let value=sqlite3_column_blob(statement,Int32(index))else{return nil};return Data(bytes:value,count:Int(sqlite3_column_bytes(statement,Int32(index))))};func withBlob<T>(_ index:Int,body:(UnsafeRawBufferPointer)->T?)->T?{guard sqlite3_column_type(statement,Int32(index)) != SQLITE_NULL,let value=sqlite3_column_blob(statement,Int32(index))else{return nil};return body(UnsafeRawBufferPointer(start:value,count:Int(sqlite3_column_bytes(statement,Int32(index)))))} }
 }

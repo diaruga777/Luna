@@ -12,6 +12,11 @@ public enum VaultMacProtocol {
     public static let version: UInt16 = 2
     public static let maximumFrameBytes = 8 * 1024 * 1024
     public static let maximumObjectBytes: UInt64 = 100 * 1024 * 1024 * 1024
+    // A peer cannot force the companion to retain an unbounded chunk-index
+    // array in the encrypted manifest. The normal client uses ~25k chunks for
+    // a 100 GiB object; this leaves ample room for resumable uploads while
+    // bounding manifest growth and per-request bookkeeping.
+    public static let maximumChunks: UInt32 = 1_048_576
     public static let serviceType = "_lunavault._tcp"
 }
 
@@ -61,6 +66,7 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
         case .putChunk:
             guard let revision, revision.objectID == objectID,
                   let chunkIndex, let totalChunks, totalChunks > 0, chunkIndex < totalChunks,
+                  totalChunks <= VaultMacProtocol.maximumChunks,
                   let totalCiphertextBytes, totalCiphertextBytes > 0,
                   totalCiphertextBytes <= VaultMacProtocol.maximumObjectBytes,
                   let ciphertext, !ciphertext.isEmpty,
@@ -126,9 +132,12 @@ public struct VaultMacPairingCredential: Codable, Hashable, Sendable {
     public init(pairingID: UUID, secret: VaultMacPairingSecret, serverBinding: Data,
                 endpointBinding: String, epoch: UInt64 = 1, createdAt: Date,
                 revokedAt: Date? = nil) throws {
-        guard serverBinding.count == 32, !endpointBinding.isEmpty, epoch > 0 else { throw VaultMacProtocolError.invalidSecret }
+        guard serverBinding.count == 32, epoch > 0,
+              let endpoint = try? VaultMacEndpoint(binding: endpointBinding) else {
+            throw VaultMacProtocolError.invalidSecret
+        }
         self.pairingID = pairingID; self.secret = secret; self.serverBinding = serverBinding
-        self.endpointBinding = endpointBinding; self.epoch = epoch
+        self.endpointBinding = endpoint.binding; self.epoch = epoch
         self.createdAt = createdAt; self.revokedAt = revokedAt
     }
     public var fingerprint: String { SHA256.hash(data: serverBinding).prefix(12).map { String(format: "%02x", $0) }.joined() }
@@ -164,9 +173,12 @@ public struct VaultMacPairingOffer: Codable, Equatable, Sendable {
     public let expiresAt: Date
     public init(pairingID: UUID, serverBinding: Data, endpointBinding: String,
                 nonce: Data, expiresAt: Date) throws {
-        guard serverBinding.count == 32, nonce.count == 32, !endpointBinding.isEmpty else { throw VaultMacProtocolError.invalidChallenge }
+        guard serverBinding.count == 32, nonce.count == 32,
+              let endpoint = try? VaultMacEndpoint(binding: endpointBinding) else {
+            throw VaultMacProtocolError.invalidChallenge
+        }
         self.pairingID = pairingID; self.serverBinding = serverBinding
-        self.endpointBinding = endpointBinding; self.nonce = nonce; self.expiresAt = expiresAt
+        self.endpointBinding = endpoint.binding; self.nonce = nonce; self.expiresAt = expiresAt
     }
     public var fingerprint: String { SHA256.hash(data: serverBinding).prefix(12).map { String(format: "%02x", $0) }.joined() }
 }
@@ -394,6 +406,20 @@ public protocol VaultMacFrameConnecting: Sendable {
 public struct VaultMacEndpoint: Codable, Equatable, Hashable, Sendable {
     public enum Reachability: String, Codable, Sendable { case tailscale, lanBonjour }
     public let host: String; public let port: UInt16; public let reachability: Reachability
+    public init(binding: String) throws {
+        guard let separator = binding.firstIndex(of: ":"),
+              let reachability = Reachability(rawValue: String(binding[..<separator])) else {
+            throw VaultMacProtocolError.invalidEndpoint
+        }
+        let hostAndPort = binding[binding.index(after: separator)...]
+        guard let portSeparator = hostAndPort.lastIndex(of: ":"),
+              portSeparator > hostAndPort.startIndex,
+              let port = UInt16(hostAndPort[hostAndPort.index(after: portSeparator)...]) else {
+            throw VaultMacProtocolError.invalidEndpoint
+        }
+        try self.init(host: String(hostAndPort[..<portSeparator]), port: port,
+                      reachability: reachability)
+    }
     public init(host: String, port: UInt16, reachability: Reachability) throws {
         let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard port > 0, Self.isValid(normalized, reachability: reachability) else { throw VaultMacProtocolError.invalidEndpoint }

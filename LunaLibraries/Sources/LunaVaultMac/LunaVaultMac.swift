@@ -148,6 +148,12 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
     public func rotate(to credential: VaultMacPairingCredential) {
         lock.withLock { self.credential = credential; pending.removeAll(); consumed.removeAll() }
     }
+    /// Active listeners call this before every application frame so a revoke
+    /// or rotation takes effect without waiting for an existing TCP connection
+    /// to go idle.
+    public func isCredentialUsable(epoch: UInt64) -> Bool {
+        lock.withLock { credential.revokedAt == nil && credential.epoch == epoch }
+    }
     public func revoke(now: Date = Date()) throws {
         try lock.withLock { credential = try credential.revoked(now: now); pending.removeAll(); consumed.removeAll() }
     }
@@ -172,7 +178,7 @@ private struct ManifestEnvelope: Codable { let nonce: Data; let ciphertext: Data
 
 public actor VaultMacCompanionStore {
     public let rootURL: URL
-    private let credential: VaultMacPairingCredential
+    private var credential: VaultMacPairingCredential
     private let limits: VaultMacCompanionLimits
     private var manifest: CompanionManifest
 
@@ -217,6 +223,22 @@ public actor VaultMacCompanionStore {
         manifest.objects[objectID.rawValue.uuidString]?.revision
     }
     public func storedObjectCount() -> Int { manifest.objects.values.filter { !$0.deleted }.count }
+
+    /// Re-encrypts the manifest under a newly paired credential. The caller
+    /// must persist the same credential in its owner-only credential store and
+    /// recreate the listener after this succeeds. If the durable write fails,
+    /// this actor keeps using the old credential and manifest.
+    public func rotateCredential(to replacement: VaultMacPairingCredential) throws {
+        guard replacement.revokedAt == nil else { throw VaultMacProtocolError.revoked }
+        let previous = credential
+        credential = replacement
+        do {
+            try persistManifest()
+        } catch {
+            credential = previous
+            throw error
+        }
+    }
 
     private func stat(_ request: VaultMacRequest) -> VaultMacResponse {
         guard let object = manifest.objects[request.objectID.rawValue.uuidString], !object.deleted else {
@@ -308,7 +330,8 @@ public actor VaultMacCompanionStore {
     private func validateChunkShape(totalBytes: UInt64, totalChunks: UInt32,
                                     index: UInt32, chunkBytes: Int) throws {
         guard totalBytes > 0, totalBytes <= limits.maximumObjectBytes,
-              totalChunks > 0, index < totalChunks, chunkBytes > 0,
+              totalChunks > 0, totalChunks <= VaultMacProtocol.maximumChunks,
+              index < totalChunks, chunkBytes > 0,
               chunkBytes <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacCompanionError.invalidRange }
         let minimumChunks = (totalBytes + UInt64(VaultMacProtocol.maximumFrameBytes) - 1) /
                             UInt64(VaultMacProtocol.maximumFrameBytes)
@@ -410,8 +433,13 @@ public actor VaultMacCompanionStore {
         let box = try AES.GCM.seal(plaintext, using: SymmetricKey(data: credential.secret.rawValue),
                                    nonce: nonce, authenticating: aad)
         let envelope = ManifestEnvelope(nonce: Data(nonce), ciphertext: Data(box.ciphertext), tag: Data(box.tag))
-        try VaultSecureFileSystem.atomicWrite(try JSONEncoder().encode(envelope),
-            to: rootURL.appendingPathComponent("manifest.v2"), maximumBytes: limits.maximumManifestBytes + 1_024)
+        // JSON/base64 expands the authenticated manifest; bound the encoded
+        // envelope separately while keeping the plaintext limit authoritative.
+        let encodedEnvelope = try JSONEncoder().encode(envelope)
+        let envelopeLimit = min(Int.max / 2, max(limits.maximumManifestBytes + 1_024,
+                                                 limits.maximumManifestBytes * 2))
+        try VaultSecureFileSystem.atomicWrite(encodedEnvelope,
+            to: rootURL.appendingPathComponent("manifest.v2"), maximumBytes: envelopeLimit)
     }
 
     private static func loadManifest(rootURL: URL, credential: VaultMacPairingCredential,
@@ -420,7 +448,8 @@ public actor VaultMacCompanionStore {
         guard VaultSecureFileSystem.exists(url) else { return CompanionManifest() }
         do {
             let envelope = try JSONDecoder().decode(ManifestEnvelope.self,
-                from: VaultSecureFileSystem.read(url, maximumBytes: limits.maximumManifestBytes + 1_024))
+                from: VaultSecureFileSystem.read(url, maximumBytes: min(Int.max / 2,
+                    max(limits.maximumManifestBytes + 1_024, limits.maximumManifestBytes * 2))))
             let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: envelope.nonce),
                                             ciphertext: envelope.ciphertext, tag: envelope.tag)
             let data = try AES.GCM.open(box, using: SymmetricKey(data: credential.secret.rawValue),

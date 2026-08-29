@@ -67,15 +67,24 @@ public struct VaultMacNWConnector: VaultMacFrameConnecting {
 public final class VaultMacBonjourBrowser: VaultMacDiscoveryBrowsing, @unchecked Sendable {
     public typealias BindingResolver = @Sendable (String) -> Data?
     private let resolver: BindingResolver
-    public init(bindingResolver: @escaping BindingResolver) { self.resolver = bindingResolver }
+    private let port: UInt16
+    /// Bonjour's service endpoint does not expose a TCP port through the
+    /// lightweight record seam, so callers supply the port advertised by the
+    /// companion. The default matches the CLI, while custom listeners can use
+    /// their own port without silently connecting to 49,200.
+    public init(bindingResolver: @escaping BindingResolver, port: UInt16 = 49_200) {
+        self.resolver = bindingResolver
+        self.port = port > 0 ? port : 49_200
+    }
     public func records() -> AsyncThrowingStream<VaultMacDiscoveryRecord, Error> {
         AsyncThrowingStream { continuation in
+            let advertisedPort = self.port
             let browser = NWBrowser(for: .bonjour(type: VaultMacProtocol.serviceType, domain: nil), using: .tcp)
-            browser.browseResultsChangedHandler = { [resolver] results, _ in
+            browser.browseResultsChangedHandler = { [resolver, advertisedPort] results, _ in
                 for result in results {
                     guard case let .service(name, _, _, _) = result.endpoint,
                           let binding = resolver(name),
-                          let endpoint = try? VaultMacEndpoint(host: "\(name).local", port: 49_200, reachability: .lanBonjour),
+                          let endpoint = try? VaultMacEndpoint(host: "\(name).local", port: advertisedPort, reachability: .lanBonjour),
                           let record = try? VaultMacDiscoveryRecord(displayName: name, endpoint: endpoint, serverBinding: binding) else { continue }
                     continuation.yield(record)
                 }

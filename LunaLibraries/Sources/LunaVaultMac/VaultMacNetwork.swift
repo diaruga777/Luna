@@ -110,9 +110,15 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
         let receiver = VaultMacReplayGuard(key: keys.requestKey, sessionID: challenge.sessionID, direction: .request)
         let sender = VaultMacSendSequence(key: keys.responseKey, sessionID: challenge.sessionID, direction: .response)
         while true {
+            guard authority.isCredentialUsable(epoch: challenge.credentialEpoch) else {
+                throw VaultMacProtocolError.revoked
+            }
             let encoded = try await withTimeout(seconds: limits.idleTimeout) { try await channel.receive() }
             let frame = try JSONDecoder().decode(VaultMacAuthenticatedFrame.self, from: encoded)
             let request = try JSONDecoder().decode(VaultMacRequest.self, from: receiver.open(frame))
+            guard authority.isCredentialUsable(epoch: challenge.credentialEpoch) else {
+                throw VaultMacProtocolError.revoked
+            }
             let response = await service.handle(request)
             try await channel.send(JSONEncoder().encode(try sender.seal(JSONEncoder().encode(response))))
         }

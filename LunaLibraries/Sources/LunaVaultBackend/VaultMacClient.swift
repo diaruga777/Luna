@@ -585,11 +585,21 @@ extension VaultMacRemoteBackend {
         }
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("luna-vault-mac-\(UUID().uuidString).lvf")
-        guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else {
-            throw VaultBackendError.io
+        var keepTemporary = false
+        defer {
+            if !keepTemporary { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
+        }
+        // Establish the protected inode before any ciphertext arrives from
+        // the Mac. The transport never writes into an unprotected temporary.
+        let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
+        try created.close()
+        let protection = SystemVaultFileProtectionApplier()
+        try protection.apply(to: temporary)
+        guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
+            throw VaultBackendError.permissionDenied
         }
         do {
-            let output = try FileHandle(forWritingTo: temporary)
+            let output = try VaultSecureFileAccess.openForWriting(at: temporary)
             defer { try? output.close() }
             var offset: UInt64 = 0
             while offset < total {
@@ -606,10 +616,11 @@ extension VaultMacRemoteBackend {
                 try output.write(contentsOf: bytes); offset += length
             }
             try output.synchronize()
-            return try VaultAuthenticatedCiphertextFile(fileURL: temporary,
+            let result = try VaultAuthenticatedCiphertextFile(fileURL: temporary,
                 expectedIdentity: identity, vaultID: self.identity.vaultID, ownsFile: true)
+            keepTemporary = true
+            return result
         } catch {
-            try? FileManager.default.removeItem(at: temporary)
             if let error = error as? VaultBackendError { throw error }
             throw VaultBackendError.corruptPayload
         }

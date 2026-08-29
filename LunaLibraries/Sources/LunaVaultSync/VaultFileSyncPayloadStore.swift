@@ -23,10 +23,8 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         self.rootKey = rootKey
         self.repository = repository
         self.protection = protectionApplier
-        try fileManager.createDirectory(at: rootURL.appendingPathComponent("uploads", isDirectory: true),
-                                        withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: rootURL.appendingPathComponent("downloads", isDirectory: true),
-                                        withIntermediateDirectories: true)
+        try VaultSecureFileAccess.ensureDirectory(at: rootURL.appendingPathComponent("uploads", isDirectory: true))
+        try VaultSecureFileAccess.ensureDirectory(at: rootURL.appendingPathComponent("downloads", isDirectory: true))
         try protection.apply(to: rootURL)
         guard (try? protection.hasRequiredProtection(at: rootURL)) == true else {
             throw VaultSyncError.backend(.permissionDenied)
@@ -112,11 +110,10 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             guard let repository else { return }
             let temporary = destination.deletingLastPathComponent()
                 .appendingPathComponent(".plaintext-\(UUID().uuidString)")
-            guard fileManager.createFile(atPath: temporary.path, contents: nil) else {
-                throw VaultSyncError.backend(.io)
-            }
+            let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
+            try created.close()
             do {
-                defer { try? fileManager.removeItem(at: temporary) }
+                defer { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
                 try protection.apply(to: temporary)
                 guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
                     throw VaultSyncError.backend(.permissionDenied)
@@ -154,7 +151,7 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
     public func removeUploadPayload(for identity: VaultRemoteObjectIdentity) async throws {
         try lock.withLock {
             let target = url(for: identity, area: "uploads")
-            if fileManager.fileExists(atPath: target.path) { try fileManager.removeItem(at: target) }
+            if fileManager.fileExists(atPath: target.path) { try VaultSecureFileAccess.removeRegularFile(at: target) }
         }
     }
 
@@ -162,7 +159,7 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         try lock.withLock {
             for area in ["uploads", "downloads"] {
                 let target = url(for: identity, area: area)
-                if fileManager.fileExists(atPath: target.path) { try fileManager.removeItem(at: target) }
+                if fileManager.fileExists(atPath: target.path) { try VaultSecureFileAccess.removeRegularFile(at: target) }
             }
             try repository?.removeDownloadedMaterial(for: identity)
         }
@@ -170,10 +167,26 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
 
     private func write(_ payload: VaultAuthenticatedCiphertext, to url: URL) throws {
         let data = try payload.encoded()
-        try data.write(to: url, options: .atomic)
-        try? fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: url.path)
+        let parent = url.deletingLastPathComponent()
+        try VaultSecureFileAccess.ensureDirectory(at: parent)
+        let staging = parent.appendingPathComponent(".staging-\(UUID().uuidString)")
+        let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+        try created.close()
+        do {
+            try protection.apply(to: staging)
+            guard (try? protection.hasRequiredProtection(at: staging)) == true else {
+                throw VaultSyncError.backend(.permissionDenied)
+            }
+            let output = try VaultSecureFileAccess.openForWriting(at: staging)
+            try output.write(contentsOf: data)
+            try output.synchronize(); try output.close()
+            if fileManager.fileExists(atPath: url.path) { try VaultSecureFileAccess.removeRegularFile(at: url) }
+            try VaultSecureFileAccess.install(staging, at: url)
+            VaultSimulatorProtectionLedger.record(url)
+        } catch {
+            try? VaultSecureFileAccess.removeRegularFile(at: staging)
+            throw error
+        }
     }
 
     private func copy(_ source: URL, to destination: URL) throws {
@@ -183,31 +196,29 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             throw VaultSyncError.backend(.corruptPayload)
         }
         let parent = destination.deletingLastPathComponent()
-        try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+        try VaultSecureFileAccess.ensureDirectory(at: parent)
         let staging = parent.appendingPathComponent(".staging-\(UUID().uuidString)")
-        guard fileManager.createFile(atPath: staging.path, contents: nil) else {
-            throw VaultSyncError.backend(.io)
-        }
+        let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+        try created.close()
         do {
             try protection.apply(to: staging)
             guard (try? protection.hasRequiredProtection(at: staging)) == true else {
                 throw VaultSyncError.backend(.permissionDenied)
             }
             let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
-            let output = try FileHandle(forWritingTo: staging)
+            let output = try VaultSecureFileAccess.openForWriting(at: staging)
             defer { try? input.close(); try? output.close() }
             while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
                 try output.write(contentsOf: chunk)
             }
             try output.synchronize()
             if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.replaceItemAt(destination, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: destination)
+                try VaultSecureFileAccess.removeRegularFile(at: destination)
             }
+            try VaultSecureFileAccess.install(staging, at: destination)
             VaultSimulatorProtectionLedger.record(destination)
         } catch {
-            try? fileManager.removeItem(at: staging)
+            try? VaultSecureFileAccess.removeRegularFile(at: staging)
             throw error
         }
     }

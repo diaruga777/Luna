@@ -251,21 +251,31 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
         }
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("luna-vault-icloud-\(UUID().uuidString).lvf")
+        var keepTemporary = false
+        defer {
+            if !keepTemporary { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
+        }
+        // The coordinator writes into this inode. Create and protect it
+        // before asking iCloud for the first byte; a coordinator must not be
+        // able to create an unprotected download and add protection later.
+        let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
+        try created.close()
+        #if os(iOS)
+        let protection = SystemVaultFileProtectionApplier()
+        try protection.apply(to: temporary)
+        guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
+            throw VaultBackendError.permissionDenied
+        }
+        #endif
         guard try await retrying(configuration.retryPolicy, operation: {
             try self.coordinator.readToFile(at: path, destinationURL: temporary)
         }) != nil else { return nil }
         do {
-            #if os(iOS)
-            let protection = SystemVaultFileProtectionApplier()
-            try protection.apply(to: temporary)
-            guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
-                throw VaultBackendError.permissionDenied
-            }
-            #endif
-            return try VaultAuthenticatedCiphertextFile(fileURL: temporary,
+            let result = try VaultAuthenticatedCiphertextFile(fileURL: temporary,
                 expectedIdentity: identity, vaultID: configuration.vaultID, ownsFile: true)
+            keepTemporary = true
+            return result
         } catch {
-            try? FileManager.default.removeItem(at: temporary)
             throw VaultBackendError.corruptPayload
         }
     }
@@ -356,10 +366,13 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
 
     private let fileManager: FileManager
     private let coordinator: NSFileCoordinator
+    private let protection: VaultFileProtectionApplying
 
-    public init(containerIdentifier: String? = nil, fileManager: FileManager = .default) {
+    public init(containerIdentifier: String? = nil, fileManager: FileManager = .default,
+                protectionApplier: VaultFileProtectionApplying = SystemVaultFileProtectionApplier()) {
         self.fileManager = fileManager
         self.coordinator = NSFileCoordinator(filePresenter: nil)
+        self.protection = protectionApplier
         let resolved = containerIdentifier.flatMap {
             fileManager.url(forUbiquityContainerIdentifier: $0)
         }
@@ -613,20 +626,30 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
     private func copyFile(_ source: URL, _ destination: URL, expectedBytes: UInt64) throws {
         let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
         defer { try? input.close() }
-        if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
-        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-            throw VaultBackendError.io
+        if fileManager.fileExists(atPath: destination.path) {
+            try VaultSecureFileAccess.removeRegularFile(at: destination)
         }
-        let output = try FileHandle(forWritingTo: destination)
-        defer { try? output.close() }
-        var copied: UInt64 = 0
-        while copied < expectedBytes {
-            guard let chunk = try input.read(upToCount: Int(min(UInt64(1_048_576), expectedBytes - copied))),
-                  !chunk.isEmpty else { throw VaultBackendError.io }
-            try output.write(contentsOf: chunk); copied += UInt64(chunk.count)
+        let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+        try created.close()
+        try protection.apply(to: destination)
+        guard (try? protection.hasRequiredProtection(at: destination)) == true else {
+            throw VaultBackendError.permissionDenied
         }
-        guard try input.read(upToCount: 1)?.isEmpty != false else { throw VaultBackendError.io }
-        try output.synchronize()
+        do {
+            let output = try VaultSecureFileAccess.openForWriting(at: destination)
+            defer { try? output.close() }
+            var copied: UInt64 = 0
+            while copied < expectedBytes {
+                guard let chunk = try input.read(upToCount: Int(min(UInt64(1_048_576), expectedBytes - copied))),
+                      !chunk.isEmpty else { throw VaultBackendError.io }
+                try output.write(contentsOf: chunk); copied += UInt64(chunk.count)
+            }
+            guard try input.read(upToCount: 1)?.isEmpty != false else { throw VaultBackendError.io }
+            try output.synchronize()
+        } catch {
+            try? VaultSecureFileAccess.removeRegularFile(at: destination)
+            throw error
+        }
     }
 
     private func filesEqual(_ lhs: URL, _ rhs: URL, expectedBytes: UInt64) throws -> Bool {

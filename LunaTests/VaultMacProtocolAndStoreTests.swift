@@ -1,5 +1,6 @@
 import Foundation
 import LunaVaultBackend
+import LunaVaultCrypto
 import LunaVaultMac
 import LunaVaultModels
 import XCTest
@@ -301,6 +302,39 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertEqual(restartedCiphertext, replacement)
         let connectionCount = await connector.connectionCount
         XCTAssertGreaterThanOrEqual(connectionCount, 4)
+    }
+
+    func testAuthenticatedEnvelopeUploadBindsMacIdentityAndIsVerifiedByCompanion() async throws {
+        let rootURL = temporary("authenticated-envelope")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: rootURL, credential: credential)
+        let connector = LoopbackMacConnector(service: VaultMacCompanionService(store: store),
+            authority: VaultMacSessionAuthority(credential: credential,
+                random: DeterministicMacRandom(seed: 81)))
+        let backend = try VaultMacRemoteBackend(
+            endpoint: VaultMacEndpoint(binding: credential.endpointBinding), credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 82),
+            uploadStateStore: VaultMacFileUploadStateStore(
+                fileURL: rootURL.appendingPathComponent("upload-state.json")))
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 3, count: 32))
+        let plaintext = rootURL.appendingPathComponent("plaintext")
+        let envelope = rootURL.appendingPathComponent("payload.lvf")
+        XCTAssertTrue(FileManager.default.createFile(atPath: plaintext.path,
+                                                     contents: Data("authenticated".utf8)))
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: plaintext, fileURL: envelope, vaultID: "default", kind: .content,
+            objectID: objectID, revision: UUID(), root: root, chunkSize: 8,
+            random: DeterministicMacRandom(seed: 83))
+        let verified = try payload.verified(rootKey: { _ in root })
+        let outcome = try await backend.put(verified, expectedRevision: nil)
+        XCTAssertEqual(outcome, .current)
+        let storedRevision = await store.currentRevision(for: objectID)
+        XCTAssertEqual(storedRevision?.revision, verified.identity.revision)
+        let downloaded = try await backend.payloadFile(for: verified.identity)
+        XCTAssertEqual(downloaded?.identity, verified.identity)
+        try downloaded?.removeOwnedFile()
     }
 
     func testLargeReadUsesMultipleSafeRangesWithoutPersistingCiphertext() async throws {

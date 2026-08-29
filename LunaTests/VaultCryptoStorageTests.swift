@@ -28,6 +28,21 @@ final class VaultCryptoStorageTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: output), Data())
     }
 
+    func testAuthenticatedGenerationCarriesCompleteEnvelopeIdentity() throws {
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 8, count: 32))
+        let cryptor = VaultChunkedCryptor(chunkSize: 8, vaultID: "bound",
+                                          random: VaultTestRandomBytes(seed: 91))
+        let frames = try cryptor.seal(Data("bound".utf8), objectID: objectID,
+                                      revision: revision, root: root)
+        let payload = try VaultAuthenticatedCiphertext(vaultID: "bound", kind: .content,
+                                                        encryptedFrames: frames)
+        let token = try payload.verified(rootKey: { _ in root }).authenticatedGeneration
+        XCTAssertEqual(token.objectID, objectID)
+        XCTAssertEqual(token.revision, revision)
+        XCTAssertEqual(token.kind, .content)
+        XCTAssertEqual(token.value, payload.identity.generation)
+    }
+
     func testChunkEncryptionRoundTripsBoundariesAndEveryRange() throws {
         let root = try VaultRootKey(version: 1, key: Data(repeating: 7, count: 32))
         for length in [0, 1, 7, 8, 9, 16, 33] {

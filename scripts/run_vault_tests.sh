@@ -94,5 +94,5 @@ exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
   -only-testing:LunaTests/VaultExtractionTests \
   -only-testing:LunaTests/VaultSearchTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
-  "${TIMEOUT_ARGS[@]}" \
+  ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} \
   ${EXTRA[@]+"${EXTRA[@]}"}

@@ -176,8 +176,11 @@ final class VaultStage5Tests: XCTestCase {
     func testCacheCoordinatorTouchesAccessAndAppliesSevenDayExpiry() throws {
         let directory = try VaultTemporaryDirectory(name: "stage5-cache")
         defer { try? directory.cleanUp() }
-        let repository = try VaultRepository(testContainerURL: directory.url,
-                                              protectionApplier: TestProtection())
+        let repository = try VaultRepository(
+            configuration: VaultStorageConfiguration(
+                policy: VaultStoragePolicy(location: .iCloud, keepLocalCopy: false)),
+            testContainerURL: directory.url,
+            protectionApplier: TestProtection())
         let cache = VaultCacheCoordinator(repository: repository)
         let objectID = VaultObjectID(rawValue: UUID())
         let initial = Date(timeIntervalSinceReferenceDate: 20_000)

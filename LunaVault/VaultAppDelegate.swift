@@ -7,6 +7,9 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         VaultWiring.install()
+        // Vault is independent from the shared link-save `saves.sqlite` store;
+        // its repository and optional paired-Mac backend are built by the
+        // scene's VaultWiring composition seam.
         return true
     }
 

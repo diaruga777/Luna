@@ -1,17 +1,21 @@
 import Foundation
 import UIKit
+import LunaVaultBackend
+import LunaVaultCrypto
+import LunaVaultModels
+import LunaVaultStorage
+import LunaVaultSync
 import LunaVaultUI
 
-/// The composition seam for Luna Vault. Provider, crypto, indexing and sync
-/// services are intentionally absent in Stage 1; later stages install them
-/// behind this boundary without making SceneDelegate a service locator.
-enum VaultWiring {
-    private static let services: VaultRuntimeServices? = {
-        try? VaultRuntimeServices.productionFromDefaults()
-    }()
-    private static let syncRuntime = services.flatMap { VaultSyncRuntimeController(services: $0) }
+/// The composition seam for Luna Vault. The app owns construction of the
+/// repository, root-key manager, and optional paired-Mac backend here. The
+/// scene receives only the resulting runtime instead of locating services.
+@MainActor enum VaultWiring {
+    private static var services: VaultRuntimeServices?
+    private static var syncRuntime: VaultSyncRuntimeController?
+    private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
 
-    static func install() { _ = syncRuntime }
+    static func install() { _ = makeServices() }
 
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
@@ -22,6 +26,105 @@ enum VaultWiring {
     }
 
     static func makeRootViewController() -> UIViewController {
-        VaultRootViewController(services: services)
+        let root = VaultRootViewController(services: makeServices())
+        identityConfirmer.attach(to: root)
+        return root
     }
+
+    private static func makeServices() -> VaultRuntimeServices? {
+        if let services { return services }
+        let location = UserDefaults.standard.string(forKey: "LunaVault.storageLocation")
+            .flatMap(VaultStorageLocation.init(rawValue:)) ?? .device
+        do {
+            let value: VaultRuntimeServices
+            if location == .mac { value = try makeMacServices() }
+            else { value = try VaultRuntimeServices.productionFromDefaults() }
+            services = value
+            syncRuntime = VaultSyncRuntimeController(services: value)
+            return value
+        } catch {
+            return nil
+        }
+    }
+
+    private static func makeMacServices() throws -> VaultRuntimeServices {
+        let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String
+        guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
+        let rootKeys = VaultRootKeyManager(configuration:
+            VaultCryptoConfiguration(keychainAccessGroup: accessGroup))
+        let repository = try VaultRepository()
+        let device = VaultDeviceBackend(store: repository)
+        let credentialStore = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
+            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
+        let credential = try credentialStore.load()
+        let backend: (any VaultBackendTransport)?
+        if let credential, credential.revokedAt == nil {
+            backend = try VaultMacRemoteBackend(
+                endpoint: VaultMacEndpoint(binding: credential.endpointBinding),
+                credential: credential, connector: VaultMacNWConnector(),
+                identityConfirmer: identityConfirmer)
+        } else {
+            backend = nil
+        }
+        let sync: VaultSyncCoordinator?
+        if let backend {
+            let staging = repository.contentDirectory.deletingLastPathComponent()
+                .appendingPathComponent("VaultSyncCiphertext", isDirectory: true)
+            let payloadStore = try VaultFileSyncPayloadStore(
+                rootURL: staging, vaultID: "default", repository: repository,
+                rootKey: { try rootKeys.key(version: $0) })
+            sync = VaultSyncCoordinator(repository: repository, backend: backend,
+                payloadSource: payloadStore, owner: "iphone-mac-host",
+                configuration: VaultSyncConfiguration(location: .mac))
+        } else {
+            sync = nil
+        }
+        return VaultRuntimeServices(
+            policy: VaultStoragePolicy(location: .mac), repository: repository,
+            deviceBackend: device, remoteBackend: backend, syncCoordinator: sync)
+    }
+}
+
+private final class VaultMacIdentityConfirmationPresenter:
+    VaultMacServerIdentityConfirming, @unchecked Sendable {
+    private weak var presenter: UIViewController?
+    private let lock = NSLock()
+    private var confirmedBindings: Set<String> = []
+
+    @MainActor func attach(to presenter: UIViewController) { self.presenter = presenter }
+
+    func confirm(fingerprint: String, endpointBinding: String) async throws
+        -> VaultMacServerIdentityConfirmation? {
+        if lock.withLock({ confirmedBindings.contains("\(fingerprint)|\(endpointBinding)") }) {
+            return VaultMacServerIdentityConfirmation(fingerprint: fingerprint,
+                endpointBinding: endpointBinding)
+        }
+        return await withCheckedContinuation { continuation in
+            Task { @MainActor [weak self] in
+                guard let self, let presenter = self.presenter else {
+                    continuation.resume(returning: nil); return
+                }
+                let alert = UIAlertController(title: "Confirm your Mac",
+                    message: "Compare this fingerprint on both devices:\n\n\(fingerprint)\n\nEndpoint: \(endpointBinding)",
+                    preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                    continuation.resume(returning: nil)
+                })
+                alert.addAction(UIAlertAction(title: "Fingerprints Match", style: .default) { [weak self] _ in
+                    if let self {
+                        self.lock.withLock {
+                            self.confirmedBindings.insert("\(fingerprint)|\(endpointBinding)")
+                        }
+                    }
+                    continuation.resume(returning: VaultMacServerIdentityConfirmation(
+                        fingerprint: fingerprint, endpointBinding: endpointBinding))
+                })
+                presenter.present(alert, animated: true)
+            }
+        }
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T { lock(); defer { unlock() }; return body() }
 }

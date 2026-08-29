@@ -18,10 +18,9 @@ public enum LunaVaultUIModule {
 /// injected through `VaultRuntimeServices`; this surface only reports whether
 /// the selected backend is currently usable.
 public final class VaultRootViewController: UIViewController {
+    private let services: VaultRuntimeServices?
     private let searchField: UITextField
     private let statusLabel: UILabel
-
-    private let services: VaultRuntimeServices?
 
     public init(services: VaultRuntimeServices? = nil) {
         self.services = services
@@ -78,6 +77,10 @@ public final class VaultRootViewController: UIViewController {
             return
         }
         guard services.isReady else {
+            if services.policy.location == .mac {
+                statusLabel.text = "Luna Vault\nPair your Mac to sync encrypted files."
+                return
+            }
             switch services.availability {
             case .unavailable:
                 statusLabel.text = "Luna Vault\niCloud is unavailable. Check your Apple ID and iCloud Drive."

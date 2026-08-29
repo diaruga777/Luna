@@ -252,7 +252,7 @@ let package = Package(
             "LunaVaultStorage",
         ]),
         .target(name: "LunaVaultUI", dependencies: [
-            "LunaDesignSystem", "LunaVaultModels", "LunaVaultCrypto",
+            "LunaDesignSystem", "LunaAppConfig", "LunaVaultModels", "LunaVaultCrypto",
             "LunaVaultStorage", "LunaVaultIndexExtraction",
             "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
             "LunaVaultSync", "LunaVaultSetup",

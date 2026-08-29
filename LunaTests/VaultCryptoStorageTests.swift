@@ -137,13 +137,13 @@ final class VaultCryptoStorageTests: XCTestCase {
     }
 
     func testReclaimedJobRejectsStaleOwnerTransition() throws {
-        let directory=try VaultTemporaryDirectory(name:"job-reclaim");let repo=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:200);let job=VaultJob(kind:.upload,createdAt:now,updatedAt:now);try repo.enqueue(job);XCTAssertNotNil(try repo.claimNextJob(owner:"a",now:now,leaseDuration:5));let reclaimed=try XCTUnwrap(repo.claimNextJob(owner:"b",now:now.addingTimeInterval(6),leaseDuration:10));XCTAssertEqual(reclaimed.leaseOwner,"b")
-        XCTAssertThrowsError(try repo.transitionJob(id:job.id,owner:"a",state:.succeeded,now:now.addingTimeInterval(7)));XCTAssertNoThrow(try repo.transitionJob(id:job.id,owner:"b",state:.succeeded,now:now.addingTimeInterval(7)))
+        let directory=try VaultTemporaryDirectory(name:"job-reclaim");let repo=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:200);let job=VaultJob(kind:.upload,createdAt:now,updatedAt:now);try repo.enqueue(job);let original=try XCTUnwrap(repo.claimNextJob(owner:"a",now:now,leaseDuration:5));let reclaimed=try XCTUnwrap(repo.claimNextJob(owner:"b",now:now.addingTimeInterval(6),leaseDuration:10));XCTAssertEqual(reclaimed.leaseOwner,"b");XCTAssertNotEqual(original.leaseToken,reclaimed.leaseToken)
+        XCTAssertThrowsError(try repo.transitionJob(id:job.id,leaseToken:original.leaseToken,state:.succeeded,now:now.addingTimeInterval(7)));XCTAssertNoThrow(try repo.transitionJob(id:job.id,leaseToken:reclaimed.leaseToken,state:.succeeded,now:now.addingTimeInterval(7)))
     }
 
     func testExpiredLeaseCannotBeRevivedByHeartbeat() throws {
-        let directory=try VaultTemporaryDirectory(name:"heartbeat-expiry"),now=Date(timeIntervalSinceReferenceDate:250);let repo=try VaultRepository(testContainerURL:directory.url);let job=VaultJob(kind:.download,createdAt:now,updatedAt:now);try repo.enqueue(job);XCTAssertNotNil(try repo.claimNextJob(owner:"expired",now:now,leaseDuration:5))
-        XCTAssertThrowsError(try repo.heartbeatJob(id:job.id,owner:"expired",now:now.addingTimeInterval(5),leaseDuration:30))
+        let directory=try VaultTemporaryDirectory(name:"heartbeat-expiry"),now=Date(timeIntervalSinceReferenceDate:250);let repo=try VaultRepository(testContainerURL:directory.url);let job=VaultJob(kind:.download,createdAt:now,updatedAt:now);try repo.enqueue(job);let expired=try XCTUnwrap(repo.claimNextJob(owner:"expired",now:now,leaseDuration:5))
+        XCTAssertThrowsError(try repo.heartbeatJob(id:job.id,leaseToken:try XCTUnwrap(expired.leaseToken),now:now.addingTimeInterval(5),leaseDuration:30))
         XCTAssertEqual(try repo.claimNextJob(owner:"replacement",now:now.addingTimeInterval(5),leaseDuration:30)?.leaseOwner,"replacement")
     }
 

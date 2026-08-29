@@ -7,7 +7,7 @@ import LunaVaultStorage
 /// complete-until-first-user-authentication Data Protection policy. It does not
 /// use the root key: local-at-rest protection is an OS responsibility, while
 /// iCloud and Mac transports require client-side encryption.
-public final class VaultDeviceBackend: VaultBackendTransport, @unchecked Sendable {
+public final class VaultDeviceBackend: @unchecked Sendable {
     private let store: VaultObjectStoring
 
     public let capabilities = VaultBackendCapabilities(
@@ -22,17 +22,15 @@ public final class VaultDeviceBackend: VaultBackendTransport, @unchecked Sendabl
         self.store = store
     }
 
-    public func putCiphertext(_ ciphertext: Data, for id: VaultObjectID) async throws {
-        // The transport name is retained for protocol compatibility. On this
-        // backend the payload is local content, not network ciphertext.
-        try store.setData(ciphertext, for: id)
+    public func putContent(_ content: Data, for id: VaultObjectID) async throws {
+        try store.setData(content, for: id)
     }
 
-    public func ciphertext(for id: VaultObjectID) async throws -> Data? {
+    public func content(for id: VaultObjectID) async throws -> Data? {
         try store.data(for: id)
     }
 
-    public func ciphertext(for id: VaultObjectID, range: Range<Int>) async throws -> Data? {
+    public func content(for id: VaultObjectID, range: Range<Int>) async throws -> Data? {
         guard range.lowerBound >= 0, range.upperBound >= range.lowerBound else {
             throw VaultBackendError.invalidRange
         }
@@ -41,7 +39,7 @@ public final class VaultDeviceBackend: VaultBackendTransport, @unchecked Sendabl
         return Data(value[range])
     }
 
-    public func removeCiphertext(for id: VaultObjectID) async throws {
+    public func removeContent(for id: VaultObjectID) async throws {
         // Deletion is idempotent at the object-store boundary.
         try store.removeData(for: id)
     }

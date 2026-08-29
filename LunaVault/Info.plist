@@ -9,7 +9,7 @@
 	<key>LunaVaultKeychainAccessGroup</key>
 	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_PREFIX).vault.keychain</string>
 	<key>LunaVaultICloudContainerID</key>
-	<string>iCloud.$(PRODUCT_BUNDLE_PREFIX).vault</string>
+	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>LunaVaultDatabaseName</key>
 	<string>vault.sqlite</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

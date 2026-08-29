@@ -20,7 +20,10 @@ public final class VaultRootViewController: UIViewController {
     private let searchField: UITextField
     private let statusLabel: UILabel
 
-    public init() {
+    private let services: VaultRuntimeServices?
+
+    public init(services: VaultRuntimeServices? = nil) {
+        self.services = services
         searchField = UITextField()
         statusLabel = UILabel()
         super.init(nibName: nil, bundle: nil)
@@ -43,7 +46,12 @@ public final class VaultRootViewController: UIViewController {
         searchField.returnKeyType = .search
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = "Luna Vault\nYour encrypted files will appear here."
+        if let services {
+            let location = services.policy.location == .iCloud ? "iCloud" : "this device"
+            statusLabel.text = "Luna Vault\nReady on \(location)."
+        } else {
+            statusLabel.text = "Luna Vault\nStorage setup needs attention."
+        }
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
         statusLabel.textColor = .secondaryLabel

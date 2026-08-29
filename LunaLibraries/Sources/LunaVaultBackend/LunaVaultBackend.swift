@@ -44,14 +44,59 @@ public struct VaultBackendCapabilities: Codable, Equatable, Sendable {
     }
 }
 
-public enum VaultBackendError: Error, Equatable, Sendable {
+public enum VaultBackendError: String, Error, Codable, Equatable, Sendable {
     case unavailable
-    case notFound
-    case invalidPath
-    case invalidRange
+    case notFound = "not_found"
+    case invalidPath = "invalid_path"
+    case invalidRange = "invalid_range"
     case unsupported
     case conflict
-    case io(String)
+    case staleVersion = "stale_version"
+    case corruptPayload = "corrupt_payload"
+    case permissionDenied = "permission_denied"
+    case uploadFailed = "upload_failed"
+    case retryExhausted = "retry_exhausted"
+    case io
+
+    public var isTransient: Bool {
+        switch self {
+        case .unavailable, .conflict, .staleVersion, .uploadFailed, .io: return true
+        case .notFound, .invalidPath, .invalidRange, .unsupported,
+             .corruptPayload, .permissionDenied, .retryExhausted: return false
+        }
+    }
+}
+
+public struct VaultBackendIdentity: Codable, Hashable, Sendable {
+    public let location: VaultStorageLocation
+    public let containerIdentifier: String
+    public let vaultID: String
+
+    public init(location: VaultStorageLocation, containerIdentifier: String,
+                vaultID: String) {
+        self.location = location
+        self.containerIdentifier = containerIdentifier
+        self.vaultID = vaultID
+    }
+
+    public var stableKey: String {
+        "\(location.rawValue):\(containerIdentifier):\(vaultID)"
+    }
+}
+
+public enum VaultRemoteObjectState: String, Codable, Equatable, Sendable {
+    case missing
+    case pendingUpload
+    case current
+    case needsDownload
+    case downloading
+    case failed
+    case conflicted
+}
+
+public enum VaultBackendWriteOutcome: String, Codable, Equatable, Sendable {
+    case pending
+    case current
 }
 
 public struct VaultBackendRetryPolicy: Equatable, Sendable {
@@ -95,21 +140,26 @@ public struct VaultMacConnectionConfiguration: Equatable, Sendable {
 /// metadata or file bytes. Cloud-provider-specific adapters are intentionally
 /// out of the v1 contract.
 public protocol VaultBackendTransport: Sendable {
+    var identity: VaultBackendIdentity { get }
     var capabilities: VaultBackendCapabilities { get }
-    func putCiphertext(_ ciphertext: Data, for id: VaultObjectID) async throws
-    func ciphertext(for id: VaultObjectID) async throws -> Data?
-    func removeCiphertext(for id: VaultObjectID) async throws
+    func put(_ payload: VaultAuthenticatedCiphertext,
+             expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome
+    func payload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext?
+    func remove(_ identity: VaultRemoteObjectIdentity,
+                expectedRevision: UUID?) async throws
+    func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState
 }
 
 public extension VaultBackendTransport {
     /// The common transport intentionally permits a full-read fallback. A
     /// backend advertises whether it has a native range implementation, while
     /// callers can still use this method safely for small previews.
-    func ciphertext(for id: VaultObjectID, range: Range<Int>) async throws -> Data? {
+    func encryptedRange(for identity: VaultRemoteObjectIdentity,
+                        range: Range<Int>) async throws -> Data? {
         guard range.lowerBound >= 0, range.upperBound >= range.lowerBound else {
             throw VaultBackendError.invalidRange
         }
-        guard let value = try await ciphertext(for: id) else { return nil }
+        guard let value = try await payload(for: identity)?.encoded() else { return nil }
         guard range.upperBound <= value.count else { throw VaultBackendError.invalidRange }
         return Data(value[range])
     }
@@ -123,7 +173,7 @@ public extension VaultBackendTransport {
         while true {
             do { return try await operation() }
             catch let error as VaultBackendError {
-                guard (error == .unavailable || error == .conflict),
+                guard error.isTransient,
                       attempt + 1 < policy.maximumAttempts else { throw error }
                 attempt += 1
                 if delay > 0 { try await Task.sleep(nanoseconds: delay) }

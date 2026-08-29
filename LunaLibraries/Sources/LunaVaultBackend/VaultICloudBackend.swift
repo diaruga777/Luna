@@ -1,4 +1,5 @@
 import Foundation
+import LunaVaultCrypto
 import LunaVaultModels
 
 /// The state reported by the file provider for one ubiquitous object.
@@ -6,16 +7,26 @@ public struct VaultUbiquitousFileState: Equatable, Sendable {
     public let exists: Bool
     public let isUbiquitous: Bool
     public let isDownloaded: Bool
+    public let isCurrent: Bool
     public let isDownloading: Bool
     public let isUploaded: Bool
+    public let isUploading: Bool
+    public let uploadFailed: Bool
+    public let hasUnresolvedConflicts: Bool
 
     public init(exists: Bool, isUbiquitous: Bool, isDownloaded: Bool,
-                isDownloading: Bool, isUploaded: Bool) {
+                isCurrent: Bool, isDownloading: Bool, isUploaded: Bool,
+                isUploading: Bool = false, uploadFailed: Bool = false,
+                hasUnresolvedConflicts: Bool = false) {
         self.exists = exists
         self.isUbiquitous = isUbiquitous
         self.isDownloaded = isDownloaded
+        self.isCurrent = isCurrent
         self.isDownloading = isDownloading
         self.isUploaded = isUploaded
+        self.isUploading = isUploading
+        self.uploadFailed = uploadFailed
+        self.hasUnresolvedConflicts = hasUnresolvedConflicts
     }
 }
 
@@ -36,7 +47,7 @@ public protocol VaultUbiquitousFileCoordinating: Sendable {
     var rootURL: URL? { get }
     var availability: VaultBackendAvailability { get }
     func state(for relativePath: String) throws -> VaultUbiquitousFileState
-    func write(_ data: Data, at relativePath: String) throws
+    func writeIfAbsentOrIdentical(_ data: Data, at relativePath: String) throws
     func read(at relativePath: String) throws -> Data?
     func remove(at relativePath: String) throws
     func startDownloading(at relativePath: String) throws
@@ -70,6 +81,7 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
     private let rootAvailable: Bool
 
     public let capabilities: VaultBackendCapabilities
+    public let identity: VaultBackendIdentity
 
     public init(configuration: VaultICloudBackendConfiguration,
                 coordinator: VaultUbiquitousFileCoordinating? = nil) {
@@ -78,6 +90,9 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
             containerIdentifier: configuration.containerIdentifier)
         self.coordinator = resolvedCoordinator
         rootAvailable = resolvedCoordinator.rootURL != nil
+        identity = VaultBackendIdentity(location: .iCloud,
+                                        containerIdentifier: configuration.containerIdentifier,
+                                        vaultID: configuration.vaultID)
         capabilities = VaultBackendCapabilities(
             location: .iCloud,
             availability: resolvedCoordinator.availability,
@@ -90,48 +105,57 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
             requiresClientSideEncryption: true)
     }
 
-    public func putCiphertext(_ ciphertext: Data, for id: VaultObjectID) async throws {
+    public func put(_ payload: VaultAuthenticatedCiphertext,
+                    expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome {
         try ensureAvailable()
-        let path = objectPath(id)
+        guard payload.vaultID == configuration.vaultID else { throw VaultBackendError.corruptPayload }
+        if let expectedRevision, expectedRevision != payload.identity.revision {
+            throw VaultBackendError.staleVersion
+        }
+        let path = objectPath(payload.identity)
+        let encoded = try payload.encoded()
         try await retrying(configuration.retryPolicy) { [coordinator] in
-            do { try coordinator.write(ciphertext, at: path) }
+            do { try coordinator.writeIfAbsentOrIdentical(encoded, at: path) }
             catch { throw Self.map(error) }
         }
+        let fileState = try coordinator.state(for: path)
+        guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
+        guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
+        guard fileState.isUploaded, !fileState.isUploading else { return .pending }
         if !configuration.keepLocalCopy {
-            // A pending outcome is deliberately ignored here: the write is
-            // complete, but callers can query `evictionOutcome` to observe
-            // whether the OS has actually removed local bytes.
-            _ = try? await evictionOutcome(for: id)
+            _ = try await evictionOutcome(for: payload.identity)
         }
+        return .current
     }
 
-    public func ciphertext(for id: VaultObjectID) async throws -> Data? {
+    public func payload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext? {
         try ensureAvailable()
-        let path = objectPath(id)
-        let state = try coordinator.state(for: path)
-        guard state.exists else { return nil }
-        if state.isUbiquitous && !state.isDownloaded {
+        let path = objectPath(identity)
+        let fileState = try coordinator.state(for: path)
+        guard fileState.exists else { return nil }
+        guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
+        guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
+        if fileState.isUbiquitous && !fileState.isCurrent {
             try coordinator.startDownloading(at: path)
             throw VaultBackendError.unavailable
         }
-        return try await retrying(configuration.retryPolicy) { [coordinator] in
+        let data = try await retrying(configuration.retryPolicy) { [coordinator] in
             do { return try coordinator.read(at: path) }
             catch { throw Self.map(error) }
         }
+        guard let data else { return nil }
+        do { return try VaultAuthenticatedCiphertext.decodeAndValidate(
+            data, expected: identity, vaultID: configuration.vaultID) }
+        catch { throw VaultBackendError.corruptPayload }
     }
 
-    public func ciphertext(for id: VaultObjectID, range: Range<Int>) async throws -> Data? {
-        guard range.lowerBound >= 0, range.upperBound >= range.lowerBound else {
-            throw VaultBackendError.invalidRange
-        }
-        guard let value = try await ciphertext(for: id) else { return nil }
-        guard range.upperBound <= value.count else { throw VaultBackendError.invalidRange }
-        return Data(value[range])
-    }
-
-    public func removeCiphertext(for id: VaultObjectID) async throws {
+    public func remove(_ identity: VaultRemoteObjectIdentity,
+                       expectedRevision: UUID?) async throws {
         try ensureAvailable()
-        let path = objectPath(id)
+        if let expectedRevision, expectedRevision != identity.revision {
+            throw VaultBackendError.staleVersion
+        }
+        let path = objectPath(identity)
         try await retrying(configuration.retryPolicy) { [coordinator] in
             do { try coordinator.remove(at: path) }
             catch { throw Self.map(error) }
@@ -141,19 +165,28 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
     /// Requests local eviction and returns only a state confirmed by the
     /// ubiquity coordinator. `.pending` is not success and must remain visible
     /// in UI/sync state until a later query returns `.evicted`.
-    public func evictionOutcome(for id: VaultObjectID) async throws -> VaultEvictionOutcome {
+    public func evictionOutcome(for identity: VaultRemoteObjectIdentity) async throws -> VaultEvictionOutcome {
         try ensureAvailable()
-        let path = objectPath(id)
-        let state = try coordinator.state(for: path)
-        guard state.exists, state.isUbiquitous else { return .notEvictable }
-        if !state.isDownloaded { return .evicted }
+        let path = objectPath(identity)
+        let fileState = try coordinator.state(for: path)
+        guard fileState.exists, fileState.isUbiquitous else { return .notEvictable }
+        guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
+        guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
+        if !fileState.isDownloaded { return .evicted }
         do { return try coordinator.requestEviction(at: path) }
         catch { throw Self.map(error) }
     }
 
-    public func state(for id: VaultObjectID) throws -> VaultUbiquitousFileState {
+    public func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState {
         try ensureAvailable()
-        return try coordinator.state(for: objectPath(id))
+        let fileState = try coordinator.state(for: objectPath(identity))
+        guard fileState.exists else { return .missing }
+        if fileState.hasUnresolvedConflicts { return .conflicted }
+        if fileState.uploadFailed { return .failed }
+        if fileState.isUploading || !fileState.isUploaded { return .pendingUpload }
+        if fileState.isDownloading { return .downloading }
+        if !fileState.isCurrent { return .needsDownload }
+        return .current
     }
 
     private func ensureAvailable() throws {
@@ -161,18 +194,18 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
         guard capabilities.availability != .unavailable else { throw VaultBackendError.unavailable }
     }
 
-    private func objectPath(_ id: VaultObjectID) -> String {
+    private func objectPath(_ identity: VaultRemoteObjectIdentity) -> String {
         // UUID is the only remotely observable path component. Vault ID is
         // bounded to a safe directory component during configuration.
         let safeVaultID = configuration.vaultID
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
-        return "VaultObjects/\(safeVaultID)/\(id.rawValue.uuidString).vault"
+        return "VaultObjects/\(safeVaultID)/\(identity.kind.rawValue)/\(identity.objectID.rawValue.uuidString)/\(identity.revision.uuidString)/\(identity.generation).vault"
     }
 
     private static func map(_ error: Error) -> VaultBackendError {
         if let error = error as? VaultBackendError { return error }
-        return .io(String(describing: error))
+        return .io
     }
 }
 
@@ -204,22 +237,34 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         let values = try url.resourceValues(forKeys: [
             .isUbiquitousItemKey,
             .ubiquitousItemIsDownloadingKey,
-            .ubiquitousItemIsUploadedKey,
+            .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey,
             .ubiquitousItemDownloadingStatusKey,
+            .ubiquitousItemHasUnresolvedConflictsKey,
+            .ubiquitousItemUploadingErrorKey,
         ])
         let downloadingStatus = values.ubiquitousItemDownloadingStatus
-        let isDownloaded = downloadingStatus == .current || downloadingStatus == .downloaded || downloadingStatus == nil
+        let isCurrent = downloadingStatus == .current
+        let isDownloaded = isCurrent || downloadingStatus == .downloaded
         return VaultUbiquitousFileState(
             exists: true,
             isUbiquitous: values.isUbiquitousItem ?? false,
             isDownloaded: isDownloaded,
+            isCurrent: isCurrent,
             isDownloading: values.ubiquitousItemIsDownloading ?? false,
-            isUploaded: values.ubiquitousItemIsUploaded ?? false)
+            isUploaded: values.ubiquitousItemIsUploaded ?? false,
+            isUploading: values.ubiquitousItemIsUploading ?? false,
+            uploadFailed: values.ubiquitousItemUploadingError != nil,
+            hasUnresolvedConflicts: values.ubiquitousItemHasUnresolvedConflicts ?? false)
     }
 
-    public func write(_ data: Data, at relativePath: String) throws {
+    public func writeIfAbsentOrIdentical(_ data: Data, at relativePath: String) throws {
         guard let url = url(for: relativePath) else { throw VaultBackendError.unavailable }
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: url.path) {
+            let existing = try read(at: relativePath)
+            guard existing == data else { throw VaultBackendError.conflict }
+            return
+        }
         try coordinateWriting(url) { target in
             try data.write(to: target, options: .atomic)
         }
@@ -261,8 +306,8 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
 
     private func missingState() -> VaultUbiquitousFileState {
         VaultUbiquitousFileState(exists: false, isUbiquitous: false,
-                                 isDownloaded: false, isDownloading: false,
-                                 isUploaded: false)
+                                 isDownloaded: false, isCurrent: false,
+                                 isDownloading: false, isUploaded: false)
     }
 
     private func coordinateWriting(_ url: URL, body: (URL) throws -> Void) throws {
@@ -272,7 +317,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             do { try body(target) } catch { operationError = error }
         }
         if let operationError { throw operationError }
-        if let coordinationError { throw VaultBackendError.io(coordinationError.localizedDescription) }
+        if coordinationError != nil { throw VaultBackendError.io }
     }
 
     private func coordinateReading(_ url: URL, body: (URL) throws -> Void) throws {
@@ -282,6 +327,6 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             do { try body(target) } catch { operationError = error }
         }
         if let operationError { throw operationError }
-        if let coordinationError { throw VaultBackendError.io(coordinationError.localizedDescription) }
+        if coordinationError != nil { throw VaultBackendError.io }
     }
 }

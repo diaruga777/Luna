@@ -6,8 +6,7 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // Stage 1 deliberately performs no provider access and never touches
-        // the shared `saves.sqlite`; Vault's store is `vault.sqlite`.
+        VaultWiring.install()
         return true
     }
 

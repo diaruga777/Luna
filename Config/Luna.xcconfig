@@ -17,6 +17,11 @@ PRODUCT_BUNDLE_PREFIX = $(COMPANY_PREFIX).$(LUNA_NAMESPACE)
 // link saved in any app surface land in one shared store.
 APP_GROUP_ID = group.$(PRODUCT_BUNDLE_PREFIX)
 
+// The iCloud container is shared by the apps that opt into an iCloud
+// capability. Targets without an iCloud entitlement do not gain access merely
+// by inheriting this build setting.
+ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_PREFIX)
+
 // Human-visible app name prefix, e.g. "Luna Reader".
 DISPLAY_NAME_PREFIX = Luna
 

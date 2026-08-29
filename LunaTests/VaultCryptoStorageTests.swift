@@ -187,6 +187,35 @@ final class VaultCryptoStorageTests: XCTestCase {
         let directory=try VaultTemporaryDirectory(name:"first-open");let opens=LockedResults();DispatchQueue.concurrentPerform(iterations:6){_ in do{let repo=try VaultRepository(testContainerURL:directory.url);opens.append(try repo.integrityCheck())}catch{opens.append("error:\(error)")}};XCTAssertEqual(opens.values,[String](repeating:"ok",count:6),"\(opens.values)")
         let root=try VaultRootKey(version:1,key:Data(repeating:6,count:32));let cryptor=VaultChunkedCryptor(chunkSize:4,vaultID:"mix",random:VaultTestRandomBytes(seed:30));let first=try cryptor.seal(Data("abcdefgh".utf8),objectID:objectID,revision:revision,root:root,role:.index);let other=try cryptor.seal(Data("ABCDEFGH".utf8),objectID:VaultObjectID(rawValue:UUID()),revision:revision,root:root,role:.index);var mixed=first;mixed[2]=other[2];XCTAssertThrowsError(try VaultEncryptedArtifact(kind:.index,vaultID:"mix",revision:revision,rootVersion:1,encryptedFrames:mixed));XCTAssertThrowsError(try VaultEncryptedArtifact(kind:.index,vaultID:"wrong",revision:revision,rootVersion:1,encryptedFrames:first))
     }
+
+    func testExtractionArtifactAndLeaseLifecycleSurviveRestart() throws {
+        let directory = try VaultTemporaryDirectory(name: "extraction-lifecycle")
+        let now = Date(timeIntervalSinceReferenceDate: 900)
+        let repo = try VaultRepository(testContainerURL: directory.url)
+        let record = VaultObjectRecord(id: objectID, revision: revision, logicalTime: 1, size: 4,
+                                       createdAt: now, updatedAt: now, accessedAt: now)
+        XCTAssertTrue(try repo.upsert(record))
+        let payload = Data("artifact".utf8)
+        try repo.putExtractionArtifact(payload, objectID: objectID, revision: revision, modelVersion: "v2")
+        XCTAssertEqual(try repo.extractionArtifact(objectID: objectID, revision: revision, modelVersion: "v2"), payload)
+        XCTAssertNil(try repo.extractionArtifact(objectID: objectID, revision: revision, modelVersion: "other"))
+
+        let lease = try repo.beginExtractionJob(objectID: objectID, revision: revision, modelVersion: "v2",
+                                                owner: "worker-a", now: now, leaseDuration: 30)
+        XCTAssertThrowsError(try repo.beginExtractionJob(objectID: objectID, revision: revision,
+                                                         modelVersion: "v2", owner: "worker-b",
+                                                         now: now.addingTimeInterval(1), leaseDuration: 30))
+        try repo.transitionExtractionJob(lease, to: .succeeded, error: nil, retryAt: nil,
+                                         now: now.addingTimeInterval(2))
+        try repo.removeExtractionArtifacts(for: objectID)
+        let reopened = try VaultRepository(testContainerURL: directory.url)
+        XCTAssertNil(try reopened.extractionArtifact(objectID: objectID, revision: revision, modelVersion: "v2"))
+        let retry = try reopened.beginExtractionJob(objectID: objectID, revision: revision,
+                                                    modelVersion: "v2", owner: "worker-c",
+                                                    now: now.addingTimeInterval(3), leaseDuration: 30)
+        try reopened.transitionExtractionJob(retry, to: .failed, error: "fixture", retryAt: nil,
+                                             now: now.addingTimeInterval(4))
+    }
 }
 
 private final class LockedResults: @unchecked Sendable { private let lock=NSLock();private var storage=[String]();func append(_ value:String){lock.withLock{storage.append(value)}};var values:[String]{lock.withLock{storage}} }

@@ -48,6 +48,26 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertFalse(contentDirectory.lastPathComponent.contains("fixture"))
     }
 
+    func testIdenticalImportDeduplicatesContentAddressedObject() throws {
+        let directory = try VaultTemporaryDirectory(name: "stage5-import-dedupe")
+        defer { try? directory.cleanUp() }
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory.url,
+                                              protectionApplier: protection)
+        let source = directory.url.appendingPathComponent("fixture.txt")
+        try Data("same bytes".utf8).write(to: source)
+        let coordinator = try VaultImportCoordinator(repository: repository,
+                                                      protectionApplier: protection)
+        let first = try coordinator.importFile(VaultImportSource(fileURL: source,
+                                                                  fileName: "first.txt"))
+        let second = try coordinator.importFile(VaultImportSource(fileURL: source,
+                                                                   fileName: "second.txt"))
+        XCTAssertEqual(first.objectID, second.objectID)
+        XCTAssertEqual(first.revision, second.revision)
+        XCTAssertEqual(try repository.objects().count, 1)
+        XCTAssertEqual(try repository.jobs().filter { $0.kind == .index }.count, 1)
+    }
+
     func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {
         let directory = try VaultTemporaryDirectory(name: "stage5-index")
         defer { try? directory.cleanUp() }

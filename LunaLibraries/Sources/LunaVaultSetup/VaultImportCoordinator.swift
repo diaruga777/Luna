@@ -487,6 +487,9 @@ public final class VaultImportCoordinator: @unchecked Sendable {
               try digestFile(stagedURL, expectedByteCount: journal.byteCount) == journal.contentDigest else {
             throw VaultImportError.interrupted
         }
+        if let duplicate = try existingDuplicateResult(for: journal) {
+            return duplicate
+        }
         let record = VaultObjectRecord(id: journal.objectID, revision: journal.revision,
                                        logicalTime: journal.logicalTime, size: journal.byteCount,
                                        contentType: journal.contentType, createdAt: journal.createdAt,
@@ -528,6 +531,65 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                  logicalTime: journal.logicalTime, fileName: journal.fileName,
                                  byteCount: journal.byteCount, indexJobID: indexJob.id,
                                  uploadJobID: uploadID)
+    }
+
+    /// The system identity is content-addressed while revisions remain
+    /// per-import metadata. A retry with a fresh revision must converge on the
+    /// already-installed object instead of being mistaken for a conflicting
+    /// update by the atomic insert boundary.
+    private func existingDuplicateResult(for journal: VaultImportJournal) throws -> VaultImportResult? {
+        guard let current = try repository.object(journal.objectID),
+              !current.isTombstone, current.revision != journal.revision,
+              let capability = try repository.localContentCapability(for: journal.objectID),
+              capability.revision == current.revision,
+              capability.generation == journal.contentDigest,
+              capability.byteCount == journal.byteCount else { return nil }
+
+        let metadata: VaultImportedFileMetadata
+        if let existing = try metadataStore.metadata(objectID: journal.objectID,
+                                                      revision: current.revision) {
+            metadata = existing
+        } else {
+            let recovered = VaultImportedFileMetadata(
+                objectID: journal.objectID, revision: current.revision,
+                fileName: journal.fileName, contentType: journal.contentType,
+                byteCount: current.size, createdAt: journal.createdAt,
+                updatedAt: journal.updatedAt)
+            try metadataStore.put(recovered)
+            metadata = recovered
+        }
+
+        var jobs = try repository.jobs().filter {
+            $0.objectID == journal.objectID && $0.revision == current.revision
+        }
+        var indexJob = jobs.first(where: { $0.kind == .index &&
+                                           $0.idempotencyKey.hasSuffix(":\(configuration.modelVersion)") })
+        if indexJob == nil {
+            let job = VaultJob(kind: .index, objectID: journal.objectID,
+                               createdAt: journal.updatedAt, updatedAt: journal.updatedAt,
+                               idempotencyKey: "index:\(journal.objectID.rawValue.uuidString):\(current.revision.uuidString):\(configuration.modelVersion)",
+                               revision: current.revision)
+            try repository.enqueue(job)
+            jobs.append(job)
+            indexJob = job
+        }
+
+        var uploadJob = jobs.first(where: { $0.kind == .upload &&
+                                            $0.backendKey == configuration.uploadBackendKey })
+        if let backendKey = configuration.uploadBackendKey, uploadJob == nil {
+            let job = VaultJob(kind: .upload, objectID: journal.objectID,
+                               createdAt: journal.updatedAt, updatedAt: journal.updatedAt,
+                               idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(current.revision.uuidString)",
+                               revision: current.revision, backendKey: backendKey,
+                               payloadGeneration: journal.contentDigest,
+                               remoteObjectKind: "content")
+            try repository.enqueue(job)
+            uploadJob = job
+        }
+        return VaultImportResult(objectID: journal.objectID, revision: current.revision,
+                                 logicalTime: current.logicalTime, fileName: metadata.fileName,
+                                 byteCount: current.size, indexJobID: indexJob?.id,
+                                 uploadJobID: uploadJob?.id)
     }
 
     private func stage(_ source: URL, to destination: URL, expectedByteCount: Int64,

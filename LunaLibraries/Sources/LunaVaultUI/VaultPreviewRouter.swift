@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import Foundation
+import UniformTypeIdentifiers
 import PDFKit
 import QuickLook
 import UIKit
@@ -33,13 +34,18 @@ public struct VaultPreviewPlan: Equatable, Sendable {
     /// Only returned for local protected bytes. Remote ciphertext and remote
     /// URLs are never represented by this plan.
     public let localURL: URL?
+    /// Repository-issued proof for `localURL`; callers should retain this
+    /// capability while presenting a preview and release it afterward.
+    public let capability: VaultLocalContentCapability?
     public let message: String?
 
     public init(availability: VaultPreviewAvailability, kind: VaultPreviewKind? = nil,
-                localURL: URL? = nil, message: String? = nil) {
+                localURL: URL? = nil, capability: VaultLocalContentCapability? = nil,
+                message: String? = nil) {
         self.availability = availability
         self.kind = kind
         self.localURL = localURL
+        self.capability = capability
         self.message = message
     }
 }
@@ -85,18 +91,25 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                      remoteIdentity: VaultRemoteObjectIdentity? = nil) async throws -> VaultPreviewPlan {
         guard let record = try repository.object(objectID) else { throw VaultPreviewError.missingObject }
         guard !record.isTombstone else { throw VaultPreviewError.tombstoned }
-        let url = repository.contentDirectory
-            .appendingPathComponent(objectID.rawValue.uuidString, isDirectory: true)
-            .appendingPathComponent("content")
-        if FileManager.default.fileExists(atPath: url.path) {
-            guard try protection.hasRequiredProtection(at: url) else {
-                throw VaultPreviewError.unprotectedLocalFile
-            }
+        if let capability = try repository.localContentCapability(for: objectID), capability.authenticated {
+            let url = capability.localURL
             let fileName = (try? metadataStore?.metadata(objectID: objectID,
                                                          revision: record.revision)?.fileName) ?? ""
             let kind = kind(for: record.contentType, fileName: fileName)
             try? cache?.markAccessed(objectID, byteCount: record.size, fullContent: true, now: Date())
-            return VaultPreviewPlan(availability: .ready, kind: kind, localURL: url)
+            return VaultPreviewPlan(availability: .ready, kind: kind, localURL: url,
+                                    capability: capability)
+        }
+
+        let url = repository.contentDirectory
+            .appendingPathComponent(objectID.rawValue.uuidString, isDirectory: true)
+            .appendingPathComponent("content")
+        if FileManager.default.fileExists(atPath: url.path) {
+            // A path exists but failed repository authentication. Do not hand
+            // it to AVKit/QuickLook; the caller must repair or re-download it.
+            guard try protection.hasRequiredProtection(at: url) else {
+                throw VaultPreviewError.unprotectedLocalFile
+            }
         }
 
         if let remoteIdentity {
@@ -123,6 +136,14 @@ public final class VaultPreviewRouter: @unchecked Sendable {
     /// create a partial/range playback URL.
     public func downloadAndPlan(objectID: VaultObjectID,
                                 identity: VaultRemoteObjectIdentity) async throws -> VaultPreviewPlan {
+        guard identity.objectID == objectID,
+              let record = try repository.object(objectID),
+              !record.isTombstone, record.revision == identity.revision,
+              identity.kind == .content,
+              identity.generation.count == 64,
+              identity.generation.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+            throw VaultPreviewError.unsupported
+        }
         guard let downloadRequester else { throw VaultPreviewError.downloadUnavailable }
         try await downloadRequester.requestDownload(for: identity)
         return try await plan(objectID: objectID, remoteIdentity: identity)
@@ -142,17 +163,32 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         }
     }
 
+    public func beginPreview(_ capability: VaultLocalContentCapability) throws {
+        guard capability.authenticated,
+              try repository.validateLocalContentCapability(capability) else {
+            throw VaultPreviewError.unprotectedLocalFile
+        }
+        try repository.setPreviewActive(capability.objectID, active: true)
+    }
+
+    public func endPreview(_ capability: VaultLocalContentCapability) throws {
+        try repository.setPreviewActive(capability.objectID, active: false)
+    }
+
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {
         let lower = fileName.lowercased()
-        if contentType?.hasPrefix("image/") == true || ["jpg", "jpeg", "png", "heic", "heif", "gif"].contains(URL(fileURLWithPath: lower).pathExtension) {
+        let ext = URL(fileURLWithPath: lower).pathExtension
+        let type = contentType.flatMap { UTType(mimeType: $0.split(separator: ";", maxSplits: 1).first.map(String.init) ?? $0) }
+            ?? UTType(filenameExtension: ext)
+        if type?.conforms(to: .image) == true || ["jpg", "jpeg", "png", "heic", "heif", "gif"].contains(ext) {
             return .image
         }
-        if contentType == "application/pdf" || lower.hasSuffix(".pdf") { return .pdf }
-        if contentType?.hasPrefix("text/") == true || ["txt", "md", "markdown", "json", "csv", "html"].contains(URL(fileURLWithPath: lower).pathExtension) {
+        if type?.conforms(to: .pdf) == true || ext == "pdf" { return .pdf }
+        if type?.conforms(to: .text) == true || ["txt", "md", "markdown", "json", "csv", "html"].contains(ext) {
             return .text
         }
-        if contentType?.hasPrefix("audio/") == true { return .audio }
-        if contentType?.hasPrefix("video/") == true { return .video }
+        if type?.conforms(to: .audio) == true { return .audio }
+        if type?.conforms(to: .movie) == true { return .video }
         return .quickLook
     }
 

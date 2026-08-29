@@ -44,7 +44,11 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
     private let submitter: VaultBackgroundTaskSubmitting
     private let lock = NSLock()
     private var operations: [VaultBackgroundTaskKind: @Sendable () async -> Bool] = [:]
-    private var active: [VaultBackgroundTaskKind: Task<Bool, Never>] = [:]
+    private struct ActiveTask {
+        let token: UUID
+        let task: Task<Bool, Never>
+    }
+    private var active: [VaultBackgroundTaskKind: ActiveTask] = [:]
     // Reserve a kind before constructing its Task. Swift tasks may start
     // immediately, so checking only `active` leaves a small duplicate-start
     // window during scheduling.
@@ -119,19 +123,23 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
     private func start(kind: VaultBackgroundTaskKind,
                        operation: @escaping @Sendable () async -> Bool) -> Task<Bool, Never> {
         let task = Task { await operation() }
+        let token = UUID()
         lock.withLock {
             starting.remove(kind)
-            active[kind] = task
+            active[kind] = ActiveTask(token: token, task: task)
         }
         Task { [weak self] in
             _ = await task.value
-            self?.lock.withLock { self?.active[kind] = nil }
+            self?.lock.withLock {
+                guard self?.active[kind]?.token == token else { return }
+                self?.active[kind] = nil
+            }
         }
         return task
     }
 
     public func cancel(kind: VaultBackgroundTaskKind) {
-        lock.withLock { active[kind]?.cancel() }
+        lock.withLock { active[kind]?.task.cancel() }
         submitter.cancel(identifier: identifier(for: kind))
     }
 

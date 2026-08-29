@@ -1,4 +1,4 @@
-# Luna Vault topology (Stage 4A)
+# Luna Vault topology (Stage 5 UI)
 
 Luna Vault is a fifth, standalone iOS host in the Luna family. Its bundle
 identifier is `com.hsanabria.luna.vault` (derived from `PRODUCT_BUNDLE_PREFIX`)
@@ -37,7 +37,12 @@ outside `onboardingRankedSiblings`, the legacy shared stage catalogs, and
 `scripts/stage_screenshots.py` until central integration and real Vault stage
 fixtures exist. `LunaVaultUI` owns a search-first surface with honest
 device/iCloud readiness status; unavailable iCloud never silently falls back
-to local storage. `VaultTestKit` supplies deterministic
+to local storage. The host loads a typed first-run coordinator: an empty setup
+state is the only path that calls `createFirstRun()`, while later launches use
+`loadRequired()`. The root presents bounded recent files, canonical-deduplicated
+search results, groups, and an import callback; it does not implement extraction
+or rendering. Settings expose storage/cache/index/security/Mac controls,
+including explicit iCloud local-eviction states. `VaultTestKit` supplies deterministic
 clock/UUID/randomness, in-memory stores, fake extraction/transcription/
 embeddings, a no-egress URL protocol, temporary directories, and redacting
 logging for later stages.

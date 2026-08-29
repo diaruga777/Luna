@@ -53,3 +53,10 @@ small durable batch as it arrives, and background import/reindex jobs resume
 from post-commit progress. Release profiling should additionally record p50,
 p95, and memory on supported physical devices. Any HNSW replacement must
 preserve the model-version, tombstone, and canonical-dedupe tests unchanged.
+
+The Stage 5 UIKit home screen uses `VaultSearchIndex.recent(limit:)`, which
+applies the limit in SQLite before decoding rows. `VaultSearchPresentationFacade`
+then canonical-deduplicates search (and future alias-inclusive recent) hits
+while retaining the winning snippet, matched fields, source, and symbolic-alias
+provenance for presentation. Import and file-opening behavior remains a
+callback-owned host seam.

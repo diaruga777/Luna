@@ -7,11 +7,28 @@ import LunaVaultModels
 public struct VaultAtomicObjectInsertRequest: Sendable {
     public let record: VaultObjectRecord
     public let content: Data
+    /// A protected staging file can be installed without materialising the
+    /// object's bytes in memory. Exactly one of `content` or `contentURL`
+    /// carries the source; the Data initializer remains source-compatible for
+    /// small callers and tests.
+    public let contentURL: URL?
+    public let contentByteCount: Int64
     public let jobs: [VaultJob]
 
     public init(record: VaultObjectRecord, content: Data, jobs: [VaultJob] = []) {
         self.record = record
         self.content = content
+        self.contentURL = nil
+        self.contentByteCount = Int64(content.count)
+        self.jobs = jobs
+    }
+
+    public init(record: VaultObjectRecord, contentURL: URL, contentByteCount: Int64,
+                jobs: [VaultJob] = []) {
+        self.record = record
+        self.content = Data()
+        self.contentURL = contentURL
+        self.contentByteCount = contentByteCount
         self.jobs = jobs
     }
 }
@@ -25,7 +42,7 @@ extension VaultRepository: VaultAtomicObjectInserting {
     @discardableResult
     public func insertAtomically(_ request: VaultAtomicObjectInsertRequest) throws -> Bool {
         guard request.record.size >= 0,
-              Int64(request.content.count) == request.record.size else {
+              request.contentByteCount == request.record.size else {
             throw VaultStorageError.invalidArtifact
         }
         if let current = try object(request.record.id) {
@@ -38,8 +55,14 @@ extension VaultRepository: VaultAtomicObjectInserting {
             return false
         }
         do {
-            if try readContent(for: request.record.id) == nil {
-                _ = try writeContent(request.content, for: request.record.id)
+            if try localContentCapability(for: request.record.id) == nil {
+                if let contentURL = request.contentURL {
+                    _ = try writeContent(from: contentURL,
+                                         expectedByteCount: request.contentByteCount,
+                                         for: request.record.id)
+                } else {
+                    _ = try writeContent(request.content, for: request.record.id)
+                }
             }
             for job in request.jobs { try enqueue(job) }
             return true

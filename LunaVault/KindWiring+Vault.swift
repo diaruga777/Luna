@@ -1,8 +1,11 @@
 import Foundation
 import UIKit
+import LunaAppConfig
 import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultModels
+import LunaVaultSearch
+import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
 import LunaVaultUI
@@ -13,9 +16,19 @@ import LunaVaultUI
 @MainActor enum VaultWiring {
     private static var services: VaultRuntimeServices?
     private static var syncRuntime: VaultSyncRuntimeController?
+    private static let setupCoordinator = VaultSetupCoordinator(
+        configuration: VaultSetupConfiguration(
+            keychainAccessGroup: Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String),
+        store: UserDefaultsVaultSetupStore(
+            defaults: UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard))
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
+    /// The host owns import implementation. The UI only exposes the seam.
+    static var importHandler: (() -> Void)?
 
-    static func install() { _ = makeServices() }
+    static func install() {
+        _ = setupCoordinator.load()
+        _ = makeServices()
+    }
 
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
@@ -26,19 +39,21 @@ import LunaVaultUI
     }
 
     static func makeRootViewController() -> UIViewController {
-        let root = VaultRootViewController(services: makeServices())
+        let root = VaultRootViewController(
+            services: makeServices(), setupCoordinator: setupCoordinator,
+            searchIndex: makeSearchIndex(), searchIndexProvider: makeSearchIndex,
+            servicesProvider: makeServices, importHandler: importHandler)
         identityConfirmer.attach(to: root)
         return root
     }
 
     private static func makeServices() -> VaultRuntimeServices? {
         if let services { return services }
-        let location = UserDefaults.standard.string(forKey: "LunaVault.storageLocation")
-            .flatMap(VaultStorageLocation.init(rawValue:)) ?? .device
+        guard let policy = setupCoordinator.state.policy else { return nil }
         do {
             let value: VaultRuntimeServices
-            if location == .mac { value = try makeMacServices() }
-            else { value = try VaultRuntimeServices.productionFromDefaults() }
+            if policy.location == .mac { value = try makeMacServices(policy: policy) }
+            else { value = try VaultRuntimeServices.production(policy: policy) }
             services = value
             syncRuntime = VaultSyncRuntimeController(services: value)
             return value
@@ -47,7 +62,7 @@ import LunaVaultUI
         }
     }
 
-    private static func makeMacServices() throws -> VaultRuntimeServices {
+    private static func makeMacServices(policy: VaultStoragePolicy) throws -> VaultRuntimeServices {
         let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String
         guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let rootKeys = VaultRootKeyManager(configuration:
@@ -80,8 +95,13 @@ import LunaVaultUI
             sync = nil
         }
         return VaultRuntimeServices(
-            policy: VaultStoragePolicy(location: .mac), repository: repository,
+            policy: policy, repository: repository,
             deviceBackend: device, remoteBackend: backend, syncCoordinator: sync)
+    }
+
+    private static func makeSearchIndex() -> VaultSearchIndex? {
+        guard let container = AppConfig.sharedContainerURL() else { return nil }
+        return try? VaultSearchIndex(databaseURL: container.appendingPathComponent("vault-index.sqlite"))
     }
 }
 

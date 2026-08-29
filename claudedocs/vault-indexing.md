@@ -9,7 +9,8 @@ adapter. Protected documents, archives, and unknown binary formats remain
 metadata-only; no archive is unpacked during indexing.
 
 The default extraction policy accepts a declared object size up to 100 GB but
-keeps indexing bounded to 16 MB of text, 8,000 chunks, 1,200 characters per
+keeps in-memory extraction bounded to 64 MiB, text to 16 MB, and indexing to
+8,000 chunks, 1,200 characters per
 chunk, and a 30-second work budget. DOCX/EPUB central directories are preflighted
 before decompression for entry count, per-entry and total expanded bytes, ZIP64,
 encryption, and compression ratio. Images are metadata-inspected without decoding,

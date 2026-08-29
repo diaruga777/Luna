@@ -81,6 +81,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         metadataURL = rootURL.appendingPathComponent("index.json")
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try protectionApplier.apply(to: rootURL)
+        guard isProtected(rootURL) else { throw VaultThumbnailError.persistence }
         if fileManager.fileExists(atPath: metadataURL.path) {
             do {
                 let attrs = try fileManager.attributesOfItem(atPath: metadataURL.path)
@@ -113,6 +114,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             let directory = directoryURL(for: key)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try protection.apply(to: directory)
+            guard isProtected(directory) else { throw VaultThumbnailError.persistence }
             let destination = payloadURL(for: key)
             let staging = directory.appendingPathComponent(".staging-\(UUID().uuidString)")
             do {
@@ -130,6 +132,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                     try fileManager.removeItem(at: destination)
                 }
                 try fileManager.moveItem(at: staging, to: destination)
+                VaultSimulatorProtectionLedger.record(destination)
                 entriesByKey[key] = VaultThumbnailEntry(key: key,
                                                         byteCount: Int64(data.count),
                                                         createdAt: entriesByKey[key]?.createdAt ?? now,
@@ -151,6 +154,11 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     public func data(for key: VaultThumbnailKey, now: Date = Date()) throws -> Data? {
         try lock.withLock {
             guard let entry = entriesByKey[key] else { return nil }
+            guard isCurrent(key) else {
+                try removeLocked(key)
+                try persistIndex()
+                return nil
+            }
             let url = payloadURL(for: key)
             guard fileManager.fileExists(atPath: url.path),
                   isProtected(url) else {
@@ -263,6 +271,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             } else {
                 try fileManager.moveItem(at: staging, to: metadataURL)
             }
+            VaultSimulatorProtectionLedger.record(metadataURL)
         } catch {
             try? fileManager.removeItem(at: staging)
             throw VaultThumbnailError.persistence
@@ -294,20 +303,50 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         let objectDirectories = (try? fileManager.contentsOfDirectory(at: rootURL,
                                                                         includingPropertiesForKeys: nil)) ?? []
         for objectDirectory in objectDirectories where objectDirectory != metadataURL {
+            guard let objectID = UUID(uuidString: objectDirectory.lastPathComponent) else {
+                try? fileManager.removeItem(at: objectDirectory)
+                continue
+            }
             guard let revisions = try? fileManager.contentsOfDirectory(at: objectDirectory,
                                                                         includingPropertiesForKeys: nil) else {
                 try? fileManager.removeItem(at: objectDirectory); continue
             }
             for revisionDirectory in revisions {
+                guard let revision = UUID(uuidString: revisionDirectory.lastPathComponent) else {
+                    try? fileManager.removeItem(at: revisionDirectory)
+                    continue
+                }
                 let payloads = (try? fileManager.contentsOfDirectory(at: revisionDirectory,
                                                                       includingPropertiesForKeys: nil)) ?? []
                 if payloads.isEmpty { try? fileManager.removeItem(at: revisionDirectory) }
-                for payload in payloads where payload.lastPathComponent.hasPrefix(".staging-") {
-                    try? fileManager.removeItem(at: payload)
+                for payload in payloads {
+                    let matching = entriesByKey.contains {
+                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
+                        payload == payloadURL(for: $0.key)
+                    }
+                    let values = try? payload.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    let attrs = try? fileManager.attributesOfItem(atPath: payload.path)
+                    let size = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+                    let expectedSize = entriesByKey.first(where: {
+                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
+                        payload == payloadURL(for: $0.key)
+                    })?.value.byteCount
+                    if payload.lastPathComponent.hasPrefix(".staging-") || !matching ||
+                        values?.isDirectory == true || values?.isSymbolicLink == true ||
+                        !isProtected(payload) || size != expectedSize {
+                        try? fileManager.removeItem(at: payload)
+                    }
                 }
             }
         }
         try persistIndex()
+    }
+
+    private func isCurrent(_ key: VaultThumbnailKey) -> Bool {
+        guard let repository else { return true }
+        guard let object = try? repository.object(key.objectID),
+              !object.isTombstone, object.revision == key.revision else { return false }
+        return true
     }
 
     private func directoryURL(for key: VaultThumbnailKey) -> URL {

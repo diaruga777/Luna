@@ -122,6 +122,9 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
             XCTAssertThrowsError(try VaultMacTCPListener(bindHost: wildcard,
                 service: service, authority: authority), "wildcard bind escaped validation: \(wildcard)")
         }
+        let bounded = VaultMacListenerLimits(authenticationTimeout: .nan, idleTimeout: .nan)
+        XCTAssertEqual(bounded.authenticationTimeout, 10)
+        XCTAssertEqual(bounded.idleTimeout, 60)
         #endif
     }
 

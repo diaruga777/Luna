@@ -21,10 +21,15 @@ public struct VaultMacListenerLimits: Equatable, Sendable {
                 idleTimeout: TimeInterval = 60,
                 maximumAuthenticationFailuresPerMinute: Int = 5) {
         self.maximumConnections = max(1, min(maximumConnections, 32))
-        self.authenticationTimeout = max(1, min(authenticationTimeout, 30))
-        self.idleTimeout = max(5, min(idleTimeout, 300))
+        self.authenticationTimeout = Self.clamp(authenticationTimeout, lower: 1, upper: 30,
+                                               fallback: 10)
+        self.idleTimeout = Self.clamp(idleTimeout, lower: 5, upper: 300, fallback: 60)
         self.maximumAuthenticationFailuresPerMinute = max(1,
             min(maximumAuthenticationFailuresPerMinute, 1_000))
+    }
+    private static func clamp(_ value: TimeInterval, lower: TimeInterval,
+                              upper: TimeInterval, fallback: TimeInterval) -> TimeInterval {
+        value.isFinite ? min(max(value, lower), upper) : fallback
     }
 }
 

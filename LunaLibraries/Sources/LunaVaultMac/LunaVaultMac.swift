@@ -15,6 +15,7 @@ public enum VaultMacCompanionError: Error, Equatable, Sendable {
 }
 
 public struct VaultMacCompanionLimits: Equatable, Sendable {
+    public static let maximumConfigurableStoredBytes: UInt64 = 16 * 1_099_511_627_776
     public let maximumObjectBytes: UInt64
     public let maximumStoredBytes: UInt64
     public let maximumManifestBytes: Int
@@ -26,7 +27,7 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
                 maximumPartialUploads: Int = 64,
                 partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60) {
         self.maximumObjectBytes = max(1, min(maximumObjectBytes, VaultMacProtocol.maximumObjectBytes))
-        self.maximumStoredBytes = max(1, maximumStoredBytes)
+        self.maximumStoredBytes = min(max(1, maximumStoredBytes), Self.maximumConfigurableStoredBytes)
         self.maximumManifestBytes = max(1, min(maximumManifestBytes, 16 * 1024 * 1024))
         self.maximumPartialUploads = max(1, min(maximumPartialUploads, 1_024))
         self.partialUploadLifetime = partialUploadLifetime.isFinite
@@ -122,7 +123,7 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
         }
     }
     public func accept(_ response: VaultMacSessionResponse, now: Date = Date()) throws
-        -> (VaultMacSessionChallenge, VaultMacSessionKeys) {
+        -> (VaultMacSessionChallenge, VaultMacSessionKeys, VaultMacSessionAcceptance) {
         try lock.withLock {
             guard !consumed.contains(response.sessionID),
                   let challenge = pending[response.sessionID] else {
@@ -142,11 +143,20 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
             pending.removeValue(forKey: response.sessionID)
             consumed.insert(response.sessionID)
             if consumed.count > 4_096 { consumed.removeAll(keepingCapacity: true) }
-            return (challenge, keys)
+            let acceptance = try VaultMacSessionAcceptance.make(challenge: challenge,
+                response: response, credential: credential, now: now)
+            return (challenge, keys, acceptance)
         }
     }
-    public func rotate(to credential: VaultMacPairingCredential) {
-        lock.withLock { self.credential = credential; pending.removeAll(); consumed.removeAll() }
+    public func rotate(to replacement: VaultMacPairingCredential) throws {
+        try lock.withLock {
+            guard replacement.revokedAt == nil,
+                  replacement.pairingID == credential.pairingID,
+                  replacement.epoch > credential.epoch else {
+                throw VaultMacProtocolError.invalidSecret
+            }
+            credential = replacement; pending.removeAll(); consumed.removeAll()
+        }
     }
     /// Active listeners call this before every application frame so a revoke
     /// or rotation takes effect without waiting for an existing TCP connection
@@ -167,7 +177,7 @@ private struct PartialUpload: Codable, Sendable {
     var receivedChunks: [UInt32]; var receivedBytes: UInt64; var updatedAt: Date
 }
 private struct IdempotencyRecord: Codable, Sendable {
-    var signature: Data; var response: VaultMacResponse; var createdAt: Date
+    var signature: Data; var response: VaultMacResponse; var responseDigest: Data?; var createdAt: Date
 }
 private struct CompanionManifest: Codable, Sendable {
     var objects: [String: StoredObject] = [:]
@@ -200,6 +210,14 @@ public actor VaultMacCompanionStore {
         let signature = SHA256.hash(data: try signatureEncoder.encode(request)).withUnsafeBytes { Data($0) }
         if let existing = manifest.idempotency[request.idempotencyKey] {
             guard constantTimeEqual(existing.signature, signature) else { throw VaultMacCompanionError.conflict }
+            if request.operation == .readRange, let digest = existing.responseDigest {
+                let replay = try readRange(request)
+                let replayBytes = try signatureEncoder.encode(replay)
+                guard constantTimeEqual(digest, Data(SHA256.hash(data: replayBytes))) else {
+                    throw VaultMacCompanionError.conflict
+                }
+                return replay
+            }
             try cleanupCommittedState(for: request.objectID)
             return existing.response
         }
@@ -210,7 +228,20 @@ public actor VaultMacCompanionStore {
         case .readRange: response = try readRange(request)
         case .delete: response = try delete(request)
         }
-        manifest.idempotency[request.idempotencyKey] = IdempotencyRecord(signature: signature, response: response, createdAt: now)
+        let responseBytes = try signatureEncoder.encode(response)
+        let storedResponse: VaultMacResponse
+        let responseDigest: Data?
+        if request.operation == .readRange {
+            storedResponse = VaultMacResponse(status: response.status, objectID: response.objectID,
+                currentRevision: response.currentRevision, revision: response.revision,
+                receivedChunks: response.receivedChunks,
+                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message)
+            responseDigest = Data(SHA256.hash(data: responseBytes))
+        } else {
+            storedResponse = response; responseDigest = nil
+        }
+        manifest.idempotency[request.idempotencyKey] = IdempotencyRecord(signature: signature,
+            response: storedResponse, responseDigest: responseDigest, createdAt: now)
         trimIdempotency()
         try persistManifest()
         try cleanupCommittedState(for: request.objectID)
@@ -229,7 +260,11 @@ public actor VaultMacCompanionStore {
     /// recreate the listener after this succeeds. If the durable write fails,
     /// this actor keeps using the old credential and manifest.
     public func rotateCredential(to replacement: VaultMacPairingCredential) throws {
-        guard replacement.revokedAt == nil else { throw VaultMacProtocolError.revoked }
+        guard replacement.revokedAt == nil,
+              replacement.pairingID == credential.pairingID,
+              replacement.epoch > credential.epoch else {
+            throw VaultMacProtocolError.invalidSecret
+        }
         let previous = credential
         credential = replacement
         do {
@@ -241,8 +276,12 @@ public actor VaultMacCompanionStore {
     }
 
     private func stat(_ request: VaultMacRequest) -> VaultMacResponse {
-        guard let object = manifest.objects[request.objectID.rawValue.uuidString], !object.deleted else {
+        guard let object = manifest.objects[request.objectID.rawValue.uuidString] else {
             return VaultMacResponse(status: .notFound, objectID: request.objectID)
+        }
+        if object.deleted {
+            return VaultMacResponse(status: .notFound, objectID: request.objectID,
+                revision: object.revision, totalCiphertextBytes: 0)
         }
         return VaultMacResponse(status: .accepted, objectID: request.objectID,
             revision: object.revision, totalCiphertextBytes: object.totalBytes)
@@ -273,13 +312,13 @@ public actor VaultMacCompanionStore {
         let directory = objectDirectoryURL(for: request.objectID, revision: revision.revision)
         let chunkURL = directory.appendingPathComponent("chunk-\(index).bin")
         if VaultSecureFileSystem.exists(chunkURL) {
-            guard try VaultSecureFileSystem.read(chunkURL, maximumBytes: VaultMacProtocol.maximumFrameBytes) == ciphertext else { throw VaultMacCompanionError.conflict }
+            guard try VaultSecureFileSystem.read(chunkURL, maximumBytes: VaultMacProtocol.maximumTransferBytes) == ciphertext else { throw VaultMacCompanionError.conflict }
         } else {
             let projected = try checkedAdd(storedAndPartialBytes(), UInt64(ciphertext.count))
             guard projected <= limits.maximumStoredBytes else { throw VaultMacCompanionError.quotaExceeded }
             _ = try objectDirectory(for: request.objectID, revision: revision.revision)
             try VaultSecureFileSystem.atomicWrite(ciphertext, to: chunkURL,
-                                                  maximumBytes: VaultMacProtocol.maximumFrameBytes)
+                                                  maximumBytes: VaultMacProtocol.maximumTransferBytes)
             partial.receivedBytes = try checkedAdd(partial.receivedBytes, UInt64(ciphertext.count))
         }
         if !partial.receivedChunks.contains(index) { partial.receivedChunks.append(index); partial.receivedChunks.sort() }
@@ -332,9 +371,11 @@ public actor VaultMacCompanionStore {
         guard totalBytes > 0, totalBytes <= limits.maximumObjectBytes,
               totalChunks > 0, totalChunks <= VaultMacProtocol.maximumChunks,
               index < totalChunks, chunkBytes > 0,
-              chunkBytes <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacCompanionError.invalidRange }
-        let minimumChunks = (totalBytes + UInt64(VaultMacProtocol.maximumFrameBytes) - 1) /
-                            UInt64(VaultMacProtocol.maximumFrameBytes)
+              chunkBytes <= VaultMacProtocol.maximumTransferBytes else { throw VaultMacCompanionError.invalidRange }
+        let (roundedBytes, overflow) = totalBytes.addingReportingOverflow(
+            UInt64(VaultMacProtocol.maximumTransferBytes) - 1)
+        guard !overflow else { throw VaultMacCompanionError.invalidRange }
+        let minimumChunks = roundedBytes / UInt64(VaultMacProtocol.maximumTransferBytes)
         guard UInt64(totalChunks) >= minimumChunks, UInt64(totalChunks) <= totalBytes else {
             throw VaultMacCompanionError.invalidRange
         }
@@ -363,7 +404,7 @@ public actor VaultMacCompanionStore {
         var written: UInt64 = 0
         for index in 0..<totalChunks {
             let chunk = try VaultSecureFileSystem.read(directory.appendingPathComponent("chunk-\(index).bin"),
-                                                       maximumBytes: VaultMacProtocol.maximumFrameBytes)
+                                                       maximumBytes: VaultMacProtocol.maximumTransferBytes)
             try VaultSecureFileSystem.writeAll(chunk, fd: fd)
             written = try checkedAdd(written, UInt64(chunk.count))
         }
@@ -492,9 +533,15 @@ public actor VaultMacCompanionStore {
                     continue
                 }
                 try VaultSecureFileSystem.ensureDirectory(revisionURL)
-                for fileURL in try VaultSecureFileSystem.directoryContents(revisionURL)
-                    where !allowedFiles.contains(fileURL.lastPathComponent) {
-                    try VaultSecureFileSystem.removeTree(fileURL)
+                for fileURL in try VaultSecureFileSystem.directoryContents(revisionURL) {
+                    if allowedFiles.contains(fileURL.lastPathComponent) {
+                        // A symlink occupying an expected ciphertext/chunk name
+                        // is not an orphan we can silently unlink: fail startup
+                        // closed so no manifest-authorized path is ever followed.
+                        try VaultSecureFileSystem.rejectSymlink(fileURL)
+                    } else {
+                        try VaultSecureFileSystem.removeTree(fileURL)
+                    }
                 }
             }
         }

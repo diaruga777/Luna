@@ -11,12 +11,17 @@ import Glibc
 public enum VaultMacProtocol {
     public static let version: UInt16 = 2
     public static let maximumFrameBytes = 8 * 1024 * 1024
+    /// Raw ciphertext carried inside request/response JSON. Keeping this at
+    /// 4 MiB leaves room for both inner and outer base64 expansion beneath the
+    /// authenticated 8 MiB frame ceiling.
+    public static let maximumTransferBytes = 4 * 1024 * 1024
     public static let maximumObjectBytes: UInt64 = 100 * 1024 * 1024 * 1024
     // A peer cannot force the companion to retain an unbounded chunk-index
-    // array in the encrypted manifest. The normal client uses ~25k chunks for
-    // a 100 GiB object; this leaves ample room for resumable uploads while
-    // bounding manifest growth and per-request bookkeeping.
-    public static let maximumChunks: UInt32 = 1_048_576
+    // array in the encrypted manifest or in a partial response. The normal
+    // client uses ~25k chunks for a 100 GiB object; 65,536 leaves headroom for
+    // resumable uploads while keeping the sorted index list well below the
+    // authenticated frame ceiling even with JSON/base64 expansion.
+    public static let maximumChunks: UInt32 = 65_536
     public static let serviceType = "_lunavault._tcp"
 }
 
@@ -70,13 +75,14 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
                   let totalCiphertextBytes, totalCiphertextBytes > 0,
                   totalCiphertextBytes <= VaultMacProtocol.maximumObjectBytes,
                   let ciphertext, !ciphertext.isEmpty,
-                  ciphertext.count <= VaultMacProtocol.maximumFrameBytes,
+                  ciphertext.count <= VaultMacProtocol.maximumTransferBytes,
                   UInt64(ciphertext.count) <= totalCiphertextBytes else { throw VaultMacProtocolError.invalidRequest }
         case .stat:
             guard revision == nil, ciphertext == nil, offset == nil, length == nil else { throw VaultMacProtocolError.invalidRequest }
         case .readRange:
             guard revision == nil, ciphertext == nil, let offset, let length,
-                  length <= UInt64(VaultMacProtocol.maximumFrameBytes),
+                  length > 0,
+                  length <= UInt64(VaultMacProtocol.maximumTransferBytes),
                   offset <= UInt64.max - length else { throw VaultMacProtocolError.invalidRequest }
         case .delete:
             guard let revision, revision.objectID == objectID,
@@ -163,6 +169,33 @@ public struct VaultMacPairingCredential: Codable, Hashable, Sendable {
     }
 }
 
+/// iPhone-side pairing storage. This is a separate, non-synchronizable Keychain
+/// item from the synchronizable Vault root-key ring, so the Share extension is
+/// never granted or handed the Mac credential.
+public struct VaultMacKeychainCredentialStore: Sendable {
+    public let descriptor: VaultKeyDescriptor
+    private let store: any VaultKeyStoring
+    public init(accessGroup: String, service: String,
+                account: String = "paired-mac",
+                store: any VaultKeyStoring = VaultKeychainStore()) {
+        descriptor = VaultKeyDescriptor(service: service, account: account,
+            accessGroup: accessGroup, synchronizable: false, accessibility: .whenUnlocked)
+        self.store = store
+    }
+    public func load() throws -> VaultMacPairingCredential? {
+        guard let data = try store.data(for: descriptor) else { return nil }
+        guard data.count <= 16 * 1024 else { throw VaultMacProtocolError.invalidSecret }
+        return try JSONDecoder().decode(VaultMacPairingCredential.self, from: data)
+    }
+    public func save(_ credential: VaultMacPairingCredential) throws {
+        guard credential.revokedAt == nil else { throw VaultMacProtocolError.revoked }
+        let data = try JSONEncoder().encode(credential)
+        guard data.count <= 16 * 1024 else { throw VaultMacProtocolError.invalidSecret }
+        try store.setData(data, for: descriptor)
+    }
+    public func remove() throws { try store.removeData(for: descriptor) }
+}
+
 /// Shown by the Mac UI as a QR/code. The one-time code is delivered separately
 /// and never appears in this network-visible offer.
 public struct VaultMacPairingOffer: Codable, Equatable, Sendable {
@@ -224,8 +257,11 @@ public enum VaultMacPairingClient {
                                          random: VaultRandomBytesGenerating = SystemVaultRandomBytes(),
                                          now: Date = Date()) async throws -> VaultMacPairingClientResult {
         guard now < capsule.offer.expiresAt,
-              try await identityConfirmer.confirm(fingerprint: capsule.offer.fingerprint,
-                                                   endpointBinding: capsule.offer.endpointBinding) else {
+              let confirmation = try await identityConfirmer.confirm(
+                fingerprint: capsule.offer.fingerprint,
+                endpointBinding: capsule.offer.endpointBinding),
+              confirmation.fingerprint == capsule.offer.fingerprint,
+              confirmation.endpointBinding == capsule.offer.endpointBinding else {
             throw VaultMacProtocolError.unconfirmedServerIdentity
         }
         let clientNonce = try random.bytes(count: 32)
@@ -238,7 +274,18 @@ public enum VaultMacPairingClient {
 }
 
 public protocol VaultMacServerIdentityConfirming: Sendable {
-    func confirm(fingerprint: String, endpointBinding: String) async throws -> Bool
+    func confirm(fingerprint: String, endpointBinding: String) async throws
+        -> VaultMacServerIdentityConfirmation?
+}
+
+public struct VaultMacServerIdentityConfirmation: Equatable, Sendable {
+    public let fingerprint: String
+    public let endpointBinding: String
+    public let confirmedAt: Date
+    public init(fingerprint: String, endpointBinding: String, confirmedAt: Date = Date()) {
+        self.fingerprint = fingerprint; self.endpointBinding = endpointBinding
+        self.confirmedAt = confirmedAt
+    }
 }
 
 public struct VaultMacSessionChallenge: Codable, Equatable, Sendable {
@@ -279,14 +326,50 @@ public struct VaultMacSessionResponse: Codable, Equatable, Sendable {
     }
 }
 
+/// The server's proof of possession. A public challenge and a bare "accepted"
+/// marker are not authentication: an active peer could relay or forge them.
+/// This proof binds the complete session transcript and the client's proof.
+public struct VaultMacSessionAcceptance: Codable, Equatable, Sendable {
+    public let sessionID: UUID
+    public let proof: Data
+    public init(sessionID: UUID, proof: Data) throws {
+        guard proof.count == 32 else { throw VaultMacProtocolError.invalidChallenge }
+        self.sessionID = sessionID; self.proof = proof
+    }
+    public static func make(challenge: VaultMacSessionChallenge,
+                            response: VaultMacSessionResponse,
+                            credential: VaultMacPairingCredential,
+                            now: Date) throws -> Self {
+        _ = try VaultMacSessionKeys(challenge: challenge, response: response,
+                                    credential: credential, now: now)
+        return try Self(sessionID: challenge.sessionID,
+            proof: hmac(key: credential.secret.rawValue,
+                        data: serverAcceptanceTranscript(challenge: challenge, response: response)))
+    }
+    public func verify(challenge: VaultMacSessionChallenge,
+                       response: VaultMacSessionResponse,
+                       credential: VaultMacPairingCredential,
+                       now: Date) throws {
+        guard sessionID == challenge.sessionID else { throw VaultMacProtocolError.wrongSession }
+        let expected = try Self.make(challenge: challenge, response: response,
+                                     credential: credential, now: now)
+        guard constantTimeEqual(proof, expected.proof) else {
+            throw VaultMacProtocolError.authenticationFailed
+        }
+    }
+}
+
 public enum VaultMacHandshakeKind: String, Codable, Sendable { case challenge, response, accepted, rejected }
 public struct VaultMacHandshakeMessage: Codable, Equatable, Sendable {
     public let kind: VaultMacHandshakeKind
     public let challenge: VaultMacSessionChallenge?
     public let response: VaultMacSessionResponse?
+    public let acceptance: VaultMacSessionAcceptance?
     public init(kind: VaultMacHandshakeKind, challenge: VaultMacSessionChallenge? = nil,
-                response: VaultMacSessionResponse? = nil) {
+                response: VaultMacSessionResponse? = nil,
+                acceptance: VaultMacSessionAcceptance? = nil) {
         self.kind = kind; self.challenge = challenge; self.response = response
+        self.acceptance = acceptance
     }
 }
 
@@ -478,9 +561,9 @@ public protocol VaultMacDiscoveryBrowsing: Sendable {
 
 public struct VaultMacChunkPlan: Equatable, Sendable {
     public let chunkSize: Int; public let totalChunks: UInt32; public let byteCount: UInt64
-    public init(byteCount: UInt64, chunkSize: Int = 4 * 1024 * 1024) throws {
+    public init(byteCount: UInt64, chunkSize: Int = VaultMacProtocol.maximumTransferBytes) throws {
         guard byteCount > 0, byteCount <= VaultMacProtocol.maximumObjectBytes,
-              chunkSize > 0, chunkSize <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacProtocolError.objectTooLarge }
+              chunkSize > 0, chunkSize <= VaultMacProtocol.maximumTransferBytes else { throw VaultMacProtocolError.objectTooLarge }
         let divisor = UInt64(chunkSize), adjusted = try checkedAdd(byteCount, divisor - 1)
         let count = adjusted / divisor
         guard count > 0, count <= UInt64(UInt32.max) else { throw VaultMacProtocolError.objectTooLarge }
@@ -527,6 +610,13 @@ private func sessionTranscript(challenge: VaultMacSessionChallenge, clientNonce:
     data.append(challenge.serverBinding); data.append(Data(challenge.endpointBinding.utf8))
     var epoch = challenge.credentialEpoch.bigEndian
     withUnsafeBytes(of: &epoch) { data.append(contentsOf: $0) }; return data
+}
+private func serverAcceptanceTranscript(challenge: VaultMacSessionChallenge,
+                                        response: VaultMacSessionResponse) -> Data {
+    var data = Data("LunaVault-Mac-server-accept-v2".utf8)
+    data.append(sessionTranscript(challenge: challenge, clientNonce: response.clientNonce))
+    data.append(response.proof)
+    return data
 }
 private func hmac(key: Data, data: Data) -> Data {
     HMAC<SHA256>.authenticationCode(for: data, using: SymmetricKey(data: key)).withUnsafeBytes { Data($0) }

@@ -1,5 +1,8 @@
 import Foundation
 import LunaVaultBackend
+#if canImport(Darwin)
+import Darwin
+#endif
 
 #if canImport(Network)
 import Network
@@ -20,7 +23,8 @@ public struct VaultMacListenerLimits: Equatable, Sendable {
         self.maximumConnections = max(1, min(maximumConnections, 32))
         self.authenticationTimeout = max(1, min(authenticationTimeout, 30))
         self.idleTimeout = max(5, min(idleTimeout, 300))
-        self.maximumAuthenticationFailuresPerMinute = max(1, maximumAuthenticationFailuresPerMinute)
+        self.maximumAuthenticationFailuresPerMinute = max(1,
+            min(maximumAuthenticationFailuresPerMinute, 1_000))
     }
 }
 
@@ -36,9 +40,11 @@ private final class VaultMacConnectionGate: @unchecked Sendable {
             let global = failures["*", default: []].filter { now.timeIntervalSince($0) < 60 }
             failures[peer] = recent
             failures["*"] = global
-            guard active < limits.maximumConnections,
+            let (globalLimit, overflow) = limits.maximumAuthenticationFailuresPerMinute
+                .multipliedReportingOverflow(by: limits.maximumConnections)
+            guard !overflow, active < limits.maximumConnections,
                   recent.count < limits.maximumAuthenticationFailuresPerMinute,
-                  global.count < limits.maximumAuthenticationFailuresPerMinute * limits.maximumConnections else {
+                  global.count < globalLimit else {
                 return false
             }
             active += 1; return true
@@ -67,7 +73,7 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
     public init(bindHost: String, port: UInt16 = 49_200, advertiseName: String? = nil,
                 service: VaultMacCompanionService, authority: VaultMacSessionAuthority,
                 limits: VaultMacListenerLimits = VaultMacListenerLimits()) throws {
-        guard port > 0, !bindHost.isEmpty, bindHost != "0.0.0.0", bindHost != "::" else {
+        guard port > 0, Self.isConcreteBindHost(bindHost) else {
             throw VaultMacProtocolError.invalidEndpoint
         }
         let parameters = NWParameters.tcp
@@ -88,6 +94,36 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
     }
     public func stop() { listener.cancel() }
 
+    private static func isConcreteBindHost(_ rawValue: String) -> Bool {
+        let rawHost = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // Accept the bracket spelling commonly used for IPv6 literals only as
+        // presentation syntax. Canonicalize before checking wildcard forms so
+        // `[*]`, `[::]`, and `[0.0.0.0]` cannot evade the bind guard.
+        let host: String
+        if rawHost.hasPrefix("[") || rawHost.hasSuffix("]") {
+            guard rawHost.count >= 2, rawHost.first == "[", rawHost.last == "]" else { return false }
+            host = String(rawHost.dropFirst().dropLast())
+        } else {
+            host = rawHost
+        }
+        guard !host.isEmpty, host != "*", host != "0" else { return false }
+        if let bytes = ipv4Bytes(host), bytes.allSatisfy({ $0 == 0 }) { return false }
+#if canImport(Darwin)
+        var address = in6_addr()
+        if host.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 {
+            return !withUnsafeBytes(of: &address) { $0.allSatisfy { $0 == 0 } }
+        }
+        #endif
+        return true
+    }
+
+    private static func ipv4Bytes(_ value: String) -> [UInt8]? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }
+        let bytes = parts.compactMap { UInt8($0) }
+        return bytes.count == 4 ? bytes : nil
+    }
+
     private func accept(_ connection: NWConnection) {
         let peer = String(describing: connection.endpoint), now = Date()
         guard gate.begin(peer: peer, now: now) else { connection.cancel(); return }
@@ -105,8 +141,9 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
         let responseData = try await withTimeout(seconds: limits.authenticationTimeout) { try await channel.receive() }
         let message = try JSONDecoder().decode(VaultMacHandshakeMessage.self, from: responseData)
         guard message.kind == .response, let response = message.response else { throw VaultMacProtocolError.authenticationFailed }
-        let (_, keys) = try authority.accept(response)
-        try await channel.send(JSONEncoder().encode(VaultMacHandshakeMessage(kind: .accepted)))
+        let (_, keys, acceptance) = try authority.accept(response)
+        try await channel.send(JSONEncoder().encode(VaultMacHandshakeMessage(
+            kind: .accepted, acceptance: acceptance)))
         let receiver = VaultMacReplayGuard(key: keys.requestKey, sessionID: challenge.sessionID, direction: .request)
         let sender = VaultMacSendSequence(key: keys.responseKey, sessionID: challenge.sessionID, direction: .response)
         while true {

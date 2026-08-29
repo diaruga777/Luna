@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
@@ -10,6 +11,23 @@ public final class VaultMacNWFrameChannel: VaultMacFrameChannel, @unchecked Send
     private let queue = DispatchQueue(label: "com.hsanabria.luna.vault.mac-channel")
     public init(connection: NWConnection) { self.connection = connection }
     public func start() { connection.start(queue: queue) }
+    public func startAndWaitUntilReady() async throws {
+        let gate = VaultMacNWReadyGate()
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                gate.install(continuation)
+                connection.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready: gate.finish(.success(()))
+                    case .failed(let error): gate.finish(.failure(error))
+                    case .cancelled: gate.finish(.failure(VaultMacProtocolError.unavailable))
+                    default: break
+                    }
+                }
+                connection.start(queue: queue)
+            }
+        }, onCancel: { connection.cancel() })
+    }
     public func send(_ frame: Data) async throws {
         guard frame.count > 0, frame.count <= VaultMacProtocol.maximumFrameBytes + 1024 else { throw VaultMacProtocolError.frameTooLarge }
         var size = UInt32(frame.count).bigEndian
@@ -59,33 +77,38 @@ public struct VaultMacNWConnector: VaultMacFrameConnecting {
         let connection = NWConnection(host: NWEndpoint.Host(endpoint.host),
                                       port: NWEndpoint.Port(rawValue: endpoint.port)!, using: .tcp)
         let channel = VaultMacNWFrameChannel(connection: connection)
-        channel.start()
+        try await channel.startAndWaitUntilReady()
         return channel
     }
 }
 
 public final class VaultMacBonjourBrowser: VaultMacDiscoveryBrowsing, @unchecked Sendable {
-    public typealias BindingResolver = @Sendable (String) -> Data?
-    private let resolver: BindingResolver
-    private let port: UInt16
-    /// Bonjour's service endpoint does not expose a TCP port through the
-    /// lightweight record seam, so callers supply the port advertised by the
-    /// companion. The default matches the CLI, while custom listeners can use
-    /// their own port without silently connecting to 49,200.
-    public init(bindingResolver: @escaping BindingResolver, port: UInt16 = 49_200) {
-        self.resolver = bindingResolver
-        self.port = port > 0 ? port : 49_200
+    public struct Resolution: Equatable, Sendable {
+        public let serverBinding: Data
+        public let port: UInt16
+        public init(serverBinding: Data, port: UInt16) throws {
+            guard serverBinding.count == 32, port > 0 else {
+                throw VaultMacProtocolError.invalidEndpoint
+            }
+            self.serverBinding = serverBinding
+            self.port = port
+        }
+    }
+    public typealias ResolutionResolver = @Sendable (String) -> Resolution?
+    private let resolver: ResolutionResolver
+    public init(resolutionResolver: @escaping ResolutionResolver) {
+        self.resolver = resolutionResolver
     }
     public func records() -> AsyncThrowingStream<VaultMacDiscoveryRecord, Error> {
         AsyncThrowingStream { continuation in
-            let advertisedPort = self.port
             let browser = NWBrowser(for: .bonjour(type: VaultMacProtocol.serviceType, domain: nil), using: .tcp)
-            browser.browseResultsChangedHandler = { [resolver, advertisedPort] results, _ in
+            browser.browseResultsChangedHandler = { [resolver] results, _ in
                 for result in results {
                     guard case let .service(name, _, _, _) = result.endpoint,
-                          let binding = resolver(name),
-                          let endpoint = try? VaultMacEndpoint(host: "\(name).local", port: advertisedPort, reachability: .lanBonjour),
-                          let record = try? VaultMacDiscoveryRecord(displayName: name, endpoint: endpoint, serverBinding: binding) else { continue }
+                          let resolution = resolver(name),
+                          let endpoint = try? VaultMacEndpoint(host: "\(name).local", port: resolution.port, reachability: .lanBonjour),
+                          let record = try? VaultMacDiscoveryRecord(displayName: name, endpoint: endpoint,
+                                                                    serverBinding: resolution.serverBinding) else { continue }
                     continuation.yield(record)
                 }
             }
@@ -97,6 +120,31 @@ public final class VaultMacBonjourBrowser: VaultMacDiscoveryBrowsing, @unchecked
             browser.start(queue: DispatchQueue(label: "com.hsanabria.luna.vault.mac-browser"))
         }
     }
+}
+
+private final class VaultMacNWReadyGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var result: Result<Void, Error>?
+    func install(_ continuation: CheckedContinuation<Void, Error>) {
+        let immediate = lock.withLock { () -> Result<Void, Error>? in
+            if let result { return result }
+            self.continuation = continuation; return nil
+        }
+        if let immediate { continuation.resume(with: immediate) }
+    }
+    func finish(_ result: Result<Void, Error>) {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Error>? in
+            guard self.result == nil else { return nil }
+            self.result = result
+            let value = self.continuation; self.continuation = nil; return value
+        }
+        continuation?.resume(with: result)
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T { lock(); defer { unlock() }; return body() }
 }
 #endif
 
@@ -124,16 +172,24 @@ public actor VaultMacSessionClient {
         guard message.kind == .challenge, let challenge = message.challenge,
               challenge.serverBinding == credential.serverBinding,
               challenge.endpointBinding == credential.endpointBinding else { throw VaultMacProtocolError.authenticationFailed }
-        guard try await identityConfirmer.confirm(fingerprint: credential.fingerprint,
-                                                   endpointBinding: credential.endpointBinding) else {
+        guard let confirmation = try await identityConfirmer.confirm(
+                fingerprint: credential.fingerprint,
+                endpointBinding: credential.endpointBinding),
+              confirmation.fingerprint == credential.fingerprint,
+              confirmation.endpointBinding == credential.endpointBinding else {
             throw VaultMacProtocolError.unconfirmedServerIdentity
         }
         let response = try VaultMacSessionResponse.make(challenge: challenge, credential: credential,
             clientNonce: random.bytes(count: 32), now: now())
         try await channel.send(JSONEncoder().encode(VaultMacHandshakeMessage(kind: .response, response: response)))
         let accepted = try JSONDecoder().decode(VaultMacHandshakeMessage.self, from: try await channel.receive())
-        guard accepted.kind == .accepted else { throw VaultMacProtocolError.authenticationFailed }
-        let keys = try VaultMacSessionKeys(challenge: challenge, response: response, credential: credential, now: now())
+        guard accepted.kind == .accepted, let acceptance = accepted.acceptance else {
+            throw VaultMacProtocolError.authenticationFailed
+        }
+        try acceptance.verify(challenge: challenge, response: response,
+                              credential: credential, now: now())
+        let keys = try VaultMacSessionKeys(challenge: challenge, response: response,
+                                           credential: credential, now: now())
         sender = VaultMacSendSequence(key: keys.requestKey, sessionID: challenge.sessionID, direction: .request)
         receiver = VaultMacReplayGuard(key: keys.responseKey, sessionID: challenge.sessionID, direction: .response)
     }
@@ -149,55 +205,184 @@ public actor VaultMacSessionClient {
     public func close() { channel.close() }
 }
 
+public struct VaultMacClientTimeouts: Equatable, Sendable {
+    public let connect: TimeInterval
+    public let authenticate: TimeInterval
+    public let request: TimeInterval
+    public init(connect: TimeInterval = 10, authenticate: TimeInterval = 10,
+                request: TimeInterval = 60) {
+        self.connect = Self.clamp(connect, lower: 1, upper: 30, fallback: 10)
+        self.authenticate = Self.clamp(authenticate, lower: 1, upper: 30, fallback: 10)
+        self.request = Self.clamp(request, lower: 1, upper: 300, fallback: 60)
+    }
+    private static func clamp(_ value: TimeInterval, lower: TimeInterval,
+                              upper: TimeInterval, fallback: TimeInterval) -> TimeInterval {
+        value.isFinite ? min(max(value, lower), upper) : fallback
+    }
+}
+
+public struct VaultMacPendingUpload: Codable, Equatable, Sendable {
+    public let objectID: VaultObjectID
+    public let revision: VaultRevision
+    public let expectedRevision: UUID?
+    public let totalCiphertextBytes: UInt64
+    public let ciphertextDigest: Data
+    public init(objectID: VaultObjectID, revision: VaultRevision,
+                expectedRevision: UUID?, totalCiphertextBytes: UInt64,
+                ciphertextDigest: Data) throws {
+        guard revision.objectID == objectID, totalCiphertextBytes > 0,
+              totalCiphertextBytes <= VaultMacProtocol.maximumObjectBytes,
+              ciphertextDigest.count == 32 else { throw VaultMacProtocolError.invalidRequest }
+        self.objectID = objectID; self.revision = revision
+        self.expectedRevision = expectedRevision
+        self.totalCiphertextBytes = totalCiphertextBytes
+        self.ciphertextDigest = ciphertextDigest
+    }
+}
+
+public protocol VaultMacUploadStateStoring: Sendable {
+    func pendingUpload(for objectID: VaultObjectID) async throws -> VaultMacPendingUpload?
+    func savePendingUpload(_ upload: VaultMacPendingUpload) async throws
+    func removePendingUpload(for objectID: VaultObjectID) async throws
+}
+
+public actor VaultMacFileUploadStateStore: VaultMacUploadStateStoring {
+    public static let shared = VaultMacFileUploadStateStore(fileURL: {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("LunaVault", isDirectory: true)
+            .appendingPathComponent("mac-pending-uploads.json")
+    }())
+    private let fileURL: URL
+    private var loaded = false
+    private var uploads: [String: VaultMacPendingUpload] = [:]
+    public init(fileURL: URL) { self.fileURL = fileURL }
+    public func pendingUpload(for objectID: VaultObjectID) throws -> VaultMacPendingUpload? {
+        try loadIfNeeded(); return uploads[objectID.rawValue.uuidString]
+    }
+    public func savePendingUpload(_ upload: VaultMacPendingUpload) throws {
+        try loadIfNeeded()
+        guard uploads.count < 1_024 || uploads[upload.objectID.rawValue.uuidString] != nil else {
+            throw VaultMacProtocolError.unavailable
+        }
+        uploads[upload.objectID.rawValue.uuidString] = upload; try persist()
+    }
+    public func removePendingUpload(for objectID: VaultObjectID) throws {
+        try loadIfNeeded()
+        if uploads.removeValue(forKey: objectID.rawValue.uuidString) != nil { try persist() }
+    }
+    private func loadIfNeeded() throws {
+        guard !loaded else { return }; loaded = true
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        guard data.count <= 1_048_576 else { throw VaultMacProtocolError.invalidFrame }
+        let decoded = try JSONDecoder().decode([String: VaultMacPendingUpload].self, from: data)
+        guard decoded.count <= 1_024,
+              decoded.allSatisfy({ key, upload in
+                  key == upload.objectID.rawValue.uuidString
+              }) else { throw VaultMacProtocolError.invalidFrame }
+        uploads = decoded
+    }
+    private func persist() throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let data = try JSONEncoder().encode(uploads)
+        guard data.count <= 1_048_576 else { throw VaultMacProtocolError.frameTooLarge }
+        try data.write(to: fileURL, options: [.atomic])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+}
+
 public actor VaultMacRemoteBackend: VaultBackendTransport {
     private let endpoint: VaultMacEndpoint
     private let credential: VaultMacPairingCredential
     private let connector: VaultMacFrameConnecting
     private let identityConfirmer: VaultMacServerIdentityConfirming
     private let random: VaultRandomBytesGenerating
+    private let timeouts: VaultMacClientTimeouts
+    private let uploadStateStore: any VaultMacUploadStateStoring
     private var revisions: [VaultObjectID: VaultRevision] = [:]
 
     public init(endpoint: VaultMacEndpoint, credential: VaultMacPairingCredential,
                 connector: VaultMacFrameConnecting, identityConfirmer: VaultMacServerIdentityConfirming,
-                random: VaultRandomBytesGenerating = SystemVaultRandomBytes()) throws {
+                random: VaultRandomBytesGenerating = SystemVaultRandomBytes(),
+                timeouts: VaultMacClientTimeouts = VaultMacClientTimeouts(),
+                uploadStateStore: any VaultMacUploadStateStoring = VaultMacFileUploadStateStore.shared) throws {
         guard endpoint.binding == credential.endpointBinding else { throw VaultMacProtocolError.invalidEndpoint }
         self.endpoint = endpoint; self.credential = credential; self.connector = connector
-        self.identityConfirmer = identityConfirmer; self.random = random
+        self.identityConfirmer = identityConfirmer; self.random = random; self.timeouts = timeouts
+        self.uploadStateStore = uploadStateStore
     }
 
     public func putCiphertext(_ ciphertext: Data, for id: VaultObjectID) async throws {
         let plan = try VaultMacChunkPlan(byteCount: UInt64(ciphertext.count))
-        let previous = try await remoteRevision(for: id)
-        let revision = VaultRevision(objectID: id, logicalTime: Int64(Date().timeIntervalSince1970 * 1_000), deviceID: "iphone")
+        let digest = Data(SHA256.hash(data: ciphertext))
+        let pending = try await uploadStateStore.pendingUpload(for: id)
+        let upload: VaultMacPendingUpload
+        if let pending {
+            guard pending.totalCiphertextBytes == UInt64(ciphertext.count),
+                  pending.ciphertextDigest == digest else {
+                throw VaultMacProtocolError.conflictingRevision
+            }
+            upload = pending
+        } else {
+            let previous = try await remoteRevision(for: id)
+            let revision = VaultRevision(objectID: id,
+                logicalTime: try nextLogicalTime(after: previous?.logicalTime), deviceID: "iphone")
+            upload = try VaultMacPendingUpload(objectID: id, revision: revision,
+                expectedRevision: previous?.revision, totalCiphertextBytes: UInt64(ciphertext.count),
+                ciphertextDigest: digest)
+            try await uploadStateStore.savePendingUpload(upload)
+        }
         let client = try await makeClient()
         defer { Task { await client.close() } }
         for index in 0..<plan.totalChunks {
             let range = try plan.range(for: index)
-            let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: revision,
-                expectedRevision: previous?.revision, chunkIndex: index, totalChunks: plan.totalChunks,
+            let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
+                expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
                 totalCiphertextBytes: UInt64(ciphertext.count),
-                idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id, revision: revision.revision, chunkIndex: index),
+                idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id,
+                    revision: upload.revision.revision, chunkIndex: index),
                 ciphertext: Data(ciphertext[range]))
-            let response = try await client.request(request)
-            guard response.status == .partial || response.status == .accepted else { throw VaultMacProtocolError.conflictingRevision }
+            let response = try await timedRequest(request, client: client)
+            guard response.status == .partial || response.status == .accepted else {
+                // A revision conflict means the durable pending revision can
+                // never be accepted by this server state. Drop only that
+                // stale marker; transient quota/unavailable errors remain
+                // resumable with the same revision on the next attempt.
+                if response.status == .conflict {
+                    try? await uploadStateStore.removePendingUpload(for: id)
+                }
+                throw VaultMacProtocolError.conflictingRevision
+            }
         }
-        revisions[id] = revision
+        revisions[id] = upload.revision
+        try await uploadStateStore.removePendingUpload(for: id)
     }
 
     public func ciphertext(for id: VaultObjectID) async throws -> Data? {
         let client = try await makeClient(); defer { Task { await client.close() } }
-        let stat = try await client.request(VaultMacRequest(operation: .stat, objectID: id, idempotencyKey: UUID().uuidString))
-        guard stat.status != .notFound else { return nil }
+        let stat = try await timedRequest(VaultMacRequest(operation: .stat,
+            objectID: id, idempotencyKey: UUID().uuidString), client: client)
+        if stat.status == .notFound {
+            if let revision = stat.revision { revisions[id] = revision }
+            return nil
+        }
         guard stat.status == .accepted, let total = stat.totalCiphertextBytes,
+              let statRevision = stat.revision, total > 0,
               total <= VaultMacProtocol.maximumObjectBytes else { throw VaultMacProtocolError.invalidFrame }
+        revisions[id] = statRevision
         var output = Data(); if total <= UInt64(Int.max) { output.reserveCapacity(Int(total)) }
         var offset: UInt64 = 0
         while offset < total {
-            let length = min(UInt64(VaultMacProtocol.maximumFrameBytes), total - offset)
-            let response = try await client.request(VaultMacRequest(operation: .readRange, objectID: id,
-                offset: offset, length: length, idempotencyKey: UUID().uuidString))
+            let length = min(UInt64(VaultMacProtocol.maximumTransferBytes), total - offset)
+            let response = try await timedRequest(VaultMacRequest(operation: .readRange, objectID: id,
+                offset: offset, length: length, idempotencyKey: UUID().uuidString), client: client)
             guard response.status == .accepted, let bytes = response.ciphertext,
-                  UInt64(bytes.count) == length else { throw VaultMacProtocolError.invalidFrame }
+                  response.revision == statRevision,
+                  UInt64(bytes.count) == length else { throw VaultMacProtocolError.conflictingRevision }
             output.append(bytes); offset += length
         }
         return output
@@ -205,11 +390,11 @@ public actor VaultMacRemoteBackend: VaultBackendTransport {
 
     public func removeCiphertext(for id: VaultObjectID) async throws {
         guard let current = try await remoteRevision(for: id) else { return }
-        let tombstone = VaultRevision(objectID: id, logicalTime: max(current.logicalTime + 1,
-            Int64(Date().timeIntervalSince1970 * 1_000)), deviceID: "iphone")
+        let tombstone = VaultRevision(objectID: id,
+            logicalTime: try nextLogicalTime(after: current.logicalTime), deviceID: "iphone")
         let client = try await makeClient(); defer { Task { await client.close() } }
-        let response = try await client.request(VaultMacRequest(operation: .delete, objectID: id,
-            revision: tombstone, expectedRevision: current.revision, idempotencyKey: UUID().uuidString))
+        let response = try await timedRequest(VaultMacRequest(operation: .delete, objectID: id,
+            revision: tombstone, expectedRevision: current.revision, idempotencyKey: UUID().uuidString), client: client)
         guard response.status == .accepted || response.status == .notFound else { throw VaultMacProtocolError.conflictingRevision }
         revisions[id] = tombstone
     }
@@ -217,14 +402,56 @@ public actor VaultMacRemoteBackend: VaultBackendTransport {
     private func remoteRevision(for id: VaultObjectID) async throws -> VaultRevision? {
         if let revision = revisions[id] { return revision }
         let client = try await makeClient(); defer { Task { await client.close() } }
-        let stat = try await client.request(VaultMacRequest(operation: .stat, objectID: id, idempotencyKey: UUID().uuidString))
-        guard stat.status != .notFound, let revision = stat.revision else { return nil }
+        let stat = try await timedRequest(VaultMacRequest(operation: .stat,
+            objectID: id, idempotencyKey: UUID().uuidString), client: client)
+        guard stat.status == .accepted || stat.status == .notFound,
+              let revision = stat.revision else { return nil }
         revisions[id] = revision; return revision
     }
 
     private func makeClient() async throws -> VaultMacSessionClient {
-        let client = VaultMacSessionClient(channel: try await connector.connect(to: endpoint),
+        let channel = try await vaultMacWithTimeout(seconds: timeouts.connect) {
+            try await self.connector.connect(to: self.endpoint)
+        }
+        let client = VaultMacSessionClient(channel: channel,
             credential: credential, identityConfirmer: identityConfirmer, random: random)
-        try await client.authenticate(); return client
+        do {
+            try await vaultMacWithTimeout(seconds: timeouts.authenticate) {
+                try await client.authenticate()
+            }
+            return client
+        } catch {
+            await client.close(); throw error
+        }
+    }
+
+    private func timedRequest(_ request: VaultMacRequest,
+                              client: VaultMacSessionClient) async throws -> VaultMacResponse {
+        try await vaultMacWithTimeout(seconds: timeouts.request) {
+            try await client.request(request)
+        }
+    }
+
+    private func nextLogicalTime(after previous: Int64?) throws -> Int64 {
+        let milliseconds = Date().timeIntervalSince1970 * 1_000
+        let wallClock = milliseconds.isFinite && milliseconds < Double(Int64.max)
+            ? Int64(milliseconds) : Int64.max
+        guard let previous else { return wallClock }
+        let (successor, overflow) = previous.addingReportingOverflow(1)
+        guard !overflow else { throw VaultMacProtocolError.sequenceOverflow }
+        return max(successor, wallClock)
+    }
+}
+
+private func vaultMacWithTimeout<T: Sendable>(seconds: TimeInterval,
+                                               operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw VaultMacProtocolError.expired
+        }
+        guard let result = try await group.next() else { throw VaultMacProtocolError.unavailable }
+        group.cancelAll(); return result
     }
 }

@@ -32,7 +32,9 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let challenge = try authority.issue(now: now)
         let response = try VaultMacSessionResponse.make(challenge: challenge, credential: credential,
             clientNonce: Data(repeating: 5, count: 32), now: now)
-        let (_, keys) = try authority.accept(response, now: now)
+        let (_, keys, acceptance) = try authority.accept(response, now: now)
+        XCTAssertNoThrow(try acceptance.verify(challenge: challenge, response: response,
+                                                credential: credential, now: now))
         XCTAssertNotEqual(keys.requestKey, keys.responseKey)
         XCTAssertThrowsError(try authority.accept(response, now: now))
 
@@ -65,6 +67,37 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertNoThrow(try authority.accept(valid, now: now))
     }
 
+    func testServerAcceptanceProofRejectsMITMAndRotationInvalidatesOldEpoch() async throws {
+        let now = Date(timeIntervalSince1970: 20), credential = try makeCredential(now: now)
+        let authority = VaultMacSessionAuthority(credential: credential,
+            random: DeterministicMacRandom(seed: 15))
+        let connector = LoopbackMacConnector(service: nil, authority: authority,
+                                             tamperAcceptance: true)
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let channel = try await connector.connect(to: endpoint)
+        let client = VaultMacSessionClient(channel: channel, credential: credential,
+            identityConfirmer: AlwaysConfirmMacIdentity(), random: DeterministicMacRandom(seed: 16),
+            now: { now })
+        do {
+            try await client.authenticate()
+            XCTFail("accepted a server without the credential-bound transcript proof")
+        } catch {
+            XCTAssertEqual(error as? VaultMacProtocolError, .authenticationFailed)
+        }
+
+        XCTAssertThrowsError(try authority.rotate(to: credential))
+        let lower = try VaultMacPairingCredential(pairingID: credential.pairingID,
+            secret: credential.secret, serverBinding: credential.serverBinding,
+            endpointBinding: credential.endpointBinding, epoch: 1, createdAt: now)
+        XCTAssertThrowsError(try authority.rotate(to: lower))
+        let replacement = try credential.rotated(secret: VaultMacPairingSecret(
+            rawValue: Data(repeating: 19, count: 32)), serverBinding: Data(repeating: 20, count: 32),
+            endpointBinding: credential.endpointBinding, now: now)
+        try authority.rotate(to: replacement)
+        XCTAssertFalse(authority.isCredentialUsable(epoch: credential.epoch))
+        XCTAssertTrue(authority.isCredentialUsable(epoch: replacement.epoch))
+    }
+
     func testEndpointValidationOnlyAcceptsTailscaleOrBonjourShapes() throws {
         XCTAssertNoThrow(try VaultMacEndpoint(host: "vault.example.ts.net", port: 49_200, reachability: .tailscale))
         XCTAssertNoThrow(try VaultMacEndpoint(host: "100.64.0.1", port: 49_200, reachability: .tailscale))
@@ -75,6 +108,9 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertThrowsError(try VaultMacEndpoint(host: "fd7a:115c:a1e0:broken", port: 49_200, reachability: .tailscale))
         XCTAssertNoThrow(try VaultMacEndpoint(binding: "tailscale:vault.example.ts.net:49200"))
         XCTAssertThrowsError(try VaultMacEndpoint(binding: "tailscale:8.8.8.8:49200"))
+        let resolution = try VaultMacBonjourBrowser.Resolution(serverBinding: Data(repeating: 1, count: 32),
+                                                               port: 55_555)
+        XCTAssertEqual(resolution.port, 55_555, "Bonjour must use the resolved SRV port")
     }
 
     func testCredentialAndDirectoriesAreOwnerOnlyAndRevocable() throws {
@@ -136,6 +172,21 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertThrowsError(try VaultMacCompanionStore(rootURL: root, credential: makeCredential(now: Date(), fill: 3)))
     }
 
+    func testExpectedManifestSymlinkFailsRecoveryClosed() throws {
+        #if canImport(Darwin)
+        let root = temporary("manifest-symlink"), outside = temporary("outside-manifest")
+        defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
+        let credential = try makeCredential(now: Date())
+        _ = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let manifest = root.appendingPathComponent("manifest.v2")
+        try FileManager.default.removeItem(at: manifest)
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: manifest, withDestinationURL: outside)
+        XCTAssertThrowsError(try VaultMacCompanionStore(rootURL: root, credential: credential))
+        XCTAssertEqual(try Data(contentsOf: outside), Data("outside".utf8))
+        #endif
+    }
+
     func testQuotaAndShapeValidationOccurBeforePartialWrite() async throws {
         let root = temporary("quota"); defer { try? FileManager.default.removeItem(at: root) }
         let store = try VaultMacCompanionStore(rootURL: root, credential: makeCredential(now: Date()),
@@ -179,6 +230,24 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertEqual(replacementResponse.status, .accepted)
     }
 
+    func testTombstoneRevisionSurvivesRestart() async throws {
+        let root = temporary("tombstone-restart"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let live = VaultRevision(objectID: objectID, logicalTime: 10, deviceID: "phone")
+        _ = try await store.handle(VaultMacRequest(operation: .putChunk, objectID: objectID,
+            revision: live, chunkIndex: 0, totalChunks: 1, totalCiphertextBytes: 1,
+            idempotencyKey: "restart-live", ciphertext: Data([1])))
+        let tombstone = VaultRevision(objectID: objectID, logicalTime: 11, deviceID: "phone")
+        _ = try await store.handle(VaultMacRequest(operation: .delete, objectID: objectID,
+            revision: tombstone, expectedRevision: live.revision, idempotencyKey: "restart-delete"))
+        let reopened = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let stat = try await reopened.handle(VaultMacRequest(operation: .stat, objectID: objectID,
+            idempotencyKey: "restart-stat"))
+        XCTAssertEqual(stat.status, .notFound)
+        XCTAssertEqual(stat.revision, tombstone)
+    }
+
     func testSymlinkRootIsRejected() throws {
         #if canImport(Darwin)
         let parent = temporary("symlink"), real = parent.appendingPathComponent("real"), link = parent.appendingPathComponent("link")
@@ -207,8 +276,84 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         try await backend.removeCiphertext(for: objectID)
         let deletedCiphertext = try await backend.ciphertext(for: objectID)
         XCTAssertNil(deletedCiphertext)
+        let restartedBackend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 10),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: root.appendingPathComponent("retry-state.json")))
+        let replacement = Data([4, 3, 2, 1])
+        try await restartedBackend.putCiphertext(replacement, for: objectID)
+        let restartedCiphertext = try await restartedBackend.ciphertext(for: objectID)
+        XCTAssertEqual(restartedCiphertext, replacement)
         let connectionCount = await connector.connectionCount
         XCTAssertGreaterThanOrEqual(connectionCount, 4)
+    }
+
+    func testLargeReadUsesMultipleSafeRangesWithoutPersistingCiphertext() async throws {
+        let root = temporary("large-ranges"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let service = VaultMacCompanionService(store: store)
+        let connector = LoopbackMacConnector(service: service,
+            authority: VaultMacSessionAuthority(credential: credential,
+                                                random: DeterministicMacRandom(seed: 21)))
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let state = VaultMacFileUploadStateStore(fileURL: root.appendingPathComponent("upload-state.json"))
+        let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 22), uploadStateStore: state)
+        let size = VaultMacProtocol.maximumTransferBytes * 2 + 7
+        let bytes = Data((0..<size).map { UInt8($0 % 251) })
+        try await backend.putCiphertext(bytes, for: objectID)
+        let downloaded = try await backend.ciphertext(for: objectID)
+        XCTAssertEqual(downloaded, bytes)
+        let manifestSize = try FileManager.default.attributesOfItem(
+            atPath: root.appendingPathComponent("manifest.v2").path)[.size] as? NSNumber
+        XCTAssertLessThan(manifestSize?.intValue ?? .max, 256 * 1024,
+                          "range ciphertext must not be retained in the idempotency manifest")
+    }
+
+    func testInterruptedUploadResumesDurableRevisionAcrossBackendRestart() async throws {
+        let root = temporary("resume"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let connector = LoopbackMacConnector(service: VaultMacCompanionService(store: store),
+            authority: VaultMacSessionAuthority(credential: credential,
+                                                random: DeterministicMacRandom(seed: 31)),
+            failAfterFirstPutChunkOnce: true)
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let stateURL = root.appendingPathComponent("client-state.json")
+        let bytes = Data(repeating: 0x5a, count: VaultMacProtocol.maximumTransferBytes + 1)
+        let first = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 32),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: stateURL))
+        do { try await first.putCiphertext(bytes, for: objectID); XCTFail("upload was not interrupted") }
+        catch { XCTAssertEqual(error as? VaultMacProtocolError, .unavailable) }
+        let pendingBeforeRestart = try await VaultMacFileUploadStateStore(fileURL: stateURL)
+            .pendingUpload(for: objectID)
+        XCTAssertNotNil(pendingBeforeRestart)
+        let restarted = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 33),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: stateURL))
+        try await restarted.putCiphertext(bytes, for: objectID)
+        let storedRevision = await store.currentRevision(for: objectID)
+        XCTAssertEqual(storedRevision, pendingBeforeRestart?.revision)
+        let downloaded = try await restarted.ciphertext(for: objectID)
+        XCTAssertEqual(downloaded, bytes)
+    }
+
+    func testClientConnectTimeoutIsBounded() async throws {
+        let credential = try makeCredential(now: Date())
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: HangingMacConnector(), identityConfirmer: AlwaysConfirmMacIdentity(),
+            timeouts: VaultMacClientTimeouts(connect: 1, authenticate: 1, request: 1),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: temporary("timeout-state")))
+        let started = Date()
+        do { _ = try await backend.ciphertext(for: objectID); XCTFail("connect did not time out") }
+        catch { XCTAssertEqual(error as? VaultMacProtocolError, .expired) }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2.5)
     }
 
     private func makeCredential(now: Date, fill: UInt8 = 7) throws -> VaultMacPairingCredential {
@@ -235,7 +380,10 @@ private final class DeterministicMacRandom: VaultRandomBytesGenerating, @uncheck
     func bytes(count: Int) throws -> Data { lock.lock(); defer { lock.unlock() }; defer { value &+= 1 }; return Data(repeating: value, count: count) }
 }
 private struct AlwaysConfirmMacIdentity: VaultMacServerIdentityConfirming {
-    func confirm(fingerprint: String, endpointBinding: String) async throws -> Bool { true }
+    func confirm(fingerprint: String, endpointBinding: String) async throws
+        -> VaultMacServerIdentityConfirmation? {
+        VaultMacServerIdentityConfirmation(fingerprint: fingerprint, endpointBinding: endpointBinding)
+    }
 }
 
 private actor LoopbackPipe {
@@ -256,22 +404,39 @@ private final class LoopbackChannel: VaultMacFrameChannel, @unchecked Sendable {
     func close() { Task { await incoming.close(); await outgoing.close() } }
 }
 private actor LoopbackMacConnector: VaultMacFrameConnecting {
-    let service: VaultMacCompanionService, authority: VaultMacSessionAuthority
+    let service: VaultMacCompanionService?, authority: VaultMacSessionAuthority
+    let tamperAcceptance: Bool
+    private var failAfterFirstPutChunkOnce: Bool
     private(set) var connectionCount = 0
-    init(service: VaultMacCompanionService, authority: VaultMacSessionAuthority) { self.service = service; self.authority = authority }
+    init(service: VaultMacCompanionService?, authority: VaultMacSessionAuthority,
+         tamperAcceptance: Bool = false, failAfterFirstPutChunkOnce: Bool = false) {
+        self.service = service; self.authority = authority
+        self.tamperAcceptance = tamperAcceptance
+        self.failAfterFirstPutChunkOnce = failAfterFirstPutChunkOnce
+    }
+    private func consumePutInterruption() -> Bool {
+        guard failAfterFirstPutChunkOnce else { return false }
+        failAfterFirstPutChunkOnce = false; return true
+    }
     func connect(to endpoint: VaultMacEndpoint) async throws -> VaultMacFrameChannel {
         connectionCount += 1
         let clientInbound = LoopbackPipe(), serverInbound = LoopbackPipe()
         let client = LoopbackChannel(incoming: clientInbound, outgoing: serverInbound)
         let server = LoopbackChannel(incoming: serverInbound, outgoing: clientInbound)
-        Task { [service, authority] in
+        Task { [service, authority, tamperAcceptance] in
             do {
                 let challenge = try authority.issue()
                 try await server.send(JSONEncoder().encode(VaultMacHandshakeMessage(kind: .challenge, challenge: challenge)))
                 let message = try JSONDecoder().decode(VaultMacHandshakeMessage.self, from: try await server.receive())
                 guard let response = message.response else { throw VaultMacProtocolError.authenticationFailed }
-                let (_, keys) = try authority.accept(response)
-                try await server.send(JSONEncoder().encode(VaultMacHandshakeMessage(kind: .accepted)))
+                let (_, keys, validAcceptance) = try authority.accept(response)
+                let acceptance = tamperAcceptance
+                    ? try VaultMacSessionAcceptance(sessionID: validAcceptance.sessionID,
+                        proof: Data(repeating: 0, count: 32))
+                    : validAcceptance
+                try await server.send(JSONEncoder().encode(VaultMacHandshakeMessage(
+                    kind: .accepted, acceptance: acceptance)))
+                guard let service else { server.close(); return }
                 let receiver = VaultMacReplayGuard(key: keys.requestKey, sessionID: challenge.sessionID, direction: .request)
                 let sender = VaultMacSendSequence(key: keys.responseKey, sessionID: challenge.sessionID, direction: .response)
                 while true {
@@ -279,9 +444,19 @@ private actor LoopbackMacConnector: VaultMacFrameConnecting {
                     let request = try JSONDecoder().decode(VaultMacRequest.self, from: receiver.open(frame))
                     let response = await service.handle(request)
                     try await server.send(JSONEncoder().encode(try sender.seal(JSONEncoder().encode(response))))
+                    if request.operation == .putChunk, await self.consumePutInterruption() {
+                        server.close(); return
+                    }
                 }
             } catch { server.close() }
         }
         return client
+    }
+}
+
+private struct HangingMacConnector: VaultMacFrameConnecting {
+    func connect(to endpoint: VaultMacEndpoint) async throws -> VaultMacFrameChannel {
+        try await Task.sleep(nanoseconds: 60_000_000_000)
+        throw VaultMacProtocolError.unavailable
     }
 }

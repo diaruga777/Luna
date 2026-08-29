@@ -89,8 +89,9 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
                       !record.isTombstone, record.revision == payload.identity.revision else {
                     throw VaultSyncError.backend(.staleVersion)
                 }
+                let generation = try payload.verified(rootKey: rootKey).authenticatedGeneration
                 _ = try repository.writeContent(plaintext, for: payload.identity.objectID,
-                                                authenticatedGeneration: payload.authenticatedGeneration)
+                                                authenticatedGeneration: generation)
             case .metadata,.manifest,.index:
                 let kind: VaultEncryptedArtifact.Kind = payload.identity.kind == .index ? .index : .manifest
                 let artifact = try VaultEncryptedArtifact(
@@ -127,10 +128,11 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
                           !record.isTombstone, record.revision == payload.identity.revision else {
                         throw VaultSyncError.backend(.staleVersion)
                     }
+                    let verified = try payload.verified(rootKey: rootKey)
                     _ = try repository.writeContent(from: temporary,
                                                     expectedByteCount: Int64(payload.plaintextByteCount),
                                                     for: payload.identity.objectID,
-                                                    authenticatedGeneration: payload.authenticatedGeneration)
+                                                    authenticatedGeneration: verified.authenticatedGeneration)
                 case .metadata, .manifest, .index:
                     // Artifacts remain encrypted at rest in their repository
                     // table; they are small by construction and can use the

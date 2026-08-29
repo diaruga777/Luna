@@ -575,6 +575,28 @@ public final class VaultRepository: @unchecked Sendable {
                      .text(lease.revision.uuidString), .text(lease.generation)])
         }
     }
+    /// Extends only the exact lease token and its bound revision/generation.
+    /// A stale token cannot revive a lease after it has been ended or replaced.
+    @discardableResult
+    public func renewPreviewLease(_ lease: VaultPreviewLease,
+                                  duration: TimeInterval = 15 * 60,
+                                  now: Date = Date()) throws -> VaultPreviewLease {
+        guard duration.isFinite, duration > 0, duration <= 24 * 60 * 60 else {
+            throw VaultStorageError.invalidTransition
+        }
+        let expiry = now.addingTimeInterval(duration)
+        let renewed = VaultPreviewLease(objectID: lease.objectID, revision: lease.revision,
+                                        generation: lease.generation, token: lease.token,
+                                        expiresAt: expiry)
+        try sync {
+            try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)])
+            try run("UPDATE preview_leases SET expires_at=? WHERE object_id=? AND token=? AND revision=? AND generation=?",
+                    [.double(expiry.timeIntervalSinceReferenceDate), .text(lease.objectID.rawValue.uuidString),
+                     .text(lease.token.uuidString), .text(lease.revision.uuidString), .text(lease.generation)])
+            guard sqlite3_changes(db) == 1 else { throw VaultStorageError.invalidTransition }
+        }
+        return renewed
+    }
     public func reclaimExpiredPreviewLeases(now: Date = Date()) throws {
         try sync { try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)]) }
     }

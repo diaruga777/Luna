@@ -208,6 +208,12 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         try repository.endPreviewLease(lease)
     }
 
+    @discardableResult
+    public func renewPreview(_ lease: VaultPreviewLease,
+                             duration: TimeInterval = 15 * 60) throws -> VaultPreviewLease {
+        try repository.renewPreviewLease(lease, duration: duration)
+    }
+
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {
         let lower = fileName.lowercased()
         let ext = URL(fileURLWithPath: lower).pathExtension

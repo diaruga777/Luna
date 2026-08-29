@@ -55,9 +55,6 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
     public let identity: VaultRemoteObjectIdentity
     public let rootVersion: UInt32
     public let encryptedFrames: [Data]
-    public var authenticatedGeneration: VaultAuthenticatedGeneration {
-        VaultAuthenticatedGeneration(identity.generation)
-    }
 
     public init(vaultID: String, kind: VaultRemoteObjectKind,
                 encryptedFrames: [Data]) throws {
@@ -216,5 +213,8 @@ public struct VaultVerifiedCiphertext: Equatable, Sendable {
     public var vaultID: String { payload.vaultID }
     public var rootVersion: UInt32 { payload.rootVersion }
     public var encryptedFrames: [Data] { payload.encryptedFrames }
+    public var authenticatedGeneration: VaultAuthenticatedGeneration {
+        VaultAuthenticatedGeneration(identity.generation)
+    }
     public func encoded() throws -> Data { try payload.encoded() }
 }

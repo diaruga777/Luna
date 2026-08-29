@@ -331,7 +331,8 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
     /// protocol tests.
     private func putCiphertext(_ ciphertext: Data, for id: VaultObjectID,
                                revision: VaultRevision,
-                               expectedRevision: UUID?) async throws {
+                               expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
+                               generation: String? = nil) async throws {
         let plan = try VaultMacChunkPlan(byteCount: UInt64(ciphertext.count))
         let digest = Data(SHA256.hash(data: ciphertext))
         let pending = try await uploadStateStore.pendingUpload(for: id)
@@ -357,7 +358,8 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 totalCiphertextBytes: UInt64(ciphertext.count),
                 idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id,
                     revision: upload.revision.revision, chunkIndex: index),
-                ciphertext: Data(ciphertext[range]))
+                ciphertext: Data(ciphertext[range]), objectKind: kind,
+                payloadGeneration: generation)
             let response = try await timedRequest(request, client: client)
             guard response.status == .partial || response.status == .accepted else {
                 // A revision conflict means the durable pending revision can
@@ -376,7 +378,8 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
 
     private func putCiphertextFile(_ fileURL: URL, byteCount: UInt64,
                                    for id: VaultObjectID, revision: VaultRevision,
-                                   expectedRevision: UUID?) async throws {
+                                   expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
+                                   generation: String? = nil) async throws {
         let plan = try VaultMacChunkPlan(byteCount: byteCount)
         let digest = try SHA256.hashFile(at: fileURL, byteCount: byteCount)
         // Keep one no-follow descriptor for the complete upload. A pathname
@@ -408,7 +411,8 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
                 totalCiphertextBytes: byteCount,
                 idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id,
-                    revision: upload.revision.revision, chunkIndex: index), ciphertext: chunk)
+                    revision: upload.revision.revision, chunkIndex: index), ciphertext: chunk,
+                objectKind: kind, payloadGeneration: generation)
             let response = try await timedRequest(request, client: client)
             guard response.status == .partial || response.status == .accepted else {
                 if response.status == .conflict { try? await uploadStateStore.removePendingUpload(for: id) }
@@ -530,7 +534,8 @@ extension VaultMacRemoteBackend {
         let revision = VaultRevision(objectID: identity.objectID,
             revision: identity.revision, logicalTime: logicalTime, deviceID: "iphone")
         try await putCiphertext(try payload.encoded(), for: identity.objectID,
-                                revision: revision, expectedRevision: expectedRevision)
+                                revision: revision, expectedRevision: expectedRevision,
+                                kind: identity.kind, generation: identity.generation)
         return .current
     }
 
@@ -543,7 +548,8 @@ extension VaultMacRemoteBackend {
         do {
             try await putCiphertextFile(payload.fileURL,
                 byteCount: payload.ciphertextByteCount, for: payload.identity.objectID,
-                revision: remoteRevision, expectedRevision: expectedRevision)
+                revision: remoteRevision, expectedRevision: expectedRevision,
+                kind: payload.identity.kind, generation: payload.identity.generation)
             return .current
         } catch let error as VaultBackendError { throw error }
         catch { throw VaultBackendError.io }
@@ -571,7 +577,9 @@ extension VaultMacRemoteBackend {
         }
         guard let total = stat.totalCiphertextBytes, total > 0,
               total <= VaultMacProtocol.maximumObjectBytes,
-              stat.revision?.revision == identity.revision else {
+              stat.revision?.revision == identity.revision,
+              stat.objectKind == identity.kind,
+              stat.payloadGeneration == identity.generation else {
             throw VaultBackendError.staleVersion
         }
         let temporary = FileManager.default.temporaryDirectory
@@ -589,6 +597,8 @@ extension VaultMacRemoteBackend {
                     objectID: identity.objectID, offset: offset, length: length,
                     idempotencyKey: UUID().uuidString), client: client)
                 guard response.status == .accepted, response.revision?.revision == identity.revision,
+                      response.objectKind == identity.kind,
+                      response.payloadGeneration == identity.generation,
                       let bytes = response.ciphertext, UInt64(bytes.count) == length else {
                     throw VaultBackendError.conflict
                 }

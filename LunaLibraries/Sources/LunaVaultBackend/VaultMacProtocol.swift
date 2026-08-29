@@ -50,14 +50,18 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
     /// An already encrypted Vault envelope or byte range. There is no filename,
     /// MIME type, plaintext metadata, index term, or root-key field.
     public let ciphertext: Data?
+    public let objectKind: VaultRemoteObjectKind?
+    public let payloadGeneration: String?
 
     public init(operation: VaultMacOperation, objectID: VaultObjectID,
                 revision: VaultRevision? = nil, expectedRevision: UUID? = nil,
                 chunkIndex: UInt32? = nil, totalChunks: UInt32? = nil,
                 totalCiphertextBytes: UInt64? = nil, offset: UInt64? = nil,
                 length: UInt64? = nil, idempotencyKey: String,
-                ciphertext: Data? = nil) {
+                ciphertext: Data? = nil, objectKind: VaultRemoteObjectKind? = nil,
+                payloadGeneration: String? = nil) {
         self.operation = operation; self.objectID = objectID
+        self.objectKind = objectKind; self.payloadGeneration = payloadGeneration
         self.revision = revision; self.expectedRevision = expectedRevision
         self.chunkIndex = chunkIndex; self.totalChunks = totalChunks
         self.totalCiphertextBytes = totalCiphertextBytes
@@ -77,6 +81,11 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
                   let ciphertext, !ciphertext.isEmpty,
                   ciphertext.count <= VaultMacProtocol.maximumTransferBytes,
                   UInt64(ciphertext.count) <= totalCiphertextBytes else { throw VaultMacProtocolError.invalidRequest }
+            if let payloadGeneration {
+                guard payloadGeneration.count == 64,
+                      payloadGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { throw VaultMacProtocolError.invalidRequest }
+            }
+            guard (objectKind == nil) == (payloadGeneration == nil) else { throw VaultMacProtocolError.invalidRequest }
         case .stat:
             guard revision == nil, ciphertext == nil, offset == nil, length == nil else { throw VaultMacProtocolError.invalidRequest }
         case .readRange:
@@ -105,17 +114,21 @@ public struct VaultMacResponse: Codable, Equatable, Sendable {
     public let totalCiphertextBytes: UInt64?
     public let ciphertext: Data?
     public let message: String?
+    public let objectKind: VaultRemoteObjectKind?
+    public let payloadGeneration: String?
 
     public init(status: VaultMacResponseStatus, objectID: VaultObjectID,
                 currentRevision: UUID? = nil, revision: VaultRevision? = nil,
                 receivedChunks: [UInt32] = [],
                 totalCiphertextBytes: UInt64? = nil, ciphertext: Data? = nil,
-                message: String? = nil) {
+                message: String? = nil, objectKind: VaultRemoteObjectKind? = nil,
+                payloadGeneration: String? = nil) {
         self.status = status; self.objectID = objectID
         self.currentRevision = currentRevision ?? revision?.revision; self.revision = revision
         self.receivedChunks = receivedChunks.sorted()
         self.totalCiphertextBytes = totalCiphertextBytes
         self.ciphertext = ciphertext; self.message = message
+        self.objectKind = objectKind; self.payloadGeneration = payloadGeneration
     }
 }
 

@@ -171,10 +171,27 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
 
 private struct StoredObject: Codable, Sendable {
     var revision: VaultRevision; var totalBytes: UInt64; var totalChunks: UInt32; var deleted: Bool
+    var objectKind: VaultRemoteObjectKind? = nil; var payloadGeneration: String? = nil
+    init(revision: VaultRevision, totalBytes: UInt64, totalChunks: UInt32, deleted: Bool,
+         objectKind: VaultRemoteObjectKind? = nil, payloadGeneration: String? = nil) {
+        self.revision = revision; self.totalBytes = totalBytes; self.totalChunks = totalChunks
+        self.deleted = deleted; self.objectKind = objectKind; self.payloadGeneration = payloadGeneration
+    }
+    private enum CodingKeys: String, CodingKey { case revision, totalBytes, totalChunks, deleted, objectKind, payloadGeneration }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        revision = try c.decode(VaultRevision.self, forKey: .revision)
+        totalBytes = try c.decode(UInt64.self, forKey: .totalBytes)
+        totalChunks = try c.decode(UInt32.self, forKey: .totalChunks)
+        deleted = try c.decode(Bool.self, forKey: .deleted)
+        objectKind = try c.decodeIfPresent(VaultRemoteObjectKind.self, forKey: .objectKind)
+        payloadGeneration = try c.decodeIfPresent(String.self, forKey: .payloadGeneration)
+    }
 }
 private struct PartialUpload: Codable, Sendable {
     var revision: VaultRevision; var totalBytes: UInt64; var totalChunks: UInt32
     var receivedChunks: [UInt32]; var receivedBytes: UInt64; var updatedAt: Date
+    var objectKind: VaultRemoteObjectKind? = nil; var payloadGeneration: String? = nil
 }
 private struct IdempotencyRecord: Codable, Sendable {
     var signature: Data; var response: VaultMacResponse; var responseDigest: Data?; var createdAt: Date
@@ -235,7 +252,8 @@ public actor VaultMacCompanionStore {
             storedResponse = VaultMacResponse(status: response.status, objectID: response.objectID,
                 currentRevision: response.currentRevision, revision: response.revision,
                 receivedChunks: response.receivedChunks,
-                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message)
+                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message,
+                objectKind: response.objectKind, payloadGeneration: response.payloadGeneration)
             responseDigest = Data(SHA256.hash(data: responseBytes))
         } else {
             storedResponse = response; responseDigest = nil
@@ -284,7 +302,8 @@ public actor VaultMacCompanionStore {
                 revision: object.revision, totalCiphertextBytes: 0)
         }
         return VaultMacResponse(status: .accepted, objectID: request.objectID,
-            revision: object.revision, totalCiphertextBytes: object.totalBytes)
+            revision: object.revision, totalCiphertextBytes: object.totalBytes,
+            objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
     private func putChunk(_ request: VaultMacRequest, now: Date) throws -> VaultMacResponse {
@@ -306,9 +325,12 @@ public actor VaultMacCompanionStore {
         }
         var partial = manifest.partialUploads[key] ?? PartialUpload(revision: revision,
             totalBytes: totalBytes, totalChunks: totalChunks, receivedChunks: [],
-            receivedBytes: 0, updatedAt: now)
+            receivedBytes: 0, updatedAt: now, objectKind: request.objectKind,
+            payloadGeneration: request.payloadGeneration)
         guard partial.revision.revision == revision.revision, partial.totalBytes == totalBytes,
-              partial.totalChunks == totalChunks else { throw VaultMacCompanionError.conflict }
+              partial.totalChunks == totalChunks,
+              partial.objectKind == request.objectKind,
+              partial.payloadGeneration == request.payloadGeneration else { throw VaultMacCompanionError.conflict }
         let directory = objectDirectoryURL(for: request.objectID, revision: revision.revision)
         let chunkURL = directory.appendingPathComponent("chunk-\(index).bin")
         if VaultSecureFileSystem.exists(chunkURL) {
@@ -331,10 +353,13 @@ public actor VaultMacCompanionStore {
         try assemble(objectID: request.objectID, revision: revision.revision, totalChunks: totalChunks,
                      expectedBytes: totalBytes)
         manifest.objects[key] = StoredObject(revision: revision, totalBytes: totalBytes,
-                                             totalChunks: totalChunks, deleted: false)
+                                             totalChunks: totalChunks, deleted: false,
+                                             objectKind: partial.objectKind,
+                                             payloadGeneration: partial.payloadGeneration)
         manifest.partialUploads.removeValue(forKey: key)
         return VaultMacResponse(status: .accepted, objectID: request.objectID, revision: revision,
-            receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes)
+            receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes,
+            objectKind: partial.objectKind, payloadGeneration: partial.payloadGeneration)
     }
 
     private func readRange(_ request: VaultMacRequest) throws -> VaultMacResponse {
@@ -349,7 +374,8 @@ public actor VaultMacCompanionStore {
                                                         expectedFileBytes: object.totalBytes)
         guard UInt64(bytes.count) == length else { throw VaultMacCompanionError.diskFailure }
         return VaultMacResponse(status: .accepted, objectID: request.objectID,
-            revision: object.revision, totalCiphertextBytes: object.totalBytes, ciphertext: bytes)
+            revision: object.revision, totalCiphertextBytes: object.totalBytes, ciphertext: bytes,
+            objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
     private func delete(_ request: VaultMacRequest) throws -> VaultMacResponse {

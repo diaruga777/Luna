@@ -23,9 +23,6 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     public let plaintextByteCount: UInt64
     public let frameCount: UInt32
     public let ciphertextByteCount: UInt64
-    public var authenticatedGeneration: VaultAuthenticatedGeneration {
-        VaultAuthenticatedGeneration(identity.generation)
-    }
 
     public init(fileURL: URL, expectedIdentity: VaultRemoteObjectIdentity? = nil,
                 vaultID: String) throws {
@@ -377,6 +374,11 @@ public struct VaultVerifiedCiphertextFile: Equatable, Sendable {
     public var ciphertextByteCount: UInt64 { payload.ciphertextByteCount }
     public var plaintextByteCount: UInt64 { payload.plaintextByteCount }
     public var frameCount: UInt32 { payload.frameCount }
+    /// This token exists only after every frame's authentication tag has
+    /// verified under the supplied root key.
+    public var authenticatedGeneration: VaultAuthenticatedGeneration {
+        VaultAuthenticatedGeneration(identity.generation)
+    }
     public func frame(at index: UInt32) throws -> Data { try payload.frame(at: index) }
 }
 

@@ -149,7 +149,7 @@ final class VaultCryptoStorageTests: XCTestCase {
 
     func testCacheDowngradeAndStartupRepair() throws {
         let directory=try VaultTemporaryDirectory(name:"repair"),protection=SelectiveProtection();let now=Date(timeIntervalSinceReferenceDate:300);let repo=try VaultRepository(testContainerURL:directory.url,protectionApplier:protection);let record=VaultObjectRecord(id:objectID,revision:revision,logicalTime:1,size:3,createdAt:now,updatedAt:now,accessedAt:now);_=try repo.upsert(record);_=try repo.writeContent(Data("old".utf8),for:objectID);try repo.putCache(VaultCacheEntry(objectID:objectID,byteCount:3,fullContent:true,lastAccessedAt:now,createdAt:now),now:now);try repo.putCache(VaultCacheEntry(objectID:objectID,byteCount:1,fullContent:false,lastAccessedAt:now,createdAt:now),now:now);XCTAssertNil(try repo.readContent(for:objectID));XCTAssertFalse(try XCTUnwrap(repo.cacheEntries().first).fullContent)
-        _=try repo.writeContent(Data("recover".utf8),for:objectID);let objectDir=repo.contentDirectory.appendingPathComponent(objectID.rawValue.uuidString),content=objectDir.appendingPathComponent("content"),generation=objectDir.appendingPathComponent(".content-generation"),previous=objectDir.appendingPathComponent(".previous"),previousGeneration=objectDir.appendingPathComponent(".previous-generation"),staging=objectDir.appendingPathComponent(".staging-crash");try FileManager.default.moveItem(at:content,to:previous);try FileManager.default.moveItem(at:generation,to:previousGeneration);try Data("partial".utf8).write(to:staging);let reopened=try VaultRepository(testContainerURL:directory.url,protectionApplier:protection);XCTAssertEqual(try reopened.readContent(for:objectID),Data("recover".utf8));XCTAssertFalse(FileManager.default.fileExists(atPath:staging.path));XCTAssertFalse(FileManager.default.fileExists(atPath:previous.path))
+        _=try repo.writeContent(Data("new".utf8),for:objectID);let objectDir=repo.contentDirectory.appendingPathComponent(objectID.rawValue.uuidString),content=objectDir.appendingPathComponent("content"),generation=objectDir.appendingPathComponent(".content-generation"),previous=objectDir.appendingPathComponent(".previous"),previousGeneration=objectDir.appendingPathComponent(".previous-generation"),staging=objectDir.appendingPathComponent(".staging-crash");try FileManager.default.moveItem(at:content,to:previous);try FileManager.default.moveItem(at:generation,to:previousGeneration);try Data("partial".utf8).write(to:staging);let reopened=try VaultRepository(testContainerURL:directory.url,protectionApplier:protection);XCTAssertEqual(try reopened.readContent(for:objectID),Data("new".utf8));XCTAssertFalse(FileManager.default.fileExists(atPath:staging.path));XCTAssertFalse(FileManager.default.fileExists(atPath:previous.path))
     }
 
     func testDurableCleanupAndProtectionFailure() throws {
@@ -222,5 +222,15 @@ private final class LockedResults: @unchecked Sendable { private let lock=NSLock
 private struct RepeatingRandom: VaultRandomBytesGenerating { func bytes(count:Int)throws->Data{Data(repeating:1,count:count)} }
 private struct FailingProtection: VaultFileProtectionApplying { func apply(to url:URL)throws{throw NSError(domain:"protection",code:1)};func hasRequiredProtection(at url:URL)throws->Bool{false} }
 private final class SelectiveProtection: VaultFileProtectionApplying,@unchecked Sendable { var failStaging=false;func apply(to url:URL)throws{if failStaging&&url.lastPathComponent.hasPrefix(".staging-"){throw NSError(domain:"protection-staging",code:1)}};func hasRequiredProtection(at url:URL)throws->Bool{true} }
-private final class SyntheticCrashProtection: VaultFileProtectionApplying,@unchecked Sendable { var unprotectedPath:String?;func apply(to url:URL)throws{};func hasRequiredProtection(at url:URL)throws->Bool{url.path != unprotectedPath} }
+private final class SyntheticCrashProtection: VaultFileProtectionApplying,@unchecked Sendable {
+    var unprotectedPath:String?
+    private var protectedInodes=Set<Int64>()
+    func apply(to url:URL)throws{
+        if let inode=(try?FileManager.default.attributesOfItem(atPath:url.path)[.systemFileNumber] as? NSNumber)?.int64Value{protectedInodes.insert(inode)}
+    }
+    func hasRequiredProtection(at url:URL)throws->Bool{
+        guard let inode=(try?FileManager.default.attributesOfItem(atPath:url.path)[.systemFileNumber] as? NSNumber)?.int64Value else{return false}
+        return url.path != unprotectedPath || protectedInodes.contains(inode)
+    }
+}
 private final class ToggleFailFileManager: FileManager, @unchecked Sendable { var failRemoval=false;override func removeItem(at URL:URL)throws{if failRemoval && URL.path.contains("VaultObjects"){throw NSError(domain:"remove",code:1)};try super.removeItem(at:URL)} }

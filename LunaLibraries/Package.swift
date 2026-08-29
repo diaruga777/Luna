@@ -250,8 +250,9 @@ let package = Package(
             "LunaVaultBackend",
         ]),
         .target(name: "LunaVaultSetup", dependencies: [
-            "LunaVaultModels", "LunaVaultBackend", "LunaVaultCrypto",
-            "LunaVaultStorage",
+            "LunaVaultModels", "LunaVaultCrypto",
+            "LunaVaultStorage", "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
+            "LunaVaultSearch",
         ]),
         .target(name: "LunaVaultUI", dependencies: [
             "LunaDesignSystem", "LunaAppConfig", "LunaVaultModels", "LunaVaultCrypto",

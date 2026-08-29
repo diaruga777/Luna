@@ -41,6 +41,10 @@ public struct VaultExtractionPolicy: Codable, Equatable, Sendable {
     public let maximumMediaInputBytes: Int64
     public let maximumAudioOutputBytes: Int64
     public let maximumMediaDuration: TimeInterval
+    /// Extraction is deliberately bounded separately from Vault's 100 GB
+    /// import limit. Objects above this threshold are indexed as metadata-only
+    /// and never materialised as one `Data` value.
+    public let maximumMaterializedInputBytes: Int64
 
     public init(maximumObjectBytes: Int64 = 100_000_000_000, maximumTextBytes: Int = 16_000_000,
                 maximumChunks: Int = 8_000, chunkCharacterCount: Int = 1_200,
@@ -50,7 +54,8 @@ public struct VaultExtractionPolicy: Codable, Equatable, Sendable {
                 maximumImageDimension: Int = 50_000, maximumImagePixels: Int64 = 200_000_000,
                 maximumDecodedImageBytes: Int64 = 512_000_000, ocrMaximumPixelSize: Int = 4_096,
                 maximumMediaInputBytes: Int64 = 4_000_000_000, maximumAudioOutputBytes: Int64 = 512_000_000,
-                maximumMediaDuration: TimeInterval = 6 * 60 * 60) {
+                maximumMediaDuration: TimeInterval = 6 * 60 * 60,
+                maximumMaterializedInputBytes: Int64 = 64 * 1024 * 1024) {
         self.maximumObjectBytes = max(1, maximumObjectBytes); self.maximumTextBytes = max(1, maximumTextBytes)
         self.maximumChunks = max(1, maximumChunks); self.chunkCharacterCount = max(1, chunkCharacterCount)
         self.maximumWorkInterval = max(0.1, maximumWorkInterval); self.maximumArchiveEntries = max(1, maximumArchiveEntries)
@@ -60,6 +65,7 @@ public struct VaultExtractionPolicy: Codable, Equatable, Sendable {
         self.maximumDecodedImageBytes = max(4, maximumDecodedImageBytes); self.ocrMaximumPixelSize = max(1, ocrMaximumPixelSize)
         self.maximumMediaInputBytes = max(1, maximumMediaInputBytes); self.maximumAudioOutputBytes = max(1, maximumAudioOutputBytes)
         self.maximumMediaDuration = max(1, maximumMediaDuration)
+        self.maximumMaterializedInputBytes = max(1, maximumMaterializedInputBytes)
     }
 }
 

@@ -52,6 +52,19 @@ public struct VaultExtractionPipeline: Sendable {
         try checkBudget(startedAt)
         guard request.descriptor.byteCount <= policy.maximumObjectBytes else { throw VaultExtractionError.inputTooLarge(request.descriptor.byteCount) }
         guard Int64(request.data.count) <= policy.maximumObjectBytes else { throw VaultExtractionError.inputTooLarge(Int64(request.data.count)) }
+        // A large Vault object is valid storage input but not valid in-memory
+        // extraction input. The caller may pass an empty bounded request to
+        // obtain metadata-only indexing; silently extracting a prefix would
+        // make a partial result look complete.
+        if request.descriptor.byteCount <= policy.maximumMaterializedInputBytes {
+            guard Int64(request.data.count) == request.descriptor.byteCount else {
+                throw VaultExtractionError.inputTooLarge(request.descriptor.byteCount)
+            }
+        } else {
+            guard request.data.isEmpty else {
+                throw VaultExtractionError.inputTooLarge(request.descriptor.byteCount)
+            }
+        }
         if let cached = try cachedResult(for: request) { return cached }
 
         let now = Date()
@@ -88,6 +101,23 @@ public struct VaultExtractionPipeline: Sendable {
     }
 
     private func performExtraction(_ request: VaultExtractionRequest, startedAt: Date) async throws -> VaultExtractionResult {
+        if request.descriptor.byteCount > policy.maximumMaterializedInputBytes {
+            let route = VaultFileTypeSniffer.route(fileName: request.descriptor.fileName,
+                                                   contentType: request.descriptor.contentType,
+                                                   data: nil)
+            let metadata = try await withTimeout(remainingBudget(startedAt)) {
+                try await metadataProvider.metadata(for: Data(),
+                                                    contentType: request.descriptor.contentType,
+                                                    fileName: request.descriptor.fileName)
+            }
+            return VaultExtractionResult(descriptor: request.descriptor, route: route, chunks: [],
+                                        metadata: VaultExtractedMetadata(title: metadata.title,
+                                                                         mediaWidth: metadata.mediaWidth,
+                                                                         mediaHeight: metadata.mediaHeight,
+                                                                         duration: metadata.duration,
+                                                                         isMetadataOnly: true),
+                                        modelVersion: modelVersion)
+        }
         let route = VaultFileTypeSniffer.route(fileName: request.descriptor.fileName,
                                                contentType: request.descriptor.contentType,
                                                data: request.data)

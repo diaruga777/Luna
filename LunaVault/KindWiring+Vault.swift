@@ -24,6 +24,10 @@ import LunaVaultUI
             keychainAccessGroup: Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String),
         store: UserDefaultsVaultSetupStore(
             defaults: UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard))
+    private static var backgroundScheduler: VaultBackgroundTaskScheduler?
+    private static var importCoordinator: VaultImportCoordinator?
+    private static var indexWorker: VaultIndexWorker?
+    private static var thumbnailStore: VaultThumbnailStore?
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
     /// The host owns import implementation. The UI only exposes the seam.
     static var importHandler: (() -> Void)?
@@ -43,10 +47,15 @@ import LunaVaultUI
 
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
+        for kind in [VaultBackgroundTaskKind.importRepair, .index, .thumbnailMaintenance] {
+            try? backgroundScheduler?.schedule(kind: kind)
+        }
     }
 
     static func applicationWillEnterForeground() {
         syncRuntime?.applicationWillEnterForeground()
+        _ = backgroundScheduler?.run(kind: .importRepair)
+        _ = backgroundScheduler?.run(kind: .index)
     }
 
     static func makeRootViewController() -> UIViewController {
@@ -133,6 +142,7 @@ import LunaVaultUI
             }
             services = value
             syncRuntime = VaultSyncRuntimeController(services: value)
+            installBackgroundRuntime(for: value)
             return value
         } catch {
             return nil
@@ -172,6 +182,61 @@ import LunaVaultUI
             credentialGeneration: credential?.epoch,
             credentialFingerprint: credential?.fingerprint,
             runtimeGeneration: runtimeGeneration)
+    }
+
+    private static func makeMacServices(policy: VaultStoragePolicy,
+                                        credential: VaultMacPairingCredential?,
+                                        runtimeIdentity: VaultRuntimeIdentity) throws -> VaultRuntimeServices {
+    /// Registers the local maintenance path at launch. It deliberately uses
+    /// only repository, metadata, search, and thumbnail services; no backend
+    /// or URLSession is constructed for import repair or indexing.
+    private static func installBackgroundRuntime(for services: VaultRuntimeServices) {
+        let root = services.repository.contentDirectory.deletingLastPathComponent()
+        do {
+            let metadata = try VaultImportedFileMetadataStore(
+                rootURL: root.appendingPathComponent("VaultImportStaging/Metadata", isDirectory: true))
+            let worker = VaultIndexWorker(
+                repository: services.repository,
+                metadataStore: metadata,
+                searchIndex: try VaultSearchIndex(
+                    databaseURL: root.appendingPathComponent("vault-index.sqlite")),
+                owner: "vault-local-index")
+            let thumbnails = try VaultThumbnailStore(
+                rootURL: root.appendingPathComponent("VaultThumbnails", isDirectory: true),
+                repository: services.repository)
+            let coordinator = try VaultImportCoordinator(
+                repository: services.repository, metadataStore: metadata)
+            let scheduler = VaultBackgroundTaskScheduler(
+                identifierPrefix: Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault")
+            scheduler.register(kind: .importRepair) { [weak coordinator] in
+                guard let coordinator else { return false }
+                return (try? coordinator.repairInterruptedImports()) != nil
+            }
+            scheduler.register(kind: .index) { [weak worker] in
+                guard let worker else { return false }
+                var processed = 0
+                while !Task.isCancelled && processed < 64 {
+                    guard await worker.processNext() != nil else { break }
+                    processed += 1
+                }
+                return !Task.isCancelled
+            }
+            scheduler.register(kind: .thumbnailMaintenance) { [weak thumbnails] in
+                guard let thumbnails else { return false }
+                return (try? thumbnails.evictExpired()) != nil
+            }
+            for kind in [VaultBackgroundTaskKind.importRepair, .index, .thumbnailMaintenance] {
+                try? scheduler.registerWithSystemScheduler(kind: kind)
+            }
+            importCoordinator = coordinator
+            indexWorker = worker
+            thumbnailStore = thumbnails
+            backgroundScheduler = scheduler
+        } catch {
+            // Storage setup already fails closed. Keep the UI usable while
+            // leaving maintenance unregistered until the next launch.
+            backgroundScheduler = nil
+        }
     }
 
     private static func makeMacServices(policy: VaultStoragePolicy,

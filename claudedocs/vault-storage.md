@@ -4,7 +4,8 @@ Vault owns `vault.sqlite` in the shared App Group and never opens the legacy
 `saves.sqlite`. `VaultRepository` uses one serialized SQLite connection per
 process, enables WAL, `synchronous=FULL`, and foreign keys, and creates the
 objects, durable tombstones, cache, jobs, and encrypted-artifacts tables at
-schema version 5. Migrations acquire an exclusive transaction, re-read the
+schema version 6. Cache rows also carry independent `supports_eviction` and
+active-preview state. Migrations acquire an exclusive transaction, re-read the
 version under that lock, and retry bounded SQLite busy races so concurrent first
 opens cannot partially initialize the store. Object IDs and revisions are opaque UUIDs. Upserts are
 latest-only using logical time, device id, then revision UUID as a total order.
@@ -23,7 +24,8 @@ the indexing stage owns its local schema and encrypted artifact projection.
 Replacement keeps recoverable staging/previous states. Content and its generation
 token are fully written, fsynced, and protected while still staged; the protection
 attribute survives their atomic renames, and the token is installed only after the
-protected content. Startup verifies the token, current revision, and required file
+protected content. Startup verifies the token's revision and SHA-256 digest against
+the installed bytes, along with required file
 protection attributes before accepting a final. It restores a verified previous
 generation or deletes the candidate rather than applying protection after the fact.
 Deletions enqueue durable
@@ -35,7 +37,7 @@ staging, and final files.
 
 Cache rows retain access/creation dates, full-content state, and an in-flight pin.
 Full content expires after seven days unless pinned. Eviction is oldest-first
-for unpinned entries and is bounded by the configured quota (the public
+for unpinned, evictable, non-preview entries and is bounded by the configured quota (the public
 configuration computes 10% of important available capacity, bounded to 2–20 GB,
 unless the user supplies a bounded override). Names, indexes, and thumbnails
 are independent of full-content eviction; downgrading a row from full content

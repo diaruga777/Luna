@@ -102,10 +102,27 @@ public struct VaultJob: Codable, Hashable, Sendable {
 public struct VaultCacheEntry: Codable, Hashable, Sendable {
     public let objectID: VaultObjectID; public let byteCount: Int64; public let fullContent: Bool
     public var lastAccessedAt: Date; public let createdAt: Date; public var pinned: Bool
+    /// A caller may retain a cache entry for a preview or another operation
+    /// even when it is not user-pinned. Eviction must honour this independent
+    /// policy bit; older serialized entries default to `true`.
+    public var supportsEviction: Bool
     public init(objectID: VaultObjectID, byteCount: Int64, fullContent: Bool, lastAccessedAt: Date,
-                createdAt: Date, pinned: Bool = false) {
+                createdAt: Date, pinned: Bool = false, supportsEviction: Bool = true) {
         self.objectID=objectID; self.byteCount=byteCount; self.fullContent=fullContent
         self.lastAccessedAt=lastAccessedAt; self.createdAt=createdAt; self.pinned=pinned
+        self.supportsEviction=supportsEviction
+    }
+
+    private enum CodingKeys: String, CodingKey { case objectID, byteCount, fullContent, lastAccessedAt, createdAt, pinned, supportsEviction }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        objectID = try c.decode(VaultObjectID.self, forKey: .objectID)
+        byteCount = try c.decode(Int64.self, forKey: .byteCount)
+        fullContent = try c.decode(Bool.self, forKey: .fullContent)
+        lastAccessedAt = try c.decode(Date.self, forKey: .lastAccessedAt)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        supportsEviction = try c.decodeIfPresent(Bool.self, forKey: .supportsEviction) ?? true
     }
 }
 

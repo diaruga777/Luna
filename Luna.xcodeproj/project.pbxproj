@@ -100,6 +100,8 @@
 		4C1000000000000000000002 /* LunaVaultCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000012 /* LunaVaultCrypto */; };
 		4C1000000000000000000003 /* LunaVaultStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000013 /* LunaVaultStorage */; };
 		4C1000000000000000000004 /* LunaVaultSync in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000014 /* LunaVaultSync */; };
+		4C1000000000000000000005 /* LunaVaultSearch in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000015 /* LunaVaultSearch */; };
+		4C1000000000000000000006 /* LunaVaultSetup in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000016 /* LunaVaultSetup */; };
 		4142DF31BCC07DF42F077D2C /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 062D53662477EEF9A388EF94 /* Localizable.strings */; };
 		41CED045DAB9F43705D5B165 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		42B701ABE733F820F5447F96 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
@@ -1038,6 +1040,8 @@
 				4C1000000000000000000002 /* LunaVaultCrypto in Frameworks */,
 				4C1000000000000000000003 /* LunaVaultStorage in Frameworks */,
 				4C1000000000000000000004 /* LunaVaultSync in Frameworks */,
+				4C1000000000000000000005 /* LunaVaultSearch in Frameworks */,
+				4C1000000000000000000006 /* LunaVaultSetup in Frameworks */,
 				720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1624,6 +1628,8 @@
 				4C1000000000000000000012 /* LunaVaultCrypto */,
 				4C1000000000000000000013 /* LunaVaultStorage */,
 				4C1000000000000000000014 /* LunaVaultSync */,
+				4C1000000000000000000015 /* LunaVaultSearch */,
+				4C1000000000000000000016 /* LunaVaultSetup */,
 				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
 			);
 			productName = LunaVault;
@@ -2184,7 +2190,8 @@
 				64013D5A6E6E7F34528E3934 /* LunaPriceCompare */,
 				AA3816329641750C54CDDCBC /* VaultTestKit */,
 				4B0000000000000000000002 /* LunaVaultMac */,
-				4C1000000000000000000015 /* LunaVaultSetup */,
+				4C1000000000000000000015 /* LunaVaultSearch */,
+				4C1000000000000000000016 /* LunaVaultSetup */,
 				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
 			);
 			productName = LunaTests;
@@ -5551,7 +5558,12 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultSync;
 		};
-		4C1000000000000000000015 /* LunaVaultSetup */ = {
+		4C1000000000000000000015 /* LunaVaultSearch */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaVaultSearch;
+		};
+		4C1000000000000000000016 /* LunaVaultSetup */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultSetup;

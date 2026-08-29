@@ -3,6 +3,8 @@ import UIKit
 import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultModels
+import LunaVaultSearch
+import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
 import LunaVaultUI

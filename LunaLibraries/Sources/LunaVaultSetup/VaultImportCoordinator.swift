@@ -148,7 +148,7 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
                 try handle.write(contentsOf: encoder.encode(metadata))
                 try handle.synchronize(); try handle.close()
                 if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.replaceItemAt(destination, withItemAt: staging)
+                    _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
                 } else {
                     try fileManager.moveItem(at: staging, to: destination)
                 }
@@ -343,6 +343,10 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             fileManager: fileManager, protectionApplier: protectionApplier)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try protection.apply(to: root)
+        guard (try? protection.hasRequiredProtection(at: root)) == true else {
+            throw VaultImportError.protectedStaging
+        }
+        VaultSimulatorProtectionLedger.record(root)
     }
 
     /// Imports one source file. Reading is bounded by `maximumBytes`; the

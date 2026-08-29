@@ -151,6 +151,16 @@ public protocol VaultBackendTransport: Sendable {
     func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState
 }
 
+/// File-backed transport capability.  Implementations that conform to this
+/// protocol must copy encrypted frames in bounded chunks; the legacy
+/// `VaultBackendTransport` methods remain for small artifact compatibility.
+public protocol VaultStreamingBackendTransport: VaultBackendTransport {
+    func put(_ payload: VaultVerifiedCiphertextFile,
+             expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome
+    func payloadFile(for identity: VaultRemoteObjectIdentity) async throws
+        -> VaultAuthenticatedCiphertextFile?
+}
+
 public extension VaultBackendTransport {
     var currentAvailability: VaultBackendAvailability { capabilities.availability }
 }

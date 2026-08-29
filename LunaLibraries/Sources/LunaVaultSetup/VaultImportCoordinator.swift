@@ -780,16 +780,10 @@ public final class VaultIndexWorker: @unchecked Sendable {
         var job: VaultJob?
         do {
             for _ in 0..<64 {
-                guard let candidate = try repository.claimNextJob(owner: owner, now: now) else { break }
-                if candidate.kind == .index {
-                    job = candidate
-                    break
-                }
-                if let leaseToken = candidate.leaseToken {
-                    try? repository.transitionJob(id: candidate.id, leaseToken: leaseToken,
-                                                  state: .retrying, error: "deferred-to-specialized-worker",
-                                                  nextAttemptAt: now.addingTimeInterval(30), now: now)
-                }
+                guard let candidate = try repository.claimNextJob(owner: owner, now: now,
+                                                                   kinds: [.index]) else { break }
+                job = candidate
+                break
             }
         } catch {
             return VaultIndexWorkResult(state: .unavailable, objectID: nil, jobID: nil, errorCode: "claim-failed")

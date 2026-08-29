@@ -153,6 +153,9 @@ public struct VaultEncryptedArtifact: Equatable, Sendable {
 
 public final class VaultRepository: @unchecked Sendable {
     public let databaseURL: URL; public let contentDirectory: URL; public let cacheQuotaBytes: Int64
+    /// Only an iCloud policy that allows local eviction may evict full bytes.
+    /// Device and Mac copies are canonical and therefore non-evictable.
+    public let supportsCacheEviction: Bool
     private var db: OpaquePointer?; private let queue=DispatchQueue(label: "com.hsanabria.luna.vault.sqlite")
     private let fileManager: FileManager; private let configuration: VaultStorageConfiguration
     private let protectionApplier: VaultFileProtectionApplying
@@ -174,6 +177,7 @@ public final class VaultRepository: @unchecked Sendable {
         let values=try? testContainerURL.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
         let capacity=Int64(values?.volumeAvailableCapacityForImportantUsage ?? 20_000_000_000)
         cacheQuotaBytes=configuration.cacheQuota(availableCapacity:capacity); stagingAllowanceBytes=min(max(cacheQuotaBytes/10,256_000_000),2_000_000_000)
+        supportsCacheEviction = configuration.policy.location == .iCloud && !configuration.policy.keepLocalCopy
         var opened:OpaquePointer?;let flags=SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX|0x0040_0000
         guard sqlite3_open_v2(databaseURL.path,&opened,flags,nil)==SQLITE_OK,let opened else{throw VaultStorageError.sqlite("open")};db=opened
         do { try queue.sync { sqlite3_busy_timeout(opened,5000);try retryingBusy{try execute("PRAGMA journal_mode=WAL")};try execute("PRAGMA synchronous=FULL");try execute("PRAGMA foreign_keys=ON");try retryingBusy{try migrate()} } } catch { sqlite3_close_v2(opened);db=nil;throw error }
@@ -236,6 +240,7 @@ public final class VaultRepository: @unchecked Sendable {
                 if fileManager.fileExists(atPath:backupGeneration.path){try fileManager.moveItem(at:backupGeneration,to:generation)}
                 throw error
             }
+            try markObjectReadyLocked(id)
             return final
         }catch{try?fileManager.removeItem(at:staging);try?fileManager.removeItem(at:stagingGeneration);throw error}
     }}
@@ -287,6 +292,7 @@ public final class VaultRepository: @unchecked Sendable {
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
                     try fileManager.removeItem(at: old)
                 }
+                try markObjectReadyLocked(id)
                 return final
             } catch {
                 try? fileManager.removeItem(at: staging)
@@ -416,6 +422,19 @@ public final class VaultRepository: @unchecked Sendable {
               size <= 64 * 1024 * 1024 else { throw VaultStorageError.stagingLimit }
         return try readBoundedFile(url, maximumBytes: 64 * 1024 * 1024)
     }}
+    /// A durable visibility bit separates a metadata row from an installed
+    /// protected payload. Workers must not claim jobs for an object until this
+    /// bit is true; it survives process death and is repaired from the content
+    /// generation marker on the next repository launch.
+    public func objectIsReady(_ id: VaultObjectID) throws -> Bool {
+        try sync {
+            var ready = false
+            try query("SELECT ready FROM object_visibility WHERE object_id=?", [.text(id.rawValue.uuidString)]) {
+                ready = $0.int(0) != 0
+            }
+            return ready
+        }
+    }
     public func removeContent(for id:VaultObjectID)throws{try sync{try transaction{try enqueueCleanupLocked(id)};try drainPendingCleanup()}}
 
     public func putCache(_ entry:VaultCacheEntry,now:Date=Date())throws{try sync{var downgraded=false;try transaction{guard entry.byteCount >= 0 else{throw VaultStorageError.invalidArtifact};var wasFull=false;var wasPinned=false;var wasEvictable=true;try query("SELECT full_content,pinned,supports_eviction FROM cache WHERE object_id=?",[.text(entry.objectID.rawValue.uuidString)]){wasFull=$0.int(0) != 0;wasPinned=$0.int(1) != 0;wasEvictable=$0.int(2) != 0};downgraded=wasFull && !entry.fullContent;if downgraded{try enqueueCleanupLocked(entry.objectID)};try run("INSERT INTO cache(object_id,bytes,full_content,last_accessed,created_at,pinned,supports_eviction) VALUES(?,?,?,?,?,?,?) ON CONFLICT(object_id) DO UPDATE SET bytes=excluded.bytes,full_content=excluded.full_content,last_accessed=excluded.last_accessed,pinned=excluded.pinned,supports_eviction=excluded.supports_eviction",[.text(entry.objectID.rawValue.uuidString),.int(entry.byteCount),.int(entry.fullContent ? 1:0),.double(entry.lastAccessedAt.timeIntervalSinceReferenceDate),.double(entry.createdAt.timeIntervalSinceReferenceDate),.int((entry.pinned || wasPinned) ? 1:0),.int(entry.supportsEviction && wasEvictable ? 1:0)])};if downgraded{try drainPendingCleanup()};try evictLocked(now:now)}}
@@ -449,22 +468,58 @@ public final class VaultRepository: @unchecked Sendable {
     public func enqueue(_ job:VaultJob)throws{try sync{try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",[.text(job.id.uuidString),.text(job.idempotencyKey),.text(job.kind.rawValue),job.objectID.map{$0.rawValue.uuidString}.map(SQLiteValue.text) ?? .null,.text(job.state.rawValue),.int(Int64(job.attempts)),job.nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.lastError.map(SQLiteValue.text) ?? .null,.double(job.createdAt.timeIntervalSinceReferenceDate),.double(job.updatedAt.timeIntervalSinceReferenceDate),job.leaseOwner.map(SQLiteValue.text) ?? .null,job.leaseToken.map{$0.uuidString}.map(SQLiteValue.text) ?? .null,job.leaseExpiresAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.revision.map{$0.uuidString}.map(SQLiteValue.text) ?? .null,job.backendKey.map(SQLiteValue.text) ?? .null,job.payloadGeneration.map(SQLiteValue.text) ?? .null,job.remoteObjectKind.map(SQLiteValue.text) ?? .null,job.expectedRemoteRevision.map{$0.uuidString}.map(SQLiteValue.text) ?? .null])}}
     public func job(_ id:UUID)throws->VaultJob?{try sync{try jobLocked(id)}}
     public func job(idempotencyKey:String)throws->VaultJob?{try sync{var result:VaultJob?;try query("SELECT id FROM jobs WHERE idempotency_key=?",[.text(idempotencyKey)]){r in if let raw=r.text(0),let id=UUID(uuidString:raw){result=try jobLocked(id)}};return result}}
-    public func jobs()throws->[VaultJob]{try sync{var result=[VaultJob]();try query("SELECT id FROM jobs ORDER BY created_at,id"){r in if let raw=r.text(0),let id=UUID(uuidString:raw),let job=try jobLocked(id){result.append(job)}};return result}}
+    public func jobs()throws->[VaultJob]{try jobs(kinds: nil)}
+    /// Returns only jobs owned by the requested worker kinds. The filter is
+    /// applied in SQLite so a specialized worker never claims a network job
+    /// and increments its attempt counter before deferring it.
+    public func jobs(kinds: Set<VaultJobKind>?) throws -> [VaultJob] {
+        try sync {
+            var result = [VaultJob]()
+            let values: [SQLiteValue]
+            let whereClause: String
+            if let kinds, !kinds.isEmpty {
+                let names = kinds.map { $0.rawValue }.sorted()
+                whereClause = " WHERE kind IN (" + names.map { _ in "?" }.joined(separator: ",") + ")"
+                values = names.map(SQLiteValue.text)
+            } else {
+                whereClause = ""
+                values = []
+            }
+            try query("SELECT id FROM jobs\(whereClause) ORDER BY created_at,id", values) { row in
+                if let raw = row.text(0), let id = UUID(uuidString: raw),
+                   let job = try jobLocked(id) { result.append(job) }
+            }
+            return result
+        }
+    }
     /// Claims exactly `id`, unlike `claimNextJob`, so two different durable
     /// operations cannot be accidentally crossed when callers share a queue.
     public func claimJob(id:UUID,owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
         guard let job=try jobLocked(id) else{return nil}
         let nowValue=now.timeIntervalSinceReferenceDate
         let eligible=(job.state == .queued || job.state == .retrying) && (job.nextAttemptAt == nil || job.nextAttemptAt! <= now) || (job.state == .running && (job.leaseExpiresAt ?? .distantFuture) <= now)
+        guard eligible, try jobObjectIsReadyLocked(job) else { return nil }
         guard eligible else{return nil}
         let token=UUID()
         try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=?",[.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(nowValue),.text(id.uuidString)])
         guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(id)
     }}}
-    public func claimNextJob(owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
-        var candidate:UUID?;try query("SELECT id FROM jobs WHERE (state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?) ORDER BY created_at LIMIT 1",[.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)]){r in candidate=r.text(0).flatMap{UUID(uuidString:$0)}};guard let candidate else{return nil}
+    public func claimNextJob(owner:String, now:Date=Date(), leaseDuration:TimeInterval=120,
+                             kinds: Set<VaultJobKind>? = nil) throws -> VaultJob? { try sync { try transaction {
+        let kindClause: String
+        var kindValues: [SQLiteValue] = []
+        if let kinds, !kinds.isEmpty {
+            let names = kinds.map { $0.rawValue }.sorted()
+            kindClause = " AND kind IN (" + names.map { _ in "?" }.joined(separator: ",") + ")"
+            kindValues = names.map(SQLiteValue.text)
+        } else { kindClause = "" }
+        var candidate:UUID?
+        try query("SELECT id FROM jobs WHERE ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause) ORDER BY created_at LIMIT 1", [.double(now.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)] + kindValues) { r in
+            candidate=r.text(0).flatMap{UUID(uuidString:$0)}
+        }
+        guard let candidate else{return nil}
         let token=UUID()
-        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?))",[.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)])
+        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause)", [.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)] + kindValues)
         guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(candidate)
     }}}
     public func heartbeatJob(id:UUID,leaseToken:UUID,now:Date=Date(),leaseDuration:TimeInterval=120)throws{try sync{try run("UPDATE jobs SET lease_expires=?,updated_at=? WHERE id=? AND state='running' AND lease_token=? AND lease_expires>?",[.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString),.text(leaseToken.uuidString),.double(now.timeIntervalSinceReferenceDate)]);guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition}}}
@@ -611,7 +666,11 @@ public final class VaultRepository: @unchecked Sendable {
                 // interrupted Stage 5 migration.
                 try execute("CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL)")
             }
-            guard version == 6 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
+            if version == 6 {
+                try execute("CREATE TABLE IF NOT EXISTS object_visibility(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN(0,1)),updated_at REAL NOT NULL);CREATE INDEX IF NOT EXISTS object_visibility_ready ON object_visibility(ready);PRAGMA user_version=7")
+                version = 7
+            }
+            guard version == 7 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
             try execute("COMMIT")
         } catch {
             try? execute("ROLLBACK")
@@ -619,6 +678,16 @@ public final class VaultRepository: @unchecked Sendable {
         }
     }
     private func objectLocked(_ id:VaultObjectID)throws->VaultObjectRecord?{var result:VaultObjectRecord?;try query("SELECT revision,logical_time,device_id,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects WHERE id=?",[.text(id.rawValue.uuidString)]){r in result=try decodeRecord(id,r)};return result}
+    private func markObjectReadyLocked(_ id: VaultObjectID) throws {
+        guard try objectLocked(id) != nil else { throw VaultStorageError.missingObject }
+        try run("INSERT INTO object_visibility(object_id,ready,updated_at) VALUES(?,1,?) ON CONFLICT(object_id) DO UPDATE SET ready=1,updated_at=excluded.updated_at", [.text(id.rawValue.uuidString), .double(Date().timeIntervalSinceReferenceDate)])
+    }
+    private func jobObjectIsReadyLocked(_ job: VaultJob) throws -> Bool {
+        guard let objectID = job.objectID else { return true }
+        var ready = false
+        try query("SELECT ready FROM object_visibility WHERE object_id=?", [.text(objectID.rawValue.uuidString)]) { ready = $0.int(0) != 0 }
+        return ready
+    }
     private func tombstoneLocked(_ id:VaultObjectID)throws->VaultTombstone?{var result:VaultTombstone?;try query("SELECT revision,logical_time,device_id,deleted_at FROM tombstones WHERE id=?",[.text(id.rawValue.uuidString)]){r in guard let rev=UUID(uuidString:r.text(0) ?? "")else{throw VaultStorageError.sqlite("tombstone")};result=VaultTombstone(id:id,revision:rev,logicalTime:r.int(1),deletedAt:Date(timeIntervalSinceReferenceDate:r.double(3)),deviceID:r.text(2) ?? "")};return result}
     private func decodeRecord(_ id:VaultObjectID,_ r:SQLiteRow,offset:Int=0)throws->VaultObjectRecord{guard let rev=UUID(uuidString:r.text(offset) ?? "")else{throw VaultStorageError.sqlite("revision")};return VaultObjectRecord(id:id,revision:rev,logicalTime:r.int(offset+1),size:r.int(offset+3),contentType:r.text(offset+4),createdAt:Date(timeIntervalSinceReferenceDate:r.double(offset+5)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+6)),accessedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+7)),isTombstone:r.int(offset+8) != 0,deviceID:r.text(offset+2) ?? "")}
     private func jobLocked(_ id:UUID)throws->VaultJob?{var result:VaultJob?;try query("SELECT kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision FROM jobs WHERE id=?",[.text(id.uuidString)]){r in guard let kind=VaultJobKind(rawValue:r.text(0) ?? ""),let state=VaultJobState(rawValue:r.text(2) ?? "")else{throw VaultStorageError.sqlite("job")};result=VaultJob(id:id,kind:kind,objectID:r.text(1).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:state,attempts:Int(r.int(3)),nextAttemptAt:r.optionalDouble(4).map{Date(timeIntervalSinceReferenceDate:$0)},lastError:r.text(5),createdAt:Date(timeIntervalSinceReferenceDate:r.double(6)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(7)),idempotencyKey:r.text(8),revision:r.text(12).flatMap{UUID(uuidString:$0)},backendKey:r.text(13),payloadGeneration:r.text(14),remoteObjectKind:r.text(15),expectedRemoteRevision:r.text(16).flatMap{UUID(uuidString:$0)},leaseOwner:r.text(9),leaseToken:r.text(10).flatMap{UUID(uuidString:$0)},leaseExpiresAt:r.optionalDouble(11).map{Date(timeIntervalSinceReferenceDate:$0)})};return result}

@@ -133,6 +133,23 @@ public final class VaultRootViewController: UIViewController {
         renderState()
     }
 
+    /// Refreshes the bounded presentation after a host-owned operation (for
+    /// example, a document-picker import) commits a new object/index row.
+    /// The controller remains the owner of rendering; hosts never reach into
+    /// its private stacks to force a reload.
+    public func refresh() { renderState() }
+
+    /// Deterministic seam for app-host and simulator tests. Production callers
+    /// use the navigation item's action, while tests can exercise the exact
+    /// import callback without relying on UIKit's private bar-button wiring.
+    public func triggerImportForTesting() { importTapped() }
+
+    /// Deterministic seam for app-host and simulator tests of result/recent
+    /// routing. The argument is still the canonical opaque object ID.
+    public func triggerOpenForTesting(_ objectID: VaultObjectID) {
+        openCanonicalObject(objectID)
+    }
+
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         focusSearchIfReady()

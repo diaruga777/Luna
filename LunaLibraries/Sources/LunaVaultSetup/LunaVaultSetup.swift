@@ -1,6 +1,5 @@
 import Foundation
 import LunaAppConfig
-import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultModels
 import LunaVaultStorage

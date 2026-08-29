@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 import LunaAppConfig
 import LunaVaultBackend
 import LunaVaultCrypto
@@ -28,6 +29,9 @@ import LunaVaultUI
     private static var importCoordinator: VaultImportCoordinator?
     private static var indexWorker: VaultIndexWorker?
     private static var thumbnailStore: VaultThumbnailStore?
+    private static var previewRouter: VaultPreviewRouter?
+    private static var documentImporter: VaultDocumentImportPresenter?
+    private static var objectPreviewPresenter: VaultObjectPreviewPresenter?
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
     /// The host owns import implementation. The UI only exposes the seam.
     static var importHandler: (() -> Void)?
@@ -48,7 +52,7 @@ import LunaVaultUI
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
         for kind in [VaultBackgroundTaskKind.importRepair, .index, .thumbnailMaintenance] {
-            try? backgroundScheduler?.schedule(kind: kind)
+            _ = try? backgroundScheduler?.schedule(kind: kind)
         }
     }
 
@@ -56,6 +60,7 @@ import LunaVaultUI
         syncRuntime?.applicationWillEnterForeground()
         _ = backgroundScheduler?.run(kind: .importRepair)
         _ = backgroundScheduler?.run(kind: .index)
+        _ = backgroundScheduler?.run(kind: .thumbnailMaintenance)
     }
 
     static func makeRootViewController() -> UIViewController {
@@ -63,11 +68,22 @@ import LunaVaultUI
         // ready. The provider callbacks let the root lazily recover after a
         // first-run completion or a transient provider failure.
         let index = setupCoordinator.state.isReady ? makeSearchIndex() : nil
+        let importer = VaultDocumentImportPresenter(
+            coordinatorProvider: { importCoordinator })
+        let opener = VaultObjectPreviewPresenter(
+            routerProvider: { previewRouter },
+            servicesProvider: { services })
         let root = VaultRootViewController(
             services: makeServices(), setupCoordinator: setupCoordinator,
             searchIndex: index, searchIndexProvider: makeSearchIndex,
-            servicesProvider: makeServices, importHandler: importHandler,
-            openHandler: openHandler, settingsActions: makeSettingsActions())
+            servicesProvider: makeServices,
+            importHandler: importHandler ?? { [weak importer] in importer?.present() },
+            openHandler: openHandler ?? { [weak opener] objectID in opener?.open(objectID) },
+            settingsActions: makeSettingsActions())
+        importer.presenter = root
+        opener.presenter = root
+        documentImporter = importer
+        objectPreviewPresenter = opener
         identityConfirmer.attach(to: root)
         return root
     }
@@ -87,10 +103,7 @@ import LunaVaultUI
                 }
                 try index.rebuild()
             },
-            // Eviction is an object-scoped backend operation. Settings keeps
-            // this callback honest until a file-level picker is presented;
-            // it must never claim that a local copy was removed.
-            requestICloudEviction: { .unavailable },
+            requestICloudEviction: requestICloudEviction,
             reconfigureRuntime: {
                 invalidateRuntime()
                 _ = makeServices()
@@ -111,16 +124,14 @@ import LunaVaultUI
 
     private static func makeServices() -> VaultRuntimeServices? {
         guard let policy = setupCoordinator.state.policy else {
-            services = nil
-            syncRuntime = nil
+            clearMediaRuntime()
             return nil
         }
         let credential: VaultMacPairingCredential?
         do {
             credential = policy.location == .mac ? try loadMacCredential() : nil
         } catch {
-            services = nil
-            syncRuntime = nil
+            clearMediaRuntime()
             return nil
         }
         let runtimeIdentity = makeRuntimeIdentity(policy: policy, credential: credential)
@@ -128,8 +139,7 @@ import LunaVaultUI
         // A Settings policy or credential change must rebuild the provider.
         // Keeping the previous service here would make a newly-selected Mac
         // or credential appear ready until the next process launch.
-        services = nil
-        syncRuntime = nil
+        clearMediaRuntime()
         do {
             let value: VaultRuntimeServices
             if policy.location == .mac {
@@ -151,8 +161,17 @@ import LunaVaultUI
 
     private static func invalidateRuntime() {
         runtimeGeneration &+= 1
+        clearMediaRuntime()
+    }
+
+    private static func clearMediaRuntime() {
         services = nil
         syncRuntime = nil
+        importCoordinator = nil
+        indexWorker = nil
+        thumbnailStore = nil
+        previewRouter = nil
+        backgroundScheduler = nil
     }
 
     private static func loadMacCredential() throws -> VaultMacPairingCredential? {
@@ -184,9 +203,6 @@ import LunaVaultUI
             runtimeGeneration: runtimeGeneration)
     }
 
-    private static func makeMacServices(policy: VaultStoragePolicy,
-                                        credential: VaultMacPairingCredential?,
-                                        runtimeIdentity: VaultRuntimeIdentity) throws -> VaultRuntimeServices {
     /// Registers the local maintenance path at launch. It deliberately uses
     /// only repository, metadata, search, and thumbnail services; no backend
     /// or URLSession is constructed for import repair or indexing.
@@ -231,6 +247,13 @@ import LunaVaultUI
             importCoordinator = coordinator
             indexWorker = worker
             thumbnailStore = thumbnails
+            let requester = services.syncCoordinator.map(VaultSyncDownloadRequester.init(sync:))
+            previewRouter = VaultPreviewRouter(
+                repository: services.repository,
+                cache: VaultCacheCoordinator(repository: services.repository),
+                backend: services.remoteBackend,
+                downloadRequester: requester,
+                metadataStore: metadata)
             backgroundScheduler = scheduler
         } catch {
             // Storage setup already fails closed. Keep the UI usable while
@@ -279,6 +302,211 @@ import LunaVaultUI
     private static func makeSearchIndex() -> VaultSearchIndex? {
         guard let container = AppConfig.sharedContainerURL() else { return nil }
         return try? VaultSearchIndex(databaseURL: container.appendingPathComponent("vault-index.sqlite"))
+    }
+
+    private static func requestICloudEviction() async -> VaultICloudLocalState {
+        guard let value = services ?? makeServices(),
+              value.policy.location == .iCloud,
+              let backend = value.remoteBackend as? VaultICloudBackend,
+              let identity = remoteIdentity(for: value) else { return .unavailable }
+        do {
+            switch try await backend.evictionOutcome(for: identity) {
+            case .evicted: return .evicted
+            case .pending: return .evictionRequested
+            case .notEvictable: return .unavailable
+            }
+        } catch {
+            return .failed
+        }
+    }
+
+    private static func remoteIdentity(for services: VaultRuntimeServices)
+        -> VaultRemoteObjectIdentity? {
+        guard let backend = services.remoteBackend else { return nil }
+        let jobs = (try? services.repository.jobs()) ?? []
+        for job in jobs.sorted(by: { $0.updatedAt > $1.updatedAt }) {
+            guard job.backendKey == backend.identity.stableKey,
+                  job.kind == .download || job.kind == .upload,
+                  let objectID = job.objectID,
+                  let revision = job.revision,
+                  let generation = job.payloadGeneration,
+                  let rawKind = job.remoteObjectKind,
+                  let kind = VaultRemoteObjectKind(rawValue: rawKind) else { continue }
+            return try? VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
+                                                   kind: kind, generation: generation)
+        }
+        return nil
+    }
+}
+
+/// The UI owns only the import button. This host object owns the document
+/// picker lease and hands the selected URL to the protected import coordinator.
+@MainActor
+private final class VaultDocumentImportPresenter: NSObject, UIDocumentPickerDelegate {
+    weak var presenter: UIViewController?
+    private let coordinatorProvider: () -> VaultImportCoordinator?
+    private var picker: UIDocumentPickerViewController?
+
+    init(coordinatorProvider: @escaping () -> VaultImportCoordinator?) {
+        self.coordinatorProvider = coordinatorProvider
+        super.init()
+    }
+
+    func present() {
+        guard let presenter else { return }
+        guard coordinatorProvider() != nil else {
+            showError(on: presenter, message: "Vault storage is not ready. Finish setup, then try again.")
+            return
+        }
+        let value = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
+        value.delegate = self
+        value.allowsMultipleSelection = false
+        picker = value
+        presenter.present(value, animated: true)
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController,
+                        didPickDocumentsAt urls: [URL]) {
+        picker = nil
+        guard let url = urls.first, let coordinator = coordinatorProvider(),
+              let presenter else { return }
+        do {
+            let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+            _ = try coordinator.importFile(VaultImportSource(
+                fileURL: url, fileName: url.lastPathComponent, contentType: contentType))
+            (presenter as? VaultRootViewController)?.refresh()
+        } catch {
+            showError(on: presenter, message: "The file could not be imported. Check its size and try again.")
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        picker = nil
+    }
+
+    private func showError(on presenter: UIViewController, message: String) {
+        let alert = UIAlertController(title: "Vault", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Done", style: .default))
+        presenter.present(alert, animated: true)
+    }
+}
+
+private final class VaultSyncDownloadRequester: VaultPreviewDownloadRequesting, @unchecked Sendable {
+    private let sync: VaultSyncCoordinator
+
+    init(sync: VaultSyncCoordinator) { self.sync = sync }
+
+    func requestDownload(for identity: VaultRemoteObjectIdentity) async throws {
+        _ = try await sync.download(identity, wakeReason: .userRequested)
+    }
+}
+
+/// Presents only the plan returned by `VaultPreviewRouter`. A remote URL or
+/// unverified ciphertext never crosses this boundary; remote opens perform a
+/// complete authenticated sync download before constructing a player/QuickLook
+/// controller.
+@MainActor
+private final class VaultObjectPreviewPresenter {
+    weak var presenter: UIViewController?
+    private let routerProvider: () -> VaultPreviewRouter?
+    private let servicesProvider: () -> VaultRuntimeServices?
+
+    init(routerProvider: @escaping () -> VaultPreviewRouter?,
+         servicesProvider: @escaping () -> VaultRuntimeServices?) {
+        self.routerProvider = routerProvider
+        self.servicesProvider = servicesProvider
+    }
+
+    func open(_ objectID: VaultObjectID) {
+        guard let presenter else { return }
+        guard let router = routerProvider() else {
+            showStatus(on: presenter, message: "Vault preview is unavailable until storage is ready.")
+            return
+        }
+        let services = servicesProvider()
+        let identity = services.flatMap { Self.remoteIdentity(for: objectID, services: $0) }
+        Task { [weak self, weak presenter] in
+            do {
+                var plan = try await router.plan(objectID: objectID, remoteIdentity: identity)
+                if plan.availability == .needsDownload, let identity {
+                    plan = try await router.downloadAndPlan(objectID: objectID, identity: identity)
+                }
+                if let capability = plan.capability {
+                    try router.beginPreview(capability)
+                    let content = router.makeViewController(for: plan)
+                    let session = VaultPreviewSessionViewController(
+                        content: content, router: router, capability: capability)
+                    await MainActor.run { presenter?.present(session, animated: true) }
+                } else {
+                    let content = router.makeViewController(for: plan)
+                    await MainActor.run { presenter?.present(content, animated: true) }
+                }
+            } catch {
+                await MainActor.run { [weak self, weak presenter] in
+                    guard let self, let presenter else { return }
+                    self.showStatus(on: presenter, message: "This file could not be opened securely.")
+                }
+            }
+        }
+    }
+
+    private static func remoteIdentity(for objectID: VaultObjectID,
+                                       services: VaultRuntimeServices) -> VaultRemoteObjectIdentity? {
+        guard let backend = services.remoteBackend else { return nil }
+        let jobs = (try? services.repository.jobs()) ?? []
+        return jobs.sorted(by: { $0.updatedAt > $1.updatedAt }).compactMap { job in
+            guard job.objectID == objectID, job.backendKey == backend.identity.stableKey,
+                  (job.kind == .download || job.kind == .upload),
+                  let revision = job.revision, let generation = job.payloadGeneration,
+                  let rawKind = job.remoteObjectKind,
+                  let kind = VaultRemoteObjectKind(rawValue: rawKind) else { return nil }
+            return try? VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
+                                                   kind: kind, generation: generation)
+        }.first
+    }
+
+    private func showStatus(on presenter: UIViewController, message: String) {
+        let alert = UIAlertController(title: "Vault", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Done", style: .default))
+        presenter.present(alert, animated: true)
+    }
+}
+
+@MainActor
+private final class VaultPreviewSessionViewController: UIViewController {
+    private let content: UIViewController
+    private let router: VaultPreviewRouter
+    private let capability: VaultLocalContentCapability
+    private var ended = false
+
+    init(content: UIViewController, router: VaultPreviewRouter,
+         capability: VaultLocalContentCapability) {
+        self.content = content; self.router = router; self.capability = capability
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(content)
+        content.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(content.view)
+        NSLayoutConstraint.activate([
+            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            content.view.topAnchor.constraint(equalTo: view.topAnchor),
+            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        content.didMove(toParent: self)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard !ended else { return }
+        ended = true
+        try? router.endPreview(capability)
     }
 }
 

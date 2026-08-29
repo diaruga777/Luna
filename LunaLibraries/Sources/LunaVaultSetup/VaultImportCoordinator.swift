@@ -21,20 +21,58 @@ public struct VaultImportSource: Sendable {
     }
 }
 
+/// Production import configuration for a remote-backed Vault. The caller
+/// supplies the backend's stable identity and the app-owned root-key lookup;
+/// the setup layer never invents a key or stores plaintext as an upload.
+public struct VaultImportRemoteConfiguration: Sendable {
+    public let backendKey: String
+    public let vaultID: String
+    public let root: VaultRootKey
+    public let rootKey: @Sendable (UInt32) throws -> VaultRootKey
+    public let chunkSize: Int
+    /// The protected `uploads` directory owned by the sync payload store.
+    /// When present, import copies the sealed frame file there before the job
+    /// becomes visible, so a replay cannot produce a missing-payload job.
+    public let payloadDirectory: URL?
+
+    public init(backendKey: String, vaultID: String,
+                chunkSize: Int = 1_048_576,
+                root: VaultRootKey,
+                rootKey: @escaping @Sendable (UInt32) throws -> VaultRootKey,
+                payloadDirectory: URL? = nil) {
+        self.backendKey = backendKey
+        self.vaultID = vaultID
+        self.root = root
+        self.rootKey = rootKey
+        self.chunkSize = min(max(1, chunkSize), 8_388_608)
+        self.payloadDirectory = payloadDirectory
+    }
+}
+
 public struct VaultImportConfiguration: Equatable, Sendable {
     public let deviceID: String
     public let modelVersion: String
     public let maximumBytes: Int64
     public let uploadBackendKey: String?
+    public let remote: VaultImportRemoteConfiguration?
 
     public init(deviceID: String = "device",
                 modelVersion: String = "extractor-v2",
                 maximumBytes: Int64 = 100_000_000_000,
-                uploadBackendKey: String? = nil) {
+                uploadBackendKey: String? = nil,
+                remote: VaultImportRemoteConfiguration? = nil) {
         self.deviceID = deviceID
         self.modelVersion = modelVersion
         self.maximumBytes = min(max(1, maximumBytes), 100_000_000_000)
         self.uploadBackendKey = uploadBackendKey
+        self.remote = remote
+    }
+
+    public static func == (lhs: VaultImportConfiguration, rhs: VaultImportConfiguration) -> Bool {
+        lhs.deviceID == rhs.deviceID && lhs.modelVersion == rhs.modelVersion &&
+        lhs.maximumBytes == rhs.maximumBytes && lhs.uploadBackendKey == rhs.uploadBackendKey &&
+        lhs.remote?.backendKey == rhs.remote?.backendKey &&
+        lhs.remote?.vaultID == rhs.remote?.vaultID && lhs.remote?.chunkSize == rhs.remote?.chunkSize
     }
 }
 
@@ -168,7 +206,7 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
             guard let size = (attrs[.size] as? NSNumber)?.int64Value, size <= 1_048_576 else {
                 throw VaultImportError.malformedJournal
             }
-            let handle = try FileHandle(forReadingFrom: url)
+            let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
             defer { try? handle.close() }
             guard let data = try handle.read(upToCount: Int(size)), Int64(data.count) == size else {
                 throw VaultImportError.malformedJournal
@@ -244,6 +282,8 @@ public enum VaultImportError: Error, Equatable, Sendable {
     case invalidSource
     case securityScopeRequired
     case malformedJournal
+    case remoteConfigurationRequired
+    case cleanupFailed
 }
 
 public struct VaultImportResult: Equatable, Sendable {
@@ -279,20 +319,23 @@ private struct VaultImportJournal: Codable, Sendable {
     let updatedAt: Date
     let sourceName: String
     let contentDigest: String
+    let remoteGeneration: String?
 
     private enum CodingKeys: String, CodingKey {
         case objectID, revision, logicalTime, deviceID, fileName, contentType,
-             byteCount, createdAt, updatedAt, sourceName, contentDigest
+             byteCount, createdAt, updatedAt, sourceName, contentDigest, remoteGeneration
     }
 
     init(objectID: VaultObjectID, revision: UUID, logicalTime: Int64,
          deviceID: String, fileName: String, contentType: String?, byteCount: Int64,
-         createdAt: Date, updatedAt: Date, sourceName: String, contentDigest: String) {
+         createdAt: Date, updatedAt: Date, sourceName: String, contentDigest: String,
+         remoteGeneration: String? = nil) {
         self.objectID = objectID; self.revision = revision; self.logicalTime = logicalTime
         self.deviceID = deviceID; self.fileName = fileName; self.contentType = contentType
         self.byteCount = byteCount; self.createdAt = createdAt; self.updatedAt = updatedAt
         self.sourceName = sourceName
         self.contentDigest = contentDigest
+        self.remoteGeneration = remoteGeneration
     }
 
     init(from decoder: Decoder) throws {
@@ -308,6 +351,7 @@ private struct VaultImportJournal: Codable, Sendable {
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         sourceName = try c.decode(String.self, forKey: .sourceName)
         contentDigest = try c.decode(String.self, forKey: .contentDigest)
+        remoteGeneration = try c.decodeIfPresent(String.self, forKey: .remoteGeneration)
     }
 }
 
@@ -380,7 +424,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             let logicalTime = identity.nextLogicalTime(now: now)
             let fileName = sanitizedFileName(source.fileName ?? values.name ?? source.fileURL.lastPathComponent)
             guard !fileName.isEmpty else { throw VaultImportError.invalidSource }
-            let journal = VaultImportJournal(objectID: objectID, revision: revision,
+            var journal = VaultImportJournal(objectID: objectID, revision: revision,
                                              logicalTime: logicalTime, deviceID: configuration.deviceID,
                                              fileName: fileName, contentType: source.contentType,
                                              byteCount: byteCount, createdAt: now, updatedAt: now,
@@ -395,10 +439,37 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             try stage(source.fileURL, to: staged, expectedByteCount: byteCount,
                       expectedDigest: contentDigest)
 
+            let remoteStaged: URL?
+            if let remote = configuration.remote {
+                let destination = stagingDirectory.appendingPathComponent("ciphertext-\(token).lvf")
+                let encrypted = try sealRemotePayload(staged, to: destination, journal: journal,
+                                                       remote: remote)
+                let payloadDirectory = remote.payloadDirectory ??
+                    stagingDirectory.deletingLastPathComponent()
+                        .appendingPathComponent("VaultSyncCiphertext/uploads", isDirectory: true)
+                try stageRemoteUpload(encrypted, from: destination, into: payloadDirectory)
+                remoteStaged = destination
+                journal = VaultImportJournal(objectID: journal.objectID, revision: journal.revision,
+                    logicalTime: journal.logicalTime, deviceID: journal.deviceID,
+                    fileName: journal.fileName, contentType: journal.contentType,
+                    byteCount: journal.byteCount, createdAt: journal.createdAt,
+                    updatedAt: journal.updatedAt, sourceName: journal.sourceName,
+                    contentDigest: journal.contentDigest, remoteGeneration: encrypted.identity.generation)
+                // Persist the ciphertext generation in the recovery anchor
+                // before the atomic object/job boundary is attempted.
+                try writeJournal(journal, to: marker)
+            } else {
+                remoteStaged = nil
+            }
+
             do {
-                let result = try finalize(journal, stagedURL: staged, journalURL: marker)
-                try? fileManager.removeItem(at: staged)
-                try? fileManager.removeItem(at: marker)
+                let result = try finalize(journal, stagedURL: staged, journalURL: marker,
+                                          remoteURL: remoteStaged)
+                do {
+                    try fileManager.removeItem(at: staged)
+                    if let remoteStaged { try fileManager.removeItem(at: remoteStaged) }
+                    try fileManager.removeItem(at: marker)
+                } catch { throw VaultImportError.cleanupFailed }
                 return result
             } catch {
                 // Leave both protected files for repair. The import job is
@@ -412,11 +483,13 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     /// removes only stale staging pairs that cannot be matched to a journal.
     @discardableResult
     public func repairInterruptedImports() throws -> [VaultImportResult] {
-        lock.withLock {
+        try lock.withLock {
             let files = (try? fileManager.contentsOfDirectory(at: stagingDirectory,
                                                                includingPropertiesForKeys: nil)) ?? []
             var results: [VaultImportResult] = []
             var livePayloadTokens = Set<String>()
+            var liveCiphertextTokens = Set<String>()
+            var cleanupFailed = false
             for journalURL in files where journalURL.lastPathComponent.hasPrefix("journal-") && journalURL.pathExtension == "json" {
                 let token = journalURL.deletingPathExtension().lastPathComponent
                     .dropFirst("journal-".count)
@@ -444,10 +517,48 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                     continue
                 }
                 livePayloadTokens.insert(tokenString)
+                let ciphertext = stagingDirectory.appendingPathComponent("ciphertext-\(tokenString).lvf")
+                let remoteURL: URL?
+                if configuration.remote != nil {
+                    guard fileManager.fileExists(atPath: ciphertext.path),
+                          isProtected(ciphertext), isRegularFile(ciphertext) else {
+                        continue
+                    }
+                    liveCiphertextTokens.insert(tokenString)
+                    remoteURL = ciphertext
+                } else {
+                    remoteURL = nil
+                }
+                var resolvedJournal = journal
+                if let remote = configuration.remote, let remoteURL, journal.remoteGeneration == nil,
+                   let encrypted = try? VaultAuthenticatedCiphertextFile(fileURL: remoteURL,
+                                                                          vaultID: remote.vaultID),
+                   encrypted.identity.objectID == journal.objectID,
+                   encrypted.identity.revision == journal.revision,
+                   encrypted.identity.kind == .content,
+                   encrypted.plaintextByteCount == UInt64(journal.byteCount) {
+                    do {
+                        _ = try encrypted.verified(rootKey: remote.rootKey)
+                        resolvedJournal = VaultImportJournal(objectID: journal.objectID,
+                            revision: journal.revision, logicalTime: journal.logicalTime,
+                            deviceID: journal.deviceID, fileName: journal.fileName,
+                            contentType: journal.contentType, byteCount: journal.byteCount,
+                            createdAt: journal.createdAt, updatedAt: journal.updatedAt,
+                            sourceName: journal.sourceName, contentDigest: journal.contentDigest,
+                            remoteGeneration: encrypted.identity.generation)
+                        try writeJournal(resolvedJournal, to: journalURL)
+                    } catch { continue }
+                }
                 do {
-                    let result = try finalize(journal, stagedURL: payload, journalURL: journalURL)
-                    try? fileManager.removeItem(at: payload)
-                    try? fileManager.removeItem(at: journalURL)
+                    let result = try finalize(resolvedJournal, stagedURL: payload, journalURL: journalURL,
+                                              remoteURL: remoteURL)
+                    do {
+                        try fileManager.removeItem(at: payload)
+                        if let remoteURL { try fileManager.removeItem(at: remoteURL) }
+                        try fileManager.removeItem(at: journalURL)
+                    } catch {
+                        cleanupFailed = true
+                    }
                     results.append(result)
                 } catch {
                     // A later foreground/background pass can retry the same
@@ -464,17 +575,27 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                 if name.hasPrefix("payload-") {
                     let token = String(name.dropFirst("payload-".count))
                     if UUID(uuidString: token) == nil || !livePayloadTokens.contains(token) {
-                        try? fileManager.removeItem(at: file)
+                        do { try fileManager.removeItem(at: file) }
+                        catch { cleanupFailed = true }
+                    }
+                } else if name.hasPrefix("ciphertext-") && name.hasSuffix(".lvf") {
+                    let token = String(name.dropFirst("ciphertext-".count).dropLast(".lvf".count))
+                    if UUID(uuidString: token) == nil || !liveCiphertextTokens.contains(token) {
+                        do { try fileManager.removeItem(at: file) }
+                        catch { cleanupFailed = true }
                     }
                 } else if name.hasPrefix(".staging-") || name.hasPrefix("tmp-") {
-                    try? fileManager.removeItem(at: file)
+                    do { try fileManager.removeItem(at: file) }
+                    catch { cleanupFailed = true }
                 }
             }
+            if cleanupFailed { throw VaultImportError.cleanupFailed }
             return results
         }
     }
 
-    private func finalize(_ journal: VaultImportJournal, stagedURL: URL, journalURL: URL) throws -> VaultImportResult {
+    private func finalize(_ journal: VaultImportJournal, stagedURL: URL, journalURL: URL,
+                          remoteURL: URL? = nil) throws -> VaultImportResult {
         guard fileManager.fileExists(atPath: stagedURL.path), isProtected(stagedURL),
               isRegularFile(stagedURL) else {
             throw VaultImportError.protectedStaging
@@ -486,6 +607,28 @@ public final class VaultImportCoordinator: @unchecked Sendable {
               journal.contentDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
               try digestFile(stagedURL, expectedByteCount: journal.byteCount) == journal.contentDigest else {
             throw VaultImportError.interrupted
+        }
+        let remoteIdentity: VaultRemoteObjectIdentity?
+        if let remote = configuration.remote {
+            guard let remoteURL,
+                  journal.remoteGeneration?.count == 64,
+                  let payload = try? VaultAuthenticatedCiphertextFile(
+                    fileURL: remoteURL, vaultID: remote.vaultID),
+                  payload.identity.objectID == journal.objectID,
+                  payload.identity.revision == journal.revision,
+                  payload.identity.kind == .content,
+                  payload.plaintextByteCount == UInt64(journal.byteCount),
+                  payload.identity.generation == journal.remoteGeneration else {
+                throw VaultImportError.interrupted
+            }
+            do { _ = try payload.verified(rootKey: remote.rootKey) }
+            catch { throw VaultImportError.interrupted }
+            remoteIdentity = payload.identity
+        } else {
+            guard configuration.uploadBackendKey == nil else {
+                throw VaultImportError.remoteConfigurationRequired
+            }
+            remoteIdentity = nil
         }
         if let duplicate = try existingDuplicateResult(for: journal) {
             return duplicate
@@ -501,23 +644,24 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                 idempotencyKey: indexKey, revision: journal.revision)
         var jobs = [indexJob]
         var uploadID: UUID?
-        if let backendKey = configuration.uploadBackendKey {
+        if let backendKey = configuration.remote?.backendKey {
             // The content generation is filled by the authenticated content
             // install. The upload worker must still bind its request to this
             // revision; it may not use a random or all-zero dedupe token.
-            let generation = journal.contentDigest
+            guard let remoteIdentity else { throw VaultImportError.remoteConfigurationRequired }
             let upload = VaultJob(kind: .upload, objectID: journal.objectID,
                                   createdAt: journal.updatedAt, updatedAt: journal.updatedAt,
-                                  idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(journal.revision.uuidString)",
+                                  idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(journal.revision.uuidString):\(remoteIdentity.generation)",
                                   revision: journal.revision, backendKey: backendKey,
-                                  payloadGeneration: generation, remoteObjectKind: "content")
+                                  payloadGeneration: remoteIdentity.generation, remoteObjectKind: "content")
             jobs.append(upload)
             uploadID = upload.id
         }
         _ = try repository.insertAtomically(VaultAtomicObjectInsertRequest(record: record,
                                                                             contentURL: stagedURL,
                                                                             contentByteCount: journal.byteCount,
-                                                                            jobs: jobs))
+                                                                            jobs: jobs,
+                                                                            deferVisibility: true))
         guard let current = try repository.object(journal.objectID), current.revision == journal.revision,
               !current.isTombstone else { throw VaultImportError.missingObject }
         try metadataStore.put(VaultImportedFileMetadata(objectID: journal.objectID,
@@ -527,10 +671,17 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                                          byteCount: journal.byteCount,
                                                          createdAt: journal.createdAt,
                                                          updatedAt: journal.updatedAt))
+        // Publish only after the protected sidecar and the durable jobs exist;
+        // an index worker can now never observe an incomplete import.
+        try repository.setObjectReady(journal.objectID)
+        let storedIndexID = try repository.job(idempotencyKey: indexKey)?.id ?? indexJob.id
+        let storedUploadID = uploadID.flatMap { id in
+            try? repository.job(id)?.id
+        } ?? uploadID
         return VaultImportResult(objectID: journal.objectID, revision: journal.revision,
                                  logicalTime: journal.logicalTime, fileName: journal.fileName,
-                                 byteCount: journal.byteCount, indexJobID: indexJob.id,
-                                 uploadJobID: uploadID)
+                                 byteCount: journal.byteCount, indexJobID: storedIndexID,
+                                 uploadJobID: storedUploadID)
     }
 
     /// The system identity is content-addressed while revisions remain
@@ -558,6 +709,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             try metadataStore.put(recovered)
             metadata = recovered
         }
+        try repository.setObjectReady(journal.objectID)
 
         var jobs = try repository.jobs().filter {
             $0.objectID == journal.objectID && $0.revision == current.revision
@@ -570,21 +722,24 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                idempotencyKey: "index:\(journal.objectID.rawValue.uuidString):\(current.revision.uuidString):\(configuration.modelVersion)",
                                revision: current.revision)
             try repository.enqueue(job)
-            jobs.append(job)
-            indexJob = job
+            indexJob = try repository.job(idempotencyKey: job.idempotencyKey)
         }
 
+        let backendKey = configuration.remote?.backendKey
         var uploadJob = jobs.first(where: { $0.kind == .upload &&
-                                            $0.backendKey == configuration.uploadBackendKey })
-        if let backendKey = configuration.uploadBackendKey, uploadJob == nil {
+                                            $0.backendKey == backendKey })
+        if let backendKey, uploadJob == nil {
+            guard let generation = journal.remoteGeneration else {
+                throw VaultImportError.remoteConfigurationRequired
+            }
             let job = VaultJob(kind: .upload, objectID: journal.objectID,
                                createdAt: journal.updatedAt, updatedAt: journal.updatedAt,
-                               idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(current.revision.uuidString)",
+                               idempotencyKey: "upload:\(backendKey):content:\(journal.objectID.rawValue.uuidString):\(current.revision.uuidString):\(generation)",
                                revision: current.revision, backendKey: backendKey,
-                               payloadGeneration: journal.contentDigest,
+                               payloadGeneration: generation,
                                remoteObjectKind: "content")
             try repository.enqueue(job)
-            uploadJob = job
+            uploadJob = try repository.job(idempotencyKey: job.idempotencyKey)
         }
         return VaultImportResult(objectID: journal.objectID, revision: current.revision,
                                  logicalTime: current.logicalTime, fileName: metadata.fileName,
@@ -604,7 +759,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             // Keep the source descriptor open for the whole copy. A later
             // replacement of the source pathname cannot switch the bytes
             // being copied midway through the import.
-            let input = try FileHandle(forReadingFrom: source)
+            let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
             let output = try FileHandle(forWritingTo: destination)
             defer { try? input.close(); try? output.close() }
             var copied: Int64 = 0
@@ -629,6 +784,78 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         }
     }
 
+    private func sealRemotePayload(_ plaintextURL: URL, to destination: URL,
+                                   journal: VaultImportJournal,
+                                   remote: VaultImportRemoteConfiguration)
+        throws -> VaultAuthenticatedCiphertextFile {
+        guard remote.vaultID.isEmpty == false,
+              remote.backendKey.isEmpty == false,
+              journal.byteCount >= 0 else { throw VaultImportError.remoteConfigurationRequired }
+        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
+            throw VaultImportError.protectedStaging
+        }
+        do {
+            // The output inode is protected before the first ciphertext/header
+            // byte is written. Atomic install is still performed by the sync
+            // payload store after this authenticated file is copied.
+            try protection.apply(to: destination)
+            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
+            let payload = try VaultAuthenticatedCiphertextFile.seal(
+                plaintextURL: plaintextURL, fileURL: destination,
+                vaultID: remote.vaultID, kind: .content,
+                objectID: journal.objectID, revision: journal.revision,
+                root: remote.root, chunkSize: remote.chunkSize)
+            _ = try payload.verified(rootKey: remote.rootKey)
+            guard payload.plaintextByteCount == UInt64(journal.byteCount) else {
+                throw VaultImportError.interrupted
+            }
+            VaultSimulatorProtectionLedger.record(destination)
+            return payload
+        } catch let error as VaultImportError {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw VaultImportError.interrupted
+        }
+    }
+
+    private func stageRemoteUpload(_ payload: VaultAuthenticatedCiphertextFile,
+                                   from source: URL, into directory: URL) throws {
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try protection.apply(to: directory)
+        guard isProtected(directory) else { throw VaultImportError.protectedStaging }
+        let filename = [payload.identity.kind.rawValue,
+                        payload.identity.objectID.rawValue.uuidString,
+                        payload.identity.revision.uuidString,
+                        payload.identity.generation].joined(separator: "-") + ".vault"
+        let destination = directory.appendingPathComponent(filename)
+        let staging = directory.appendingPathComponent(".import-upload-\(UUID().uuidString)")
+        guard fileManager.createFile(atPath: staging.path, contents: nil) else {
+            throw VaultImportError.protectedStaging
+        }
+        do {
+            try protection.apply(to: staging)
+            guard isProtected(staging) else { throw VaultImportError.protectedStaging }
+            let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
+            let output = try FileHandle(forWritingTo: staging)
+            defer { try? input.close(); try? output.close() }
+            while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try output.write(contentsOf: chunk)
+            }
+            try output.synchronize()
+            if fileManager.fileExists(atPath: destination.path) {
+                _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
+            } else {
+                try fileManager.moveItem(at: staging, to: destination)
+            }
+            VaultSimulatorProtectionLedger.record(destination)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+    }
+
     private func valid(_ journal: VaultImportJournal) -> Bool {
         guard journal.byteCount >= 0, journal.byteCount <= configuration.maximumBytes,
               !journal.deviceID.isEmpty, journal.deviceID.utf8.count <= 256,
@@ -642,7 +869,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
 
     private func digestFile(_ url: URL, expectedByteCount: Int64) throws -> String {
         guard expectedByteCount >= 0 else { throw VaultImportError.invalidSource }
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
         var remaining = expectedByteCount
         var hasher = SHA256()
@@ -659,7 +886,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     }
 
     private func readBounded(_ url: URL, maximumBytes: Int64) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
         var data = Data()
         var remaining = maximumBytes
@@ -704,7 +931,9 @@ public final class VaultImportCoordinator: @unchecked Sendable {
 
     private func isRegularFile(_ url: URL) -> Bool {
         guard url.isFileURL,
-              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              let handle = try? VaultSecureFileAccess.openRegularReadOnly(at: url) else { return false }
+        defer { try? handle.close() }
+        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
               values.isDirectory != true, values.isSymbolicLink != true,
               let attributes = try? fileManager.attributesOfItem(atPath: url.path),
               let type = attributes[.type] as? FileAttributeType,

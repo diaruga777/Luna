@@ -189,7 +189,7 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             guard (try? protection.hasRequiredProtection(at: staging)) == true else {
                 throw VaultSyncError.backend(.permissionDenied)
             }
-            let input = try FileHandle(forReadingFrom: source)
+            let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
             let output = try FileHandle(forWritingTo: staging)
             defer { try? input.close(); try? output.close() }
             while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {

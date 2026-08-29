@@ -110,7 +110,8 @@ PATH_RULES: list[tuple[str, object]] = [
     (r"^LunaTests/Fixtures/", "SYMBOL"),
     (r"^Fixtures/Vault/manifest\.json$", ["VaultScaffoldTests"]),
     (r"^LunaLibraries/Sources/LunaVault", ["VaultScaffoldTests", "VaultCryptoStorageTests",
-                                            "VaultBackendTests", "VaultExtractionTests", "VaultSearchTests"]),
+                                            "VaultBackendTests", "VaultExtractionTests", "VaultSearchTests",
+                                            "VaultStage5Tests"]),
     (r"^LunaTests/VaultSearchTests\.swift$", ["VaultSearchTests"]),
     (r"^LunaTests/ReferenceImages/", "SYMBOL"),
     # Inputs that cannot move a test result.

@@ -5,7 +5,47 @@ import LunaAppConfig
 import LunaVaultCrypto
 import LunaVaultModels
 
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
+
 public enum LunaVaultStorageModule { public static let identifier = "LunaVaultStorage" }
+
+/// Opens a source by descriptor after rejecting symlink components and a
+/// symlink final path. Callers copy/hash through the returned descriptor so a
+/// pathname replacement cannot produce a TOCTOU swap midway through a read.
+public enum VaultSecureFileAccess {
+    public static func openRegularReadOnly(at url: URL) throws -> FileHandle {
+        guard url.isFileURL, !hasSymlinkComponent(url.path) else {
+            throw VaultStorageError.invalidArtifact
+        }
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0,
+              (info.st_mode & S_IFMT) == S_IFREG else {
+            close(descriptor)
+            throw VaultStorageError.invalidArtifact
+        }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    private static func hasSymlinkComponent(_ path: String) -> Bool {
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+        var current = standardized.hasPrefix("/") ? "/" : ""
+        for component in standardized.split(separator: "/") {
+            if current.isEmpty || current == "/" { current += String(component) }
+            else { current += "/" + component }
+            var info = stat()
+            if lstat(current, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK {
+                return true
+            }
+        }
+        return false
+    }
+}
 
 public struct VaultStorageConfiguration: Equatable, Sendable {
     public let databaseName: String
@@ -208,7 +248,8 @@ public final class VaultRepository: @unchecked Sendable {
         return true}
         if advanced{try drainPendingCleanup()};return advanced}}
 
-    public func writeContent(_ data:Data,for id:VaultObjectID)throws->URL{try sync{
+    public func writeContent(_ data:Data,for id:VaultObjectID,
+                             visibility: Bool = true)throws->URL{try sync{
         guard let object=try objectLocked(id),!object.isTombstone else{throw VaultStorageError.missingObject}
         let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try fileManager.createDirectory(at:dir,withIntermediateDirectories:true);try protect(dir)
         let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
@@ -240,7 +281,7 @@ public final class VaultRepository: @unchecked Sendable {
                 if fileManager.fileExists(atPath:backupGeneration.path){try fileManager.moveItem(at:backupGeneration,to:generation)}
                 throw error
             }
-            try markObjectReadyLocked(id)
+            if visibility { try markObjectReadyLocked(id) }
             return final
         }catch{try?fileManager.removeItem(at:staging);try?fileManager.removeItem(at:stagingGeneration);throw error}
     }}
@@ -251,7 +292,7 @@ public final class VaultRepository: @unchecked Sendable {
     /// change the bytes being copied. The final object is invisible to job
     /// workers until the caller enqueues its durable job.
     public func writeContent(from sourceURL: URL, expectedByteCount: Int64? = nil,
-                             for id: VaultObjectID) throws -> URL {
+                             for id: VaultObjectID, visibility: Bool = true) throws -> URL {
         try sync {
             guard let object = try objectLocked(id), !object.isTombstone else {
                 throw VaultStorageError.missingObject
@@ -292,7 +333,7 @@ public final class VaultRepository: @unchecked Sendable {
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
                     try fileManager.removeItem(at: old)
                 }
-                try markObjectReadyLocked(id)
+                if visibility { try markObjectReadyLocked(id) }
                 return final
             } catch {
                 try? fileManager.removeItem(at: staging)
@@ -312,7 +353,7 @@ public final class VaultRepository: @unchecked Sendable {
             let url = contentURL(id)
             guard fileManager.fileExists(atPath: url.path),
                   try protectionApplier.hasRequiredProtection(at: url) else { return nil }
-            let handle = try FileHandle(forReadingFrom: url)
+            let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
             defer { try? handle.close() }
             return try handle.read(upToCount: Int(maximumBytes))
         }
@@ -326,7 +367,7 @@ public final class VaultRepository: @unchecked Sendable {
         // Mark the inode before its first plaintext write; `protect` also
         // verifies the exact required class and fails closed.
         try protect(destination)
-        let input = try FileHandle(forReadingFrom: sourceURL)
+        let input = try VaultSecureFileAccess.openRegularReadOnly(at: sourceURL)
         let output = try FileHandle(forWritingTo: destination)
         defer { try? input.close(); try? output.close() }
         var copied: Int64 = 0
@@ -367,7 +408,7 @@ public final class VaultRepository: @unchecked Sendable {
     }
 
     private func digestFile(_ url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
         var hasher = SHA256()
         while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
@@ -433,6 +474,14 @@ public final class VaultRepository: @unchecked Sendable {
                 ready = $0.int(0) != 0
             }
             return ready
+        }
+    }
+    /// Publishes a staged object only after its sidecar metadata and durable
+    /// follow-up jobs have been committed by the caller.
+    public func setObjectReady(_ id: VaultObjectID, ready: Bool = true) throws {
+        try sync {
+            guard try objectLocked(id) != nil else { throw VaultStorageError.missingObject }
+            try run("INSERT INTO object_visibility(object_id,ready,updated_at) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET ready=excluded.ready,updated_at=excluded.updated_at", [.text(id.rawValue.uuidString), .int(ready ? 1 : 0), .double(Date().timeIntervalSinceReferenceDate)])
         }
     }
     public func removeContent(for id:VaultObjectID)throws{try sync{try transaction{try enqueueCleanupLocked(id)};try drainPendingCleanup()}}
@@ -769,7 +818,7 @@ public final class VaultRepository: @unchecked Sendable {
 
     private func readBoundedFile(_ url: URL, maximumBytes: Int64) throws -> Data {
         guard maximumBytes >= 0, maximumBytes <= Int64(Int.max) else { throw VaultStorageError.invalidArtifact }
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
         var result = Data()
         result.reserveCapacity(Int(min(maximumBytes, 1_048_576)))

@@ -78,15 +78,16 @@ public extension VaultUbiquitousFileCoordinating {
                              identity: VaultRemoteObjectIdentity,
                              versionAt versionPath: String,
                              expectedRevision: UUID?) throws {
-        guard byteCount <= UInt64(Int.max) else { throw VaultBackendError.invalidRange }
-        try compareAndWrite(Data(contentsOf: sourceURL), at: relativePath,
-                            identity: identity, versionAt: versionPath,
-                            expectedRevision: expectedRevision)
+        // A legacy coordinator that cannot stream is not a safe fallback for
+        // a potentially 100-GB content object. It must opt into the explicit
+        // file API rather than silently materialising the source as Data.
+        _ = sourceURL; _ = byteCount; _ = relativePath; _ = identity
+        _ = versionPath; _ = expectedRevision
+        throw VaultBackendError.unsupported
     }
     func readToFile(at relativePath: String, destinationURL: URL) throws -> UInt64? {
-        guard let data = try read(at: relativePath) else { return nil }
-        try data.write(to: destinationURL, options: .atomic)
-        return UInt64(data.count)
+        _ = relativePath; _ = destinationURL
+        throw VaultBackendError.unsupported
     }
 }
 

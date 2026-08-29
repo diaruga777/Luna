@@ -14,22 +14,28 @@ public struct VaultAtomicObjectInsertRequest: Sendable {
     public let contentURL: URL?
     public let contentByteCount: Int64
     public let jobs: [VaultJob]
+    /// Keep the object invisible until a caller has committed sidecar
+    /// metadata and all durable jobs.
+    public let deferVisibility: Bool
 
-    public init(record: VaultObjectRecord, content: Data, jobs: [VaultJob] = []) {
+    public init(record: VaultObjectRecord, content: Data, jobs: [VaultJob] = [],
+                deferVisibility: Bool = false) {
         self.record = record
         self.content = content
         self.contentURL = nil
         self.contentByteCount = Int64(content.count)
         self.jobs = jobs
+        self.deferVisibility = deferVisibility
     }
 
     public init(record: VaultObjectRecord, contentURL: URL, contentByteCount: Int64,
-                jobs: [VaultJob] = []) {
+                jobs: [VaultJob] = [], deferVisibility: Bool = false) {
         self.record = record
         self.content = Data()
         self.contentURL = contentURL
         self.contentByteCount = contentByteCount
         self.jobs = jobs
+        self.deferVisibility = deferVisibility
     }
 }
 
@@ -55,16 +61,21 @@ extension VaultRepository: VaultAtomicObjectInserting {
             return false
         }
         do {
+            if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
             if try localContentCapability(for: request.record.id) == nil {
                 if let contentURL = request.contentURL {
                     _ = try writeContent(from: contentURL,
                                          expectedByteCount: request.contentByteCount,
-                                         for: request.record.id)
+                                         for: request.record.id,
+                                         visibility: !request.deferVisibility)
                 } else {
-                    _ = try writeContent(request.content, for: request.record.id)
+                    _ = try writeContent(request.content, for: request.record.id,
+                                         visibility: !request.deferVisibility)
                 }
             }
             for job in request.jobs { try enqueue(job) }
+            // A deferred request intentionally remains invisible. The caller
+            // publishes it after its sidecar metadata transaction commits.
             return true
         } catch {
             // Keep the object row as a durable recovery anchor. The import

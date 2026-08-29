@@ -5,6 +5,7 @@ import LunaVaultCrypto
 import LunaVaultModels
 import LunaVaultStorage
 import LunaVaultSync
+import LunaVaultSetup
 
 public enum VaultRuntimeError: Error, Sendable { case unsupportedLocation, providerUnavailable }
 
@@ -16,6 +17,9 @@ public final class VaultRuntimeServices: @unchecked Sendable {
     public let deviceBackend: VaultDeviceBackend
     public let remoteBackend: VaultBackendTransport?
     public let syncCoordinator: VaultSyncCoordinator?
+    /// The app-owned encryption policy used when a document import also
+    /// schedules a remote upload. Extensions never receive this capability.
+    public let remoteImportConfiguration: VaultImportRemoteConfiguration?
     public var availability: VaultBackendAvailability {
         remoteBackend?.currentAvailability ?? (policy.location == .device ? .available : .unavailable)
     }
@@ -27,10 +31,12 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                 repository: VaultRepository,
                 deviceBackend: VaultDeviceBackend,
                 remoteBackend: VaultBackendTransport?,
-                syncCoordinator: VaultSyncCoordinator?) {
+                syncCoordinator: VaultSyncCoordinator?,
+                remoteImportConfiguration: VaultImportRemoteConfiguration? = nil) {
         self.policy = policy; self.repository = repository
         self.deviceBackend = deviceBackend; self.remoteBackend = remoteBackend
         self.syncCoordinator = syncCoordinator
+        self.remoteImportConfiguration = remoteImportConfiguration
     }
 
     public static func production(policy: VaultStoragePolicy) throws -> VaultRuntimeServices {
@@ -42,7 +48,8 @@ public final class VaultRuntimeServices: @unchecked Sendable {
             if policy.location == .device {
                 return VaultRuntimeServices(policy: policy, repository: repository,
                                             deviceBackend: device, remoteBackend: nil,
-                                            syncCoordinator: nil)
+                                            syncCoordinator: nil,
+                                            remoteImportConfiguration: nil)
             }
             throw VaultRuntimeError.unsupportedLocation
         }
@@ -59,6 +66,7 @@ public final class VaultRuntimeServices: @unchecked Sendable {
         }
         let keyManager = VaultRootKeyManager(configuration: VaultCryptoConfiguration(
             keychainAccessGroup: keychainAccessGroup, vaultID: "default"))
+        let currentRoot = try keyManager.loadRequired()
         let payloadStore = try VaultFileSyncPayloadStore(
             rootURL: staging, vaultID: "default", repository: repository,
             rootKey: { try keyManager.key(version: $0) })
@@ -67,7 +75,12 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                                         owner: "iphone-host")
         return VaultRuntimeServices(policy: policy, repository: repository,
                                     deviceBackend: device, remoteBackend: backend,
-                                    syncCoordinator: sync)
+                                    syncCoordinator: sync,
+                                    remoteImportConfiguration: VaultImportRemoteConfiguration(
+                                        backendKey: backend.identity.stableKey, vaultID: "default",
+                                        root: currentRoot,
+                                        rootKey: { try keyManager.key(version: $0) },
+                                        payloadDirectory: staging.appendingPathComponent("uploads", isDirectory: true)))
     }
 
     public static func productionFromDefaults(_ defaults: UserDefaults = .standard) throws -> VaultRuntimeServices {

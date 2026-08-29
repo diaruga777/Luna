@@ -10,11 +10,12 @@ PROVIDER="device"
 LIVE=0
 PERFORMANCE=0
 TEST_PLAN="LunaVault"
+STAGE5=0
 EXTRA=()
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID] [--performance]
+Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID] [--performance|--stage5]
        [--provider device|icloud|mac] [--live-provider device|icloud|mac] [-- ...]
 
 The iCloud and Mac provider modes require --live-provider explicitly. Device
@@ -31,6 +32,7 @@ while [[ $# -gt 0 ]]; do
     --provider) PROVIDER="${2:?missing provider}"; shift 2 ;;
     --live-provider) PROVIDER="${2:?missing provider}"; LIVE=1; shift 2 ;;
     --performance) PERFORMANCE=1; TEST_PLAN="LunaVaultPerformance"; shift ;;
+    --stage5) STAGE5=1; TEST_PLAN="LunaVaultStage5"; shift ;;
     --) shift; EXTRA+=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -87,13 +89,17 @@ if [[ "$PERFORMANCE" -eq 1 ]]; then
   # the performance-only plan gets its documented 20-minute execution cap.
   TIMEOUT_ARGS=(-default-test-execution-time-allowance 1200 -maximum-test-execution-time-allowance 1200)
 fi
+TEST_SELECTORS=(
+  -only-testing:LunaTests/VaultScaffoldTests
+  -only-testing:LunaTests/VaultCryptoStorageTests
+  -only-testing:LunaTests/VaultExtractionTests
+  -only-testing:LunaTests/VaultSearchTests
+  -only-testing:LunaTests/VaultBackendTests
+  -only-testing:LunaTests/VaultStage5Tests
+)
+if [[ "$STAGE5" -eq 1 ]]; then TEST_SELECTORS=(-only-testing:LunaTests/VaultStage5Tests); fi
 exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
-  -destination "$DESTINATION" \
-  -only-testing:LunaTests/VaultScaffoldTests \
-  -only-testing:LunaTests/VaultCryptoStorageTests \
-  -only-testing:LunaTests/VaultExtractionTests \
-  -only-testing:LunaTests/VaultSearchTests \
-  -only-testing:LunaTests/VaultBackendTests \
+  -destination "$DESTINATION" "${TEST_SELECTORS[@]}" \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
   ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} \
   ${EXTRA[@]+"${EXTRA[@]}"}

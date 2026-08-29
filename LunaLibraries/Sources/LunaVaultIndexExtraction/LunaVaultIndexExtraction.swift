@@ -29,6 +29,7 @@ public struct VaultExtractionPipeline: Sendable {
     private let artifactWriter: (any VaultExtractionArtifactStoring)?
     private let jobScheduler: (any VaultExtractionJobScheduling)?
     private let jobCoordinator: (any VaultExtractionJobCoordinating)?
+    private let temporaryCleanupFailed: Bool
 
     public init(policy: VaultExtractionPolicy = VaultExtractionPolicy(), modelVersion: String = "extractor-v2",
                 workerID: String = "vault-extraction-\(UUID().uuidString)",
@@ -45,9 +46,13 @@ public struct VaultExtractionPipeline: Sendable {
         self.transcriber = transcriber; self.metadataProvider = metadataProvider; self.imagePreparer = imagePreparer
         self.audioPreparer = audioPreparer; self.archivePreflight = archivePreflight; self.artifactWriter = artifactWriter
         self.jobScheduler = jobScheduler; self.jobCoordinator = jobCoordinator
+        self.temporaryCleanupFailed = VaultProtectedTemporaryDirectory.hadLaunchCleanupFailure
     }
 
     public func extract(_ request: VaultExtractionRequest) async throws -> VaultExtractionResult {
+        guard !temporaryCleanupFailed else {
+            throw VaultExtractionError.malformed("temporary cleanup failed")
+        }
         let startedAt = Date()
         try checkBudget(startedAt)
         guard request.descriptor.byteCount <= policy.maximumObjectBytes else { throw VaultExtractionError.inputTooLarge(request.descriptor.byteCount) }

@@ -43,7 +43,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         }
 
         var offset = UInt64(Self.headerByteCount)
-        var digest = Data()
+        var digest = SHA256()
         var frameBytes: UInt64 = 0
         var previousLength: UInt64?
         var chunkSize: UInt64?
@@ -93,8 +93,8 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
                 }
             }
             var lengthBE = length.bigEndian
-            withUnsafeBytes(of: &lengthBE) { digest.append(contentsOf: $0) }
-            digest.append(frame)
+            withUnsafeBytes(of: &lengthBE) { digest.update(data: Data($0)) }
+            digest.update(data: frame)
             frameBytes = try Self.checkedAdd(frameBytes, 8 + length)
             previousLength = length
             offset = try Self.checkedAdd(frameOffset, length)
@@ -229,7 +229,14 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     }
 
     static func writePlaceholder(to fileURL: URL) throws -> FileHandle {
-        guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: fileURL.path) {
+            let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
+            guard (attributes[.type] as? FileAttributeType) == .typeRegular,
+                  (attributes[.size] as? NSNumber)?.int64Value == 0 else {
+                throw VaultCryptoError.malformedEnvelope
+            }
+        } else if !fileManager.createFile(atPath: fileURL.path, contents: nil) {
             throw VaultCryptoError.malformedEnvelope
         }
         let handle = try FileHandle(forWritingTo: fileURL)
@@ -305,8 +312,8 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         return Int(min(8_388_608, max(1, plaintextByteCount)))
     }
 
-    private static func generation(_ input: Data) -> String {
-        SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
+    private static func generation(_ input: SHA256) -> String {
+        input.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private static func readUInt32(_ data: Data, offset: Int) -> UInt32 {
@@ -346,13 +353,13 @@ public extension VaultChunkedCryptor {
         let source = try FileHandle(forReadingFrom: plaintextURL)
         let output = try VaultAuthenticatedCiphertextFile.writePlaceholder(to: fileURL)
         defer { try? source.close(); try? output.close() }
-        var digest = Data()
+        var digest = SHA256()
         var frameCount: UInt32 = 0
         func appendFrame(_ frame: Data) throws {
             try VaultAuthenticatedCiphertextFile.writeFrame(frame, to: output)
             var length = UInt64(frame.count).bigEndian
-            withUnsafeBytes(of: &length) { digest.append(contentsOf: $0) }
-            digest.append(frame)
+            withUnsafeBytes(of: &length) { digest.update(data: Data($0)) }
+            digest.update(data: frame)
             guard frameCount < UInt32.max else { throw VaultCryptoError.tooManyChunks }
             frameCount += 1
         }
@@ -390,7 +397,7 @@ public extension VaultChunkedCryptor {
         let metadata = VaultAuthenticatedCiphertextFile.Metadata(
             vaultID: vaultID, objectID: objectID, revision: revision, kind: kind,
             rootVersion: root.version, plaintextByteCount: size,
-            frameCount: frameCount, generation: SHA256.hash(data: digest)
+            frameCount: frameCount, generation: digest.finalize()
                 .map { String(format: "%02x", $0) }.joined())
         try VaultAuthenticatedCiphertextFile.rewriteHeader(metadata, at: fileURL)
     }

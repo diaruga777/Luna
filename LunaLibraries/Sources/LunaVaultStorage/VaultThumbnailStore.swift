@@ -166,7 +166,15 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 try persistIndex()
                 return nil
             }
-            guard let data = fileManager.contents(atPath: url.path),
+            guard let handle = try? VaultSecureFileAccess.openRegularReadOnly(at: url) else {
+                // The payload and its index entry are one integrity unit. A
+                // corrupt, replaced, or symlinked payload is never retained.
+                try removeLocked(key)
+                try persistIndex()
+                return nil
+            }
+            defer { try? handle.close() }
+            guard let data = try? handle.readToEnd(),
                   Int64(data.count) == entry.byteCount else {
                 try removeLocked(key)
                 try persistIndex()

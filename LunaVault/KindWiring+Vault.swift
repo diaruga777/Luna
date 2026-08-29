@@ -191,7 +191,7 @@ private final class VaultMacIdentityConfirmationPresenter:
                 })
                 alert.addAction(UIAlertAction(title: "Fingerprints Match", style: .default) { [weak self] _ in
                     if let self {
-                        self.lock.withLock {
+                        _ = self.lock.withLock {
                             self.confirmedBindings.insert("\(fingerprint)|\(endpointBinding)")
                         }
                     }

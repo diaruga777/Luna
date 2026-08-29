@@ -119,7 +119,7 @@ import LunaVaultUI
         guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let rootKeys = VaultRootKeyManager(configuration:
             VaultCryptoConfiguration(keychainAccessGroup: accessGroup))
-        let currentRoot = try rootKeys.loadRequired()
+        let currentRoot = try rootKeys.loadOrCreate()
         let repository = try VaultRepository()
         let device = VaultDeviceBackend(store: repository)
         let credentialStore = VaultMacKeychainCredentialStore(accessGroup: accessGroup,

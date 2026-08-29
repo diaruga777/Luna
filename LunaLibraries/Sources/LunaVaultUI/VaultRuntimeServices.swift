@@ -66,7 +66,7 @@ public final class VaultRuntimeServices: @unchecked Sendable {
         }
         let keyManager = VaultRootKeyManager(configuration: VaultCryptoConfiguration(
             keychainAccessGroup: keychainAccessGroup, vaultID: "default"))
-        let currentRoot = try keyManager.loadRequired()
+        let currentRoot = try keyManager.loadOrCreate()
         let payloadStore = try VaultFileSyncPayloadStore(
             rootURL: staging, vaultID: "default", repository: repository,
             rootKey: { try keyManager.key(version: $0) })

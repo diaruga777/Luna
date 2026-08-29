@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
+import LunaVaultStorage
 
 #if canImport(Network)
 import Network
@@ -609,7 +610,7 @@ extension VaultMacRemoteBackend {
     }
 
     private static func readFile(_ fileURL: URL, range: Range<Int>) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: fileURL)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: fileURL)
         defer { try? handle.close() }
         try handle.seek(toOffset: UInt64(range.lowerBound))
         guard let data = try handle.read(upToCount: range.count), data.count == range.count else {
@@ -621,7 +622,7 @@ extension VaultMacRemoteBackend {
 
 private extension SHA256 {
     static func hashFile(at url: URL, byteCount: UInt64) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: url)
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
         var hasher = SHA256(); var remaining = byteCount
         while remaining > 0 {

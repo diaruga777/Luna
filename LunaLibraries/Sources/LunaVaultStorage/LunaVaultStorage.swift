@@ -249,7 +249,8 @@ public final class VaultRepository: @unchecked Sendable {
         if advanced{try drainPendingCleanup()};return advanced}}
 
     public func writeContent(_ data:Data,for id:VaultObjectID,
-                             visibility: Bool = true)throws->URL{try sync{
+                             visibility: Bool = true,
+                             generationOverride: String? = nil)throws->URL{try sync{
         guard let object=try objectLocked(id),!object.isTombstone else{throw VaultStorageError.missingObject}
         let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try fileManager.createDirectory(at:dir,withIntermediateDirectories:true);try protect(dir)
         let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
@@ -259,7 +260,12 @@ public final class VaultRepository: @unchecked Sendable {
         do{
             try writeProtectedData(data, to: staging)
             let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            try writeProtectedData(Data("\(object.revision.uuidString):\(digest)".utf8), to: stagingGeneration)
+            let capabilityGeneration = generationOverride ?? digest
+            guard capabilityGeneration.count == 64,
+                  capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                throw VaultStorageError.invalidArtifact
+            }
+            try writeProtectedData(Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8), to: stagingGeneration)
             for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
             if fileManager.fileExists(atPath:final.path){try fileManager.moveItem(at:final,to:backup)}
             if fileManager.fileExists(atPath:generation.path){try fileManager.moveItem(at:generation,to:backupGeneration)}
@@ -292,18 +298,25 @@ public final class VaultRepository: @unchecked Sendable {
     /// change the bytes being copied. The final object is invisible to job
     /// workers until the caller enqueues its durable job.
     public func writeContent(from sourceURL: URL, expectedByteCount: Int64? = nil,
-                             for id: VaultObjectID, visibility: Bool = true) throws -> URL {
+                             for id: VaultObjectID, visibility: Bool = true,
+                             generationOverride: String? = nil) throws -> URL {
         try sync {
             guard let object = try objectLocked(id), !object.isTombstone else {
                 throw VaultStorageError.missingObject
             }
             guard sourceURL.isFileURL,
                   (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) != true,
-                  (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isSymbolicLink) != true,
-                  let attrs = try? fileManager.attributesOfItem(atPath: sourceURL.path),
-                  let sourceSize = (attrs[.size] as? NSNumber)?.int64Value,
-                  sourceSize >= 0 else { throw VaultStorageError.invalidArtifact }
-            let size = expectedByteCount ?? sourceSize
+                  (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isSymbolicLink) != true else {
+                throw VaultStorageError.invalidArtifact
+            }
+            // Keep one no-follow descriptor for the size check and the full
+            // copy. A pathname replacement after this point cannot alter the
+            // bytes consumed by the install.
+            let source = try VaultSecureFileAccess.openRegularReadOnly(at: sourceURL)
+            defer { try? source.close() }
+            let sourceSize = try source.seekToEnd()
+            try source.seek(toOffset: 0)
+            let size = expectedByteCount ?? Int64(sourceSize)
             guard size == sourceSize, size == object.size, size <= 100_000_000_000 else {
                 throw VaultStorageError.invalidArtifact
             }
@@ -318,8 +331,13 @@ public final class VaultRepository: @unchecked Sendable {
             let backup = dir.appendingPathComponent(".previous")
             let backupGeneration = dir.appendingPathComponent(".previous-generation")
             do {
-                let digest = try streamCopy(sourceURL, to: staging, expectedByteCount: size)
-                let marker = Data("\(object.revision.uuidString):\(digest)".utf8)
+                let digest = try streamCopy(source, to: staging, expectedByteCount: size)
+                let capabilityGeneration = generationOverride ?? digest
+                guard capabilityGeneration.count == 64,
+                      capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                    throw VaultStorageError.invalidArtifact
+                }
+                let marker = Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8)
                 try writeProtectedData(marker, to: stagingGeneration)
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
                     try fileManager.removeItem(at: old)
@@ -359,7 +377,7 @@ public final class VaultRepository: @unchecked Sendable {
         }
     }
 
-    private func streamCopy(_ sourceURL: URL, to destination: URL,
+    private func streamCopy(_ input: FileHandle, to destination: URL,
                             expectedByteCount: Int64) throws -> String {
         guard fileManager.createFile(atPath: destination.path, contents: nil) else {
             throw VaultStorageError.sqlite("create staging")
@@ -367,9 +385,8 @@ public final class VaultRepository: @unchecked Sendable {
         // Mark the inode before its first plaintext write; `protect` also
         // verifies the exact required class and fails closed.
         try protect(destination)
-        let input = try VaultSecureFileAccess.openRegularReadOnly(at: sourceURL)
         let output = try FileHandle(forWritingTo: destination)
-        defer { try? input.close(); try? output.close() }
+        defer { try? output.close() }
         var copied: Int64 = 0
         var hasher = SHA256()
         while copied < expectedByteCount {
@@ -434,11 +451,16 @@ public final class VaultRepository: @unchecked Sendable {
                   let marker = String(data: markerData, encoding: .utf8),
                   let separator = marker.firstIndex(of: ":") else { return nil }
             let markerRevision = String(marker[..<separator])
-            let generation = String(marker[marker.index(after: separator)...])
+            let remainder = String(marker[marker.index(after: separator)...])
+            let generations = remainder.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            let generation = generations.first ?? ""
+            let plaintextDigest = generations.count > 1 ? generations[1] : generation
             guard markerRevision == object.revision.uuidString,
                   generation.count == 64,
                   generation.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
-            guard try digestFile(url) == generation else { return nil }
+            guard plaintextDigest.count == 64,
+                  plaintextDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+                  try digestFile(url) == plaintextDigest else { return nil }
             return VaultLocalContentCapability(objectID: id, revision: object.revision,
                                                generation: generation, byteCount: size,
                                                localURL: url)

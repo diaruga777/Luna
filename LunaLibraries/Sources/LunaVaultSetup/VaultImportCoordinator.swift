@@ -410,7 +410,12 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             guard values.isDirectory != true else { throw VaultImportError.notAFile }
             guard values.isSymbolicLink != true else { throw VaultImportError.symbolicLink }
             let attrs = try fileManager.attributesOfItem(atPath: source.fileURL.path)
-            guard let rawSize = (attrs[.size] as? NSNumber)?.int64Value else { throw VaultImportError.invalidSource }
+            let sourceHandle = try VaultSecureFileAccess.openRegularReadOnly(at: source.fileURL)
+            defer { try? sourceHandle.close() }
+            let descriptorSize = try sourceHandle.seekToEnd()
+            try sourceHandle.seek(toOffset: 0)
+            guard let rawSize = (attrs[.size] as? NSNumber)?.int64Value,
+                  rawSize == Int64(descriptorSize) else { throw VaultImportError.invalidSource }
             let byteCount = rawSize
             guard byteCount >= 0 else { throw VaultImportError.invalidSource }
             guard byteCount <= configuration.maximumBytes else { throw VaultImportError.inputTooLarge(byteCount) }
@@ -418,7 +423,8 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             // Hash through the source descriptor before choosing its opaque
             // identity. This is streaming-only and makes retries of identical
             // bytes converge on one object without retaining plaintext.
-            let contentDigest = try digestFile(source.fileURL, expectedByteCount: byteCount)
+            let contentDigest = try digestFile(sourceHandle, expectedByteCount: byteCount)
+            try sourceHandle.seek(toOffset: 0)
             let objectID = identity.objectID(forContentDigest: contentDigest)
             let revision = identity.nextRevision()
             let logicalTime = identity.nextLogicalTime(now: now)
@@ -436,7 +442,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             // The journal is the recovery anchor and is durably written before
             // any plaintext enters Vault's staging area.
             try writeJournal(journal, to: marker)
-            try stage(source.fileURL, to: staged, expectedByteCount: byteCount,
+            try stage(sourceHandle, to: staged, expectedByteCount: byteCount,
                       expectedDigest: contentDigest)
 
             let remoteStaged: URL?
@@ -747,9 +753,8 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                                  uploadJobID: uploadJob?.id)
     }
 
-    private func stage(_ source: URL, to destination: URL, expectedByteCount: Int64,
+    private func stage(_ input: FileHandle, to destination: URL, expectedByteCount: Int64,
                        expectedDigest: String) throws {
-        guard isRegularFile(source) else { throw VaultImportError.invalidSource }
         do {
             guard fileManager.createFile(atPath: destination.path, contents: nil) else {
                 throw VaultImportError.protectedStaging
@@ -759,9 +764,8 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             // Keep the source descriptor open for the whole copy. A later
             // replacement of the source pathname cannot switch the bytes
             // being copied midway through the import.
-            let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
             let output = try FileHandle(forWritingTo: destination)
-            defer { try? input.close(); try? output.close() }
+            defer { try? output.close() }
             var copied: Int64 = 0
             var hasher = SHA256()
             while copied < expectedByteCount {
@@ -868,9 +872,14 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     }
 
     private func digestFile(_ url: URL, expectedByteCount: Int64) throws -> String {
-        guard expectedByteCount >= 0 else { throw VaultImportError.invalidSource }
         let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
         defer { try? handle.close() }
+        return try digestFile(handle, expectedByteCount: expectedByteCount)
+    }
+
+    private func digestFile(_ handle: FileHandle, expectedByteCount: Int64) throws -> String {
+        guard expectedByteCount >= 0 else { throw VaultImportError.invalidSource }
+        try handle.seek(toOffset: 0)
         var remaining = expectedByteCount
         var hasher = SHA256()
         while remaining > 0 {

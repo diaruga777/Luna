@@ -1,6 +1,7 @@
 import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
+import LunaVaultStorage
 
 /// The state reported by the file provider for one ubiquitous object.
 public struct VaultUbiquitousFileState: Equatable, Sendable {
@@ -428,7 +429,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             try self.fileManager.createDirectory(at: payloadTarget.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
             let staging = payloadTarget.deletingLastPathComponent()
-                .appendingPathComponent(".staging-(UUID().uuidString)")
+                .appendingPathComponent(".staging-\(UUID().uuidString)")
             try self.copyFile(sourceURL, staging, expectedBytes: byteCount)
             if self.fileManager.fileExists(atPath: payloadTarget.path) {
                 try self.fileManager.removeItem(at: payloadTarget)
@@ -548,7 +549,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
     }
 
     private func copyFile(_ source: URL, _ destination: URL, expectedBytes: UInt64) throws {
-        let input = try FileHandle(forReadingFrom: source)
+        let input = try VaultSecureFileAccess.openRegularReadOnly(at: source)
         defer { try? input.close() }
         if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
         guard fileManager.createFile(atPath: destination.path, contents: nil) else {
@@ -570,7 +571,8 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         guard fileManager.fileExists(atPath: rhs.path) else { return false }
         let attrs = try fileManager.attributesOfItem(atPath: rhs.path)
         guard (attrs[.size] as? NSNumber)?.uint64Value == expectedBytes else { return false }
-        let left = try FileHandle(forReadingFrom: lhs), right = try FileHandle(forReadingFrom: rhs)
+        let left = try VaultSecureFileAccess.openRegularReadOnly(at: lhs)
+        let right = try VaultSecureFileAccess.openRegularReadOnly(at: rhs)
         defer { try? left.close(); try? right.close() }
         var remaining = expectedBytes
         while remaining > 0 {

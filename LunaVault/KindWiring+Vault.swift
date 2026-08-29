@@ -9,8 +9,17 @@ enum VaultWiring {
     private static let services: VaultRuntimeServices? = {
         try? VaultRuntimeServices.productionFromDefaults()
     }()
+    private static let syncRuntime = services.flatMap { VaultSyncRuntimeController(services: $0) }
 
-    static func install() { _ = services }
+    static func install() { _ = syncRuntime }
+
+    static func applicationDidEnterBackground() {
+        syncRuntime?.applicationDidEnterBackground()
+    }
+
+    static func applicationWillEnterForeground() {
+        syncRuntime?.applicationWillEnterForeground()
+    }
 
     static func makeRootViewController() -> UIViewController {
         VaultRootViewController(services: services)

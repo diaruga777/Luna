@@ -10,12 +10,14 @@ public final class InMemoryVaultUbiquitousCoordinator: VaultUbiquitousFileCoordi
     private var values: [String: Data]
     private var downloaded: Set<String>
     private var ubiquitous: Set<String>
+    private var currentIdentities: [String: VaultRemoteObjectIdentity] = [:]
     public let rootURL: URL?
     public let availability: VaultBackendAvailability
     public var evictionRemainsPending = false
     public var uploadRemainsPending = false
     public var uploadFails = false
     public var downloadedIsCurrent = true
+    public var downloadStatusIsKnown = true
     public var hasUnresolvedConflicts = false
     public var evictionError: VaultBackendError?
 
@@ -32,6 +34,7 @@ public final class InMemoryVaultUbiquitousCoordinator: VaultUbiquitousFileCoordi
         lock.withLock {
             VaultUbiquitousFileState(
                 exists: values[relativePath] != nil,
+                isDownloadStatusKnown: downloadStatusIsKnown,
                 isUbiquitous: ubiquitous.contains(relativePath),
                 isDownloaded: downloaded.contains(relativePath),
                 isCurrent: downloaded.contains(relativePath) && downloadedIsCurrent,
@@ -43,24 +46,44 @@ public final class InMemoryVaultUbiquitousCoordinator: VaultUbiquitousFileCoordi
         }
     }
 
-    public func writeIfAbsentOrIdentical(_ data: Data, at relativePath: String) throws {
+    public func compareAndWrite(_ data: Data, at relativePath: String,
+                                identity: VaultRemoteObjectIdentity,
+                                versionAt versionPath: String,
+                                expectedRevision: UUID?) throws {
         try lock.withLock {
-            if let existing = values[relativePath], existing != data {
-                throw VaultBackendError.conflict
+            let current = currentIdentities[versionPath]
+            if current == identity {
+                guard values[relativePath] == data else { throw VaultBackendError.conflict }
+                return
             }
+            guard current?.revision == expectedRevision else { throw VaultBackendError.staleVersion }
+            if let existing = values[relativePath], existing != data { throw VaultBackendError.conflict }
             values[relativePath] = data
+            currentIdentities[versionPath] = identity
             ubiquitous.insert(relativePath)
             downloaded.insert(relativePath)
         }
+    }
+
+    public func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity? {
+        lock.withLock { currentIdentities[versionPath] }
     }
 
     public func read(at relativePath: String) throws -> Data? {
         lock.withLock { values[relativePath] }
     }
 
-    public func remove(at relativePath: String) throws {
-        lock.withLock {
+    public func compareAndRemove(at relativePath: String,
+                                 identity: VaultRemoteObjectIdentity,
+                                 versionAt versionPath: String,
+                                 expectedRevision: UUID?) throws {
+        try lock.withLock {
+            guard let current = currentIdentities[versionPath] else { return }
+            guard current == identity, current.revision == expectedRevision else {
+                throw VaultBackendError.staleVersion
+            }
             values.removeValue(forKey: relativePath)
+            currentIdentities.removeValue(forKey: versionPath)
             downloaded.remove(relativePath)
             ubiquitous.remove(relativePath)
         }
@@ -86,11 +109,24 @@ public actor InMemoryVaultSyncPayloadStore: VaultSyncPayloadSource {
     private var staged: [VaultRemoteObjectIdentity: VaultAuthenticatedCiphertext] = [:]
     private var downloaded: [VaultRemoteObjectIdentity: VaultAuthenticatedCiphertext] = [:]
 
-    public init() {}
-    public func stageUpload(_ payload: VaultAuthenticatedCiphertext) async throws { staged[payload.identity] = payload }
-    public func uploadPayload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext? { staged[identity] }
+    private let rootKey: @Sendable (UInt32) throws -> VaultRootKey
+
+    public init(rootKey: @escaping @Sendable (UInt32) throws -> VaultRootKey = { version in
+        guard version == 1 else { throw VaultCryptoError.missingRootKey }
+        return try VaultRootKey(version: 1, key: Data(repeating: 7, count: 32))
+    }) { self.rootKey = rootKey }
+    public func stageUpload(_ payload: VaultAuthenticatedCiphertext) async throws {
+        _ = try payload.verified(rootKey: rootKey)
+        staged[payload.identity] = payload
+    }
+    public func uploadPayload(for identity: VaultRemoteObjectIdentity) async throws -> VaultVerifiedCiphertext? {
+        try staged[identity]?.verified(rootKey: rootKey)
+    }
     public func installDownloadedPayload(_ payload: VaultAuthenticatedCiphertext) async throws { downloaded[payload.identity] = payload }
-    public func removeStagedPayload(for identity: VaultRemoteObjectIdentity) async throws { staged.removeValue(forKey: identity) }
+    public func removeUploadPayload(for identity: VaultRemoteObjectIdentity) async throws { staged.removeValue(forKey: identity) }
+    public func removeAllPayloads(for identity: VaultRemoteObjectIdentity) async throws {
+        staged.removeValue(forKey: identity); downloaded.removeValue(forKey: identity)
+    }
     public func downloadedPayload(for identity: VaultRemoteObjectIdentity) -> VaultAuthenticatedCiphertext? { downloaded[identity] }
     public func stagedPayload(for identity: VaultRemoteObjectIdentity) -> VaultAuthenticatedCiphertext? { staged[identity] }
 }
@@ -194,13 +230,17 @@ public actor InMemoryVaultBackend: VaultBackendTransport {
         injectedFailures = failures
     }
 
-    public func put(_ payload: VaultAuthenticatedCiphertext,
+    public func put(_ payload: VaultVerifiedCiphertext,
                     expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome {
         try failIfInjected()
-        if let expectedRevision, expectedRevision != payload.identity.revision {
-            throw VaultBackendError.staleVersion
+        let current = values.keys.first {
+            $0.kind == payload.identity.kind && $0.objectID == payload.identity.objectID
         }
-        values[payload.identity] = payload
+        if current != payload.identity {
+            guard current?.revision == expectedRevision else { throw VaultBackendError.staleVersion }
+            if let current { values.removeValue(forKey: current); states[current] = .missing }
+        }
+        values[payload.identity] = payload.payload
         let state = states[payload.identity] ?? .current
         states[payload.identity] = state
         return state == .current ? .current : .pending
@@ -214,7 +254,10 @@ public actor InMemoryVaultBackend: VaultBackendTransport {
     public func remove(_ identity: VaultRemoteObjectIdentity,
                        expectedRevision: UUID?) async throws {
         try failIfInjected()
-        if let expectedRevision, expectedRevision != identity.revision {
+        let current = values.keys.first {
+            $0.kind == identity.kind && $0.objectID == identity.objectID
+        }
+        guard current == nil || (current == identity && current?.revision == expectedRevision) else {
             throw VaultBackendError.staleVersion
         }
         values.removeValue(forKey: identity)

@@ -122,7 +122,8 @@ final class VaultScaffoldTests: XCTestCase {
         let frames = try VaultChunkedCryptor(vaultID: "default", random: VaultTestRandomBytes(seed: 2))
             .seal(Data([9, 8]), objectID: id, revision: revision, root: root)
         let encrypted = try VaultAuthenticatedCiphertext(vaultID: "default", kind: .content, encryptedFrames: frames)
-        let writeOutcome = try await backend.put(encrypted, expectedRevision: revision)
+        let writeOutcome = try await backend.put(
+            try encrypted.verified { _ in root }, expectedRevision: nil)
         XCTAssertEqual(writeOutcome, .current)
         let ciphertext = try await backend.payload(for: encrypted.identity)
         XCTAssertEqual(ciphertext, encrypted)

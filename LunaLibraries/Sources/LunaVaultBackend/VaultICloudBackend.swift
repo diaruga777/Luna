@@ -5,6 +5,7 @@ import LunaVaultModels
 /// The state reported by the file provider for one ubiquitous object.
 public struct VaultUbiquitousFileState: Equatable, Sendable {
     public let exists: Bool
+    public let isDownloadStatusKnown: Bool
     public let isUbiquitous: Bool
     public let isDownloaded: Bool
     public let isCurrent: Bool
@@ -14,11 +15,13 @@ public struct VaultUbiquitousFileState: Equatable, Sendable {
     public let uploadFailed: Bool
     public let hasUnresolvedConflicts: Bool
 
-    public init(exists: Bool, isUbiquitous: Bool, isDownloaded: Bool,
+    public init(exists: Bool, isDownloadStatusKnown: Bool = true,
+                isUbiquitous: Bool, isDownloaded: Bool,
                 isCurrent: Bool, isDownloading: Bool, isUploaded: Bool,
                 isUploading: Bool = false, uploadFailed: Bool = false,
                 hasUnresolvedConflicts: Bool = false) {
         self.exists = exists
+        self.isDownloadStatusKnown = isDownloadStatusKnown
         self.isUbiquitous = isUbiquitous
         self.isDownloaded = isDownloaded
         self.isCurrent = isCurrent
@@ -47,9 +50,16 @@ public protocol VaultUbiquitousFileCoordinating: Sendable {
     var rootURL: URL? { get }
     var availability: VaultBackendAvailability { get }
     func state(for relativePath: String) throws -> VaultUbiquitousFileState
-    func writeIfAbsentOrIdentical(_ data: Data, at relativePath: String) throws
+    func compareAndWrite(_ data: Data, at relativePath: String,
+                         identity: VaultRemoteObjectIdentity,
+                         versionAt versionPath: String,
+                         expectedRevision: UUID?) throws
+    func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity?
     func read(at relativePath: String) throws -> Data?
-    func remove(at relativePath: String) throws
+    func compareAndRemove(at relativePath: String,
+                          identity: VaultRemoteObjectIdentity,
+                          versionAt versionPath: String,
+                          expectedRevision: UUID?) throws
     func startDownloading(at relativePath: String) throws
     func requestEviction(at relativePath: String) throws -> VaultEvictionOutcome
 }
@@ -82,6 +92,7 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
 
     public let capabilities: VaultBackendCapabilities
     public let identity: VaultBackendIdentity
+    public var currentAvailability: VaultBackendAvailability { coordinator.availability }
 
     public init(configuration: VaultICloudBackendConfiguration,
                 coordinator: VaultUbiquitousFileCoordinating? = nil) {
@@ -105,17 +116,19 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
             requiresClientSideEncryption: true)
     }
 
-    public func put(_ payload: VaultAuthenticatedCiphertext,
+    public func put(_ payload: VaultVerifiedCiphertext,
                     expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome {
         try ensureAvailable()
         guard payload.vaultID == configuration.vaultID else { throw VaultBackendError.corruptPayload }
-        if let expectedRevision, expectedRevision != payload.identity.revision {
-            throw VaultBackendError.staleVersion
-        }
         let path = objectPath(payload.identity)
         let encoded = try payload.encoded()
         try await retrying(configuration.retryPolicy) { [coordinator] in
-            do { try coordinator.writeIfAbsentOrIdentical(encoded, at: path) }
+            do {
+                try coordinator.compareAndWrite(
+                    encoded, at: path, identity: payload.identity,
+                    versionAt: self.versionPath(payload.identity),
+                    expectedRevision: expectedRevision)
+            }
             catch { throw Self.map(error) }
         }
         let fileState = try coordinator.state(for: path)
@@ -130,11 +143,18 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
 
     public func payload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext? {
         try ensureAvailable()
+        guard try coordinator.currentIdentity(at: versionPath(identity)) == identity else {
+            throw VaultBackendError.staleVersion
+        }
         let path = objectPath(identity)
         let fileState = try coordinator.state(for: path)
         guard fileState.exists else { return nil }
         guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
         guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
+        // A provider that cannot report download status has not established
+        // that the bytes are a usable current copy. Never read/install based
+        // on an optimistic or stale resource-value snapshot.
+        guard fileState.isDownloadStatusKnown else { throw VaultBackendError.unavailable }
         if fileState.isUbiquitous && !fileState.isCurrent {
             try coordinator.startDownloading(at: path)
             throw VaultBackendError.unavailable
@@ -152,12 +172,14 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
     public func remove(_ identity: VaultRemoteObjectIdentity,
                        expectedRevision: UUID?) async throws {
         try ensureAvailable()
-        if let expectedRevision, expectedRevision != identity.revision {
-            throw VaultBackendError.staleVersion
-        }
         let path = objectPath(identity)
         try await retrying(configuration.retryPolicy) { [coordinator] in
-            do { try coordinator.remove(at: path) }
+            do {
+                try coordinator.compareAndRemove(
+                    at: path, identity: identity,
+                    versionAt: self.versionPath(identity),
+                    expectedRevision: expectedRevision)
+            }
             catch { throw Self.map(error) }
         }
     }
@@ -172,13 +194,17 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
         guard fileState.exists, fileState.isUbiquitous else { return .notEvictable }
         guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
         guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
-        if !fileState.isDownloaded { return .evicted }
+        if fileState.isDownloadStatusKnown && !fileState.isDownloaded { return .evicted }
         do { return try coordinator.requestEviction(at: path) }
         catch { throw Self.map(error) }
     }
 
     public func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState {
         try ensureAvailable()
+        guard let current = try coordinator.currentIdentity(at: versionPath(identity)) else {
+            return .missing
+        }
+        guard current == identity else { return .conflicted }
         let fileState = try coordinator.state(for: objectPath(identity))
         guard fileState.exists else { return .missing }
         if fileState.hasUnresolvedConflicts { return .conflicted }
@@ -191,7 +217,7 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
 
     private func ensureAvailable() throws {
         guard rootAvailable else { throw VaultBackendError.unavailable }
-        guard capabilities.availability != .unavailable else { throw VaultBackendError.unavailable }
+        guard coordinator.availability != .unavailable else { throw VaultBackendError.unavailable }
     }
 
     private func objectPath(_ identity: VaultRemoteObjectIdentity) -> String {
@@ -201,6 +227,13 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
         return "VaultObjects/\(safeVaultID)/\(identity.kind.rawValue)/\(identity.objectID.rawValue.uuidString)/\(identity.revision.uuidString)/\(identity.generation).vault"
+    }
+
+    private func versionPath(_ identity: VaultRemoteObjectIdentity) -> String {
+        let safeVaultID = configuration.vaultID
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+        return "VaultObjects/\(safeVaultID)/\(identity.kind.rawValue)/\(identity.objectID.rawValue.uuidString)/current.json"
     }
 
     private static func map(_ error: Error) -> VaultBackendError {
@@ -216,7 +249,9 @@ public final class VaultICloudBackend: VaultBackendTransport, @unchecked Sendabl
 /// storage policy).
 public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoordinating, @unchecked Sendable {
     public let rootURL: URL?
-    public let availability: VaultBackendAvailability
+    public var availability: VaultBackendAvailability {
+        rootURL == nil || fileManager.ubiquityIdentityToken == nil ? .unavailable : .available
+    }
 
     private let fileManager: FileManager
     private let coordinator: NSFileCoordinator
@@ -228,7 +263,6 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             fileManager.url(forUbiquityContainerIdentifier: $0)
         }
         rootURL = resolved?.appendingPathComponent("Documents", isDirectory: true)
-        availability = resolved == nil ? .unavailable : .available
     }
 
     public func state(for relativePath: String) throws -> VaultUbiquitousFileState {
@@ -247,6 +281,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         let isDownloaded = isCurrent || downloadingStatus == .downloaded
         return VaultUbiquitousFileState(
             exists: true,
+            isDownloadStatusKnown: downloadingStatus != nil,
             isUbiquitous: values.isUbiquitousItem ?? false,
             isDownloaded: isDownloaded,
             isCurrent: isCurrent,
@@ -257,17 +292,42 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             hasUnresolvedConflicts: values.ubiquitousItemHasUnresolvedConflicts ?? false)
     }
 
-    public func writeIfAbsentOrIdentical(_ data: Data, at relativePath: String) throws {
-        guard let url = url(for: relativePath) else { throw VaultBackendError.unavailable }
-        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if fileManager.fileExists(atPath: url.path) {
-            let existing = try read(at: relativePath)
-            guard existing == data else { throw VaultBackendError.conflict }
-            return
+    public func compareAndWrite(_ data: Data, at relativePath: String,
+                                identity: VaultRemoteObjectIdentity,
+                                versionAt versionPath: String,
+                                expectedRevision: UUID?) throws {
+        guard let payloadURL = url(for: relativePath), let versionURL = url(for: versionPath) else {
+            throw VaultBackendError.unavailable
         }
-        try coordinateWriting(url) { target in
-            try data.write(to: target, options: .atomic)
+        try coordinateWriting(payloadURL, versionURL) { payloadTarget, versionTarget in
+            let current = try self.decodeIdentity(at: versionTarget)
+            if current == identity {
+                guard self.fileManager.fileExists(atPath: payloadTarget.path),
+                      try Data(contentsOf: payloadTarget) == data else {
+                    throw VaultBackendError.conflict
+                }
+                return
+            }
+            guard current?.revision == expectedRevision else { throw VaultBackendError.staleVersion }
+            try self.fileManager.createDirectory(
+                at: payloadTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if self.fileManager.fileExists(atPath: payloadTarget.path) {
+                guard try Data(contentsOf: payloadTarget) == data else {
+                    throw VaultBackendError.conflict
+                }
+            } else {
+                try data.write(to: payloadTarget, options: .atomic)
+            }
+            try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
         }
+    }
+
+    public func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity? {
+        guard let versionURL = url(for: versionPath) else { throw VaultBackendError.unavailable }
+        guard fileManager.fileExists(atPath: versionURL.path) else { return nil }
+        var result: VaultRemoteObjectIdentity?
+        try coordinateReading(versionURL) { result = try self.decodeIdentity(at: $0) }
+        return result
     }
 
     public func read(at relativePath: String) throws -> Data? {
@@ -278,10 +338,25 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         return result
     }
 
-    public func remove(at relativePath: String) throws {
-        guard let url = url(for: relativePath) else { throw VaultBackendError.unavailable }
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        try coordinateWriting(url) { target in try fileManager.removeItem(at: target) }
+    public func compareAndRemove(at relativePath: String,
+                                 identity: VaultRemoteObjectIdentity,
+                                 versionAt versionPath: String,
+                                 expectedRevision: UUID?) throws {
+        guard let payloadURL = url(for: relativePath), let versionURL = url(for: versionPath) else {
+            throw VaultBackendError.unavailable
+        }
+        try coordinateWriting(payloadURL, versionURL) { payloadTarget, versionTarget in
+            guard let current = try self.decodeIdentity(at: versionTarget) else { return }
+            guard current == identity, current.revision == expectedRevision else {
+                throw VaultBackendError.staleVersion
+            }
+            if self.fileManager.fileExists(atPath: payloadTarget.path) {
+                try self.fileManager.removeItem(at: payloadTarget)
+            }
+            if self.fileManager.fileExists(atPath: versionTarget.path) {
+                try self.fileManager.removeItem(at: versionTarget)
+            }
+        }
     }
 
     public func startDownloading(at relativePath: String) throws {
@@ -293,10 +368,10 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         guard let url = url(for: relativePath) else { throw VaultBackendError.unavailable }
         let before = try state(for: relativePath)
         guard before.exists, before.isUbiquitous else { return .notEvictable }
-        if !before.isDownloaded { return .evicted }
+        if before.isDownloadStatusKnown && !before.isDownloaded { return .evicted }
         try fileManager.evictUbiquitousItem(at: url)
         let after = try state(for: relativePath)
-        return after.isDownloaded ? .pending : .evicted
+        return after.isDownloadStatusKnown && !after.isDownloaded ? .evicted : .pending
     }
 
     private func url(for relativePath: String) -> URL? {
@@ -305,7 +380,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
     }
 
     private func missingState() -> VaultUbiquitousFileState {
-        VaultUbiquitousFileState(exists: false, isUbiquitous: false,
+        VaultUbiquitousFileState(exists: false, isDownloadStatusKnown: false, isUbiquitous: false,
                                  isDownloaded: false, isCurrent: false,
                                  isDownloading: false, isUploaded: false)
     }
@@ -318,6 +393,27 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         }
         if let operationError { throw operationError }
         if coordinationError != nil { throw VaultBackendError.io }
+    }
+
+    private func coordinateWriting(_ firstURL: URL, _ secondURL: URL,
+                                   body: (URL, URL) throws -> Void) throws {
+        var coordinationError: NSError?
+        var operationError: Error?
+        coordinator.coordinate(
+            writingItemAt: firstURL, options: .forReplacing,
+            writingItemAt: secondURL, options: .forReplacing,
+            error: &coordinationError
+        ) { firstTarget, secondTarget in
+            do { try body(firstTarget, secondTarget) } catch { operationError = error }
+        }
+        if let operationError { throw operationError }
+        if coordinationError != nil { throw VaultBackendError.io }
+    }
+
+    private func decodeIdentity(at url: URL) throws -> VaultRemoteObjectIdentity? {
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        do { return try JSONDecoder().decode(VaultRemoteObjectIdentity.self, from: Data(contentsOf: url)) }
+        catch { throw VaultBackendError.conflict }
     }
 
     private func coordinateReading(_ url: URL, body: (URL) throws -> Void) throws {

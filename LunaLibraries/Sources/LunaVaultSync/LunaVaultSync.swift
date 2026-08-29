@@ -60,9 +60,10 @@ public enum VaultSyncError: Error, Equatable, Sendable {
 
 public protocol VaultSyncPayloadSource: Sendable {
     func stageUpload(_ payload: VaultAuthenticatedCiphertext) async throws
-    func uploadPayload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext?
+    func uploadPayload(for identity: VaultRemoteObjectIdentity) async throws -> VaultVerifiedCiphertext?
     func installDownloadedPayload(_ payload: VaultAuthenticatedCiphertext) async throws
-    func removeStagedPayload(for identity: VaultRemoteObjectIdentity) async throws
+    func removeUploadPayload(for identity: VaultRemoteObjectIdentity) async throws
+    func removeAllPayloads(for identity: VaultRemoteObjectIdentity) async throws
 }
 
 public struct VaultSyncOperationResult: Equatable, Sendable {
@@ -91,21 +92,24 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
     }
 
     public func upload(_ payload: VaultAuthenticatedCiphertext,
+                       expectedRemoteRevision: UUID? = nil,
                        wakeReason: VaultSyncWakeReason = .scheduled,
                        now: Date = Date()) async throws -> VaultSyncOperationResult {
         guard payload.vaultID == backend.identity.vaultID else {
             throw VaultSyncError.backend(.corruptPayload)
         }
         try await payloadSource.stageUpload(payload)
-        let job = makeJob(kind: .upload, identity: payload.identity, now: now)
+        let job = makeJob(kind: .upload, identity: payload.identity,
+                          expectedRemoteRevision: expectedRemoteRevision, now: now)
         let claimed = try prepareAndClaim(job, wakeReason: wakeReason, now: now)
-        if claimed.state == .succeeded || claimed.state == .failed { return result(payload.identity, claimed) }
+        if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(payload.identity, claimed) }
         return try await finishClaim(claimed, identity: payload.identity, now: now) {
             if try await self.backend.state(for: payload.identity) == .current { return .succeeded }
             guard let staged = try await self.payloadSource.uploadPayload(for: payload.identity) else {
                 throw VaultSyncError.sync(.missingPayload)
             }
-            let outcome = try await self.backend.put(staged, expectedRevision: payload.identity.revision)
+            let outcome = try await self.backend.put(staged, expectedRevision: expectedRemoteRevision)
+            if outcome == .current { try await self.payloadSource.removeUploadPayload(for: payload.identity) }
             return outcome == .current ? .succeeded : .retrying
         }
     }
@@ -115,7 +119,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                          now: Date = Date()) async throws -> VaultSyncOperationResult {
         let job = makeJob(kind: .download, identity: identity, now: now)
         let claimed = try prepareAndClaim(job, wakeReason: wakeReason, now: now)
-        if claimed.state == .succeeded || claimed.state == .failed { return result(identity, claimed) }
+        if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(identity, claimed) }
         return try await finishClaim(claimed, identity: identity, now: now) {
             guard let payload = try await self.backend.payload(for: identity) else {
                 throw VaultSyncError.backend(.notFound)
@@ -131,13 +135,13 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                        now: Date = Date()) async throws -> VaultSyncOperationResult {
         let job = makeJob(kind: .delete, identity: identity, now: now)
         let claimed = try prepareAndClaim(job, wakeReason: wakeReason, now: now)
-        if claimed.state == .succeeded || claimed.state == .failed { return result(identity, claimed) }
+        if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(identity, claimed) }
         return try await finishClaim(claimed, identity: identity, now: now) {
             try await self.backend.remove(identity, expectedRevision: identity.revision)
             guard try await self.backend.state(for: identity) == .missing else {
                 throw VaultSyncError.backend(.conflict)
             }
-            try await self.payloadSource.removeStagedPayload(for: identity)
+            try await self.payloadSource.removeAllPayloads(for: identity)
             return .succeeded
         }
     }
@@ -155,15 +159,95 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         catch { throw VaultSyncError.sync(.invalidArtifact) }
     }
 
+    /// Replays durable work after a BGTask, app lifecycle, or file-provider
+    /// notification. Jobs contain every opaque identity component required to
+    /// resume without retaining plaintext or relying on in-memory closures.
+    @discardableResult
+    public func runReadyJobs(wakeReason: VaultSyncWakeReason,
+                             now: Date = Date()) async -> [VaultSyncOperationResult] {
+        let candidates = (try? repository.jobs())?.filter {
+            $0.backendKey == backend.identity.stableKey &&
+            [.queued, .retrying, .running].contains($0.state)
+        } ?? []
+        var results: [VaultSyncOperationResult] = []
+        for job in candidates {
+            if Task.isCancelled { break }
+            guard let identity = remoteIdentity(for: job) else { continue }
+            do {
+                if wakeReason != .scheduled { try repository.makeJobReady(id: job.id, now: now) }
+                guard let claimed = try repository.claimJob(id: job.id, owner: owner, now: now) else { continue }
+                let result = try await finishClaim(claimed, identity: identity, now: now) {
+                    switch claimed.kind {
+                    case .upload:
+                        if try await self.backend.state(for: identity) == .current {
+                            try await self.payloadSource.removeUploadPayload(for: identity)
+                            return .succeeded
+                        }
+                        guard let payload = try await self.payloadSource.uploadPayload(for: identity) else {
+                            throw VaultSyncError.sync(.missingPayload)
+                        }
+                        let outcome = try await self.backend.put(
+                            payload, expectedRevision: claimed.expectedRemoteRevision)
+                        if outcome == .current {
+                            try await self.payloadSource.removeUploadPayload(for: identity)
+                        }
+                        return outcome == .current ? .succeeded : .retrying
+                    case .download:
+                        guard let payload = try await self.backend.payload(for: identity) else {
+                            throw VaultSyncError.backend(.notFound)
+                        }
+                        try await self.payloadSource.installDownloadedPayload(payload)
+                        return .succeeded
+                    case .delete:
+                        try await self.backend.remove(identity, expectedRevision: identity.revision)
+                        guard try await self.backend.state(for: identity) == .missing else {
+                            throw VaultSyncError.backend(.conflict)
+                        }
+                        try await self.payloadSource.removeAllPayloads(for: identity)
+                        return .succeeded
+                    case .importFile, .index:
+                        throw VaultSyncError.sync(.invalidArtifact)
+                    }
+                }
+                results.append(result)
+            } catch {
+                // finishClaim persists a fixed redacted failure code and the
+                // next bounded retry time. A later job must still be allowed
+                // to run during this wake.
+                continue
+            }
+        }
+        return results
+    }
+
+    public func hasPendingJobs() -> Bool {
+        ((try? repository.jobs()) ?? []).contains {
+            $0.backendKey == backend.identity.stableKey &&
+            [.queued, .retrying, .running].contains($0.state)
+        }
+    }
+
+    private func remoteIdentity(for job: VaultJob) -> VaultRemoteObjectIdentity? {
+        guard let objectID = job.objectID, let revision = job.revision,
+              let generation = job.payloadGeneration,
+              let rawKind = job.remoteObjectKind,
+              let kind = VaultRemoteObjectKind(rawValue: rawKind) else { return nil }
+        return try? VaultRemoteObjectIdentity(
+            objectID: objectID, revision: revision, kind: kind, generation: generation)
+    }
+
     private func makeJob(kind: VaultJobKind, identity: VaultRemoteObjectIdentity,
+                         expectedRemoteRevision: UUID? = nil,
                          now: Date) -> VaultJob {
         let key = [kind.rawValue, backend.identity.stableKey,
                    identity.kind.rawValue, identity.objectID.rawValue.uuidString,
                    identity.revision.uuidString, identity.generation].joined(separator: ":")
-        return VaultJob(kind: kind, objectID: nil, createdAt: now, updatedAt: now,
+        return VaultJob(kind: kind, objectID: identity.objectID, createdAt: now, updatedAt: now,
                         idempotencyKey: key, revision: identity.revision,
                         backendKey: backend.identity.stableKey,
-                        payloadGeneration: identity.generation)
+                        payloadGeneration: identity.generation,
+                        remoteObjectKind: identity.kind.rawValue,
+                        expectedRemoteRevision: expectedRemoteRevision)
     }
 
     private func prepareAndClaim(_ proposed: VaultJob, wakeReason: VaultSyncWakeReason,
@@ -173,7 +257,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         guard let queued = try repository.job(idempotencyKey: proposed.idempotencyKey) else {
             throw VaultSyncError.sync(.alreadyClaimed)
         }
-        if queued.state == .succeeded || queued.state == .failed { return queued }
+        if [.succeeded, .failed, .cancelled].contains(queued.state) { return queued }
         if wakeReason != .scheduled { try repository.makeJobReady(id: queued.id, now: now) }
         guard let claimed = try repository.claimJob(id: queued.id, owner: owner, now: now),
               claimed.leaseToken != nil else {
@@ -209,7 +293,6 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
             } else {
                 try repository.transitionJob(id: claimed.id, leaseToken: leaseToken,
                                              state: .succeeded, now: now)
-                try? await payloadSource.removeStagedPayload(for: identity)
             }
             return VaultSyncOperationResult(identity: identity, attempts: claimed.attempts, state: finalState)
         } catch {

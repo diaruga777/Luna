@@ -142,12 +142,17 @@ public struct VaultMacConnectionConfiguration: Equatable, Sendable {
 public protocol VaultBackendTransport: Sendable {
     var identity: VaultBackendIdentity { get }
     var capabilities: VaultBackendCapabilities { get }
-    func put(_ payload: VaultAuthenticatedCiphertext,
+    var currentAvailability: VaultBackendAvailability { get }
+    func put(_ payload: VaultVerifiedCiphertext,
              expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome
     func payload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext?
     func remove(_ identity: VaultRemoteObjectIdentity,
                 expectedRevision: UUID?) async throws
     func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState
+}
+
+public extension VaultBackendTransport {
+    var currentAvailability: VaultBackendAvailability { capabilities.availability }
 }
 
 public extension VaultBackendTransport {

@@ -79,6 +79,8 @@ public struct VaultJob: Codable, Hashable, Sendable {
     public let revision: UUID?
     public let backendKey: String?
     public let payloadGeneration: String?
+    public let remoteObjectKind: String?
+    public let expectedRemoteRevision: UUID?
     public var leaseOwner: String?
     public var leaseToken: UUID?
     public var leaseExpiresAt: Date?
@@ -86,12 +88,14 @@ public struct VaultJob: Codable, Hashable, Sendable {
                 attempts: Int = 0, nextAttemptAt: Date? = nil, lastError: String? = nil,
                 createdAt: Date = Date(), updatedAt: Date = Date(), idempotencyKey: String? = nil,
                 revision: UUID? = nil, backendKey: String? = nil,
-                payloadGeneration: String? = nil, leaseOwner: String? = nil,
+                payloadGeneration: String? = nil, remoteObjectKind: String? = nil,
+                expectedRemoteRevision: UUID? = nil, leaseOwner: String? = nil,
                 leaseToken: UUID? = nil, leaseExpiresAt: Date? = nil) {
         self.id=id; self.kind=kind; self.objectID=objectID; self.state=state; self.attempts=attempts
         self.nextAttemptAt=nextAttemptAt; self.lastError=lastError; self.createdAt=createdAt; self.updatedAt=updatedAt
         self.idempotencyKey=idempotencyKey ?? id.uuidString; self.leaseOwner=leaseOwner; self.leaseExpiresAt=leaseExpiresAt
-        self.revision=revision;self.backendKey=backendKey;self.payloadGeneration=payloadGeneration;self.leaseToken=leaseToken
+        self.revision=revision;self.backendKey=backendKey;self.payloadGeneration=payloadGeneration
+        self.remoteObjectKind=remoteObjectKind;self.expectedRemoteRevision=expectedRemoteRevision;self.leaseToken=leaseToken
     }
 }
 

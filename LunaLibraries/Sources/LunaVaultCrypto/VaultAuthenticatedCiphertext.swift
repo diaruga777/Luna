@@ -118,14 +118,29 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
     /// retaining the decrypted bytes. Remote downloads must pass this check
     /// before they are installed into a durable local store.
     public func authenticate(rootKey: (UInt32) throws -> VaultRootKey) throws {
+        _ = try open(rootKey: rootKey)
+    }
+
+    /// Authenticates every envelope and returns the plaintext. Callers that
+    /// install a remote content object use this single verification pass both
+    /// to establish the capability and to materialize local content.
+    public func open(rootKey: (UInt32) throws -> VaultRootKey) throws -> Data {
         let first = try VaultChunkEnvelope.decode(
             encryptedFrames[1],
             maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
         let inferredChunkSize = max(1, first.ciphertext.count - 16)
-        _ = try VaultChunkedCryptor(chunkSize: inferredChunkSize, vaultID: vaultID)
+        return try VaultChunkedCryptor(chunkSize: inferredChunkSize, vaultID: vaultID)
             .open(encryptedFrames, objectID: identity.objectID,
                   revision: identity.revision, role: identity.kind.envelopeRole,
                   rootKey: rootKey)
+    }
+
+    /// The only value accepted by an outbound backend write. Construction is
+    /// impossible without successfully authenticating the wrapped DEK and all
+    /// chunk tags with the Vault root key.
+    public func verified(rootKey: (UInt32) throws -> VaultRootKey) throws -> VaultVerifiedCiphertext {
+        try authenticate(rootKey: rootKey)
+        return VaultVerifiedCiphertext(payload: self)
     }
 
     public static func decodeAndValidate(_ data: Data,
@@ -138,7 +153,8 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         let validated = try VaultAuthenticatedCiphertext(
             vaultID: vaultID, kind: expected.kind,
             encryptedFrames: decoded.encryptedFrames)
-        guard validated.vaultID == vaultID,
+        guard decoded.vaultID == vaultID,
+              validated.vaultID == vaultID,
               validated.identity == expected,
               decoded.identity == expected,
               decoded.rootVersion == validated.rootVersion else {
@@ -176,4 +192,18 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
                            values[8], values[9], values[10], values[11],
                            values[12], values[13], values[14], values[15]))
     }
+}
+
+public struct VaultVerifiedCiphertext: Equatable, Sendable {
+    public let payload: VaultAuthenticatedCiphertext
+
+    fileprivate init(payload: VaultAuthenticatedCiphertext) {
+        self.payload = payload
+    }
+
+    public var identity: VaultRemoteObjectIdentity { payload.identity }
+    public var vaultID: String { payload.vaultID }
+    public var rootVersion: UInt32 { payload.rootVersion }
+    public var encryptedFrames: [Data] { payload.encryptedFrames }
+    public func encoded() throws -> Data { try payload.encoded() }
 }

@@ -21,6 +21,10 @@
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.sync</string>
 		<string>$(PRODUCT_BUNDLE_PREFIX).vault.index</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

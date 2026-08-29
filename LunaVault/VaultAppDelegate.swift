@@ -10,6 +10,14 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        VaultWiring.applicationDidEnterBackground()
+    }
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        VaultWiring.applicationWillEnterForeground()
+    }
+
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,

@@ -6,7 +6,7 @@ import LunaVaultModels
 import LunaVaultStorage
 import LunaVaultSync
 
-public enum VaultRuntimeError: Error, Sendable { case unsupportedLocation }
+public enum VaultRuntimeError: Error, Sendable { case unsupportedLocation, providerUnavailable }
 
 /// App-host composition for the v1 file backends. The Share extension never
 /// links or constructs this type, preserving its keyless handoff boundary.
@@ -16,6 +16,12 @@ public final class VaultRuntimeServices: @unchecked Sendable {
     public let deviceBackend: VaultDeviceBackend
     public let remoteBackend: VaultBackendTransport?
     public let syncCoordinator: VaultSyncCoordinator?
+    public var availability: VaultBackendAvailability {
+        remoteBackend?.currentAvailability ?? (policy.location == .device ? .available : .unavailable)
+    }
+    public var isReady: Bool {
+        availability == .available
+    }
 
     public init(policy: VaultStoragePolicy,
                 repository: VaultRepository,
@@ -43,6 +49,9 @@ public final class VaultRuntimeServices: @unchecked Sendable {
         let backend = VaultICloudBackend(configuration: VaultICloudBackendConfiguration(
             containerIdentifier: AppConfig.vaultICloudContainerID,
             keepLocalCopy: policy.keepLocalCopy))
+        guard backend.currentAvailability == .available else {
+            throw VaultRuntimeError.providerUnavailable
+        }
         let staging = repository.contentDirectory.deletingLastPathComponent()
             .appendingPathComponent("VaultSyncCiphertext", isDirectory: true)
         guard let keychainAccessGroup = AppConfig.vaultKeychainAccessGroup else {
@@ -51,7 +60,7 @@ public final class VaultRuntimeServices: @unchecked Sendable {
         let keyManager = VaultRootKeyManager(configuration: VaultCryptoConfiguration(
             keychainAccessGroup: keychainAccessGroup, vaultID: "default"))
         let payloadStore = try VaultFileSyncPayloadStore(
-            rootURL: staging, vaultID: "default",
+            rootURL: staging, vaultID: "default", repository: repository,
             rootKey: { try keyManager.key(version: $0) })
         let sync = VaultSyncCoordinator(repository: repository, backend: backend,
                                         payloadSource: payloadStore,

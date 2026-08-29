@@ -14,8 +14,9 @@ public enum LunaVaultUIModule {
     public static let identifier = "LunaVaultUI"
 }
 
-/// Search-first placeholder owned by the Vault UI package. It intentionally
-/// performs no storage, provider, extraction or indexing work in Stage 1.
+/// Search-first root owned by the Vault UI package. Storage and sync remain
+/// injected through `VaultRuntimeServices`; this surface only reports whether
+/// the selected backend is currently usable.
 public final class VaultRootViewController: UIViewController {
     private let searchField: UITextField
     private let statusLabel: UILabel
@@ -46,12 +47,7 @@ public final class VaultRootViewController: UIViewController {
         searchField.returnKeyType = .search
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        if let services {
-            let location = services.policy.location == .iCloud ? "iCloud" : "this device"
-            statusLabel.text = "Luna Vault\nReady on \(location)."
-        } else {
-            statusLabel.text = "Luna Vault\nStorage setup needs attention."
-        }
+        updateStatus()
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
         statusLabel.textColor = .secondaryLabel
@@ -69,5 +65,32 @@ public final class VaultRootViewController: UIViewController {
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
         ])
         searchField.becomeFirstResponder()
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateStatus()
+    }
+
+    private func updateStatus() {
+        guard let services else {
+            statusLabel.text = "Luna Vault\nStorage setup needs attention."
+            return
+        }
+        guard services.isReady else {
+            switch services.availability {
+            case .unavailable:
+                statusLabel.text = "Luna Vault\niCloud is unavailable. Check your Apple ID and iCloud Drive."
+            case .failed:
+                statusLabel.text = "Luna Vault\niCloud reported a storage error. Try again later."
+            case .needsDownload, .downloading, .evicting:
+                statusLabel.text = "Luna Vault\niCloud is preparing your vault."
+            case .available:
+                statusLabel.text = "Luna Vault\nStorage setup needs attention."
+            }
+            return
+        }
+        let location = services.policy.location == .iCloud ? "iCloud" : "this device"
+        statusLabel.text = "Luna Vault\nReady on \(location)."
     }
 }

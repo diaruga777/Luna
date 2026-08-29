@@ -289,6 +289,15 @@ public final class VaultSearchIndex: @unchecked Sendable {
         try sync { try documentsLocked(includeTombstones: includeTombstones) }
     }
 
+    /// Returns the most recently accessed live objects using a bounded SQL
+    /// query. This deliberately does not call `allDocuments()` and sort in
+    /// Swift: a large Vault should retain at most `limit` decoded rows for its
+    /// home-screen recents rail.
+    public func recent(limit: Int = 20) throws -> [VaultSearchHit] {
+        guard (1...1_000).contains(limit) else { throw VaultSearchError.invalidLimit(limit) }
+        return try sync { try recentLocked(limit: limit) }
+    }
+
     /// Returns a count without decoding or retaining document rows. Import and
     /// performance callers should use this instead of `allDocuments()` when
     /// they only need a cardinality check.
@@ -786,6 +795,40 @@ public final class VaultSearchIndex: @unchecked Sendable {
     private func documentsLocked(includeTombstones: Bool) throws -> [VaultIndexedDocument] {
         var result: [VaultIndexedDocument] = []
         try queryRows("SELECT id,revision,logical_time,device_id,filename,body,ocr,transcript,created_at,updated_at,accessed_at,source,tombstone FROM documents\(includeTombstones ? "" : " WHERE tombstone=0") ORDER BY id") { result.append(try self.decodeDocument($0)) }
+        return result
+    }
+
+    private func recentLocked(limit: Int) throws -> [VaultSearchHit] {
+        var result: [VaultSearchHit] = []
+        try queryRows("""
+            SELECT id,revision,logical_time,device_id,filename,body,ocr,transcript,
+                   created_at,updated_at,accessed_at,source
+            FROM documents
+            WHERE tombstone=0
+            ORDER BY accessed_at DESC,id ASC
+            LIMIT ?
+            """, [.int(Int64(limit))]) { row in
+            let document = try self.decodeSearchDocument(row)
+            let field: VaultSearchField
+            let text: String
+            if !document.bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                field = .text; text = document.bodyText
+            } else if !document.ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                field = .ocr; text = document.ocrText
+            } else if !document.transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                field = .transcript; text = document.transcriptText
+            } else {
+                field = .filename; text = document.filename
+            }
+            let compact = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            let snippet = String(compact.prefix(220))
+            result.append(VaultSearchHit(objectID: document.id,
+                canonicalObjectID: document.id, filename: document.filename,
+                snippet: snippet, snippetSource: field, score: 0,
+                createdAt: document.createdAt, updatedAt: document.updatedAt,
+                accessedAt: document.accessedAt, source: document.source,
+                matchedFields: [], isSymbolicAlias: false))
+        }
         return result
     }
 

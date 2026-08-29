@@ -672,7 +672,12 @@ private enum VaultSecureFileSystem {
     }
     static func rejectSymlink(_ url: URL) throws {
         #if canImport(Darwin)
-        var info = stat(); guard lstat(url.path, &info) == 0 else { throw VaultMacCompanionError.diskFailure }
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            throw VaultMacCompanionError.diskFailure
+        }
         guard (info.st_mode & S_IFMT) != S_IFLNK else { throw VaultMacCompanionError.symlinkRejected }
         #endif
     }
@@ -682,9 +687,27 @@ private enum VaultSecureFileSystem {
         #endif
     }
     static func directoryContents(_ url: URL) throws -> [URL] {
-        try ensureDirectory(url)
-        return try FileManager.default.contentsOfDirectory(at: url,
-            includingPropertiesForKeys: nil, options: [])
+        #if canImport(Darwin)
+        let fd = try openDirectory(url.path)
+        guard let stream = fdopendir(fd) else {
+            close(fd)
+            throw VaultMacCompanionError.diskFailure
+        }
+        defer { _ = closedir(stream) }
+        var contents: [URL] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
+                }
+            }
+            guard name != ".", name != ".." else { continue }
+            contents.append(url.appendingPathComponent(name))
+        }
+        return contents
+        #else
+        throw VaultMacCompanionError.diskFailure
+        #endif
     }
     static func openNew(_ url: URL) throws -> Int32 {
         #if canImport(Darwin)
@@ -716,7 +739,11 @@ private enum VaultSecureFileSystem {
             // installation so an existing file can never weaken the contract
             // through an unusual filesystem or a future writer change.
             #if canImport(Darwin)
-            guard chmod(url.path, S_IRUSR | S_IWUSR) == 0 else { throw VaultMacCompanionError.diskFailure }
+            let installed = try openRegular(url.path)
+            defer { close(installed) }
+            guard fchmod(installed, S_IRUSR | S_IWUSR) == 0 else {
+                throw VaultMacCompanionError.diskFailure
+            }
             #endif
         }
         catch { try? removeRegularFile(staging); throw error }

@@ -98,4 +98,37 @@ extension VaultRepository: VaultAtomicObjectInserting {
             throw error
         }
     }
+
+    /// Descriptor-preserving import boundary.  The setup coordinator keeps
+    /// the protected staging inode open from its initial hash through this
+    /// call; the repository must not reopen a mutable pathname after that
+    /// hash and accidentally install different bytes.
+    @discardableResult
+    public func insertAtomically(_ request: VaultAtomicObjectInsertRequest,
+                                 contentHandle: FileHandle) throws -> Bool {
+        guard request.contentURL != nil || request.content.isEmpty,
+              request.record.size >= 0,
+              request.contentByteCount == request.record.size else {
+            throw VaultStorageError.invalidArtifact
+        }
+        if let current = try object(request.record.id) {
+            guard !current.isTombstone, current.revision == request.record.revision else { return false }
+        } else if try !upsert(request.record) {
+            return false
+        }
+        do {
+            if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
+            if try localContentCapability(for: request.record.id) == nil {
+                try writeContent(from: contentHandle,
+                                 expectedByteCount: request.contentByteCount,
+                                 for: request.record.id,
+                                 visibility: !request.deferVisibility,
+                                 authenticatedGeneration: request.authenticatedGeneration)
+            }
+            for job in request.jobs { try enqueue(job) }
+            return true
+        } catch {
+            throw error
+        }
+    }
 }

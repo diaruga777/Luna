@@ -84,7 +84,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         self.repository = repository
         self.entriesByKey = [:]
         metadataURL = rootURL.appendingPathComponent("index.json")
-        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try VaultSecureFileAccess.ensureDirectory(at: rootURL)
         try protectionApplier.apply(to: rootURL)
         guard isProtected(rootURL) else { throw VaultThumbnailError.persistence }
         if fileManager.fileExists(atPath: metadataURL.path) {
@@ -101,7 +101,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                     .reduce(into: [:]) { $0[$1.key] = $1 }
             } catch {
                 entriesByKey = [:]
-                try? fileManager.removeItem(at: metadataURL)
+                try? VaultSecureFileAccess.removeRegularFile(at: metadataURL)
             }
         } else {
             entriesByKey = [:]
@@ -117,7 +117,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         }
         try lock.withLock {
             let directory = directoryURL(for: key)
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try VaultSecureFileAccess.ensureDirectory(at: directory)
             guard isSafeDirectory(rootURL), isSafeDirectory(directoryURL(for: key).deletingLastPathComponent()),
                   isSafeDirectory(directory) else { throw VaultThumbnailError.persistence }
             try protection.apply(to: directory)
@@ -125,20 +125,19 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             let destination = payloadURL(for: key)
             let staging = directory.appendingPathComponent(".staging-\(UUID().uuidString)")
             do {
-                guard fileManager.createFile(atPath: staging.path, contents: nil) else {
-                    throw VaultThumbnailError.persistence
-                }
+                let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+                try created.close()
                 try protection.apply(to: staging)
                 guard isProtected(staging) else {
                     throw VaultThumbnailError.persistence
                 }
-                let handle = try FileHandle(forWritingTo: staging)
+                let handle = try VaultSecureFileAccess.openForWriting(at: staging)
                 try handle.write(contentsOf: data)
                 try handle.synchronize(); try handle.close()
                 if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.removeItem(at: destination)
+                    try VaultSecureFileAccess.removeRegularFile(at: destination)
                 }
-                try fileManager.moveItem(at: staging, to: destination)
+                try VaultSecureFileAccess.install(staging, at: destination)
                 VaultSimulatorProtectionLedger.record(destination)
                 entriesByKey[key] = VaultThumbnailEntry(key: key,
                                                         byteCount: Int64(data.count),
@@ -148,10 +147,10 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 try persistIndex()
                 try evictLocked(now: now)
             } catch let error as VaultThumbnailError {
-                try? fileManager.removeItem(at: staging)
+                try? VaultSecureFileAccess.removeRegularFile(at: staging)
                 throw error
             } catch {
-                try? fileManager.removeItem(at: staging)
+                try? VaultSecureFileAccess.removeRegularFile(at: staging)
                 throw VaultThumbnailError.persistence
             }
         }
@@ -271,7 +270,10 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     private func removeLocked(_ key: VaultThumbnailKey) throws {
         let directory = directoryURL(for: key)
         if fileManager.fileExists(atPath: directory.path) {
-            try fileManager.removeItem(at: directory)
+            // The directory contains only opaque thumbnail payloads. Remove
+            // it through the anchored storage boundary so a swapped revision
+            // component cannot redirect cleanup outside Vault.
+            try VaultSecureFileAccess.removeTree(at: directory)
         }
         entriesByKey.removeValue(forKey: key)
     }
@@ -281,20 +283,20 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys]
         let staging = rootURL.appendingPathComponent(".index-staging-\(UUID().uuidString)")
         do {
-            guard fileManager.createFile(atPath: staging.path, contents: nil) else { throw VaultThumbnailError.persistence }
+            let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+            try created.close()
             try protection.apply(to: staging)
             guard isProtected(staging) else { throw VaultThumbnailError.persistence }
-            let handle = try FileHandle(forWritingTo: staging)
+            let handle = try VaultSecureFileAccess.openForWriting(at: staging)
             try handle.write(contentsOf: encoder.encode(Array(entriesByKey.values)))
             try handle.synchronize(); try handle.close()
             if fileManager.fileExists(atPath: metadataURL.path) {
-                try fileManager.replaceItemAt(metadataURL, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: metadataURL)
+                try VaultSecureFileAccess.removeRegularFile(at: metadataURL)
             }
+            try VaultSecureFileAccess.install(staging, at: metadataURL)
             VaultSimulatorProtectionLedger.record(metadataURL)
         } catch {
-            try? fileManager.removeItem(at: staging)
+            try? VaultSecureFileAccess.removeRegularFile(at: staging)
             throw VaultThumbnailError.persistence
         }
     }

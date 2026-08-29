@@ -31,31 +31,168 @@ public enum VaultSecureFileAccess {
     }
 
     private static func openAnchoredRegularFile(_ path: String) throws -> Int32 {
-        let components = path.split(separator: "/", omittingEmptySubsequences: true)
-            .map(String.init)
-        guard !components.isEmpty, !components.contains("."), !components.contains("..") else {
+        let (directory, name) = try openParent(path)
+        defer { close(directory) }
+        let descriptor = name.withCString { openat(directory, $0, O_RDONLY | O_NOFOLLOW) }
+        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
+        return descriptor
+    }
+
+    /// Creates a new empty regular file through its already-open parent
+    /// directory.  FileManager's path-based `createFile` follows a swapped
+    /// intermediate component or can replace an attacker-created symlink
+    /// between a check and the write; all Vault staging starts here instead.
+    public static func createEmptyFile(at url: URL) throws -> FileHandle {
+        let (directory, name) = try openParent(url.path)
+        defer { close(directory) }
+        let descriptor = name.withCString {
+            openat(directory, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+                   S_IRUSR | S_IWUSR)
+        }
+        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// Opens an existing Vault regular file for replacement-safe writing.  It
+    /// never follows the final component and never creates a missing file.
+    public static func openForWriting(at url: URL) throws -> FileHandle {
+        let (directory, name) = try openParent(url.path)
+        defer { close(directory) }
+        let descriptor = name.withCString { openat(directory, $0, O_WRONLY | O_TRUNC | O_NOFOLLOW) }
+        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            close(descriptor); throw VaultStorageError.invalidArtifact
+        }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// Atomically renames one regular Vault file to another path while both
+    /// parent directories are held open. Existing destination symlinks are
+    /// rejected rather than silently replaced, so every content install has a
+    /// fail-closed destination decision.
+    public static func install(_ source: URL, at destination: URL) throws {
+        let (sourceDirectory, sourceName) = try openParent(source.path)
+        defer { close(sourceDirectory) }
+        let (destinationDirectory, destinationName) = try openParent(destination.path)
+        defer { close(destinationDirectory) }
+        var sourceInfo = stat()
+        guard fstatat(sourceDirectory, sourceName, &sourceInfo, AT_SYMLINK_NOFOLLOW) == 0,
+              (sourceInfo.st_mode & S_IFMT) == S_IFREG else {
             throw VaultStorageError.invalidArtifact
         }
+        var destinationInfo = stat()
+        if fstatat(destinationDirectory, destinationName, &destinationInfo, AT_SYMLINK_NOFOLLOW) == 0 {
+            guard (destinationInfo.st_mode & S_IFMT) == S_IFREG else {
+                throw VaultStorageError.invalidArtifact
+            }
+        } else if errno != ENOENT {
+            throw VaultStorageError.invalidArtifact
+        }
+        guard renameat(sourceDirectory, sourceName, destinationDirectory, destinationName) == 0 else {
+            throw VaultStorageError.invalidArtifact
+        }
+    }
+
+    /// Removes only a regular file, anchored to its parent descriptor.
+    public static func removeRegularFile(at url: URL) throws {
+        let (directory, name) = try openParent(url.path)
+        defer { close(directory) }
+        var info = stat()
+        guard fstatat(directory, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return }
+            throw VaultStorageError.invalidArtifact
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw VaultStorageError.invalidArtifact }
+        guard unlinkat(directory, name, 0) == 0 else { throw VaultStorageError.invalidArtifact }
+    }
+
+    /// Removes a Vault-owned tree without ever following a symlink. Directory
+    /// enumeration is only used to obtain names; every actual removal is
+    /// resolved again from an open, no-follow parent descriptor.
+    public static func removeTree(at url: URL) throws {
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return }
+            throw VaultStorageError.invalidArtifact
+        }
+        let kind = info.st_mode & S_IFMT
+        if kind == S_IFREG {
+            guard unlinkat(parent, name, 0) == 0 else { throw VaultStorageError.invalidArtifact }
+            return
+        }
+        guard kind == S_IFDIR else { throw VaultStorageError.invalidArtifact }
+        let directoryURL = url
+        let children = try FileManager.default.contentsOfDirectory(
+            at: directoryURL, includingPropertiesForKeys: nil, options: [])
+        for child in children { try removeTree(at: child) }
+        guard unlinkat(parent, name, AT_REMOVEDIR) == 0 else { throw VaultStorageError.invalidArtifact }
+    }
+
+    /// Creates all app-owned descendants without ever traversing a symlink.
+    /// Existing ancestors are opened with `O_NOFOLLOW`; newly-created
+    /// directories are private and remain anchored for the caller's next
+    /// operation.
+    public static func ensureDirectory(at url: URL) throws {
+        let components = try validatedComponents(url.path)
+        var directory = open(url.path.hasPrefix("/") ? "/" : ".",
+                             O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directory >= 0 else { throw VaultStorageError.invalidArtifact }
+        for component in components {
+            var next = component.withCString {
+                openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            }
+            if next < 0, errno == ENOENT {
+                let made = component.withCString { mkdirat(directory, $0, S_IRUSR | S_IWUSR | S_IXUSR) }
+                guard made == 0 || errno == EEXIST else {
+                    close(directory); throw VaultStorageError.invalidArtifact
+                }
+                next = component.withCString {
+                    openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                }
+            }
+            guard next >= 0 else { close(directory); throw VaultStorageError.invalidArtifact }
+            close(directory); directory = next
+        }
+        close(directory)
+    }
+
+    private static func openParent(_ path: String) throws -> (Int32, String) {
+        let components = try validatedComponents(path)
+        guard let name = components.last else { throw VaultStorageError.invalidArtifact }
+        let parent = path.hasPrefix("/")
+            ? "/" + components.dropLast().joined(separator: "/")
+            : components.dropLast().joined(separator: "/")
+        let directory = try openDirectory(parent.isEmpty ? "." : parent)
+        return (directory, name)
+    }
+
+    private static func openDirectory(_ path: String) throws -> Int32 {
+        let components = try validatedComponents(path)
         var directory = open(path.hasPrefix("/") ? "/" : ".",
                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard directory >= 0 else { throw VaultStorageError.invalidArtifact }
-        for component in components.dropLast() {
+        for component in components {
             let next = component.withCString {
                 openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
             }
             guard next >= 0 else {
-                close(directory)
-                throw VaultStorageError.invalidArtifact
+                close(directory); throw VaultStorageError.invalidArtifact
             }
-            close(directory)
-            directory = next
+            close(directory); directory = next
         }
-        let descriptor = components.last!.withCString {
-            openat(directory, $0, O_RDONLY | O_NOFOLLOW)
+        return directory
+    }
+
+    private static func validatedComponents(_ path: String) throws -> [String] {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !components.isEmpty, !components.contains("."), !components.contains(".."),
+              components.allSatisfy({ !$0.contains("\0") }) else {
+            throw VaultStorageError.invalidArtifact
         }
-        close(directory)
-        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
-        return descriptor
+        return components
     }
 }
 
@@ -250,8 +387,8 @@ public final class VaultRepository: @unchecked Sendable {
         self.protectionApplier=protectionApplier
         databaseURL=testContainerURL.appendingPathComponent(configuration.databaseName)
         contentDirectory=testContainerURL.appendingPathComponent("VaultObjects",isDirectory:true)
-        try fileManager.createDirectory(at:testContainerURL,withIntermediateDirectories:true)
-        try fileManager.createDirectory(at:contentDirectory,withIntermediateDirectories:true)
+        try VaultSecureFileAccess.ensureDirectory(at: testContainerURL)
+        try VaultSecureFileAccess.ensureDirectory(at: contentDirectory)
         let values=try? testContainerURL.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
         let capacity=Int64(values?.volumeAvailableCapacityForImportantUsage ?? 20_000_000_000)
         cacheQuotaBytes=configuration.cacheQuota(availableCapacity:capacity); stagingAllowanceBytes=min(max(cacheQuotaBytes/10,256_000_000),2_000_000_000)
@@ -294,7 +431,7 @@ public final class VaultRepository: @unchecked Sendable {
             guard capability.objectID == id, capability.revision == object.revision,
                   capability.kind == .content else { throw VaultStorageError.invalidArtifact }
         }
-        let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try fileManager.createDirectory(at:dir,withIntermediateDirectories:true);try protect(dir)
+        let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try VaultSecureFileAccess.ensureDirectory(at: dir);try protect(dir)
         let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
         let final=dir.appendingPathComponent("content"),generation=dir.appendingPathComponent(".content-generation"),backup=dir.appendingPathComponent(".previous"),backupGeneration=dir.appendingPathComponent(".previous-generation")
         guard Int64(data.count) == object.size else { throw VaultStorageError.invalidArtifact }
@@ -308,30 +445,30 @@ public final class VaultRepository: @unchecked Sendable {
                 throw VaultStorageError.invalidArtifact
             }
             try writeProtectedData(Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8), to: stagingGeneration)
-            for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
-            if fileManager.fileExists(atPath:final.path){try fileManager.moveItem(at:final,to:backup)}
-            if fileManager.fileExists(atPath:generation.path){try fileManager.moveItem(at:generation,to:backupGeneration)}
+            for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try VaultSecureFileAccess.removeRegularFile(at: oldBackup)}
+            if fileManager.fileExists(atPath:final.path){try VaultSecureFileAccess.install(final, at: backup)}
+            if fileManager.fileExists(atPath:generation.path){try VaultSecureFileAccess.install(generation, at: backupGeneration)}
             do{
                 // Data Protection attributes were applied and fsynced on staging and
                 // survive rename. Never install first and protect afterward.
-                try fileManager.moveItem(at:staging,to:final)
-                try fileManager.moveItem(at:stagingGeneration,to:generation)
+                try VaultSecureFileAccess.install(staging, at: final)
+                try VaultSecureFileAccess.install(stagingGeneration, at: generation)
                 // The simulator cannot report the protection class after a
                 // rename, so carry the authenticated inode into its final
                 // paths for same-process reads and previews.
                 VaultSimulatorProtectionLedger.record(final)
                 VaultSimulatorProtectionLedger.record(generation)
-                for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try fileManager.removeItem(at:oldBackup)}
+                for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try VaultSecureFileAccess.removeRegularFile(at: oldBackup)}
             }catch{
-                if fileManager.fileExists(atPath:final.path){try?fileManager.removeItem(at:final)}
-                if fileManager.fileExists(atPath:generation.path){try?fileManager.removeItem(at:generation)}
-                if fileManager.fileExists(atPath:backup.path){try fileManager.moveItem(at:backup,to:final)}
-                if fileManager.fileExists(atPath:backupGeneration.path){try fileManager.moveItem(at:backupGeneration,to:generation)}
+                if fileManager.fileExists(atPath:final.path){try?VaultSecureFileAccess.removeRegularFile(at: final)}
+                if fileManager.fileExists(atPath:generation.path){try?VaultSecureFileAccess.removeRegularFile(at: generation)}
+                if fileManager.fileExists(atPath:backup.path){try VaultSecureFileAccess.install(backup, at: final)}
+                if fileManager.fileExists(atPath:backupGeneration.path){try VaultSecureFileAccess.install(backupGeneration, at: generation)}
                 throw error
             }
             if visibility { try markObjectReadyLocked(id) }
             return final
-        }catch{try?fileManager.removeItem(at:staging);try?fileManager.removeItem(at:stagingGeneration);throw error}
+        }catch{try?VaultSecureFileAccess.removeRegularFile(at: staging);try?VaultSecureFileAccess.removeRegularFile(at: stagingGeneration);throw error}
     }}
 
     /// Installs a regular file without materialising it as `Data`. The source
@@ -367,7 +504,7 @@ public final class VaultRepository: @unchecked Sendable {
                 throw VaultStorageError.invalidArtifact
             }
             let dir = contentDirectory.appendingPathComponent(id.rawValue.uuidString, isDirectory: true)
-            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            try VaultSecureFileAccess.ensureDirectory(at: dir)
             try protect(dir)
             let token = UUID().uuidString
             let staging = dir.appendingPathComponent(".staging-\(token)")
@@ -386,22 +523,92 @@ public final class VaultRepository: @unchecked Sendable {
                 let marker = Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8)
                 try writeProtectedData(marker, to: stagingGeneration)
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try fileManager.removeItem(at: old)
+                    try VaultSecureFileAccess.removeRegularFile(at: old)
                 }
-                if fileManager.fileExists(atPath: final.path) { try fileManager.moveItem(at: final, to: backup) }
-                if fileManager.fileExists(atPath: generation.path) { try fileManager.moveItem(at: generation, to: backupGeneration) }
-                try fileManager.moveItem(at: staging, to: final)
-                try fileManager.moveItem(at: stagingGeneration, to: generation)
+                if fileManager.fileExists(atPath: final.path) { try VaultSecureFileAccess.install(final, at: backup) }
+                if fileManager.fileExists(atPath: generation.path) { try VaultSecureFileAccess.install(generation, at: backupGeneration) }
+                try VaultSecureFileAccess.install(staging, at: final)
+                try VaultSecureFileAccess.install(stagingGeneration, at: generation)
                 VaultSimulatorProtectionLedger.record(final)
                 VaultSimulatorProtectionLedger.record(generation)
                 for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try fileManager.removeItem(at: old)
+                    try VaultSecureFileAccess.removeRegularFile(at: old)
                 }
                 if visibility { try markObjectReadyLocked(id) }
                 return final
             } catch {
-                try? fileManager.removeItem(at: staging)
-                try? fileManager.removeItem(at: stagingGeneration)
+                try? VaultSecureFileAccess.removeRegularFile(at: staging)
+                try? VaultSecureFileAccess.removeRegularFile(at: stagingGeneration)
+                throw error
+            }
+        }
+    }
+
+    /// Installs from an already-open, caller-owned descriptor. This overload
+    /// is used by import finalization so hashing and installation consume the
+    /// same stable inode and never reopen a picker/staging pathname.
+    public func writeContent(from source: FileHandle, expectedByteCount: Int64,
+                             for id: VaultObjectID, visibility: Bool = true,
+                             authenticatedGeneration: VaultAuthenticatedGeneration? = nil) throws -> URL {
+        try sync {
+            guard let object = try objectLocked(id), !object.isTombstone,
+                  expectedByteCount >= 0, expectedByteCount == object.size else {
+                throw VaultStorageError.invalidArtifact
+            }
+            if let capability = authenticatedGeneration {
+                guard capability.objectID == id, capability.revision == object.revision,
+                      capability.kind == .content else { throw VaultStorageError.invalidArtifact }
+            }
+            let originalOffset = try source.offsetInFile
+            try source.seek(toOffset: 0)
+            defer { try? source.seek(toOffset: originalOffset) }
+            let sourceSize = try source.seekToEnd()
+            try source.seek(toOffset: 0)
+            guard Int64(sourceSize) == expectedByteCount,
+                  expectedByteCount <= 100_000_000_000 else {
+                throw VaultStorageError.invalidArtifact
+            }
+            let dir = contentDirectory.appendingPathComponent(id.rawValue.uuidString, isDirectory: true)
+            try VaultSecureFileAccess.ensureDirectory(at: dir)
+            try protect(dir)
+            let token = UUID().uuidString
+            let staging = dir.appendingPathComponent(".staging-\(token)")
+            let stagingGeneration = dir.appendingPathComponent(".generation-staging-\(token)")
+            let final = dir.appendingPathComponent("content")
+            let generation = dir.appendingPathComponent(".content-generation")
+            let backup = dir.appendingPathComponent(".previous")
+            let backupGeneration = dir.appendingPathComponent(".previous-generation")
+            do {
+                let digest = try streamCopy(source, to: staging, expectedByteCount: expectedByteCount)
+                let capabilityGeneration = authenticatedGeneration?.value ?? digest
+                guard capabilityGeneration.count == 64,
+                      capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                    throw VaultStorageError.invalidArtifact
+                }
+                try writeProtectedData(
+                    Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8),
+                    to: stagingGeneration)
+                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
+                    try VaultSecureFileAccess.removeRegularFile(at: old)
+                }
+                if fileManager.fileExists(atPath: final.path) {
+                    try VaultSecureFileAccess.install(final, at: backup)
+                }
+                if fileManager.fileExists(atPath: generation.path) {
+                    try VaultSecureFileAccess.install(generation, at: backupGeneration)
+                }
+                try VaultSecureFileAccess.install(staging, at: final)
+                try VaultSecureFileAccess.install(stagingGeneration, at: generation)
+                VaultSimulatorProtectionLedger.record(final)
+                VaultSimulatorProtectionLedger.record(generation)
+                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
+                    try VaultSecureFileAccess.removeRegularFile(at: old)
+                }
+                if visibility { try markObjectReadyLocked(id) }
+                return final
+            } catch {
+                try? VaultSecureFileAccess.removeRegularFile(at: staging)
+                try? VaultSecureFileAccess.removeRegularFile(at: stagingGeneration)
                 throw error
             }
         }
@@ -425,13 +632,12 @@ public final class VaultRepository: @unchecked Sendable {
 
     private func streamCopy(_ input: FileHandle, to destination: URL,
                             expectedByteCount: Int64) throws -> String {
-        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-            throw VaultStorageError.sqlite("create staging")
-        }
+        let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+        try created.close()
         // Mark the inode before its first plaintext write; `protect` also
         // verifies the exact required class and fails closed.
         try protect(destination)
-        let output = try FileHandle(forWritingTo: destination)
+        let output = try VaultSecureFileAccess.openForWriting(at: destination)
         defer { try? output.close() }
         var copied: Int64 = 0
         var hasher = SHA256()
@@ -454,19 +660,18 @@ public final class VaultRepository: @unchecked Sendable {
     }
 
     private func writeProtectedData(_ data: Data, to destination: URL) throws {
-        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-            throw VaultStorageError.sqlite("create staging")
-        }
+        let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+        try created.close()
         do {
             // Set protection before the first plaintext write. An atomic Data
             // write would create an unprotected inode transiently.
             try protect(destination)
-            let handle = try FileHandle(forWritingTo: destination)
+            let handle = try VaultSecureFileAccess.openForWriting(at: destination)
             try handle.write(contentsOf: data)
             try handle.synchronize()
             try handle.close()
         } catch {
-            try? fileManager.removeItem(at: destination)
+            try? VaultSecureFileAccess.removeRegularFile(at: destination)
             throw error
         }
     }

@@ -1,74 +1,100 @@
-# Luna Vault Mac companion (v1)
+# Luna Vault Mac companion (v1 foundation)
 
 The Mac storage option is a companion process owned and installed by the user.
-Luna does not provide a hosted relay, a cloud bucket, or a Tailscale SDK. The
-user may install Tailscale separately on both devices and enter a Tailscale IP
-or MagicDNS name in Vault. If Tailscale can form a direct peer connection it
-will carry the TCP stream directly; if it uses DERP, the same encrypted stream
-works through that transport. Vault does not promise that a path is direct or
-that Tailscale is always running. When the devices are on the same network,
-Bonjour discovery is an opportunistic fallback; the user can also enter a LAN
-endpoint manually.
+Luna has no hosted relay, cloud bucket, or embedded Tailscale SDK. A user may
+install and configure Tailscale separately, then give Vault a Tailscale CGNAT
+address, Tailscale IPv6 address, or MagicDNS `*.ts.net` name. Tailscale chooses
+the path: a direct peer path when available, or a DERP relay when it is not.
+Luna cannot promise that a connection is direct. On the same LAN, the companion
+can publish `_lunavault._tcp` and the iPhone-side browser can discover it; manual
+`.local` entry remains a fallback.
 
-## Protocol boundary
+## Pairing and channel security
 
-`LunaVaultBackend` owns the platform-neutral wire contract:
+Pairing is application-level and independent of Tailscale:
 
-* `VaultMacPairingChallenge` and `VaultMacPairingResponse` bind a one-time
-  nonce, a session UUID, and a server certificate/public binding to a paired
-  32-byte application secret. An endpoint address is never part of identity.
-* `VaultMacAuthenticatedFrame` authenticates every request and response with
-  HMAC-SHA256 over a protocol label, session UUID, sequence number, and payload.
-  `VaultMacReplayGuard` accepts each sequence once and in order. A malformed,
-  unauthenticated, or replayed frame terminates the connection before storage
-  dispatch.
-* Requests contain only opaque UUID object IDs, revision clocks, byte ranges,
-  idempotency keys, and `ciphertext`. They contain no filename, content type,
-  plaintext metadata, root key, or search text. The ciphertext is produced by
-  `LunaVaultCrypto` on the iPhone; the Mac does not decrypt it.
-* `VaultMacChunkPlan` and the `putChunk` operation support bounded resumable
-  uploads. Repeating an idempotency key is safe; a different body for an
-  already-written chunk is a conflict. `readRange` supports bounded ciphertext
-  range reads for the iPhone's authenticated decrypt/range pipeline.
-* Revisions use Vault's logical time, device ID, and revision UUID total order.
-  An update to an existing object must name the current revision, preventing a
-  stale phone or duplicate request from overwriting newer data. Deletes are
-  tombstoned in the encrypted Mac manifest.
+1. The Mac creates a five-minute, one-use offer containing a random pairing ID,
+   nonce, endpoint binding, and server identity binding. The setup UI must show
+   the server-binding fingerprint out of band for the user to compare on both
+   devices.
+2. The iPhone proves possession of the one-time setup code. The Mac accepts the
+   enrollment only once, only before expiry, and only after the fingerprint
+   confirmation seam approves it.
+3. Both sides derive a 32-byte paired credential. The Mac stores that credential
+   in an owner-only file; it never receives the Vault root encryption key.
+   Pairing credentials carry an epoch and support explicit rotation/revocation.
+   A rotation re-encrypts the companion manifest under the replacement secret;
+   the caller then persists the replacement credential and recreates the
+   listener. Revocation terminates active listener sessions at their next
+   frame boundary.
+4. Every TCP connection begins with a fresh, short-lived server challenge and a
+   client proof bound to the pairing ID, credential epoch, endpoint, server
+   identity, both nonces, and a unique session ID. The server consumes session
+   IDs once and rejects an old transcript on a new connection.
+5. HKDF derives independent request and response keys. Request and response JSON
+   is sealed with AES-GCM; the visible envelope contains only protocol version,
+   session ID, direction, contiguous sequence number, nonce, ciphertext, and
+   tag. The nonce and authenticated data bind direction and sequence. Replays,
+   gaps, reflected frames, changed ciphertext, and changed tags are rejected.
 
-`LunaVaultMac` provides `VaultMacCompanionStore`, an actor-backed store that
-keeps object bytes in opaque UUID/revision directories. The manifest is
-AES-GCM encrypted with the paired application secret, and files are created
-with owner-only permissions on Darwin. The Mac stores the paired application
-credential, not the iPhone's synchronizable Vault root key. Losing/revoking a
-pair therefore requires a new explicit pairing; root-key recovery remains an
-iPhone Keychain/iCloud concern.
+This is application-layer authenticated encryption and channel binding, not
+TLS certificate pinning. It protects content and request metadata from the LAN,
+Tailscale path, and DERP. The out-of-band fingerprint comparison is mandatory in
+the eventual setup UI; silently accepting a first-seen identity would permit an
+active first-pairing attack.
 
-`LunaVaultMacCompanion` is a small headless executable foundation for local
-development and future macOS UI/launch-agent wiring. It accepts a root path,
-paired-secret base64, session UUID, and port, then serves authenticated frames
-over Network.framework TCP. Pairing UI, Bonjour publication, sleep/wake policy,
-and launch-at-login are intentionally shell responsibilities, not hidden in
-the storage actor.
+## Storage and transfer contract
 
-## Threat model and limits
+The iPhone-side `VaultMacRemoteBackend` implements `VaultBackendTransport` over
+fresh authenticated sessions. It accepts only strict Tailscale/MagicDNS or
+Bonjour endpoint shapes. The shared contract supports:
 
-The protocol assumes the IP path, LAN, Tailscale control plane, and any DERP
-relay can observe timing, size, and availability but must not learn Vault
-content. Client-side encryption protects object bytes, filenames, metadata,
-and index artifacts before transport. An attacker who steals the paired Mac
-credential or an unlocked Mac can impersonate that pairing; revocation and
-re-pairing must be surfaced in the eventual settings UI. A stolen iPhone with
-the unlocked synchronizable Keychain item can decrypt the vault, as intended by
-the user's iCloud recovery choice.
+- opaque UUID object IDs and client-generated total-order revisions;
+- client-side-encrypted object bytes and encrypted higher-level metadata only;
+- chunked, resumable and idempotent writes, bounded to 100 GiB per object and
+  1,048,576 chunks;
+- exact bounded range reads; and
+- revision-checked tombstones that allow a legitimate newer replacement.
 
-The current Network.framework listener is a direct authenticated TCP transport
-and does not silently claim TLS certificate validation. The pairing transcript's
-server binding plus per-frame MAC is the equivalent application-channel binding
-for this v1 foundation; production UI should display and confirm the binding
-fingerprint during pairing and rotate/revoke secrets. A later release may add
-TLS with certificate pinning without changing the request/storage contract.
+An idempotency record covers the operation, object, revision, chunk/range
+coordinates, declared length, and body hash through a canonical request digest,
+and stores the exact response. Reusing a key with any changed field is a
+conflict. The companion validates revision, shape, partial-count, and quota
+before writing a chunk.
 
-Neither iOS nor macOS guarantees unlimited background execution. Sync is
-opportunistic: foreground transfers, background processing when granted, and
-retryable durable jobs are expected. Tailscale being asleep, offline, or
-relayed is a normal unavailable state, not a data-loss condition.
+The encrypted manifest is limited to 16 MiB by default. The store defaults to a
+1 TiB total quota and 64 concurrent partial uploads. Directories are mode 0700,
+files are 0600, file descriptors use no-follow/exclusive creation, completed
+files and manifests are fsynced before atomic rename, and parent directories are
+fsynced afterward. Startup recovery removes staging files, stale partials,
+unreferenced revisions, and symlinks without following them. Deletes and
+replacement commits similarly prune obsolete ciphertext after the manifest is
+durable.
+
+The listener cannot start without an already-paired, non-revoked credential and
+a concrete non-wildcard bind host. It bounds concurrent connections, handshake
+time, idle time, and per-peer/global authentication failures. Bonjour publication
+and browsing are explicit seams (the browser receives the companion's advertised
+port); no discovery result bypasses fingerprint or session authentication.
+
+## Threat model and operational limits
+
+The network path may observe endpoints, timing, packet sizes, and availability,
+but must not learn filenames, file metadata, search/index content, object bytes,
+or revisions. The protocol encrypts its whole application payload, while Vault
+encrypts stored content and metadata before handing it to the backend. A thief
+who obtains the Mac pairing credential can impersonate that Mac pairing until it
+is revoked; the credential therefore needs Keychain-backed storage in the final
+Mac app UI rather than export or logging. The iPhone synchronizable Keychain
+remains the only root-key recovery mechanism.
+
+iOS and macOS do not guarantee continuous background execution. Sync is durable
+and opportunistic: foreground work, system-granted background work, and retry on
+the next reachable window. A sleeping/offline Mac or Tailscale client is a normal
+unavailable state, not data loss.
+
+The automated tests use deterministic in-process channels. They validate the
+wire, storage, client adapter, replay behavior, permissions, quotas, ranges, and
+revisions without a live network. They do **not** establish a real Tailscale,
+DERP, MagicDNS, or Bonjour connection; those require a later two-device manual
+validation matrix before shipping.

@@ -54,7 +54,7 @@ do {
     let listener = try VaultMacTCPListener(bindHost: bindHost, port: port,
         advertiseName: value(after: "--bonjour-name"), service: service, authority: authority)
     listener.start()
-    print("Luna Vault Mac companion listening on \(bindHost):\(listener.port). The route may be LAN, direct Tailscale, or DERP.")
+    print("Luna Vault Mac companion listening on \(bindHost):\(listener.port). The configured LAN/Tailscale transport determines the route.")
     dispatchMain()
 #else
     _ = service

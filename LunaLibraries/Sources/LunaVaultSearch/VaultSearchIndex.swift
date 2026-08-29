@@ -351,6 +351,46 @@ public final class VaultSearchIndex: @unchecked Sendable {
 
     public func groups() throws -> [VaultGroup] { try sync { try groupsLocked() } }
 
+    /// Bounded query-group listing for presentation. Snapshot groups return
+    /// their persisted canonical membership; live groups resolve through the
+    /// same bounded search path used by `queryGroup`.
+    public func queryGroups(limit: Int = 100) throws -> [VaultQueryGroup] {
+        guard (1...1_000).contains(limit) else { throw VaultSearchError.invalidLimit(limit) }
+        return try sync {
+            var result: [VaultQueryGroup] = []
+            try queryRows("SELECT id,query,live,created_at FROM query_groups ORDER BY created_at DESC,id LIMIT ?",
+                          [.int(Int64(limit))]) { row in
+                guard let id = UUID(uuidString: row.text(0) ?? "") else { return }
+                let query = row.text(1) ?? ""
+                let live = row.int(2) != 0
+                let members = live
+                    ? try self.searchLocked(query, embedding: nil,
+                                            limit: self.configuration.maximumResults)
+                        .map(\.canonicalObjectID)
+                    : try self.queryMembers(groupID: id)
+                result.append(VaultQueryGroup(id: id, query: query,
+                    memberIDs: members, live: live,
+                    createdAt: Date(timeIntervalSinceReferenceDate: row.double(3))))
+            }
+            return result
+        }
+    }
+
+    /// The model version is part of manual membership/alias creation. UI
+    /// callers must obtain it explicitly instead of guessing or silently
+    /// dropping an add-to-group request.
+    public func modelVersions(limit: Int = 20) throws -> [String] {
+        guard (1...100).contains(limit) else { throw VaultSearchError.invalidLimit(limit) }
+        return try sync {
+            var result: [String] = []
+            try queryRows("SELECT model_version FROM model_spaces ORDER BY model_version LIMIT ?",
+                          [.int(Int64(limit))]) { row in
+                if let version = row.text(0), !version.isEmpty { result.append(version) }
+            }
+            return result
+        }
+    }
+
     public func createGroup(label: String, members: [VaultObjectID] = [], frozen: Bool = true) throws -> VaultGroup {
         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty else { throw VaultSearchError.invalidQuery }

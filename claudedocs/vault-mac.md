@@ -52,7 +52,8 @@ Bonjour endpoint shapes. The shared contract supports:
 - opaque UUID object IDs and client-generated total-order revisions;
 - client-side-encrypted object bytes and encrypted higher-level metadata only;
 - chunked, resumable and idempotent writes, bounded to 100 GiB per object and
-  1,048,576 chunks;
+  65,536 chunks (the client’s 4 MiB transfer size needs at most about 25,600
+  chunks at the object limit);
 - exact bounded range reads; and
 - revision-checked tombstones that allow a legitimate newer replacement.
 

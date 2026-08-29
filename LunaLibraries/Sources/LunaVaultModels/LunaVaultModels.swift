@@ -76,15 +76,26 @@ public struct VaultJob: Codable, Hashable, Sendable {
     public var state: VaultJobState; public var attempts: Int; public var nextAttemptAt: Date?
     public var lastError: String?; public let createdAt: Date; public var updatedAt: Date
     public let idempotencyKey: String
+    public let revision: UUID?
+    public let backendKey: String?
+    public let payloadGeneration: String?
+    public let remoteObjectKind: String?
+    public let expectedRemoteRevision: UUID?
     public var leaseOwner: String?
+    public var leaseToken: UUID?
     public var leaseExpiresAt: Date?
     public init(id: UUID = UUID(), kind: VaultJobKind, objectID: VaultObjectID? = nil, state: VaultJobState = .queued,
                 attempts: Int = 0, nextAttemptAt: Date? = nil, lastError: String? = nil,
                 createdAt: Date = Date(), updatedAt: Date = Date(), idempotencyKey: String? = nil,
-                leaseOwner: String? = nil, leaseExpiresAt: Date? = nil) {
+                revision: UUID? = nil, backendKey: String? = nil,
+                payloadGeneration: String? = nil, remoteObjectKind: String? = nil,
+                expectedRemoteRevision: UUID? = nil, leaseOwner: String? = nil,
+                leaseToken: UUID? = nil, leaseExpiresAt: Date? = nil) {
         self.id=id; self.kind=kind; self.objectID=objectID; self.state=state; self.attempts=attempts
         self.nextAttemptAt=nextAttemptAt; self.lastError=lastError; self.createdAt=createdAt; self.updatedAt=updatedAt
         self.idempotencyKey=idempotencyKey ?? id.uuidString; self.leaseOwner=leaseOwner; self.leaseExpiresAt=leaseExpiresAt
+        self.revision=revision;self.backendKey=backendKey;self.payloadGeneration=payloadGeneration
+        self.remoteObjectKind=remoteObjectKind;self.expectedRemoteRevision=expectedRemoteRevision;self.leaseToken=leaseToken
     }
 }
 
@@ -150,7 +161,13 @@ public protocol VaultExtractionJobScheduling: Sendable {
 public struct VaultExtractionJobLease: Equatable, Sendable {
     public let jobID: UUID
     public let owner: String
-    public init(jobID: UUID, owner: String) { self.jobID = jobID; self.owner = owner }
+    /// Stage 4 uses an unguessable token in addition to the owner.  The
+    /// optional value keeps the Stage 3 protocol/fake initializer source
+    /// compatible while concrete storage always returns a token.
+    public let leaseToken: UUID?
+    public init(jobID: UUID, owner: String, leaseToken: UUID? = nil) {
+        self.jobID = jobID; self.owner = owner; self.leaseToken = leaseToken
+    }
 }
 
 /// Durable lifecycle for one extraction attempt. Implementations must claim a

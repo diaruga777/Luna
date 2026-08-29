@@ -4,14 +4,16 @@ Vault owns `vault.sqlite` in the shared App Group and never opens the legacy
 `saves.sqlite`. `VaultRepository` uses one serialized SQLite connection per
 process, enables WAL, `synchronous=FULL`, and foreign keys, and creates the
 objects, durable tombstones, cache, jobs, and encrypted-artifacts tables at
-schema version 3. Migrations acquire an exclusive transaction, re-read the
+schema version 5. Migrations acquire an exclusive transaction, re-read the
 version under that lock, and retry bounded SQLite busy races so concurrent first
 opens cannot partially initialize the store. Object IDs and revisions are opaque UUIDs. Upserts are
 latest-only using logical time, device id, then revision UUID as a total order.
 Tombstones participate in the same order and must beat both the current object
 and prior tombstone; stale or equal candidates are complete no-ops. Winning
 tombstones make the object logically invisible in the same transaction, remove
-cache/in-flight jobs, and prevent equal or older data from being resurrected.
+cache, cancel queued/retrying transfer jobs, and prevent equal or older data
+from being resurrected. A running lease may finish its current operation, but
+its conditional transition cannot revive the tombstoned object.
 
 Local bytes use an opaque UUID directory with an atomically replaced `content`
 file. Files are marked `completeUntilFirstUserAuthentication`, relying on iOS
@@ -38,7 +40,9 @@ configuration computes 10% of important available capacity, bounded to 2–20 GB
 unless the user supplies a bounded override). Names, indexes, and thumbnails
 are independent of full-content eviction; downgrading a row from full content
 to metadata also durably removes its content file and byte accounting. Import, index, upload, download and
-delete jobs have durable state, attempts, retry time and last-error fields; a
+delete jobs have durable state, attempts, retry time and last-error fields,
+opaque object identity (kind, revision, and payload generation), backend key,
+and the expected remote revision for upload CAS; a
 worker claims queued/retrying work atomically with a cross-process lease.
 Attempts increment only on successful claims; heartbeats extend a lease and an
 expired lease is reclaimable after a crash. Completion/failure transitions use

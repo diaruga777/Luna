@@ -119,7 +119,13 @@ public final class VaultRepository: @unchecked Sendable {
         if let old=try objectLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)<=0{return false}
         try run("INSERT INTO tombstones(id,revision,logical_time,device_id,deleted_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,device_id=excluded.device_id,deleted_at=excluded.deleted_at",[.text(tombstone.id.rawValue.uuidString),.text(tombstone.revision.uuidString),.int(tombstone.logicalTime),.text(tombstone.deviceID),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate)])
         if let old=try objectLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)>0 {try run("UPDATE objects SET revision=?,logical_time=?,device_id=?,size=0,updated_at=?,accessed_at=?,tombstone=1 WHERE id=?",[.text(tombstone.revision.uuidString),.int(tombstone.logicalTime),.text(tombstone.deviceID),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.text(tombstone.id.rawValue.uuidString)])}
-        try enqueueCleanupLocked(tombstone.id);try run("DELETE FROM cache WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)]);try run("DELETE FROM extraction_artifacts WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)]);try run("DELETE FROM jobs WHERE object_id=? AND state NOT IN ('succeeded','failed','cancelled')",[.text(tombstone.id.rawValue.uuidString)]);return true}
+        try enqueueCleanupLocked(tombstone.id)
+        try run("DELETE FROM cache WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)])
+        try run("DELETE FROM extraction_artifacts WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)])
+        // Transfer jobs remain durable records, but a tombstoned object must
+        // never be retried. Keeping them as cancelled preserves auditability.
+        try run("UPDATE jobs SET state='cancelled',next_attempt=NULL,last_error=NULL,lease_owner=NULL,lease_token=NULL,lease_expires=NULL,updated_at=? WHERE object_id=? AND state IN ('queued','retrying','running')",[.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.text(tombstone.id.rawValue.uuidString)])
+        return true}
         if advanced{try drainPendingCleanup()};return advanced}}
 
     public func writeContent(_ data:Data,for id:VaultObjectID)throws->URL{try sync{
@@ -164,18 +170,45 @@ public final class VaultRepository: @unchecked Sendable {
     }
     private func removeFullCacheLocked(_ id:VaultObjectID)throws{try transaction{try enqueueCleanupLocked(id);try run("DELETE FROM cache WHERE object_id=? AND full_content=1",[.text(id.rawValue.uuidString)])};try drainPendingCleanup()}
 
-    public func enqueue(_ job:VaultJob)throws{try sync{try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_expires) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",[.text(job.id.uuidString),.text(job.idempotencyKey),.text(job.kind.rawValue),job.objectID.map{$0.rawValue.uuidString}.map(SQLiteValue.text) ?? .null,.text(job.state.rawValue),.int(Int64(job.attempts)),job.nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.lastError.map(SQLiteValue.text) ?? .null,.double(job.createdAt.timeIntervalSinceReferenceDate),.double(job.updatedAt.timeIntervalSinceReferenceDate),job.leaseOwner.map(SQLiteValue.text) ?? .null,job.leaseExpiresAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null])}}
+    public func enqueue(_ job:VaultJob)throws{try sync{try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",[.text(job.id.uuidString),.text(job.idempotencyKey),.text(job.kind.rawValue),job.objectID.map{$0.rawValue.uuidString}.map(SQLiteValue.text) ?? .null,.text(job.state.rawValue),.int(Int64(job.attempts)),job.nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.lastError.map(SQLiteValue.text) ?? .null,.double(job.createdAt.timeIntervalSinceReferenceDate),.double(job.updatedAt.timeIntervalSinceReferenceDate),job.leaseOwner.map(SQLiteValue.text) ?? .null,job.leaseToken.map{$0.uuidString}.map(SQLiteValue.text) ?? .null,job.leaseExpiresAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,job.revision.map{$0.uuidString}.map(SQLiteValue.text) ?? .null,job.backendKey.map(SQLiteValue.text) ?? .null,job.payloadGeneration.map(SQLiteValue.text) ?? .null,job.remoteObjectKind.map(SQLiteValue.text) ?? .null,job.expectedRemoteRevision.map{$0.uuidString}.map(SQLiteValue.text) ?? .null])}}
+    public func job(_ id:UUID)throws->VaultJob?{try sync{try jobLocked(id)}}
+    public func job(idempotencyKey:String)throws->VaultJob?{try sync{var result:VaultJob?;try query("SELECT id FROM jobs WHERE idempotency_key=?",[.text(idempotencyKey)]){r in if let raw=r.text(0),let id=UUID(uuidString:raw){result=try jobLocked(id)}};return result}}
+    public func jobs()throws->[VaultJob]{try sync{var result=[VaultJob]();try query("SELECT id FROM jobs ORDER BY created_at,id"){r in if let raw=r.text(0),let id=UUID(uuidString:raw),let job=try jobLocked(id){result.append(job)}};return result}}
+    /// Claims exactly `id`, unlike `claimNextJob`, so two different durable
+    /// operations cannot be accidentally crossed when callers share a queue.
+    public func claimJob(id:UUID,owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
+        guard let job=try jobLocked(id) else{return nil}
+        let nowValue=now.timeIntervalSinceReferenceDate
+        let eligible=(job.state == .queued || job.state == .retrying) && (job.nextAttemptAt == nil || job.nextAttemptAt! <= now) || (job.state == .running && (job.leaseExpiresAt ?? .distantFuture) <= now)
+        guard eligible else{return nil}
+        let token=UUID()
+        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=?",[.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(nowValue),.text(id.uuidString)])
+        guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(id)
+    }}}
     public func claimNextJob(owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws->VaultJob?{try sync{try transaction{
         var candidate:UUID?;try query("SELECT id FROM jobs WHERE (state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?) ORDER BY created_at LIMIT 1",[.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)]){r in candidate=r.text(0).flatMap{UUID(uuidString:$0)}};guard let candidate else{return nil}
-        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?))",[.text(owner),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)])
+        let token=UUID()
+        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?))",[.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)])
         guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(candidate)
     }}}
-    public func heartbeatJob(id:UUID,owner:String,now:Date=Date(),leaseDuration:TimeInterval=120)throws{try sync{try run("UPDATE jobs SET lease_expires=?,updated_at=? WHERE id=? AND state='running' AND lease_owner=? AND lease_expires>?",[.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString),.text(owner),.double(now.timeIntervalSinceReferenceDate)]);guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition}}}
-    public func transitionJob(id:UUID,owner:String?=nil,state:VaultJobState,error:String?=nil,nextAttemptAt:Date?=nil,now:Date=Date())throws{try sync{try transaction{guard let job=try jobLocked(id)else{throw VaultStorageError.missingObject};guard legal(job.state,state)else{throw VaultStorageError.invalidTransition};let common:[SQLiteValue]=[.text(state.rawValue),error.map(SQLiteValue.text) ?? .null,nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString)];if job.state == .running{guard let owner,job.leaseOwner==owner,let expiry=job.leaseExpiresAt,expiry>now else{throw VaultStorageError.invalidTransition};try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_expires=NULL WHERE id=? AND state='running' AND lease_owner=? AND lease_expires>?",common+[.text(owner),.double(now.timeIntervalSinceReferenceDate)])}else{try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_expires=NULL WHERE id=? AND state=? AND updated_at=?",common+[.text(job.state.rawValue),.double(job.updatedAt.timeIntervalSinceReferenceDate)])};guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition};return ()}}}
+    public func heartbeatJob(id:UUID,leaseToken:UUID,now:Date=Date(),leaseDuration:TimeInterval=120)throws{try sync{try run("UPDATE jobs SET lease_expires=?,updated_at=? WHERE id=? AND state='running' AND lease_token=? AND lease_expires>?",[.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString),.text(leaseToken.uuidString),.double(now.timeIntervalSinceReferenceDate)]);guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition}}}
+    public func makeJobReady(id:UUID,now:Date=Date())throws{try sync{try run("UPDATE jobs SET next_attempt=NULL,updated_at=? WHERE id=? AND state='retrying'",[.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString)])}}
+    public func transitionJob(id:UUID,leaseToken:UUID?=nil,state:VaultJobState,error:String?=nil,nextAttemptAt:Date?=nil,now:Date=Date())throws{try sync{try transaction{guard let job=try jobLocked(id)else{throw VaultStorageError.missingObject};guard legal(job.state,state)else{throw VaultStorageError.invalidTransition};let common:[SQLiteValue]=[.text(state.rawValue),error.map(SQLiteValue.text) ?? .null,nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString)];if job.state == .running{guard let leaseToken,job.leaseToken==leaseToken,let expiry=job.leaseExpiresAt,expiry>now else{throw VaultStorageError.invalidTransition};try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_token=NULL,lease_expires=NULL WHERE id=? AND state='running' AND lease_token=? AND lease_expires>?",common+[.text(leaseToken.uuidString),.double(now.timeIntervalSinceReferenceDate)])}else{try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_token=NULL,lease_expires=NULL WHERE id=? AND state=? AND updated_at=?",common+[.text(job.state.rawValue),.double(job.updatedAt.timeIntervalSinceReferenceDate)])};guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition};return ()}}}
     private func legal(_ old:VaultJobState,_ new:VaultJobState)->Bool{switch(old,new){case(.queued,.running),(.queued,.cancelled),(.retrying,.running),(.retrying,.cancelled),(.running,.succeeded),(.running,.retrying),(.running,.failed),(.running,.cancelled):return true;default:return false}}
 
     public func putEncryptedArtifact(_ artifact:VaultEncryptedArtifact)throws{guard artifact.vaultID==configuration.vaultID else{throw VaultStorageError.invalidArtifact};let validated=try VaultEncryptedArtifact(kind:artifact.kind,vaultID:artifact.vaultID,revision:artifact.revision,rootVersion:artifact.rootVersion,encryptedFrames:artifact.encryptedFrames);let payload=try JSONEncoder().encode(validated.encryptedFrames);try sync{try run("INSERT INTO encrypted_artifacts(kind,vault_id,object_id,payload,revision,root_version,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET vault_id=excluded.vault_id,object_id=excluded.object_id,payload=excluded.payload,revision=excluded.revision,root_version=excluded.root_version,updated_at=excluded.updated_at",[.text(validated.kind.rawValue),.text(validated.vaultID),.text(validated.objectID.rawValue.uuidString),.blob(payload),.text(validated.revision.uuidString),.int(Int64(validated.rootVersion)),.double(Date().timeIntervalSinceReferenceDate)])}}
     public func encryptedArtifact(_ kind:VaultEncryptedArtifact.Kind)throws->VaultEncryptedArtifact?{try sync{var artifact:VaultEncryptedArtifact?;try query("SELECT vault_id,object_id,payload,revision,root_version FROM encrypted_artifacts WHERE kind=?",[.text(kind.rawValue)]){r in guard r.text(0)==configuration.vaultID,let expectedObject=UUID(uuidString:r.text(1) ?? ""),let data=r.blob(2),let frames=try?JSONDecoder().decode([Data].self,from:data),let revision=UUID(uuidString:r.text(3) ?? "")else{throw VaultStorageError.invalidArtifact};let decoded=try VaultEncryptedArtifact(kind:kind,vaultID:configuration.vaultID,revision:revision,rootVersion:UInt32(r.int(4)),encryptedFrames:frames);guard decoded.objectID.rawValue==expectedObject else{throw VaultStorageError.invalidArtifact};artifact=decoded};return artifact}}
+
+    public func removeDownloadedMaterial(for identity:VaultRemoteObjectIdentity)throws{try sync{
+        switch identity.kind {
+        case .content:
+            guard let object=try objectLocked(identity.objectID),object.revision==identity.revision else{return}
+            try transaction{try enqueueCleanupLocked(identity.objectID)};try drainPendingCleanup()
+        case .metadata,.manifest,.index:
+            let kind=identity.kind == .index ? "index":"manifest"
+            try run("DELETE FROM encrypted_artifacts WHERE kind=? AND object_id=? AND revision=?",[.text(kind),.text(identity.objectID.rawValue.uuidString),.text(identity.revision.uuidString)])
+        }
+    }}
 
     public func integrityCheck()throws->String{try sync{var value="";try query("PRAGMA integrity_check"){r in value=r.text(0) ?? ""};return value}}
     public func foreignKeysEnabled()throws->Bool{try sync{try scalar("PRAGMA foreign_keys")==1}}
@@ -218,7 +251,7 @@ public final class VaultRepository: @unchecked Sendable {
         try sync { try transaction {
             let key = "index:\(objectID.rawValue.uuidString):\(revision.uuidString):\(modelVersion)"
             let candidateID = UUID()
-            try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_expires) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,NULL)", [
+            try run("INSERT OR IGNORE INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_token,lease_expires) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)", [
                 .text(candidateID.uuidString), .text(key), .text(VaultJobKind.index.rawValue),
                 .text(objectID.rawValue.uuidString), .text(VaultJobState.queued.rawValue), .int(0), .null, .null,
                 .double(now.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)
@@ -231,21 +264,31 @@ public final class VaultRepository: @unchecked Sendable {
             }
             guard let jobID, let state else { throw VaultStorageError.missingObject }
             if state == .succeeded || state == .failed || state == .cancelled {
-                try run("UPDATE jobs SET state='queued',next_attempt=NULL,last_error=NULL,lease_owner=NULL,lease_expires=NULL,updated_at=? WHERE id=?", [.double(now.timeIntervalSinceReferenceDate), .text(jobID.uuidString)])
+                try run("UPDATE jobs SET state='queued',next_attempt=NULL,last_error=NULL,lease_owner=NULL,lease_token=NULL,lease_expires=NULL,updated_at=? WHERE id=?", [.double(now.timeIntervalSinceReferenceDate), .text(jobID.uuidString)])
             } else if state == .running, let leaseExpiry, leaseExpiry > now {
                 throw VaultStorageError.invalidTransition
             }
-            try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_expires=?,updated_at=? WHERE id=? AND (state IN ('queued','retrying') OR (state='running' AND lease_expires<=?))", [
-                .text(owner), .double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),
+            let token = UUID()
+            try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND (state IN ('queued','retrying') OR (state='running' AND lease_expires<=?))", [
+                .text(owner), .text(token.uuidString), .double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),
                 .double(now.timeIntervalSinceReferenceDate), .text(jobID.uuidString), .double(now.timeIntervalSinceReferenceDate)
             ])
             guard sqlite3_changes(db) == 1 else { throw VaultStorageError.invalidTransition }
-            return VaultExtractionJobLease(jobID: jobID, owner: owner)
+            return VaultExtractionJobLease(jobID: jobID, owner: owner, leaseToken: token)
         }}
     }
     public func transitionExtractionJob(_ lease: VaultExtractionJobLease, to state: VaultJobState,
                                         error: String?, retryAt: Date?, now: Date) throws {
-        try transitionJob(id: lease.jobID, owner: lease.owner, state: state, error: error, nextAttemptAt: retryAt, now: now)
+        guard let token = lease.leaseToken else { throw VaultStorageError.invalidTransition }
+        try transitionJob(id: lease.jobID, leaseToken: token, state: state, error: error, nextAttemptAt: retryAt, now: now)
+    }
+
+    private func hasColumn(_ table: String, _ column: String) throws -> Bool {
+        var found = false
+        try query("PRAGMA table_info(\(table))") { row in
+            if row.text(1) == column { found = true }
+        }
+        return found
     }
 
     private func migrate() throws {
@@ -265,10 +308,25 @@ public final class VaultRepository: @unchecked Sendable {
                 version = 3
             }
             if version == 3 {
-                try execute("CREATE TABLE IF NOT EXISTS extraction_artifacts(object_id TEXT NOT NULL,revision TEXT NOT NULL,model_version TEXT NOT NULL,payload BLOB NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(object_id,revision,model_version));PRAGMA user_version=4")
+                try execute("CREATE TABLE IF NOT EXISTS extraction_artifacts(object_id TEXT NOT NULL,revision TEXT NOT NULL,model_version TEXT NOT NULL,payload BLOB NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(object_id,revision,model_version));ALTER TABLE jobs ADD COLUMN lease_token TEXT;ALTER TABLE jobs ADD COLUMN revision TEXT;ALTER TABLE jobs ADD COLUMN backend_key TEXT;ALTER TABLE jobs ADD COLUMN payload_generation TEXT;CREATE INDEX IF NOT EXISTS jobs_backend_ready ON jobs(backend_key,state,next_attempt);PRAGMA user_version=4")
                 version = 4
             }
-            guard version == 4 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
+            if version == 4 {
+                // Stage 3 databases already have extraction_artifacts but not
+                // the Stage 4 lease columns. Add any missing columns before
+                // rebuilding the CHECK-constrained jobs table.
+                for (name, definition) in [("lease_token", "TEXT"), ("revision", "TEXT"), ("backend_key", "TEXT"), ("payload_generation", "TEXT")] {
+                    if try !hasColumn("jobs", name) { try execute("ALTER TABLE jobs ADD COLUMN \(name) \(definition)") }
+                }
+                try execute("ALTER TABLE jobs RENAME TO jobs_v4;CREATE TABLE jobs(id TEXT PRIMARY KEY,idempotency_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL CHECK(kind IN('importFile','index','upload','download','delete')),object_id TEXT,state TEXT NOT NULL CHECK(state IN('queued','running','retrying','succeeded','failed','cancelled')),attempts INTEGER NOT NULL CHECK(attempts>=0),next_attempt REAL,last_error TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,lease_owner TEXT,lease_token TEXT,lease_expires REAL,revision TEXT,backend_key TEXT,payload_generation TEXT,remote_object_kind TEXT,expected_remote_revision TEXT,CHECK((state='running')=(lease_owner IS NOT NULL AND lease_token IS NOT NULL AND lease_expires IS NOT NULL)));INSERT INTO jobs(id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation) SELECT id,idempotency_key,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation FROM jobs_v4;DROP TABLE jobs_v4;CREATE INDEX jobs_ready ON jobs(state,next_attempt,lease_expires);CREATE INDEX jobs_backend_ready ON jobs(backend_key,state,next_attempt);CREATE INDEX jobs_object_pending ON jobs(object_id,state);PRAGMA user_version=5")
+                version = 5
+            }
+            if version == 5 {
+                // Stage 4A databases can arrive here without the extraction
+                // table because its earlier branch did not own that feature.
+                try execute("CREATE TABLE IF NOT EXISTS extraction_artifacts(object_id TEXT NOT NULL,revision TEXT NOT NULL,model_version TEXT NOT NULL,payload BLOB NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(object_id,revision,model_version))")
+            }
+            guard version == 5 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
             try execute("COMMIT")
         } catch {
             try? execute("ROLLBACK")
@@ -278,7 +336,7 @@ public final class VaultRepository: @unchecked Sendable {
     private func objectLocked(_ id:VaultObjectID)throws->VaultObjectRecord?{var result:VaultObjectRecord?;try query("SELECT revision,logical_time,device_id,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects WHERE id=?",[.text(id.rawValue.uuidString)]){r in result=try decodeRecord(id,r)};return result}
     private func tombstoneLocked(_ id:VaultObjectID)throws->VaultTombstone?{var result:VaultTombstone?;try query("SELECT revision,logical_time,device_id,deleted_at FROM tombstones WHERE id=?",[.text(id.rawValue.uuidString)]){r in guard let rev=UUID(uuidString:r.text(0) ?? "")else{throw VaultStorageError.sqlite("tombstone")};result=VaultTombstone(id:id,revision:rev,logicalTime:r.int(1),deletedAt:Date(timeIntervalSinceReferenceDate:r.double(3)),deviceID:r.text(2) ?? "")};return result}
     private func decodeRecord(_ id:VaultObjectID,_ r:SQLiteRow,offset:Int=0)throws->VaultObjectRecord{guard let rev=UUID(uuidString:r.text(offset) ?? "")else{throw VaultStorageError.sqlite("revision")};return VaultObjectRecord(id:id,revision:rev,logicalTime:r.int(offset+1),size:r.int(offset+3),contentType:r.text(offset+4),createdAt:Date(timeIntervalSinceReferenceDate:r.double(offset+5)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+6)),accessedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+7)),isTombstone:r.int(offset+8) != 0,deviceID:r.text(offset+2) ?? "")}
-    private func jobLocked(_ id:UUID)throws->VaultJob?{var result:VaultJob?;try query("SELECT kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_expires FROM jobs WHERE id=?",[.text(id.uuidString)]){r in guard let kind=VaultJobKind(rawValue:r.text(0) ?? ""),let state=VaultJobState(rawValue:r.text(2) ?? "")else{throw VaultStorageError.sqlite("job")};result=VaultJob(id:id,kind:kind,objectID:r.text(1).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:state,attempts:Int(r.int(3)),nextAttemptAt:r.optionalDouble(4).map{Date(timeIntervalSinceReferenceDate:$0)},lastError:r.text(5),createdAt:Date(timeIntervalSinceReferenceDate:r.double(6)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(7)),idempotencyKey:r.text(8),leaseOwner:r.text(9),leaseExpiresAt:r.optionalDouble(10).map{Date(timeIntervalSinceReferenceDate:$0)})};return result}
+    private func jobLocked(_ id:UUID)throws->VaultJob?{var result:VaultJob?;try query("SELECT kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision FROM jobs WHERE id=?",[.text(id.uuidString)]){r in guard let kind=VaultJobKind(rawValue:r.text(0) ?? ""),let state=VaultJobState(rawValue:r.text(2) ?? "")else{throw VaultStorageError.sqlite("job")};result=VaultJob(id:id,kind:kind,objectID:r.text(1).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:state,attempts:Int(r.int(3)),nextAttemptAt:r.optionalDouble(4).map{Date(timeIntervalSinceReferenceDate:$0)},lastError:r.text(5),createdAt:Date(timeIntervalSinceReferenceDate:r.double(6)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(7)),idempotencyKey:r.text(8),revision:r.text(12).flatMap{UUID(uuidString:$0)},backendKey:r.text(13),payloadGeneration:r.text(14),remoteObjectKind:r.text(15),expectedRemoteRevision:r.text(16).flatMap{UUID(uuidString:$0)},leaseOwner:r.text(9),leaseToken:r.text(10).flatMap{UUID(uuidString:$0)},leaseExpiresAt:r.optionalDouble(11).map{Date(timeIntervalSinceReferenceDate:$0)})};return result}
     private func compare(_ lt:Int64,_ ld:String,_ lr:UUID,_ rt:Int64,_ rd:String,_ rr:UUID)->Int{if lt != rt{return lt < rt ? -1:1};if ld != rd{return ld < rd ? -1:1};return lr.uuidString == rr.uuidString ? 0:(lr.uuidString < rr.uuidString ? -1:1)}
     private func contentURL(_ id:VaultObjectID)->URL{contentDirectory.appendingPathComponent(id.rawValue.uuidString).appendingPathComponent("content")}
     private func generationURL(_ id:VaultObjectID)->URL{contentDirectory.appendingPathComponent(id.rawValue.uuidString).appendingPathComponent(".content-generation")}

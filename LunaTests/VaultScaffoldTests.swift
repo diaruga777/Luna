@@ -117,13 +117,20 @@ final class VaultScaffoldTests: XCTestCase {
         XCTAssertEqual(try store.data(for: id), Data([1, 2, 3]))
 
         let backend = InMemoryVaultBackend()
-        try await backend.putCiphertext(Data([9, 8]), for: id)
-        let ciphertext = try await backend.ciphertext(for: id)
-        XCTAssertEqual(ciphertext, Data([9, 8]))
+        let revision = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 4, count: 32))
+        let frames = try VaultChunkedCryptor(vaultID: "default", random: VaultTestRandomBytes(seed: 2))
+            .seal(Data([9, 8]), objectID: id, revision: revision, root: root)
+        let encrypted = try VaultAuthenticatedCiphertext(vaultID: "default", kind: .content, encryptedFrames: frames)
+        let writeOutcome = try await backend.put(
+            try encrypted.verified { _ in root }, expectedRevision: nil)
+        XCTAssertEqual(writeOutcome, .current)
+        let ciphertext = try await backend.payload(for: encrypted.identity)
+        XCTAssertEqual(ciphertext, encrypted)
         let objectIDs = await backend.allObjectIDs()
         XCTAssertEqual(objectIDs, [id])
-        try await backend.removeCiphertext(for: id)
-        let removed = try await backend.ciphertext(for: id)
+        try await backend.remove(encrypted.identity, expectedRevision: revision)
+        let removed = try await backend.payload(for: encrypted.identity)
         XCTAssertNil(removed)
     }
 

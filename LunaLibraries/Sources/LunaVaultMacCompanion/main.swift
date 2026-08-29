@@ -1,51 +1,65 @@
 import Foundation
 import LunaVaultBackend
+import LunaVaultCrypto
 import LunaVaultMac
 
-/// A deliberately small companion entry point. Pairing UI, login/launch-agent
-/// integration, and Bonjour publication belong to the macOS app shell; this
-/// executable makes the storage/transport foundation runnable in development
-/// and in headless integration tests without embedding a Tailscale client.
-@main
-struct LunaVaultMacCompanionMain {
-    static func main() async {
-        let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments.contains("--help") || arguments.isEmpty {
-            print("Usage: LunaVaultMacCompanion --root <directory> --secret-base64 <32-byte-secret> --session <uuid> [--port <port>]")
-            return
-        }
+let arguments = Array(CommandLine.arguments.dropFirst())
+func value(after flag: String) -> String? {
+    guard let index = arguments.firstIndex(of: flag),
+          arguments.index(after: index) < arguments.endIndex else { return nil }
+    return arguments[arguments.index(after: index)]
+}
+func fail(_ message: String) -> Never {
+    fputs("\(message)\n", stderr); exit(2)
+}
 
-        func value(after flag: String) -> String? {
-            guard let index = arguments.firstIndex(of: flag), arguments.index(after: index) < arguments.endIndex else { return nil }
-            return arguments[arguments.index(after: index)]
-        }
+if arguments.contains("--help") || arguments.isEmpty {
+    print("Usage:")
+    print("  LunaVaultMacCompanion --initialize --root <directory> --endpoint-binding <binding>")
+    print("  LunaVaultMacCompanion --root <directory> --credential <file> --bind-host <non-wildcard-address> [--port <port>] [--bonjour-name <name>]")
+    exit(0)
+}
 
-        guard let root = value(after: "--root"),
-              let encodedSecret = value(after: "--secret-base64"),
-              let sessionString = value(after: "--session"),
-              let sessionID = UUID(uuidString: sessionString),
-              let secret = try? VaultMacPairingSecret(base64Encoded: encodedSecret),
-              let port = UInt16(value(after: "--port") ?? "49200") else {
-            fputs("Invalid companion arguments. Use --help.\n", stderr)
-            return
-        }
+guard let rootPath = value(after: "--root") else { fail("Missing --root. Use --help.") }
+let rootURL = URL(fileURLWithPath: rootPath)
+let defaultCredentialURL = rootURL.appendingPathComponent("pairing.credential")
 
-        do {
-            let credentialsURL = URL(fileURLWithPath: root).appendingPathComponent("pairing.credential")
-            try VaultMacPairedCredentialStore().save(secret, at: credentialsURL)
-            let store = try VaultMacCompanionStore(rootURL: URL(fileURLWithPath: root), secret: secret)
-            let service = VaultMacCompanionService(store: store)
-#if canImport(Network)
-            let listener = try VaultMacTCPListener(port: port, service: service, secret: secret, sessionID: sessionID)
-            listener.start()
-            print("Luna Vault Mac companion listening on port \(listener.port). Tailscale/LAN are reachability only.")
-            dispatchMain()
-#else
-            _ = service
-            print("Luna Vault Mac companion storage is ready; Network.framework is unavailable on this platform.")
-#endif
-        } catch {
-            fputs("Unable to start companion: \(error)\n", stderr)
+do {
+    if arguments.contains("--initialize") {
+        guard let endpointBinding = value(after: "--endpoint-binding"), !endpointBinding.isEmpty else {
+            fail("Missing --endpoint-binding.")
         }
+        let random = SystemVaultRandomBytes()
+        let credential = try VaultMacPairingCredential(pairingID: UUID(),
+            secret: VaultMacPairingSecret(rawValue: random.bytes(count: 32)),
+            serverBinding: random.bytes(count: 32), endpointBinding: endpointBinding,
+            createdAt: Date())
+        try VaultMacPairedCredentialStore().save(credential, at: defaultCredentialURL)
+        print("Initialized owner-only pairing credential at \(defaultCredentialURL.path)")
+        print("Server fingerprint: \(credential.fingerprint)")
+        exit(0)
     }
+
+    guard let bindHost = value(after: "--bind-host"),
+          let port = UInt16(value(after: "--port") ?? "49200") else {
+        fail("Missing or invalid --bind-host/--port. Use --help.")
+    }
+    let credentialURL = value(after: "--credential").map(URL.init(fileURLWithPath:)) ?? defaultCredentialURL
+    let credential = try VaultMacPairedCredentialStore().load(from: credentialURL)
+    guard credential.revokedAt == nil else { fail("Pairing credential is revoked; re-pair before listening.") }
+    let store = try VaultMacCompanionStore(rootURL: rootURL, credential: credential)
+    let service = VaultMacCompanionService(store: store)
+#if canImport(Network)
+    let authority = VaultMacSessionAuthority(credential: credential)
+    let listener = try VaultMacTCPListener(bindHost: bindHost, port: port,
+        advertiseName: value(after: "--bonjour-name"), service: service, authority: authority)
+    listener.start()
+    print("Luna Vault Mac companion listening on \(bindHost):\(listener.port). The route may be LAN, direct Tailscale, or DERP.")
+    dispatchMain()
+#else
+    _ = service
+    fail("Network.framework is unavailable on this platform.")
+#endif
+} catch {
+    fail("Unable to start companion: \(error)")
 }

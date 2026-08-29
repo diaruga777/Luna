@@ -624,10 +624,15 @@ private enum VaultSecureFileSystem {
     static func ensureDirectory(_ url: URL) throws {
         #if canImport(Darwin)
         let components = try validatedComponents(url.path)
+        // Walk from a stable root descriptor.  Opening the complete path and
+        // creating missing descendants afterwards reintroduces a race at the
+        // first missing component; mkdirat/openat keeps every component
+        // decision anchored and rejects an intermediate symlink.
         var directory = Darwin.open(url.path.hasPrefix("/") ? "/" : ".",
                                     O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard directory >= 0 else { throw VaultMacCompanionError.diskFailure }
         for component in components {
+            var created = false
             var next = component.withCString {
                 Darwin.openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
             }
@@ -638,6 +643,7 @@ private enum VaultSecureFileSystem {
                     close(directory)
                     throw wasLink ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
                 }
+                created = made == 0
                 next = component.withCString {
                     Darwin.openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
                 }
@@ -646,7 +652,10 @@ private enum VaultSecureFileSystem {
                 close(directory)
                 throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
             }
-            guard fchmod(next, 0o700) == 0 else {
+            // Never chmod an OS-owned ancestor such as `/Users` or `/private`.
+            // Newly created Vault descendants are private by construction;
+            // existing app-owned directories retain their established mode.
+            guard !created || fchmod(next, 0o700) == 0 else {
                 close(next); close(directory); throw VaultMacCompanionError.diskFailure
             }
             close(directory)

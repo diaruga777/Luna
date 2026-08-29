@@ -8,10 +8,36 @@ import LunaVaultSync
 
 public enum VaultRuntimeError: Error, Sendable { case unsupportedLocation, providerUnavailable }
 
+/// The complete identity of a constructed Vault runtime. Storage policy alone
+/// is not enough: pairing the same Mac policy can replace its credential, and
+/// therefore its authenticated backend, without changing the visible policy.
+/// `runtimeGeneration` is the host invalidation token used when a credential
+/// is explicitly saved or removed even if all credential fields are unchanged.
+public struct VaultRuntimeIdentity: Equatable, Sendable {
+    public let policy: VaultStoragePolicy
+    public let backendIdentity: VaultBackendIdentity?
+    public let credentialGeneration: UInt64?
+    public let credentialFingerprint: String?
+    public let runtimeGeneration: UInt64
+
+    public init(policy: VaultStoragePolicy,
+                backendIdentity: VaultBackendIdentity? = nil,
+                credentialGeneration: UInt64? = nil,
+                credentialFingerprint: String? = nil,
+                runtimeGeneration: UInt64 = 0) {
+        self.policy = policy
+        self.backendIdentity = backendIdentity
+        self.credentialGeneration = credentialGeneration
+        self.credentialFingerprint = credentialFingerprint
+        self.runtimeGeneration = runtimeGeneration
+    }
+}
+
 /// App-host composition for the v1 file backends. The Share extension never
 /// links or constructs this type, preserving its keyless handoff boundary.
 public final class VaultRuntimeServices: @unchecked Sendable {
     public let policy: VaultStoragePolicy
+    public let runtimeIdentity: VaultRuntimeIdentity
     public let repository: VaultRepository
     public let deviceBackend: VaultDeviceBackend
     public let remoteBackend: VaultBackendTransport?
@@ -27,13 +53,18 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                 repository: VaultRepository,
                 deviceBackend: VaultDeviceBackend,
                 remoteBackend: VaultBackendTransport?,
-                syncCoordinator: VaultSyncCoordinator?) {
-        self.policy = policy; self.repository = repository
+                syncCoordinator: VaultSyncCoordinator?,
+                runtimeIdentity: VaultRuntimeIdentity? = nil) {
+        self.policy = policy
+        self.runtimeIdentity = runtimeIdentity ?? VaultRuntimeIdentity(
+            policy: policy, backendIdentity: remoteBackend?.identity)
+        self.repository = repository
         self.deviceBackend = deviceBackend; self.remoteBackend = remoteBackend
         self.syncCoordinator = syncCoordinator
     }
 
-    public static func production(policy: VaultStoragePolicy) throws -> VaultRuntimeServices {
+    public static func production(policy: VaultStoragePolicy,
+                                  runtimeIdentity: VaultRuntimeIdentity? = nil) throws -> VaultRuntimeServices {
         let storage = VaultStorageConfiguration(
             databaseName: AppConfig.vaultDatabaseName, policy: policy)
         let repository = try VaultRepository(configuration: storage)
@@ -42,7 +73,8 @@ public final class VaultRuntimeServices: @unchecked Sendable {
             if policy.location == .device {
                 return VaultRuntimeServices(policy: policy, repository: repository,
                                             deviceBackend: device, remoteBackend: nil,
-                                            syncCoordinator: nil)
+                                            syncCoordinator: nil,
+                                            runtimeIdentity: runtimeIdentity)
             }
             throw VaultRuntimeError.unsupportedLocation
         }
@@ -67,7 +99,8 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                                         owner: "iphone-host")
         return VaultRuntimeServices(policy: policy, repository: repository,
                                     deviceBackend: device, remoteBackend: backend,
-                                    syncCoordinator: sync)
+                                    syncCoordinator: sync,
+                                    runtimeIdentity: runtimeIdentity)
     }
 
     public static func productionFromDefaults(_ defaults: UserDefaults = .standard) throws -> VaultRuntimeServices {

@@ -54,4 +54,8 @@ and every retry reports the failure without silently changing storage policy.
 Settings callbacks are host-owned: policy changes and Mac credential changes
 rebuild the runtime/sync controller, while unpairing drops the local runtime
 and reports remote revocation as local-only when the paired companion cannot
-be reached.
+be reached. Runtime caching compares the full identity (policy, backend
+identity, credential epoch/fingerprint, and an explicit lifecycle generation),
+so pairing or unpairing a Mac is observed immediately even when the selected
+storage policy remains `mac`; the root swaps the runtime or renders an honest
+unavailable state without requiring relaunch.

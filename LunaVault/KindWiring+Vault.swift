@@ -16,6 +16,9 @@ import LunaVaultUI
 @MainActor enum VaultWiring {
     private static var services: VaultRuntimeServices?
     private static var syncRuntime: VaultSyncRuntimeController?
+    /// Bumps on explicit credential lifecycle changes. This keeps a save of
+    /// an otherwise identical credential from reusing a live backend actor.
+    private static var runtimeGeneration: UInt64 = 0
     private static let setupCoordinator = VaultSetupCoordinator(
         configuration: VaultSetupConfiguration(
             keychainAccessGroup: Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String),
@@ -80,6 +83,7 @@ import LunaVaultUI
             // it must never claim that a local copy was removed.
             requestICloudEviction: { .unavailable },
             reconfigureRuntime: {
+                invalidateRuntime()
                 _ = makeServices()
             },
             enrollmentPrepared: { enrollmentPreparedHandler?($0) },
@@ -89,8 +93,7 @@ import LunaVaultUI
                 // Drop the local runtime immediately; the UI reports the
                 // remote operation as local-only and instructs the user to
                 // revoke the companion before pairing again.
-                services = nil
-                syncRuntime = nil
+                invalidateRuntime()
                 return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
             },
             credentialUnpaired: { credentialUnpairedHandler?($0) }
@@ -103,16 +106,31 @@ import LunaVaultUI
             syncRuntime = nil
             return nil
         }
-        if let services, services.policy == policy { return services }
-        // A Settings policy change must rebuild the provider. Keeping the
-        // previous device service here would make a newly-selected Mac or
-        // iCloud location appear ready until the next process launch.
+        let credential: VaultMacPairingCredential?
+        do {
+            credential = policy.location == .mac ? try loadMacCredential() : nil
+        } catch {
+            services = nil
+            syncRuntime = nil
+            return nil
+        }
+        let runtimeIdentity = makeRuntimeIdentity(policy: policy, credential: credential)
+        if let services, services.runtimeIdentity == runtimeIdentity { return services }
+        // A Settings policy or credential change must rebuild the provider.
+        // Keeping the previous service here would make a newly-selected Mac
+        // or credential appear ready until the next process launch.
         services = nil
         syncRuntime = nil
         do {
             let value: VaultRuntimeServices
-            if policy.location == .mac { value = try makeMacServices(policy: policy) }
-            else { value = try VaultRuntimeServices.production(policy: policy) }
+            if policy.location == .mac {
+                value = try makeMacServices(policy: policy, credential: credential,
+                    runtimeIdentity: runtimeIdentity)
+            }
+            else {
+                value = try VaultRuntimeServices.production(policy: policy,
+                    runtimeIdentity: runtimeIdentity)
+            }
             services = value
             syncRuntime = VaultSyncRuntimeController(services: value)
             return value
@@ -121,16 +139,50 @@ import LunaVaultUI
         }
     }
 
-    private static func makeMacServices(policy: VaultStoragePolicy) throws -> VaultRuntimeServices {
+    private static func invalidateRuntime() {
+        runtimeGeneration &+= 1
+        services = nil
+        syncRuntime = nil
+    }
+
+    private static func loadMacCredential() throws -> VaultMacPairingCredential? {
+        guard let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String,
+              !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
+        let store = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
+            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
+        return try store.load()
+    }
+
+    private static func makeRuntimeIdentity(policy: VaultStoragePolicy,
+                                             credential: VaultMacPairingCredential?) -> VaultRuntimeIdentity {
+        let backendIdentity: VaultBackendIdentity?
+        switch policy.location {
+        case .device:
+            backendIdentity = nil
+        case .iCloud:
+            backendIdentity = VaultBackendIdentity(location: .iCloud,
+                containerIdentifier: AppConfig.vaultICloudContainerID, vaultID: "default")
+        case .mac:
+            backendIdentity = credential.map {
+                VaultBackendIdentity(location: .mac,
+                    containerIdentifier: $0.endpointBinding, vaultID: "default")
+            }
+        }
+        return VaultRuntimeIdentity(policy: policy, backendIdentity: backendIdentity,
+            credentialGeneration: credential?.epoch,
+            credentialFingerprint: credential?.fingerprint,
+            runtimeGeneration: runtimeGeneration)
+    }
+
+    private static func makeMacServices(policy: VaultStoragePolicy,
+                                        credential: VaultMacPairingCredential?,
+                                        runtimeIdentity: VaultRuntimeIdentity) throws -> VaultRuntimeServices {
         let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String
         guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let rootKeys = VaultRootKeyManager(configuration:
             VaultCryptoConfiguration(keychainAccessGroup: accessGroup))
         let repository = try VaultRepository()
         let device = VaultDeviceBackend(store: repository)
-        let credentialStore = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
-            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
-        let credential = try credentialStore.load()
         let backend: (any VaultBackendTransport)?
         if let credential, credential.revokedAt == nil {
             backend = try VaultMacRemoteBackend(
@@ -155,7 +207,8 @@ import LunaVaultUI
         }
         return VaultRuntimeServices(
             policy: policy, repository: repository,
-            deviceBackend: device, remoteBackend: backend, syncCoordinator: sync)
+            deviceBackend: device, remoteBackend: backend, syncCoordinator: sync,
+            runtimeIdentity: runtimeIdentity)
     }
 
     private static func makeSearchIndex() -> VaultSearchIndex? {

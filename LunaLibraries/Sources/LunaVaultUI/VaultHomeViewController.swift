@@ -372,7 +372,16 @@ public final class VaultRootViewController: UIViewController {
             break
         case .ready(let policy):
             setupPolicy = policy
-            if services?.policy != policy { services = servicesProvider?() }
+            // Settings can replace a Mac credential while keeping the same
+            // storage policy. Resolve the host runtime on every ready render
+            // and compare its complete identity, rather than policy alone;
+            // unpair therefore also clears a previously-ready backend.
+            if let servicesProvider {
+                let resolved = servicesProvider()
+                if services?.runtimeIdentity != resolved?.runtimeIdentity {
+                    services = resolved
+                }
+            }
             updateReadyContent()
             if services?.isReady != true {
                 let message = policy.location == .iCloud
@@ -419,6 +428,10 @@ public final class VaultRootViewController: UIViewController {
 
     private func updateReadyContent() {
         guard ensureSearchFacade(), let facade = searchFacade else { return }
+        // A previous provider/runtime failure may have left the status panel
+        // visible. A newly-ready runtime must clear that stale state before
+        // rendering its content; the catch below restores it for index errors.
+        hideContentStatus()
         do {
             renderRecents(try facade.recent(limit: 12))
             renderGroups()

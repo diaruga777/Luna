@@ -4,7 +4,9 @@ import LunaVaultCrypto
 import LunaVaultModels
 import LunaVaultSearch
 import LunaVaultSetup
+import LunaVaultStorage
 import LunaVaultUI
+import VaultTestKit
 import UIKit
 import XCTest
 
@@ -136,6 +138,120 @@ final class VaultStage5SetupTests: XCTestCase {
         XCTAssertEqual(selected, VaultStoragePolicy(location: .iCloud))
         XCTAssertTrue(reconfigured)
     }
+
+    @MainActor
+    func testPairingSamePolicyRebuildsBackendAndRootImmediately() throws {
+        let policy = VaultStoragePolicy(location: .mac)
+        let first = try makeStage5Runtime(policy: policy, backend: nil,
+            credentialGeneration: nil, credentialFingerprint: nil, runtimeGeneration: 1)
+        let pairedBackend = InMemoryVaultBackend(identity: VaultBackendIdentity(
+            location: .mac, containerIdentifier: "paired-mac", vaultID: "default"))
+        let second = try makeStage5Runtime(policy: policy, backend: pairedBackend,
+            credentialGeneration: 7, credentialFingerprint: "paired-fingerprint",
+            runtimeGeneration: 2)
+        defer {
+            try? FileManager.default.removeItem(at: first.directory)
+            try? FileManager.default.removeItem(at: second.directory)
+        }
+
+        let coordinator = makeReadyCoordinator(policy: policy)
+        let indexDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luna-vault-ui-runtime-index-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: indexDirectory) }
+        let index = try VaultSearchIndex(databaseURL: indexDirectory.appendingPathComponent("index.sqlite"))
+        var current: VaultRuntimeServices? = first.services
+        let root = VaultRootViewController(services: first.services,
+            setupCoordinator: coordinator, searchIndex: index,
+            servicesProvider: { current })
+        root.loadViewIfNeeded()
+        root.viewWillAppear(false)
+        let status = try XCTUnwrap(root.view.viewWithAccessibilityIdentifier(
+            VaultAccessibilityID.contentStatus))
+        XCTAssertFalse(status.superview?.isHidden ?? true)
+
+        current = second.services
+        root.viewWillAppear(false)
+        XCTAssertTrue(status.superview?.isHidden ?? false)
+        XCTAssertNotEqual(first.services.runtimeIdentity, second.services.runtimeIdentity)
+        XCTAssertEqual(second.services.remoteBackend?.identity, pairedBackend.identity)
+    }
+
+    @MainActor
+    func testUnpairSamePolicyRemovesBackendAndUpdatesRootWithoutRelaunch() throws {
+        let policy = VaultStoragePolicy(location: .mac)
+        let pairedBackend = InMemoryVaultBackend(identity: VaultBackendIdentity(
+            location: .mac, containerIdentifier: "paired-mac", vaultID: "default"))
+        let paired = try makeStage5Runtime(policy: policy, backend: pairedBackend,
+            credentialGeneration: 7, credentialFingerprint: "paired-fingerprint",
+            runtimeGeneration: 1)
+        let unpaired = try makeStage5Runtime(policy: policy, backend: nil,
+            credentialGeneration: nil, credentialFingerprint: nil, runtimeGeneration: 2)
+        defer {
+            try? FileManager.default.removeItem(at: paired.directory)
+            try? FileManager.default.removeItem(at: unpaired.directory)
+        }
+
+        let coordinator = makeReadyCoordinator(policy: policy)
+        let indexDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luna-vault-ui-runtime-index-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: indexDirectory) }
+        let index = try VaultSearchIndex(databaseURL: indexDirectory.appendingPathComponent("index.sqlite"))
+        var current: VaultRuntimeServices? = paired.services
+        let root = VaultRootViewController(services: paired.services,
+            setupCoordinator: coordinator, searchIndex: index,
+            servicesProvider: { current })
+        root.loadViewIfNeeded()
+        root.viewWillAppear(false)
+        let status = try XCTUnwrap(root.view.viewWithAccessibilityIdentifier(
+            VaultAccessibilityID.contentStatus))
+        XCTAssertTrue(status.superview?.isHidden ?? false)
+
+        current = unpaired.services
+        root.viewWillAppear(false)
+        XCTAssertFalse(status.superview?.isHidden ?? true)
+        let label = try XCTUnwrap(status as? UILabel)
+        XCTAssertTrue(label.text?.contains("Mac storage is unavailable") == true)
+        XCTAssertNil(unpaired.services.remoteBackend)
+    }
+}
+
+private struct Stage5RuntimeFixture {
+    let services: VaultRuntimeServices
+    let directory: URL
+}
+
+private func makeStage5Runtime(policy: VaultStoragePolicy,
+                               backend: VaultBackendTransport?,
+                               credentialGeneration: UInt64?,
+                               credentialFingerprint: String?,
+                               runtimeGeneration: UInt64) throws -> Stage5RuntimeFixture {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("luna-vault-ui-runtime-\(UUID().uuidString)", isDirectory: true)
+    let repository = try VaultRepository(
+        configuration: VaultStorageConfiguration(databaseName: "vault.sqlite", policy: policy),
+        testContainerURL: directory)
+    let identity = VaultRuntimeIdentity(policy: policy,
+        backendIdentity: backend?.identity,
+        credentialGeneration: credentialGeneration,
+        credentialFingerprint: credentialFingerprint,
+        runtimeGeneration: runtimeGeneration)
+    let services = VaultRuntimeServices(policy: policy, repository: repository,
+        deviceBackend: VaultDeviceBackend(store: repository), remoteBackend: backend,
+        syncCoordinator: nil, runtimeIdentity: identity)
+    return Stage5RuntimeFixture(services: services, directory: directory)
+}
+
+private func makeReadyCoordinator(policy: VaultStoragePolicy) -> VaultSetupCoordinator {
+    let keys = Stage5MemoryKeyStore()
+    let manager = VaultRootKeyManager(
+        configuration: VaultCryptoConfiguration(keychainAccessGroup: "test.group"),
+        store: keys, lifecycleLockURL: nil)
+    let coordinator = VaultSetupCoordinator(store: InMemoryVaultSetupStore(),
+        rootKeyManager: manager)
+    _ = coordinator.completeFirstRun(policy: policy)
+    return coordinator
 }
 
 private extension UIView {

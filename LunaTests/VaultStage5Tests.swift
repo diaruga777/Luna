@@ -254,6 +254,15 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(plan.availability, VaultPreviewAvailability.ready)
         XCTAssertEqual(plan.kind, .video)
         XCTAssertNotNil(plan.localURL)
+        let lease = try repository.beginPreviewLease(try XCTUnwrap(plan.capability), duration: 5,
+                                                      now: Date(timeIntervalSinceReferenceDate: 100))
+        let renewed = try repository.renewPreviewLease(lease, duration: 30,
+                                                        now: Date(timeIntervalSinceReferenceDate: 102))
+        XCTAssertTrue(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)))
+        try repository.endPreviewLease(lease)
+        XCTAssertTrue(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)), "old token must not end renewed lease")
+        try repository.endPreviewLease(renewed)
+        XCTAssertFalse(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)))
         let wrongIdentity = try VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
                                                            kind: .content,
                                                            generation: String(repeating: "c", count: 64))

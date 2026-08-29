@@ -540,9 +540,9 @@ public final class VaultRepository: @unchecked Sendable {
         throw VaultStorageError.invalidTransition
     }
 
-    public func isPreviewActive(_ id: VaultObjectID) throws -> Bool {
+    public func isPreviewActive(_ id: VaultObjectID, now: Date = Date()) throws -> Bool {
         try sync {
-            let now = Date().timeIntervalSinceReferenceDate
+            let now = now.timeIntervalSinceReferenceDate
             var active = false
             try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now)])
             try query("SELECT 1 FROM preview_leases WHERE object_id=? AND expires_at>? LIMIT 1", [.text(id.rawValue.uuidString), .double(now)]) { _ in active = true }
@@ -586,14 +586,18 @@ public final class VaultRepository: @unchecked Sendable {
         }
         let expiry = now.addingTimeInterval(duration)
         let renewed = VaultPreviewLease(objectID: lease.objectID, revision: lease.revision,
-                                        generation: lease.generation, token: lease.token,
+                                        generation: lease.generation, token: UUID(),
                                         expiresAt: expiry)
         try sync {
             try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)])
-            try run("UPDATE preview_leases SET expires_at=? WHERE object_id=? AND token=? AND revision=? AND generation=?",
-                    [.double(expiry.timeIntervalSinceReferenceDate), .text(lease.objectID.rawValue.uuidString),
-                     .text(lease.token.uuidString), .text(lease.revision.uuidString), .text(lease.generation)])
+            try run("DELETE FROM preview_leases WHERE object_id=? AND token=? AND revision=? AND generation=?",
+                    [.text(lease.objectID.rawValue.uuidString), .text(lease.token.uuidString),
+                     .text(lease.revision.uuidString), .text(lease.generation)])
             guard sqlite3_changes(db) == 1 else { throw VaultStorageError.invalidTransition }
+            try run("INSERT INTO preview_leases(object_id,token,revision,generation,expires_at,created_at) VALUES(?,?,?,?,?,?)",
+                    [.text(renewed.objectID.rawValue.uuidString), .text(renewed.token.uuidString),
+                     .text(renewed.revision.uuidString), .text(renewed.generation),
+                     .double(renewed.expiresAt.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)])
         }
         return renewed
     }

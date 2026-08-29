@@ -104,7 +104,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
             previousLength = length
             offset = try Self.checkedAdd(frameOffset, length)
         }
-        guard metadata.frameCount == 1 || metadata.plaintextByteCount > 0,
+        guard metadata.frameCount >= 2,
               offset == fileSize,
               Self.generation(digest) == metadata.generation,
               frameBytes == fileSize - UInt64(Self.headerByteCount) else {

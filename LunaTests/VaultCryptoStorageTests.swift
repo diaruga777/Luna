@@ -9,6 +9,25 @@ final class VaultCryptoStorageTests: XCTestCase {
     private let objectID = VaultObjectID(rawValue: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!)
     private let revision = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
 
+    func testFileEnvelopeEmptySealParseAuthenticateDecryptRoundTrip() throws {
+        let directory = try VaultTemporaryDirectory(name: "empty-envelope")
+        defer { try? directory.cleanUp() }
+        let plaintext = directory.url.appendingPathComponent("empty")
+        let envelope = directory.url.appendingPathComponent("empty.lvf")
+        XCTAssertTrue(FileManager.default.createFile(atPath: plaintext.path, contents: Data()))
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 4, count: 32))
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: plaintext, fileURL: envelope, vaultID: "empty",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 77))
+        XCTAssertEqual(payload.plaintextByteCount, 0)
+        XCTAssertEqual(payload.frameCount, 2)
+        try payload.authenticate(rootKey: { _ in root })
+        let output = directory.url.appendingPathComponent("output")
+        XCTAssertEqual(try payload.decrypt(to: output, rootKey: { _ in root }), 0)
+        XCTAssertEqual(try Data(contentsOf: output), Data())
+    }
+
     func testChunkEncryptionRoundTripsBoundariesAndEveryRange() throws {
         let root = try VaultRootKey(version: 1, key: Data(repeating: 7, count: 32))
         for length in [0, 1, 7, 8, 9, 16, 33] {

@@ -272,6 +272,10 @@ public final class VaultRepository: @unchecked Sendable {
                              visibility: Bool = true,
                              authenticatedGeneration: VaultAuthenticatedGeneration? = nil)throws->URL{try sync{
         guard let object=try objectLocked(id),!object.isTombstone else{throw VaultStorageError.missingObject}
+        if let capability = authenticatedGeneration {
+            guard capability.objectID == id, capability.revision == object.revision,
+                  capability.kind == .content else { throw VaultStorageError.invalidArtifact }
+        }
         let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try fileManager.createDirectory(at:dir,withIntermediateDirectories:true);try protect(dir)
         let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
         let final=dir.appendingPathComponent("content"),generation=dir.appendingPathComponent(".content-generation"),backup=dir.appendingPathComponent(".previous"),backupGeneration=dir.appendingPathComponent(".previous-generation")
@@ -323,6 +327,10 @@ public final class VaultRepository: @unchecked Sendable {
         try sync {
             guard let object = try objectLocked(id), !object.isTombstone else {
                 throw VaultStorageError.missingObject
+            }
+            if let capability = authenticatedGeneration {
+                guard capability.objectID == id, capability.revision == object.revision,
+                      capability.kind == .content else { throw VaultStorageError.invalidArtifact }
             }
             guard sourceURL.isFileURL,
                   (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) != true,
@@ -410,6 +418,7 @@ public final class VaultRepository: @unchecked Sendable {
         var copied: Int64 = 0
         var hasher = SHA256()
         while copied < expectedByteCount {
+            if Task.isCancelled { throw VaultStorageError.invalidTransition }
             let count = Int(min(Int64(1_048_576), expectedByteCount - copied))
             guard let chunk = try input.read(upToCount: count), !chunk.isEmpty else {
                 throw VaultStorageError.invalidArtifact

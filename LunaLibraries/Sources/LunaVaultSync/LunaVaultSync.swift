@@ -167,6 +167,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                     throw VaultSyncError.backend(.notFound)
                 }
                 guard payload.identity == identity else { throw VaultSyncError.backend(.corruptPayload) }
+                defer { try? payload.removeOwnedFile() }
                 try await source.installDownloadedPayloadFile(payload)
             } else {
                 guard let payload = try await self.backend.payload(for: identity) else {
@@ -260,6 +261,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                             guard payload.identity == identity else {
                                 throw VaultSyncError.backend(.corruptPayload)
                             }
+                            defer { try? payload.removeOwnedFile() }
                             try await source.installDownloadedPayloadFile(payload)
                         } else {
                             guard let payload = try await self.backend.payload(for: identity) else {

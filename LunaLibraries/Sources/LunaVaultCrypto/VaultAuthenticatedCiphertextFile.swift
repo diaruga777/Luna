@@ -23,10 +23,14 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     public let plaintextByteCount: UInt64
     public let frameCount: UInt32
     public let ciphertextByteCount: UInt64
+    /// True only for a transport-created temporary whose caller must remove it.
+    public let ownsFile: Bool
 
     public init(fileURL: URL, expectedIdentity: VaultRemoteObjectIdentity? = nil,
-                vaultID: String) throws {
-        let metadata = try Self.readMetadata(fileURL)
+                vaultID: String, ownsFile: Bool = false) throws {
+        let stableFile = try Self.openStableReadOnly(fileURL)
+        defer { try? stableFile.close() }
+        let metadata = try Self.readMetadata(stableFile)
         guard metadata.vaultID == vaultID,
               metadata.rootVersion > 0,
               metadata.plaintextByteCount <= VaultChunkedCryptor.maximumObjectBytes,
@@ -40,8 +44,6 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         if let expectedIdentity, expectedIdentity != identity {
             throw VaultCryptoError.malformedEnvelope
         }
-        let stableFile = try Self.openStableReadOnly(fileURL)
-        defer { try? stableFile.close() }
         let fileSize = try stableFile.seekToEnd()
         guard fileSize >= UInt64(Self.headerByteCount) else {
             throw VaultCryptoError.malformedEnvelope
@@ -53,7 +55,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         var previousLength: UInt64?
         var chunkSize: UInt64?
         for index in 0..<metadata.frameCount {
-            let (length, frameOffset) = try Self.readFrameLength(fileURL, offset: offset)
+            let (length, frameOffset) = try Self.readFrameLength(stableFile, offset: offset)
             guard length >= UInt64(VaultChunkEnvelope.headerSize + 16),
                   length <= UInt64(8_388_608 + VaultChunkEnvelope.headerSize + 16),
                   offset <= UInt64.max - 8 - length,
@@ -63,7 +65,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
             // Each encrypted frame is bounded independently.  The digest
             // matches the in-memory generation algorithm without retaining
             // the object or even two full frames at once.
-            let frame = try Self.readBytes(fileURL, offset: frameOffset, count: Int(length))
+            let frame = try Self.readBytes(stableFile, offset: frameOffset, count: Int(length))
             if index == 0 {
                 guard frame.count == 113, frame[0] == 1,
                       Self.readUInt32(frame, offset: 1) == metadata.rootVersion,
@@ -120,6 +122,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         self.plaintextByteCount = metadata.plaintextByteCount
         self.frameCount = metadata.frameCount
         self.ciphertextByteCount = frameBytes
+        self.ownsFile = ownsFile
     }
 
     /// Streams plaintext into a destination after authenticating every frame.
@@ -128,8 +131,10 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     @discardableResult
     public func decrypt(to destinationURL: URL,
                         rootKey: (UInt32) throws -> VaultRootKey) throws -> UInt64 {
+        let stableFile = try Self.openStableReadOnly(fileURL)
+        defer { try? stableFile.close() }
         let cryptor = VaultChunkedCryptor(
-            chunkSize: Self.inferredChunkSize(fileURL: fileURL, frameCount: frameCount,
+            chunkSize: Self.inferredChunkSize(handle: stableFile, frameCount: frameCount,
                                                plaintextByteCount: plaintextByteCount),
             vaultID: vaultID)
         if FileManager.default.fileExists(atPath: destinationURL.path) {
@@ -144,16 +149,16 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         do {
             let output = try FileHandle(forWritingTo: destinationURL)
             defer { try? output.close() }
-            let wrapped = try frame(at: 0)
+            let wrapped = try frame(at: 0, handle: stableFile)
             var written: UInt64 = 0
             if plaintextByteCount == 0 {
-                _ = try cryptor.openFrame(wrapped, frame: try frame(at: 1),
+                _ = try cryptor.openFrame(wrapped, frame: try frame(at: 1, handle: stableFile),
                     objectID: identity.objectID, revision: identity.revision,
                     role: identity.kind.envelopeRole, chunkIndex: 0,
                     plaintextLength: 0, rootKey: rootKey)
             } else {
                 for index in 0..<(frameCount - 1) {
-                    let plaintext = try cryptor.openFrame(wrapped, frame: try frame(at: index + 1),
+                    let plaintext = try cryptor.openFrame(wrapped, frame: try frame(at: index + 1, handle: stableFile),
                         objectID: identity.objectID, revision: identity.revision,
                         role: identity.kind.envelopeRole, chunkIndex: index,
                         plaintextLength: plaintextByteCount, rootKey: rootKey)
@@ -171,19 +176,21 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     }
 
     public func authenticate(rootKey: (UInt32) throws -> VaultRootKey) throws {
+        let stableFile = try Self.openStableReadOnly(fileURL)
+        defer { try? stableFile.close() }
         let cryptor = VaultChunkedCryptor(
-            chunkSize: Self.inferredChunkSize(fileURL: fileURL, frameCount: frameCount,
+            chunkSize: Self.inferredChunkSize(handle: stableFile, frameCount: frameCount,
                                                plaintextByteCount: plaintextByteCount),
             vaultID: vaultID)
-        let wrapped = try frame(at: 0)
+        let wrapped = try frame(at: 0, handle: stableFile)
         if plaintextByteCount == 0 {
-            _ = try cryptor.openFrame(wrapped, frame: try frame(at: 1),
+            _ = try cryptor.openFrame(wrapped, frame: try frame(at: 1, handle: stableFile),
                 objectID: identity.objectID, revision: identity.revision,
                 role: identity.kind.envelopeRole, chunkIndex: 0,
                 plaintextLength: 0, rootKey: rootKey)
         } else {
             for index in 0..<(frameCount - 1) {
-                _ = try cryptor.openFrame(wrapped, frame: try frame(at: index + 1),
+                _ = try cryptor.openFrame(wrapped, frame: try frame(at: index + 1, handle: stableFile),
                     objectID: identity.objectID, revision: identity.revision,
                     role: identity.kind.envelopeRole, chunkIndex: index,
                     plaintextLength: plaintextByteCount, rootKey: rootKey)
@@ -199,21 +206,28 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     /// The returned file is a temporary transport artifact owned by the
     /// caller. Remove it after the consumer has finished reading it.
     public func removeOwnedFile() throws {
+        guard ownsFile else { return }
         try FileManager.default.removeItem(at: fileURL)
     }
 
     /// Reads exactly one bounded frame. It is the only frame accessor exposed
     /// to network transports, making accidental whole-object reads difficult.
     public func frame(at index: UInt32) throws -> Data {
+        let stableFile = try Self.openStableReadOnly(fileURL)
+        defer { try? stableFile.close() }
+        return try frame(at: index, handle: stableFile)
+    }
+
+    private func frame(at index: UInt32, handle: FileHandle) throws -> Data {
         guard index < frameCount else { throw VaultCryptoError.invalidRange }
         var offset = UInt64(Self.headerByteCount)
         for _ in 0..<index {
-            let (length, frameOffset) = try Self.readFrameLength(fileURL, offset: offset)
+            let (length, frameOffset) = try Self.readFrameLength(handle, offset: offset)
             offset = try Self.checkedAdd(frameOffset, length)
         }
-        let (length, frameOffset) = try Self.readFrameLength(fileURL, offset: offset)
+        let (length, frameOffset) = try Self.readFrameLength(handle, offset: offset)
         guard length <= UInt64(Int.max) else { throw VaultCryptoError.inputTooLarge }
-        return try Self.readBytes(fileURL, offset: frameOffset, count: Int(length))
+        return try Self.readBytes(handle, offset: frameOffset, count: Int(length))
     }
 
     public static func seal(plaintextURL: URL, fileURL: URL,
@@ -280,9 +294,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         try handle.synchronize()
     }
 
-    fileprivate static func readMetadata(_ fileURL: URL) throws -> Metadata {
-        let handle = try openStableReadOnly(fileURL)
-        defer { try? handle.close() }
+    fileprivate static func readMetadata(_ handle: FileHandle) throws -> Metadata {
         guard let header = try handle.read(upToCount: headerByteCount),
               header.count == headerByteCount,
               header.prefix(4).elementsEqual([0x4c, 0x56, 0x46, 0x31]) else {
@@ -293,16 +305,14 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         return try JSONDecoder().decode(Metadata.self, from: Data(header[8..<(8 + Int(length))]))
     }
 
-    private static func readFrameLength(_ fileURL: URL, offset: UInt64) throws -> (UInt64, UInt64) {
-        let bytes = try readBytes(fileURL, offset: offset, count: 8)
+    private static func readFrameLength(_ handle: FileHandle, offset: UInt64) throws -> (UInt64, UInt64) {
+        let bytes = try readBytes(handle, offset: offset, count: 8)
         let length = bytes.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
         return (length, try checkedAdd(offset, 8))
     }
 
-    private static func readBytes(_ fileURL: URL, offset: UInt64, count: Int) throws -> Data {
+    private static func readBytes(_ handle: FileHandle, offset: UInt64, count: Int) throws -> Data {
         guard offset <= UInt64(Int64.max), count >= 0 else { throw VaultCryptoError.invalidRange }
-        let handle = try openStableReadOnly(fileURL)
-        defer { try? handle.close() }
         try handle.seek(toOffset: offset)
         guard let data = try handle.read(upToCount: count), data.count == count else {
             throw VaultCryptoError.malformedEnvelope
@@ -310,12 +320,12 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         return data
     }
 
-    private static func inferredChunkSize(fileURL: URL, frameCount: UInt32,
+    private static func inferredChunkSize(handle: FileHandle, frameCount: UInt32,
                                           plaintextByteCount: UInt64) -> Int {
         // The first chunk's authenticated length is authoritative. Read and
         // decode it; this remains a single bounded frame read.
-        if let (length, offset) = try? readFrameLength(fileURL, offset: UInt64(headerByteCount)),
-           let bytes = try? readBytes(fileURL, offset: offset, count: Int(length)),
+        if let (length, offset) = try? readFrameLength(handle, offset: UInt64(headerByteCount)),
+           let bytes = try? readBytes(handle, offset: offset, count: Int(length)),
            let envelope = try? VaultChunkEnvelope.decode(bytes,
                maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16) {
             return max(1, envelope.ciphertext.count - 16)
@@ -377,7 +387,7 @@ public struct VaultVerifiedCiphertextFile: Equatable, Sendable {
     /// This token exists only after every frame's authentication tag has
     /// verified under the supplied root key.
     public var authenticatedGeneration: VaultAuthenticatedGeneration {
-        VaultAuthenticatedGeneration(identity.generation)
+        VaultAuthenticatedGeneration(identity: identity)
     }
     public func frame(at index: UInt32) throws -> Data { try payload.frame(at: index) }
 }

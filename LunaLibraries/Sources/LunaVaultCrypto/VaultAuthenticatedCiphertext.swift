@@ -42,8 +42,16 @@ public struct VaultRemoteObjectIdentity: Codable, Hashable, Sendable {
 /// fabricated by callers that only have a string; storage accepts this token
 /// when installing a remote payload instead of a public override string.
 public struct VaultAuthenticatedGeneration: Hashable, Sendable {
+    public let objectID: VaultObjectID
+    public let revision: UUID
+    public let kind: VaultRemoteObjectKind
     public let value: String
-    internal init(_ value: String) { self.value = value }
+    internal init(identity: VaultRemoteObjectIdentity) {
+        self.objectID = identity.objectID
+        self.revision = identity.revision
+        self.kind = identity.kind
+        self.value = identity.generation
+    }
 }
 
 /// A structurally authenticated chunked payload. Construction validates the
@@ -214,7 +222,7 @@ public struct VaultVerifiedCiphertext: Equatable, Sendable {
     public var rootVersion: UInt32 { payload.rootVersion }
     public var encryptedFrames: [Data] { payload.encryptedFrames }
     public var authenticatedGeneration: VaultAuthenticatedGeneration {
-        VaultAuthenticatedGeneration(identity.generation)
+        VaultAuthenticatedGeneration(identity: identity)
     }
     public func encoded() throws -> Data { try payload.encoded() }
 }

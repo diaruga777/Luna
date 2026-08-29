@@ -618,6 +618,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             throw VaultImportError.interrupted
         }
         let remoteIdentity: VaultRemoteObjectIdentity?
+        let authenticatedGeneration: VaultAuthenticatedGeneration?
         if let remote = configuration.remote {
             guard let remoteURL,
                   journal.remoteGeneration?.count == 64,
@@ -630,14 +631,17 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                   payload.identity.generation == journal.remoteGeneration else {
                 throw VaultImportError.interrupted
             }
-            do { _ = try payload.verified(rootKey: remote.rootKey) }
+            let verifiedPayload: VaultVerifiedCiphertextFile
+            do { verifiedPayload = try payload.verified(rootKey: remote.rootKey) }
             catch { throw VaultImportError.interrupted }
             remoteIdentity = payload.identity
+            authenticatedGeneration = verifiedPayload.authenticatedGeneration
         } else {
             guard configuration.uploadBackendKey == nil else {
                 throw VaultImportError.remoteConfigurationRequired
             }
             remoteIdentity = nil
+            authenticatedGeneration = nil
         }
         if let duplicate = try existingDuplicateResult(for: journal) {
             return duplicate
@@ -669,6 +673,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         _ = try repository.insertAtomically(VaultAtomicObjectInsertRequest(record: record,
                                                                             contentURL: stagedURL,
                                                                             contentByteCount: journal.byteCount,
+                                                                            authenticatedGeneration: authenticatedGeneration,
                                                                             jobs: jobs,
                                                                             deferVisibility: true))
         guard let current = try repository.object(journal.objectID), current.revision == journal.revision,
@@ -886,6 +891,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
         var remaining = expectedByteCount
         var hasher = SHA256()
         while remaining > 0 {
+            if Task.isCancelled { throw VaultImportError.interrupted }
             guard let chunk = try handle.read(upToCount: Int(min(1_048_576, remaining))),
                   !chunk.isEmpty else { throw VaultImportError.interrupted }
             hasher.update(data: chunk)

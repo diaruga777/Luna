@@ -252,8 +252,15 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
             try self.coordinator.readToFile(at: path, destinationURL: temporary)
         }) != nil else { return nil }
         do {
+            #if os(iOS)
+            let protection = SystemVaultFileProtectionApplier()
+            try protection.apply(to: temporary)
+            guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
+                throw VaultBackendError.permissionDenied
+            }
+            #endif
             return try VaultAuthenticatedCiphertextFile(fileURL: temporary,
-                expectedIdentity: identity, vaultID: configuration.vaultID)
+                expectedIdentity: identity, vaultID: configuration.vaultID, ownsFile: true)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
             throw VaultBackendError.corruptPayload

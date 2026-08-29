@@ -606,7 +606,7 @@ extension VaultMacRemoteBackend {
             }
             try output.synchronize()
             return try VaultAuthenticatedCiphertextFile(fileURL: temporary,
-                expectedIdentity: identity, vaultID: self.identity.vaultID)
+                expectedIdentity: identity, vaultID: self.identity.vaultID, ownsFile: true)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
             if let error = error as? VaultBackendError { throw error }
@@ -633,6 +633,8 @@ extension VaultMacRemoteBackend {
         }
         guard let revision = stat.revision else { return .conflicted }
         guard revision.revision == identity.revision else { return .conflicted }
+        guard stat.objectKind == identity.kind,
+              stat.payloadGeneration == identity.generation else { return .conflicted }
         guard stat.totalCiphertextBytes.map({ $0 > 0 && $0 <= VaultMacProtocol.maximumObjectBytes }) == true else {
             return .failed
         }

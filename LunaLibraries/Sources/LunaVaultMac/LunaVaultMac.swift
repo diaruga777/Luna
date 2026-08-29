@@ -352,6 +352,16 @@ public actor VaultMacCompanionStore {
         guard partial.receivedBytes == totalBytes else { throw VaultMacCompanionError.incompleteUpload }
         try assemble(objectID: request.objectID, revision: revision.revision, totalChunks: totalChunks,
                      expectedBytes: totalBytes)
+        if let kind = partial.objectKind, let generation = partial.payloadGeneration,
+           let expected = try? VaultRemoteObjectIdentity(objectID: request.objectID,
+                    revision: revision.revision, kind: kind, generation: generation) {
+            let ciphertext = objectDirectoryURL(for: request.objectID, revision: revision.revision)
+                .appendingPathComponent("ciphertext.bin")
+            guard (try? VaultAuthenticatedCiphertextFile(fileURL: ciphertext,
+                    expectedIdentity: expected, vaultID: "default")) != nil else {
+                throw VaultMacCompanionError.conflict
+            }
+        }
         manifest.objects[key] = StoredObject(revision: revision, totalBytes: totalBytes,
                                              totalChunks: totalChunks, deleted: false,
                                              objectKind: partial.objectKind,

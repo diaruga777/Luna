@@ -176,6 +176,15 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
               payload.identity.kind.envelopeRole != .dek else {
             throw VaultBackendError.corruptPayload
         }
+        // The verified wrapper authenticates the inode at construction time.
+        // Re-open and validate immediately before handing the path to the
+        // coordinator so a replaced pathname cannot become an upload source.
+        do {
+            _ = try VaultAuthenticatedCiphertextFile(fileURL: payload.fileURL,
+                expectedIdentity: payload.identity, vaultID: configuration.vaultID)
+        } catch {
+            throw VaultBackendError.corruptPayload
+        }
         try await retrying(configuration.retryPolicy) { [coordinator] in
             do {
                 try coordinator.compareAndWriteFile(from: payload.fileURL,

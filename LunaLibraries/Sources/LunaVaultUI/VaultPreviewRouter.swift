@@ -194,18 +194,20 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         }
     }
 
-    public func beginPreview(_ capability: VaultLocalContentCapability) throws {
+    @discardableResult
+    public func beginPreview(_ capability: VaultLocalContentCapability) throws -> VaultPreviewLease {
         guard capability.authenticated,
               try repository.validateLocalContentCapability(capability) else {
             throw VaultPreviewError.unprotectedLocalFile
         }
-        try repository.setPreviewActive(capability.objectID, active: true)
+        let lease = try repository.beginPreviewLease(capability)
         try repository.setPinned(capability.objectID, pinned: true)
+        return lease
     }
 
-    public func endPreview(_ capability: VaultLocalContentCapability) throws {
-        try repository.setPreviewActive(capability.objectID, active: false)
-        try repository.setPinned(capability.objectID, pinned: false)
+    public func endPreview(_ lease: VaultPreviewLease) throws {
+        try repository.endPreviewLease(lease)
+        try repository.setPinned(lease.objectID, pinned: false)
     }
 
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {

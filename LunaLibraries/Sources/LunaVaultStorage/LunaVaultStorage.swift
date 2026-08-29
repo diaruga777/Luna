@@ -33,9 +33,12 @@ public enum VaultSecureFileAccess {
     }
 
     private static func hasSymlinkComponent(_ path: String) -> Bool {
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        var current = standardized.hasPrefix("/") ? "/" : ""
-        for component in standardized.split(separator: "/") {
+        // Do not use `standardizedFileURL` here: Foundation resolves a
+        // symlink during standardisation, erasing the very evidence this
+        // check is meant to reject.
+        let rawPath = URL(fileURLWithPath: path).path
+        var current = rawPath.hasPrefix("/") ? "/" : ""
+        for component in rawPath.split(separator: "/") {
             if current.isEmpty || current == "/" { current += String(component) }
             else { current += "/" + component }
             var info = stat()
@@ -165,6 +168,23 @@ public struct VaultLocalContentCapability: Hashable, Sendable {
         self.localURL = localURL; self.authenticated = true
     }
 }
+
+/// A short-lived, capability-bound hold on a local preview. The random token
+/// is required to end a lease; an object ID alone can never release another
+/// preview owned by a different scene or process.
+public struct VaultPreviewLease: Hashable, Sendable {
+    public let objectID: VaultObjectID
+    public let revision: UUID
+    public let generation: String
+    public let token: UUID
+    public let expiresAt: Date
+
+    internal init(objectID: VaultObjectID, revision: UUID, generation: String,
+                  token: UUID, expiresAt: Date) {
+        self.objectID = objectID; self.revision = revision
+        self.generation = generation; self.token = token; self.expiresAt = expiresAt
+    }
+}
 public struct VaultEncryptedArtifact: Equatable, Sendable {
     public enum Kind: String, Sendable { case manifest, index }
     public let kind: Kind; public let vaultID: String; public let objectID: VaultObjectID
@@ -221,7 +241,7 @@ public final class VaultRepository: @unchecked Sendable {
         var opened:OpaquePointer?;let flags=SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX|0x0040_0000
         guard sqlite3_open_v2(databaseURL.path,&opened,flags,nil)==SQLITE_OK,let opened else{throw VaultStorageError.sqlite("open")};db=opened
         do { try queue.sync { sqlite3_busy_timeout(opened,5000);try retryingBusy{try execute("PRAGMA journal_mode=WAL")};try execute("PRAGMA synchronous=FULL");try execute("PRAGMA foreign_keys=ON");try retryingBusy{try migrate()} } } catch { sqlite3_close_v2(opened);db=nil;throw error }
-        try protect(testContainerURL);try protect(contentDirectory);try protectDatabaseFiles();try queue.sync{try repairFileLayout();try drainPendingCleanup()}
+        try protect(testContainerURL);try protect(contentDirectory);try protectDatabaseFiles();try queue.sync{try repairFileLayout();try drainPendingCleanup();try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(Date().timeIntervalSinceReferenceDate)])}
     }
     deinit{if let db{sqlite3_close_v2(db)}}
 
@@ -514,27 +534,58 @@ public final class VaultRepository: @unchecked Sendable {
     /// Holds a full-content cache entry while an active preview owns its URL.
     /// This state is durable so a second process cannot evict bytes beneath a
     /// reader that is still using them.
+    @available(*, deprecated, message: "Use beginPreviewLease(_:duration:)")
     public func setPreviewActive(_ id: VaultObjectID, active: Bool,
                                  now: Date = Date()) throws {
-        try sync {
-            try run("INSERT INTO cache_activity(object_id,active_preview,updated_at) VALUES(?,?,?) ON CONFLICT(object_id) DO UPDATE SET active_preview=excluded.active_preview,updated_at=excluded.updated_at", [.text(id.rawValue.uuidString), .int(active ? 1 : 0), .double(now.timeIntervalSinceReferenceDate)])
-        }
+        throw VaultStorageError.invalidTransition
     }
 
     public func isPreviewActive(_ id: VaultObjectID) throws -> Bool {
         try sync {
+            let now = Date().timeIntervalSinceReferenceDate
             var active = false
-            try query("SELECT active_preview FROM cache_activity WHERE object_id=?", [.text(id.rawValue.uuidString)]) { active = $0.int(0) != 0 }
+            try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now)])
+            try query("SELECT 1 FROM preview_leases WHERE object_id=? AND expires_at>? LIMIT 1", [.text(id.rawValue.uuidString), .double(now)]) { _ in active = true }
             return active
         }
+    }
+    public func beginPreviewLease(_ capability: VaultLocalContentCapability,
+                                  duration: TimeInterval = 15 * 60,
+                                  now: Date = Date()) throws -> VaultPreviewLease {
+        guard capability.authenticated, duration.isFinite, duration > 0, duration <= 24 * 60 * 60,
+              try validateLocalContentCapability(capability) else {
+            throw VaultStorageError.protectionRequired
+        }
+        let expiresAt = now.addingTimeInterval(duration)
+        let lease = VaultPreviewLease(objectID: capability.objectID, revision: capability.revision,
+                                      generation: capability.generation, token: UUID(), expiresAt: expiresAt)
+        try sync {
+            try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)])
+            try run("INSERT INTO preview_leases(object_id,token,revision,generation,expires_at,created_at) VALUES(?,?,?,?,?,?)",
+                    [.text(lease.objectID.rawValue.uuidString), .text(lease.token.uuidString),
+                     .text(lease.revision.uuidString), .text(lease.generation),
+                     .double(lease.expiresAt.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)])
+        }
+        return lease
+    }
+    public func endPreviewLease(_ lease: VaultPreviewLease, now: Date = Date()) throws {
+        try sync {
+            try run("DELETE FROM preview_leases WHERE object_id=? AND token=? AND revision=? AND generation=?",
+                    [.text(lease.objectID.rawValue.uuidString), .text(lease.token.uuidString),
+                     .text(lease.revision.uuidString), .text(lease.generation)])
+        }
+    }
+    public func reclaimExpiredPreviewLeases(now: Date = Date()) throws {
+        try sync { try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)]) }
     }
     public func evictExpired(now:Date=Date())throws{try sync{try evictLocked(now:now)}}
     private func evictLocked(now:Date)throws{
         guard supportsCacheEviction else { return }
+        try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(now.timeIntervalSinceReferenceDate)])
         let cutoff=now.addingTimeInterval(-7*86400).timeIntervalSinceReferenceDate
-        var expired=[VaultObjectID]();try query("SELECT object_id FROM cache WHERE full_content=1 AND pinned=0 AND supports_eviction=1 AND COALESCE((SELECT active_preview FROM cache_activity WHERE object_id=cache.object_id),0)=0 AND last_accessed<? ORDER BY last_accessed",[.double(cutoff)]){r in if let u=UUID(uuidString:r.text(0) ?? ""){expired.append(VaultObjectID(rawValue:u))}}
+        var expired=[VaultObjectID]();try query("SELECT object_id FROM cache WHERE full_content=1 AND pinned=0 AND supports_eviction=1 AND NOT EXISTS (SELECT 1 FROM preview_leases WHERE preview_leases.object_id=cache.object_id AND expires_at>?) AND last_accessed<? ORDER BY last_accessed",[.double(now.timeIntervalSinceReferenceDate), .double(cutoff)]){r in if let u=UUID(uuidString:r.text(0) ?? ""){expired.append(VaultObjectID(rawValue:u))}}
         for id in expired{try removeFullCacheLocked(id)}
-        while try scalar("SELECT COALESCE(SUM(bytes),0) FROM cache WHERE full_content=1")>cacheQuotaBytes{var victim:VaultObjectID?;try query("SELECT object_id FROM cache WHERE full_content=1 AND pinned=0 AND supports_eviction=1 AND COALESCE((SELECT active_preview FROM cache_activity WHERE object_id=cache.object_id),0)=0 ORDER BY last_accessed LIMIT 1"){r in victim=r.text(0).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)}};guard let victim else{break};try removeFullCacheLocked(victim)}
+        while try scalar("SELECT COALESCE(SUM(bytes),0) FROM cache WHERE full_content=1")>cacheQuotaBytes{var victim:VaultObjectID?;try query("SELECT object_id FROM cache WHERE full_content=1 AND pinned=0 AND supports_eviction=1 AND NOT EXISTS (SELECT 1 FROM preview_leases WHERE preview_leases.object_id=cache.object_id AND expires_at>?) ORDER BY last_accessed LIMIT 1", [.double(now.timeIntervalSinceReferenceDate)]){r in victim=r.text(0).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)}};guard let victim else{break};try removeFullCacheLocked(victim)}
     }
     private func removeFullCacheLocked(_ id:VaultObjectID)throws{try transaction{try enqueueCleanupLocked(id);try run("DELETE FROM cache WHERE object_id=? AND full_content=1",[.text(id.rawValue.uuidString)])};try drainPendingCleanup()}
 
@@ -743,7 +794,16 @@ public final class VaultRepository: @unchecked Sendable {
                 try execute("CREATE TABLE IF NOT EXISTS object_visibility(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN(0,1)),updated_at REAL NOT NULL);CREATE INDEX IF NOT EXISTS object_visibility_ready ON object_visibility(ready);PRAGMA user_version=7")
                 version = 7
             }
-            guard version == 7 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
+            if version == 7 {
+                try execute("CREATE TABLE IF NOT EXISTS preview_leases(object_id TEXT NOT NULL REFERENCES objects(id) ON DELETE CASCADE,token TEXT NOT NULL,revision TEXT NOT NULL,generation TEXT NOT NULL,expires_at REAL NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(object_id,token));CREATE INDEX IF NOT EXISTS preview_leases_expiry ON preview_leases(expires_at);PRAGMA user_version=8")
+                version = 8
+            }
+            // A database may have recorded the schema version before an
+            // interrupted DDL transaction was observed by the caller. Keep
+            // this idempotent guard outside the version ladder so lease APIs
+            // never run against a version-8 database missing the table.
+            try execute("CREATE TABLE IF NOT EXISTS preview_leases(object_id TEXT NOT NULL REFERENCES objects(id) ON DELETE CASCADE,token TEXT NOT NULL,revision TEXT NOT NULL,generation TEXT NOT NULL,expires_at REAL NOT NULL,created_at REAL NOT NULL,PRIMARY KEY(object_id,token));CREATE INDEX IF NOT EXISTS preview_leases_expiry ON preview_leases(expires_at)")
+            guard version == 8 else { throw VaultStorageError.sqlite("unsupported schema \(version)") }
             try execute("COMMIT")
         } catch {
             try? execute("ROLLBACK")

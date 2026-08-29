@@ -379,6 +379,12 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                                    expectedRevision: UUID?) async throws {
         let plan = try VaultMacChunkPlan(byteCount: byteCount)
         let digest = try SHA256.hashFile(at: fileURL, byteCount: byteCount)
+        // Keep one no-follow descriptor for the complete upload. A pathname
+        // replacement cannot switch the bytes between range requests; the
+        // final digest also detects an in-place mutation while the upload was
+        // in flight.
+        let source = try VaultSecureFileAccess.openRegularReadOnly(at: fileURL)
+        defer { try? source.close() }
         let pending = try await uploadStateStore.pendingUpload(for: id)
         let upload: VaultMacPendingUpload
         if let pending {
@@ -397,7 +403,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         defer { Task { await client.close() } }
         for index in 0..<plan.totalChunks {
             let range = try plan.range(for: index)
-            let chunk = try Self.readFile(fileURL, range: range)
+            let chunk = try Self.readFile(source, range: range)
             let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
                 expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
                 totalCiphertextBytes: byteCount,
@@ -408,6 +414,9 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 if response.status == .conflict { try? await uploadStateStore.removePendingUpload(for: id) }
                 throw VaultMacProtocolError.conflictingRevision
             }
+        }
+        guard try SHA256.hashFile(at: fileURL, byteCount: byteCount) == digest else {
+            throw VaultMacProtocolError.conflictingRevision
         }
         revisions[id] = upload.revision
         try await uploadStateStore.removePendingUpload(for: id)
@@ -623,6 +632,10 @@ extension VaultMacRemoteBackend {
     private static func readFile(_ fileURL: URL, range: Range<Int>) throws -> Data {
         let handle = try VaultSecureFileAccess.openRegularReadOnly(at: fileURL)
         defer { try? handle.close() }
+        return try readFile(handle, range: range)
+    }
+
+    private static func readFile(_ handle: FileHandle, range: Range<Int>) throws -> Data {
         try handle.seek(toOffset: UInt64(range.lowerBound))
         guard let data = try handle.read(upToCount: range.count), data.count == range.count else {
             throw VaultMacProtocolError.invalidFrame

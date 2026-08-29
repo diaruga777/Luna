@@ -113,6 +113,8 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         try lock.withLock {
             let directory = directoryURL(for: key)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard isSafeDirectory(rootURL), isSafeDirectory(directoryURL(for: key).deletingLastPathComponent()),
+                  isSafeDirectory(directory) else { throw VaultThumbnailError.persistence }
             try protection.apply(to: directory)
             guard isProtected(directory) else { throw VaultThumbnailError.persistence }
             let destination = payloadURL(for: key)
@@ -304,10 +306,12 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 }
             }
             let url = payloadURL(for: key)
+            let descriptor = try? VaultSecureFileAccess.openRegularReadOnly(at: url)
+            defer { try? descriptor?.close() }
             let attrs = try? fileManager.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
             let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            if !fileManager.fileExists(atPath: url.path) || !isProtected(url) ||
+            if descriptor == nil || !fileManager.fileExists(atPath: url.path) || !isProtected(url) ||
                 values?.isDirectory == true || values?.isSymbolicLink == true || size != entriesByKey[key]?.byteCount {
                 entriesByKey.removeValue(forKey: key)
             }
@@ -377,6 +381,11 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     private func isProtected(_ url: URL) -> Bool {
         (try? protection.hasRequiredProtection(at: url)) == true
     }
+
+    private func isSafeDirectory(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
+        return values.isDirectory == true && values.isSymbolicLink != true
+    }
 }
 
 public struct VaultCacheStatus: Equatable, Sendable {
@@ -426,10 +435,10 @@ public final class VaultCacheCoordinator: @unchecked Sendable {
     }
 
     public func beginPreview(_ objectID: VaultObjectID, now: Date = Date()) throws {
-        try repository.setPreviewActive(objectID, active: true, now: now)
+        throw VaultStorageError.invalidTransition
     }
 
     public func endPreview(_ objectID: VaultObjectID, now: Date = Date()) throws {
-        try repository.setPreviewActive(objectID, active: false, now: now)
+        throw VaultStorageError.invalidTransition
     }
 }

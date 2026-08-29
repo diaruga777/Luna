@@ -1,6 +1,11 @@
 import CryptoKit
 import Foundation
 import LunaVaultModels
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 
 /// A file-backed authenticated ciphertext envelope.  Unlike
 /// `VaultAuthenticatedCiphertext`, this value never owns the encrypted
@@ -35,10 +40,10 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         if let expectedIdentity, expectedIdentity != identity {
             throw VaultCryptoError.malformedEnvelope
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-        guard (attributes[.type] as? FileAttributeType) == .typeRegular,
-              let fileSize = (attributes[.size] as? NSNumber)?.uint64Value,
-              fileSize >= UInt64(Self.headerByteCount) else {
+        let stableFile = try Self.openStableReadOnly(fileURL)
+        defer { try? stableFile.close() }
+        let fileSize = try stableFile.seekToEnd()
+        guard fileSize >= UInt64(Self.headerByteCount) else {
             throw VaultCryptoError.malformedEnvelope
         }
 
@@ -191,6 +196,12 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         return VaultVerifiedCiphertextFile(payload: self)
     }
 
+    /// The returned file is a temporary transport artifact owned by the
+    /// caller. Remove it after the consumer has finished reading it.
+    public func removeOwnedFile() throws {
+        try FileManager.default.removeItem(at: fileURL)
+    }
+
     /// Reads exactly one bounded frame. It is the only frame accessor exposed
     /// to network transports, making accidental whole-object reads difficult.
     public func frame(at index: UInt32) throws -> Data {
@@ -270,7 +281,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     }
 
     fileprivate static func readMetadata(_ fileURL: URL) throws -> Metadata {
-        let handle = try FileHandle(forReadingFrom: fileURL)
+        let handle = try openStableReadOnly(fileURL)
         defer { try? handle.close() }
         guard let header = try handle.read(upToCount: headerByteCount),
               header.count == headerByteCount,
@@ -290,7 +301,7 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
 
     private static func readBytes(_ fileURL: URL, offset: UInt64, count: Int) throws -> Data {
         guard offset <= UInt64(Int64.max), count >= 0 else { throw VaultCryptoError.invalidRange }
-        let handle = try FileHandle(forReadingFrom: fileURL)
+        let handle = try openStableReadOnly(fileURL)
         defer { try? handle.close() }
         try handle.seek(toOffset: offset)
         guard let data = try handle.read(upToCount: count), data.count == count else {
@@ -325,6 +336,32 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         guard !overflow else { throw VaultCryptoError.inputTooLarge }
         return value
     }
+
+    fileprivate static func openStableReadOnly(_ fileURL: URL) throws -> FileHandle {
+        guard fileURL.isFileURL, !hasSymlinkComponent(fileURL.path) else {
+            throw VaultCryptoError.malformedEnvelope
+        }
+        let descriptor = open(fileURL.path, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw VaultCryptoError.malformedEnvelope }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            close(descriptor)
+            throw VaultCryptoError.malformedEnvelope
+        }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    private static func hasSymlinkComponent(_ path: String) -> Bool {
+        let raw = URL(fileURLWithPath: path).path
+        var current = raw.hasPrefix("/") ? "/" : ""
+        for component in raw.split(separator: "/") {
+            if current.isEmpty || current == "/" { current += String(component) }
+            else { current += "/" + component }
+            var info = stat()
+            if lstat(current, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK { return true }
+        }
+        return false
+    }
 }
 
 public struct VaultVerifiedCiphertextFile: Equatable, Sendable {
@@ -350,7 +387,7 @@ public extension VaultChunkedCryptor {
         guard (attrs[.type] as? FileAttributeType) == .typeRegular,
               let size = (attrs[.size] as? NSNumber)?.uint64Value,
               size <= Self.maximumObjectBytes else { throw VaultCryptoError.inputTooLarge }
-        let source = try FileHandle(forReadingFrom: plaintextURL)
+        let source = try VaultAuthenticatedCiphertextFile.openStableReadOnly(plaintextURL)
         let output = try VaultAuthenticatedCiphertextFile.writePlaceholder(to: fileURL)
         defer { try? source.close(); try? output.close() }
         var digest = SHA256()

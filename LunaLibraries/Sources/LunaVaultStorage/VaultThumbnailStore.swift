@@ -20,13 +20,17 @@ public struct VaultThumbnailKey: Codable, Hashable, Sendable {
 public struct VaultThumbnailEntry: Codable, Hashable, Sendable {
     public let key: VaultThumbnailKey
     public let byteCount: Int64
+    /// SHA-256 of the exact sidecar bytes. A size-only check cannot detect an
+    /// in-place corruption that preserves the thumbnail length.
+    public let digest: String
     public let createdAt: Date
     public var lastAccessedAt: Date
 
     public init(key: VaultThumbnailKey, byteCount: Int64, createdAt: Date,
-                lastAccessedAt: Date) {
+                lastAccessedAt: Date, digest: String = "") {
         self.key = key
         self.byteCount = byteCount
+        self.digest = digest
         self.createdAt = createdAt
         self.lastAccessedAt = lastAccessedAt
     }
@@ -138,7 +142,8 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 entriesByKey[key] = VaultThumbnailEntry(key: key,
                                                         byteCount: Int64(data.count),
                                                         createdAt: entriesByKey[key]?.createdAt ?? now,
-                                                        lastAccessedAt: now)
+                                                        lastAccessedAt: now,
+                                                        digest: Self.digest(data))
                 try persistIndex()
                 try evictLocked(now: now)
             } catch let error as VaultThumbnailError {
@@ -177,7 +182,10 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             }
             defer { try? handle.close() }
             guard let data = try? handle.readToEnd(),
-                  Int64(data.count) == entry.byteCount else {
+                  Int64(data.count) == entry.byteCount,
+                  entry.digest.count == 64,
+                  entry.digest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+                  Self.digest(data) == entry.digest else {
                 try removeLocked(key)
                 try persistIndex()
                 return nil
@@ -314,8 +322,10 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             let attrs = try? fileManager.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
             let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            let digest = (try? descriptor.flatMap { try Self.digest($0, maximumBytes: configuration.maximumBytes) }) ?? nil
             if descriptor == nil || !fileManager.fileExists(atPath: url.path) || !isProtected(url) ||
-                values?.isDirectory == true || values?.isSymbolicLink == true || size != entriesByKey[key]?.byteCount {
+                values?.isDirectory == true || values?.isSymbolicLink == true || size != entriesByKey[key]?.byteCount ||
+                digest == nil || digest != entriesByKey[key]?.digest {
                 entriesByKey.removeValue(forKey: key)
             }
         }
@@ -353,9 +363,18 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                         $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
                         payload == payloadURL(for: $0.key)
                     })?.value.byteCount
+                    let payloadDigest = (try? VaultSecureFileAccess.openRegularReadOnly(at: payload)).flatMap { descriptor in
+                        defer { try? descriptor.close() }
+                        return try? Self.digest(descriptor, maximumBytes: configuration.maximumBytes)
+                    }
+                    let expectedDigest = entriesByKey.first(where: {
+                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
+                        payload == payloadURL(for: $0.key)
+                    })?.value.digest
                     if payload.lastPathComponent.hasPrefix(".staging-") || !matching ||
                         values?.isDirectory == true || values?.isSymbolicLink == true ||
-                        !isProtected(payload) || size != expectedSize {
+                        !isProtected(payload) || size != expectedSize ||
+                        payloadDigest == nil || payloadDigest != expectedDigest {
                         try? fileManager.removeItem(at: payload)
                     }
                 }
@@ -385,6 +404,21 @@ public final class VaultThumbnailStore: @unchecked Sendable {
 
     private func isProtected(_ url: URL) -> Bool {
         (try? protection.hasRequiredProtection(at: url)) == true
+    }
+
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func digest(_ handle: FileHandle, maximumBytes: Int64) throws -> String {
+        var hasher = SHA256()
+        var total: Int64 = 0
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            total += Int64(chunk.count)
+            guard total <= maximumBytes else { throw VaultThumbnailError.tooLarge(total) }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func isSafeDirectory(_ url: URL) -> Bool {

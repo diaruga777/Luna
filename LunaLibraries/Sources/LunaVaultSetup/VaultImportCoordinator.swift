@@ -707,7 +707,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
               !current.isTombstone, current.revision != journal.revision,
               let capability = try repository.localContentCapability(for: journal.objectID),
               capability.revision == current.revision,
-              capability.generation == journal.contentDigest,
+              capability.contentDigest == journal.contentDigest,
               capability.byteCount == journal.byteCount else { return nil }
 
         let metadata: VaultImportedFileMetadata
@@ -853,6 +853,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             let output = try FileHandle(forWritingTo: staging)
             defer { try? input.close(); try? output.close() }
             while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+                if Task.isCancelled { throw VaultImportError.interrupted }
                 try output.write(contentsOf: chunk)
             }
             try output.synchronize()

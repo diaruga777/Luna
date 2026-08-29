@@ -184,14 +184,24 @@ public final class VaultPreviewRouter: @unchecked Sendable {
               let kind = plan.kind else {
             return VaultPreviewStatusViewController(plan: plan)
         }
+        let child: UIViewController
         switch kind {
-        case .image: return VaultImagePreviewViewController(url: url)
-        case .pdf: return VaultPDFPreviewViewController(url: url)
-        case .text: return VaultTextPreviewViewController(url: url)
-        case .audio: return VaultAVPlayerPreviewViewController(url: url)
-        case .video: return VaultAVPlayerPreviewViewController(url: url)
-        case .quickLook: return VaultQuickLookPreviewViewController(url: url)
+        case .image: child = VaultImagePreviewViewController(url: url)
+        case .pdf: child = VaultPDFPreviewViewController(url: url)
+        case .text: child = VaultTextPreviewViewController(url: url)
+        case .audio: child = VaultAVPlayerPreviewViewController(url: url)
+        case .video: child = VaultAVPlayerPreviewViewController(url: url)
+        case .quickLook: child = VaultQuickLookPreviewViewController(url: url)
         }
+        guard let lease = try? beginPreview(capability) else {
+            return VaultPreviewStatusViewController(plan: VaultPreviewPlan(
+                availability: .failed, kind: kind,
+                message: "This preview is no longer available."))
+        }
+        return VaultPreviewLeaseHostingViewController(content: child,
+                                                       repository: repository,
+                                                       lease: lease,
+                                                       capability: capability)
     }
 
     @discardableResult
@@ -233,6 +243,71 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         return .quickLook
     }
 
+}
+
+/// Owns the repository lease for the entire presented viewer lifecycle. The
+/// lease is renewed while visible and ended as soon as the viewer disappears,
+/// allowing iCloud eviction and cache maintenance to proceed safely.
+public final class VaultPreviewLeaseHostingViewController: UIViewController {
+    private let content: UIViewController
+    private let repository: VaultRepository
+    private let capability: VaultLocalContentCapability
+    private var lease: VaultPreviewLease?
+    private var renewalTimer: Timer?
+
+    internal init(content: UIViewController, repository: VaultRepository,
+                  lease: VaultPreviewLease,
+                  capability: VaultLocalContentCapability) {
+        self.content = content
+        self.repository = repository
+        self.capability = capability
+        self.lease = lease
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(content)
+        content.view.frame = view.bounds
+        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(content.view)
+        content.didMove(toParent: self)
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if lease == nil {
+            lease = try? repository.beginPreviewLease(capability)
+        }
+        renewalTimer?.invalidate()
+        renewalTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            guard let lease = self.lease else { return }
+            do {
+                self.lease = try self.repository.renewPreviewLease(lease,
+                                                                     duration: 15 * 60)
+            } catch {
+                self.renewalTimer?.invalidate()
+                self.renewalTimer = nil
+            }
+        }
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        renewalTimer?.invalidate()
+        renewalTimer = nil
+        if let lease { try? repository.endPreviewLease(lease) }
+        lease = nil
+    }
+
+    deinit {
+        renewalTimer?.invalidate()
+        if let lease { try? repository.endPreviewLease(lease) }
+    }
 }
 
 public final class VaultPreviewStatusViewController: UIViewController {

@@ -60,6 +60,11 @@ public protocol VaultUbiquitousFileCoordinating: Sendable {
                              identity: VaultRemoteObjectIdentity,
                              versionAt versionPath: String,
                              expectedRevision: UUID?) throws
+    func compareAndWriteFile(from payload: VaultVerifiedCiphertextFile,
+                             at relativePath: String,
+                             identity: VaultRemoteObjectIdentity,
+                             versionAt versionPath: String,
+                             expectedRevision: UUID?) throws
     func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity?
     func read(at relativePath: String) throws -> Data?
     func readToFile(at relativePath: String, destinationURL: URL) throws -> UInt64?
@@ -84,6 +89,14 @@ public extension VaultUbiquitousFileCoordinating {
         // file API rather than silently materialising the source as Data.
         _ = sourceURL; _ = byteCount; _ = relativePath; _ = identity
         _ = versionPath; _ = expectedRevision
+        throw VaultBackendError.unsupported
+    }
+    func compareAndWriteFile(from payload: VaultVerifiedCiphertextFile,
+                             at relativePath: String,
+                             identity: VaultRemoteObjectIdentity,
+                             versionAt versionPath: String,
+                             expectedRevision: UUID?) throws {
+        _ = payload; _ = relativePath; _ = identity; _ = versionPath; _ = expectedRevision
         throw VaultBackendError.unsupported
     }
     func readToFile(at relativePath: String, destinationURL: URL) throws -> UInt64? {
@@ -176,19 +189,9 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
               payload.identity.kind.envelopeRole != .dek else {
             throw VaultBackendError.corruptPayload
         }
-        // The verified wrapper authenticates the inode at construction time.
-        // Re-open and validate immediately before handing the path to the
-        // coordinator so a replaced pathname cannot become an upload source.
-        do {
-            _ = try VaultAuthenticatedCiphertextFile(fileURL: payload.fileURL,
-                expectedIdentity: payload.identity, vaultID: configuration.vaultID)
-        } catch {
-            throw VaultBackendError.corruptPayload
-        }
         try await retrying(configuration.retryPolicy) { [coordinator] in
             do {
-                try coordinator.compareAndWriteFile(from: payload.fileURL,
-                    byteCount: payload.ciphertextByteCount,
+                try coordinator.compareAndWriteFile(from: payload,
                     at: self.objectPath(payload.identity), identity: payload.identity,
                     versionAt: self.versionPath(payload.identity),
                     expectedRevision: expectedRevision)
@@ -455,6 +458,49 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         }
     }
 
+    /// Copies from the already-authenticated descriptor held by the verified
+    /// payload.  No pathname is reopened between verification and upload.
+    public func compareAndWriteFile(from payload: VaultVerifiedCiphertextFile,
+                                    at relativePath: String,
+                                    identity: VaultRemoteObjectIdentity,
+                                    versionAt versionPath: String,
+                                    expectedRevision: UUID?) throws {
+        guard payload.identity == identity,
+              payload.ciphertextByteCount > 0 else { throw VaultBackendError.corruptPayload }
+        guard let payloadURL = url(for: relativePath), let versionURL = url(for: versionPath) else {
+            throw VaultBackendError.unavailable
+        }
+        try coordinateWriting(payloadURL, versionURL) { payloadTarget, versionTarget in
+            let current = try self.decodeIdentity(at: versionTarget)
+            if current == identity {
+                guard try self.filesEqual(payload, payloadTarget,
+                                          expectedBytes: payload.ciphertextByteCount) else {
+                    throw VaultBackendError.conflict
+                }
+                return
+            }
+            guard current?.revision == expectedRevision else { throw VaultBackendError.staleVersion }
+            try self.fileManager.createDirectory(at: payloadTarget.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+            let staging = payloadTarget.deletingLastPathComponent()
+                .appendingPathComponent(".staging-\(UUID().uuidString)")
+            do {
+                let before = try payload.digest()
+                _ = try payload.writeCopy(to: staging)
+                let after = try payload.digest()
+                guard before == after else { throw VaultBackendError.conflict }
+                if self.fileManager.fileExists(atPath: payloadTarget.path) {
+                    try self.fileManager.removeItem(at: payloadTarget)
+                }
+                try self.fileManager.moveItem(at: staging, to: payloadTarget)
+                try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
+            } catch {
+                try? self.fileManager.removeItem(at: staging)
+                throw error
+            }
+        }
+    }
+
     public func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity? {
         guard let versionURL = url(for: versionPath) else { throw VaultBackendError.unavailable }
         guard fileManager.fileExists(atPath: versionURL.path) else { return nil }
@@ -599,6 +645,25 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         let leftEnd = try left.read(upToCount: 1)?.isEmpty != false
         let rightEnd = try right.read(upToCount: 1)?.isEmpty != false
         return leftEnd && rightEnd
+    }
+
+    private func filesEqual(_ lhs: VaultVerifiedCiphertextFile, _ rhs: URL,
+                            expectedBytes: UInt64) throws -> Bool {
+        guard fileManager.fileExists(atPath: rhs.path) else { return false }
+        let attrs = try fileManager.attributesOfItem(atPath: rhs.path)
+        guard (attrs[.size] as? NSNumber)?.uint64Value == expectedBytes else { return false }
+        let right = try VaultSecureFileAccess.openRegularReadOnly(at: rhs)
+        defer { try? right.close() }
+        var offset: UInt64 = 0
+        while offset < expectedBytes {
+            let count = Int(min(UInt64(1_048_576), expectedBytes - offset))
+            let leftBytes = try lhs.read(offset: offset, count: count)
+            guard let rightBytes = try right.read(upToCount: count), leftBytes == rightBytes else {
+                return false
+            }
+            offset += UInt64(count)
+        }
+        return try right.read(upToCount: 1)?.isEmpty != false
     }
 
     private func coordinateReading(_ url: URL, body: (URL) throws -> Void) throws {

@@ -261,6 +261,7 @@ public struct VaultChunkedCryptor: Sendable {
         var result=[try wrap(dek,root,objectID,revision,wrapNonce)]; let key=SymmetricKey(data:dek)
         let count=max(1,(plaintext.count + chunkSize - 1) / chunkSize); guard count <= Int(UInt32.max) else { throw VaultCryptoError.tooManyChunks }
         for number in 0..<count {
+            if Task.isCancelled { throw VaultCryptoError.invalidLength }
             let start=min(plaintext.count,number*chunkSize), end=min(plaintext.count,start+chunkSize); let nonceData=try uniqueNonce(&nonces)
             let aad=associatedData(role,root.version,objectID,revision,UInt32(number),UInt64(plaintext.count))
             let box=try AES.GCM.seal(Data(plaintext[start..<end]),using:key,nonce:try AES.GCM.Nonce(data:nonceData),authenticating:aad)
@@ -326,7 +327,9 @@ public struct VaultChunkedCryptor: Sendable {
         let root=try rootKey(parsed.rootVersion); guard root.version == parsed.rootVersion else { throw VaultCryptoError.wrongRootVersion }
         let dek=try unwrap(frames[0],root,parsed.envelopes[0].objectID,parsed.envelopes[0].revision); let key=SymmetricKey(data:dek)
         let chunks=try planRange(range,plaintextLength:Int(parsed.length)); var output=Data(); output.reserveCapacity(range.count)
-        for number in chunks { let e=parsed.envelopes[number]; let aad=associatedData(e.role,e.rootVersion,e.objectID,e.revision,e.chunkIndex,e.plaintextLength); let box=try sealedBox(e)
+        for number in chunks {
+            if Task.isCancelled { throw VaultCryptoError.invalidLength }
+            let e=parsed.envelopes[number]; let aad=associatedData(e.role,e.rootVersion,e.objectID,e.revision,e.chunkIndex,e.plaintextLength); let box=try sealedBox(e)
             let plain:Data; do { plain=try AES.GCM.open(box,using:key,authenticating:aad) } catch { throw VaultCryptoError.authenticationFailed }
             let chunkStart=number*chunkSize, lower=max(range.lowerBound,chunkStart)-chunkStart, upper=min(range.upperBound,chunkStart+plain.count)-chunkStart
             if lower < upper { output.append(plain[lower..<upper]) }

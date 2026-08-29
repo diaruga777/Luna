@@ -81,11 +81,15 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
                   let ciphertext, !ciphertext.isEmpty,
                   ciphertext.count <= VaultMacProtocol.maximumTransferBytes,
                   UInt64(ciphertext.count) <= totalCiphertextBytes else { throw VaultMacProtocolError.invalidRequest }
-            if let payloadGeneration {
-                guard payloadGeneration.count == 64,
-                      payloadGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { throw VaultMacProtocolError.invalidRequest }
+            // Every Mac object is an authenticated LVF generation.  Raw
+            // ciphertext uploads would let a peer publish bytes that the
+            // companion cannot bind to an object kind or immutable identity.
+            guard let objectKind, let payloadGeneration,
+                  payloadGeneration.count == 64,
+                  payloadGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                throw VaultMacProtocolError.invalidRequest
             }
-            guard (objectKind == nil) == (payloadGeneration == nil) else { throw VaultMacProtocolError.invalidRequest }
+            _ = objectKind
         case .stat:
             guard revision == nil, ciphertext == nil, offset == nil, length == nil else { throw VaultMacProtocolError.invalidRequest }
         case .readRange:

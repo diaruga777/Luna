@@ -9,6 +9,7 @@ import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
 import UIKit
+import UniformTypeIdentifiers
 
 public enum LunaVaultUIModule {
     public static let identifier = "LunaVaultUI"
@@ -19,11 +20,18 @@ public enum LunaVaultUIModule {
 /// the selected backend is currently usable.
 public final class VaultRootViewController: UIViewController {
     private let services: VaultRuntimeServices?
+    private let importHandler: ((VaultImportSource) throws -> VaultImportResult)?
     private let searchField: UITextField
     private let statusLabel: UILabel
 
-    public init(services: VaultRuntimeServices? = nil) {
+    /// `importHandler` is injected by the app composition root. Keeping the
+    /// document-provider URL in this controller only for the duration of the
+    /// picker callback means extensions never receive a source URL or an
+    /// encryption capability.
+    public init(services: VaultRuntimeServices? = nil,
+                importHandler: ((VaultImportSource) throws -> VaultImportResult)? = nil) {
         self.services = services
+        self.importHandler = importHandler
         searchField = UITextField()
         statusLabel = UILabel()
         super.init(nibName: nil, bundle: nil)
@@ -53,6 +61,12 @@ public final class VaultRootViewController: UIViewController {
 
         view.addSubview(searchField)
         view.addSubview(statusLabel)
+        if importHandler != nil {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: "Import", style: .plain, target: self,
+                action: #selector(importDocuments))
+            navigationItem.rightBarButtonItem?.accessibilityLabel = "Import files"
+        }
         NSLayoutConstraint.activate([
             searchField.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             searchField.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
@@ -95,5 +109,49 @@ public final class VaultRootViewController: UIViewController {
         }
         let location = services.policy.location == .iCloud ? "iCloud" : "this device"
         statusLabel.text = "Luna Vault\nReady on \(location)."
+    }
+
+    @objc private func importDocuments() {
+        guard importHandler != nil else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item],
+                                                     asCopy: false)
+        picker.allowsMultipleSelection = true
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    private func reportImport(_ result: Result<VaultImportResult, Error>) {
+        let message: String
+        switch result {
+        case .success(let imported):
+            message = "Imported \(imported.fileName)"
+        case .failure:
+            message = "The file could not be imported. It remains outside your vault."
+        }
+        let alert = UIAlertController(title: "Luna Vault", message: message,
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+extension VaultRootViewController: UIDocumentPickerDelegate {
+    public func documentPicker(_ controller: UIDocumentPickerViewController,
+                               didPickDocumentsAt urls: [URL]) {
+        guard let importHandler else { return }
+        for url in urls {
+            let source = VaultImportSource(
+                fileURL: url,
+                fileName: url.lastPathComponent,
+                contentType: UTType(filenameExtension: url.pathExtension)?.identifier)
+            // Import is synchronous by design at the setup boundary, but it
+            // must never block UIKit's document-provider callback queue.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Result { try importHandler(source) }
+                DispatchQueue.main.async { [weak self] in
+                    self?.reportImport(result)
+                }
+            }
+        }
     }
 }

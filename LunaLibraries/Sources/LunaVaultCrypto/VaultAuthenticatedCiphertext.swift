@@ -89,6 +89,7 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         let chunkSize = first.ciphertext.count - 16
         guard chunkSize >= 0 else { throw VaultCryptoError.malformedEnvelope }
         for (index, frame) in encryptedFrames.dropFirst().enumerated() {
+            if Task.isCancelled { throw VaultCryptoError.malformedEnvelope }
             let envelope = try VaultChunkEnvelope.decode(
                 frame, maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
             guard envelope.objectID == objectID,
@@ -105,6 +106,9 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
             guard expected >= 0, envelope.ciphertext.count == expected + 16 else {
                 throw VaultCryptoError.malformedEnvelope
             }
+        }
+        guard first.plaintextLength <= UInt64(Int.max) else {
+            throw VaultCryptoError.inputTooLarge
         }
         let divisor = max(1, chunkSize)
         let expectedCount = first.plaintextLength == 0

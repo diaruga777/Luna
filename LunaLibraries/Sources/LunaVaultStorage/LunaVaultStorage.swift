@@ -18,10 +18,8 @@ public enum LunaVaultStorageModule { public static let identifier = "LunaVaultSt
 /// pathname replacement cannot produce a TOCTOU swap midway through a read.
 public enum VaultSecureFileAccess {
     public static func openRegularReadOnly(at url: URL) throws -> FileHandle {
-        guard url.isFileURL, !hasSymlinkComponent(url.path) else {
-            throw VaultStorageError.invalidArtifact
-        }
-        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard url.isFileURL else { throw VaultStorageError.invalidArtifact }
+        let descriptor = try openAnchoredRegularFile(url.path)
         guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
         var info = stat()
         guard fstat(descriptor, &info) == 0,
@@ -32,21 +30,32 @@ public enum VaultSecureFileAccess {
         return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 
-    private static func hasSymlinkComponent(_ path: String) -> Bool {
-        // Do not use `standardizedFileURL` here: Foundation resolves a
-        // symlink during standardisation, erasing the very evidence this
-        // check is meant to reject.
-        let rawPath = URL(fileURLWithPath: path).path
-        var current = rawPath.hasPrefix("/") ? "/" : ""
-        for component in rawPath.split(separator: "/") {
-            if current.isEmpty || current == "/" { current += String(component) }
-            else { current += "/" + component }
-            var info = stat()
-            if lstat(current, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK {
-                return true
-            }
+    private static func openAnchoredRegularFile(_ path: String) throws -> Int32 {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard !components.isEmpty, !components.contains("."), !components.contains("..") else {
+            throw VaultStorageError.invalidArtifact
         }
-        return false
+        var directory = open(path.hasPrefix("/") ? "/" : ".",
+                             O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directory >= 0 else { throw VaultStorageError.invalidArtifact }
+        for component in components.dropLast() {
+            let next = component.withCString {
+                openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            }
+            guard next >= 0 else {
+                close(directory)
+                throw VaultStorageError.invalidArtifact
+            }
+            close(directory)
+            directory = next
+        }
+        let descriptor = components.last!.withCString {
+            openat(directory, $0, O_RDONLY | O_NOFOLLOW)
+        }
+        close(directory)
+        guard descriptor >= 0 else { throw VaultStorageError.invalidArtifact }
+        return descriptor
     }
 }
 
@@ -155,6 +164,10 @@ public struct VaultLocalContentCapability: Hashable, Sendable {
     public let objectID: VaultObjectID
     public let revision: UUID
     public let generation: String
+    /// Plaintext content identity used only for local deduplication. This is
+    /// intentionally separate from the authenticated remote envelope
+    /// generation, which changes with encryption randomness.
+    public let contentDigest: String
     public let byteCount: Int64
     public let localURL: URL
     /// True only after protection, regular-file, size, revision, generation,
@@ -162,9 +175,9 @@ public struct VaultLocalContentCapability: Hashable, Sendable {
     public let authenticated: Bool
 
     internal init(objectID: VaultObjectID, revision: UUID, generation: String,
-                  byteCount: Int64, localURL: URL) {
+                  contentDigest: String, byteCount: Int64, localURL: URL) {
         self.objectID = objectID; self.revision = revision
-        self.generation = generation; self.byteCount = byteCount
+        self.generation = generation; self.contentDigest = contentDigest; self.byteCount = byteCount
         self.localURL = localURL; self.authenticated = true
     }
 }
@@ -198,14 +211,19 @@ public struct VaultEncryptedArtifact: Equatable, Sendable {
               let first = try? VaultChunkEnvelope.decode(encryptedFrames[1], maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16),
               first.role == expectedRole, first.revision == revision, first.rootVersion == rootVersion else { throw VaultStorageError.invalidArtifact }
         guard Data(encryptedFrames[0][5..<21])==vaultFingerprint,Data(encryptedFrames[0][21..<37])==first.objectID.rawValue.uuidData,Data(encryptedFrames[0][37..<53])==revision.uuidData else{throw VaultStorageError.invalidArtifact}
+        guard first.plaintextLength <= UInt64(Int.max) else { throw VaultStorageError.invalidArtifact }
         let chunkSize = first.ciphertext.count - 16
         guard chunkSize >= 0 else { throw VaultStorageError.invalidArtifact }
         for (index, frame) in encryptedFrames.dropFirst().enumerated() {
+            if Task.isCancelled { throw VaultStorageError.invalidTransition }
             guard let envelope=try?VaultChunkEnvelope.decode(frame,maximumBytes:8_388_608+VaultChunkEnvelope.headerSize+16),envelope.role==expectedRole,envelope.objectID==first.objectID,envelope.revision==revision,envelope.rootVersion==rootVersion,envelope.plaintextLength==first.plaintextLength,envelope.chunkIndex==UInt32(index) else{throw VaultStorageError.invalidArtifact}
-            let expected = first.plaintextLength == 0 ? 0 : min(chunkSize, Int(first.plaintextLength) - index * chunkSize)
-            guard expected >= 0, envelope.ciphertext.count == expected + 16 else { throw VaultStorageError.invalidArtifact }
+            let (offset, offsetOverflow) = UInt64(index).multipliedReportingOverflow(by: UInt64(chunkSize))
+            guard !offsetOverflow, offset <= first.plaintextLength else { throw VaultStorageError.invalidArtifact }
+            let expected = first.plaintextLength == 0 ? 0 : min(UInt64(chunkSize), first.plaintextLength - offset)
+            guard envelope.ciphertext.count == Int(expected) + 16 else { throw VaultStorageError.invalidArtifact }
         }
-        let expectedCount = first.plaintextLength == 0 ? 1 : (Int(first.plaintextLength) + max(1,chunkSize) - 1) / max(1,chunkSize)
+        let divisor = UInt64(max(1, chunkSize))
+        let expectedCount = first.plaintextLength == 0 ? 1 : Int((first.plaintextLength + divisor - 1) / divisor)
         guard expectedCount == encryptedFrames.count - 1 else { throw VaultStorageError.invalidArtifact }
         self.kind=kind; self.vaultID=vaultID; self.objectID=first.objectID; self.revision=revision; self.rootVersion=rootVersion; self.encryptedFrames=encryptedFrames
     }
@@ -491,7 +509,8 @@ public final class VaultRepository: @unchecked Sendable {
                   plaintextDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
                   try digestFile(url) == plaintextDigest else { return nil }
             return VaultLocalContentCapability(objectID: id, revision: object.revision,
-                                               generation: generation, byteCount: size,
+                                               generation: generation, contentDigest: plaintextDigest,
+                                               byteCount: size,
                                                localURL: url)
         }
     }

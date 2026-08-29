@@ -37,7 +37,10 @@ import LunaVaultUI
     }
 
     static func makeRootViewController() -> UIViewController {
-        let root = VaultRootViewController(services: makeServices())
+        let handler: ((VaultImportSource) throws -> VaultImportResult)? = importCoordinator.map { coordinator in
+            { source in try coordinator.importFile(source) }
+        }
+        let root = VaultRootViewController(services: makeServices(), importHandler: handler)
         identityConfirmer.attach(to: root)
         return root
     }

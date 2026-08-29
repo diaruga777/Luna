@@ -376,18 +376,19 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         try await uploadStateStore.removePendingUpload(for: id)
     }
 
-    private func putCiphertextFile(_ fileURL: URL, byteCount: UInt64,
+    private func putCiphertextFile(_ payload: VaultVerifiedCiphertextFile, byteCount: UInt64,
                                    for id: VaultObjectID, revision: VaultRevision,
                                    expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
                                    generation: String? = nil) async throws {
         let plan = try VaultMacChunkPlan(byteCount: byteCount)
-        let digest = try SHA256.hashFile(at: fileURL, byteCount: byteCount)
-        // Keep one no-follow descriptor for the complete upload. A pathname
-        // replacement cannot switch the bytes between range requests; the
-        // final digest also detects an in-place mutation while the upload was
-        // in flight.
-        let source = try VaultSecureFileAccess.openRegularReadOnly(at: fileURL)
-        defer { try? source.close() }
+        guard payload.ciphertextByteCount == byteCount else {
+            throw VaultMacProtocolError.conflictingRevision
+        }
+        // The verified payload retains the descriptor that was authenticated
+        // by VaultAuthenticatedCiphertextFile. Both digest passes and every
+        // chunk read below therefore refer to one immutable inode, never a
+        // reopened pathname.
+        let digest = try payload.digestBytes()
         let pending = try await uploadStateStore.pendingUpload(for: id)
         let upload: VaultMacPendingUpload
         if let pending {
@@ -406,7 +407,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         defer { Task { await client.close() } }
         for index in 0..<plan.totalChunks {
             let range = try plan.range(for: index)
-            let chunk = try Self.readFile(source, range: range)
+            let chunk = try payload.read(offset: UInt64(range.lowerBound), count: range.count)
             let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
                 expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
                 totalCiphertextBytes: byteCount,
@@ -419,7 +420,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 throw VaultMacProtocolError.conflictingRevision
             }
         }
-        guard try SHA256.hashFile(at: fileURL, byteCount: byteCount) == digest else {
+        guard try payload.digestBytes() == digest else {
             throw VaultMacProtocolError.conflictingRevision
         }
         revisions[id] = upload.revision
@@ -546,7 +547,7 @@ extension VaultMacRemoteBackend {
             revision: payload.identity.revision,
             logicalTime: Int64(Date().timeIntervalSince1970 * 1_000), deviceID: "iphone")
         do {
-            try await putCiphertextFile(payload.fileURL,
+            try await putCiphertextFile(payload,
                 byteCount: payload.ciphertextByteCount, for: payload.identity.objectID,
                 revision: remoteRevision, expectedRevision: expectedRevision,
                 kind: payload.identity.kind, generation: payload.identity.generation)

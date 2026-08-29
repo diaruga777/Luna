@@ -2,6 +2,11 @@ import CryptoKit
 import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public enum VaultMacProtocol {
     public static let version: UInt16 = 2
@@ -402,7 +407,7 @@ public struct VaultMacEndpoint: Codable, Equatable, Hashable, Sendable {
         case .tailscale:
             if host.hasSuffix(".ts.net") { return validHostname(host) }
             if let ip = ipv4Bytes(host) { return ip[0] == 100 && (64...127).contains(ip[1]) }
-            return host.hasPrefix("fd7a:115c:a1e0:") && host.allSatisfy { $0.isHexDigit || $0 == ":" }
+            return tailscaleIPv6(host)
         case .lanBonjour: return host.hasSuffix(".local") && validHostname(host)
         }
     }
@@ -416,6 +421,20 @@ public struct VaultMacEndpoint: Codable, Equatable, Hashable, Sendable {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4 else { return nil }; let bytes = parts.compactMap { UInt8($0) }
         return bytes.count == 4 ? bytes : nil
+    }
+    private static func tailscaleIPv6(_ value: String) -> Bool {
+        #if canImport(Darwin) || canImport(Glibc)
+        var address = in6_addr()
+        let result = value.withCString { inet_pton(AF_INET6, $0, &address) }
+        guard result == 1 else { return false }
+        return withUnsafeBytes(of: &address) { bytes in
+            bytes.count >= 6 && bytes[0] == 0xfd && bytes[1] == 0x7a &&
+                bytes[2] == 0x11 && bytes[3] == 0x5c &&
+                bytes[4] == 0xa1 && bytes[5] == 0xe0
+        }
+        #else
+        return false
+        #endif
     }
 }
 

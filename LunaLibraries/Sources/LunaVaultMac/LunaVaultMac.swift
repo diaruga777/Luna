@@ -25,11 +25,13 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
                 maximumManifestBytes: Int = 16 * 1024 * 1024,
                 maximumPartialUploads: Int = 64,
                 partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60) {
-        self.maximumObjectBytes = min(maximumObjectBytes, VaultMacProtocol.maximumObjectBytes)
-        self.maximumStoredBytes = maximumStoredBytes
-        self.maximumManifestBytes = maximumManifestBytes
-        self.maximumPartialUploads = maximumPartialUploads
-        self.partialUploadLifetime = partialUploadLifetime
+        self.maximumObjectBytes = max(1, min(maximumObjectBytes, VaultMacProtocol.maximumObjectBytes))
+        self.maximumStoredBytes = max(1, maximumStoredBytes)
+        self.maximumManifestBytes = max(1, min(maximumManifestBytes, 16 * 1024 * 1024))
+        self.maximumPartialUploads = max(1, min(maximumPartialUploads, 1_024))
+        self.partialUploadLifetime = partialUploadLifetime.isFinite
+            ? max(1, min(partialUploadLifetime, 30 * 24 * 60 * 60))
+            : 7 * 24 * 60 * 60
     }
 }
 
@@ -62,6 +64,9 @@ public final class VaultMacPairingCoordinator: @unchecked Sendable {
         -> (VaultMacPairingOffer, VaultMacPairingSecret) {
         try lock.withLock {
             guard !consumed else { throw VaultMacProtocolError.pairingAlreadyConsumed }
+            guard lifetime.isFinite, lifetime > 0, lifetime <= 15 * 60 else {
+                throw VaultMacProtocolError.invalidChallenge
+            }
             let code = try VaultMacPairingSecret(rawValue: random.bytes(count: 32))
             let offer = try VaultMacPairingOffer(pairingID: UUID(), serverBinding: serverBinding,
                 endpointBinding: endpointBinding, nonce: random.bytes(count: 32),
@@ -102,6 +107,9 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
     public func issue(now: Date = Date(), lifetime: TimeInterval = 10) throws -> VaultMacSessionChallenge {
         try lock.withLock {
             guard credential.revokedAt == nil else { throw VaultMacProtocolError.revoked }
+            guard lifetime.isFinite, lifetime > 0, lifetime <= 5 * 60 else {
+                throw VaultMacProtocolError.invalidChallenge
+            }
             pending = pending.filter { $0.value.expiresAt > now }
             guard pending.count < 128 else { throw VaultMacProtocolError.unavailable }
             var sessionID = UUID()
@@ -117,11 +125,21 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
         -> (VaultMacSessionChallenge, VaultMacSessionKeys) {
         try lock.withLock {
             guard !consumed.contains(response.sessionID),
-                  let challenge = pending.removeValue(forKey: response.sessionID) else {
+                  let challenge = pending[response.sessionID] else {
                 throw VaultMacProtocolError.replayedFrame
             }
-            let keys = try VaultMacSessionKeys(challenge: challenge, response: response,
+            // Do not remove the challenge until the proof has verified.  The
+            // handshake is unauthenticated up to this point; consuming it on
+            // a bad response would let any peer burn a legitimate pairing
+            // attempt and create a trivial denial of service.
+            let keys: VaultMacSessionKeys
+            do {
+                keys = try VaultMacSessionKeys(challenge: challenge, response: response,
                                                credential: credential, now: now)
+            } catch {
+                throw error
+            }
+            pending.removeValue(forKey: response.sessionID)
             consumed.insert(response.sessionID)
             if consumed.count > 4_096 { consumed.removeAll(keepingCapacity: true) }
             return (challenge, keys)
@@ -514,7 +532,17 @@ private enum VaultSecureFileSystem {
         if exists(url) { try rejectSymlink(url) }
         let staging = url.deletingLastPathComponent().appendingPathComponent(".staging-\(UUID().uuidString)")
         let fd = try openNew(staging); defer { close(fd) }
-        do { try writeAll(data, fd: fd); guard fsync(fd) == 0 else { throw VaultMacCompanionError.diskFailure }; try install(staging, at: url) }
+        do {
+            try writeAll(data, fd: fd)
+            guard fsync(fd) == 0 else { throw VaultMacCompanionError.diskFailure }
+            try install(staging, at: url)
+            // `rename` preserves the staging mode, but reassert it after
+            // installation so an existing file can never weaken the contract
+            // through an unusual filesystem or a future writer change.
+            #if canImport(Darwin)
+            guard chmod(url.path, S_IRUSR | S_IWUSR) == 0 else { throw VaultMacCompanionError.diskFailure }
+            #endif
+        }
         catch { try? removeRegularFile(staging); throw error }
     }
     static func install(_ source: URL, at destination: URL) throws {

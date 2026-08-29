@@ -14,11 +14,15 @@ public final class VaultMacNWFrameChannel: VaultMacFrameChannel, @unchecked Send
         guard frame.count > 0, frame.count <= VaultMacProtocol.maximumFrameBytes + 1024 else { throw VaultMacProtocolError.frameTooLarge }
         var size = UInt32(frame.count).bigEndian
         var data = Data(bytes: &size, count: 4); data.append(frame)
-        let _: Void = try await withCheckedThrowingContinuation { continuation in
-            connection.send(content: data, completion: .contentProcessed { error in
-                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-            })
-        }
+        let _: Void = try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                connection.send(content: data, completion: .contentProcessed { error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                })
+            }
+        }, onCancel: {
+            connection.cancel()
+        })
     }
     public func receive() async throws -> Data {
         let header = try await receiveExactly(4)
@@ -31,14 +35,18 @@ public final class VaultMacNWFrameChannel: VaultMacFrameChannel, @unchecked Send
         var result = Data(); result.reserveCapacity(count)
         while result.count < count {
             let remaining = count - result.count
-            let piece: Data = try await withCheckedThrowingContinuation { continuation in
-                connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { data, _, complete, error in
-                    if let error { continuation.resume(throwing: error) }
-                    else if let data, !data.isEmpty { continuation.resume(returning: data) }
-                    else if complete { continuation.resume(throwing: VaultMacProtocolError.unavailable) }
-                    else { continuation.resume(throwing: VaultMacProtocolError.invalidFrame) }
+            let piece: Data = try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { continuation in
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { data, _, complete, error in
+                        if let error { continuation.resume(throwing: error) }
+                        else if let data, !data.isEmpty { continuation.resume(returning: data) }
+                        else if complete { continuation.resume(throwing: VaultMacProtocolError.unavailable) }
+                        else { continuation.resume(throwing: VaultMacProtocolError.invalidFrame) }
+                    }
                 }
-            }
+            }, onCancel: {
+                connection.cancel()
+            })
             result.append(piece)
         }
         return result

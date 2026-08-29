@@ -1,20 +1,25 @@
 import CryptoKit
 import Foundation
+import LunaVaultCrypto
 import LunaVaultModels
 
-/// The application protocol used between the Vault iPhone host and its paired
-/// Mac. Tailscale, a LAN address, and Bonjour are deliberately absent from the
-/// authenticated identity: they are only ways to reach the same peer.
 public enum VaultMacProtocol {
-    public static let version: UInt16 = 1
+    public static let version: UInt16 = 2
     public static let maximumFrameBytes = 8 * 1024 * 1024
+    public static let maximumObjectBytes: UInt64 = 100 * 1024 * 1024 * 1024
+    public static let serviceType = "_lunavault._tcp"
 }
 
-public enum VaultMacOperation: String, Codable, Sendable {
-    case putChunk
-    case readRange
-    case delete
+public enum VaultMacProtocolError: Error, Equatable, Sendable {
+    case invalidRequest, invalidSecret, invalidChallenge, invalidFrame
+    case wrongProtocolVersion, wrongSession, wrongDirection
+    case replayedFrame, outOfOrderFrame, authenticationFailed
+    case sequenceOverflow, frameTooLarge, objectTooLarge, conflictingRevision
+    case expired, revoked, pairingAlreadyConsumed, unconfirmedServerIdentity
+    case invalidEndpoint, unavailable
 }
+
+public enum VaultMacOperation: String, Codable, Sendable { case putChunk, stat, readRange, delete }
 
 public struct VaultMacRequest: Codable, Equatable, Sendable {
     public let operation: VaultMacOperation
@@ -23,263 +28,351 @@ public struct VaultMacRequest: Codable, Equatable, Sendable {
     public let expectedRevision: UUID?
     public let chunkIndex: UInt32?
     public let totalChunks: UInt32?
+    public let totalCiphertextBytes: UInt64?
     public let offset: UInt64?
     public let length: UInt64?
     public let idempotencyKey: String
-    /// This is always an encrypted frame/chunk. There is intentionally no
-    /// filename, content type, plaintext metadata, or root-key field.
+    /// An already encrypted Vault envelope or byte range. There is no filename,
+    /// MIME type, plaintext metadata, index term, or root-key field.
     public let ciphertext: Data?
 
-    public init(
-        operation: VaultMacOperation,
-        objectID: VaultObjectID,
-        revision: VaultRevision? = nil,
-        expectedRevision: UUID? = nil,
-        chunkIndex: UInt32? = nil,
-        totalChunks: UInt32? = nil,
-        offset: UInt64? = nil,
-        length: UInt64? = nil,
-        idempotencyKey: String,
-        ciphertext: Data? = nil
-    ) {
-        self.operation = operation
-        self.objectID = objectID
-        self.revision = revision
-        self.expectedRevision = expectedRevision
-        self.chunkIndex = chunkIndex
-        self.totalChunks = totalChunks
-        self.offset = offset
-        self.length = length
-        self.idempotencyKey = idempotencyKey
-        self.ciphertext = ciphertext
+    public init(operation: VaultMacOperation, objectID: VaultObjectID,
+                revision: VaultRevision? = nil, expectedRevision: UUID? = nil,
+                chunkIndex: UInt32? = nil, totalChunks: UInt32? = nil,
+                totalCiphertextBytes: UInt64? = nil, offset: UInt64? = nil,
+                length: UInt64? = nil, idempotencyKey: String,
+                ciphertext: Data? = nil) {
+        self.operation = operation; self.objectID = objectID
+        self.revision = revision; self.expectedRevision = expectedRevision
+        self.chunkIndex = chunkIndex; self.totalChunks = totalChunks
+        self.totalCiphertextBytes = totalCiphertextBytes
+        self.offset = offset; self.length = length
+        self.idempotencyKey = idempotencyKey; self.ciphertext = ciphertext
     }
 
     public func validated() throws -> VaultMacRequest {
-        guard !idempotencyKey.isEmpty, idempotencyKey.utf8.count <= 256 else {
-            throw VaultMacProtocolError.invalidRequest
-        }
+        guard !idempotencyKey.isEmpty, idempotencyKey.utf8.count <= 256 else { throw VaultMacProtocolError.invalidRequest }
         switch operation {
         case .putChunk:
-            guard let revision, let chunkIndex, let totalChunks,
-                  totalChunks > 0, chunkIndex < totalChunks,
+            guard let revision, revision.objectID == objectID,
+                  let chunkIndex, let totalChunks, totalChunks > 0, chunkIndex < totalChunks,
+                  let totalCiphertextBytes, totalCiphertextBytes > 0,
+                  totalCiphertextBytes <= VaultMacProtocol.maximumObjectBytes,
                   let ciphertext, !ciphertext.isEmpty,
-                  ciphertext.count <= VaultMacProtocol.maximumFrameBytes else {
-                throw VaultMacProtocolError.invalidRequest
-            }
-            _ = revision
+                  ciphertext.count <= VaultMacProtocol.maximumFrameBytes,
+                  UInt64(ciphertext.count) <= totalCiphertextBytes else { throw VaultMacProtocolError.invalidRequest }
+        case .stat:
+            guard revision == nil, ciphertext == nil, offset == nil, length == nil else { throw VaultMacProtocolError.invalidRequest }
         case .readRange:
-            guard let offset, let length,
-                  offset <= UInt64.max - length,
-                  length <= UInt64(VaultMacProtocol.maximumFrameBytes) else {
-                throw VaultMacProtocolError.invalidRequest
-            }
+            guard revision == nil, ciphertext == nil, let offset, let length,
+                  length <= UInt64(VaultMacProtocol.maximumFrameBytes),
+                  offset <= UInt64.max - length else { throw VaultMacProtocolError.invalidRequest }
         case .delete:
-            break
+            guard let revision, revision.objectID == objectID,
+                  expectedRevision != nil, ciphertext == nil else { throw VaultMacProtocolError.invalidRequest }
         }
         return self
     }
 }
 
 public enum VaultMacResponseStatus: String, Codable, Sendable {
-    case accepted
-    case partial
-    case conflict
-    case notFound
-    case invalid
-    case failed
+    case accepted, partial, conflict, notFound, invalid, failed, quotaExceeded
 }
 
 public struct VaultMacResponse: Codable, Equatable, Sendable {
     public let status: VaultMacResponseStatus
     public let objectID: VaultObjectID
     public let currentRevision: UUID?
+    public let revision: VaultRevision?
     public let receivedChunks: [UInt32]
+    public let totalCiphertextBytes: UInt64?
     public let ciphertext: Data?
     public let message: String?
 
-    public init(
-        status: VaultMacResponseStatus,
-        objectID: VaultObjectID,
-        currentRevision: UUID? = nil,
-        receivedChunks: [UInt32] = [],
-        ciphertext: Data? = nil,
-        message: String? = nil
-    ) {
-        self.status = status
-        self.objectID = objectID
-        self.currentRevision = currentRevision
+    public init(status: VaultMacResponseStatus, objectID: VaultObjectID,
+                currentRevision: UUID? = nil, revision: VaultRevision? = nil,
+                receivedChunks: [UInt32] = [],
+                totalCiphertextBytes: UInt64? = nil, ciphertext: Data? = nil,
+                message: String? = nil) {
+        self.status = status; self.objectID = objectID
+        self.currentRevision = currentRevision ?? revision?.revision; self.revision = revision
         self.receivedChunks = receivedChunks.sorted()
-        self.ciphertext = ciphertext
-        self.message = message
+        self.totalCiphertextBytes = totalCiphertextBytes
+        self.ciphertext = ciphertext; self.message = message
     }
 }
 
 public struct VaultMacPairingSecret: Codable, Hashable, Sendable {
     public let rawValue: Data
-
-    public init(rawValue: Data) throws {
-        guard rawValue.count == 32 else { throw VaultMacProtocolError.invalidSecret }
-        self.rawValue = rawValue
-    }
-
-    public init(base64Encoded value: String) throws {
-        guard let data = Data(base64Encoded: value) else {
-            throw VaultMacProtocolError.invalidSecret
-        }
-        try self.init(rawValue: data)
-    }
-
+    public init(rawValue: Data) throws { guard rawValue.count == 32 else { throw VaultMacProtocolError.invalidSecret }; self.rawValue = rawValue }
+    public init(base64Encoded value: String) throws { guard let data = Data(base64Encoded: value) else { throw VaultMacProtocolError.invalidSecret }; try self.init(rawValue: data) }
     public var base64Encoded: String { rawValue.base64EncodedString() }
 }
 
-public struct VaultMacPairingChallenge: Codable, Equatable, Sendable {
-    public let sessionID: UUID
-    public let nonce: Data
+public struct VaultMacPairingCredential: Codable, Hashable, Sendable {
+    public let pairingID: UUID
+    public let secret: VaultMacPairingSecret
     public let serverBinding: Data
+    public let endpointBinding: String
+    public let epoch: UInt64
+    public let createdAt: Date
+    public let revokedAt: Date?
 
-    public init(sessionID: UUID = UUID(), nonce: Data, serverBinding: Data) throws {
-        guard nonce.count >= 16, nonce.count <= 64, !serverBinding.isEmpty else {
-            throw VaultMacProtocolError.invalidChallenge
-        }
-        self.sessionID = sessionID
-        self.nonce = nonce
-        self.serverBinding = serverBinding
+    public init(pairingID: UUID, secret: VaultMacPairingSecret, serverBinding: Data,
+                endpointBinding: String, epoch: UInt64 = 1, createdAt: Date,
+                revokedAt: Date? = nil) throws {
+        guard serverBinding.count == 32, !endpointBinding.isEmpty, epoch > 0 else { throw VaultMacProtocolError.invalidSecret }
+        self.pairingID = pairingID; self.secret = secret; self.serverBinding = serverBinding
+        self.endpointBinding = endpointBinding; self.epoch = epoch
+        self.createdAt = createdAt; self.revokedAt = revokedAt
     }
-
-    public func proof(using secret: VaultMacPairingSecret) -> Data {
-        HMAC<SHA256>.authenticationCode(for: transcript, using: SymmetricKey(data: secret.rawValue))
-            .withUnsafeBytes { Data($0) }
+    public var fingerprint: String { SHA256.hash(data: serverBinding).prefix(12).map { String(format: "%02x", $0) }.joined() }
+    public func rotated(secret: VaultMacPairingSecret, serverBinding: Data, endpointBinding: String, now: Date) throws -> Self {
+        guard epoch < UInt64.max else { throw VaultMacProtocolError.sequenceOverflow }
+        return try Self(pairingID: pairingID, secret: secret, serverBinding: serverBinding,
+                        endpointBinding: endpointBinding, epoch: epoch + 1, createdAt: now)
     }
-
-    public func verify(_ response: VaultMacPairingResponse, using secret: VaultMacPairingSecret) throws {
-        guard response.sessionID == sessionID, response.proof == proof(using: secret) else {
-            throw VaultMacProtocolError.authenticationFailed
-        }
+    public func revoked(now: Date) throws -> Self {
+        try Self(pairingID: pairingID, secret: secret, serverBinding: serverBinding,
+                 endpointBinding: endpointBinding, epoch: epoch, createdAt: createdAt, revokedAt: now)
     }
-
-    fileprivate var transcript: Data {
-        var data = Data("LunaVault-Mac-pair-v1".utf8)
-        data.append(sessionID.uuidData)
-        data.append(contentsOf: nonce)
-        data.append(contentsOf: serverBinding)
-        return data
+    public static func derive(offer: VaultMacPairingOffer, oneTimeCode: VaultMacPairingSecret,
+                              clientNonce: Data, now: Date) throws -> Self {
+        guard now < offer.expiresAt, clientNonce.count == 32 else { throw VaultMacProtocolError.expired }
+        var material = Data("LunaVault-Mac-credential-v2".utf8)
+        material.append(offer.nonce); material.append(clientNonce)
+        let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: oneTimeCode.rawValue),
+            salt: offer.serverBinding, info: material, outputByteCount: 32).data
+        return try Self(pairingID: offer.pairingID,
+            secret: VaultMacPairingSecret(rawValue: key), serverBinding: offer.serverBinding,
+            endpointBinding: offer.endpointBinding, createdAt: now)
     }
 }
 
-public struct VaultMacPairingResponse: Codable, Equatable, Sendable {
-    public let sessionID: UUID
+/// Shown by the Mac UI as a QR/code. The one-time code is delivered separately
+/// and never appears in this network-visible offer.
+public struct VaultMacPairingOffer: Codable, Equatable, Sendable {
+    public let pairingID: UUID
+    public let serverBinding: Data
+    public let endpointBinding: String
+    public let nonce: Data
+    public let expiresAt: Date
+    public init(pairingID: UUID, serverBinding: Data, endpointBinding: String,
+                nonce: Data, expiresAt: Date) throws {
+        guard serverBinding.count == 32, nonce.count == 32, !endpointBinding.isEmpty else { throw VaultMacProtocolError.invalidChallenge }
+        self.pairingID = pairingID; self.serverBinding = serverBinding
+        self.endpointBinding = endpointBinding; self.nonce = nonce; self.expiresAt = expiresAt
+    }
+    public var fingerprint: String { SHA256.hash(data: serverBinding).prefix(12).map { String(format: "%02x", $0) }.joined() }
+}
+
+public struct VaultMacPairingEnrollment: Codable, Equatable, Sendable {
+    public let pairingID: UUID
+    public let clientNonce: Data
     public let proof: Data
-
-    public init(sessionID: UUID, proof: Data) {
-        self.sessionID = sessionID
-        self.proof = proof
+    public init(pairingID: UUID, clientNonce: Data, proof: Data) throws {
+        guard clientNonce.count == 32, proof.count == 32 else { throw VaultMacProtocolError.invalidChallenge }
+        self.pairingID = pairingID; self.clientNonce = clientNonce; self.proof = proof
+    }
+    public static func make(offer: VaultMacPairingOffer, oneTimeCode: VaultMacPairingSecret,
+                            clientNonce: Data, now: Date) throws -> Self {
+        guard now < offer.expiresAt, clientNonce.count == 32 else { throw VaultMacProtocolError.expired }
+        return try Self(pairingID: offer.pairingID, clientNonce: clientNonce,
+                        proof: hmac(key: oneTimeCode.rawValue, data: pairingTranscript(offer: offer, clientNonce: clientNonce)))
     }
 }
 
-public enum VaultMacProtocolError: Error, Equatable, Sendable {
-    case invalidRequest
-    case invalidSecret
-    case invalidChallenge
-    case invalidFrame
-    case wrongProtocolVersion
-    case wrongSession
-    case replayedFrame
-    case authenticationFailed
-    case sequenceOverflow
-    case frameTooLarge
-    case conflictingRevision
+/// Sensitive one-use setup material normally carried in a local QR code or
+/// direct device-to-device handoff. It must not be logged or sent through the
+/// unauthenticated storage listener.
+public struct VaultMacPairingCapsule: Codable, Equatable, Sendable {
+    public let offer: VaultMacPairingOffer
+    public let oneTimeCode: VaultMacPairingSecret
+    public init(offer: VaultMacPairingOffer, oneTimeCode: VaultMacPairingSecret) {
+        self.offer = offer; self.oneTimeCode = oneTimeCode
+    }
 }
 
-/// A compact, authenticated envelope used after pairing. TCP/Tailscale is
-/// ordered but not trusted; the sequence number prevents replay and the MAC
-/// binds the session and payload to the paired secret. Payloads themselves are
-/// JSON request/response records whose data field is already CryptoKit
-/// ciphertext.
+public struct VaultMacPairingClientResult: Equatable, Sendable {
+    public let enrollment: VaultMacPairingEnrollment
+    public let credential: VaultMacPairingCredential
+    public init(enrollment: VaultMacPairingEnrollment, credential: VaultMacPairingCredential) {
+        self.enrollment = enrollment; self.credential = credential
+    }
+}
+
+public enum VaultMacPairingClient {
+    public static func prepareEnrollment(capsule: VaultMacPairingCapsule,
+                                         identityConfirmer: VaultMacServerIdentityConfirming,
+                                         random: VaultRandomBytesGenerating = SystemVaultRandomBytes(),
+                                         now: Date = Date()) async throws -> VaultMacPairingClientResult {
+        guard now < capsule.offer.expiresAt,
+              try await identityConfirmer.confirm(fingerprint: capsule.offer.fingerprint,
+                                                   endpointBinding: capsule.offer.endpointBinding) else {
+            throw VaultMacProtocolError.unconfirmedServerIdentity
+        }
+        let clientNonce = try random.bytes(count: 32)
+        let enrollment = try VaultMacPairingEnrollment.make(offer: capsule.offer,
+            oneTimeCode: capsule.oneTimeCode, clientNonce: clientNonce, now: now)
+        let credential = try VaultMacPairingCredential.derive(offer: capsule.offer,
+            oneTimeCode: capsule.oneTimeCode, clientNonce: clientNonce, now: now)
+        return VaultMacPairingClientResult(enrollment: enrollment, credential: credential)
+    }
+}
+
+public protocol VaultMacServerIdentityConfirming: Sendable {
+    func confirm(fingerprint: String, endpointBinding: String) async throws -> Bool
+}
+
+public struct VaultMacSessionChallenge: Codable, Equatable, Sendable {
+    public let protocolVersion: UInt16
+    public let pairingID: UUID
+    public let credentialEpoch: UInt64
+    public let sessionID: UUID
+    public let serverNonce: Data
+    public let serverBinding: Data
+    public let endpointBinding: String
+    public let expiresAt: Date
+    public init(pairingID: UUID, credentialEpoch: UInt64, sessionID: UUID,
+                serverNonce: Data, serverBinding: Data, endpointBinding: String,
+                expiresAt: Date) throws {
+        guard credentialEpoch > 0, serverNonce.count == 32, serverBinding.count == 32,
+              !endpointBinding.isEmpty else { throw VaultMacProtocolError.invalidChallenge }
+        self.protocolVersion = VaultMacProtocol.version; self.pairingID = pairingID
+        self.credentialEpoch = credentialEpoch; self.sessionID = sessionID
+        self.serverNonce = serverNonce; self.serverBinding = serverBinding
+        self.endpointBinding = endpointBinding; self.expiresAt = expiresAt
+    }
+}
+
+public struct VaultMacSessionResponse: Codable, Equatable, Sendable {
+    public let sessionID: UUID
+    public let clientNonce: Data
+    public let proof: Data
+    public init(sessionID: UUID, clientNonce: Data, proof: Data) throws {
+        guard clientNonce.count == 32, proof.count == 32 else { throw VaultMacProtocolError.invalidChallenge }
+        self.sessionID = sessionID; self.clientNonce = clientNonce; self.proof = proof
+    }
+    public static func make(challenge: VaultMacSessionChallenge, credential: VaultMacPairingCredential,
+                            clientNonce: Data, now: Date) throws -> Self {
+        try validate(challenge: challenge, credential: credential, now: now)
+        return try Self(sessionID: challenge.sessionID, clientNonce: clientNonce,
+                        proof: hmac(key: credential.secret.rawValue,
+                                    data: sessionTranscript(challenge: challenge, clientNonce: clientNonce)))
+    }
+}
+
+public enum VaultMacHandshakeKind: String, Codable, Sendable { case challenge, response, accepted, rejected }
+public struct VaultMacHandshakeMessage: Codable, Equatable, Sendable {
+    public let kind: VaultMacHandshakeKind
+    public let challenge: VaultMacSessionChallenge?
+    public let response: VaultMacSessionResponse?
+    public init(kind: VaultMacHandshakeKind, challenge: VaultMacSessionChallenge? = nil,
+                response: VaultMacSessionResponse? = nil) {
+        self.kind = kind; self.challenge = challenge; self.response = response
+    }
+}
+
+public struct VaultMacSessionKeys: Equatable, Sendable {
+    public let requestKey: Data
+    public let responseKey: Data
+    public init(challenge: VaultMacSessionChallenge, response: VaultMacSessionResponse,
+                credential: VaultMacPairingCredential, now: Date) throws {
+        try validate(challenge: challenge, credential: credential, now: now)
+        guard response.sessionID == challenge.sessionID else { throw VaultMacProtocolError.wrongSession }
+        let transcript = sessionTranscript(challenge: challenge, clientNonce: response.clientNonce)
+        guard constantTimeEqual(response.proof, hmac(key: credential.secret.rawValue, data: transcript)) else { throw VaultMacProtocolError.authenticationFailed }
+        let salt = SHA256.hash(data: transcript).withUnsafeBytes { Data($0) }
+        let baseKey = SymmetricKey(data: credential.secret.rawValue)
+        requestKey = HKDF<SHA256>.deriveKey(inputKeyMaterial: baseKey, salt: salt,
+            info: Data("LunaVault-Mac-request-v2".utf8), outputByteCount: 32).data
+        responseKey = HKDF<SHA256>.deriveKey(inputKeyMaterial: baseKey, salt: salt,
+            info: Data("LunaVault-Mac-response-v2".utf8), outputByteCount: 32).data
+    }
+}
+
+public enum VaultMacFrameDirection: UInt8, Codable, Sendable { case request = 1, response = 2 }
+
+/// Only routing data is visible. Operation, object identity, revisions, byte
+/// ranges, and content are inside this directional AES-GCM envelope.
 public struct VaultMacAuthenticatedFrame: Codable, Equatable, Sendable {
     public let protocolVersion: UInt16
     public let sessionID: UUID
+    public let direction: VaultMacFrameDirection
     public let sequence: UInt64
-    public let payload: Data
-    public let tag: Data
-
-    public init(protocolVersion: UInt16 = VaultMacProtocol.version, sessionID: UUID, sequence: UInt64, payload: Data, tag: Data) {
-        self.protocolVersion = protocolVersion
-        self.sessionID = sessionID
-        self.sequence = sequence
-        self.payload = payload
-        self.tag = tag
+    public var ciphertext: Data
+    public var tag: Data
+    public init(protocolVersion: UInt16 = VaultMacProtocol.version, sessionID: UUID,
+                direction: VaultMacFrameDirection, sequence: UInt64,
+                ciphertext: Data, tag: Data) {
+        self.protocolVersion = protocolVersion; self.sessionID = sessionID
+        self.direction = direction; self.sequence = sequence
+        self.ciphertext = ciphertext; self.tag = tag
     }
-
-    public static func seal(payload: Data, sessionID: UUID, sequence: UInt64, secret: VaultMacPairingSecret) throws -> Self {
-        guard payload.count <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacProtocolError.frameTooLarge }
-        let material = authenticationMaterial(sessionID: sessionID, sequence: sequence, payload: payload)
-        let tag = HMAC<SHA256>.authenticationCode(for: material, using: SymmetricKey(data: secret.rawValue))
-            .withUnsafeBytes { Data($0) }
-        return Self(sessionID: sessionID, sequence: sequence, payload: payload, tag: tag)
+    public static func seal(plaintext: Data, sessionID: UUID, direction: VaultMacFrameDirection,
+                            sequence: UInt64, key: Data) throws -> Self {
+        guard sequence > 0, key.count == 32 else { throw VaultMacProtocolError.invalidFrame }
+        guard plaintext.count <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacProtocolError.frameTooLarge }
+        let nonce = try AES.GCM.Nonce(data: nonceData(direction: direction, sequence: sequence))
+        let box = try AES.GCM.seal(plaintext, using: SymmetricKey(data: key), nonce: nonce,
+                                   authenticating: aad(sessionID: sessionID, direction: direction, sequence: sequence))
+        return Self(sessionID: sessionID, direction: direction, sequence: sequence,
+                    ciphertext: Data(box.ciphertext), tag: Data(box.tag))
     }
-
-    public func open(using secret: VaultMacPairingSecret, expectedSessionID: UUID) throws -> Data {
+    public func open(key: Data, expectedSessionID: UUID,
+                     expectedDirection: VaultMacFrameDirection) throws -> Data {
         guard protocolVersion == VaultMacProtocol.version else { throw VaultMacProtocolError.wrongProtocolVersion }
         guard sessionID == expectedSessionID else { throw VaultMacProtocolError.wrongSession }
-        guard payload.count <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacProtocolError.frameTooLarge }
-        let material = Self.authenticationMaterial(sessionID: sessionID, sequence: sequence, payload: payload)
-        let expected = HMAC<SHA256>.authenticationCode(for: material, using: SymmetricKey(data: secret.rawValue))
-            .withUnsafeBytes { Data($0) }
-        guard expected == tag else { throw VaultMacProtocolError.authenticationFailed }
-        return payload
+        guard direction == expectedDirection else { throw VaultMacProtocolError.wrongDirection }
+        guard sequence > 0, key.count == 32, ciphertext.count <= VaultMacProtocol.maximumFrameBytes,
+              tag.count == 16 else { throw VaultMacProtocolError.invalidFrame }
+        do {
+            let nonce = try AES.GCM.Nonce(data: Self.nonceData(direction: direction, sequence: sequence))
+            let box = try AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
+            return try AES.GCM.open(box, using: SymmetricKey(data: key),
+                authenticating: Self.aad(sessionID: sessionID, direction: direction, sequence: sequence))
+        } catch { throw VaultMacProtocolError.authenticationFailed }
     }
-
-    private static func authenticationMaterial(sessionID: UUID, sequence: UInt64, payload: Data) -> Data {
-        var data = Data("LunaVault-Mac-frame-v1".utf8)
-        data.append(sessionID.uuidData)
-        var bigEndian = sequence.bigEndian
-        withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
-        data.append(contentsOf: payload)
-        return data
+    private static func nonceData(direction: VaultMacFrameDirection, sequence: UInt64) -> Data {
+        var data = Data([0x4c, 0x56, 0x4d, direction.rawValue]); var value = sequence.bigEndian
+        withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }; return data
+    }
+    private static func aad(sessionID: UUID, direction: VaultMacFrameDirection, sequence: UInt64) -> Data {
+        var data = Data("LunaVault-Mac-frame-v2".utf8); data.append(sessionID.uuidData)
+        data.append(direction.rawValue); var value = sequence.bigEndian
+        withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }; return data
     }
 }
 
-/// Stateful guard used by both the iPhone client and Mac service. Frames are
-/// accepted strictly once and in order; a duplicate or out-of-order frame is
-/// never handed to storage.
 public final class VaultMacReplayGuard: @unchecked Sendable {
-    private let lock = NSLock()
-    private var lastReceived: UInt64 = 0
-    private let secret: VaultMacPairingSecret
-    private let sessionID: UUID
-
-    public init(secret: VaultMacPairingSecret, sessionID: UUID) {
-        self.secret = secret
-        self.sessionID = sessionID
+    private let lock = NSLock(); private var nextExpected: UInt64 = 1
+    private let key: Data; private let sessionID: UUID; private let direction: VaultMacFrameDirection
+    public init(key: Data, sessionID: UUID, direction: VaultMacFrameDirection) {
+        self.key = key; self.sessionID = sessionID; self.direction = direction
     }
-
     public func open(_ frame: VaultMacAuthenticatedFrame) throws -> Data {
         try lock.withLock {
-            guard frame.sequence > lastReceived else { throw VaultMacProtocolError.replayedFrame }
-            let payload = try frame.open(using: secret, expectedSessionID: sessionID)
-            lastReceived = frame.sequence
-            return payload
+            guard frame.sequence >= nextExpected else { throw VaultMacProtocolError.replayedFrame }
+            guard frame.sequence == nextExpected else { throw VaultMacProtocolError.outOfOrderFrame }
+            let plaintext = try frame.open(key: key, expectedSessionID: sessionID, expectedDirection: direction)
+            guard nextExpected < UInt64.max else { throw VaultMacProtocolError.sequenceOverflow }
+            nextExpected += 1; return plaintext
         }
     }
 }
 
 public final class VaultMacSendSequence: @unchecked Sendable {
-    private let lock = NSLock()
-    private var nextSequence: UInt64 = 1
-    private let secret: VaultMacPairingSecret
-    private let sessionID: UUID
-
-    public init(secret: VaultMacPairingSecret, sessionID: UUID) {
-        self.secret = secret
-        self.sessionID = sessionID
+    private let lock = NSLock(); private var nextSequence: UInt64 = 1
+    private let key: Data; private let sessionID: UUID; private let direction: VaultMacFrameDirection
+    public init(key: Data, sessionID: UUID, direction: VaultMacFrameDirection) {
+        self.key = key; self.sessionID = sessionID; self.direction = direction
     }
-
-    public func seal(_ payload: Data) throws -> VaultMacAuthenticatedFrame {
+    public func seal(_ plaintext: Data) throws -> VaultMacAuthenticatedFrame {
         try lock.withLock {
             guard nextSequence < UInt64.max else { throw VaultMacProtocolError.sequenceOverflow }
-            let frame = try VaultMacAuthenticatedFrame.seal(payload: payload, sessionID: sessionID, sequence: nextSequence, secret: secret)
-            nextSequence += 1
-            return frame
+            let frame = try VaultMacAuthenticatedFrame.seal(plaintext: plaintext,
+                sessionID: sessionID, direction: direction, sequence: nextSequence, key: key)
+            nextSequence += 1; return frame
         }
     }
 }
@@ -289,64 +382,126 @@ public protocol VaultMacFrameChannel: Sendable {
     func receive() async throws -> Data
     func close()
 }
+public protocol VaultMacFrameConnecting: Sendable {
+    func connect(to endpoint: VaultMacEndpoint) async throws -> VaultMacFrameChannel
+}
 
-public struct VaultMacDiscoveryRecord: Codable, Equatable, Sendable {
+public struct VaultMacEndpoint: Codable, Equatable, Hashable, Sendable {
     public enum Reachability: String, Codable, Sendable { case tailscale, lanBonjour }
-    public let displayName: String
-    public let endpoint: String
-    public let port: UInt16
-    public let reachability: Reachability
-    public let certificateBinding: Data
-
-    public init(displayName: String, endpoint: String, port: UInt16, reachability: Reachability, certificateBinding: Data) {
-        self.displayName = displayName
-        self.endpoint = endpoint
-        self.port = port
-        self.reachability = reachability
-        self.certificateBinding = certificateBinding
+    public let host: String; public let port: UInt16; public let reachability: Reachability
+    public init(host: String, port: UInt16, reachability: Reachability) throws {
+        let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard port > 0, Self.isValid(normalized, reachability: reachability) else { throw VaultMacProtocolError.invalidEndpoint }
+        self.host = normalized; self.port = port; self.reachability = reachability
+    }
+    public var binding: String { "\(reachability.rawValue):\(host):\(port)" }
+    private static func isValid(_ host: String, reachability: Reachability) -> Bool {
+        guard !host.isEmpty, host.utf8.count <= 253, !host.contains("://"),
+              !host.contains("/"), !host.contains("@") else { return false }
+        switch reachability {
+        case .tailscale:
+            if host.hasSuffix(".ts.net") { return validHostname(host) }
+            if let ip = ipv4Bytes(host) { return ip[0] == 100 && (64...127).contains(ip[1]) }
+            return host.hasPrefix("fd7a:115c:a1e0:") && host.allSatisfy { $0.isHexDigit || $0 == ":" }
+        case .lanBonjour: return host.hasSuffix(".local") && validHostname(host)
+        }
+    }
+    private static func validHostname(_ value: String) -> Bool {
+        value.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
+            !$0.isEmpty && $0.count <= 63 && $0.first != "-" && $0.last != "-" &&
+            $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
+        }
+    }
+    private static func ipv4Bytes(_ value: String) -> [UInt8]? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }; let bytes = parts.compactMap { UInt8($0) }
+        return bytes.count == 4 ? bytes : nil
     }
 }
 
-public struct VaultMacChunkPlan: Equatable, Sendable {
-    public let chunkSize: Int
-    public let totalChunks: UInt32
-
-    public init(byteCount: Int, chunkSize: Int = 4 * 1024 * 1024) throws {
-        guard byteCount >= 0, chunkSize > 0 else { throw VaultMacProtocolError.invalidRequest }
-        let count = max(1, (byteCount + chunkSize - 1) / chunkSize)
-        guard count <= Int(UInt32.max) else { throw VaultMacProtocolError.frameTooLarge }
-        self.chunkSize = chunkSize
-        self.totalChunks = UInt32(count)
+public struct VaultMacDiscoveryRecord: Codable, Equatable, Sendable {
+    public let displayName: String; public let endpoint: VaultMacEndpoint; public let serverBinding: Data
+    public init(displayName: String, endpoint: VaultMacEndpoint, serverBinding: Data) throws {
+        guard !displayName.isEmpty, displayName.utf8.count <= 128,
+              serverBinding.count == 32 else { throw VaultMacProtocolError.invalidEndpoint }
+        self.displayName = displayName; self.endpoint = endpoint; self.serverBinding = serverBinding
     }
+}
+public protocol VaultMacDiscoveryBrowsing: Sendable {
+    func records() -> AsyncThrowingStream<VaultMacDiscoveryRecord, Error>
+}
 
-    public func range(for index: UInt32, byteCount: Int) throws -> Range<Int> {
-        guard index < totalChunks, byteCount >= 0 else { throw VaultMacProtocolError.invalidRequest }
-        let lower = Int(index) * chunkSize
-        return lower..<min(byteCount, lower + chunkSize)
+public struct VaultMacChunkPlan: Equatable, Sendable {
+    public let chunkSize: Int; public let totalChunks: UInt32; public let byteCount: UInt64
+    public init(byteCount: UInt64, chunkSize: Int = 4 * 1024 * 1024) throws {
+        guard byteCount > 0, byteCount <= VaultMacProtocol.maximumObjectBytes,
+              chunkSize > 0, chunkSize <= VaultMacProtocol.maximumFrameBytes else { throw VaultMacProtocolError.objectTooLarge }
+        let divisor = UInt64(chunkSize), adjusted = try checkedAdd(byteCount, divisor - 1)
+        let count = adjusted / divisor
+        guard count > 0, count <= UInt64(UInt32.max) else { throw VaultMacProtocolError.objectTooLarge }
+        self.chunkSize = chunkSize; self.totalChunks = UInt32(count); self.byteCount = byteCount
+    }
+    public func range(for index: UInt32) throws -> Range<Int> {
+        guard index < totalChunks else { throw VaultMacProtocolError.invalidRequest }
+        let lower = try checkedMultiply(UInt64(index), UInt64(chunkSize))
+        let upper = min(byteCount, try checkedAdd(lower, UInt64(chunkSize)))
+        guard upper <= UInt64(Int.max) else { throw VaultMacProtocolError.objectTooLarge }
+        return Int(lower)..<Int(upper)
     }
 }
 
 public enum VaultMacRequestFactory {
     public static func idempotencyKey(objectID: VaultObjectID, revision: UUID, chunkIndex: UInt32) -> String {
-        var data = Data("LunaVault-Mac-put-v1".utf8)
-        data.append(objectID.rawValue.uuidData)
-        data.append(revision.uuidData)
-        var bigEndian = chunkIndex.bigEndian
-        withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+        var data = Data("LunaVault-Mac-put-v2".utf8); data.append(objectID.rawValue.uuidData)
+        data.append(revision.uuidData); var value = chunkIndex.bigEndian
+        withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 
-private extension UUID {
-    var uuidData: Data {
-        var uuid = uuid
-        return withUnsafeBytes(of: &uuid) { Data($0) }
-    }
+private func validate(challenge: VaultMacSessionChallenge,
+                      credential: VaultMacPairingCredential, now: Date) throws {
+    guard credential.revokedAt == nil else { throw VaultMacProtocolError.revoked }
+    guard challenge.protocolVersion == VaultMacProtocol.version else { throw VaultMacProtocolError.wrongProtocolVersion }
+    guard challenge.pairingID == credential.pairingID,
+          challenge.credentialEpoch == credential.epoch,
+          challenge.serverBinding == credential.serverBinding,
+          challenge.endpointBinding == credential.endpointBinding else { throw VaultMacProtocolError.authenticationFailed }
+    guard now < challenge.expiresAt else { throw VaultMacProtocolError.expired }
 }
-
+private func pairingTranscript(offer: VaultMacPairingOffer, clientNonce: Data) -> Data {
+    var data = Data("LunaVault-Mac-pair-v2".utf8); data.append(offer.pairingID.uuidData)
+    data.append(offer.serverBinding); data.append(Data(offer.endpointBinding.utf8))
+    data.append(offer.nonce); data.append(clientNonce)
+    var expiry = offer.expiresAt.timeIntervalSince1970.bitPattern.bigEndian
+    withUnsafeBytes(of: &expiry) { data.append(contentsOf: $0) }; return data
+}
+private func sessionTranscript(challenge: VaultMacSessionChallenge, clientNonce: Data) -> Data {
+    var data = Data("LunaVault-Mac-session-v2".utf8); data.append(challenge.pairingID.uuidData)
+    data.append(challenge.sessionID.uuidData); data.append(challenge.serverNonce); data.append(clientNonce)
+    data.append(challenge.serverBinding); data.append(Data(challenge.endpointBinding.utf8))
+    var epoch = challenge.credentialEpoch.bigEndian
+    withUnsafeBytes(of: &epoch) { data.append(contentsOf: $0) }; return data
+}
+private func hmac(key: Data, data: Data) -> Data {
+    HMAC<SHA256>.authenticationCode(for: data, using: SymmetricKey(data: key)).withUnsafeBytes { Data($0) }
+}
+private func constantTimeEqual(_ lhs: Data, _ rhs: Data) -> Bool {
+    guard lhs.count == rhs.count else { return false }
+    return zip(lhs, rhs).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+}
+private func checkedAdd(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {
+    let (value, overflow) = lhs.addingReportingOverflow(rhs)
+    guard !overflow else { throw VaultMacProtocolError.objectTooLarge }; return value
+}
+private func checkedMultiply(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {
+    let (value, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+    guard !overflow else { throw VaultMacProtocolError.objectTooLarge }; return value
+}
+private extension UUID {
+    var uuidData: Data { var value = uuid; return withUnsafeBytes(of: &value) { Data($0) } }
+}
+private extension SymmetricKey { var data: Data { withUnsafeBytes { Data($0) } } }
 private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock(); defer { unlock() }
-        return try body()
-    }
+    func withLock<T>(_ body: () throws -> T) rethrows -> T { lock(); defer { unlock() }; return try body() }
 }

@@ -137,6 +137,7 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
 
     public init(configuration: VaultICloudBackendConfiguration,
                 coordinator: VaultUbiquitousFileCoordinating? = nil) {
+        _ = VaultProtectedDownloadTemporarySweep.sweep()
         self.configuration = configuration
         let resolvedCoordinator = coordinator ?? SystemVaultUbiquitousFileCoordinator(
             containerIdentifier: configuration.containerIdentifier)

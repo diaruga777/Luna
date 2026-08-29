@@ -311,6 +311,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 random: VaultRandomBytesGenerating = SystemVaultRandomBytes(),
                 timeouts: VaultMacClientTimeouts = VaultMacClientTimeouts(),
                 uploadStateStore: any VaultMacUploadStateStoring = VaultMacFileUploadStateStore.shared) throws {
+        _ = VaultProtectedDownloadTemporarySweep.sweep()
         guard endpoint.binding == credential.endpointBinding else { throw VaultMacProtocolError.invalidEndpoint }
         self.endpoint = endpoint; self.credential = credential; self.connector = connector
         self.identityConfirmer = identityConfirmer; self.random = random; self.timeouts = timeouts

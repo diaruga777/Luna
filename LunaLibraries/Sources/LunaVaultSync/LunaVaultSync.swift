@@ -252,10 +252,21 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                         }
                         return outcome == .current ? .succeeded : .retrying
                     case .download:
-                        guard let payload = try await self.backend.payload(for: identity) else {
-                            throw VaultSyncError.backend(.notFound)
+                        if let transport = self.backend as? VaultStreamingBackendTransport,
+                           let source = self.payloadSource as? VaultStreamingSyncPayloadSource {
+                            guard let payload = try await transport.payloadFile(for: identity) else {
+                                throw VaultSyncError.backend(.notFound)
+                            }
+                            guard payload.identity == identity else {
+                                throw VaultSyncError.backend(.corruptPayload)
+                            }
+                            try await source.installDownloadedPayloadFile(payload)
+                        } else {
+                            guard let payload = try await self.backend.payload(for: identity) else {
+                                throw VaultSyncError.backend(.notFound)
+                            }
+                            try await self.payloadSource.installDownloadedPayload(payload)
                         }
-                        try await self.payloadSource.installDownloadedPayload(payload)
                         return .succeeded
                     case .delete:
                         try await self.backend.remove(identity, expectedRevision: identity.revision)
@@ -334,6 +345,15 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                                          error: VaultSyncFailureCode.retryExhausted.rawValue, now: now)
             return VaultSyncOperationResult(identity: identity, attempts: claimed.attempts, state: .failed)
         }
+        let heartbeat = Task { [repository] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                catch { break }
+                try? repository.heartbeatJob(id: claimed.id, leaseToken: leaseToken,
+                                             now: Date(), leaseDuration: 120)
+            }
+        }
+        defer { heartbeat.cancel() }
         do {
             let finalState = try await operation()
             if finalState == .retrying {

@@ -162,13 +162,13 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             let url = payloadURL(for: key)
             guard fileManager.fileExists(atPath: url.path),
                   isProtected(url) else {
-                entriesByKey.removeValue(forKey: key)
+                try removeLocked(key)
                 try persistIndex()
                 return nil
             }
             guard let data = fileManager.contents(atPath: url.path),
                   Int64(data.count) == entry.byteCount else {
-                entriesByKey.removeValue(forKey: key)
+                try removeLocked(key)
                 try persistIndex()
                 return nil
             }
@@ -289,6 +289,11 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                       object.revision == key.revision else {
                     entriesByKey.removeValue(forKey: key); continue
                 }
+                guard let capability = try? repository.localContentCapability(for: key.objectID),
+                      capability.revision == key.revision,
+                      capability.generation == key.generation else {
+                    entriesByKey.removeValue(forKey: key); continue
+                }
             }
             let url = payloadURL(for: key)
             let attrs = try? fileManager.attributesOfItem(atPath: url.path)
@@ -346,7 +351,8 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         guard let repository else { return true }
         guard let object = try? repository.object(key.objectID),
               !object.isTombstone, object.revision == key.revision else { return false }
-        return true
+        guard let capability = try? repository.localContentCapability(for: key.objectID) else { return false }
+        return capability.revision == key.revision && capability.generation == key.generation
     }
 
     private func directoryURL(for key: VaultThumbnailKey) -> URL {
@@ -403,7 +409,8 @@ public final class VaultCacheCoordinator: @unchecked Sendable {
                                                 lastAccessedAt: now,
                                                 createdAt: existing?.createdAt ?? now,
                                                 pinned: pinned || (existing?.pinned ?? false),
-                                                supportsEviction: existing?.supportsEviction ?? true), now: now)
+                                                supportsEviction: repository.supportsCacheEviction &&
+                                                    (existing?.supportsEviction ?? true)), now: now)
     }
 
     public func evict(now: Date = Date()) throws {

@@ -39,9 +39,9 @@ public struct VaultPreviewPlan: Equatable, Sendable {
     public let capability: VaultLocalContentCapability?
     public let message: String?
 
-    public init(availability: VaultPreviewAvailability, kind: VaultPreviewKind? = nil,
-                localURL: URL? = nil, capability: VaultLocalContentCapability? = nil,
-                message: String? = nil) {
+    internal init(availability: VaultPreviewAvailability, kind: VaultPreviewKind? = nil,
+                  localURL: URL? = nil, capability: VaultLocalContentCapability? = nil,
+                  message: String? = nil) {
         self.availability = availability
         self.kind = kind
         self.localURL = localURL
@@ -52,6 +52,14 @@ public struct VaultPreviewPlan: Equatable, Sendable {
 
 public protocol VaultPreviewDownloadRequesting: Sendable {
     func requestDownload(for identity: VaultRemoteObjectIdentity) async throws
+}
+
+/// Strict preview downloads return the repository-issued capability produced
+/// by authenticated local installation. The request-only protocol remains
+/// source-compatible for older app compositions, but cannot attest a generation.
+public protocol VaultPreviewDownloadResultProviding: VaultPreviewDownloadRequesting {
+    func requestDownloadResult(for identity: VaultRemoteObjectIdentity) async throws
+        -> VaultLocalContentCapability
 }
 
 public enum VaultPreviewError: Error, Equatable, Sendable {
@@ -91,7 +99,9 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                      remoteIdentity: VaultRemoteObjectIdentity? = nil) async throws -> VaultPreviewPlan {
         guard let record = try repository.object(objectID) else { throw VaultPreviewError.missingObject }
         guard !record.isTombstone else { throw VaultPreviewError.tombstoned }
-        if let capability = try repository.localContentCapability(for: objectID), capability.authenticated {
+        if let capability = try repository.localContentCapability(for: objectID), capability.authenticated,
+           remoteIdentity == nil || (remoteIdentity?.revision == capability.revision &&
+                                     remoteIdentity?.generation == capability.generation) {
             let url = capability.localURL
             let fileName = (try? metadataStore?.metadata(objectID: objectID,
                                                          revision: record.revision)?.fileName) ?? ""
@@ -145,12 +155,28 @@ public final class VaultPreviewRouter: @unchecked Sendable {
             throw VaultPreviewError.unsupported
         }
         guard let downloadRequester else { throw VaultPreviewError.downloadUnavailable }
-        try await downloadRequester.requestDownload(for: identity)
+        if let resultProvider = downloadRequester as? VaultPreviewDownloadResultProviding {
+            let capability = try await resultProvider.requestDownloadResult(for: identity)
+            guard capability.authenticated,
+                  capability.objectID == objectID,
+                  capability.revision == identity.revision,
+                  capability.generation == identity.generation,
+                  capability.byteCount == record.size,
+                  try repository.validateLocalContentCapability(capability) else {
+                throw VaultPreviewError.downloadUnavailable
+            }
+        } else {
+            try await downloadRequester.requestDownload(for: identity)
+        }
         return try await plan(objectID: objectID, remoteIdentity: identity)
     }
 
     public func makeViewController(for plan: VaultPreviewPlan) -> UIViewController {
-        guard plan.availability == .ready, let url = plan.localURL, let kind = plan.kind else {
+        guard plan.availability == .ready, let url = plan.localURL,
+              let capability = plan.capability, capability.authenticated,
+              capability.localURL == url,
+              (try? repository.validateLocalContentCapability(capability)) == true,
+              let kind = plan.kind else {
             return VaultPreviewStatusViewController(plan: plan)
         }
         switch kind {
@@ -169,16 +195,20 @@ public final class VaultPreviewRouter: @unchecked Sendable {
             throw VaultPreviewError.unprotectedLocalFile
         }
         try repository.setPreviewActive(capability.objectID, active: true)
+        try repository.setPinned(capability.objectID, pinned: true)
     }
 
     public func endPreview(_ capability: VaultLocalContentCapability) throws {
         try repository.setPreviewActive(capability.objectID, active: false)
+        try repository.setPinned(capability.objectID, pinned: false)
     }
 
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {
         let lower = fileName.lowercased()
         let ext = URL(fileURLWithPath: lower).pathExtension
-        let type = contentType.flatMap { UTType(mimeType: $0.split(separator: ";", maxSplits: 1).first.map(String.init) ?? $0) }
+        let normalizedType = contentType?.split(separator: ";", maxSplits: 1).first
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let type = normalizedType.flatMap { UTType(identifier: $0) ?? UTType(mimeType: $0) }
             ?? UTType(filenameExtension: ext)
         if type?.conforms(to: .image) == true || ["jpg", "jpeg", "png", "heic", "heif", "gif"].contains(ext) {
             return .image

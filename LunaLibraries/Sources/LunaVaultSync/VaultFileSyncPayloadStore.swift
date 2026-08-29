@@ -109,11 +109,12 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             try copy(payload.fileURL, to: destination)
             guard let repository else { return }
             let temporary = destination.deletingLastPathComponent()
-                .appendingPathComponent(".plaintext-(UUID().uuidString)")
+                .appendingPathComponent(".plaintext-\(UUID().uuidString)")
             guard fileManager.createFile(atPath: temporary.path, contents: nil) else {
                 throw VaultSyncError.backend(.io)
             }
             do {
+                defer { try? fileManager.removeItem(at: temporary) }
                 try protection.apply(to: temporary)
                 guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
                     throw VaultSyncError.backend(.permissionDenied)
@@ -143,7 +144,6 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
                 }
             } catch let error as VaultSyncError { throw error }
             catch { throw VaultSyncError.backend(.corruptPayload) }
-            try? fileManager.removeItem(at: temporary)
         }
     }
 
@@ -180,7 +180,7 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         }
         let parent = destination.deletingLastPathComponent()
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
-        let staging = parent.appendingPathComponent(".staging-(UUID().uuidString)")
+        let staging = parent.appendingPathComponent(".staging-\(UUID().uuidString)")
         guard fileManager.createFile(atPath: staging.path, contents: nil) else {
             throw VaultSyncError.backend(.io)
         }

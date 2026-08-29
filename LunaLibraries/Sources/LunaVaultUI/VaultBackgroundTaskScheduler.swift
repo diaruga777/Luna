@@ -53,6 +53,46 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
     // immediately, so checking only `active` leaves a small duplicate-start
     // window during scheduling.
     private var starting: Set<VaultBackgroundTaskKind> = []
+    private var cancelledStarting: Set<VaultBackgroundTaskKind> = []
+
+    /// A task is created before it is published in `active`, so it must wait
+    /// on this gate before invoking user work. This closes the cancellation
+    /// window between Task construction and registration.
+    private final class StartGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Bool, Never>?
+        private var opened = false
+        private var cancelled = false
+
+        func wait() async -> Bool {
+            await withCheckedContinuation { continuation in
+                lock.withLock {
+                    if opened { continuation.resume(returning: !cancelled) }
+                    else { self.continuation = continuation }
+                }
+            }
+        }
+
+        func open() {
+            lock.withLock {
+                guard !opened else { return }
+                opened = true
+                continuation?.resume(returning: !cancelled)
+                continuation = nil
+            }
+        }
+
+        func cancel() {
+            lock.withLock {
+                cancelled = true
+                if !opened {
+                    opened = true
+                    continuation?.resume(returning: false)
+                    continuation = nil
+                }
+            }
+        }
+    }
 
     public init(identifierPrefix: String,
                 submitter: VaultBackgroundTaskSubmitting = SystemVaultBackgroundTaskSubmitter()) {
@@ -122,12 +162,21 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
 
     private func start(kind: VaultBackgroundTaskKind,
                        operation: @escaping @Sendable () async -> Bool) -> Task<Bool, Never> {
-        let task = Task { await operation() }
+        let gate = StartGate()
+        let task = Task {
+            await withTaskCancellationHandler(operation: {
+                guard await gate.wait(), !Task.isCancelled else { return false }
+                return await operation()
+            }, onCancel: { gate.cancel() })
+        }
         let token = UUID()
-        lock.withLock {
+        let cancelled = lock.withLock {
             starting.remove(kind)
             active[kind] = ActiveTask(token: token, task: task)
+            let value = cancelledStarting.remove(kind) != nil
+            return value
         }
+        if cancelled { task.cancel() } else { gate.open() }
         Task { [weak self] in
             _ = await task.value
             self?.lock.withLock {
@@ -139,7 +188,10 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
     }
 
     public func cancel(kind: VaultBackgroundTaskKind) {
-        lock.withLock { active[kind]?.task.cancel() }
+        lock.withLock {
+            if let task = active[kind]?.task { task.cancel() }
+            else if starting.contains(kind) { cancelledStarting.insert(kind) }
+        }
         submitter.cancel(identifier: identifier(for: kind))
     }
 

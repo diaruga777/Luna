@@ -816,7 +816,8 @@ public final class VaultIndexWorker: @unchecked Sendable {
                 return VaultIndexWorkResult(state: .downloadNeeded, objectID: objectID, jobID: job.id, errorCode: "download-needed")
             }
             if Task.isCancelled {
-                try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .cancelled, now: now)
+                try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .retrying,
+                                             error: "cancelled", nextAttemptAt: now.addingTimeInterval(60), now: now)
                 return VaultIndexWorkResult(state: .cancelled, objectID: objectID, jobID: job.id)
             }
             let descriptor = VaultFileDescriptor(objectID: objectID, revision: revision,
@@ -853,7 +854,8 @@ public final class VaultIndexWorker: @unchecked Sendable {
             try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .succeeded, now: Date())
             return VaultIndexWorkResult(state: .indexed, objectID: objectID, jobID: job.id)
         } catch is CancellationError {
-            try? repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .cancelled, now: now)
+            try? repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .retrying,
+                                          error: "cancelled", nextAttemptAt: Date().addingTimeInterval(60), now: Date())
             return VaultIndexWorkResult(state: .cancelled, objectID: objectID, jobID: job.id)
         } catch {
             try? repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .failed,

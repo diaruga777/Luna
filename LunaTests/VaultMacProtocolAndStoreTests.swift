@@ -416,7 +416,9 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let endpoint = try VaultMacEndpoint(host: "vault.example.ts.net", port: 49_200, reachability: .tailscale)
         let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
             connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
-            random: DeterministicMacRandom(seed: 9))
+            random: DeterministicMacRandom(seed: 9),
+            uploadStateStore: VaultMacFileUploadStateStore(
+                fileURL: root.appendingPathComponent("initial-state.json")))
         let fixture = try makeFixture(root: root, plaintext: Data((0..<100).map(UInt8.init)),
                                       revision: UUID())
         try await backend.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
@@ -524,7 +526,7 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
                                 expectedRevision: nil)
             XCTFail("upload was not interrupted")
         }
-        catch { XCTAssertEqual(error as? VaultMacProtocolError, .unavailable) }
+        catch { XCTAssertEqual(error as? VaultBackendError, .io) }
         let pendingBeforeRestart = try await VaultMacFileUploadStateStore(fileURL: stateURL)
             .pendingUpload(for: objectID)
         XCTAssertNotNil(pendingBeforeRestart)

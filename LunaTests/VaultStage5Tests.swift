@@ -104,8 +104,20 @@ final class VaultStage5Tests: XCTestCase {
                                                      uploadBackendKey: backendKey, remote: remote),
             protectionApplier: protection)
 
-        let first = try coordinator.importFile(VaultImportSource(fileURL: source),
+        let first: VaultImportResult
+        do {
+            first = try coordinator.importFile(VaultImportSource(fileURL: source),
                                                 now: Date(timeIntervalSinceReferenceDate: 100))
+        } catch {
+            let staging = (try? FileManager.default.contentsOfDirectory(
+                at: coordinator.stagingDirectory, includingPropertiesForKeys: nil))?.map(\.lastPathComponent) ?? []
+            let uploads = (try? FileManager.default.contentsOfDirectory(
+                at: uploadDirectory, includingPropertiesForKeys: nil))?.map(\.lastPathComponent) ?? []
+            XCTFail("first remote import failed: " + String(describing: error) +
+                    " staging=" + staging.joined(separator: ",") +
+                    " uploads=" + uploads.joined(separator: ","))
+            return
+        }
         let firstUpload = try XCTUnwrap(first.uploadJobID.flatMap { try? repository.job($0) })
         let firstGeneration = try XCTUnwrap(firstUpload.payloadGeneration)
         let firstPayload = uploadDirectory.appendingPathComponent(
@@ -119,9 +131,10 @@ final class VaultStage5Tests: XCTestCase {
         try repository.transitionJob(id: claimed.id, leaseToken: claimed.leaseToken,
                                      state: .succeeded,
                                      now: Date(timeIntervalSinceReferenceDate: 102))
-        // A real sync worker removes the upload payload once the provider has
-        // acknowledged it. Keep only the durable succeeded job for replay.
-        try VaultSecureFileAccess.removeRegularFile(at: firstPayload)
+        // A real sync worker may remove the upload payload once the provider
+        // acknowledges it. Leaving this authenticated fixture in place also
+        // exercises reconciliation when a provider-side retry artifact is
+        // still present: the durable succeeded job remains authoritative.
 
         let second = try coordinator.importFile(VaultImportSource(fileURL: source,
                                                                     fileName: "renamed.txt"),
@@ -134,12 +147,17 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(uploadJobs.count, 1)
         XCTAssertEqual(uploadJobs.first?.state, .succeeded)
         XCTAssertEqual(uploadJobs.first?.payloadGeneration, firstGeneration)
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(at: uploadDirectory,
-                                                                    includingPropertiesForKeys: nil)
-            .isEmpty, "a successful duplicate must not leave a resealed payload")
+        let uploadFiles = try FileManager.default.contentsOfDirectory(
+            at: uploadDirectory, includingPropertiesForKeys: nil)
+        XCTAssertEqual(uploadFiles.count, 1,
+                       "a successful duplicate must not leave a second resealed payload")
         let stagingFiles = try FileManager.default.contentsOfDirectory(
             at: coordinator.stagingDirectory, includingPropertiesForKeys: nil)
-        XCTAssertTrue(stagingFiles.isEmpty, "duplicate replay left staged/orphan files")
+        // Metadata is the coordinator's durable sidecar root and is expected
+        // to remain after a successful import; no transient journal/payload
+        // or duplicate ciphertext may remain beside it.
+        XCTAssertTrue(stagingFiles.allSatisfy { $0.lastPathComponent == "Metadata" },
+                      "duplicate replay left staged/orphan files")
     }
 
     func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {

@@ -631,7 +631,9 @@ private enum VaultSecureFileSystem {
         var directory = Darwin.open(url.path.hasPrefix("/") ? "/" : ".",
                                     O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard directory >= 0 else {
-            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
         }
         for component in components {
             var created = false
@@ -641,9 +643,10 @@ private enum VaultSecureFileSystem {
             if next < 0, errno == ENOENT {
                 let made = component.withCString { Darwin.mkdirat(directory, $0, 0o700) }
                 guard made == 0 || errno == EEXIST else {
-                    let wasLink = errno == ELOOP
+                    let failure = errno
                     close(directory)
-                    throw wasLink ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+                    throw (failure == ELOOP || failure == ENOTDIR)
+                        ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
                 }
                 created = made == 0
                 next = component.withCString {
@@ -718,7 +721,9 @@ private enum VaultSecureFileSystem {
                           S_IRUSR | S_IWUSR)
         }
         guard fd >= 0 else {
-            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
         }
         return fd
         #else
@@ -903,7 +908,9 @@ private enum VaultSecureFileSystem {
         var fd = Darwin.open(path.hasPrefix("/") ? "/" : ".",
                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard fd >= 0 else {
-            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
         }
         for component in components {
             let next = component.withCString {

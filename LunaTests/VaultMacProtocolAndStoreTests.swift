@@ -111,6 +111,18 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         let resolution = try VaultMacBonjourBrowser.Resolution(serverBinding: Data(repeating: 1, count: 32),
                                                                port: 55_555)
         XCTAssertEqual(resolution.port, 55_555, "Bonjour must use the resolved SRV port")
+        #if canImport(Network)
+        let root = temporary("listener-bind")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let service = VaultMacCompanionService(store: store)
+        let authority = VaultMacSessionAuthority(credential: credential)
+        for wildcard in ["0.0.0.0", "[0.0.0.0]", "::", "[::]", "[0:0:0:0:0:0:0:0]", "*"] {
+            XCTAssertThrowsError(try VaultMacTCPListener(bindHost: wildcard,
+                service: service, authority: authority), "wildcard bind escaped validation: \(wildcard)")
+        }
+        #endif
     }
 
     func testCredentialAndDirectoriesAreOwnerOnlyAndRevocable() throws {

@@ -24,7 +24,8 @@ the indexing stage owns its local schema and encrypted artifact projection.
 Replacement keeps recoverable staging/previous states. Content and its generation
 token are fully written, fsynced, and protected while still staged; the protection
 attribute survives their atomic renames, and the token is installed only after the
-protected content. Startup verifies the token, current revision, and required file
+protected content. Startup verifies the token's revision and SHA-256 digest against
+the installed bytes, along with required file
 protection attributes before accepting a final. It restores a verified previous
 generation or deletes the candidate rather than applying protection after the fact.
 Deletions enqueue durable

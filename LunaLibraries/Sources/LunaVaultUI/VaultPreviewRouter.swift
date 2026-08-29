@@ -201,13 +201,11 @@ public final class VaultPreviewRouter: @unchecked Sendable {
             throw VaultPreviewError.unprotectedLocalFile
         }
         let lease = try repository.beginPreviewLease(capability)
-        try repository.setPinned(capability.objectID, pinned: true)
         return lease
     }
 
     public func endPreview(_ lease: VaultPreviewLease) throws {
         try repository.endPreviewLease(lease)
-        try repository.setPinned(lease.objectID, pinned: false)
     }
 
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {

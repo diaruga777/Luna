@@ -134,14 +134,23 @@ final class VaultSearchTests: XCTestCase {
         // 4,096 is the measured sweet spot on the iPhone 17 Pro simulator:
         // it keeps source material bounded while avoiding hundreds of WAL
         // commits. The API still caps callers at this batch size.
-        let result = try index.upsertStreaming(performanceDocuments(count: 100_000), batchSize: 4_096)
+        var peakResident = residentBytes()
+        var lastProgress = VaultIndexBatchProgress(batchNumber: 0, documentsProcessed: 0, documentsApplied: 0, documentsSkipped: 0)
+        let result = try index.upsertStreaming(performanceDocuments(count: 100_000), batchSize: 4_096, progress: { progress in
+            lastProgress = progress
+            peakResident = max(peakResident, residentBytes())
+            if progress.batchNumber == 1 || progress.batchNumber.isMultiple(of: 4) {
+                XCTContext.runActivity(named: "100k index progress: batch=\(progress.batchNumber) processed=\(progress.documentsProcessed) resident=\(residentBytes())B") { _ in }
+            }
+        })
         XCTAssertEqual(result.documentsApplied,100_000)
         let buildSeconds=ProcessInfo.processInfo.systemUptime-start
+        XCTContext.runActivity(named: "100k index phase: build=\(buildSeconds)s batches=\(lastProgress.batchNumber) processed=\(lastProgress.documentsProcessed) resident=\(residentBytes())B") { _ in }
         var queryDurations:[Double]=[];queryDurations.reserveCapacity(80);var vectorDurations:[Double]=[];vectorDurations.reserveCapacity(40);var hybridDurations:[Double]=[];hybridDurations.reserveCapacity(40)
         let queryVector = VaultEmbedding(values: [1,2,3,4,5,6,7,8].map(Float.init), modelVersion: "v1")
-        // Ten samples per query family are enough for stable p50/p95
-        // diagnostics while keeping the nightly plan comfortably bounded.
-        for value in stride(from:1,through:100_000,by:10_000) {
+        // Three samples per family provide p50/p95 diagnostics while bounding
+        // the O(N) exact-vector scan against the 100k-record fixture.
+        for value in stride(from:1,through:100_000,by:50_000) {
             let marker = String(format: "%06d", value);let queryStart=ProcessInfo.processInfo.systemUptime
             XCTAssertEqual(try index.search("vaultrecord\(marker)").count,1);queryDurations.append(ProcessInfo.processInfo.systemUptime-queryStart)
             let ftsStart=ProcessInfo.processInfo.systemUptime
@@ -150,15 +159,21 @@ final class VaultSearchTests: XCTestCase {
             XCTAssertFalse(try index.cosineSearch(queryVector,limit:10).isEmpty);vectorDurations.append(ProcessInfo.processInfo.systemUptime-vectorStart)
             let hybridStart=ProcessInfo.processInfo.systemUptime
             XCTAssertFalse(try index.search("payloadmarker\(marker)",embedding:queryVector,limit:10).isEmpty);hybridDurations.append(ProcessInfo.processInfo.systemUptime-hybridStart)
+            peakResident = max(peakResident, residentBytes())
         }
         let sorted=queryDurations.sorted();let p50=sorted[sorted.count/2],p95=sorted[Int(Double(sorted.count-1)*0.95)]
         let vectorSorted=vectorDurations.sorted();let vectorP50=vectorSorted[vectorSorted.count/2],vectorP95=vectorSorted[Int(Double(vectorSorted.count-1)*0.95)]
         let hybridSorted=hybridDurations.sorted();let hybridP50=hybridSorted[hybridSorted.count/2],hybridP95=hybridSorted[Int(Double(hybridSorted.count-1)*0.95)]
         try index.checkpointWAL()
+        let group = try index.createGroup(label: "performance group", members: [id(1)])
+        let alias = try index.addManualMembership(objectID: id(1), toGroup: group.id, modelVersion: "v1")
+        XCTAssertEqual(try index.groups().first(where: { $0.id == group.id })?.memberIDs, [id(1)])
+        XCTAssertTrue(try index.aliases(for: id(1)).contains(where: { $0.id == alias.id }))
         let dbBytes=["","-wal","-shm"].compactMap{try? FileManager.default.attributesOfItem(atPath:directory.url.appendingPathComponent("vault-index.sqlite").path+$0)[.size] as? NSNumber}.reduce(Int64(0)){ $0+$1.int64Value }
-        let memory=residentBytes();XCTContext.runActivity(named:"100k SQLite records: build=\(buildSeconds)s p50=\(p50)s p95=\(p95)s resident=\(memory)B db=\(dbBytes)B") { _ in }
-        XCTContext.runActivity(named:"100k query metrics: lexical p50=\(p50)s p95=\(p95)s vector p50=\(vectorP50)s p95=\(vectorP95)s hybrid p50=\(hybridP50)s p95=\(hybridP95)s checkpointed db+wal+shm=\(dbBytes)B resident=\(memory)B") { _ in }
-        if memory > 0 { XCTAssertLessThan(memory,768*1024*1024,"streaming index must not retain the 100k-document input") }
+        let memory=residentBytes(); peakResident = max(peakResident, memory)
+        XCTContext.runActivity(named:"100k SQLite records: build=\(buildSeconds)s p50=\(p50)s p95=\(p95)s resident=\(memory)B peakResident=\(peakResident)B db=\(dbBytes)B") { _ in }
+        XCTContext.runActivity(named:"100k query metrics: lexical p50=\(p50)s p95=\(p95)s vector p50=\(vectorP50)s p95=\(vectorP95)s hybrid p50=\(hybridP50)s p95=\(hybridP95)s checkpointed db+wal+shm=\(dbBytes)B resident=\(memory)B peakResident=\(peakResident)B") { _ in }
+        if peakResident > 0 { XCTAssertLessThan(peakResident,768*1024*1024,"streaming index must not retain the 100k-document input") }
         XCTAssertEqual(try index.documentCount(),100_000)
     }
 

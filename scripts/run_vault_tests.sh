@@ -80,10 +80,18 @@ if [[ "$PERFORMANCE" -eq 1 ]]; then
 fi
 DESTINATION="platform=iOS Simulator,id=$DEVICE"
 [[ "$MODE" == "device" ]] && DESTINATION="platform=iOS,id=$DEVICE"
+TIMEOUT_ARGS=()
+if [[ "$PERFORMANCE" -eq 1 ]]; then
+  # Xcode 26.2 ignores the test-plan JSON allowance for the individual test
+  # when an explicit test selector is supplied; pass both XCTest overrides so
+  # the performance-only plan gets its documented 20-minute execution cap.
+  TIMEOUT_ARGS=(-default-test-execution-time-allowance 1200 -maximum-test-execution-time-allowance 1200)
+fi
 exec xcodebuild test -scheme LunaVaultTests -testPlan "$TEST_PLAN" \
   -destination "$DESTINATION" \
   -only-testing:LunaTests/VaultScaffoldTests \
   -only-testing:LunaTests/VaultCryptoStorageTests \
   -only-testing:LunaTests/VaultSearchTests \
   -derivedDataPath "${LUNA_VAULT_TEST_DD:-$REPO/.build-dd-vault}" \
+  "${TIMEOUT_ARGS[@]}" \
   ${EXTRA[@]+"${EXTRA[@]}"}

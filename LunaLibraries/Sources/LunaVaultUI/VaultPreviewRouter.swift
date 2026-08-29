@@ -208,7 +208,7 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         let ext = URL(fileURLWithPath: lower).pathExtension
         let normalizedType = contentType?.split(separator: ";", maxSplits: 1).first
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-        let type = normalizedType.flatMap { UTType(identifier: $0) ?? UTType(mimeType: $0) }
+        let type = normalizedType.flatMap { UTType($0) ?? UTType(mimeType: $0) }
             ?? UTType(filenameExtension: ext)
         if type?.conforms(to: .image) == true || ["jpg", "jpeg", "png", "heic", "heif", "gif"].contains(ext) {
             return .image

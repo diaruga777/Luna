@@ -757,6 +757,11 @@ public final class VaultRepository: @unchecked Sendable {
     }
     private func jobObjectIsReadyLocked(_ job: VaultJob) throws -> Bool {
         guard let objectID = job.objectID else { return true }
+        // Artifact transfers may be queued before a local object row exists;
+        // their authenticated envelope is the durable source of truth. Once
+        // a local object row is present, however, its visibility marker is a
+        // hard publication boundary for all object-scoped workers.
+        guard try objectLocked(objectID) != nil else { return true }
         var ready = false
         try query("SELECT ready FROM object_visibility WHERE object_id=?", [.text(objectID.rawValue.uuidString)]) { ready = $0.int(0) != 0 }
         return ready
@@ -811,7 +816,13 @@ public final class VaultRepository: @unchecked Sendable {
     }
     private func installedGenerationIsValid(content:URL,generation:URL,expectedRevision:String?)throws->Bool{
         guard fileManager.fileExists(atPath:content.path),fileManager.fileExists(atPath:generation.path),try protectionApplier.hasRequiredProtection(at:content),try protectionApplier.hasRequiredProtection(at:generation),let contentValues=try?content.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey]),contentValues.isDirectory != true,contentValues.isSymbolicLink != true,let markerData=try?readBoundedFile(generation,maximumBytes:256),let marker=String(data:markerData,encoding:.utf8),let separator=marker.firstIndex(of:":") else{return false}
-        let digest=String(marker[marker.index(after:separator)...])
+        let remainder = String(marker[marker.index(after: separator)...])
+        // Current markers carry the repository-issued capability generation
+        // followed by the digest of the installed plaintext. Older markers
+        // used the digest as the sole token; accepting that form keeps
+        // upgrades repairable while still authenticating the bytes below.
+        let markerParts = remainder.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        let digest = markerParts.count > 1 ? markerParts[1] : remainder
         guard digest.count == 64, digest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else{return false}
         guard expectedRevision.map({String(marker[..<separator])==$0}) ?? true else{return false}
         // The generation marker authenticates the revision, but it must not

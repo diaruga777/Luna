@@ -97,9 +97,13 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
                     chunkSize = UInt64(envelope.ciphertext.count - 16)
                 }
                 let actualChunkSize = chunkSize ?? 0
-                let expected = metadata.plaintextByteCount == 0
-                    ? 0
-                    : min(actualChunkSize, metadata.plaintextByteCount - UInt64(index - 1) * actualChunkSize)
+                let chunkIndex = UInt64(index - 1)
+                let (consumed, multiplicationOverflow) = chunkIndex.multipliedReportingOverflow(by: actualChunkSize)
+                guard !multiplicationOverflow, consumed <= metadata.plaintextByteCount else {
+                    throw VaultCryptoError.malformedEnvelope
+                }
+                let remaining = metadata.plaintextByteCount - consumed
+                let expected = metadata.plaintextByteCount == 0 ? 0 : min(actualChunkSize, remaining)
                 guard actualChunkSize > 0 || metadata.plaintextByteCount == 0,
                       UInt64(envelope.ciphertext.count - 16) == expected else {
                     throw VaultCryptoError.malformedEnvelope

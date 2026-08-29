@@ -108,6 +108,28 @@ final class VaultCryptoStorageTests: XCTestCase {
         XCTAssertEqual(Set(try frames.dropFirst().map { try VaultChunkEnvelope.decode($0, maximumBytes: 100).nonce }).count, frames.count - 1)
     }
 
+    func testChunkEnvelopeRejectsExtraFramesWithoutUnsignedLengthUnderflow() throws {
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 3, count: 32))
+        let cryptor = VaultChunkedCryptor(chunkSize: 1, vaultID: "underflow",
+                                          random: VaultTestRandomBytes(seed: 23))
+        var frames = try cryptor.seal(Data([0x01]), objectID: objectID,
+                                      revision: revision, root: root)
+        let extra = VaultChunkEnvelope(role: .content, rootVersion: root.version,
+                                       objectID: objectID, revision: revision,
+                                       chunkIndex: 1, plaintextLength: 1,
+                                       nonce: Data(repeating: 0, count: 12),
+                                       ciphertext: Data(repeating: 0, count: 16))
+        let beyondEnd = VaultChunkEnvelope(role: .content, rootVersion: root.version,
+                                           objectID: objectID, revision: revision,
+                                           chunkIndex: 2, plaintextLength: 1,
+                                           nonce: Data(repeating: 1, count: 12),
+                                           ciphertext: Data(repeating: 0, count: 16))
+        frames.append(try extra.encoded())
+        frames.append(try beyondEnd.encoded())
+        XCTAssertThrowsError(try VaultAuthenticatedCiphertext(
+            vaultID: "underflow", kind: .content, encryptedFrames: frames))
+    }
+
     func testRootKeyLifecycleIsExplicitStrictAndConcurrent() throws {
         let descriptorGroup = "TEAM.com.hsanabria.luna.vault.keys"
         let store = InMemoryVaultKeyStore()

@@ -100,10 +100,17 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
                   envelope.plaintextLength == first.plaintextLength else {
                 throw VaultCryptoError.malformedEnvelope
             }
-            let expected = first.plaintextLength == 0
-                ? 0
-                : min(chunkSize, Int(first.plaintextLength) - index * chunkSize)
-            guard expected >= 0, envelope.ciphertext.count == expected + 16 else {
+            guard first.plaintextLength <= UInt64(Int.max) else {
+                throw VaultCryptoError.inputTooLarge
+            }
+            let plaintextLength = Int(first.plaintextLength)
+            let (consumed, multiplicationOverflow) = index.multipliedReportingOverflow(by: chunkSize)
+            guard !multiplicationOverflow, consumed <= plaintextLength else {
+                throw VaultCryptoError.malformedEnvelope
+            }
+            let remaining = plaintextLength - consumed
+            let expected = first.plaintextLength == 0 ? 0 : min(chunkSize, remaining)
+            guard envelope.ciphertext.count == expected + 16 else {
                 throw VaultCryptoError.malformedEnvelope
             }
         }
@@ -111,9 +118,12 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
             throw VaultCryptoError.inputTooLarge
         }
         let divisor = max(1, chunkSize)
+        let plaintextLength = Int(first.plaintextLength)
+        let quotient = plaintextLength / divisor
+        let remainder = plaintextLength % divisor
         let expectedCount = first.plaintextLength == 0
             ? 1
-            : (Int(first.plaintextLength) + divisor - 1) / divisor
+            : quotient + (remainder == 0 ? 0 : 1)
         guard expectedCount == encryptedFrames.count - 1 else {
             throw VaultCryptoError.malformedEnvelope
         }

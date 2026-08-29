@@ -534,7 +534,7 @@ extension VaultMacRemoteBackend {
         let logicalTime = Int64(Date().timeIntervalSince1970 * 1_000)
         let revision = VaultRevision(objectID: identity.objectID,
             revision: identity.revision, logicalTime: logicalTime, deviceID: "iphone")
-        try await putCiphertext(try payload.encoded(), for: identity.objectID,
+        try await putCiphertext(try payload.encodedFileData(), for: identity.objectID,
                                 revision: revision, expectedRevision: expectedRevision,
                                 kind: identity.kind, generation: identity.generation)
         return .current

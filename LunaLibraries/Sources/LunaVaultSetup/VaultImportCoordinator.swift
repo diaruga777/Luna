@@ -141,6 +141,7 @@ public protocol VaultImportedFileMetadataStoring: Sendable {
 /// Metadata is keyed by opaque IDs and stored below the protected Vault
 /// directory. It is not part of any extension target or extension handoff.
 public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStoring, @unchecked Sendable {
+    private static let maximumRepairEntries = 4_096
     private let rootURL: URL
     private let fileManager: FileManager
     private let protection: VaultFileProtectionApplying
@@ -244,8 +245,9 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
     }
 
     private func repairFiles() throws {
-        let children = (try? fileManager.contentsOfDirectory(at: rootURL,
-                                                              includingPropertiesForKeys: nil)) ?? []
+        let children = Array(((try? fileManager.contentsOfDirectory(at: rootURL,
+                                                                      includingPropertiesForKeys: nil)) ?? [])
+            .prefix(Self.maximumRepairEntries))
         for child in children {
             if Task.isCancelled { throw VaultImportError.interrupted }
             guard UUID(uuidString: child.lastPathComponent) != nil else {
@@ -256,7 +258,7 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
                                                                     includingPropertiesForKeys: nil) else {
                 try? fileManager.removeItem(at: child); continue
             }
-            for file in files {
+            for file in files.prefix(Self.maximumRepairEntries) {
                 if Task.isCancelled { throw VaultImportError.interrupted }
                 let revision = file.deletingPathExtension().lastPathComponent
                 let attrs = try? fileManager.attributesOfItem(atPath: file.path)
@@ -361,6 +363,7 @@ private struct VaultImportJournal: Codable, Sendable {
 /// The journal is removed only after the object, metadata, and durable work
 /// records exist, so a process death can be repaired on the next launch.
 public final class VaultImportCoordinator: @unchecked Sendable {
+    private static let maximumRepairEntries = 4_096
     public let stagingDirectory: URL
     private let repository: VaultRepository
     private let metadataStore: VaultImportedFileMetadataStoring
@@ -492,8 +495,9 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     @discardableResult
     public func repairInterruptedImports() throws -> [VaultImportResult] {
         try lock.withLock {
-            let files = (try? fileManager.contentsOfDirectory(at: stagingDirectory,
-                                                               includingPropertiesForKeys: nil)) ?? []
+            let files = Array(((try? fileManager.contentsOfDirectory(at: stagingDirectory,
+                                                                       includingPropertiesForKeys: nil)) ?? [])
+                .prefix(Self.maximumRepairEntries))
             var results: [VaultImportResult] = []
             var livePayloadTokens = Set<String>()
             var liveCiphertextTokens = Set<String>()

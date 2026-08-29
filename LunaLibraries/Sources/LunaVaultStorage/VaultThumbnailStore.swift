@@ -62,6 +62,7 @@ public struct VaultThumbnailConfiguration: Equatable, Sendable {
 /// It has an independent quota and eviction policy from `VaultRepository`'s
 /// full-content cache.
 public final class VaultThumbnailStore: @unchecked Sendable {
+    private static let maximumRepairEntries = 4_096
     public let rootURL: URL
     private let fileManager: FileManager
     private let protection: VaultFileProtectionApplying
@@ -330,8 +331,9 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             }
         }
         // Remove orphan payload directories and files left by a killed write.
-        let objectDirectories = (try? fileManager.contentsOfDirectory(at: rootURL,
-                                                                        includingPropertiesForKeys: nil)) ?? []
+        let objectDirectories = Array(((try? fileManager.contentsOfDirectory(at: rootURL,
+                                                                                includingPropertiesForKeys: nil)) ?? [])
+            .prefix(Self.maximumRepairEntries))
         for objectDirectory in objectDirectories where objectDirectory != metadataURL {
             if Task.isCancelled { throw VaultThumbnailError.unavailable }
             guard let objectID = UUID(uuidString: objectDirectory.lastPathComponent) else {
@@ -342,14 +344,15 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                                                                         includingPropertiesForKeys: nil) else {
                 try? fileManager.removeItem(at: objectDirectory); continue
             }
-            for revisionDirectory in revisions {
+            for revisionDirectory in revisions.prefix(Self.maximumRepairEntries) {
                 if Task.isCancelled { throw VaultThumbnailError.unavailable }
                 guard let revision = UUID(uuidString: revisionDirectory.lastPathComponent) else {
                     try? fileManager.removeItem(at: revisionDirectory)
                     continue
                 }
-                let payloads = (try? fileManager.contentsOfDirectory(at: revisionDirectory,
-                                                                      includingPropertiesForKeys: nil)) ?? []
+                let payloads = Array(((try? fileManager.contentsOfDirectory(at: revisionDirectory,
+                                                                              includingPropertiesForKeys: nil)) ?? [])
+                    .prefix(Self.maximumRepairEntries))
                 if payloads.isEmpty { try? fileManager.removeItem(at: revisionDirectory) }
                 for payload in payloads {
                     let matching = entriesByKey.contains {

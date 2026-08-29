@@ -134,6 +134,41 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
                                        encryptedFrames: encryptedFrames))
     }
 
+    /// Serializes the authenticated frames into the streaming LVF container
+    /// used by the Mac companion. This preserves the same fixed header and
+    /// length-prefixed frame layout as `VaultAuthenticatedCiphertextFile`
+    /// without exposing a pathname or requiring a second encryption pass.
+    /// Callers should prefer the file-backed representation for large objects.
+    public func encodedFileData() throws -> Data {
+        guard encryptedFrames.count >= 2 else { throw VaultCryptoError.malformedEnvelope }
+        let first = try VaultChunkEnvelope.decode(
+            encryptedFrames[1], maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
+        let metadata = FileMetadata(vaultID: vaultID, objectID: identity.objectID,
+                                    revision: identity.revision, kind: identity.kind,
+                                    rootVersion: rootVersion,
+                                    plaintextByteCount: first.plaintextLength,
+                                    frameCount: UInt32(encryptedFrames.count),
+                                    generation: identity.generation)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let encoded = try encoder.encode(metadata)
+        guard encoded.count + 8 <= VaultAuthenticatedCiphertextFile.headerByteCount else {
+            throw VaultCryptoError.malformedEnvelope
+        }
+        var header = Data([0x4c, 0x56, 0x46, 0x31])
+        var length = UInt32(encoded.count).bigEndian
+        withUnsafeBytes(of: &length) { header.append(contentsOf: $0) }
+        header.append(encoded)
+        header.append(Data(repeating: 0,
+                           count: VaultAuthenticatedCiphertextFile.headerByteCount - header.count))
+        var result = header
+        for frame in encryptedFrames {
+            var frameLength = UInt64(frame.count).bigEndian
+            withUnsafeBytes(of: &frameLength) { result.append(contentsOf: $0) }
+            result.append(frame)
+        }
+        return result
+    }
+
     /// Verifies the wrapped DEK and every chunk authentication tag without
     /// retaining the decrypted bytes. Remote downloads must pass this check
     /// before they are installed into a durable local store.
@@ -200,6 +235,17 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         let encryptedFrames: [Data]
     }
 
+    private struct FileMetadata: Codable {
+        let vaultID: String
+        let objectID: VaultObjectID
+        let revision: UUID
+        let kind: VaultRemoteObjectKind
+        let rootVersion: UInt32
+        let plaintextByteCount: UInt64
+        let frameCount: UInt32
+        let generation: String
+    }
+
     private static func readUInt32(_ data: Data, offset: Int) -> UInt32 {
         data[offset..<(offset + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
     }
@@ -229,4 +275,5 @@ public struct VaultVerifiedCiphertext: Equatable, Sendable {
         VaultAuthenticatedGeneration(identity: identity)
     }
     public func encoded() throws -> Data { try payload.encoded() }
+    public func encodedFileData() throws -> Data { try payload.encodedFileData() }
 }

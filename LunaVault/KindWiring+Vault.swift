@@ -48,8 +48,17 @@ import LunaVaultUI
     }
 
     private static func makeServices() -> VaultRuntimeServices? {
-        if let services { return services }
-        guard let policy = setupCoordinator.state.policy else { return nil }
+        guard let policy = setupCoordinator.state.policy else {
+            services = nil
+            syncRuntime = nil
+            return nil
+        }
+        if let services, services.policy == policy { return services }
+        // A Settings policy change must rebuild the provider. Keeping the
+        // previous device service here would make a newly-selected Mac or
+        // iCloud location appear ready until the next process launch.
+        services = nil
+        syncRuntime = nil
         do {
             let value: VaultRuntimeServices
             if policy.location == .mac { value = try makeMacServices(policy: policy) }

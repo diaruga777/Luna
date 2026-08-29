@@ -129,6 +129,9 @@ public final class VaultSetupCoordinator: @unchecked Sendable {
 
     /// Current in-memory state. `load()` should be called once at app launch.
     public var state: VaultSetupState { lock.withLock { current } }
+    /// Read-only spelling for callers that want to make the launch-state
+    /// dependency explicit at call sites.
+    public var currentState: VaultSetupState { state }
 
     /// Recovery/launch path. Existing state requires an existing root key.
     @discardableResult
@@ -153,6 +156,10 @@ public final class VaultSetupCoordinator: @unchecked Sendable {
             return current
         }
     }
+
+    /// Alias used by scene coordinators that model setup as a refresh event.
+    @discardableResult
+    public func refresh() -> VaultSetupState { load() }
 
     /// Setup-only path. This is the sole coordinator call that can create the
     /// initial root key.

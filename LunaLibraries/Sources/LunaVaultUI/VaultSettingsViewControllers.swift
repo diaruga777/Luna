@@ -21,16 +21,25 @@ public final class VaultSettingsViewController: UITableViewController {
         var symbol: String { switch self { case .storage: return "internaldrive"; case .cache: return "archivebox"; case .index: return "magnifyingglass"; case .security: return "lock"; case .mac: return "desktopcomputer" } }
     }
     private let setupCoordinator: VaultSetupCoordinator?
-    public init(setupCoordinator: VaultSetupCoordinator? = nil) { self.setupCoordinator = setupCoordinator; super.init(style: .insetGrouped); title = "Vault Settings" }
+    private let macCredentialStore: VaultMacKeychainCredentialStore?
+    public init(setupCoordinator: VaultSetupCoordinator? = nil, macCredentialStore: VaultMacKeychainCredentialStore? = nil) {
+        self.setupCoordinator = setupCoordinator
+        self.macCredentialStore = macCredentialStore
+        super.init(style: .insetGrouped)
+        title = "Vault Settings"
+    }
     @available(*, unavailable) public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     public override func viewDidLoad() { super.viewDidLoad(); tableView.accessibilityIdentifier = "vault.settings.list"; tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell") }
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { Row.allCases.count }
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell { let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath); let row = Row.allCases[indexPath.row]; var content = cell.defaultContentConfiguration(); content.text = row.title; content.image = UIImage(systemName: row.symbol); cell.contentConfiguration = content; cell.accessoryType = .disclosureIndicator; cell.accessibilityIdentifier = "vault.settings.\(row.title.lowercased().replacingOccurrences(of: " ", with: "-"))"; return cell }
-    public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) { tableView.deselectRow(at: indexPath, animated: true); switch Row.allCases[indexPath.row] { case .storage: navigationController?.pushViewController(VaultStorageSettingsViewController(setupCoordinator: setupCoordinator), animated: true); case .cache: navigationController?.pushViewController(VaultCacheSettingsViewController(), animated: true); case .index: navigationController?.pushViewController(VaultIndexSettingsViewController(), animated: true); case .security: navigationController?.pushViewController(VaultSecuritySettingsViewController(), animated: true); case .mac: navigationController?.pushViewController(VaultMacPairingViewController(), animated: true) } }
+    public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) { tableView.deselectRow(at: indexPath, animated: true); switch Row.allCases[indexPath.row] { case .storage: navigationController?.pushViewController(VaultStorageSettingsViewController(setupCoordinator: setupCoordinator), animated: true); case .cache: navigationController?.pushViewController(VaultCacheSettingsViewController(), animated: true); case .index: navigationController?.pushViewController(VaultIndexSettingsViewController(), animated: true); case .security: navigationController?.pushViewController(VaultSecuritySettingsViewController(), animated: true); case .mac: navigationController?.pushViewController(VaultMacPairingViewController(credentialStore: macCredentialStore), animated: true) } }
 }
 
 public final class VaultStorageSettingsViewController: UIViewController {
     public var onPolicyChanged: ((VaultStoragePolicy) -> Void)?
+    /// The storage backend owns eviction. This UI callback only records the
+    /// user's intent and renders the explicit in-progress state.
+    public var onICloudEvictionRequested: (() -> Void)?
     public var icloudState: VaultICloudLocalState = .keptLocal { didSet { if isViewLoaded { renderState() } } }
     private let setupCoordinator: VaultSetupCoordinator?
     private let locationControl = UISegmentedControl(items: ["iPhone", "iCloud", "Mac"])
@@ -51,7 +60,7 @@ public final class VaultStorageSettingsViewController: UIViewController {
     }
     @objc private func locationChanged() { let locations: [VaultStorageLocation] = [.device, .iCloud, .mac]; policy = VaultStoragePolicy(location: locations[max(0, min(2, locationControl.selectedSegmentIndex))], keepLocalCopy: keepLocal.isOn); persist() }
     @objc private func keepLocalChanged() { policy = VaultStoragePolicy(location: policy.location, keepLocalCopy: keepLocal.isOn); persist() }
-    @objc private func requestEviction() { guard policy.location == .iCloud else { return }; icloudState = .evictionRequested; renderState() }
+    @objc private func requestEviction() { guard policy.location == .iCloud else { return }; icloudState = .evictionRequested; onICloudEvictionRequested?(); renderState() }
     private func persist() { _ = setupCoordinator?.updateStoragePolicy(policy); onPolicyChanged?(policy); renderState() }
     private func renderState() { let iCloud = policy.location == .iCloud; keepLocal.isEnabled = iCloud; evictionButton.isHidden = !iCloud; status.text = iCloud ? icloudMessage() : policy.location == .mac ? "Mac storage requires a paired, user-owned Mac." : "Files remain on this iPhone." }
     private func icloudMessage() -> String { switch icloudState { case .keptLocal: return keepLocal.isOn ? "iCloud is configured; this device keeps a working copy." : "iCloud is configured; local eviction may be requested per file."; case .evictionRequested: return "Eviction requested. Waiting for iCloud to confirm it."; case .evicting: return "iCloud is evicting the local working copy…"; case .evicted: return "The local working copy is evicted; iCloud remains canonical."; case .unavailable: return "iCloud is unavailable. No local fallback is being used."; case .failed: return "iCloud could not evict this copy. The local state is unchanged." } }

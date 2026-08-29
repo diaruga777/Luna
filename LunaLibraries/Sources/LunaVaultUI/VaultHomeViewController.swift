@@ -77,6 +77,7 @@ public final class VaultRootViewController: UIViewController {
         navigationItem.rightBarButtonItems = [settings, importing]
 
         configureSearchField()
+        configureStatusLabel()
         configureSetupPanel()
         configureContent()
         renderState()
@@ -92,7 +93,8 @@ public final class VaultRootViewController: UIViewController {
 
     @objc private func importTapped() { importHandler?() }
     @objc private func settingsTapped() {
-        navigationController?.pushViewController(VaultSettingsViewController(setupCoordinator: setupCoordinator), animated: true)
+        navigationController?.pushViewController(VaultSettingsViewController(
+            setupCoordinator: setupCoordinator, macCredentialStore: makeMacCredentialStore()), animated: true)
     }
 
     private func configureSearchField() {
@@ -112,6 +114,14 @@ public final class VaultRootViewController: UIViewController {
             searchField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             searchField.heightAnchor.constraint(equalToConstant: 48),
         ])
+    }
+
+    private func configureStatusLabel() {
+        statusLabel.numberOfLines = 0
+        statusLabel.textAlignment = .center
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.font = .preferredFont(forTextStyle: .subheadline)
+        statusLabel.isHidden = true
     }
 
     private func configureSetupPanel() {
@@ -155,7 +165,7 @@ public final class VaultRootViewController: UIViewController {
         ])
         contentStack.addArrangedSubview(statusLabel)
         contentStack.addArrangedSubview(sectionHeader("Recent")); contentStack.addArrangedSubview(recentScroll)
-        contentStack.addArrangedSubview(sectionHeader("Groups", action: #selector(newManualGroupTapped))); contentStack.addArrangedSubview(groupsStack)
+        contentStack.addArrangedSubview(sectionHeader("Groups", action: #selector(newGroupTapped))); contentStack.addArrangedSubview(groupsStack)
         contentStack.addArrangedSubview(sectionHeader("Results")); contentStack.addArrangedSubview(resultsStack)
         view.addSubview(scroll)
         NSLayoutConstraint.activate([scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor), scroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 18), scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
@@ -195,7 +205,9 @@ public final class VaultRootViewController: UIViewController {
         switch state {
         case .firstRun: break
         case .ready(let policy):
-            setupPolicy = policy; updateReadyContent()
+            setupPolicy = policy
+            if services?.policy != policy { services = servicesProvider?() }
+            updateReadyContent()
             if services?.isReady != true {
                 statusLabel.isHidden = false
                 statusLabel.text = policy.location == .iCloud ? "iCloud is unavailable. Check your Apple ID and iCloud Drive." : policy.location == .mac ? "Pair your Mac in Settings to use Mac storage." : "Vault storage needs attention."
@@ -241,23 +253,60 @@ public final class VaultRootViewController: UIViewController {
         resultsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if hits.isEmpty { resultsStack.addArrangedSubview(emptyLabel("Search by name or extracted text")); return }
         for hit in hits {
-            let row = UIStackView(); row.axis = .vertical; row.spacing = 3; row.isLayoutMarginsRelativeArrangement = true; row.layoutMargins = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12); row.backgroundColor = .secondarySystemBackground; row.layer.cornerRadius = 12
+            let row = UIStackView(); row.axis = .vertical; row.spacing = 7; row.isLayoutMarginsRelativeArrangement = true; row.layoutMargins = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12); row.backgroundColor = .secondarySystemBackground; row.layer.cornerRadius = 12
             let title = UILabel(); title.text = hit.filename; title.font = .preferredFont(forTextStyle: .headline)
             let detail = UILabel(); detail.text = hit.snippet; detail.numberOfLines = 2; detail.textColor = .secondaryLabel
             let fields = UILabel(); fields.text = hit.isSymbolicAlias ? "Group alias · \(hit.matchedFields.joined(separator: ", "))" : hit.matchedFields.joined(separator: ", "); fields.font = .preferredFont(forTextStyle: .caption1); fields.textColor = .tertiaryLabel
-            [title, detail, fields].forEach(row.addArrangedSubview); row.accessibilityIdentifier = "vault.result.\(hit.canonicalObjectID.rawValue.uuidString)"; resultsStack.addArrangedSubview(row)
+            let add = UIButton(type: .system); add.setTitle("Add to group", for: .normal); add.contentHorizontalAlignment = .leading; add.accessibilityIdentifier = "vault.result.add-to-group.\(hit.canonicalObjectID.rawValue.uuidString)"; add.addAction(UIAction { [weak self] _ in self?.showAddToGroup(for: hit.canonicalObjectID) }, for: .touchUpInside)
+            [title, detail, fields, add].forEach(row.addArrangedSubview); row.accessibilityIdentifier = "vault.result.\(hit.canonicalObjectID.rawValue.uuidString)"; resultsStack.addArrangedSubview(row)
         }
     }
 
     private func showGroup(_ group: VaultGroup) { let alert = UIAlertController(title: group.label, message: "\(group.memberIDs.count) files · \(group.frozen ? "Manual" : "Live") group", preferredStyle: .alert); alert.addAction(UIAlertAction(title: "Done", style: .default)); present(alert, animated: true) }
-    @objc private func newManualGroupTapped() { promptForGroup { [weak self] label in self?.createManualGroup(label: label, members: []) } }
+    @objc private func newGroupTapped() {
+        let sheet = UIAlertController(title: "New group", message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: "Manual group", style: .default) { [weak self] _ in self?.promptForGroup { [weak self] label in self?.createManualGroup(label: label, members: []) } })
+        sheet.addAction(UIAlertAction(title: "Query group", style: .default) { [weak self] _ in self?.promptForQueryGroup() })
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        if let popover = sheet.popoverPresentationController { popover.sourceView = view; popover.sourceRect = CGRect(x: view.bounds.midX, y: view.safeAreaInsets.top + 44, width: 1, height: 1) }
+        present(sheet, animated: true)
+    }
+
+    private func showAddToGroup(for objectID: VaultObjectID) {
+        guard let index = searchFacade?.index, let groups = try? index.groups(), !groups.isEmpty else {
+            showStatus("Create a group before adding files.", retry: false); return
+        }
+        let sheet = UIAlertController(title: "Add to group", message: nil, preferredStyle: .actionSheet)
+        for group in groups { sheet.addAction(UIAlertAction(title: group.label, style: .default) { [weak self] _ in self?.addMembership(objectID: objectID, to: group.id) }) }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        if let popover = sheet.popoverPresentationController { popover.sourceView = view; popover.sourceRect = CGRect(x: view.bounds.midX, y: view.safeAreaInsets.top + 44, width: 1, height: 1) }
+        present(sheet, animated: true)
+    }
+
+    private func promptForQueryGroup() {
+        let alert = UIAlertController(title: "New query group", message: "Files matching this query are saved as the group's initial membership.", preferredStyle: .alert)
+        alert.addTextField { field in field.placeholder = "Search query"; field.accessibilityIdentifier = "vault.group.query" }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Create", style: .default) { [weak self, weak alert] _ in
+            guard let query = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return }
+            let members: [VaultSearchHit]
+            if let facade = self?.searchFacade, let value = try? facade.search(query, limit: 30) { members = value } else { members = [] }
+            self?.createQueryGroup(query: query, members: members.map(\.canonicalObjectID))
+        })
+        present(alert, animated: true)
+    }
 
     public func createManualGroup(label: String, members: [VaultObjectID] = []) { if let onCreateManualGroup { onCreateManualGroup(label, members) } else { _ = try? searchFacade?.index.createGroup(label: label, members: members) }; renderGroups() }
     public func createQueryGroup(query: String, members: [VaultObjectID] = []) { if let onCreateQueryGroup { onCreateQueryGroup(query, members) } else { _ = try? searchFacade?.index.createQueryGroup(query: query, members: members) }; renderGroups() }
     public func addMembership(objectID: VaultObjectID, to groupID: UUID) { onAddMembership?(objectID, groupID) }
 
     private func promptForGroup(completion: @escaping (String) -> Void) { let alert = UIAlertController(title: "New group", message: nil, preferredStyle: .alert); alert.addTextField { $0.placeholder = "Group name" }; alert.addAction(UIAlertAction(title: "Cancel", style: .cancel)); alert.addAction(UIAlertAction(title: "Create", style: .default) { _ in guard let value = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return }; completion(value) }); present(alert, animated: true) }
-    private func focusSearchIfReady() { guard !didAutofocus, setupCoordinator?.state.policy != nil else { return }; didAutofocus = true; DispatchQueue.main.async { [weak self] in self?.searchField.becomeFirstResponder() } }
+    private func focusSearchIfReady() { guard !didAutofocus, setupCoordinator?.state.policy != nil || services?.isReady == true else { return }; didAutofocus = true; DispatchQueue.main.async { [weak self] in self?.searchField.becomeFirstResponder() } }
+    private func makeMacCredentialStore() -> VaultMacKeychainCredentialStore? {
+        guard let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String, !accessGroup.isEmpty else { return nil }
+        return VaultMacKeychainCredentialStore(accessGroup: accessGroup,
+            service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
+    }
     private func showStatus(_ text: String, retry: Bool) { statusLabel.text = text; statusLabel.textColor = .secondaryLabel; statusLabel.numberOfLines = 0; statusLabel.textAlignment = .center; statusLabel.isHidden = false; if retry { setupButton.setTitle("Try again", for: .normal); setupButton.removeTarget(nil, action: nil, for: .allEvents); setupButton.addTarget(self, action: #selector(retrySetup), for: .touchUpInside) } }
     private func setupMessage(_ reason: VaultSetupUnavailableReason) -> String { switch reason { case .keychainUnavailable: return "Vault Keychain access is unavailable. Unlock this iPhone and try again."; case .storageUnavailable: return "Vault storage is unavailable. Check device storage and try again."; case .iCloudUnavailable: return "iCloud is unavailable. Check your Apple ID and iCloud Drive."; case .macNotPaired: return "Your Mac is not paired yet. Pair it from Settings." } }
     private func emptyLabel(_ text: String) -> UILabel { let label = UILabel(); label.text = text; label.textColor = .secondaryLabel; label.numberOfLines = 0; return label }

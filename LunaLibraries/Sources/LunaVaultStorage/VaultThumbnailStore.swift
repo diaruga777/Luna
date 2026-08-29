@@ -244,9 +244,11 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     private func evictLocked(now: Date) throws {
         let cutoff = now.addingTimeInterval(-configuration.expiry)
         for entry in Array(entriesByKey.values).filter({ $0.lastAccessedAt < cutoff }) {
+            if Task.isCancelled { throw VaultThumbnailError.unavailable }
             try removeLocked(entry.key)
         }
         while entriesByKey.values.reduce(Int64(0), { $0 + $1.byteCount }) > configuration.quotaBytes {
+            if Task.isCancelled { throw VaultThumbnailError.unavailable }
             guard let victim = entriesByKey.values.min(by: {
                 if $0.lastAccessedAt != $1.lastAccessedAt {
                     return $0.lastAccessedAt < $1.lastAccessedAt
@@ -290,6 +292,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
 
     private func repair() throws {
         for key in Array(entriesByKey.keys) {
+            if Task.isCancelled { throw VaultThumbnailError.unavailable }
             guard key.generation.count == 64,
                   key.generation.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
                 entriesByKey.removeValue(forKey: key); continue
@@ -320,6 +323,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         let objectDirectories = (try? fileManager.contentsOfDirectory(at: rootURL,
                                                                         includingPropertiesForKeys: nil)) ?? []
         for objectDirectory in objectDirectories where objectDirectory != metadataURL {
+            if Task.isCancelled { throw VaultThumbnailError.unavailable }
             guard let objectID = UUID(uuidString: objectDirectory.lastPathComponent) else {
                 try? fileManager.removeItem(at: objectDirectory)
                 continue
@@ -329,6 +333,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 try? fileManager.removeItem(at: objectDirectory); continue
             }
             for revisionDirectory in revisions {
+                if Task.isCancelled { throw VaultThumbnailError.unavailable }
                 guard let revision = UUID(uuidString: revisionDirectory.lastPathComponent) else {
                     try? fileManager.removeItem(at: revisionDirectory)
                     continue

@@ -270,7 +270,7 @@ public final class VaultRepository: @unchecked Sendable {
 
     public func writeContent(_ data:Data,for id:VaultObjectID,
                              visibility: Bool = true,
-                             generationOverride: String? = nil)throws->URL{try sync{
+                             authenticatedGeneration: VaultAuthenticatedGeneration? = nil)throws->URL{try sync{
         guard let object=try objectLocked(id),!object.isTombstone else{throw VaultStorageError.missingObject}
         let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try fileManager.createDirectory(at:dir,withIntermediateDirectories:true);try protect(dir)
         let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
@@ -280,7 +280,7 @@ public final class VaultRepository: @unchecked Sendable {
         do{
             try writeProtectedData(data, to: staging)
             let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            let capabilityGeneration = generationOverride ?? digest
+            let capabilityGeneration = authenticatedGeneration?.value ?? digest
             guard capabilityGeneration.count == 64,
                   capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
                 throw VaultStorageError.invalidArtifact
@@ -319,7 +319,7 @@ public final class VaultRepository: @unchecked Sendable {
     /// workers until the caller enqueues its durable job.
     public func writeContent(from sourceURL: URL, expectedByteCount: Int64? = nil,
                              for id: VaultObjectID, visibility: Bool = true,
-                             generationOverride: String? = nil) throws -> URL {
+                             authenticatedGeneration: VaultAuthenticatedGeneration? = nil) throws -> URL {
         try sync {
             guard let object = try objectLocked(id), !object.isTombstone else {
                 throw VaultStorageError.missingObject
@@ -352,7 +352,7 @@ public final class VaultRepository: @unchecked Sendable {
             let backupGeneration = dir.appendingPathComponent(".previous-generation")
             do {
                 let digest = try streamCopy(source, to: staging, expectedByteCount: size)
-                let capabilityGeneration = generationOverride ?? digest
+                let capabilityGeneration = authenticatedGeneration?.value ?? digest
                 guard capabilityGeneration.count == 64,
                       capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
                     throw VaultStorageError.invalidArtifact

@@ -38,6 +38,14 @@ public struct VaultRemoteObjectIdentity: Codable, Hashable, Sendable {
     }
 }
 
+/// A generation marker obtained from an authenticated envelope. It cannot be
+/// fabricated by callers that only have a string; storage accepts this token
+/// when installing a remote payload instead of a public override string.
+public struct VaultAuthenticatedGeneration: Hashable, Sendable {
+    public let value: String
+    internal init(_ value: String) { self.value = value }
+}
+
 /// A structurally authenticated chunked payload. Construction validates the
 /// wrapped DEK header and every AEAD envelope's object, revision, role, root
 /// version, chunk ordering and plaintext length. Authentication tags are
@@ -47,6 +55,9 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
     public let identity: VaultRemoteObjectIdentity
     public let rootVersion: UInt32
     public let encryptedFrames: [Data]
+    public var authenticatedGeneration: VaultAuthenticatedGeneration {
+        VaultAuthenticatedGeneration(identity.generation)
+    }
 
     public init(vaultID: String, kind: VaultRemoteObjectKind,
                 encryptedFrames: [Data]) throws {

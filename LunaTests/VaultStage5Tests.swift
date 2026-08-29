@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import XCTest
 import LunaVaultCrypto
 import LunaVaultEmbeddings
@@ -229,15 +230,21 @@ final class VaultStage5Tests: XCTestCase {
                                        createdAt: Date(), updatedAt: Date(), accessedAt: Date(),
                                        deviceID: "test")
         try repository.upsert(record)
+        let generation = SHA256.hash(data: Data("full".utf8)).map { String(format: "%02x", $0) }.joined()
         let identity = try VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
-                                                     kind: .content,
-                                                     generation: String(repeating: "b", count: 64))
-        final class Downloader: VaultPreviewDownloadRequesting, @unchecked Sendable {
+                                                     kind: .content, generation: generation)
+        final class Downloader: VaultPreviewDownloadResultProviding, @unchecked Sendable {
             let repository: VaultRepository
             init(repository: VaultRepository) { self.repository = repository }
             func requestDownload(for identity: VaultRemoteObjectIdentity) async throws {
-                try repository.writeContent(Data("full".utf8), for: identity.objectID,
-                                            generationOverride: identity.generation)
+                _ = try await requestDownloadResult(for: identity)
+            }
+            func requestDownloadResult(for identity: VaultRemoteObjectIdentity) async throws -> VaultLocalContentCapability {
+                _ = try repository.writeContent(Data("full".utf8), for: identity.objectID)
+                guard let capability = try repository.localContentCapability(for: identity.objectID) else {
+                    throw VaultPreviewError.downloadUnavailable
+                }
+                return capability
             }
         }
         let router = VaultPreviewRouter(repository: repository,

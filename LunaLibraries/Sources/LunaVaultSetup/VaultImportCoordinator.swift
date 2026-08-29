@@ -247,6 +247,7 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
         let children = (try? fileManager.contentsOfDirectory(at: rootURL,
                                                               includingPropertiesForKeys: nil)) ?? []
         for child in children {
+            if Task.isCancelled { throw VaultImportError.interrupted }
             guard UUID(uuidString: child.lastPathComponent) != nil else {
                 try? fileManager.removeItem(at: child)
                 continue
@@ -256,6 +257,7 @@ public final class VaultImportedFileMetadataStore: VaultImportedFileMetadataStor
                 try? fileManager.removeItem(at: child); continue
             }
             for file in files {
+                if Task.isCancelled { throw VaultImportError.interrupted }
                 let revision = file.deletingPathExtension().lastPathComponent
                 let attrs = try? fileManager.attributesOfItem(atPath: file.path)
                 let size = (attrs?[.size] as? NSNumber)?.int64Value ?? Int64.max
@@ -497,6 +499,7 @@ public final class VaultImportCoordinator: @unchecked Sendable {
             var liveCiphertextTokens = Set<String>()
             var cleanupFailed = false
             for journalURL in files where journalURL.lastPathComponent.hasPrefix("journal-") && journalURL.pathExtension == "json" {
+                if Task.isCancelled { throw VaultImportError.interrupted }
                 let token = journalURL.deletingPathExtension().lastPathComponent
                     .dropFirst("journal-".count)
                 guard UUID(uuidString: String(token)) != nil,

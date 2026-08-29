@@ -23,6 +23,9 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
     public let plaintextByteCount: UInt64
     public let frameCount: UInt32
     public let ciphertextByteCount: UInt64
+    public var authenticatedGeneration: VaultAuthenticatedGeneration {
+        VaultAuthenticatedGeneration(identity.generation)
+    }
 
     public init(fileURL: URL, expectedIdentity: VaultRemoteObjectIdentity? = nil,
                 vaultID: String) throws {

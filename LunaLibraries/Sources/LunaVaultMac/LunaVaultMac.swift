@@ -571,6 +571,7 @@ public actor VaultMacCompanionService {
 private enum VaultSecureFileSystem {
     static func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
     static func ensureDirectory(_ url: URL) throws {
+        try rejectSymlinkComponents(url)
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
             guard isDirectory.boolValue else { throw VaultMacCompanionError.diskFailure }
@@ -588,6 +589,17 @@ private enum VaultSecureFileSystem {
         var info = stat(); guard lstat(url.path, &info) == 0 else { throw VaultMacCompanionError.diskFailure }
         guard (info.st_mode & S_IFMT) != S_IFLNK else { throw VaultMacCompanionError.symlinkRejected }
         #endif
+    }
+    static func rejectSymlinkComponents(_ url: URL) throws {
+        let path = url.path
+        var current = path.hasPrefix("/") ? "/" : ""
+        for component in path.split(separator: "/") {
+            if current.isEmpty || current == "/" { current += String(component) }
+            else { current += "/" + component }
+            if FileManager.default.fileExists(atPath: current) {
+                try rejectSymlink(URL(fileURLWithPath: current))
+            }
+        }
     }
     static func directoryContents(_ url: URL) throws -> [URL] {
         try ensureDirectory(url)

@@ -73,4 +73,3 @@ public final class VaultSearchPresentationFacade: VaultSearchPresenting, @unchec
 }
 
 public typealias VaultSearchPresenter = VaultSearchPresentationFacade
-

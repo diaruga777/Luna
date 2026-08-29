@@ -121,7 +121,10 @@ public struct VaultAuthenticatedCiphertextFile: Equatable, Sendable {
         self.rootVersion = metadata.rootVersion
         self.plaintextByteCount = metadata.plaintextByteCount
         self.frameCount = metadata.frameCount
-        self.ciphertextByteCount = frameBytes
+        // Transport callers copy the complete LVF, including its authenticated
+        // fixed-size header. `frameBytes` above remains the integrity check for
+        // the encrypted frame region, while this count is the source file size.
+        self.ciphertextByteCount = fileSize
         self.ownsFile = ownsFile
     }
 

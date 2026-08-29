@@ -59,7 +59,7 @@ public final class VaultFakeTextExtractor: VaultTextExtracting, @unchecked Senda
     public var calls: [VaultExtractionCall] { lock.withLock { storedCalls } }
 }
 
-public final class VaultFakeTranscriber: VaultTranscribing, @unchecked Sendable {
+public final class VaultFakeTranscriber: VaultTranscribing, VaultSpeechSegmentTranscribing, @unchecked Sendable {
     private let lock = NSLock()
     private let control: VaultFakeControl<VaultExtractedText>
     private var storedCalls: [VaultExtractionCall] = []
@@ -79,6 +79,11 @@ public final class VaultFakeTranscriber: VaultTranscribing, @unchecked Sendable 
         case let .failure(error): throw error
         case .cancellation: throw CancellationError()
         }
+    }
+
+    public func transcribeSegments(from data: Data, contentType: String?) async throws -> [VaultSpokenWordSegment] {
+        let text = try await transcribeSpokenWords(from: data, contentType: contentType).text
+        return [VaultSpokenWordSegment(text: text, startTime: 0, duration: 0)]
     }
 
     public var calls: [VaultExtractionCall] { lock.withLock { storedCalls } }

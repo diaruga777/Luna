@@ -110,10 +110,14 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             guard let repository else { return }
             let temporary = destination.deletingLastPathComponent()
                 .appendingPathComponent(".plaintext-\(UUID().uuidString)")
+            var temporaryCreated = false
+            defer {
+                if temporaryCreated { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
+            }
             let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
+            temporaryCreated = true
             try created.close()
             do {
-                defer { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
                 try protection.apply(to: temporary)
                 guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
                     throw VaultSyncError.backend(.permissionDenied)
@@ -170,7 +174,12 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         let parent = url.deletingLastPathComponent()
         try VaultSecureFileAccess.ensureDirectory(at: parent)
         let staging = parent.appendingPathComponent(".staging-\(UUID().uuidString)")
+        var stagingCreated = false
+        defer {
+            if stagingCreated { try? VaultSecureFileAccess.removeRegularFile(at: staging) }
+        }
         let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+        stagingCreated = true
         try created.close()
         do {
             try protection.apply(to: staging)
@@ -198,7 +207,12 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         let parent = destination.deletingLastPathComponent()
         try VaultSecureFileAccess.ensureDirectory(at: parent)
         let staging = parent.appendingPathComponent(".staging-\(UUID().uuidString)")
+        var stagingCreated = false
+        defer {
+            if stagingCreated { try? VaultSecureFileAccess.removeRegularFile(at: staging) }
+        }
         let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
+        stagingCreated = true
         try created.close()
         do {
             try protection.apply(to: staging)

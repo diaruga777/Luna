@@ -607,6 +607,9 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                 } else if name.hasPrefix(".staging-") || name.hasPrefix("tmp-") {
                     do { try VaultSecureFileAccess.removeRegularFile(at: file) }
                     catch { cleanupFailed = true }
+                } else if name.hasPrefix(".import-upload-") || name.hasPrefix("duplicate-ciphertext-") {
+                    do { try VaultSecureFileAccess.removeRegularFile(at: file) }
+                    catch { cleanupFailed = true }
                 }
             }
             if cleanupFailed { throw VaultImportError.cleanupFailed }
@@ -887,8 +890,13 @@ public final class VaultImportCoordinator: @unchecked Sendable {
                         payload.identity.generation].joined(separator: "-") + ".vault"
         let destination = directory.appendingPathComponent(filename)
         let staging = directory.appendingPathComponent(".import-upload-\(UUID().uuidString)")
-        let stagingCreated = try VaultSecureFileAccess.createEmptyFile(at: staging)
-        try stagingCreated.close()
+        var stagingCreated = false
+        defer {
+            if stagingCreated { try? VaultSecureFileAccess.removeRegularFile(at: staging) }
+        }
+        let stagingHandle = try VaultSecureFileAccess.createEmptyFile(at: staging)
+        stagingCreated = true
+        try stagingHandle.close()
         do {
             try protection.apply(to: staging)
             guard isProtected(staging) else { throw VaultImportError.protectedStaging }

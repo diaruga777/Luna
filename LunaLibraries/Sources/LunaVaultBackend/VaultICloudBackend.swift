@@ -629,7 +629,12 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         if fileManager.fileExists(atPath: destination.path) {
             try VaultSecureFileAccess.removeRegularFile(at: destination)
         }
+        var destinationCreated = false
+        defer {
+            if destinationCreated { try? VaultSecureFileAccess.removeRegularFile(at: destination) }
+        }
         let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+        destinationCreated = true
         try created.close()
         try protection.apply(to: destination)
         guard (try? protection.hasRequiredProtection(at: destination)) == true else {
@@ -646,6 +651,7 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
             }
             guard try input.read(upToCount: 1)?.isEmpty != false else { throw VaultBackendError.io }
             try output.synchronize()
+            destinationCreated = false
         } catch {
             try? VaultSecureFileAccess.removeRegularFile(at: destination)
             throw error

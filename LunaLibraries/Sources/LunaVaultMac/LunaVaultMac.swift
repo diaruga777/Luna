@@ -21,11 +21,16 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
     public let maximumManifestBytes: Int
     public let maximumPartialUploads: Int
     public let partialUploadLifetime: TimeInterval
+    /// Caps the number of object/revision/file entries inspected during the
+    /// startup orphan sweep. A malformed or attacker-controlled directory
+    /// must not turn companion startup into an unbounded directory walk.
+    public let maximumRecoveryEntries: Int
     public init(maximumObjectBytes: UInt64 = VaultMacProtocol.maximumObjectBytes,
                 maximumStoredBytes: UInt64 = 1_099_511_627_776,
                 maximumManifestBytes: Int = 16 * 1024 * 1024,
                 maximumPartialUploads: Int = 64,
-                partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60) {
+                partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60,
+                maximumRecoveryEntries: Int = 4_096) {
         self.maximumObjectBytes = max(1, min(maximumObjectBytes, VaultMacProtocol.maximumObjectBytes))
         self.maximumStoredBytes = min(max(1, maximumStoredBytes), Self.maximumConfigurableStoredBytes)
         self.maximumManifestBytes = max(1, min(maximumManifestBytes, 16 * 1024 * 1024))
@@ -33,6 +38,7 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
         self.partialUploadLifetime = partialUploadLifetime.isFinite
             ? max(1, min(partialUploadLifetime, 30 * 24 * 60 * 60))
             : 7 * 24 * 60 * 60
+        self.maximumRecoveryEntries = max(1, min(maximumRecoveryEntries, 65_536))
     }
 }
 
@@ -459,8 +465,7 @@ public actor VaultMacCompanionStore {
     private func removeChunkFiles(objectID: VaultObjectID, revision: UUID) throws {
         let directory = objectDirectoryURL(for: objectID, revision: revision)
         guard VaultSecureFileSystem.exists(directory) else { return }
-        let children = try FileManager.default.contentsOfDirectory(at: directory,
-            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        let children = try VaultSecureFileSystem.directoryContents(directory)
         for child in children where child.lastPathComponent.hasPrefix("chunk-") {
             try VaultSecureFileSystem.removeRegularFile(child)
         }
@@ -565,19 +570,28 @@ public actor VaultMacCompanionStore {
                     .insert("chunk-\(chunk).bin")
             }
         }
-        for objectURL in try VaultSecureFileSystem.directoryContents(objects) {
+        var scannedEntries = 0
+        func boundedContents(_ url: URL) throws -> [URL] {
+            let remaining = limits.maximumRecoveryEntries - scannedEntries
+            guard remaining > 0 else { throw VaultMacCompanionError.tooManyPartials }
+            let entries = try VaultSecureFileSystem.directoryContents(url,
+                                                                       maximumEntries: remaining)
+            scannedEntries += entries.count
+            return entries
+        }
+        for objectURL in try boundedContents(objects) {
             guard let revisions = retained[objectURL.lastPathComponent] else {
                 try VaultSecureFileSystem.removeTree(objectURL)
                 continue
             }
             try VaultSecureFileSystem.ensureDirectory(objectURL)
-            for revisionURL in try VaultSecureFileSystem.directoryContents(objectURL) {
+            for revisionURL in try boundedContents(objectURL) {
                 guard let allowedFiles = revisions[revisionURL.lastPathComponent] else {
                     try VaultSecureFileSystem.removeTree(revisionURL)
                     continue
                 }
                 try VaultSecureFileSystem.ensureDirectory(revisionURL)
-                for fileURL in try VaultSecureFileSystem.directoryContents(revisionURL) {
+                for fileURL in try boundedContents(revisionURL) {
                     if allowedFiles.contains(fileURL.lastPathComponent) {
                         // A symlink occupying an expected ciphertext/chunk name
                         // is not an orphan we can silently unlink: fail startup
@@ -689,7 +703,7 @@ private enum VaultSecureFileSystem {
         _ = try validatedComponents(url.path)
         #endif
     }
-    static func directoryContents(_ url: URL) throws -> [URL] {
+    static func directoryContents(_ url: URL, maximumEntries: Int? = nil) throws -> [URL] {
         #if canImport(Darwin)
         let fd = try openDirectory(url.path)
         guard let stream = fdopendir(fd) else {
@@ -705,6 +719,9 @@ private enum VaultSecureFileSystem {
                 }
             }
             guard name != ".", name != ".." else { continue }
+            if let maximumEntries, contents.count >= maximumEntries {
+                throw VaultMacCompanionError.tooManyPartials
+            }
             contents.append(url.appendingPathComponent(name))
         }
         return contents

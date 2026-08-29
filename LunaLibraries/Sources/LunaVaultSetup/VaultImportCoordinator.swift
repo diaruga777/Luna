@@ -1086,16 +1086,24 @@ public final class VaultImportCoordinator: @unchecked Sendable {
     private func writeJournal(_ journal: VaultImportJournal, to destination: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        let staging = destination.deletingLastPathComponent()
+            .appendingPathComponent(".journal-staging-\(UUID().uuidString)")
         do {
-            let created = try VaultSecureFileAccess.createEmptyFile(at: destination)
+            // Journal updates (notably the remote generation written after
+            // sealing) must replace an existing non-empty file atomically.
+            // Creating directly at `destination` would reject that valid
+            // update as an invalid artifact and leave the import stranded.
+            let created = try VaultSecureFileAccess.createEmptyFile(at: staging)
             try created.close()
-            try protection.apply(to: destination)
-            guard isProtected(destination) else { throw VaultImportError.protectedStaging }
-            let handle = try VaultSecureFileAccess.openForWriting(at: destination)
+            try protection.apply(to: staging)
+            guard isProtected(staging) else { throw VaultImportError.protectedStaging }
+            let handle = try VaultSecureFileAccess.openForWriting(at: staging)
             try handle.write(contentsOf: encoder.encode(journal))
             try handle.synchronize(); try handle.close()
+            try VaultSecureFileAccess.install(staging, at: destination)
+            VaultSimulatorProtectionLedger.record(destination)
         } catch {
-            try? VaultSecureFileAccess.removeRegularFile(at: destination)
+            try? VaultSecureFileAccess.removeRegularFile(at: staging)
             throw error
         }
     }

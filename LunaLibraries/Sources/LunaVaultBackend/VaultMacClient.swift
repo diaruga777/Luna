@@ -535,8 +535,14 @@ extension VaultMacRemoteBackend {
         let logicalTime = Int64(Date().timeIntervalSince1970 * 1_000)
         let revision = VaultRevision(objectID: identity.objectID,
             revision: identity.revision, logicalTime: logicalTime, deviceID: "iphone")
+        let discoveredExpectedRevision: UUID?
+        if let expectedRevision {
+            discoveredExpectedRevision = expectedRevision
+        } else {
+            discoveredExpectedRevision = try await remoteRevision(for: identity.objectID)?.revision
+        }
         try await putCiphertext(try payload.encodedFileData(), for: identity.objectID,
-                                revision: revision, expectedRevision: expectedRevision,
+                                revision: revision, expectedRevision: discoveredExpectedRevision,
                                 kind: identity.kind, generation: identity.generation)
         return .current
     }
@@ -548,9 +554,16 @@ extension VaultMacRemoteBackend {
             revision: payload.identity.revision,
             logicalTime: Int64(Date().timeIntervalSince1970 * 1_000), deviceID: "iphone")
         do {
+            let discoveredExpectedRevision: UUID?
+            if let expectedRevision {
+                discoveredExpectedRevision = expectedRevision
+            } else {
+                discoveredExpectedRevision = try await self.remoteRevision(
+                    for: payload.identity.objectID)?.revision
+            }
             try await putCiphertextFile(payload,
                 byteCount: payload.ciphertextByteCount, for: payload.identity.objectID,
-                revision: remoteRevision, expectedRevision: expectedRevision,
+                revision: remoteRevision, expectedRevision: discoveredExpectedRevision,
                 kind: payload.identity.kind, generation: payload.identity.generation)
             return .current
         } catch let error as VaultBackendError { throw error }

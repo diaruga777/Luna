@@ -14,13 +14,29 @@ public enum LunaVaultUIModule {
     public static let identifier = "LunaVaultUI"
 }
 
-/// Search-first placeholder owned by the Vault UI package. It intentionally
-/// performs no storage, provider, extraction or indexing work in Stage 1.
+public final class VaultRuntimeServices: @unchecked Sendable {
+    public let repository: VaultRepository
+    public let rootKeyManager: VaultRootKeyManager
+    public let backend: (any VaultBackendTransport)?
+    public let syncConfiguration: VaultSyncConfiguration
+    public init(repository: VaultRepository, rootKeyManager: VaultRootKeyManager,
+                backend: (any VaultBackendTransport)?,
+                syncConfiguration: VaultSyncConfiguration) {
+        self.repository = repository; self.rootKeyManager = rootKeyManager
+        self.backend = backend; self.syncConfiguration = syncConfiguration
+    }
+}
+
+/// Search-first surface owned by the Vault UI package. Repository and backend
+/// work stays behind `VaultRuntimeServices`; this controller only composes the
+/// user-facing surface and does not expose keys to extensions.
 public final class VaultRootViewController: UIViewController {
+    private let runtime: VaultRuntimeServices?
     private let searchField: UITextField
     private let statusLabel: UILabel
 
-    public init() {
+    public init(runtime: VaultRuntimeServices? = nil) {
+        self.runtime = runtime
         searchField = UITextField()
         statusLabel = UILabel()
         super.init(nibName: nil, bundle: nil)
@@ -43,7 +59,9 @@ public final class VaultRootViewController: UIViewController {
         searchField.returnKeyType = .search
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = "Luna Vault\nYour encrypted files will appear here."
+        statusLabel.text = runtime?.backend == nil
+            ? "Luna Vault\nYour encrypted files will appear here."
+            : "Luna Vault\nEncrypted Mac sync is configured."
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
         statusLabel.textColor = .secondaryLabel

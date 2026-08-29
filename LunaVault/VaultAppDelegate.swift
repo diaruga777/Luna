@@ -6,8 +6,9 @@ final class VaultAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // Stage 1 deliberately performs no provider access and never touches
-        // the shared `saves.sqlite`; Vault's store is `vault.sqlite`.
+        // Vault is independent from the shared link-save `saves.sqlite` store;
+        // its repository and optional paired-Mac backend are built by the
+        // scene's VaultWiring composition seam.
         return true
     }
 

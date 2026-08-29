@@ -114,12 +114,26 @@ final class VaultCryptoStorageTests: XCTestCase {
 
     func testTotalOrderingCacheExpiryAndSavesDatabaseIsolation() throws {
         let directory=try VaultTemporaryDirectory(name:"ordering-cache");let saves=directory.url.appendingPathComponent("saves.sqlite");let canary=Data("legacy-canary".utf8);try canary.write(to:saves)
-        let repo=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:10_000)
+        let remoteConfiguration = VaultStorageConfiguration(
+            policy: VaultStoragePolicy(location: .iCloud, keepLocalCopy: false))
+        let repo=try VaultRepository(configuration: remoteConfiguration,
+                                      testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:10_000)
         let low=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000001")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"a")
         let high=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000002")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"b")
         XCTAssertTrue(try repo.upsert(low));XCTAssertTrue(try repo.upsert(high));XCTAssertFalse(try repo.upsert(low));XCTAssertEqual(try repo.object(objectID)?.deviceID,"b")
         _=try repo.writeContent(Data("old".utf8),for:objectID);try repo.putCache(VaultCacheEntry(objectID:objectID,byteCount:3,fullContent:true,lastAccessedAt:now.addingTimeInterval(-8*86400),createdAt:now,pinned:true),now:now);XCTAssertNotNil(try repo.readContent(for:objectID))
         try repo.setPinned(objectID,pinned:false);try repo.evictExpired(now:now);XCTAssertNil(try repo.readContent(for:objectID));XCTAssertTrue(try repo.cacheEntries().isEmpty)
+        let deviceDirectory = try VaultTemporaryDirectory(name: "ordering-cache-device")
+        let deviceRepo = try VaultRepository(testContainerURL: deviceDirectory.url)
+        XCTAssertTrue(try deviceRepo.upsert(low))
+        _ = try deviceRepo.writeContent(Data("old".utf8), for: objectID)
+        try deviceRepo.putCache(VaultCacheEntry(objectID: objectID, byteCount: 3,
+                                                 fullContent: true,
+                                                 lastAccessedAt: now.addingTimeInterval(-8 * 86400),
+                                                 createdAt: now), now: now)
+        try deviceRepo.evictExpired(now: now)
+        XCTAssertNotNil(try deviceRepo.readContent(for: objectID),
+                        "device-canonical bytes must not be evicted")
         XCTAssertEqual(try Data(contentsOf:saves),canary,"Vault must never open or mutate saves.sqlite")
     }
 

@@ -69,34 +69,89 @@ final class VaultStage5Tests: XCTestCase {
     }
 
     func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {
-        let directory = try VaultTemporaryDirectory(name: "stage5-index")
-        defer { try? directory.cleanUp() }
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("luna-vault-stage5-index-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let protection = TestProtection()
-        let repository = try VaultRepository(testContainerURL: directory.url,
+        let repository = try VaultRepository(testContainerURL: directory,
                                               protectionApplier: protection)
-        let source = directory.url.appendingPathComponent("fixture.txt")
+        let source = directory.appendingPathComponent("fixture.txt")
         try Data("searchable local phrase".utf8).write(to: source)
         let imported = try VaultImportCoordinator(repository: repository, identity: Identity(),
                                                   protectionApplier: protection)
             .importFile(VaultImportSource(fileURL: source, contentType: "text/plain"))
         let metadata = try VaultImportedFileMetadataStore(
-            rootURL: directory.url.appendingPathComponent("metadata"))
+            rootURL: directory.appendingPathComponent("metadata"),
+            protectionApplier: protection)
         // The coordinator's protected metadata is its source of truth; copy a
         // deterministic descriptor into this injected store for the worker.
         let sourceMetadata = try VaultImportedFileMetadataStore(
             rootURL: repository.contentDirectory.deletingLastPathComponent()
-                .appendingPathComponent("VaultImportStaging/Metadata"))
+                .appendingPathComponent("VaultImportStaging/Metadata"),
+            protectionApplier: protection)
         try metadata.put(try XCTUnwrap(sourceMetadata.metadata(objectID: imported.objectID,
                                                                revision: imported.revision)))
-        let index = try VaultSearchIndex(databaseURL: directory.url.appendingPathComponent("search.sqlite"))
+        let index = try VaultSearchIndex(databaseURL: directory.appendingPathComponent("search.sqlite"),
+                                         protectionApplier: protection)
         let worker = VaultIndexWorker(repository: repository, metadataStore: metadata,
                                       searchIndex: index,
                                       embeddings: DeterministicVaultEmbeddingGenerator(), owner: "test")
-        let workOptional = await worker.processNext()
+        let workTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext()
+        }
+        let workOptional = await workTask.value
+        _ = directory
         let work = try XCTUnwrap(workOptional)
         XCTAssertEqual(work.state, .indexed)
         XCTAssertEqual(try index.search("searchable").first?.objectID, imported.objectID)
         XCTAssertTrue(try repository.jobs().contains { $0.id == work.jobID && $0.state == .succeeded })
+
+        let missingID = VaultObjectID(rawValue: UUID())
+        let missingRevision = UUID()
+        let missingNow = Date()
+        try repository.upsert(VaultObjectRecord(id: missingID, revision: missingRevision,
+                                                logicalTime: 2, size: 7,
+                                                contentType: "text/plain", createdAt: missingNow,
+                                                updatedAt: missingNow, accessedAt: missingNow,
+                                                deviceID: "test"))
+        try metadata.put(VaultImportedFileMetadata(objectID: missingID, revision: missingRevision,
+                                                   fileName: "missing.txt", contentType: "text/plain",
+                                                   byteCount: 7, createdAt: missingNow,
+                                                   updatedAt: missingNow))
+        try repository.setObjectReady(missingID)
+        let missingJob = VaultJob(kind: .index, objectID: missingID,
+                                  createdAt: missingNow, updatedAt: missingNow,
+                                  idempotencyKey: "missing-content", revision: missingRevision)
+        try repository.enqueue(missingJob)
+        let missingTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext(now: missingNow)
+        }
+        let missingOptional = await missingTask.value
+        _ = directory
+        let missing = try XCTUnwrap(missingOptional)
+        XCTAssertEqual(missing.state, .downloadNeeded)
+        XCTAssertEqual(try repository.job(missing.jobID!).map(\.state), .retrying)
+
+        let generation = repository.contentDirectory
+            .appendingPathComponent(imported.objectID.rawValue.uuidString)
+            .appendingPathComponent(".content-generation")
+        try Data("\(imported.revision.uuidString):\(String(repeating: "c", count: 64)):\(String(repeating: "d", count: 64))".utf8)
+            .write(to: generation)
+        let wrongJob = VaultJob(kind: .index, objectID: imported.objectID,
+                                createdAt: missingNow, updatedAt: missingNow,
+                                idempotencyKey: "wrong-generation", revision: imported.revision)
+        try repository.enqueue(wrongJob)
+        let wrongTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext(now: missingNow.addingTimeInterval(62))
+        }
+        let wrongOptional = await wrongTask.value
+        _ = directory
+        let wrong = try XCTUnwrap(wrongOptional)
+        XCTAssertEqual(wrong.state, .downloadNeeded)
+        XCTAssertEqual(try repository.job(wrongJob.id)?.state, .retrying)
     }
 
     func testThumbnailGenerationIsIndependentAndEvictsByAge() throws {
@@ -178,7 +233,8 @@ final class VaultStage5Tests: XCTestCase {
             let repository: VaultRepository
             init(repository: VaultRepository) { self.repository = repository }
             func requestDownload(for identity: VaultRemoteObjectIdentity) async throws {
-                try repository.writeContent(Data("full".utf8), for: identity.objectID)
+                try repository.writeContent(Data("full".utf8), for: identity.objectID,
+                                            generationOverride: identity.generation)
             }
         }
         let router = VaultPreviewRouter(repository: repository,
@@ -188,6 +244,11 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(plan.availability, VaultPreviewAvailability.ready)
         XCTAssertEqual(plan.kind, .video)
         XCTAssertNotNil(plan.localURL)
+        let wrongIdentity = try VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
+                                                           kind: .content,
+                                                           generation: String(repeating: "c", count: 64))
+        let wrongPlan = try await router.plan(objectID: objectID, remoteIdentity: wrongIdentity)
+        XCTAssertEqual(wrongPlan.availability, VaultPreviewAvailability.needsDownload)
     }
 
     func testBackgroundSchedulerCancellationCancelsInjectedOperation() async throws {

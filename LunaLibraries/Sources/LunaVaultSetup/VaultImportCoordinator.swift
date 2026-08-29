@@ -1047,6 +1047,14 @@ public final class VaultIndexWorker: @unchecked Sendable {
                 // multi-gigabyte object just to discover that limit.
                 data = Data()
             } else if let local = try repository.readContent(for: objectID) {
+                // A regular file is not sufficient evidence for indexing:
+                // the repository-issued capability binds the bytes to the
+                // current revision and authenticated generation marker.
+                guard try repository.localContentCapability(for: objectID) != nil else {
+                    try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .retrying,
+                                                 error: "download-needed", nextAttemptAt: now.addingTimeInterval(60), now: now)
+                    return VaultIndexWorkResult(state: .downloadNeeded, objectID: objectID, jobID: job.id, errorCode: "download-needed")
+                }
                 data = local
             } else {
                 try repository.transitionJob(id: job.id, leaseToken: leaseToken, state: .retrying,

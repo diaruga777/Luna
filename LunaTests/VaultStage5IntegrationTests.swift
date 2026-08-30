@@ -161,13 +161,26 @@ final class VaultStage5IntegrationTests: XCTestCase {
             let payload = try VaultAuthenticatedCiphertext(
                 vaultID: "default", kind: .content, encryptedFrames: frames)
 
+            let plaintextURL = directory.url.appendingPathComponent("plaintext.txt")
+            try bytes.write(to: plaintextURL)
+            let encryptedFileURL = directory.url.appendingPathComponent("content.lvf")
+            try VaultChunkedCryptor(
+                chunkSize: 16, vaultID: "default", random: VaultTestRandomBytes(seed: 55))
+                .sealFile(plaintextURL: plaintextURL, fileURL: encryptedFileURL,
+                          kind: .content, objectID: objectID, revision: revision, root: root)
+
             let backend: any VaultBackendTransport
             if location == .iCloud {
                 let coordinator = InMemoryVaultUbiquitousCoordinator()
                 let value = VaultICloudBackend(configuration: VaultICloudBackendConfiguration(
                     containerIdentifier: "iCloud.stage5", retryPolicy: VaultBackendRetryPolicy(maximumAttempts: 1)),
                     coordinator: coordinator)
-                _ = try await value.put(try payload.verified(rootKey: { _ in root }), expectedRevision: nil)
+                let file = try VaultAuthenticatedCiphertextFile(
+                    fileURL: encryptedFileURL, expectedIdentity: payload.identity,
+                    vaultID: "default")
+                _ = try await value.put(file.verified(rootKey: { _ in root }), expectedRevision: nil)
+                let direct = try await value.payloadFile(for: payload.identity)
+                XCTAssertNotNil(direct)
                 backend = value
             } else {
                 backend = InMemoryVaultBackend(values: [payload.identity: payload])

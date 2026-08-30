@@ -65,6 +65,20 @@ public final class InMemoryVaultUbiquitousCoordinator: VaultUbiquitousFileCoordi
         }
     }
 
+    public func compareAndWriteFile(from payload: VaultVerifiedCiphertextFile,
+                                    at relativePath: String,
+                                    identity: VaultRemoteObjectIdentity,
+                                    versionAt versionPath: String,
+                                    expectedRevision: UUID?) throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vault-test-payload-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        _ = try payload.writeCopy(to: temporary)
+        let data = try Data(contentsOf: temporary)
+        try compareAndWrite(data, at: relativePath, identity: identity,
+                            versionAt: versionPath, expectedRevision: expectedRevision)
+    }
+
     public func currentIdentity(at versionPath: String) throws -> VaultRemoteObjectIdentity? {
         lock.withLock { currentIdentities[versionPath] }
     }

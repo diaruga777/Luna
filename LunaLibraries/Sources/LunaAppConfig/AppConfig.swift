@@ -79,6 +79,12 @@ public enum AppConfig {
     public static let vaultDatabaseName: String =
         string(forInfoKey: vaultDatabaseNameInfoKey) ?? "vault.sqlite"
 
+    /// Vault's opt-in iCloud Documents container. The current topology uses
+    /// the already-provisioned Luna iCloud identifier; a future isolated
+    /// container can override this key without changing backend code.
+    public static let vaultICloudContainerID: String =
+        string(forInfoKey: vaultICloudContainerInfoKey) ?? cloudKitContainerID
+
     /// `true` when the identifier was resolved from the build-injected Info.plist
     /// (vs. the compiled-in fallback). Hosts should `assert(AppConfig.resolvedFromInfoPlist)`
     /// at launch in DEBUG to catch a broken xcconfig → Info.plist chain immediately.
@@ -108,6 +114,7 @@ public enum AppConfig {
     static let vaultAppGroupInfoKey = "LunaVaultAppGroupID"
     static let vaultKeychainAccessGroupInfoKey = "LunaVaultKeychainAccessGroup"
     static let vaultDatabaseNameInfoKey = "LunaVaultDatabaseName"
+    static let vaultICloudContainerInfoKey = "LunaVaultICloudContainerID"
 
     /// Fallback must match the value derived in `Config/Luna.xcconfig` for the
     /// default `LUNA_NAMESPACE = luna`. Kept in sync by `LunaAppConfigTests`.

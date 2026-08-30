@@ -56,6 +56,8 @@ let package = Package(
         .library(name: "LunaVaultSync", targets: ["LunaVaultSync"]),
         .library(name: "LunaVaultSetup", targets: ["LunaVaultSetup"]),
         .library(name: "LunaVaultUI", targets: ["LunaVaultUI"]),
+        .library(name: "LunaVaultMac", targets: ["LunaVaultMac"]),
+        .executable(name: "LunaVaultMacCompanion", targets: ["LunaVaultMacCompanion"]),
         .library(name: "VaultTestKit", targets: ["VaultTestKit"]),
     ],
     dependencies: [
@@ -231,32 +233,40 @@ let package = Package(
             "LunaVaultModels", "LunaVaultCrypto", "LunaAppConfig",
         ]),
         .target(name: "LunaVaultIndexExtraction", dependencies: [
-            "LunaVaultModels",
+            "LunaVaultModels", "LunaDocuments",
         ]),
         .target(name: "LunaVaultEmbeddings", dependencies: [
             "LunaVaultModels",
         ]),
         .target(name: "LunaVaultSearch", dependencies: [
-            "LunaVaultModels", "LunaVaultStorage", "LunaVaultEmbeddings",
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage", "LunaVaultEmbeddings",
             "LunaVaultIndexExtraction",
         ]),
         .target(name: "LunaVaultBackend", dependencies: [
-            "LunaVaultModels", "LunaVaultCrypto",
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
         ]),
         .target(name: "LunaVaultSync", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto", "LunaVaultStorage",
             "LunaVaultBackend",
         ]),
         .target(name: "LunaVaultSetup", dependencies: [
-            "LunaVaultModels", "LunaVaultBackend", "LunaVaultCrypto",
-            "LunaVaultStorage",
+            "LunaVaultModels", "LunaVaultCrypto",
+            "LunaVaultStorage", "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
+            "LunaVaultSearch",
         ]),
         .target(name: "LunaVaultUI", dependencies: [
-            "LunaDesignSystem", "LunaVaultModels", "LunaVaultCrypto",
+            "LunaDesignSystem", "LunaAppConfig", "LunaVaultModels", "LunaVaultCrypto",
             "LunaVaultStorage", "LunaVaultIndexExtraction",
             "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
             "LunaVaultSync", "LunaVaultSetup",
         ]),
+        // The companion is macOS-only by product usage. Its public library is
+        // Foundation/Network based and keeps all transport state behind the
+        // Vault backend protocol; iOS never links this product.
+        .target(name: "LunaVaultMac", dependencies: [
+            "LunaVaultModels", "LunaVaultCrypto", "LunaVaultBackend",
+        ]),
+        .executableTarget(name: "LunaVaultMacCompanion", dependencies: ["LunaVaultMac"]),
         // Test support is a product so the existing app-hosted LunaTests bundle
         // can exercise the same public seams. Production targets never link it.
         .target(name: "VaultTestKit", dependencies: [
@@ -264,6 +274,9 @@ let package = Package(
             "LunaVaultIndexExtraction", "LunaVaultEmbeddings",
             "LunaVaultSearch", "LunaVaultBackend", "LunaVaultSync",
             "LunaVaultSetup",
+        ]),
+        .testTarget(name: "LunaVaultSearchTests", dependencies: [
+            "LunaVaultSearch", "LunaVaultEmbeddings", "LunaVaultModels",
         ]),
     ],
     // Swift 5 language mode to match the app target — this is a structural

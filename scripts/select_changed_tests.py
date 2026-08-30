@@ -109,7 +109,13 @@ PATH_RULES: list[tuple[str, object]] = [
     # Test inputs: whichever test names the fixture is the one that reads it.
     (r"^LunaTests/Fixtures/", "SYMBOL"),
     (r"^Fixtures/Vault/manifest\.json$", ["VaultScaffoldTests"]),
-    (r"^LunaLibraries/Sources/LunaVault", ["VaultScaffoldTests", "VaultCryptoStorageTests"]),
+    (r"^LunaLibraries/Sources/LunaVault", ["VaultScaffoldTests", "VaultCryptoStorageTests",
+                                            "VaultBackendTests", "VaultExtractionTests", "VaultSearchTests",
+                                            "VaultStage5Tests", "VaultStage5SetupTests"]),
+    (r"^LunaTests/VaultSearchTests\.swift$", ["VaultSearchTests"]),
+    (r"^LunaTests/VaultStage5Tests\.swift$", ["VaultStage5Tests"]),
+    (r"^LunaTests/VaultStage5SetupTests\.swift$", ["VaultStage5SetupTests"]),
+    (r"^LunaTests/VaultStage5IntegrationTests\.swift$", ["VaultStage5IntegrationTests"]),
     (r"^LunaTests/ReferenceImages/", "SYMBOL"),
     # Inputs that cannot move a test result.
     (r"^claudedocs/", None),

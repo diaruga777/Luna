@@ -221,7 +221,8 @@ import LunaVaultUI
                 rootURL: root.appendingPathComponent("VaultThumbnails", isDirectory: true),
                 repository: services.repository)
             let coordinator = try VaultImportCoordinator(
-                repository: services.repository, metadataStore: metadata)
+                repository: services.repository, metadataStore: metadata,
+                configuration: services.importConfiguration)
             let scheduler = VaultBackgroundTaskScheduler(
                 identifierPrefix: Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault")
             scheduler.register(kind: .importRepair) { [weak coordinator] in
@@ -269,6 +270,7 @@ import LunaVaultUI
         guard let accessGroup, !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let rootKeys = VaultRootKeyManager(configuration:
             VaultCryptoConfiguration(keychainAccessGroup: accessGroup))
+        let currentRoot = try rootKeys.loadOrCreate()
         let repository = try VaultRepository()
         let device = VaultDeviceBackend(store: repository)
         let backend: (any VaultBackendTransport)?
@@ -296,7 +298,16 @@ import LunaVaultUI
         return VaultRuntimeServices(
             policy: policy, repository: repository,
             deviceBackend: device, remoteBackend: backend, syncCoordinator: sync,
-            runtimeIdentity: runtimeIdentity)
+            runtimeIdentity: runtimeIdentity,
+            remoteImportConfiguration: backend.map {
+                VaultImportRemoteConfiguration(
+                    backendKey: $0.identity.stableKey, vaultID: "default",
+                    root: currentRoot,
+                    rootKey: { try rootKeys.key(version: $0) },
+                    payloadDirectory: repository.contentDirectory.deletingLastPathComponent()
+                        .appendingPathComponent("VaultSyncCiphertext/uploads", isDirectory: true))
+            },
+            remoteImportBackendKey: backend?.identity.stableKey ?? "mac:unavailable")
     }
 
     private static func makeSearchIndex() -> VaultSearchIndex? {

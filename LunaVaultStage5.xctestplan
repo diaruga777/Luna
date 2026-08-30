@@ -1,0 +1,28 @@
+{
+  "configurations" : [
+    {
+      "options" : {
+        "performanceMetrics" : [ ]
+      },
+      "id" : "A5B7E0A9-3C8A-4CB7-AE7E-6A8B6C4D5110",
+      "name" : "Vault Stage 5"
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "VaultStage5Tests"
+      ],
+      "target" : {
+        "containerPath" : "container:Luna.xcodeproj",
+        "identifier" : "AAE200000000000000000000",
+        "name" : "LunaTests"
+      }
+    }
+  ],
+  "version" : 1
+}

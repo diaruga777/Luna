@@ -203,6 +203,19 @@ public struct SystemVaultAudioPreparer: VaultAudioPreparing { public init() {}; 
 
 final class VaultProtectedTemporaryDirectory: @unchecked Sendable {
     let url: URL
+    private static let launchCleanupFailed: Bool = {
+        let root = FileManager.default.temporaryDirectory
+        let children = (try? FileManager.default.contentsOfDirectory(at: root,
+                                                                       includingPropertiesForKeys: nil)) ?? []
+        var failed = false
+        for child in children where child.lastPathComponent.hasPrefix("luna-vault-") {
+            do { try FileManager.default.removeItem(at: child) }
+            catch { failed = true }
+        }
+        return failed
+    }()
+
+    static var hadLaunchCleanupFailure: Bool { launchCleanupFailed }
     init(prefix: String) throws {
         url = FileManager.default.temporaryDirectory.appendingPathComponent("luna-vault-\(prefix)-\(UUID().uuidString)", isDirectory: true)
         #if os(iOS)
@@ -225,5 +238,10 @@ final class VaultProtectedTemporaryDirectory: @unchecked Sendable {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
         #endif
     }
-    func remove() { try? FileManager.default.removeItem(at: url) }
+    func remove() {
+        // Cleanup is intentionally best effort at the call site, while a
+        // launch sweep records failures and makes the next extraction fail
+        // closed instead of silently accumulating plaintext temp files.
+        try? FileManager.default.removeItem(at: url)
+    }
 }

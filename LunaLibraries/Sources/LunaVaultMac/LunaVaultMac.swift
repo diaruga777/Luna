@@ -12,6 +12,7 @@ public enum LunaVaultMacModule { public static let identifier = "LunaVaultMac" }
 public enum VaultMacCompanionError: Error, Equatable, Sendable {
     case invalidRevision, objectNotFound, conflict, incompleteUpload, invalidRange
     case diskFailure, quotaExceeded, symlinkRejected, manifestTooLarge, tooManyPartials
+    case recoveryCancelled
 }
 
 public struct VaultMacCompanionLimits: Equatable, Sendable {
@@ -21,11 +22,16 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
     public let maximumManifestBytes: Int
     public let maximumPartialUploads: Int
     public let partialUploadLifetime: TimeInterval
+    /// Caps the number of object/revision/file entries inspected during the
+    /// startup orphan sweep. A malformed or attacker-controlled directory
+    /// must not turn companion startup into an unbounded directory walk.
+    public let maximumRecoveryEntries: Int
     public init(maximumObjectBytes: UInt64 = VaultMacProtocol.maximumObjectBytes,
                 maximumStoredBytes: UInt64 = 1_099_511_627_776,
                 maximumManifestBytes: Int = 16 * 1024 * 1024,
                 maximumPartialUploads: Int = 64,
-                partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60) {
+                partialUploadLifetime: TimeInterval = 7 * 24 * 60 * 60,
+                maximumRecoveryEntries: Int = 4_096) {
         self.maximumObjectBytes = max(1, min(maximumObjectBytes, VaultMacProtocol.maximumObjectBytes))
         self.maximumStoredBytes = min(max(1, maximumStoredBytes), Self.maximumConfigurableStoredBytes)
         self.maximumManifestBytes = max(1, min(maximumManifestBytes, 16 * 1024 * 1024))
@@ -33,6 +39,7 @@ public struct VaultMacCompanionLimits: Equatable, Sendable {
         self.partialUploadLifetime = partialUploadLifetime.isFinite
             ? max(1, min(partialUploadLifetime, 30 * 24 * 60 * 60))
             : 7 * 24 * 60 * 60
+        self.maximumRecoveryEntries = max(1, min(maximumRecoveryEntries, 65_536))
     }
 }
 
@@ -171,10 +178,27 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
 
 private struct StoredObject: Codable, Sendable {
     var revision: VaultRevision; var totalBytes: UInt64; var totalChunks: UInt32; var deleted: Bool
+    var objectKind: VaultRemoteObjectKind? = nil; var payloadGeneration: String? = nil
+    init(revision: VaultRevision, totalBytes: UInt64, totalChunks: UInt32, deleted: Bool,
+         objectKind: VaultRemoteObjectKind? = nil, payloadGeneration: String? = nil) {
+        self.revision = revision; self.totalBytes = totalBytes; self.totalChunks = totalChunks
+        self.deleted = deleted; self.objectKind = objectKind; self.payloadGeneration = payloadGeneration
+    }
+    private enum CodingKeys: String, CodingKey { case revision, totalBytes, totalChunks, deleted, objectKind, payloadGeneration }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        revision = try c.decode(VaultRevision.self, forKey: .revision)
+        totalBytes = try c.decode(UInt64.self, forKey: .totalBytes)
+        totalChunks = try c.decode(UInt32.self, forKey: .totalChunks)
+        deleted = try c.decode(Bool.self, forKey: .deleted)
+        objectKind = try c.decodeIfPresent(VaultRemoteObjectKind.self, forKey: .objectKind)
+        payloadGeneration = try c.decodeIfPresent(String.self, forKey: .payloadGeneration)
+    }
 }
 private struct PartialUpload: Codable, Sendable {
     var revision: VaultRevision; var totalBytes: UInt64; var totalChunks: UInt32
     var receivedChunks: [UInt32]; var receivedBytes: UInt64; var updatedAt: Date
+    var objectKind: VaultRemoteObjectKind? = nil; var payloadGeneration: String? = nil
 }
 private struct IdempotencyRecord: Codable, Sendable {
     var signature: Data; var response: VaultMacResponse; var responseDigest: Data?; var createdAt: Date
@@ -185,6 +209,22 @@ private struct CompanionManifest: Codable, Sendable {
     var idempotency: [String: IdempotencyRecord] = [:]
 }
 private struct ManifestEnvelope: Codable { let nonce: Data; let ciphertext: Data; let tag: Data }
+
+/// A single budget is shared by recovery enumeration and every recursive
+/// orphan deletion it triggers.  Counting only `readdir` results is unsafe:
+/// an unrecognised directory could otherwise contain an unlimited subtree and
+/// make companion startup spend unbounded time deleting it.
+private struct VaultMacRecoveryBudget {
+    private(set) var remaining: Int
+
+    init(maximumEntries: Int) { remaining = max(1, maximumEntries) }
+
+    mutating func inspectEntry() throws {
+        guard !Task.isCancelled else { throw VaultMacCompanionError.recoveryCancelled }
+        guard remaining > 0 else { throw VaultMacCompanionError.tooManyPartials }
+        remaining -= 1
+    }
+}
 
 public actor VaultMacCompanionStore {
     public let rootURL: URL
@@ -235,7 +275,8 @@ public actor VaultMacCompanionStore {
             storedResponse = VaultMacResponse(status: response.status, objectID: response.objectID,
                 currentRevision: response.currentRevision, revision: response.revision,
                 receivedChunks: response.receivedChunks,
-                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message)
+                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message,
+                objectKind: response.objectKind, payloadGeneration: response.payloadGeneration)
             responseDigest = Data(SHA256.hash(data: responseBytes))
         } else {
             storedResponse = response; responseDigest = nil
@@ -284,13 +325,18 @@ public actor VaultMacCompanionStore {
                 revision: object.revision, totalCiphertextBytes: 0)
         }
         return VaultMacResponse(status: .accepted, objectID: request.objectID,
-            revision: object.revision, totalCiphertextBytes: object.totalBytes)
+            revision: object.revision, totalCiphertextBytes: object.totalBytes,
+            objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
     private func putChunk(_ request: VaultMacRequest, now: Date) throws -> VaultMacResponse {
         guard let revision = request.revision, let index = request.chunkIndex,
               let totalChunks = request.totalChunks, let totalBytes = request.totalCiphertextBytes,
-              let ciphertext = request.ciphertext else { throw VaultMacCompanionError.invalidRevision }
+              let ciphertext = request.ciphertext,
+              let objectKind = request.objectKind,
+              let payloadGeneration = request.payloadGeneration else {
+            throw VaultMacCompanionError.invalidRevision
+        }
         try validateChunkShape(totalBytes: totalBytes, totalChunks: totalChunks, index: index, chunkBytes: ciphertext.count)
         let key = request.objectID.rawValue.uuidString
         if let current = manifest.objects[key] {
@@ -306,9 +352,12 @@ public actor VaultMacCompanionStore {
         }
         var partial = manifest.partialUploads[key] ?? PartialUpload(revision: revision,
             totalBytes: totalBytes, totalChunks: totalChunks, receivedChunks: [],
-            receivedBytes: 0, updatedAt: now)
+            receivedBytes: 0, updatedAt: now, objectKind: objectKind,
+            payloadGeneration: payloadGeneration)
         guard partial.revision.revision == revision.revision, partial.totalBytes == totalBytes,
-              partial.totalChunks == totalChunks else { throw VaultMacCompanionError.conflict }
+              partial.totalChunks == totalChunks,
+              partial.objectKind == objectKind,
+              partial.payloadGeneration == payloadGeneration else { throw VaultMacCompanionError.conflict }
         let directory = objectDirectoryURL(for: request.objectID, revision: revision.revision)
         let chunkURL = directory.appendingPathComponent("chunk-\(index).bin")
         if VaultSecureFileSystem.exists(chunkURL) {
@@ -330,11 +379,27 @@ public actor VaultMacCompanionStore {
         guard partial.receivedBytes == totalBytes else { throw VaultMacCompanionError.incompleteUpload }
         try assemble(objectID: request.objectID, revision: revision.revision, totalChunks: totalChunks,
                      expectedBytes: totalBytes)
+        // The Mac is a blind encrypted-object gateway. It cannot unwrap the
+        // DEK, but it must authenticate the complete LVF framing, identity,
+        // ordering, and generation digest before publishing the object.
+        guard let expected = try? VaultRemoteObjectIdentity(objectID: request.objectID,
+                revision: revision.revision, kind: objectKind, generation: payloadGeneration) else {
+            throw VaultMacCompanionError.conflict
+        }
+        let assembledCiphertext = objectDirectoryURL(for: request.objectID, revision: revision.revision)
+            .appendingPathComponent("ciphertext.bin")
+        guard (try? VaultAuthenticatedCiphertextFile(fileURL: assembledCiphertext,
+                expectedIdentity: expected, vaultID: "default")) != nil else {
+            throw VaultMacCompanionError.conflict
+        }
         manifest.objects[key] = StoredObject(revision: revision, totalBytes: totalBytes,
-                                             totalChunks: totalChunks, deleted: false)
+                                             totalChunks: totalChunks, deleted: false,
+                                             objectKind: objectKind,
+                                             payloadGeneration: payloadGeneration)
         manifest.partialUploads.removeValue(forKey: key)
         return VaultMacResponse(status: .accepted, objectID: request.objectID, revision: revision,
-            receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes)
+            receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes,
+            objectKind: objectKind, payloadGeneration: payloadGeneration)
     }
 
     private func readRange(_ request: VaultMacRequest) throws -> VaultMacResponse {
@@ -349,7 +414,8 @@ public actor VaultMacCompanionStore {
                                                         expectedFileBytes: object.totalBytes)
         guard UInt64(bytes.count) == length else { throw VaultMacCompanionError.diskFailure }
         return VaultMacResponse(status: .accepted, objectID: request.objectID,
-            revision: object.revision, totalCiphertextBytes: object.totalBytes, ciphertext: bytes)
+            revision: object.revision, totalCiphertextBytes: object.totalBytes, ciphertext: bytes,
+            objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
     private func delete(_ request: VaultMacRequest) throws -> VaultMacResponse {
@@ -403,6 +469,7 @@ public actor VaultMacCompanionStore {
         defer { close(fd) }
         var written: UInt64 = 0
         for index in 0..<totalChunks {
+            if Task.isCancelled { throw VaultMacCompanionError.diskFailure }
             let chunk = try VaultSecureFileSystem.read(directory.appendingPathComponent("chunk-\(index).bin"),
                                                        maximumBytes: VaultMacProtocol.maximumTransferBytes)
             try VaultSecureFileSystem.writeAll(chunk, fd: fd)
@@ -415,8 +482,7 @@ public actor VaultMacCompanionStore {
     private func removeChunkFiles(objectID: VaultObjectID, revision: UUID) throws {
         let directory = objectDirectoryURL(for: objectID, revision: revision)
         guard VaultSecureFileSystem.exists(directory) else { return }
-        let children = try FileManager.default.contentsOfDirectory(at: directory,
-            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        let children = try VaultSecureFileSystem.directoryContents(directory)
         for child in children where child.lastPathComponent.hasPrefix("chunk-") {
             try VaultSecureFileSystem.removeRegularFile(child)
         }
@@ -521,26 +587,33 @@ public actor VaultMacCompanionStore {
                     .insert("chunk-\(chunk).bin")
             }
         }
-        for objectURL in try VaultSecureFileSystem.directoryContents(objects) {
+        var budget = VaultMacRecoveryBudget(maximumEntries: limits.maximumRecoveryEntries)
+        func boundedContents(_ url: URL) throws -> [URL] {
+            let entries = try VaultSecureFileSystem.directoryContents(
+                url, maximumEntries: budget.remaining)
+            for _ in entries { try budget.inspectEntry() }
+            return entries
+        }
+        for objectURL in try boundedContents(objects) {
             guard let revisions = retained[objectURL.lastPathComponent] else {
-                try VaultSecureFileSystem.removeTree(objectURL)
+                try VaultSecureFileSystem.removeTree(objectURL, recoveryBudget: &budget)
                 continue
             }
             try VaultSecureFileSystem.ensureDirectory(objectURL)
-            for revisionURL in try VaultSecureFileSystem.directoryContents(objectURL) {
+            for revisionURL in try boundedContents(objectURL) {
                 guard let allowedFiles = revisions[revisionURL.lastPathComponent] else {
-                    try VaultSecureFileSystem.removeTree(revisionURL)
+                    try VaultSecureFileSystem.removeTree(revisionURL, recoveryBudget: &budget)
                     continue
                 }
                 try VaultSecureFileSystem.ensureDirectory(revisionURL)
-                for fileURL in try VaultSecureFileSystem.directoryContents(revisionURL) {
+                for fileURL in try boundedContents(revisionURL) {
                     if allowedFiles.contains(fileURL.lastPathComponent) {
                         // A symlink occupying an expected ciphertext/chunk name
                         // is not an orphan we can silently unlink: fail startup
                         // closed so no manifest-authorized path is ever followed.
                         try VaultSecureFileSystem.rejectSymlink(fileURL)
                     } else {
-                        try VaultSecureFileSystem.removeTree(fileURL)
+                        try VaultSecureFileSystem.removeTree(fileURL, recoveryBudget: &budget)
                     }
                 }
             }
@@ -569,35 +642,122 @@ public actor VaultMacCompanionService {
 }
 
 private enum VaultSecureFileSystem {
-    static func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
+    static func exists(_ url: URL) -> Bool {
+        #if canImport(Darwin)
+        var info = stat()
+        return lstat(url.path, &info) == 0
+        #else
+        return false
+        #endif
+    }
     static func ensureDirectory(_ url: URL) throws {
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-            guard isDirectory.boolValue else { throw VaultMacCompanionError.diskFailure }
-            try rejectSymlink(url); #if canImport(Darwin)
-            guard chmod(url.path, 0o700) == 0 else { throw VaultMacCompanionError.diskFailure }
-            #endif
-            return
+        #if canImport(Darwin)
+        let components = try validatedComponents(url.path)
+        // Walk from a stable root descriptor.  Opening the complete path and
+        // creating missing descendants afterwards reintroduces a race at the
+        // first missing component; mkdirat/openat keeps every component
+        // decision anchored and rejects an intermediate symlink.
+        var directory = Darwin.open(url.path.hasPrefix("/") ? "/" : ".",
+                                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directory >= 0 else {
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
         }
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        try rejectSymlink(url)
+        for component in components {
+            var created = false
+            var next = component.withCString {
+                Darwin.openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            }
+            if next < 0, errno == ENOENT {
+                let made = component.withCString { Darwin.mkdirat(directory, $0, 0o700) }
+                guard made == 0 || errno == EEXIST else {
+                    let failure = errno
+                    close(directory)
+                    throw (failure == ELOOP || failure == ENOTDIR)
+                        ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+                }
+                created = made == 0
+                next = component.withCString {
+                    Darwin.openat(directory, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                }
+            }
+            guard next >= 0 else {
+                let failure = errno
+                close(directory)
+                throw (failure == ELOOP || failure == ENOTDIR)
+                    ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+            }
+            // Never chmod an OS-owned ancestor such as `/Users` or `/private`.
+            // Newly created Vault descendants are private by construction;
+            // existing app-owned directories retain their established mode.
+            guard !created || fchmod(next, 0o700) == 0 else {
+                close(next); close(directory); throw VaultMacCompanionError.diskFailure
+            }
+            close(directory)
+            directory = next
+        }
+        close(directory)
+        #else
+        throw VaultMacCompanionError.diskFailure
+        #endif
     }
     static func rejectSymlink(_ url: URL) throws {
         #if canImport(Darwin)
-        var info = stat(); guard lstat(url.path, &info) == 0 else { throw VaultMacCompanionError.diskFailure }
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            throw VaultMacCompanionError.diskFailure
+        }
         guard (info.st_mode & S_IFMT) != S_IFLNK else { throw VaultMacCompanionError.symlinkRejected }
         #endif
     }
-    static func directoryContents(_ url: URL) throws -> [URL] {
-        try ensureDirectory(url)
-        return try FileManager.default.contentsOfDirectory(at: url,
-            includingPropertiesForKeys: nil, options: [])
+    static func rejectSymlinkComponents(_ url: URL) throws {
+        #if canImport(Darwin)
+        _ = try validatedComponents(url.path)
+        #endif
+    }
+    static func directoryContents(_ url: URL, maximumEntries: Int? = nil) throws -> [URL] {
+        #if canImport(Darwin)
+        let fd = try openDirectory(url.path)
+        guard let stream = fdopendir(fd) else {
+            close(fd)
+            throw VaultMacCompanionError.diskFailure
+        }
+        defer { _ = closedir(stream) }
+        var contents: [URL] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
+                }
+            }
+            guard name != ".", name != ".." else { continue }
+            if let maximumEntries, contents.count >= maximumEntries {
+                throw VaultMacCompanionError.tooManyPartials
+            }
+            contents.append(url.appendingPathComponent(name))
+        }
+        return contents
+        #else
+        throw VaultMacCompanionError.diskFailure
+        #endif
     }
     static func openNew(_ url: URL) throws -> Int32 {
         #if canImport(Darwin)
-        let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-        guard fd >= 0 else { throw VaultMacCompanionError.diskFailure }; return fd
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        let fd = name.withCString {
+            Darwin.openat(parent, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+                          S_IRUSR | S_IWUSR)
+        }
+        guard fd >= 0 else {
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        return fd
         #else
         throw VaultMacCompanionError.diskFailure
         #endif
@@ -616,7 +776,11 @@ private enum VaultSecureFileSystem {
             // installation so an existing file can never weaken the contract
             // through an unusual filesystem or a future writer change.
             #if canImport(Darwin)
-            guard chmod(url.path, S_IRUSR | S_IWUSR) == 0 else { throw VaultMacCompanionError.diskFailure }
+            let installed = try openRegular(url.path)
+            defer { close(installed) }
+            guard fchmod(installed, S_IRUSR | S_IWUSR) == 0 else {
+                throw VaultMacCompanionError.diskFailure
+            }
             #endif
         }
         catch { try? removeRegularFile(staging); throw error }
@@ -624,7 +788,13 @@ private enum VaultSecureFileSystem {
     static func install(_ source: URL, at destination: URL) throws {
         if exists(destination) { try rejectSymlink(destination) }
         #if canImport(Darwin)
-        guard rename(source.path, destination.path) == 0 else { throw VaultMacCompanionError.diskFailure }
+        let (sourceParent, sourceName) = try openParent(source.path)
+        defer { close(sourceParent) }
+        let (destinationParent, destinationName) = try openParent(destination.path)
+        defer { close(destinationParent) }
+        guard renameat(sourceParent, sourceName, destinationParent, destinationName) == 0 else {
+            throw VaultMacCompanionError.diskFailure
+        }
         try syncDirectory(destination.deletingLastPathComponent())
         #else
         throw VaultMacCompanionError.diskFailure
@@ -641,9 +811,8 @@ private enum VaultSecureFileSystem {
         }
     }
     static func read(_ url: URL, maximumBytes: Int) throws -> Data {
-        try rejectSymlink(url)
         #if canImport(Darwin)
-        let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW); guard fd >= 0 else { throw VaultMacCompanionError.diskFailure }
+        let fd = try openRegular(url.path)
         defer { close(fd) }; var info = stat(); guard fstat(fd, &info) == 0,
             (info.st_mode & S_IFMT) == S_IFREG, info.st_size >= 0,
             info.st_size <= maximumBytes else { throw VaultMacCompanionError.diskFailure }
@@ -653,9 +822,8 @@ private enum VaultSecureFileSystem {
         #endif
     }
     static func readRange(_ url: URL, offset: UInt64, length: Int, expectedFileBytes: UInt64) throws -> Data {
-        try rejectSymlink(url)
         #if canImport(Darwin)
-        let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW); guard fd >= 0 else { throw VaultMacCompanionError.diskFailure }
+        let fd = try openRegular(url.path)
         defer { close(fd) }; var info = stat(); guard fstat(fd, &info) == 0,
             (info.st_mode & S_IFMT) == S_IFREG, UInt64(info.st_size) == expectedFileBytes,
             offset <= expectedFileBytes, UInt64(length) <= expectedFileBytes - offset else { throw VaultMacCompanionError.invalidRange }
@@ -678,43 +846,200 @@ private enum VaultSecureFileSystem {
         guard readCount == count else { throw VaultMacCompanionError.diskFailure }; return data
     }
     static func removeRegularFile(_ url: URL) throws {
-        try rejectSymlink(url); #if canImport(Darwin)
-        guard unlink(url.path) == 0 else { throw VaultMacCompanionError.diskFailure }
+        #if canImport(Darwin)
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return }
+            throw VaultMacCompanionError.diskFailure
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else {
+            throw (info.st_mode & S_IFMT) == S_IFLNK
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        guard unlinkat(parent, name, 0) == 0 else { throw VaultMacCompanionError.diskFailure }
         #else
         throw VaultMacCompanionError.diskFailure
         #endif
     }
     static func removeTree(_ url: URL) throws {
         #if canImport(Darwin)
+        // Resolve the entry from a stable parent descriptor and recurse with
+        // directory FDs. A path-based lstat/contentsOfDirectory/unlink
+        // sequence permits an intermediate directory or child to be swapped
+        // between the check and the mutation.
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        try removeEntry(parent: parent, name: name)
+        guard fsync(parent) == 0 else { throw VaultMacCompanionError.diskFailure }
+        #else
+        throw VaultMacCompanionError.diskFailure
+        #endif
+    }
+
+    /// Recovery-only deletion.  Every entry, including the root entry being
+    /// removed, consumes the caller's shared budget and checks cancellation
+    /// before descending.  This keeps a crash-orphaned deep or wide subtree
+    /// from turning initialization into an unbounded recursive walk.
+    static func removeTree(_ url: URL,
+                           recoveryBudget budget: inout VaultMacRecoveryBudget) throws {
+        #if canImport(Darwin)
+        let (parent, name) = try openParent(url.path)
+        defer { close(parent) }
+        try removeEntry(parent: parent, name: name, recoveryBudget: &budget)
+        guard fsync(parent) == 0 else { throw VaultMacCompanionError.diskFailure }
+        #else
+        throw VaultMacCompanionError.diskFailure
+        #endif
+    }
+
+    #if canImport(Darwin)
+    private static func removeEntry(parent: Int32, name: String) throws {
         var info = stat()
-        guard lstat(url.path, &info) == 0 else {
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
             if errno == ENOENT { return }
             throw VaultMacCompanionError.diskFailure
         }
         let kind = info.st_mode & S_IFMT
         if kind == S_IFLNK || kind == S_IFREG {
-            guard unlink(url.path) == 0 else { throw VaultMacCompanionError.diskFailure }
-            try syncDirectory(url.deletingLastPathComponent())
+            guard name.withCString({ unlinkat(parent, $0, 0) }) == 0 else {
+                throw VaultMacCompanionError.diskFailure
+            }
             return
         }
         guard kind == S_IFDIR else { throw VaultMacCompanionError.diskFailure }
-        for child in try FileManager.default.contentsOfDirectory(at: url,
-            includingPropertiesForKeys: nil, options: []) {
-            try removeTree(child)
+        let directory = name.withCString {
+            Darwin.openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         }
-        guard rmdir(url.path) == 0 else { throw VaultMacCompanionError.diskFailure }
-        try syncDirectory(url.deletingLastPathComponent())
-        #else
-        throw VaultMacCompanionError.diskFailure
-        #endif
+        guard directory >= 0 else {
+            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        let stream = fdopendir(directory)
+        guard let stream else { close(directory); throw VaultMacCompanionError.diskFailure }
+        // fdopendir owns `directory` from this point through closedir.
+        while let entry = readdir(stream) {
+            let rawName = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
+                }
+            }
+            guard rawName != ".", rawName != ".." else { continue }
+            try removeEntry(parent: dirfd(stream), name: rawName)
+        }
+        guard closedir(stream) == 0 else { throw VaultMacCompanionError.diskFailure }
+        guard name.withCString({ unlinkat(parent, $0, AT_REMOVEDIR) }) == 0 else {
+            throw VaultMacCompanionError.diskFailure
+        }
     }
+
+    private static func removeEntry(parent: Int32, name: String,
+                                    recoveryBudget budget: inout VaultMacRecoveryBudget) throws {
+        try budget.inspectEntry()
+        var info = stat()
+        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return }
+            throw VaultMacCompanionError.diskFailure
+        }
+        let kind = info.st_mode & S_IFMT
+        if kind == S_IFLNK || kind == S_IFREG {
+            guard name.withCString({ unlinkat(parent, $0, 0) }) == 0 else {
+                throw VaultMacCompanionError.diskFailure
+            }
+            return
+        }
+        guard kind == S_IFDIR else { throw VaultMacCompanionError.diskFailure }
+        guard !Task.isCancelled else { throw VaultMacCompanionError.recoveryCancelled }
+        let directory = name.withCString {
+            Darwin.openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        }
+        guard directory >= 0 else {
+            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        let stream = fdopendir(directory)
+        guard let stream else { close(directory); throw VaultMacCompanionError.diskFailure }
+        // fdopendir owns `directory` from this point through closedir.
+        while let entry = readdir(stream) {
+            let rawName = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
+                }
+            }
+            guard rawName != ".", rawName != ".." else { continue }
+            try removeEntry(parent: dirfd(stream), name: rawName, recoveryBudget: &budget)
+        }
+        guard closedir(stream) == 0 else { throw VaultMacCompanionError.diskFailure }
+        guard name.withCString({ unlinkat(parent, $0, AT_REMOVEDIR) }) == 0 else {
+            throw VaultMacCompanionError.diskFailure
+        }
+    }
+    #endif
     static func syncDirectory(_ url: URL) throws {
         #if canImport(Darwin)
-        let fd = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        let fd = try openDirectory(url.path)
         guard fd >= 0 else { throw VaultMacCompanionError.diskFailure }; defer { close(fd) }
         guard fsync(fd) == 0 else { throw VaultMacCompanionError.diskFailure }
         #endif
     }
+
+    #if canImport(Darwin)
+    private static func validatedComponents(_ path: String) throws -> [String] {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard !components.contains("."), !components.contains("..") else {
+            throw VaultMacCompanionError.symlinkRejected
+        }
+        return components
+    }
+
+    private static func openDirectory(_ path: String) throws -> Int32 {
+        let components = try validatedComponents(path)
+        var fd = Darwin.open(path.hasPrefix("/") ? "/" : ".",
+                             O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else {
+            let failure = errno
+            throw (failure == ELOOP || failure == ENOTDIR)
+                ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        for component in components {
+            let next = component.withCString {
+                Darwin.openat(fd, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            }
+            guard next >= 0 else {
+                let failure = errno
+                close(fd)
+                throw (failure == ELOOP || failure == ENOTDIR)
+                    ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+            }
+            close(fd); fd = next
+        }
+        return fd
+    }
+
+    private static func openParent(_ path: String) throws -> (Int32, String) {
+        let components = try validatedComponents(path)
+        guard let name = components.last else { throw VaultMacCompanionError.diskFailure }
+        let parentPath = path.hasPrefix("/")
+            ? "/" + components.dropLast().joined(separator: "/")
+            : components.dropLast().joined(separator: "/")
+        let parent = try openDirectory(parentPath.isEmpty ? "." : parentPath)
+        return (parent, name)
+    }
+
+    private static func openRegular(_ path: String) throws -> Int32 {
+        let (parent, name) = try openParent(path)
+        defer { close(parent) }
+        let fd = name.withCString { Darwin.openat(parent, $0, O_RDONLY | O_NOFOLLOW) }
+        guard fd >= 0 else {
+            throw errno == ELOOP ? VaultMacCompanionError.symlinkRejected : VaultMacCompanionError.diskFailure
+        }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            close(fd); throw VaultMacCompanionError.diskFailure
+        }
+        return fd
+    }
+    #endif
 }
 
 private func checkedAdd(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {

@@ -9,6 +9,100 @@ final class VaultCryptoStorageTests: XCTestCase {
     private let objectID = VaultObjectID(rawValue: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!)
     private let revision = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
 
+    func testFileEnvelopeEmptySealParseAuthenticateDecryptRoundTrip() throws {
+        let directory = try VaultTemporaryDirectory(name: "empty-envelope")
+        defer { try? directory.cleanUp() }
+        let plaintext = directory.url.appendingPathComponent("empty")
+        let envelope = directory.url.appendingPathComponent("empty.lvf")
+        XCTAssertTrue(FileManager.default.createFile(atPath: plaintext.path, contents: Data()))
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 4, count: 32))
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: plaintext, fileURL: envelope, vaultID: "empty",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 77))
+        XCTAssertEqual(payload.plaintextByteCount, 0)
+        XCTAssertEqual(payload.frameCount, 2)
+        try payload.authenticate(rootKey: { _ in root })
+        let output = directory.url.appendingPathComponent("output")
+        XCTAssertEqual(try payload.decrypt(to: output, rootKey: { _ in root }), 0)
+        XCTAssertEqual(try Data(contentsOf: output), Data())
+    }
+
+    func testAuthenticatedEnvelopeReadsStableInodeAfterReplacementAndUnlink() throws {
+        let directory = try VaultTemporaryDirectory(name: "stable-envelope-inode")
+        defer { try? directory.cleanUp() }
+        let firstPlaintext = directory.url.appendingPathComponent("first.txt")
+        let secondPlaintext = directory.url.appendingPathComponent("second.txt")
+        let envelope = directory.url.appendingPathComponent("payload.lvf")
+        let replacement = directory.url.appendingPathComponent("replacement.lvf")
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 6, count: 32))
+        XCTAssertTrue(FileManager.default.createFile(atPath: firstPlaintext.path,
+                                                      contents: Data("first payload".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: secondPlaintext.path,
+                                                      contents: Data("second payload".utf8)))
+        let first = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: firstPlaintext, fileURL: envelope, vaultID: "stable",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 101))
+        _ = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextURL: secondPlaintext, fileURL: replacement, vaultID: "stable",
+            kind: .content, objectID: objectID, revision: revision, root: root,
+            chunkSize: 8, random: VaultTestRandomBytes(seed: 102))
+
+        try FileManager.default.removeItem(at: envelope)
+        try FileManager.default.moveItem(at: replacement, to: envelope)
+        XCTAssertEqual(try first.decrypt(to: directory.url.appendingPathComponent("out"),
+                                          rootKey: { _ in root }),
+                       UInt64(Data("first payload".utf8).count))
+        XCTAssertEqual(try Data(contentsOf: directory.url.appendingPathComponent("out")),
+                       Data("first payload".utf8))
+
+        try FileManager.default.removeItem(at: envelope)
+        let digest = try first.digest()
+        XCTAssertFalse(digest.isEmpty, "the authenticated descriptor remains readable after unlink")
+    }
+
+    func testHandleBasedSealReadsStablePlaintextAfterPathReplacement() throws {
+        let directory = try VaultTemporaryDirectory(name: "stable-plaintext-handle")
+        defer { try? directory.cleanUp() }
+        let source = directory.url.appendingPathComponent("selected.txt")
+        let envelope = directory.url.appendingPathComponent("payload.lvf")
+        let output = directory.url.appendingPathComponent("output")
+        let original = Data("original selected bytes".utf8)
+        let replacement = Data("replacement bytes".utf8)
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 12, count: 32))
+        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: original))
+        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: source)
+        defer { try? handle.close() }
+
+        // Replace the pathname after the descriptor is held. The seal must
+        // consume the selected inode, never reopen the substituted pathname.
+        try FileManager.default.removeItem(at: source)
+        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: replacement))
+        let payload = try VaultAuthenticatedCiphertextFile.seal(
+            plaintextHandle: handle, plaintextByteCount: UInt64(original.count),
+            fileURL: envelope, vaultID: "stable-handle", kind: .content,
+            objectID: objectID, revision: revision, root: root, chunkSize: 8,
+            random: VaultTestRandomBytes(seed: 103))
+        XCTAssertEqual(try payload.decrypt(to: output, rootKey: { _ in root }), UInt64(original.count))
+        XCTAssertEqual(try Data(contentsOf: output), original)
+    }
+
+    func testAuthenticatedGenerationCarriesCompleteEnvelopeIdentity() throws {
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 8, count: 32))
+        let cryptor = VaultChunkedCryptor(chunkSize: 8, vaultID: "bound",
+                                          random: VaultTestRandomBytes(seed: 91))
+        let frames = try cryptor.seal(Data("bound".utf8), objectID: objectID,
+                                      revision: revision, root: root)
+        let payload = try VaultAuthenticatedCiphertext(vaultID: "bound", kind: .content,
+                                                        encryptedFrames: frames)
+        let token = try payload.verified(rootKey: { _ in root }).authenticatedGeneration
+        XCTAssertEqual(token.objectID, objectID)
+        XCTAssertEqual(token.revision, revision)
+        XCTAssertEqual(token.kind, .content)
+        XCTAssertEqual(token.value, payload.identity.generation)
+    }
+
     func testChunkEncryptionRoundTripsBoundariesAndEveryRange() throws {
         let root = try VaultRootKey(version: 1, key: Data(repeating: 7, count: 32))
         for length in [0, 1, 7, 8, 9, 16, 33] {
@@ -38,6 +132,28 @@ final class VaultCryptoStorageTests: XCTestCase {
         var version = frames; version[1][0] = 2
         XCTAssertThrowsError(try cryptor.open(version, objectID: objectID, revision: revision, role: .metadata) { _ in root })
         XCTAssertEqual(Set(try frames.dropFirst().map { try VaultChunkEnvelope.decode($0, maximumBytes: 100).nonce }).count, frames.count - 1)
+    }
+
+    func testChunkEnvelopeRejectsExtraFramesWithoutUnsignedLengthUnderflow() throws {
+        let root = try VaultRootKey(version: 1, key: Data(repeating: 3, count: 32))
+        let cryptor = VaultChunkedCryptor(chunkSize: 1, vaultID: "underflow",
+                                          random: VaultTestRandomBytes(seed: 23))
+        var frames = try cryptor.seal(Data([0x01]), objectID: objectID,
+                                      revision: revision, root: root)
+        let extra = VaultChunkEnvelope(role: .content, rootVersion: root.version,
+                                       objectID: objectID, revision: revision,
+                                       chunkIndex: 1, plaintextLength: 1,
+                                       nonce: Data(repeating: 0, count: 12),
+                                       ciphertext: Data(repeating: 0, count: 16))
+        let beyondEnd = VaultChunkEnvelope(role: .content, rootVersion: root.version,
+                                           objectID: objectID, revision: revision,
+                                           chunkIndex: 2, plaintextLength: 1,
+                                           nonce: Data(repeating: 1, count: 12),
+                                           ciphertext: Data(repeating: 0, count: 16))
+        frames.append(try extra.encoded())
+        frames.append(try beyondEnd.encoded())
+        XCTAssertThrowsError(try VaultAuthenticatedCiphertext(
+            vaultID: "underflow", kind: .content, encryptedFrames: frames))
     }
 
     func testRootKeyLifecycleIsExplicitStrictAndConcurrent() throws {
@@ -114,12 +230,26 @@ final class VaultCryptoStorageTests: XCTestCase {
 
     func testTotalOrderingCacheExpiryAndSavesDatabaseIsolation() throws {
         let directory=try VaultTemporaryDirectory(name:"ordering-cache");let saves=directory.url.appendingPathComponent("saves.sqlite");let canary=Data("legacy-canary".utf8);try canary.write(to:saves)
-        let repo=try VaultRepository(testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:10_000)
+        let remoteConfiguration = VaultStorageConfiguration(
+            policy: VaultStoragePolicy(location: .iCloud, keepLocalCopy: false))
+        let repo=try VaultRepository(configuration: remoteConfiguration,
+                                      testContainerURL:directory.url);let now=Date(timeIntervalSinceReferenceDate:10_000)
         let low=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000001")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"a")
         let high=VaultObjectRecord(id:objectID,revision:UUID(uuidString:"00000000-0000-0000-0000-000000000002")!,logicalTime:5,size:3,createdAt:now,updatedAt:now,accessedAt:now,deviceID:"b")
         XCTAssertTrue(try repo.upsert(low));XCTAssertTrue(try repo.upsert(high));XCTAssertFalse(try repo.upsert(low));XCTAssertEqual(try repo.object(objectID)?.deviceID,"b")
         _=try repo.writeContent(Data("old".utf8),for:objectID);try repo.putCache(VaultCacheEntry(objectID:objectID,byteCount:3,fullContent:true,lastAccessedAt:now.addingTimeInterval(-8*86400),createdAt:now,pinned:true),now:now);XCTAssertNotNil(try repo.readContent(for:objectID))
         try repo.setPinned(objectID,pinned:false);try repo.evictExpired(now:now);XCTAssertNil(try repo.readContent(for:objectID));XCTAssertTrue(try repo.cacheEntries().isEmpty)
+        let deviceDirectory = try VaultTemporaryDirectory(name: "ordering-cache-device")
+        let deviceRepo = try VaultRepository(testContainerURL: deviceDirectory.url)
+        XCTAssertTrue(try deviceRepo.upsert(low))
+        _ = try deviceRepo.writeContent(Data("old".utf8), for: objectID)
+        try deviceRepo.putCache(VaultCacheEntry(objectID: objectID, byteCount: 3,
+                                                 fullContent: true,
+                                                 lastAccessedAt: now.addingTimeInterval(-8 * 86400),
+                                                 createdAt: now), now: now)
+        try deviceRepo.evictExpired(now: now)
+        XCTAssertNotNil(try deviceRepo.readContent(for: objectID),
+                        "device-canonical bytes must not be evicted")
         XCTAssertEqual(try Data(contentsOf:saves),canary,"Vault must never open or mutate saves.sqlite")
     }
 

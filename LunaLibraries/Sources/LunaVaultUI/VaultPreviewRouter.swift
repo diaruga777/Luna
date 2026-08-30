@@ -39,9 +39,9 @@ public struct VaultPreviewPlan: Equatable, Sendable {
     public let capability: VaultLocalContentCapability?
     public let message: String?
 
-    public init(availability: VaultPreviewAvailability, kind: VaultPreviewKind? = nil,
-                localURL: URL? = nil, capability: VaultLocalContentCapability? = nil,
-                message: String? = nil) {
+    internal init(availability: VaultPreviewAvailability, kind: VaultPreviewKind? = nil,
+                  localURL: URL? = nil, capability: VaultLocalContentCapability? = nil,
+                  message: String? = nil) {
         self.availability = availability
         self.kind = kind
         self.localURL = localURL
@@ -52,6 +52,15 @@ public struct VaultPreviewPlan: Equatable, Sendable {
 
 public protocol VaultPreviewDownloadRequesting: Sendable {
     func requestDownload(for identity: VaultRemoteObjectIdentity) async throws
+}
+
+/// Strict preview downloads return the repository-issued capability produced
+/// by authenticated local installation. A request-only downloader is not
+/// sufficient: without the capability there is no proof that the requested
+/// generation was installed.
+public protocol VaultPreviewDownloadResultProviding: VaultPreviewDownloadRequesting {
+    func requestDownloadResult(for identity: VaultRemoteObjectIdentity) async throws
+        -> VaultLocalContentCapability
 }
 
 public enum VaultPreviewError: Error, Equatable, Sendable {
@@ -91,7 +100,9 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                      remoteIdentity: VaultRemoteObjectIdentity? = nil) async throws -> VaultPreviewPlan {
         guard let record = try repository.object(objectID) else { throw VaultPreviewError.missingObject }
         guard !record.isTombstone else { throw VaultPreviewError.tombstoned }
-        if let capability = try repository.localContentCapability(for: objectID), capability.authenticated {
+        if let capability = try repository.localContentCapability(for: objectID), capability.authenticated,
+           remoteIdentity == nil || (remoteIdentity?.revision == capability.revision &&
+                                     remoteIdentity?.generation == capability.generation) {
             let url = capability.localURL
             let fileName = (try? metadataStore?.metadata(objectID: objectID,
                                                          revision: record.revision)?.fileName) ?? ""
@@ -145,40 +156,80 @@ public final class VaultPreviewRouter: @unchecked Sendable {
             throw VaultPreviewError.unsupported
         }
         guard let downloadRequester else { throw VaultPreviewError.downloadUnavailable }
-        try await downloadRequester.requestDownload(for: identity)
+        if let resultProvider = downloadRequester as? VaultPreviewDownloadResultProviding {
+            let capability = try await resultProvider.requestDownloadResult(for: identity)
+            guard capability.authenticated,
+                  capability.objectID == objectID,
+                  capability.revision == identity.revision,
+                  capability.generation == identity.generation,
+                  capability.byteCount == record.size,
+                  try repository.validateLocalContentCapability(capability) else {
+                throw VaultPreviewError.downloadUnavailable
+            }
+        } else {
+            // Keep the request-only protocol source-compatible for callers,
+            // but fail closed. A notification that a download was requested
+            // is not an authenticated installation result and must never make
+            // bytes eligible for preview.
+            throw VaultPreviewError.downloadUnavailable
+        }
         return try await plan(objectID: objectID, remoteIdentity: identity)
     }
 
     public func makeViewController(for plan: VaultPreviewPlan) -> UIViewController {
-        guard plan.availability == .ready, let url = plan.localURL, let kind = plan.kind else {
+        guard plan.availability == .ready, let url = plan.localURL,
+              let capability = plan.capability, capability.authenticated,
+              capability.localURL == url,
+              (try? repository.validateLocalContentCapability(capability)) == true,
+              let kind = plan.kind else {
             return VaultPreviewStatusViewController(plan: plan)
         }
+        let child: UIViewController
         switch kind {
-        case .image: return VaultImagePreviewViewController(url: url)
-        case .pdf: return VaultPDFPreviewViewController(url: url)
-        case .text: return VaultTextPreviewViewController(url: url)
-        case .audio: return VaultAVPlayerPreviewViewController(url: url)
-        case .video: return VaultAVPlayerPreviewViewController(url: url)
-        case .quickLook: return VaultQuickLookPreviewViewController(url: url)
+        case .image: child = VaultImagePreviewViewController(url: url)
+        case .pdf: child = VaultPDFPreviewViewController(url: url)
+        case .text: child = VaultTextPreviewViewController(url: url)
+        case .audio: child = VaultAVPlayerPreviewViewController(url: url)
+        case .video: child = VaultAVPlayerPreviewViewController(url: url)
+        case .quickLook: child = VaultQuickLookPreviewViewController(url: url)
         }
+        guard let lease = try? beginPreview(capability) else {
+            return VaultPreviewStatusViewController(plan: VaultPreviewPlan(
+                availability: .failed, kind: kind,
+                message: "This preview is no longer available."))
+        }
+        return VaultPreviewLeaseHostingViewController(content: child,
+                                                       repository: repository,
+                                                       lease: lease,
+                                                       capability: capability)
     }
 
-    public func beginPreview(_ capability: VaultLocalContentCapability) throws {
+    @discardableResult
+    public func beginPreview(_ capability: VaultLocalContentCapability) throws -> VaultPreviewLease {
         guard capability.authenticated,
               try repository.validateLocalContentCapability(capability) else {
             throw VaultPreviewError.unprotectedLocalFile
         }
-        try repository.setPreviewActive(capability.objectID, active: true)
+        let lease = try repository.beginPreviewLease(capability)
+        return lease
     }
 
-    public func endPreview(_ capability: VaultLocalContentCapability) throws {
-        try repository.setPreviewActive(capability.objectID, active: false)
+    public func endPreview(_ lease: VaultPreviewLease) throws {
+        try repository.endPreviewLease(lease)
+    }
+
+    @discardableResult
+    public func renewPreview(_ lease: VaultPreviewLease,
+                             duration: TimeInterval = 15 * 60) throws -> VaultPreviewLease {
+        try repository.renewPreviewLease(lease, duration: duration)
     }
 
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {
         let lower = fileName.lowercased()
         let ext = URL(fileURLWithPath: lower).pathExtension
-        let type = contentType.flatMap { UTType(mimeType: $0.split(separator: ";", maxSplits: 1).first.map(String.init) ?? $0) }
+        let normalizedType = contentType?.split(separator: ";", maxSplits: 1).first
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let type = normalizedType.flatMap { UTType($0) ?? UTType(mimeType: $0) }
             ?? UTType(filenameExtension: ext)
         if type?.conforms(to: .image) == true || ["jpg", "jpeg", "png", "heic", "heif", "gif"].contains(ext) {
             return .image
@@ -192,6 +243,71 @@ public final class VaultPreviewRouter: @unchecked Sendable {
         return .quickLook
     }
 
+}
+
+/// Owns the repository lease for the entire presented viewer lifecycle. The
+/// lease is renewed while visible and ended as soon as the viewer disappears,
+/// allowing iCloud eviction and cache maintenance to proceed safely.
+public final class VaultPreviewLeaseHostingViewController: UIViewController {
+    private let content: UIViewController
+    private let repository: VaultRepository
+    private let capability: VaultLocalContentCapability
+    private var lease: VaultPreviewLease?
+    private var renewalTimer: Timer?
+
+    internal init(content: UIViewController, repository: VaultRepository,
+                  lease: VaultPreviewLease,
+                  capability: VaultLocalContentCapability) {
+        self.content = content
+        self.repository = repository
+        self.capability = capability
+        self.lease = lease
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(content)
+        content.view.frame = view.bounds
+        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(content.view)
+        content.didMove(toParent: self)
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if lease == nil {
+            lease = try? repository.beginPreviewLease(capability)
+        }
+        renewalTimer?.invalidate()
+        renewalTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            guard let lease = self.lease else { return }
+            do {
+                self.lease = try self.repository.renewPreviewLease(lease,
+                                                                     duration: 15 * 60)
+            } catch {
+                self.renewalTimer?.invalidate()
+                self.renewalTimer = nil
+            }
+        }
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        renewalTimer?.invalidate()
+        renewalTimer = nil
+        if let lease { try? repository.endPreviewLease(lease) }
+        lease = nil
+    }
+
+    deinit {
+        renewalTimer?.invalidate()
+        if let lease { try? repository.endPreviewLease(lease) }
+    }
 }
 
 public final class VaultPreviewStatusViewController: UIViewController {

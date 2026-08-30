@@ -1,5 +1,7 @@
 import Foundation
+import CryptoKit
 import XCTest
+import LunaVaultBackend
 import LunaVaultCrypto
 import LunaVaultEmbeddings
 import LunaVaultModels
@@ -68,35 +70,207 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(try repository.jobs().filter { $0.kind == .index }.count, 1)
     }
 
-    func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {
-        let directory = try VaultTemporaryDirectory(name: "stage5-index")
+    func testIdenticalICloudImportAfterSuccessfulUploadIsIdempotent() throws {
+        try assertRemoteDuplicateIsIdempotent(backendKey: "icloud:default")
+    }
+
+    func testIdenticalMacImportAfterSuccessfulUploadIsIdempotent() throws {
+        try assertRemoteDuplicateIsIdempotent(backendKey: "mac:paired")
+    }
+
+    func testSelectedMacWithoutCredentialNeverDowngradesImportToDevice() throws {
+        let directory = try VaultTemporaryDirectory(name: "stage5-unpaired-mac")
+        defer { try? directory.cleanUp() }
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory.url,
+                                              protectionApplier: protection)
+        let services = VaultRuntimeServices(
+            policy: VaultStoragePolicy(location: .mac), repository: repository,
+            deviceBackend: VaultDeviceBackend(store: repository), remoteBackend: nil,
+            syncCoordinator: nil, remoteImportConfiguration: nil,
+            remoteImportBackendKey: "mac:unavailable")
+        let configuration = services.importConfiguration
+        XCTAssertEqual(configuration.uploadBackendKey, "mac:unavailable")
+        XCTAssertNil(configuration.remote)
+
+        let source = directory.url.appendingPathComponent("should-not-import.txt")
+        try Data("remote is required".utf8).write(to: source)
+        let coordinator = try VaultImportCoordinator(repository: repository,
+                                                      configuration: configuration,
+                                                      protectionApplier: protection)
+        XCTAssertThrowsError(try coordinator.importFile(VaultImportSource(fileURL: source))) {
+            XCTAssertEqual($0 as? VaultImportError, .remoteConfigurationRequired)
+        }
+        XCTAssertTrue(try repository.objects().isEmpty,
+                      "an unavailable selected Mac must not create a device-only object")
+    }
+
+    /// A completed upload is the reconciliation record for a content-addressed
+    /// object. Replaying the same bytes must not reseal them with a fresh
+    /// generation, enqueue a second upload, or leave an orphaned upload file.
+    private func assertRemoteDuplicateIsIdempotent(backendKey: String) throws {
+        let directory = try VaultTemporaryDirectory(name: "stage5-remote-dedupe")
         defer { try? directory.cleanUp() }
         let protection = TestProtection()
         let repository = try VaultRepository(testContainerURL: directory.url,
                                               protectionApplier: protection)
         let source = directory.url.appendingPathComponent("fixture.txt")
+        let bytes = Data("remote duplicate bytes".utf8)
+        try bytes.write(to: source)
+        let remoteRoot = try VaultRootKey(version: 1, key: Data(repeating: 9, count: 32))
+        let uploadDirectory = directory.url.appendingPathComponent("uploads", isDirectory: true)
+        let remote = VaultImportRemoteConfiguration(
+            backendKey: backendKey, vaultID: "stage5",
+            root: remoteRoot, rootKey: { version in
+                guard version == remoteRoot.version else { throw VaultCryptoError.missingRootKey }
+                return remoteRoot
+            }, payloadDirectory: uploadDirectory)
+        let coordinator = try VaultImportCoordinator(
+            repository: repository,
+            configuration: VaultImportConfiguration(deviceID: "test", modelVersion: "fixture",
+                                                     uploadBackendKey: backendKey, remote: remote),
+            protectionApplier: protection)
+
+        let first: VaultImportResult
+        do {
+            first = try coordinator.importFile(VaultImportSource(fileURL: source),
+                                                now: Date(timeIntervalSinceReferenceDate: 100))
+        } catch {
+            let staging = (try? FileManager.default.contentsOfDirectory(
+                at: coordinator.stagingDirectory, includingPropertiesForKeys: nil))?.map(\.lastPathComponent) ?? []
+            let uploads = (try? FileManager.default.contentsOfDirectory(
+                at: uploadDirectory, includingPropertiesForKeys: nil))?.map(\.lastPathComponent) ?? []
+            XCTFail("first remote import failed: " + String(describing: error) +
+                    " staging=" + staging.joined(separator: ",") +
+                    " uploads=" + uploads.joined(separator: ","))
+            return
+        }
+        let firstUpload = try XCTUnwrap(first.uploadJobID.flatMap { try? repository.job($0) })
+        let firstGeneration = try XCTUnwrap(firstUpload.payloadGeneration)
+        let firstPayload = uploadDirectory.appendingPathComponent(
+            ["content", first.objectID.rawValue.uuidString, first.revision.uuidString,
+             firstGeneration].joined(separator: "-") + ".vault")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstPayload.path))
+
+        let claimed = try XCTUnwrap(try repository.claimJob(id: firstUpload.id,
+                                                              owner: "test",
+                                                              now: Date(timeIntervalSinceReferenceDate: 101)))
+        try repository.transitionJob(id: claimed.id, leaseToken: claimed.leaseToken,
+                                     state: .succeeded,
+                                     now: Date(timeIntervalSinceReferenceDate: 102))
+        // A real sync worker may remove the upload payload once the provider
+        // acknowledges it. Leaving this authenticated fixture in place also
+        // exercises reconciliation when a provider-side retry artifact is
+        // still present: the durable succeeded job remains authoritative.
+
+        let second = try coordinator.importFile(VaultImportSource(fileURL: source,
+                                                                    fileName: "renamed.txt"),
+                                                 now: Date(timeIntervalSinceReferenceDate: 103))
+        XCTAssertEqual(second.objectID, first.objectID)
+        XCTAssertEqual(second.revision, first.revision)
+        XCTAssertEqual(second.uploadJobID, first.uploadJobID)
+        XCTAssertEqual(try repository.objects().count, 1)
+        let uploadJobs = try repository.jobs().filter { $0.kind == .upload }
+        XCTAssertEqual(uploadJobs.count, 1)
+        XCTAssertEqual(uploadJobs.first?.state, .succeeded)
+        XCTAssertEqual(uploadJobs.first?.payloadGeneration, firstGeneration)
+        let uploadFiles = try FileManager.default.contentsOfDirectory(
+            at: uploadDirectory, includingPropertiesForKeys: nil)
+        XCTAssertEqual(uploadFiles.count, 1,
+                       "a successful duplicate must not leave a second resealed payload")
+        let stagingFiles = try FileManager.default.contentsOfDirectory(
+            at: coordinator.stagingDirectory, includingPropertiesForKeys: nil)
+        // Metadata is the coordinator's durable sidecar root and is expected
+        // to remain after a successful import; no transient journal/payload
+        // or duplicate ciphertext may remain beside it.
+        XCTAssertTrue(stagingFiles.allSatisfy { $0.lastPathComponent == "Metadata" },
+                      "duplicate replay left staged/orphan files")
+    }
+
+    func testLocalIndexWorkerConsumesJobWithoutRemoteAccess() async throws {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("luna-vault-stage5-index-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let protection = TestProtection()
+        let repository = try VaultRepository(testContainerURL: directory,
+                                              protectionApplier: protection)
+        let source = directory.appendingPathComponent("fixture.txt")
         try Data("searchable local phrase".utf8).write(to: source)
         let imported = try VaultImportCoordinator(repository: repository, identity: Identity(),
                                                   protectionApplier: protection)
             .importFile(VaultImportSource(fileURL: source, contentType: "text/plain"))
         let metadata = try VaultImportedFileMetadataStore(
-            rootURL: directory.url.appendingPathComponent("metadata"))
+            rootURL: directory.appendingPathComponent("metadata"),
+            protectionApplier: protection)
         // The coordinator's protected metadata is its source of truth; copy a
         // deterministic descriptor into this injected store for the worker.
         let sourceMetadata = try VaultImportedFileMetadataStore(
             rootURL: repository.contentDirectory.deletingLastPathComponent()
-                .appendingPathComponent("VaultImportStaging/Metadata"))
+                .appendingPathComponent("VaultImportStaging/Metadata"),
+            protectionApplier: protection)
         try metadata.put(try XCTUnwrap(sourceMetadata.metadata(objectID: imported.objectID,
                                                                revision: imported.revision)))
-        let index = try VaultSearchIndex(databaseURL: directory.url.appendingPathComponent("search.sqlite"))
+        let index = try VaultSearchIndex(databaseURL: directory.appendingPathComponent("search.sqlite"),
+                                         protectionApplier: protection)
         let worker = VaultIndexWorker(repository: repository, metadataStore: metadata,
                                       searchIndex: index,
                                       embeddings: DeterministicVaultEmbeddingGenerator(), owner: "test")
-        let workOptional = await worker.processNext()
+        let workTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext()
+        }
+        let workOptional = await workTask.value
+        _ = directory
         let work = try XCTUnwrap(workOptional)
         XCTAssertEqual(work.state, .indexed)
         XCTAssertEqual(try index.search("searchable").first?.objectID, imported.objectID)
         XCTAssertTrue(try repository.jobs().contains { $0.id == work.jobID && $0.state == .succeeded })
+
+        let missingID = VaultObjectID(rawValue: UUID())
+        let missingRevision = UUID()
+        let missingNow = Date()
+        try repository.upsert(VaultObjectRecord(id: missingID, revision: missingRevision,
+                                                logicalTime: 2, size: 7,
+                                                contentType: "text/plain", createdAt: missingNow,
+                                                updatedAt: missingNow, accessedAt: missingNow,
+                                                deviceID: "test"))
+        try metadata.put(VaultImportedFileMetadata(objectID: missingID, revision: missingRevision,
+                                                   fileName: "missing.txt", contentType: "text/plain",
+                                                   byteCount: 7, createdAt: missingNow,
+                                                   updatedAt: missingNow))
+        try repository.setObjectReady(missingID)
+        let missingJob = VaultJob(kind: .index, objectID: missingID,
+                                  createdAt: missingNow, updatedAt: missingNow,
+                                  idempotencyKey: "missing-content", revision: missingRevision)
+        try repository.enqueue(missingJob)
+        let missingTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext(now: missingNow)
+        }
+        let missingOptional = await missingTask.value
+        _ = directory
+        let missing = try XCTUnwrap(missingOptional)
+        XCTAssertEqual(missing.state, .downloadNeeded)
+        XCTAssertEqual(try repository.job(missing.jobID!).map(\.state), .retrying)
+
+        let generation = repository.contentDirectory
+            .appendingPathComponent(imported.objectID.rawValue.uuidString)
+            .appendingPathComponent(".content-generation")
+        try Data("\(imported.revision.uuidString):\(String(repeating: "c", count: 64)):\(String(repeating: "d", count: 64))".utf8)
+            .write(to: generation)
+        let wrongJob = VaultJob(kind: .index, objectID: imported.objectID,
+                                createdAt: missingNow, updatedAt: missingNow,
+                                idempotencyKey: "wrong-generation", revision: imported.revision)
+        try repository.enqueue(wrongJob)
+        let wrongTask = Task { [directory] in
+            _ = directory
+            return await worker.processNext(now: missingNow.addingTimeInterval(62))
+        }
+        let wrongOptional = await wrongTask.value
+        _ = directory
+        let wrong = try XCTUnwrap(wrongOptional)
+        XCTAssertEqual(wrong.state, .downloadNeeded)
+        XCTAssertEqual(try repository.job(wrongJob.id)?.state, .retrying)
     }
 
     func testThumbnailGenerationIsIndependentAndEvictsByAge() throws {
@@ -121,8 +295,11 @@ final class VaultStage5Tests: XCTestCase {
     func testCacheCoordinatorTouchesAccessAndAppliesSevenDayExpiry() throws {
         let directory = try VaultTemporaryDirectory(name: "stage5-cache")
         defer { try? directory.cleanUp() }
-        let repository = try VaultRepository(testContainerURL: directory.url,
-                                              protectionApplier: TestProtection())
+        let repository = try VaultRepository(
+            configuration: VaultStorageConfiguration(
+                policy: VaultStoragePolicy(location: .iCloud, keepLocalCopy: false)),
+            testContainerURL: directory.url,
+            protectionApplier: TestProtection())
         let cache = VaultCacheCoordinator(repository: repository)
         let objectID = VaultObjectID(rawValue: UUID())
         let initial = Date(timeIntervalSinceReferenceDate: 20_000)
@@ -171,14 +348,21 @@ final class VaultStage5Tests: XCTestCase {
                                        createdAt: Date(), updatedAt: Date(), accessedAt: Date(),
                                        deviceID: "test")
         try repository.upsert(record)
+        let generation = SHA256.hash(data: Data("full".utf8)).map { String(format: "%02x", $0) }.joined()
         let identity = try VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
-                                                     kind: .content,
-                                                     generation: String(repeating: "b", count: 64))
-        final class Downloader: VaultPreviewDownloadRequesting, @unchecked Sendable {
+                                                     kind: .content, generation: generation)
+        final class Downloader: VaultPreviewDownloadResultProviding, @unchecked Sendable {
             let repository: VaultRepository
             init(repository: VaultRepository) { self.repository = repository }
             func requestDownload(for identity: VaultRemoteObjectIdentity) async throws {
-                try repository.writeContent(Data("full".utf8), for: identity.objectID)
+                _ = try await requestDownloadResult(for: identity)
+            }
+            func requestDownloadResult(for identity: VaultRemoteObjectIdentity) async throws -> VaultLocalContentCapability {
+                _ = try repository.writeContent(Data("full".utf8), for: identity.objectID)
+                guard let capability = try repository.localContentCapability(for: identity.objectID) else {
+                    throw VaultPreviewError.downloadUnavailable
+                }
+                return capability
             }
         }
         let router = VaultPreviewRouter(repository: repository,
@@ -188,6 +372,20 @@ final class VaultStage5Tests: XCTestCase {
         XCTAssertEqual(plan.availability, VaultPreviewAvailability.ready)
         XCTAssertEqual(plan.kind, .video)
         XCTAssertNotNil(plan.localURL)
+        let lease = try repository.beginPreviewLease(try XCTUnwrap(plan.capability), duration: 5,
+                                                      now: Date(timeIntervalSinceReferenceDate: 100))
+        let renewed = try repository.renewPreviewLease(lease, duration: 30,
+                                                        now: Date(timeIntervalSinceReferenceDate: 102))
+        XCTAssertTrue(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)))
+        try repository.endPreviewLease(lease)
+        XCTAssertTrue(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)), "old token must not end renewed lease")
+        try repository.endPreviewLease(renewed)
+        XCTAssertFalse(try repository.isPreviewActive(objectID, now: Date(timeIntervalSinceReferenceDate: 102)))
+        let wrongIdentity = try VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
+                                                           kind: .content,
+                                                           generation: String(repeating: "c", count: 64))
+        let wrongPlan = try await router.plan(objectID: objectID, remoteIdentity: wrongIdentity)
+        XCTAssertEqual(wrongPlan.availability, VaultPreviewAvailability.needsDownload)
     }
 
     func testBackgroundSchedulerCancellationCancelsInjectedOperation() async throws {

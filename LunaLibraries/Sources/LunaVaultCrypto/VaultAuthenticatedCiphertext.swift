@@ -38,6 +38,22 @@ public struct VaultRemoteObjectIdentity: Codable, Hashable, Sendable {
     }
 }
 
+/// A generation marker obtained from an authenticated envelope. It cannot be
+/// fabricated by callers that only have a string; storage accepts this token
+/// when installing a remote payload instead of a public override string.
+public struct VaultAuthenticatedGeneration: Hashable, Sendable {
+    public let objectID: VaultObjectID
+    public let revision: UUID
+    public let kind: VaultRemoteObjectKind
+    public let value: String
+    internal init(identity: VaultRemoteObjectIdentity) {
+        self.objectID = identity.objectID
+        self.revision = identity.revision
+        self.kind = identity.kind
+        self.value = identity.generation
+    }
+}
+
 /// A structurally authenticated chunked payload. Construction validates the
 /// wrapped DEK header and every AEAD envelope's object, revision, role, root
 /// version, chunk ordering and plaintext length. Authentication tags are
@@ -73,6 +89,7 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         let chunkSize = first.ciphertext.count - 16
         guard chunkSize >= 0 else { throw VaultCryptoError.malformedEnvelope }
         for (index, frame) in encryptedFrames.dropFirst().enumerated() {
+            if Task.isCancelled { throw VaultCryptoError.malformedEnvelope }
             let envelope = try VaultChunkEnvelope.decode(
                 frame, maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
             guard envelope.objectID == objectID,
@@ -83,17 +100,30 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
                   envelope.plaintextLength == first.plaintextLength else {
                 throw VaultCryptoError.malformedEnvelope
             }
-            let expected = first.plaintextLength == 0
-                ? 0
-                : min(chunkSize, Int(first.plaintextLength) - index * chunkSize)
-            guard expected >= 0, envelope.ciphertext.count == expected + 16 else {
+            guard first.plaintextLength <= UInt64(Int.max) else {
+                throw VaultCryptoError.inputTooLarge
+            }
+            let plaintextLength = Int(first.plaintextLength)
+            let (consumed, multiplicationOverflow) = index.multipliedReportingOverflow(by: chunkSize)
+            guard !multiplicationOverflow, consumed <= plaintextLength else {
+                throw VaultCryptoError.malformedEnvelope
+            }
+            let remaining = plaintextLength - consumed
+            let expected = first.plaintextLength == 0 ? 0 : min(chunkSize, remaining)
+            guard envelope.ciphertext.count == expected + 16 else {
                 throw VaultCryptoError.malformedEnvelope
             }
         }
+        guard first.plaintextLength <= UInt64(Int.max) else {
+            throw VaultCryptoError.inputTooLarge
+        }
         let divisor = max(1, chunkSize)
+        let plaintextLength = Int(first.plaintextLength)
+        let quotient = plaintextLength / divisor
+        let remainder = plaintextLength % divisor
         let expectedCount = first.plaintextLength == 0
             ? 1
-            : (Int(first.plaintextLength) + divisor - 1) / divisor
+            : quotient + (remainder == 0 ? 0 : 1)
         guard expectedCount == encryptedFrames.count - 1 else {
             throw VaultCryptoError.malformedEnvelope
         }
@@ -112,6 +142,41 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         return try encoder.encode(Wire(vaultID: vaultID, identity: identity,
                                        rootVersion: rootVersion,
                                        encryptedFrames: encryptedFrames))
+    }
+
+    /// Serializes the authenticated frames into the streaming LVF container
+    /// used by the Mac companion. This preserves the same fixed header and
+    /// length-prefixed frame layout as `VaultAuthenticatedCiphertextFile`
+    /// without exposing a pathname or requiring a second encryption pass.
+    /// Callers should prefer the file-backed representation for large objects.
+    public func encodedFileData() throws -> Data {
+        guard encryptedFrames.count >= 2 else { throw VaultCryptoError.malformedEnvelope }
+        let first = try VaultChunkEnvelope.decode(
+            encryptedFrames[1], maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
+        let metadata = FileMetadata(vaultID: vaultID, objectID: identity.objectID,
+                                    revision: identity.revision, kind: identity.kind,
+                                    rootVersion: rootVersion,
+                                    plaintextByteCount: first.plaintextLength,
+                                    frameCount: UInt32(encryptedFrames.count),
+                                    generation: identity.generation)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let encoded = try encoder.encode(metadata)
+        guard encoded.count + 8 <= VaultAuthenticatedCiphertextFile.headerByteCount else {
+            throw VaultCryptoError.malformedEnvelope
+        }
+        var header = Data([0x4c, 0x56, 0x46, 0x31])
+        var length = UInt32(encoded.count).bigEndian
+        withUnsafeBytes(of: &length) { header.append(contentsOf: $0) }
+        header.append(encoded)
+        header.append(Data(repeating: 0,
+                           count: VaultAuthenticatedCiphertextFile.headerByteCount - header.count))
+        var result = header
+        for frame in encryptedFrames {
+            var frameLength = UInt64(frame.count).bigEndian
+            withUnsafeBytes(of: &frameLength) { result.append(contentsOf: $0) }
+            result.append(frame)
+        }
+        return result
     }
 
     /// Verifies the wrapped DEK and every chunk authentication tag without
@@ -180,6 +245,17 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
         let encryptedFrames: [Data]
     }
 
+    private struct FileMetadata: Codable {
+        let vaultID: String
+        let objectID: VaultObjectID
+        let revision: UUID
+        let kind: VaultRemoteObjectKind
+        let rootVersion: UInt32
+        let plaintextByteCount: UInt64
+        let frameCount: UInt32
+        let generation: String
+    }
+
     private static func readUInt32(_ data: Data, offset: Int) -> UInt32 {
         data[offset..<(offset + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
     }
@@ -205,5 +281,9 @@ public struct VaultVerifiedCiphertext: Equatable, Sendable {
     public var vaultID: String { payload.vaultID }
     public var rootVersion: UInt32 { payload.rootVersion }
     public var encryptedFrames: [Data] { payload.encryptedFrames }
+    public var authenticatedGeneration: VaultAuthenticatedGeneration {
+        VaultAuthenticatedGeneration(identity: identity)
+    }
     public func encoded() throws -> Data { try payload.encoded() }
+    public func encodedFileData() throws -> Data { try payload.encodedFileData() }
 }

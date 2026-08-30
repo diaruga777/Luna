@@ -15,7 +15,7 @@ final class VaultBackendTests: XCTestCase {
         let repository = try VaultRepository(testContainerURL: directory.url)
         let now = Date(timeIntervalSinceReferenceDate: 10)
         let record = VaultObjectRecord(id: objectID, revision: UUID(), logicalTime: 1,
-                                       size: 11, contentType: "text/plain", createdAt: now,
+                                       size: 12, contentType: "text/plain", createdAt: now,
                                        updatedAt: now, accessedAt: now)
         XCTAssertTrue(try repository.upsert(record))
         let backend = VaultDeviceBackend(store: repository)

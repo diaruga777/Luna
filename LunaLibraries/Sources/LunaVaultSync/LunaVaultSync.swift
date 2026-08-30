@@ -66,6 +66,16 @@ public protocol VaultSyncPayloadSource: Sendable {
     func removeAllPayloads(for identity: VaultRemoteObjectIdentity) async throws
 }
 
+/// Optional file-backed companion to `VaultSyncPayloadSource`.  A sync
+/// coordinator selects these methods whenever both sides support them, so a
+/// remote content object is never represented by one whole-object `Data`.
+public protocol VaultStreamingSyncPayloadSource: VaultSyncPayloadSource {
+    func stageUploadFile(_ payload: VaultAuthenticatedCiphertextFile) async throws
+    func uploadPayloadFile(for identity: VaultRemoteObjectIdentity) async throws
+        -> VaultVerifiedCiphertextFile?
+    func installDownloadedPayloadFile(_ payload: VaultAuthenticatedCiphertextFile) async throws
+}
+
 public struct VaultSyncOperationResult: Equatable, Sendable {
     public let identity: VaultRemoteObjectIdentity
     public let attempts: Int
@@ -114,6 +124,36 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         }
     }
 
+    /// Uploads an already-sealed file-backed envelope. The file identity is
+    /// immutable and carries the encrypted-frame generation used by the job.
+    public func upload(_ payload: VaultAuthenticatedCiphertextFile,
+                       expectedRemoteRevision: UUID? = nil,
+                       wakeReason: VaultSyncWakeReason = .scheduled,
+                       now: Date = Date()) async throws -> VaultSyncOperationResult {
+        guard payload.vaultID == backend.identity.vaultID,
+              let source = payloadSource as? VaultStreamingSyncPayloadSource,
+              let transport = backend as? VaultStreamingBackendTransport else {
+            throw VaultSyncError.sync(.invalidArtifact)
+        }
+        try await source.stageUploadFile(payload)
+        let proposed = makeJob(kind: .upload, identity: payload.identity,
+                               expectedRemoteRevision: expectedRemoteRevision, now: now)
+        let claimed = try prepareAndClaim(proposed, wakeReason: wakeReason, now: now)
+        if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(payload.identity, claimed) }
+        return try await finishClaim(claimed, identity: payload.identity, now: now) {
+            if try await self.backend.state(for: payload.identity) == .current {
+                try await source.removeUploadPayload(for: payload.identity)
+                return .succeeded
+            }
+            guard let staged = try await source.uploadPayloadFile(for: payload.identity) else {
+                throw VaultSyncError.sync(.missingPayload)
+            }
+            let outcome = try await transport.put(staged, expectedRevision: expectedRemoteRevision)
+            if outcome == .current { try await source.removeUploadPayload(for: payload.identity) }
+            return outcome == .current ? .succeeded : .retrying
+        }
+    }
+
     public func download(_ identity: VaultRemoteObjectIdentity,
                          wakeReason: VaultSyncWakeReason = .scheduled,
                          now: Date = Date()) async throws -> VaultSyncOperationResult {
@@ -121,11 +161,21 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         let claimed = try prepareAndClaim(job, wakeReason: wakeReason, now: now)
         if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(identity, claimed) }
         return try await finishClaim(claimed, identity: identity, now: now) {
-            guard let payload = try await self.backend.payload(for: identity) else {
-                throw VaultSyncError.backend(.notFound)
+            if let transport = self.backend as? VaultStreamingBackendTransport,
+               let source = self.payloadSource as? VaultStreamingSyncPayloadSource {
+                guard let payload = try await transport.payloadFile(for: identity) else {
+                    throw VaultSyncError.backend(.notFound)
+                }
+                guard payload.identity == identity else { throw VaultSyncError.backend(.corruptPayload) }
+                defer { try? payload.removeOwnedFile() }
+                try await source.installDownloadedPayloadFile(payload)
+            } else {
+                guard let payload = try await self.backend.payload(for: identity) else {
+                    throw VaultSyncError.backend(.notFound)
+                }
+                guard payload.identity == identity else { throw VaultSyncError.backend(.corruptPayload) }
+                try await self.payloadSource.installDownloadedPayload(payload)
             }
-            guard payload.identity == identity else { throw VaultSyncError.backend(.corruptPayload) }
-            try await self.payloadSource.installDownloadedPayload(payload)
             return .succeeded
         }
     }
@@ -165,7 +215,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
     @discardableResult
     public func runReadyJobs(wakeReason: VaultSyncWakeReason,
                              now: Date = Date()) async -> [VaultSyncOperationResult] {
-        let candidates = (try? repository.jobs())?.filter {
+        let candidates = (try? repository.jobs(kinds: [.upload, .download, .delete]))?.filter {
             $0.backendKey == backend.identity.stableKey &&
             [.queued, .retrying, .running].contains($0.state)
         } ?? []
@@ -183,20 +233,42 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                             try await self.payloadSource.removeUploadPayload(for: identity)
                             return .succeeded
                         }
-                        guard let payload = try await self.payloadSource.uploadPayload(for: identity) else {
-                            throw VaultSyncError.sync(.missingPayload)
+                        let outcome: VaultBackendWriteOutcome
+                        if let transport = self.backend as? VaultStreamingBackendTransport,
+                           let source = self.payloadSource as? VaultStreamingSyncPayloadSource {
+                            guard let payload = try await source.uploadPayloadFile(for: identity) else {
+                                throw VaultSyncError.sync(.missingPayload)
+                            }
+                            outcome = try await transport.put(payload,
+                                expectedRevision: claimed.expectedRemoteRevision)
+                        } else {
+                            guard let payload = try await self.payloadSource.uploadPayload(for: identity) else {
+                                throw VaultSyncError.sync(.missingPayload)
+                            }
+                            outcome = try await self.backend.put(
+                                payload, expectedRevision: claimed.expectedRemoteRevision)
                         }
-                        let outcome = try await self.backend.put(
-                            payload, expectedRevision: claimed.expectedRemoteRevision)
                         if outcome == .current {
                             try await self.payloadSource.removeUploadPayload(for: identity)
                         }
                         return outcome == .current ? .succeeded : .retrying
                     case .download:
-                        guard let payload = try await self.backend.payload(for: identity) else {
-                            throw VaultSyncError.backend(.notFound)
+                        if let transport = self.backend as? VaultStreamingBackendTransport,
+                           let source = self.payloadSource as? VaultStreamingSyncPayloadSource {
+                            guard let payload = try await transport.payloadFile(for: identity) else {
+                                throw VaultSyncError.backend(.notFound)
+                            }
+                            guard payload.identity == identity else {
+                                throw VaultSyncError.backend(.corruptPayload)
+                            }
+                            defer { try? payload.removeOwnedFile() }
+                            try await source.installDownloadedPayloadFile(payload)
+                        } else {
+                            guard let payload = try await self.backend.payload(for: identity) else {
+                                throw VaultSyncError.backend(.notFound)
+                            }
+                            try await self.payloadSource.installDownloadedPayload(payload)
                         }
-                        try await self.payloadSource.installDownloadedPayload(payload)
                         return .succeeded
                     case .delete:
                         try await self.backend.remove(identity, expectedRevision: identity.revision)
@@ -221,7 +293,7 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
     }
 
     public func hasPendingJobs() -> Bool {
-        ((try? repository.jobs()) ?? []).contains {
+        ((try? repository.jobs(kinds: [.upload, .download, .delete])) ?? []).contains {
             $0.backendKey == backend.identity.stableKey &&
             [.queued, .retrying, .running].contains($0.state)
         }
@@ -275,6 +347,15 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
                                          error: VaultSyncFailureCode.retryExhausted.rawValue, now: now)
             return VaultSyncOperationResult(identity: identity, attempts: claimed.attempts, state: .failed)
         }
+        let heartbeat = Task { [repository] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                catch { break }
+                try? repository.heartbeatJob(id: claimed.id, leaseToken: leaseToken,
+                                             now: Date(), leaseDuration: 120)
+            }
+        }
+        defer { heartbeat.cancel() }
         do {
             let finalState = try await operation()
             if finalState == .retrying {

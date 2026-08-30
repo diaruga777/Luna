@@ -897,12 +897,12 @@ public final class VaultRepository: @unchecked Sendable {
             kindValues = names.map(SQLiteValue.text)
         } else { kindClause = "" }
         var candidate:UUID?
-        try query("SELECT id FROM jobs WHERE ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause) ORDER BY created_at LIMIT 1", [.double(now.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)] + kindValues) { r in
+        try query("SELECT id FROM jobs WHERE ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (kind='download' OR object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause) ORDER BY created_at LIMIT 1", [.double(now.timeIntervalSinceReferenceDate), .double(now.timeIntervalSinceReferenceDate)] + kindValues) { r in
             candidate=r.text(0).flatMap{UUID(uuidString:$0)}
         }
         guard let candidate else{return nil}
         let token=UUID()
-        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause)", [.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)] + kindValues)
+        try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=? AND ((state IN ('queued','retrying') AND (next_attempt IS NULL OR next_attempt<=?)) OR (state='running' AND lease_expires<=?)) AND (kind='download' OR object_id IS NULL OR EXISTS (SELECT 1 FROM object_visibility ov WHERE ov.object_id=jobs.object_id AND ov.ready=1))\(kindClause)", [.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(candidate.uuidString),.double(now.timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate)] + kindValues)
         guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(candidate)
     }}}
     public func heartbeatJob(id:UUID,leaseToken:UUID,now:Date=Date(),leaseDuration:TimeInterval=120)throws{try sync{try run("UPDATE jobs SET lease_expires=?,updated_at=? WHERE id=? AND state='running' AND lease_token=? AND lease_expires>?",[.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString),.text(leaseToken.uuidString),.double(now.timeIntervalSinceReferenceDate)]);guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition}}}
@@ -1081,6 +1081,9 @@ public final class VaultRepository: @unchecked Sendable {
         // a local object row is present, however, its visibility marker is a
         // hard publication boundary for all object-scoped workers.
         guard try objectLocked(objectID) != nil else { return true }
+        // A download targets a metadata-only placeholder; the ready bit is
+        // published only after this authenticated transfer installs content.
+        if job.kind == .download { return true }
         var ready = false
         try query("SELECT ready FROM object_visibility WHERE object_id=?", [.text(objectID.rawValue.uuidString)]) { ready = $0.int(0) != 0 }
         return ready

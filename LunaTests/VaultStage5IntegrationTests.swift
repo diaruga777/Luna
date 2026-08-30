@@ -133,9 +133,14 @@ final class VaultStage5IntegrationTests: XCTestCase {
     }
 
     func testICloudAndMacDownloadProducesAuthenticatedCapability() async throws {
+        var directories: [VaultTemporaryDirectory] = []
         for location in [VaultStorageLocation.iCloud, .mac] {
             let directory = try VaultTemporaryDirectory(name: "stage5-\(location.rawValue)-download")
-            defer { try? directory.cleanUp() }
+            // Keep cleanup until the repository has gone out of scope. A
+            // repository owns an open WAL connection; removing its directory
+            // from a loop defer can unlink the database while SQLite still
+            // has file descriptors open.
+            directories.append(directory)
             let protection = TestProtection()
             let policy = VaultStoragePolicy(location: location)
             let repository = try VaultRepository(
@@ -182,6 +187,7 @@ final class VaultStage5IntegrationTests: XCTestCase {
             XCTAssertEqual(plan.availability, .ready)
             XCTAssertEqual(plan.capability, capability)
         }
+        for directory in directories { try? directory.cleanUp() }
     }
 
     private func waitForPlans(_ plans: LockedPlanResults, count: Int) async throws {

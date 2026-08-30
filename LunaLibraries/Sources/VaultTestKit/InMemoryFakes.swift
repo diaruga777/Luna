@@ -73,6 +73,12 @@ public final class InMemoryVaultUbiquitousCoordinator: VaultUbiquitousFileCoordi
         lock.withLock { values[relativePath] }
     }
 
+    public func readToFile(at relativePath: String, destinationURL: URL) throws -> UInt64? {
+        guard let data = try read(at: relativePath) else { return nil }
+        try data.write(to: destinationURL)
+        return UInt64(data.count)
+    }
+
     public func compareAndRemove(at relativePath: String,
                                  identity: VaultRemoteObjectIdentity,
                                  versionAt versionPath: String,

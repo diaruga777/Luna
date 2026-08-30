@@ -443,10 +443,10 @@ private final class VaultObjectPreviewPresenter {
                     plan = try await router.downloadAndPlan(objectID: objectID, identity: identity)
                 }
                 if let capability = plan.capability {
-                    try router.beginPreview(capability)
+                    let lease = try router.beginPreview(capability)
                     let content = router.makeViewController(for: plan)
                     let session = VaultPreviewSessionViewController(
-                        content: content, router: router, capability: capability)
+                        content: content, router: router, lease: lease)
                     await MainActor.run { presenter?.present(session, animated: true) }
                 } else {
                     let content = router.makeViewController(for: plan)
@@ -487,12 +487,12 @@ private final class VaultObjectPreviewPresenter {
 private final class VaultPreviewSessionViewController: UIViewController {
     private let content: UIViewController
     private let router: VaultPreviewRouter
-    private let capability: VaultLocalContentCapability
+    private let lease: VaultPreviewLease
     private var ended = false
 
     init(content: UIViewController, router: VaultPreviewRouter,
-         capability: VaultLocalContentCapability) {
-        self.content = content; self.router = router; self.capability = capability
+         lease: VaultPreviewLease) {
+        self.content = content; self.router = router; self.lease = lease
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -517,7 +517,7 @@ private final class VaultPreviewSessionViewController: UIViewController {
         super.viewDidDisappear(animated)
         guard !ended else { return }
         ended = true
-        try? router.endPreview(capability)
+        try? router.endPreview(lease)
     }
 }
 

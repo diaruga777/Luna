@@ -33,14 +33,30 @@ final class MembershipExceptionsExistTests: XCTestCase {
         let exceptionSetIDs: [String]
     }
 
-    /// Each root group is written on one line, e.g.:
-    /// `AA0700000000000000000001 /* Luna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (ID /* … */, ); explicitFileTypes = {}; explicitFolders = (); path = Luna; sourceTree = "<group>"; };`
+    /// Xcode writes each root group either on one line or as an indented
+    /// block (its current form), so this scans block-wise from the isa marker
+    /// to the closing `};` at object indentation, the same way
+    /// `parseExceptionSets` below does.
     private func parseSynchronizedGroups(_ project: String) -> [SynchronizedGroup] {
         var groups: [SynchronizedGroup] = []
-        for line in project.split(separator: "\n") {
-            guard line.contains("isa = PBXFileSystemSynchronizedRootGroup;") else { continue }
-            guard let pathStart = line.range(of: "path = ") else { continue }
-            let afterPath = line[pathStart.upperBound...]
+        var remainder = Substring(project)
+        while let isa = remainder.range(of: "isa = PBXFileSystemSynchronizedRootGroup;") {
+            let block: Substring
+            let after = remainder[isa.upperBound...]
+            if let blockEnd = after.range(of: "\n\t\t};") {
+                block = after[..<blockEnd.lowerBound]
+                remainder = after[blockEnd.upperBound...]
+            } else if let lineEnd = after.range(of: "\n") {
+                // One-line form: the whole object shares the isa's line.
+                block = after[..<lineEnd.lowerBound]
+                remainder = after[lineEnd.upperBound...]
+            } else {
+                block = after
+                remainder = after[after.endIndex...]
+            }
+
+            guard let pathStart = block.range(of: "path = ") else { continue }
+            let afterPath = block[pathStart.upperBound...]
             guard let semi = afterPath.range(of: ";") else { continue }
             var path = String(afterPath[..<semi.lowerBound])
             if path.hasPrefix("\""), path.hasSuffix("\"") {
@@ -48,11 +64,11 @@ final class MembershipExceptionsExistTests: XCTestCase {
             }
 
             var ids: [String] = []
-            if let excStart = line.range(of: "exceptions = ("),
-               let excEnd = line.range(of: ");", range: excStart.upperBound..<line.endIndex) {
-                let body = line[excStart.upperBound..<excEnd.lowerBound]
+            if let excStart = block.range(of: "exceptions = ("),
+               let excEnd = block.range(of: ");", range: excStart.upperBound..<block.endIndex) {
+                let body = block[excStart.upperBound..<excEnd.lowerBound]
                 for token in body.split(separator: ",") {
-                    let trimmed = token.trimmingCharacters(in: .whitespaces)
+                    let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
                     if let space = trimmed.range(of: " ") {
                         ids.append(String(trimmed[..<space.lowerBound]))

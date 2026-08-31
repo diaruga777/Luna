@@ -36,6 +36,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
     public enum ResolveKind: String, Codable {
         case x
         case tiktok
+        case instagramPostPage
         case instagramGraphQL
         case instagramEmbed
         case facebookPlugin

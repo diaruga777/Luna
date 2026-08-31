@@ -12,7 +12,8 @@ import Foundation
 ///   • X      — the keyless fxtwitter JSON API (`media.all` → photo/video/gif).
 ///   • TikTok — the page's `__UNIVERSAL_DATA_FOR_REHYDRATION__` JSON
 ///              (`playAddr` video, or `imagePost` photo carousel).
-///   • Instagram — the post/embed HTML (`video_url` / `display_url` / og tags).
+///   • Instagram — the crawler-UA post page (`xig_polaris_media`), then the
+///              GraphQL/embed/og cascade (`video_url` / `display_url` / og tags).
 ///   • YouTube — guest-bound Android VR player JSON (progressive MP4 with audio).
 /// Network fetching is injectable so the per-platform PARSERS can be unit-tested
 /// against fixtures without hitting the network.
@@ -107,12 +108,31 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// keep a VIDEO from resolving to its cover frame: Instagram hands out that still
     /// freely and the playable MP4 only from one endpoint.
     private func resolveInstagram(url: URL, shortcode: String?) async -> [MediaAsset] {
-        // The web client's persisted GraphQL query FIRST — today the only keyless
-        // source that still carries `video_url`. The embed page below used to, and no
-        // longer does for reels: its `contextJSON` now describes the post as a video
-        // (`is_video`, `video_duration`, `product_type: clips`) while omitting the
-        // playable URL entirely, which is exactly how a saved reel became a static
-        // image. Both endpoints return the same `shortcode_media` node shape.
+        // The post page as served to a search crawler FIRST — today the only keyless
+        // source that still carries a reel's playable URL. Its rehydration JSON
+        // embeds the full api-v1 media node (`video_versions`, `image_versions2`,
+        // `carousel_media`) for every post kind, so stills and carousels resolve
+        // here too.
+        var pageDeclaredVideo = false
+        if let code = shortcode,
+           let data = await fetch(Self.instagramPostPageRequest(shortcode: code)),
+           let html = String(data: data, encoding: .utf8),
+           let post = InstagramMediaParser.post(fromPostPageHTML: html) {
+            if !post.assets.isEmpty { return post.assets }
+            // A video the page wouldn't name a URL for: the GraphQL query below can
+            // still answer with one, so keep laddering — only the still-only og
+            // stage is barred.
+            pageDeclaredVideo = post.declaresVideo
+        }
+
+        // The web client's persisted GraphQL query. It carried `video_url` until
+        // Instagram login-walled the logged-out endpoint (2026-09: 401
+        // `require_login` for every request); it stays in the ladder because it
+        // answers again the moment that wall lifts. The embed page below stopped
+        // carrying a reel's URL earlier: its `contextJSON` describes the post as a
+        // video (`is_video`, `video_duration`, `product_type: clips`) while omitting
+        // the playable URL entirely, which is exactly how a saved reel became a
+        // static image. Both endpoints return the same `shortcode_media` node shape.
         if let code = shortcode,
            let data = await fetch(Self.instagramGraphQLRequest(shortcode: code)),
            let post = InstagramMediaParser.post(fromGraphQLJSON: data) {
@@ -142,7 +162,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
 
         // The post page's `og:` tags. Image-only for a walled video post — better than
         // nothing for a still, never right for a reel.
-        if embedDeclaredVideo { return [] }
+        if embedDeclaredVideo || pageDeclaredVideo { return [] }
         if let data = await fetch(metaScrapeRequest(url)),
            let html = String(data: data, encoding: .utf8) {
             return InstagramMediaParser.assets(fromHTML: html)
@@ -280,6 +300,30 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return request
     }
 
+    /// The post page as fetched by a search crawler — the first Instagram stage.
+    /// Instagram serves this UA the full logged-out rehydration JSON
+    /// (`xig_polaris_media` with `video_versions`) that it strips from the same page
+    /// under a browser UA and login-walled out of the GraphQL endpoint entirely.
+    /// A plain GET, so the durable background engine (which can only issue plain
+    /// background download tasks) can run the identical request.
+    public static func instagramPostPageRequest(
+        shortcode: String, timeoutInterval: TimeInterval = 15
+    ) -> URLRequest {
+        // `/p/{code}/` serves reels as well as posts. Cookie-free and cache-bypassing
+        // for the same reason the GraphQL factory is: carried-over state or a cached
+        // wall can replace a public post's response with a login wall.
+        let endpoint = URL(string: "https://www.instagram.com/p/\(shortcode)/")
+            ?? URL(string: "https://www.instagram.com/")!
+        var request = URLRequest(
+            url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeoutInterval)
+        request.httpShouldHandleCookies = false
+        request.setValue(
+            MediaDownloadHTTP.googleCrawlerUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        return request
+    }
+
     /// The Instagram web client's own persisted GraphQL query for one post, as a GET
     /// so the durable background engine (which can only issue plain background
     /// download tasks) can run the identical request. `doc_id` names a query Instagram
@@ -289,7 +333,9 @@ public struct SocialMediaResolver: SocialMediaResolving {
     ///
     /// Instagram rotates `doc_id`s. When this one is retired the query returns no
     /// media rather than wrong media, and `resolveInstagram` stops instead of falling
-    /// through to a still — a reel that can't be fetched stays a link.
+    /// through to a still — a reel that can't be fetched stays a link. Since 2026-09
+    /// the logged-out endpoint answers 401 `require_login` outright; the crawler post
+    /// page above took over as the leading stage.
     public static func instagramGraphQLRequest(
         shortcode: String, timeoutInterval: TimeInterval = 15
     ) -> URLRequest {
@@ -382,6 +428,12 @@ public enum MediaDownloadHTTP {
 
     /// Facebook's public link-unfurl crawler, used only after browser-page fallbacks.
     public static let facebookCrawlerUserAgent = "facebookexternalhit/1.1"
+
+    /// Google's public web crawler. Instagram serves this UA the logged-out post
+    /// rehydration JSON — including a reel's `video_versions` — that it withholds
+    /// from browser UAs and from `facebookexternalhit`.
+    public static let googleCrawlerUserAgent =
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 
     /// The public application id instagram.com's own web JS sends on every API call.
     /// Not a credential — the logged-out GraphQL endpoint just expects the header.
@@ -593,6 +645,85 @@ public enum InstagramMediaParser {
               let media = payload["xdt_shortcode_media"] as? [String: Any]
         else { return nil }
         return post(fromShortcodeMedia: media)
+    }
+
+    /// Parses the post page as served to a search crawler. Its `data-sjs` script
+    /// tags carry `xig_polaris_media.if_not_gated_logged_out` — an api-v1-shaped
+    /// media node (`media_type`, `video_versions`, `image_versions2`,
+    /// `carousel_media`), a different shape from the `shortcode_media` node the
+    /// GraphQL and embed sources share. Nil when no script yields a media node
+    /// (a browser-UA page, a login wall, a gated post).
+    public static func post(fromPostPageHTML html: String) -> InstagramPost? {
+        var fallback: InstagramPost?
+        for chunk in html.components(separatedBy: "<script") {
+            guard chunk.contains("xig_polaris_media"),
+                  let open = chunk.firstIndex(of: ">"),
+                  let close = chunk.range(of: "</script")
+            else { continue }
+            let body = chunk[chunk.index(after: open)..<close.lowerBound]
+            guard let root = try? JSONSerialization.jsonObject(with: Data(body.utf8)),
+                  let wrapper = firstValue(named: "xig_polaris_media", in: root)
+                    as? [String: Any],
+                  let media = wrapper["if_not_gated_logged_out"] as? [String: Any]
+            else { continue }
+            let candidate = post(fromAPIMedia: media)
+            if !candidate.assets.isEmpty || candidate.declaresVideo { return candidate }
+            fallback = fallback ?? candidate
+        }
+        return fallback
+    }
+
+    /// One post from an api-v1-shaped media node: `media_type` 1 is an image,
+    /// 2 a video, 8 a carousel whose children sit under `carousel_media`.
+    private static func post(fromAPIMedia media: [String: Any]) -> InstagramPost {
+        if let children = media["carousel_media"] as? [[String: Any]], !children.isEmpty {
+            return InstagramPost(
+                assets: children.compactMap(asset(fromAPIMedia:)),
+                declaresVideo: children.contains(where: declaresVideo(apiMedia:)))
+        }
+        return InstagramPost(
+            assets: asset(fromAPIMedia: media).map { [$0] } ?? [],
+            declaresVideo: declaresVideo(apiMedia: media))
+    }
+
+    private static func declaresVideo(apiMedia media: [String: Any]) -> Bool {
+        if let type = media["media_type"] as? Int { return type == 2 }
+        return media["video_versions"] != nil
+    }
+
+    /// One asset from an api-v1 media node. As with the shortcode-media parser, a
+    /// video node with no `video_versions` URL yields NOTHING rather than its still:
+    /// that image is the cover frame, not the reel.
+    private static func asset(fromAPIMedia media: [String: Any]) -> MediaAsset? {
+        let candidates = (media["image_versions2"] as? [String: Any])?["candidates"]
+            as? [[String: Any]]
+        let still = (candidates?.first?["url"] as? String).flatMap(URL.init(string:))
+        if declaresVideo(apiMedia: media) {
+            guard let versions = media["video_versions"] as? [[String: Any]],
+                  let raw = versions.first?["url"] as? String,
+                  let url = URL(string: raw) else { return nil }
+            return MediaAsset(url: url, kind: .video, thumbnailURL: still)
+        }
+        guard let still else { return nil }
+        return MediaAsset(url: still, kind: .image)
+    }
+
+    /// Depth-first search for the first value under `key` anywhere in a parsed JSON
+    /// tree. The crawler page nests the media node inside a require/bbox scaffold
+    /// whose exact shape shifts between page builds, so nothing above the key
+    /// itself can be pinned.
+    private static func firstValue(named key: String, in object: Any) -> Any? {
+        if let dictionary = object as? [String: Any] {
+            if let value = dictionary[key] { return value }
+            for value in dictionary.values {
+                if let found = firstValue(named: key, in: value) { return found }
+            }
+        } else if let array = object as? [Any] {
+            for element in array {
+                if let found = firstValue(named: key, in: element) { return found }
+            }
+        }
+        return nil
     }
 
     /// Parses the embed page's `contextJSON` blob — a JSON-encoded string holding

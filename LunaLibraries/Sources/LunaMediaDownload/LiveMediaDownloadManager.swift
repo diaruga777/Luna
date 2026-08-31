@@ -1264,14 +1264,15 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveURL = url
             kind = .tiktok
         case .instagram:
-            // Mirror `SocialMediaResolver.resolveInstagram`: the persisted GraphQL
-            // query is the only keyless source that still returns a reel's
-            // `video_url`, so it leads and the embed page becomes the fallback stage
-            // (`startNextInstagramResolve`). Whoever reorders one must reorder both.
+            // Mirror `SocialMediaResolver.resolveInstagram`: the crawler-UA post
+            // page is the only keyless source that still returns a reel's playable
+            // URL, so it leads; the persisted GraphQL query and the embed page are
+            // the fallback stages (`startNextInstagramResolve`). Whoever reorders
+            // one must reorder both.
             guard let code = recognized.itemID else { return nil }
-            return (SocialMediaResolver.instagramGraphQLRequest(
+            return (SocialMediaResolver.instagramPostPageRequest(
                         shortcode: code, timeoutInterval: 60),
-                    ResolveKind.instagramGraphQL.rawValue)
+                    ResolveKind.instagramPostPage.rawValue)
         case .facebook:
             // Match SocialMediaResolver.resolveFacebook's foreground/extension path:
             // Facebook's logged-out reel page commonly returns HTTP 400 or a poster-only
@@ -1337,6 +1338,9 @@ public final class LiveMediaDownloadManager: NSObject {
         case .tiktok:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return TikTokMediaParser.assets(fromHTML: html).first
+        case .instagramPostPage:
+            guard let html = String(data: data, encoding: .utf8) else { return nil }
+            return InstagramMediaParser.post(fromPostPageHTML: html)?.assets.first
         case .instagramGraphQL:
             return InstagramMediaParser.post(fromGraphQLJSON: data)?.assets.first
         case .instagramEmbed:
@@ -1820,34 +1824,52 @@ public final class LiveMediaDownloadManager: NSObject {
         return true
     }
 
-    /// Advances the durable Instagram resolver from the persisted GraphQL query to the
-    /// embed page, mirroring `SocialMediaResolver.resolveInstagram`'s two stages.
-    /// Returns true after starting the next background task.
+    /// Advances the durable Instagram resolver through
+    /// `SocialMediaResolver.resolveInstagram`'s stages: crawler post page →
+    /// persisted GraphQL query → embed page. Returns true after starting the next
+    /// background task.
     ///
-    /// Deliberately does NOT advance when the query already answered that the post is
-    /// a video whose playable URL Instagram withheld: the embed page can only offer
-    /// that reel's cover frame, and downloading a still in place of the video is the
-    /// failure this ladder exists to prevent. The job fails as "no media" and the
-    /// saved link stays usable.
+    /// The crawler page always advances — the GraphQL query can still name a video
+    /// URL the page withheld. But it deliberately does NOT advance past a GraphQL
+    /// answer that the post is a video whose playable URL Instagram withheld: the
+    /// embed page can only offer that reel's cover frame, and downloading a still in
+    /// place of the video is the failure this ladder exists to prevent. The job
+    /// fails as "no media" and the saved link stays usable.
     private func startNextInstagramResolve(
         after persistedJob: LiveMediaDownloadJob, data: Data?
     ) -> Bool {
-        guard persistedJob.resolveKind == .instagramGraphQL,
-              let sourceURL = URL(string: persistedJob.sourceURLString),
-              let code = PlatformRecognizer.recognize(sourceURL.absoluteString)?.itemID,
-              let embedURL = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/")
+        guard let sourceURL = URL(string: persistedJob.sourceURLString),
+              let code = PlatformRecognizer.recognize(sourceURL.absoluteString)?.itemID
         else { return false }
-        if let data, InstagramMediaParser.post(fromGraphQLJSON: data)?
-            .isVideoMissingItsPlayableURL == true { return false }
+        switch persistedJob.resolveKind {
+        case .instagramPostPage:
+            guard let job = store.mutate(id: persistedJob.id, {
+                $0.resolveKind = .instagramGraphQL
+            }) else { return false }
+            startTask(
+                SocialMediaResolver.instagramGraphQLRequest(
+                    shortcode: code, timeoutInterval: 60),
+                jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+            return true
+        case .instagramGraphQL:
+            guard let embedURL = URL(
+                string: "https://www.instagram.com/p/\(code)/embed/captioned/")
+            else { return false }
+            if let data, InstagramMediaParser.post(fromGraphQLJSON: data)?
+                .isVideoMissingItsPlayableURL == true { return false }
 
-        guard let job = store.mutate(id: persistedJob.id, {
-            $0.resolveKind = .instagramEmbed
-        }) else { return false }
-        var request = URLRequest(url: embedURL, timeoutInterval: 60)
-        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
-        return true
+            guard let job = store.mutate(id: persistedJob.id, {
+                $0.resolveKind = .instagramEmbed
+            }) else { return false }
+            var request = URLRequest(url: embedURL, timeoutInterval: 60)
+            request.setValue(
+                MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+            startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+            return true
+        default:
+            return false
+        }
     }
 
     /// Advances the durable Facebook resolver through the same useful sources as

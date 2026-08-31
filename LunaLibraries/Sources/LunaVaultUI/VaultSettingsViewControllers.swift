@@ -7,6 +7,27 @@ import UIKit
 
 public enum VaultICloudLocalState: Equatable, Sendable {
     case keptLocal, evictionRequested, evicting, evicted, unavailable, failed
+
+    /// Aggregates one eviction outcome per local object into the state
+    /// reported for the whole local working copy. An empty list means no
+    /// object was evictable at all. Any failure makes the whole request
+    /// `.failed`; any still-`.pending` object keeps the aggregate
+    /// `.evictionRequested` until every evictable object confirms eviction.
+    public static func aggregating(_ outcomes: [Result<VaultEvictionOutcome, Error>]) -> VaultICloudLocalState {
+        guard !outcomes.isEmpty else { return .unavailable }
+        var sawEvicted = false
+        var sawPending = false
+        for outcome in outcomes {
+            switch outcome {
+            case .failure: return .failed
+            case .success(.evicted): sawEvicted = true
+            case .success(.pending): sawPending = true
+            case .success(.notEvictable): break
+            }
+        }
+        if sawPending { return .evictionRequested }
+        return sawEvicted ? .evicted : .unavailable
+    }
 }
 
 public enum VaultMacRemoteRevocationOutcome: Equatable, Sendable {
@@ -417,7 +438,8 @@ public struct VaultMacManualPairingInput: Equatable, Sendable {
 
 /// Pairing remains a capsule/file exchange. The prepared enrollment is shown
 /// for copy, share, or file export after explicit fingerprint confirmation.
-public final class VaultMacPairingViewController: UIViewController {
+public final class VaultMacPairingViewController: UIViewController, SFSafariViewControllerDelegate,
+    UIDocumentPickerDelegate {
     public var credentialStore: VaultMacKeychainCredentialStore?
     public var onEnrollmentPrepared: ((VaultMacPairingEnrollment) -> Void)?
     public var onCredentialSaved: ((VaultMacPairingCredential) -> Void)?
@@ -446,6 +468,10 @@ public final class VaultMacPairingViewController: UIViewController {
     private let unpairButton = UIButton(type: .system)
     private var credential: VaultMacPairingCredential?
     private var enrollmentData: Data?
+    /// The one-use enrollment secret's temporary export file. It is deleted
+    /// as soon as the picker reports either outcome; it must never be left
+    /// behind in the app's shared temporary directory.
+    private var pendingExportURL: URL?
 
     public init(credentialStore: VaultMacKeychainCredentialStore? = nil) {
         self.credentialStore = credentialStore
@@ -459,6 +485,15 @@ public final class VaultMacPairingViewController: UIViewController {
         super.viewDidLoad(); view.backgroundColor = .systemBackground
         capsuleField.font = .preferredFont(forTextStyle: .footnote)
         capsuleField.layer.borderColor = UIColor.separator.cgColor
+        // `CGColor` is resolved once and does not follow later trait
+        // changes on its own; re-resolve on every user-interface-style
+        // change so the border does not go stale after an appearance
+        // switch (Vault does not yet adopt the app-wide LunaSky appearance
+        // system, so this re-resolves against the plain system trait).
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+            (self: VaultMacPairingViewController, _: UITraitCollection) in
+            self.capsuleField.layer.borderColor = UIColor.separator.cgColor
+        }
         capsuleField.layer.borderWidth = 1; capsuleField.layer.cornerRadius = 8
         capsuleField.heightAnchor.constraint(equalToConstant: 110).isActive = true
         capsuleField.accessibilityIdentifier = "vault.mac.capsule"
@@ -600,6 +635,7 @@ public final class VaultMacPairingViewController: UIViewController {
         case .browseToURL(let url):
             tailnetStatus.text = "Finish the Tailscale login in the browser sheet."
             let browser = SFSafariViewController(url: url)
+            browser.delegate = self
             tailnetLoginBrowser = browser
             present(browser, animated: true)
         case .loginFinished:
@@ -610,6 +646,19 @@ public final class VaultMacPairingViewController: UIViewController {
             renderTailnet(summary)
             onTailnetChanged?()
         }
+    }
+
+    /// The user closed the login sheet without the tailnet ever reporting
+    /// `.running` — dismissed manually, or the login didn't propagate. Stop
+    /// waiting on the in-flight login and let a fresh status query decide
+    /// the real outcome, instead of leaving Connect disabled and the status
+    /// text stuck on "Finish the Tailscale login…" until the screen is
+    /// left and reopened.
+    public func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+        tailnetLoginTask?.cancel()
+        tailnetLoginBrowser = nil
+        connectTailnetButton.isEnabled = true
+        refreshTailnetStatus()
     }
 
     @objc private func disconnectTailnet() {
@@ -696,9 +745,30 @@ public final class VaultMacPairingViewController: UIViewController {
         do {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("luna-vault-enrollment-\(UUID().uuidString).json")
-            try enrollmentData.write(to: url, options: [.atomic])
-            present(UIDocumentPickerViewController(forExporting: [url], asCopy: true), animated: true)
+            try enrollmentData.write(to: url, options: [.atomic, .completeFileProtection])
+            pendingExportURL = url
+            let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+            picker.delegate = self
+            present(picker, animated: true)
         } catch { status.text = "Prepared enrollment could not be exported: \(error)." }
+    }
+
+    /// Both picker outcomes (exported or cancelled) must remove the
+    /// temporary export file; the picker already copied it wherever the
+    /// user chose, or the user chose nowhere.
+    public func documentPicker(_ controller: UIDocumentPickerViewController,
+                               didPickDocumentsAt urls: [URL]) {
+        removePendingExportFile()
+    }
+
+    public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        removePendingExportFile()
+    }
+
+    private func removePendingExportFile() {
+        guard let url = pendingExportURL else { return }
+        pendingExportURL = nil
+        try? FileManager.default.removeItem(at: url)
     }
 
     @objc private func unpair() {
@@ -805,17 +875,57 @@ private final class VaultMacUIIdentityConfirmer: VaultMacServerIdentityConfirmin
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { [weak self] in
                 guard let presenter = self?.presenter else { continuation.resume(returning: nil); return }
-                let alert = UIAlertController(title: "Confirm your Mac",
+                // A VC already presenting something cannot also present this
+                // alert; treat that as presentation being impossible rather
+                // than leaving the continuation to hang.
+                var topmost = presenter
+                while let presented = topmost.presentedViewController { topmost = presented }
+                guard topmost.presentedViewController == nil else { continuation.resume(returning: nil); return }
+                let resume = VaultSettingsOneShotResume(continuation)
+                let alert = VaultSettingsConfirmAlertController(title: "Confirm your Mac",
                     message: "Compare this fingerprint on both devices:\n\n\(fingerprint)\n\nEndpoint: \(endpointBinding)\n\nThis is an out-of-band confirmation.",
                     preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in continuation.resume(returning: nil) })
+                // A dismissal with neither button tapped — the presenting
+                // screen disappearing out from under the alert — must still
+                // resolve the continuation instead of hanging the caller.
+                alert.onDisappear = { resume.resume(returning: nil) }
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in resume.resume(returning: nil) })
                 alert.addAction(UIAlertAction(title: "Fingerprints Match", style: .default) { _ in
-                    continuation.resume(returning: VaultMacServerIdentityConfirmation(
+                    resume.resume(returning: VaultMacServerIdentityConfirmation(
                         fingerprint: fingerprint, endpointBinding: endpointBinding))
                 })
-                presenter.present(alert, animated: true)
+                topmost.present(alert, animated: true)
             }
         }
+    }
+}
+
+/// Resumes a checked continuation exactly once. Both a button action and a
+/// disappearance callback race to resolve the same confirmation; only the
+/// first resume must take effect.
+private final class VaultSettingsOneShotResume<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Never>?
+
+    init(_ continuation: CheckedContinuation<T, Never>) { self.continuation = continuation }
+
+    func resume(returning value: T) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: value)
+    }
+}
+
+/// An alert that reports its own disappearance, so a confirmation flow can
+/// resolve even when the alert is dismissed without either action firing.
+private final class VaultSettingsConfirmAlertController: UIAlertController {
+    var onDisappear: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDisappear?()
     }
 }
 

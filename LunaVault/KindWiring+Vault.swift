@@ -1,3 +1,4 @@
+import BackgroundTasks
 import Foundation
 import UIKit
 import UniformTypeIdentifiers
@@ -21,6 +22,13 @@ import LunaVaultUI
     /// Bumps on explicit credential lifecycle changes. This keeps a save of
     /// an otherwise identical credential from reusing a live backend actor.
     private static var runtimeGeneration: UInt64 = 0
+    /// The Mac credential loaded for `runtimeGeneration`, and the generation
+    /// it was loaded under. `renderState()` calls `makeServices()` on every
+    /// `viewWillAppear`, which would otherwise mean a Keychain query per
+    /// render; a credential only actually changes on the explicit lifecycle
+    /// events that bump `runtimeGeneration`, not on every render.
+    private static var cachedMacCredential: VaultMacPairingCredential?
+    private static var cachedMacCredentialGeneration: UInt64?
     private static let setupCoordinator = VaultSetupCoordinator(
         configuration: VaultSetupConfiguration(
             keychainAccessGroup: Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String),
@@ -38,26 +46,47 @@ import LunaVaultUI
     /// memory and network activity, so nothing starts it until a Tailscale
     /// endpoint dial or the settings screen needs it.
     private static var tailnetRunner: VaultTailnetNodeRunner?
-    /// The host owns import implementation. The UI only exposes the seam.
-    static var importHandler: (() -> Void)?
-    /// The host owns preview/rendering. The UI only forwards canonical IDs.
-    static var openHandler: ((VaultObjectID) -> Void)?
-    /// Optional host handoff for the one-use enrollment material. The UI also
-    /// keeps a visible copy/share/export affordance for the user.
-    static var enrollmentPreparedHandler: ((VaultMacPairingEnrollment) -> Void)?
-    static var storagePolicyChangedHandler: ((VaultStoragePolicy) -> Void)?
-    static var credentialSavedHandler: ((VaultMacPairingCredential) -> Void)?
-    static var credentialUnpairedHandler: ((VaultMacRemoteRevocationOutcome) -> Void)?
 
     static func install() {
         _ = setupCoordinator.load()
         _ = makeServices()
     }
 
+    /// The launch handler's stable entry point for the sync BGTask. The app
+    /// registers the identifier once in `didFinishLaunching`, before any
+    /// runtime instance exists; this seam looks up whichever
+    /// `VaultSyncRuntimeController` is current when the system fires the
+    /// task, since a Settings change replaces the runtime without
+    /// re-registering. No runtime yet (first run unfinished, or a provider
+    /// failure) completes the task as not-succeeded rather than crashing.
+    static func handleSyncBackgroundTask(_ task: BGTask) {
+        guard let processing = task as? BGProcessingTask, let syncRuntime else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        syncRuntime.handle(processing)
+    }
+
+    /// The launch handler's stable entry point for the local-maintenance
+    /// BGTasks (import repair, index, thumbnail maintenance). Same
+    /// register-once contract as `handleSyncBackgroundTask`.
+    static func handleMaintenanceBackgroundTask(_ task: BGTask, kind: VaultBackgroundTaskKind) {
+        guard let processing = task as? BGProcessingTask, let backgroundScheduler else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        backgroundScheduler.handleSystemTask(processing, kind: kind)
+    }
+
     static func applicationDidEnterBackground() {
         syncRuntime?.applicationDidEnterBackground()
+        // Only submit the system request here. Starting the operation
+        // in-process at backgrounding raced the real delivery: a suspend
+        // mid-work left `handleMaintenanceBackgroundTask`'s later call
+        // finding the kind already occupied, completing immediately without
+        // doing anything.
         for kind in [VaultBackgroundTaskKind.importRepair, .index, .thumbnailMaintenance] {
-            _ = try? backgroundScheduler?.schedule(kind: kind)
+            try? backgroundScheduler?.submit(kind: kind)
         }
     }
 
@@ -82,8 +111,8 @@ import LunaVaultUI
             services: makeServices(), setupCoordinator: setupCoordinator,
             searchIndex: index, searchIndexProvider: makeSearchIndex,
             servicesProvider: makeServices,
-            importHandler: importHandler ?? { [weak importer] in importer?.present() },
-            openHandler: openHandler ?? { [weak opener] objectID in opener?.open(objectID) },
+            importHandler: { [weak importer] in importer?.present() },
+            openHandler: { [weak opener] objectID in opener?.open(objectID) },
             settingsActions: makeSettingsActions())
         importer.presenter = root
         opener.presenter = root
@@ -95,26 +124,34 @@ import LunaVaultUI
 
     private static func makeSettingsActions() -> VaultSettingsActions {
         VaultSettingsActions(
-            storagePolicyChanged: { storagePolicyChangedHandler?($0) },
             clearCache: {
                 guard let value = services ?? makeServices() else {
                     throw VaultRuntimeError.providerUnavailable
                 }
-                try value.repository.evictExpired()
+                // A closure literal formed inside this `@MainActor` enum
+                // inherits its isolation, so the eviction scan below would
+                // otherwise run ON the main actor despite the spinner text.
+                // `Task.detached` is the same off-main seam
+                // `VaultHomeViewController.scheduleSearch` already uses for
+                // this queue-confined, `@unchecked Sendable` repository.
+                let repository = value.repository
+                try await Task.detached(priority: .utility) {
+                    try repository.evictExpired()
+                }.value
             },
             rebuildIndex: {
                 guard let index = makeSearchIndex() else {
                     throw VaultSearchError.sqlite("Vault index is unavailable")
                 }
-                try index.rebuild()
+                try await Task.detached(priority: .utility) {
+                    try index.rebuild()
+                }.value
             },
             requestICloudEviction: requestICloudEviction,
             reconfigureRuntime: {
                 invalidateRuntime()
                 _ = makeServices()
             },
-            enrollmentPrepared: { enrollmentPreparedHandler?($0) },
-            credentialSaved: { credentialSavedHandler?($0) },
             revokeMacCredential: { _ in
                 // Vault's wire protocol has no unauthenticated revoke call.
                 // Drop the local runtime immediately; the UI reports the
@@ -123,7 +160,6 @@ import LunaVaultUI
                 invalidateRuntime()
                 return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
             },
-            credentialUnpaired: { credentialUnpairedHandler?($0) },
             tailnet: makeTailnetRunner()
         )
     }
@@ -193,11 +229,15 @@ import LunaVaultUI
     }
 
     private static func loadMacCredential() throws -> VaultMacPairingCredential? {
+        if cachedMacCredentialGeneration == runtimeGeneration { return cachedMacCredential }
         guard let accessGroup = Bundle.main.object(forInfoDictionaryKey: "LunaVaultKeychainAccessGroup") as? String,
               !accessGroup.isEmpty else { throw VaultMacProtocolError.unavailable }
         let store = VaultMacKeychainCredentialStore(accessGroup: accessGroup,
             service: "\(Bundle.main.bundleIdentifier ?? "com.hsanabria.luna.vault").mac-pairing")
-        return try store.load()
+        let value = try store.load()
+        cachedMacCredential = value
+        cachedMacCredentialGeneration = runtimeGeneration
+        return value
     }
 
     private static func makeRuntimeIdentity(policy: VaultStoragePolicy,
@@ -260,9 +300,9 @@ import LunaVaultUI
                 guard let thumbnails else { return false }
                 return (try? thumbnails.evictExpired()) != nil
             }
-            for kind in [VaultBackgroundTaskKind.importRepair, .index, .thumbnailMaintenance] {
-                try? scheduler.registerWithSystemScheduler(kind: kind)
-            }
+            // The system BGTask identifiers are registered once at launch
+            // (`VaultAppDelegate.registerBackgroundTasks`); this scheduler
+            // only receives operations to run, never registers.
             importCoordinator = coordinator
             indexWorker = worker
             thumbnailStore = thumbnails
@@ -335,38 +375,47 @@ import LunaVaultUI
         return try? VaultSearchIndex(databaseURL: container.appendingPathComponent("vault-index.sqlite"))
     }
 
+    /// Requests eviction for every local object the iCloud backend can
+    /// identify remotely, not just the most recently synced one, so the
+    /// reported outcome matches the "whole local working copy" the Settings
+    /// screen describes.
     private static func requestICloudEviction() async -> VaultICloudLocalState {
         guard let value = services ?? makeServices(),
               value.policy.location == .iCloud,
-              let backend = value.remoteBackend as? VaultICloudBackend,
-              let identity = remoteIdentity(for: value) else { return .unavailable }
-        do {
-            switch try await backend.evictionOutcome(for: identity) {
-            case .evicted: return .evicted
-            case .pending: return .evictionRequested
-            case .notEvictable: return .unavailable
-            }
-        } catch {
-            return .failed
+              let backend = value.remoteBackend as? VaultICloudBackend else { return .unavailable }
+        let identities = remoteIdentities(for: value)
+        let objects = (try? value.repository.objects()) ?? []
+        let evictable = objects.compactMap { identities[$0.id] }
+        var outcomes: [Result<VaultEvictionOutcome, Error>] = []
+        for identity in evictable {
+            do { outcomes.append(.success(try await backend.evictionOutcome(for: identity))) }
+            catch { outcomes.append(.failure(error)) }
         }
+        return .aggregating(outcomes)
     }
 
-    private static func remoteIdentity(for services: VaultRuntimeServices)
-        -> VaultRemoteObjectIdentity? {
-        guard let backend = services.remoteBackend else { return nil }
+    /// The newest remote identity per object, from the sync job log, scoped
+    /// to the given backend.
+    private static func remoteIdentities(for services: VaultRuntimeServices)
+        -> [VaultObjectID: VaultRemoteObjectIdentity] {
+        guard let backend = services.remoteBackend else { return [:] }
         let jobs = (try? services.repository.jobs()) ?? []
+        var result: [VaultObjectID: VaultRemoteObjectIdentity] = [:]
         for job in jobs.sorted(by: { $0.updatedAt > $1.updatedAt }) {
             guard job.backendKey == backend.identity.stableKey,
                   job.kind == .download || job.kind == .upload,
                   let objectID = job.objectID,
+                  result[objectID] == nil,
                   let revision = job.revision,
                   let generation = job.payloadGeneration,
                   let rawKind = job.remoteObjectKind,
-                  let kind = VaultRemoteObjectKind(rawValue: rawKind) else { continue }
-            return try? VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
-                                                   kind: kind, generation: generation)
+                  let kind = VaultRemoteObjectKind(rawValue: rawKind),
+                  let identity = try? VaultRemoteObjectIdentity(objectID: objectID, revision: revision,
+                                                                 kind: kind, generation: generation)
+            else { continue }
+            result[objectID] = identity
         }
-        return nil
+        return result
     }
 }
 
@@ -377,6 +426,7 @@ private final class VaultDocumentImportPresenter: NSObject, UIDocumentPickerDele
     weak var presenter: UIViewController?
     private let coordinatorProvider: () -> VaultImportCoordinator?
     private var picker: UIDocumentPickerViewController?
+    private var progressOverlay: UIView?
 
     init(coordinatorProvider: @escaping () -> VaultImportCoordinator?) {
         self.coordinatorProvider = coordinatorProvider
@@ -396,23 +446,58 @@ private final class VaultDocumentImportPresenter: NSObject, UIDocumentPickerDele
         presenter.present(value, animated: true)
     }
 
+    /// `importFile` hashes, copies, and seals the whole picked file — seconds
+    /// for a multi-GB video. Run it off main (the coordinator is `@unchecked
+    /// Sendable`) so the watchdog never kills the app mid-import, and block
+    /// interaction with a spinner while it runs.
     func documentPicker(_ controller: UIDocumentPickerViewController,
                         didPickDocumentsAt urls: [URL]) {
         picker = nil
         guard let url = urls.first, let coordinator = coordinatorProvider(),
               let presenter else { return }
-        do {
-            let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-            _ = try coordinator.importFile(VaultImportSource(
-                fileURL: url, fileName: url.lastPathComponent, contentType: contentType))
-            (presenter as? VaultRootViewController)?.refresh()
-        } catch {
-            showError(on: presenter, message: "The file could not be imported. Check its size and try again.")
+        let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+        beginImporting(on: presenter)
+        Task { [weak self, weak presenter] in
+            let outcome = await Task.detached(priority: .userInitiated) {
+                Result { try coordinator.importFile(VaultImportSource(
+                    fileURL: url, fileName: url.lastPathComponent, contentType: contentType)) }
+            }.value
+            guard let self, let presenter else { return }
+            self.endImporting(on: presenter)
+            switch outcome {
+            case .success:
+                (presenter as? VaultRootViewController)?.refresh()
+            case .failure:
+                self.showError(on: presenter, message: "The file could not be imported. Check its size and try again.")
+            }
         }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         picker = nil
+    }
+
+    private func beginImporting(on presenter: UIViewController) {
+        presenter.view.isUserInteractionEnabled = false
+        let overlay = UIView(frame: presenter.view.bounds)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlay.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.6)
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.startAnimating()
+        overlay.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+        ])
+        presenter.view.addSubview(overlay)
+        progressOverlay = overlay
+    }
+
+    private func endImporting(on presenter: UIViewController) {
+        presenter.view.isUserInteractionEnabled = true
+        progressOverlay?.removeFromSuperview()
+        progressOverlay = nil
     }
 
     private func showError(on presenter: UIViewController, message: String) {
@@ -455,23 +540,25 @@ private final class VaultObjectPreviewPresenter {
             return
         }
         let services = servicesProvider()
-        let identity = services.flatMap { Self.remoteIdentity(for: objectID, services: $0) }
         Task { [weak self, weak presenter] in
+            // The job scan behind `remoteIdentity` reads every sync job row;
+            // run it off main, the way search already does, instead of
+            // blocking the tap that opened this preview.
+            let identity = await Task.detached(priority: .userInitiated) {
+                services.flatMap { Self.remoteIdentity(for: objectID, services: $0) }
+            }.value
             do {
                 var plan = try await router.plan(objectID: objectID, remoteIdentity: identity)
                 if plan.availability == .needsDownload, let identity {
                     plan = try await router.downloadAndPlan(objectID: objectID, identity: identity)
                 }
-                if let capability = plan.capability {
-                    let lease = try router.beginPreview(capability)
-                    let content = router.makeViewController(for: plan)
-                    let session = VaultPreviewSessionViewController(
-                        content: content, router: router, lease: lease)
-                    await MainActor.run { presenter?.present(session, animated: true) }
-                } else {
-                    let content = router.makeViewController(for: plan)
-                    await MainActor.run { presenter?.present(content, animated: true) }
-                }
+                // `makeViewController` already begins and owns a preview
+                // lease when the plan is ready (`VaultPreviewLeaseHostingViewController`
+                // renews it while visible and ends it on disappear). A second,
+                // outer lease here only added an un-renewed lease racing the
+                // real one to expire first.
+                let content = router.makeViewController(for: plan)
+                await MainActor.run { presenter?.present(content, animated: true) }
             } catch {
                 await MainActor.run { [weak self, weak presenter] in
                     guard let self, let presenter else { return }
@@ -503,44 +590,6 @@ private final class VaultObjectPreviewPresenter {
     }
 }
 
-@MainActor
-private final class VaultPreviewSessionViewController: UIViewController {
-    private let content: UIViewController
-    private let router: VaultPreviewRouter
-    private let lease: VaultPreviewLease
-    private var ended = false
-
-    init(content: UIViewController, router: VaultPreviewRouter,
-         lease: VaultPreviewLease) {
-        self.content = content; self.router = router; self.lease = lease
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        addChild(content)
-        content.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(content.view)
-        NSLayoutConstraint.activate([
-            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            content.view.topAnchor.constraint(equalTo: view.topAnchor),
-            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        content.didMove(toParent: self)
-    }
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        guard !ended else { return }
-        ended = true
-        try? router.endPreview(lease)
-    }
-}
-
 private final class VaultMacIdentityConfirmationPresenter:
     VaultMacServerIdentityConfirming, @unchecked Sendable {
     private weak var presenter: UIViewController?
@@ -560,11 +609,23 @@ private final class VaultMacIdentityConfirmationPresenter:
                 guard let self, let presenter = self.presenter else {
                     continuation.resume(returning: nil); return
                 }
-                let alert = UIAlertController(title: "Confirm your Mac",
+                // A VC already presenting something cannot also present this
+                // alert; treat that as presentation being impossible rather
+                // than leaving the continuation to hang.
+                let topmost = topmostVaultPresentedViewController(from: presenter)
+                guard topmost.presentedViewController == nil else {
+                    continuation.resume(returning: nil); return
+                }
+                let resume = VaultOneShotResume(continuation)
+                let alert = VaultConfirmAlertController(title: "Confirm your Mac",
                     message: "Compare this fingerprint on both devices:\n\n\(fingerprint)\n\nEndpoint: \(endpointBinding)",
                     preferredStyle: .alert)
+                // A dismissal with neither button tapped — the presenting
+                // screen disappearing out from under the alert — must still
+                // resolve the continuation instead of hanging the caller.
+                alert.onDisappear = { resume.resume(returning: nil) }
                 alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-                    continuation.resume(returning: nil)
+                    resume.resume(returning: nil)
                 })
                 alert.addAction(UIAlertAction(title: "Fingerprints Match", style: .default) { [weak self] _ in
                     if let self {
@@ -572,13 +633,50 @@ private final class VaultMacIdentityConfirmationPresenter:
                             self.confirmedBindings.insert("\(fingerprint)|\(endpointBinding)")
                         }
                     }
-                    continuation.resume(returning: VaultMacServerIdentityConfirmation(
+                    resume.resume(returning: VaultMacServerIdentityConfirmation(
                         fingerprint: fingerprint, endpointBinding: endpointBinding))
                 })
-                presenter.present(alert, animated: true)
+                topmost.present(alert, animated: true)
             }
         }
     }
+}
+
+/// Resumes a checked continuation exactly once. Both a button action and a
+/// disappearance callback race to resolve the same confirmation; only the
+/// first resume must take effect.
+private final class VaultOneShotResume<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Never>?
+
+    init(_ continuation: CheckedContinuation<T, Never>) { self.continuation = continuation }
+
+    func resume(returning value: T) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: value)
+    }
+}
+
+/// An alert that reports its own disappearance, so a confirmation flow can
+/// resolve even when the alert is dismissed without either action firing.
+@MainActor
+private final class VaultConfirmAlertController: UIAlertController {
+    var onDisappear: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDisappear?()
+    }
+}
+
+@MainActor
+private func topmostVaultPresentedViewController(from root: UIViewController) -> UIViewController {
+    var top = root
+    while let presented = top.presentedViewController { top = presented }
+    return top
 }
 
 private extension NSLock {

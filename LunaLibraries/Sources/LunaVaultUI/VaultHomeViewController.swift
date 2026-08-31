@@ -65,7 +65,15 @@ public final class VaultRootViewController: UIViewController {
     private var setupPolicy = VaultStoragePolicy(location: .device)
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = 0
+    /// Guards a stale off-main `updateReadyContent()` load from overwriting a
+    /// later one, the same way `searchGeneration` guards search completions.
+    private var contentLoadGeneration = 0
     private var contentRetryAction: (() -> Void)?
+    /// Which section put up the currently-shown content status. Lets one
+    /// section's own completion clear its own status without erasing a
+    /// still-relevant status a sibling section raised.
+    private enum ContentStatusOrigin: Equatable { case groups, search, other }
+    private var contentStatusOrigin: ContentStatusOrigin = .other
 
     public var onCreateManualGroup: ((String, [VaultObjectID]) throws -> Void)?
     public var onCreateQueryGroup: ((String, [VaultObjectID]) throws -> Void)?
@@ -443,23 +451,45 @@ public final class VaultRootViewController: UIViewController {
         }
     }
 
+    /// `recent`, `groups`, and `queryGroups` are synchronous SQLite reads on
+    /// the index's serial queue. Running all three from `viewWillAppear`
+    /// blocked main for a bulk import's whole in-flight transaction; one
+    /// `Task.detached` hop, mirroring the search debounce below, moves them
+    /// off main while keeping each section's own error handling and message.
     private func updateReadyContent() {
         guard ensureSearchFacade(), let facade = searchFacade else { return }
         // A previous provider/runtime failure may have left the status panel
         // visible. A newly-ready runtime must clear that stale state before
-        // rendering its content; the catch below restores it for index errors.
+        // rendering its content; the failure branch below restores it for
+        // index errors.
         hideContentStatus()
-        do {
-            renderRecents(try facade.recent(limit: 12))
-            renderGroups()
-            let query = normalizedQuery
-            if query.isEmpty { renderResults([]) }
-            else { scheduleSearch(debounceNanoseconds: 0) }
-        } catch {
-            showContentStatus("The Vault index could not be read. Try opening it again.") { [weak self] in
-                self?.searchFacade = nil
-                self?.updateReadyContent()
+        let query = normalizedQuery
+        contentLoadGeneration += 1
+        let generation = contentLoadGeneration
+        Task { [weak self] in
+            let snapshot = await Task.detached(priority: .userInitiated) {
+                (recents: Result { try facade.recent(limit: 12) },
+                 groups: Result { try facade.index.groups() },
+                 queries: Result { try facade.index.queryGroups(limit: 100) })
+            }.value
+            guard let self, generation == self.contentLoadGeneration else { return }
+            switch snapshot.recents {
+            case .success(let recents):
+                self.renderRecents(recents)
+            case .failure:
+                self.showContentStatus("The Vault index could not be read. Try opening it again.") { [weak self] in
+                    self?.searchFacade = nil
+                    self?.updateReadyContent()
+                }
+                return
             }
+            if case .success(let semantic) = snapshot.groups, case .success(let queries) = snapshot.queries {
+                self.renderGroups(semantic: semantic, queries: queries)
+            } else {
+                self.showGroupsUnavailable()
+            }
+            if query.isEmpty { self.renderResults([]) }
+            else { self.scheduleSearch(debounceNanoseconds: 0) }
         }
     }
 
@@ -485,10 +515,13 @@ public final class VaultRootViewController: UIViewController {
             }.value
             guard !Task.isCancelled, let self, generation == self.searchGeneration else { return }
             if let hits {
-                self.hideContentStatus()
+                // A search completing must not clear a status panel a
+                // sibling section (groups) put up moments earlier; it may
+                // only clear its own.
+                self.hideContentStatus(unlessShownFor: [.groups])
                 self.renderResults(hits)
             } else {
-                self.showContentStatus("Search is unavailable. Try again.") { [weak self] in
+                self.showContentStatus("Search is unavailable. Try again.", origin: .search) { [weak self] in
                     self?.scheduleSearch(debounceNanoseconds: 0)
                 }
             }
@@ -516,39 +549,54 @@ public final class VaultRootViewController: UIViewController {
         }
     }
 
+    /// Loads on main. Reserved for the one-off callers that already just
+    /// wrote to the index (`createManualGroup`, `createQueryGroup`,
+    /// `addMembership`) and need to reflect that write immediately;
+    /// `updateReadyContent()` instead loads off main and calls
+    /// `renderGroups(semantic:queries:)` directly with the result.
     private func renderGroups() {
-        removeArrangedSubviews(from: groupsStack)
-        guard let index = searchFacade?.index else { return }
+        guard let index = searchFacade?.index else {
+            removeArrangedSubviews(from: groupsStack)
+            return
+        }
         do {
-            let semantic = try index.groups()
-            let queries = try index.queryGroups(limit: 100)
-            if semantic.isEmpty && queries.isEmpty {
-                groupsStack.addArrangedSubview(emptyLabel("Groups keep related files together."))
-            }
-            for group in semantic {
-                let button = UIButton(type: .system)
-                button.contentHorizontalAlignment = .left
-                button.setTitle("\(group.label)  ·  \(group.memberIDs.count) files", for: .normal)
-                button.accessibilityIdentifier = "vault.group.\(group.id.uuidString)"
-                button.accessibilityLabel = "Group \(group.label), \(group.memberIDs.count) files"
-                button.addAction(UIAction { [weak self] _ in self?.showGroup(group) }, for: .touchUpInside)
-                groupsStack.addArrangedSubview(button)
-            }
-            for group in queries {
-                let button = UIButton(type: .system)
-                button.contentHorizontalAlignment = .left
-                button.setTitle("Search: \(group.query)  ·  \(group.memberIDs.count) files", for: .normal)
-                button.accessibilityIdentifier = "vault.query-group.\(group.id.uuidString)"
-                button.accessibilityLabel = "Query group \(group.query), \(group.memberIDs.count) files"
-                button.addAction(UIAction { [weak self] _ in self?.showQueryGroup(group) }, for: .touchUpInside)
-                groupsStack.addArrangedSubview(button)
-            }
+            renderGroups(semantic: try index.groups(), queries: try index.queryGroups(limit: 100))
         } catch {
-            groupsStack.addArrangedSubview(emptyLabel("Groups are unavailable."))
-            showContentStatus("Groups could not be loaded. Try reopening the index.") { [weak self] in
-                self?.searchFacade = nil
-                self?.updateReadyContent()
-            }
+            showGroupsUnavailable()
+        }
+    }
+
+    private func renderGroups(semantic: [VaultGroup], queries: [VaultQueryGroup]) {
+        removeArrangedSubviews(from: groupsStack)
+        if semantic.isEmpty && queries.isEmpty {
+            groupsStack.addArrangedSubview(emptyLabel("Groups keep related files together."))
+        }
+        for group in semantic {
+            let button = UIButton(type: .system)
+            button.contentHorizontalAlignment = .left
+            button.setTitle("\(group.label)  ·  \(group.memberIDs.count) files", for: .normal)
+            button.accessibilityIdentifier = "vault.group.\(group.id.uuidString)"
+            button.accessibilityLabel = "Group \(group.label), \(group.memberIDs.count) files"
+            button.addAction(UIAction { [weak self] _ in self?.showGroup(group) }, for: .touchUpInside)
+            groupsStack.addArrangedSubview(button)
+        }
+        for group in queries {
+            let button = UIButton(type: .system)
+            button.contentHorizontalAlignment = .left
+            button.setTitle("Search: \(group.query)  ·  \(group.memberIDs.count) files", for: .normal)
+            button.accessibilityIdentifier = "vault.query-group.\(group.id.uuidString)"
+            button.accessibilityLabel = "Query group \(group.query), \(group.memberIDs.count) files"
+            button.addAction(UIAction { [weak self] _ in self?.showQueryGroup(group) }, for: .touchUpInside)
+            groupsStack.addArrangedSubview(button)
+        }
+    }
+
+    private func showGroupsUnavailable() {
+        removeArrangedSubviews(from: groupsStack)
+        groupsStack.addArrangedSubview(emptyLabel("Groups are unavailable."))
+        showContentStatus("Groups could not be loaded. Try reopening the index.", origin: .groups) { [weak self] in
+            self?.searchFacade = nil
+            self?.updateReadyContent()
         }
     }
 
@@ -700,25 +748,34 @@ public final class VaultRootViewController: UIViewController {
             $0.accessibilityLabel = "Group name"
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Create", style: .default) { _ in
-            guard let value = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+        alert.addAction(UIAlertAction(title: "Create", style: .default) { [weak alert] _ in
+            guard let value = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !value.isEmpty else { return }
             completion(value)
         })
         present(alert, animated: true)
     }
 
-    private func showContentStatus(_ text: String, retry: (() -> Void)? = nil) {
+    private func showContentStatus(_ text: String, origin: ContentStatusOrigin = .other,
+                                   retry: (() -> Void)? = nil) {
         contentStatusLabel.text = text
         contentStatusLabel.accessibilityLabel = text
         contentRetryAction = retry
         contentRetryButton.isHidden = retry == nil
         contentStatusPanel.isHidden = false
+        contentStatusOrigin = origin
     }
 
-    private func hideContentStatus() {
+    /// Clears the shared status panel, unless it is currently showing a
+    /// status raised by one of `protectedOrigins` — a section's own
+    /// completion (for example, search finishing) must not silently erase a
+    /// sibling section's still-relevant error (for example, groups failing
+    /// to load).
+    private func hideContentStatus(unlessShownFor protectedOrigins: Set<ContentStatusOrigin> = []) {
+        guard contentStatusPanel.isHidden || !protectedOrigins.contains(contentStatusOrigin) else { return }
         contentStatusPanel.isHidden = true
         contentRetryAction = nil
+        contentStatusOrigin = .other
     }
 
     private func focusSearchIfReady() {

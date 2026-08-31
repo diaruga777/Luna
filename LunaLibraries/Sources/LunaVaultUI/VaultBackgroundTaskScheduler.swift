@@ -32,7 +32,6 @@ public struct SystemVaultBackgroundTaskSubmitter: VaultBackgroundTaskSubmitting 
 
 public enum VaultBackgroundTaskError: Error, Equatable, Sendable {
     case duplicate
-    case notRegistered
 }
 
 /// Schedules bounded, cancellable Vault work. The operation is intentionally
@@ -105,24 +104,23 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
         lock.withLock { operations[kind] = operation }
     }
 
-    /// Registers a real BGProcessingTask entry point. The task's expiration
-    /// handler cancels the same Swift Task returned by `run`.
-    public func registerWithSystemScheduler(kind: VaultBackgroundTaskKind) throws {
-        let identifier = identifier(for: kind)
-        guard lock.withLock({ operations[kind] != nil }) else {
-            throw VaultBackgroundTaskError.notRegistered
+    /// Runs a delivered `BGProcessingTask` against this kind's registered
+    /// operation. The app registers the system identifier exactly once at
+    /// launch (`BGTaskScheduler.register` may not be called again, and never
+    /// after launch finishes); this method is the launch handler's stable
+    /// entry point into whichever scheduler instance is current when the task
+    /// fires. The task's expiration handler cancels the same Swift Task
+    /// returned by `run`.
+    public func handleSystemTask(_ task: BGTask, kind: VaultBackgroundTaskKind) {
+        guard let processing = task as? BGProcessingTask else {
+            task.setTaskCompleted(success: false)
+            return
         }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { [weak self] task in
-            guard let self, let processing = task as? BGProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            processing.expirationHandler = { [weak self] in self?.cancel(kind: kind) }
-            let running = self.run(kind: kind)
-            Task {
-                let success = await running.value
-                processing.setTaskCompleted(success: success && !running.isCancelled)
-            }
+        processing.expirationHandler = { [weak self] in self?.cancel(kind: kind) }
+        let running = run(kind: kind)
+        Task {
+            let success = await running.value
+            processing.setTaskCompleted(success: success && !running.isCancelled)
         }
     }
 
@@ -147,6 +145,23 @@ public final class VaultBackgroundTaskScheduler: @unchecked Sendable {
             throw error
         }
         return start(kind: kind, operation: operation)
+    }
+
+    /// Submits a BGProcessingTask request without starting the operation now.
+    /// Use this at app backgrounding: the operation must run only when the
+    /// system later delivers the task to `handleSystemTask`, on the system's
+    /// own execution budget, not opportunistically in-process where a
+    /// suspend mid-work would strand the real delivery with nothing left to
+    /// do (`active[kind]` already occupied, so the later system task would
+    /// complete immediately without running).
+    public func submit(kind: VaultBackgroundTaskKind,
+                       requiresNetworkConnectivity: Bool = false,
+                       requiresExternalPower: Bool = false,
+                       earliestBeginDate: Date? = Date(timeIntervalSinceNow: 15)) throws {
+        try submitter.submit(identifier: identifier(for: kind),
+                             requiresNetworkConnectivity: requiresNetworkConnectivity,
+                             requiresExternalPower: requiresExternalPower,
+                             earliestBeginDate: earliestBeginDate)
     }
 
     @discardableResult

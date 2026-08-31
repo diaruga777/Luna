@@ -72,18 +72,8 @@ public enum VaultCryptoError: Error, Equatable, Sendable {
     case keychain(OSStatus)
 }
 
-public struct VaultKeychainQuery: Equatable, Sendable {
-    public enum Operation: Sendable { case read, add, update, delete }
-    public let descriptor: VaultKeyDescriptor
-    public let operation: Operation
-    public init(descriptor: VaultKeyDescriptor, operation: Operation) { self.descriptor = descriptor; self.operation = operation }
-}
-
 public struct VaultKeychainStore: VaultAtomicKeyStoring {
     public init() {}
-    public func query(for descriptor: VaultKeyDescriptor, operation: VaultKeychainQuery.Operation) -> VaultKeychainQuery {
-        VaultKeychainQuery(descriptor: descriptor, operation: operation)
-    }
     public func data(for descriptor: VaultKeyDescriptor) throws -> Data? {
 #if canImport(Security)
         var query = baseQuery(descriptor)
@@ -326,7 +316,11 @@ public struct VaultChunkedCryptor: Sendable {
     private func decrypt(_ frames:[Data],_ parsed:Parsed,_ range:Range<Int>,_ rootKey:(UInt32)throws->VaultRootKey)throws->Data {
         let root=try rootKey(parsed.rootVersion); guard root.version == parsed.rootVersion else { throw VaultCryptoError.wrongRootVersion }
         let dek=try unwrap(frames[0],root,parsed.envelopes[0].objectID,parsed.envelopes[0].revision); let key=SymmetricKey(data:dek)
-        let chunks=try planRange(range,plaintextLength:Int(parsed.length)); var output=Data(); output.reserveCapacity(range.count)
+        // An empty-plaintext object still has one chunk (its tag over zero
+        // bytes), and a full open must authenticate it even though the
+        // requested range is itself empty.
+        let chunks = parsed.length == 0 ? 0..<1 : try planRange(range,plaintextLength:Int(parsed.length))
+        var output=Data(); output.reserveCapacity(range.count)
         for number in chunks {
             if Task.isCancelled { throw VaultCryptoError.invalidLength }
             let e=parsed.envelopes[number]; let aad=associatedData(e.role,e.rootVersion,e.objectID,e.revision,e.chunkIndex,e.plaintextLength); let box=try sealedBox(e)

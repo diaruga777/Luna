@@ -328,9 +328,12 @@ path.
 
 The decisive trigger is `.xteinkRendezvousReady`, posted only after the GATT
 service, notifications, and current nonce are ready. Existing launch,
-foreground, and background sweeps may prepare or retry queued work, but a
-Xteink send only ever actually goes out from that trigger — there is no
-periodic background wake to piggyback on.
+foreground, and background sweeps first promote ready items whose source is
+configured for `.allSaves` into `.queued`; this also covers articles finalized
+by the share/action extensions, which cannot call the app-only readiness hook.
+Those sweeps may then retry queued work, but a Xteink send only ever actually
+goes out from that trigger — there is no periodic background wake to piggyback
+on.
 
 ## UI
 

@@ -353,6 +353,24 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertEqual(sendState(waiting, second.id), .sent)
     }
 
+    /// Share/action extensions persist articles directly to `.ready`, so the
+    /// app's lifecycle retry must reconstruct the automatic send queue for an
+    /// enabled capture source before the Xteink rendezvous sweep runs.
+    func testRetryPendingSendsQueuesReadyAutoSendItemFromExtension() async {
+        second.modeForSource = { $0 == .shareSheet ? .allSaves : .off }
+        let automatic = makeReadyItem("https://example.com/shared", source: .shareSheet)
+        let optedOut = makeReadyItem("https://example.com/pasted", source: .paste)
+
+        XCTAssertNil(sendState(automatic, second.id))
+        coordinator.retryPendingSends()
+        XCTAssertEqual(sendState(automatic, second.id), .queued)
+        XCTAssertNil(sendState(optedOut, second.id))
+
+        await drainDeliveries()
+        XCTAssertEqual(sendState(automatic, second.id), .sent)
+        XCTAssertTrue(second.sentTitles.contains("An Article"))
+    }
+
     func testEnoughSoftFailuresGiveUp() async {
         kindle.shouldFail = true
         let item = makeReadyItem()

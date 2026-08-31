@@ -141,8 +141,11 @@ generation, delivery, and per-destination per-item state:
   long-press context menu).
 - `articleBecameReady(_:)` — see above.
 - `retryPendingSends()` — launch, foreground, pull-to-refresh, background
-  entry, and the existing overnight mail/price background tasks all sweep
-  `.queued` sends whose backoff has elapsed.
+  entry, and the existing overnight mail/price background tasks reconcile
+  ready items whose source mode is `.allSaves` into `.queued`, then sweep all
+  `.queued` sends whose backoff has elapsed. This reconciliation covers
+  share/action extensions, which persist ready article content without running
+  the app-only readiness observer.
 - `sendTestDocument(toDestinationID:)` — backs each destination's Settings
   test row with a small literal `ArticleContent`.
 - The EPUB is built once per delivery attempt; in-flight sends are deduped by

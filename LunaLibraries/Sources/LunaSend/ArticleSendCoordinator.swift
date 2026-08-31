@@ -260,9 +260,15 @@ public final class ArticleSendCoordinator {
         guard !item.isPlatformItem else { return }
         for destination in destinations where destination.isConfigured {
             let state = item.sendState(for: destination.id)
-            let shouldSend = state == .queued
-                || (destination.sendMode(for: item) == .allSaves && state == nil)
+            let shouldAutoSend = destination.sendMode(for: item) == .allSaves && state == nil
+            let shouldSend = state == .queued || shouldAutoSend
             guard shouldSend else { continue }
+            // Persist the automatic enqueue before handing work to a detached
+            // task. This is both the durable intent and the hand-off that a
+            // later Xteink rendezvous sweep consumes if the receiver is asleep.
+            if shouldAutoSend {
+                store.setSendState(.queued, for: item.id, destination: destination.id)
+            }
             let task = Task { _ = await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
             deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
         }
@@ -298,12 +304,24 @@ public final class ArticleSendCoordinator {
     public func retryPendingSends() {
         for item in store.items() {
             for destination in destinations where destination.isConfigured {
-                let state = item.sendState(for: destination.id)
-                guard state == .queued else { continue }
-                guard shouldAttempt(item, destinationID: destination.id, respectBackoff: true) else {
+                // Share/action extensions persist article content directly and
+                // cannot install ArticleShellWiring's readiness observer. On
+                // launch/foreground the ready row is therefore the only signal
+                // that an all-saves source needs an automatic send. Reconcile
+                // that missing queue row before sweeping existing work.
+                guard let current = store.item(withID: item.id) else { continue }
+                if current.state == .ready,
+                   current.sendState(for: destination.id) == nil,
+                   destination.sendMode(for: current) == .allSaves {
+                    store.setSendState(.queued, for: current.id, destination: destination.id)
+                }
+
+                guard let queued = store.item(withID: item.id),
+                      queued.sendState(for: destination.id) == .queued else { continue }
+                guard shouldAttempt(queued, destinationID: destination.id, respectBackoff: true) else {
                     continue
                 }
-                let task = Task { _ = await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
+                let task = Task { _ = await self.sendBuildingEPUB(queued, to: destination, respectBackoff: true) }
                 deliveryTaskObserver?.coordinatorDidStartDeliveryTask(task)
             }
         }

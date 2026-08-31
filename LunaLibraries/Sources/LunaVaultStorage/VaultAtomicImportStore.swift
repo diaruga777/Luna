@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
@@ -72,31 +73,33 @@ extension VaultRepository: VaultAtomicObjectInserting {
         } else if try !upsert(request.record) {
             return false
         }
-        do {
-            if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
-            if try localContentCapability(for: request.record.id) == nil {
-                if let contentURL = request.contentURL {
-                    _ = try writeContent(from: contentURL,
-                                         expectedByteCount: request.contentByteCount,
-                                         for: request.record.id,
-                                         visibility: !request.deferVisibility,
-                                         authenticatedGeneration: request.authenticatedGeneration)
-                } else {
-                    _ = try writeContent(request.content, for: request.record.id,
-                                         visibility: !request.deferVisibility,
-                                         authenticatedGeneration: request.authenticatedGeneration)
-                }
-            }
-            for job in request.jobs { try enqueue(job) }
-            // A deferred request intentionally remains invisible. The caller
-            // publishes it after its sidecar metadata transaction commits.
-            return true
-        } catch {
-            // Keep the object row as a durable recovery anchor. The import
-            // journal can retry the missing content/jobs on the next launch;
-            // never silently claim an incomplete import succeeded.
-            throw error
+        // Keep the object row as a durable recovery anchor even when a step
+        // below throws. The import journal can retry the missing
+        // content/jobs on the next launch; never silently claim an
+        // incomplete import succeeded.
+        if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
+        if let capability = try localContentCapability(for: request.record.id) {
+            try validateReplayedBody(against: capability, request: request)
+        } else if let contentURL = request.contentURL {
+            _ = try writeContent(from: contentURL,
+                                 expectedByteCount: request.contentByteCount,
+                                 for: request.record.id,
+                                 visibility: !request.deferVisibility,
+                                 authenticatedGeneration: request.authenticatedGeneration)
+        } else {
+            _ = try writeContent(request.content, for: request.record.id,
+                                 visibility: !request.deferVisibility,
+                                 authenticatedGeneration: request.authenticatedGeneration)
         }
+        // A retry can land here after content was already installed by an
+        // earlier attempt that crashed before the ready bit committed. The
+        // write above is then skipped, so the bit must still be republished
+        // here or the object stays claimable-never.
+        if !request.deferVisibility { try setObjectReady(request.record.id) }
+        for job in request.jobs { try enqueue(job) }
+        // A deferred request intentionally remains invisible. The caller
+        // publishes it after its sidecar metadata transaction commits.
+        return true
     }
 
     /// Descriptor-preserving import boundary.  The setup coordinator keeps
@@ -116,19 +119,60 @@ extension VaultRepository: VaultAtomicObjectInserting {
         } else if try !upsert(request.record) {
             return false
         }
-        do {
-            if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
-            if try localContentCapability(for: request.record.id) == nil {
-                try writeContent(from: contentHandle,
-                                 expectedByteCount: request.contentByteCount,
-                                 for: request.record.id,
-                                 visibility: !request.deferVisibility,
-                                 authenticatedGeneration: request.authenticatedGeneration)
+        if request.deferVisibility { try setObjectReady(request.record.id, ready: false) }
+        if let capability = try localContentCapability(for: request.record.id) {
+            guard capability.byteCount == request.contentByteCount else {
+                throw VaultStorageError.invalidArtifact
             }
-            for job in request.jobs { try enqueue(job) }
-            return true
-        } catch {
-            throw error
+            let digest = try digestSkippingRestore(of: contentHandle)
+            guard digest == capability.contentDigest else { throw VaultStorageError.invalidArtifact }
+        } else {
+            try writeContent(from: contentHandle,
+                             expectedByteCount: request.contentByteCount,
+                             for: request.record.id,
+                             visibility: !request.deferVisibility,
+                             authenticatedGeneration: request.authenticatedGeneration)
         }
+        if !request.deferVisibility { try setObjectReady(request.record.id) }
+        for job in request.jobs { try enqueue(job) }
+        return true
+    }
+
+    /// A replay must not silently keep stale bytes for a request whose body
+    /// changed under the same (objectID, revision) key. Keying acceptance on
+    /// the identifier pair alone is not enough — the retried content is
+    /// authenticated against the capability that the earlier attempt
+    /// installed before the request is accepted as a true no-op.
+    private func validateReplayedBody(against capability: VaultLocalContentCapability,
+                                      request: VaultAtomicObjectInsertRequest) throws {
+        guard capability.byteCount == request.contentByteCount else {
+            throw VaultStorageError.invalidArtifact
+        }
+        let digest: String
+        if let contentURL = request.contentURL {
+            let handle = try VaultSecureFileAccess.openRegularReadOnly(at: contentURL)
+            defer { try? handle.close() }
+            digest = try Self.digest(handle)
+        } else {
+            digest = SHA256.hash(data: request.content).map { String(format: "%02x", $0) }.joined()
+        }
+        guard digest == capability.contentDigest else { throw VaultStorageError.invalidArtifact }
+    }
+
+    /// Digests a caller-owned handle without disturbing the offset the
+    /// caller expects to find it at afterward.
+    private func digestSkippingRestore(of handle: FileHandle) throws -> String {
+        let originalOffset = try handle.offsetInFile
+        try handle.seek(toOffset: 0)
+        defer { try? handle.seek(toOffset: originalOffset) }
+        return try Self.digest(handle)
+    }
+
+    private static func digest(_ handle: FileHandle) throws -> String {
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

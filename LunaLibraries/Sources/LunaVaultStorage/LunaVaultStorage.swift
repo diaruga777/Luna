@@ -92,6 +92,11 @@ public enum VaultSecureFileAccess {
         guard renameat(sourceDirectory, sourceName, destinationDirectory, destinationName) == 0 else {
             throw VaultStorageError.invalidArtifact
         }
+        // The renamed file's own bytes are already fsynced by its writer.
+        // The directory entry that now points to them is not durable until
+        // the directory inode is fsynced too, or a crash can lose the
+        // rename and leave the previous (or no) entry in place.
+        guard fsync(destinationDirectory) == 0 else { throw VaultStorageError.invalidArtifact }
     }
 
     /// Removes only a regular file, anchored to its parent descriptor.
@@ -207,7 +212,6 @@ public struct VaultStorageConfiguration: Equatable, Sendable {
         self.cacheQuotaOverrideBytes = cacheQuotaBytes.map { min(max($0, 2_000_000_000), 20_000_000_000) }
         self.vaultID = vaultID
     }
-    public var cacheQuotaBytes: Int64 { cacheQuotaOverrideBytes ?? 2_000_000_000 }
     public func cacheQuota(availableCapacity: Int64) -> Int64 {
         cacheQuotaOverrideBytes ?? min(max(availableCapacity / 10, 2_000_000_000), 20_000_000_000)
     }
@@ -375,6 +379,11 @@ public final class VaultRepository: @unchecked Sendable {
     private let fileManager: FileManager; private let configuration: VaultStorageConfiguration
     private let protectionApplier: VaultFileProtectionApplying
     private let stagingAllowanceBytes: Int64
+    /// Inode already confirmed protected, by path. `protectDatabaseFiles`
+    /// runs after every repository call; memoizing by inode turns a repeat
+    /// call on an unchanged file into a `stat` instead of a protection
+    /// attribute write plus a read-back verification.
+    private var protectedDatabaseInodes: [String: UInt64] = [:]
 
     /// Production initializer fails closed when the entitled App Group is unavailable.
     public convenience init(configuration: VaultStorageConfiguration = VaultStorageConfiguration(), fileManager: FileManager = .default, protectionApplier: VaultFileProtectionApplying = SystemVaultFileProtectionApplier()) throws {
@@ -404,16 +413,29 @@ public final class VaultRepository: @unchecked Sendable {
     public func objects(includeDeleted:Bool=false)throws->[VaultObjectRecord]{try sync{var result=[VaultObjectRecord]();let whereClause=includeDeleted ? "":" WHERE tombstone=0";try query("SELECT id,revision,logical_time,device_id,size,content_type,created_at,updated_at,accessed_at,tombstone FROM objects\(whereClause) ORDER BY logical_time DESC,device_id DESC,revision DESC"){row in guard let u=UUID(uuidString:row.text(0) ?? "")else{throw VaultStorageError.sqlite("object id")};result.append(try decodeRecord(VaultObjectID(rawValue:u),row,offset:1))};return result}}
     @discardableResult public func upsert(_ record:VaultObjectRecord)throws->Bool{try sync{try transaction{
         if let tomb=try tombstoneLocked(record.id), compare(record.logicalTime,record.deviceID,record.revision,tomb.logicalTime,tomb.deviceID,tomb.revision)<=0{return false}
-        if let old=try objectLocked(record.id), compare(record.logicalTime,record.deviceID,record.revision,old.logicalTime,old.deviceID,old.revision)<=0{return false}
+        let old=try objectLocked(record.id)
+        if let old, compare(record.logicalTime,record.deviceID,record.revision,old.logicalTime,old.deviceID,old.revision)<=0{return false}
         try run("INSERT INTO objects(id,revision,logical_time,device_id,size,content_type,created_at,updated_at,accessed_at,tombstone) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,device_id=excluded.device_id,size=excluded.size,content_type=excluded.content_type,created_at=excluded.created_at,updated_at=excluded.updated_at,accessed_at=excluded.accessed_at,tombstone=excluded.tombstone",
             [.text(record.id.rawValue.uuidString),.text(record.revision.uuidString),.int(record.logicalTime),.text(record.deviceID),.int(record.size),record.contentType.map(SQLiteValue.text) ?? .null,.double(record.createdAt.timeIntervalSinceReferenceDate),.double(record.updatedAt.timeIntervalSinceReferenceDate),.double(record.accessedAt.timeIntervalSinceReferenceDate),.int(record.isTombstone ? 1:0)])
+        // A winning revision that differs from the previous one invalidates
+        // any payload a worker already authenticated as ready: the bit must
+        // not outlive the revision it was published for.
+        if let old, old.revision != record.revision {
+            try run("INSERT INTO object_visibility(object_id,ready,updated_at) VALUES(?,0,?) ON CONFLICT(object_id) DO UPDATE SET ready=0,updated_at=excluded.updated_at",
+                [.text(record.id.rawValue.uuidString),.double(record.updatedAt.timeIntervalSinceReferenceDate)])
+        }
         return true
     }}}
     @discardableResult public func tombstone(_ tombstone:VaultTombstone)throws->Bool{try sync{let advanced=try transaction{
         if let old=try tombstoneLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)<=0{return false}
         if let old=try objectLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)<=0{return false}
         try run("INSERT INTO tombstones(id,revision,logical_time,device_id,deleted_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,logical_time=excluded.logical_time,device_id=excluded.device_id,deleted_at=excluded.deleted_at",[.text(tombstone.id.rawValue.uuidString),.text(tombstone.revision.uuidString),.int(tombstone.logicalTime),.text(tombstone.deviceID),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate)])
-        if let old=try objectLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)>0 {try run("UPDATE objects SET revision=?,logical_time=?,device_id=?,size=0,updated_at=?,accessed_at=?,tombstone=1 WHERE id=?",[.text(tombstone.revision.uuidString),.int(tombstone.logicalTime),.text(tombstone.deviceID),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.text(tombstone.id.rawValue.uuidString)])}
+        if let old=try objectLocked(tombstone.id),compare(tombstone.logicalTime,tombstone.deviceID,tombstone.revision,old.logicalTime,old.deviceID,old.revision)>0 {
+            try run("UPDATE objects SET revision=?,logical_time=?,device_id=?,size=0,updated_at=?,accessed_at=?,tombstone=1 WHERE id=?",[.text(tombstone.revision.uuidString),.int(tombstone.logicalTime),.text(tombstone.deviceID),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate),.text(tombstone.id.rawValue.uuidString)])
+            // The winning tombstone advances the object row past whatever
+            // revision was last marked ready; that bit must not survive it.
+            try run("INSERT INTO object_visibility(object_id,ready,updated_at) VALUES(?,0,?) ON CONFLICT(object_id) DO UPDATE SET ready=0,updated_at=excluded.updated_at",[.text(tombstone.id.rawValue.uuidString),.double(tombstone.deletedAt.timeIntervalSinceReferenceDate)])
+        }
         try enqueueCleanupLocked(tombstone.id)
         try run("DELETE FROM cache WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)])
         try run("DELETE FROM extraction_artifacts WHERE object_id=?",[.text(tombstone.id.rawValue.uuidString)])
@@ -423,53 +445,14 @@ public final class VaultRepository: @unchecked Sendable {
         return true}
         if advanced{try drainPendingCleanup()};return advanced}}
 
-    public func writeContent(_ data:Data,for id:VaultObjectID,
+    public func writeContent(_ data: Data, for id: VaultObjectID,
                              visibility: Bool = true,
-                             authenticatedGeneration: VaultAuthenticatedGeneration? = nil)throws->URL{try sync{
-        guard let object=try objectLocked(id),!object.isTombstone else{throw VaultStorageError.missingObject}
-        if let capability = authenticatedGeneration {
-            guard capability.objectID == id, capability.revision == object.revision,
-                  capability.kind == .content else { throw VaultStorageError.invalidArtifact }
+                             authenticatedGeneration: VaultAuthenticatedGeneration? = nil) throws -> URL {
+        try sync {
+            try installContent(.data(data), expectedByteCount: Int64(data.count), for: id,
+                               visibility: visibility, authenticatedGeneration: authenticatedGeneration)
         }
-        let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString,isDirectory:true);try VaultSecureFileAccess.ensureDirectory(at: dir);try protect(dir)
-        let token=UUID().uuidString,staging=dir.appendingPathComponent(".staging-\(token)"),stagingGeneration=dir.appendingPathComponent(".generation-staging-\(token)")
-        let final=dir.appendingPathComponent("content"),generation=dir.appendingPathComponent(".content-generation"),backup=dir.appendingPathComponent(".previous"),backupGeneration=dir.appendingPathComponent(".previous-generation")
-        guard Int64(data.count) == object.size else { throw VaultStorageError.invalidArtifact }
-        guard Int64(data.count)<=cacheQuotaBytes+stagingAllowanceBytes else{throw VaultStorageError.stagingLimit}
-        do{
-            try writeProtectedData(data, to: staging)
-            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            let capabilityGeneration = authenticatedGeneration?.value ?? digest
-            guard capabilityGeneration.count == 64,
-                  capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
-                throw VaultStorageError.invalidArtifact
-            }
-            try writeProtectedData(Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8), to: stagingGeneration)
-            for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try VaultSecureFileAccess.removeRegularFile(at: oldBackup)}
-            if fileManager.fileExists(atPath:final.path){try VaultSecureFileAccess.install(final, at: backup)}
-            if fileManager.fileExists(atPath:generation.path){try VaultSecureFileAccess.install(generation, at: backupGeneration)}
-            do{
-                // Data Protection attributes were applied and fsynced on staging and
-                // survive rename. Never install first and protect afterward.
-                try VaultSecureFileAccess.install(staging, at: final)
-                try VaultSecureFileAccess.install(stagingGeneration, at: generation)
-                // The simulator cannot report the protection class after a
-                // rename, so carry the authenticated inode into its final
-                // paths for same-process reads and previews.
-                VaultSimulatorProtectionLedger.record(final)
-                VaultSimulatorProtectionLedger.record(generation)
-                for oldBackup in [backup,backupGeneration] where fileManager.fileExists(atPath:oldBackup.path){try VaultSecureFileAccess.removeRegularFile(at: oldBackup)}
-            }catch{
-                if fileManager.fileExists(atPath:final.path){try?VaultSecureFileAccess.removeRegularFile(at: final)}
-                if fileManager.fileExists(atPath:generation.path){try?VaultSecureFileAccess.removeRegularFile(at: generation)}
-                if fileManager.fileExists(atPath:backup.path){try VaultSecureFileAccess.install(backup, at: final)}
-                if fileManager.fileExists(atPath:backupGeneration.path){try VaultSecureFileAccess.install(backupGeneration, at: generation)}
-                throw error
-            }
-            if visibility { try markObjectReadyLocked(id) }
-            return final
-        }catch{try?VaultSecureFileAccess.removeRegularFile(at: staging);try?VaultSecureFileAccess.removeRegularFile(at: stagingGeneration);throw error}
-    }}
+    }
 
     /// Installs a regular file without materialising it as `Data`. The source
     /// descriptor is checked before opening, then copied through an open file
@@ -480,67 +463,8 @@ public final class VaultRepository: @unchecked Sendable {
                              for id: VaultObjectID, visibility: Bool = true,
                              authenticatedGeneration: VaultAuthenticatedGeneration? = nil) throws -> URL {
         try sync {
-            guard let object = try objectLocked(id), !object.isTombstone else {
-                throw VaultStorageError.missingObject
-            }
-            if let capability = authenticatedGeneration {
-                guard capability.objectID == id, capability.revision == object.revision,
-                      capability.kind == .content else { throw VaultStorageError.invalidArtifact }
-            }
-            guard sourceURL.isFileURL,
-                  (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) != true,
-                  (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isSymbolicLink) != true else {
-                throw VaultStorageError.invalidArtifact
-            }
-            // Keep one no-follow descriptor for the size check and the full
-            // copy. A pathname replacement after this point cannot alter the
-            // bytes consumed by the install.
-            let source = try VaultSecureFileAccess.openRegularReadOnly(at: sourceURL)
-            defer { try? source.close() }
-            let sourceSize = try source.seekToEnd()
-            try source.seek(toOffset: 0)
-            let size = expectedByteCount ?? Int64(sourceSize)
-            guard size == sourceSize, size == object.size, size <= 100_000_000_000 else {
-                throw VaultStorageError.invalidArtifact
-            }
-            let dir = contentDirectory.appendingPathComponent(id.rawValue.uuidString, isDirectory: true)
-            try VaultSecureFileAccess.ensureDirectory(at: dir)
-            try protect(dir)
-            let token = UUID().uuidString
-            let staging = dir.appendingPathComponent(".staging-\(token)")
-            let stagingGeneration = dir.appendingPathComponent(".generation-staging-\(token)")
-            let final = dir.appendingPathComponent("content")
-            let generation = dir.appendingPathComponent(".content-generation")
-            let backup = dir.appendingPathComponent(".previous")
-            let backupGeneration = dir.appendingPathComponent(".previous-generation")
-            do {
-                let digest = try streamCopy(source, to: staging, expectedByteCount: size)
-                let capabilityGeneration = authenticatedGeneration?.value ?? digest
-                guard capabilityGeneration.count == 64,
-                      capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
-                    throw VaultStorageError.invalidArtifact
-                }
-                let marker = Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8)
-                try writeProtectedData(marker, to: stagingGeneration)
-                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try VaultSecureFileAccess.removeRegularFile(at: old)
-                }
-                if fileManager.fileExists(atPath: final.path) { try VaultSecureFileAccess.install(final, at: backup) }
-                if fileManager.fileExists(atPath: generation.path) { try VaultSecureFileAccess.install(generation, at: backupGeneration) }
-                try VaultSecureFileAccess.install(staging, at: final)
-                try VaultSecureFileAccess.install(stagingGeneration, at: generation)
-                VaultSimulatorProtectionLedger.record(final)
-                VaultSimulatorProtectionLedger.record(generation)
-                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try VaultSecureFileAccess.removeRegularFile(at: old)
-                }
-                if visibility { try markObjectReadyLocked(id) }
-                return final
-            } catch {
-                try? VaultSecureFileAccess.removeRegularFile(at: staging)
-                try? VaultSecureFileAccess.removeRegularFile(at: stagingGeneration)
-                throw error
-            }
+            try installContent(.url(sourceURL), expectedByteCount: expectedByteCount, for: id,
+                               visibility: visibility, authenticatedGeneration: authenticatedGeneration)
         }
     }
 
@@ -551,66 +475,113 @@ public final class VaultRepository: @unchecked Sendable {
                              for id: VaultObjectID, visibility: Bool = true,
                              authenticatedGeneration: VaultAuthenticatedGeneration? = nil) throws -> URL {
         try sync {
-            guard let object = try objectLocked(id), !object.isTombstone,
-                  expectedByteCount >= 0, expectedByteCount == object.size else {
-                throw VaultStorageError.invalidArtifact
-            }
-            if let capability = authenticatedGeneration {
-                guard capability.objectID == id, capability.revision == object.revision,
-                      capability.kind == .content else { throw VaultStorageError.invalidArtifact }
-            }
-            let originalOffset = try source.offsetInFile
-            try source.seek(toOffset: 0)
-            defer { try? source.seek(toOffset: originalOffset) }
-            let sourceSize = try source.seekToEnd()
-            try source.seek(toOffset: 0)
-            guard Int64(sourceSize) == expectedByteCount,
-                  expectedByteCount <= 100_000_000_000 else {
-                throw VaultStorageError.invalidArtifact
-            }
-            let dir = contentDirectory.appendingPathComponent(id.rawValue.uuidString, isDirectory: true)
-            try VaultSecureFileAccess.ensureDirectory(at: dir)
-            try protect(dir)
-            let token = UUID().uuidString
-            let staging = dir.appendingPathComponent(".staging-\(token)")
-            let stagingGeneration = dir.appendingPathComponent(".generation-staging-\(token)")
-            let final = dir.appendingPathComponent("content")
-            let generation = dir.appendingPathComponent(".content-generation")
-            let backup = dir.appendingPathComponent(".previous")
-            let backupGeneration = dir.appendingPathComponent(".previous-generation")
-            do {
-                let digest = try streamCopy(source, to: staging, expectedByteCount: expectedByteCount)
-                let capabilityGeneration = authenticatedGeneration?.value ?? digest
-                guard capabilityGeneration.count == 64,
-                      capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+            try installContent(.handle(source), expectedByteCount: expectedByteCount, for: id,
+                               visibility: visibility, authenticatedGeneration: authenticatedGeneration)
+        }
+    }
+
+    /// The bytes to install, in whichever form the caller already holds
+    /// them. Only one implementation stages, backs up, installs and rolls
+    /// back content, so the three public `writeContent` overloads cannot
+    /// drift from one another on the failure path.
+    private enum ContentSource { case data(Data), url(URL), handle(FileHandle) }
+
+    private func installContent(_ source: ContentSource, expectedByteCount: Int64?, for id: VaultObjectID,
+                                visibility: Bool, authenticatedGeneration: VaultAuthenticatedGeneration?) throws -> URL {
+        guard let object = try objectLocked(id), !object.isTombstone else { throw VaultStorageError.missingObject }
+        if let capability = authenticatedGeneration {
+            guard capability.objectID == id, capability.revision == object.revision,
+                  capability.kind == .content else { throw VaultStorageError.invalidArtifact }
+        }
+        let dir = contentDirectory.appendingPathComponent(id.rawValue.uuidString, isDirectory: true)
+        try VaultSecureFileAccess.ensureDirectory(at: dir)
+        try protect(dir)
+        let token = UUID().uuidString
+        let staging = dir.appendingPathComponent(".staging-\(token)")
+        let stagingGeneration = dir.appendingPathComponent(".generation-staging-\(token)")
+        let final = dir.appendingPathComponent("content")
+        let generation = dir.appendingPathComponent(".content-generation")
+        let backup = dir.appendingPathComponent(".previous")
+        let backupGeneration = dir.appendingPathComponent(".previous-generation")
+        do {
+            let digest: String
+            switch source {
+            case .data(let data):
+                guard Int64(data.count) == object.size else { throw VaultStorageError.invalidArtifact }
+                guard Int64(data.count) <= cacheQuotaBytes + stagingAllowanceBytes else { throw VaultStorageError.stagingLimit }
+                try writeProtectedData(data, to: staging)
+                digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            case .url(let sourceURL):
+                guard sourceURL.isFileURL,
+                      (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) != true,
+                      (try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isSymbolicLink) != true else {
                     throw VaultStorageError.invalidArtifact
                 }
-                try writeProtectedData(
-                    Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8),
-                    to: stagingGeneration)
-                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try VaultSecureFileAccess.removeRegularFile(at: old)
+                // Keep one no-follow descriptor for the size check and the
+                // full copy. A pathname replacement after this point cannot
+                // alter the bytes consumed by the install.
+                let handle = try VaultSecureFileAccess.openRegularReadOnly(at: sourceURL)
+                defer { try? handle.close() }
+                let sourceSize = try handle.seekToEnd()
+                try handle.seek(toOffset: 0)
+                let size = expectedByteCount ?? Int64(sourceSize)
+                guard size == sourceSize, size == object.size, size <= 100_000_000_000 else {
+                    throw VaultStorageError.invalidArtifact
                 }
-                if fileManager.fileExists(atPath: final.path) {
-                    try VaultSecureFileAccess.install(final, at: backup)
+                digest = try streamCopy(handle, to: staging, expectedByteCount: size)
+            case .handle(let handle):
+                guard let expectedByteCount, expectedByteCount >= 0, expectedByteCount == object.size else {
+                    throw VaultStorageError.invalidArtifact
                 }
-                if fileManager.fileExists(atPath: generation.path) {
-                    try VaultSecureFileAccess.install(generation, at: backupGeneration)
+                let originalOffset = try handle.offsetInFile
+                try handle.seek(toOffset: 0)
+                defer { try? handle.seek(toOffset: originalOffset) }
+                let sourceSize = try handle.seekToEnd()
+                try handle.seek(toOffset: 0)
+                guard Int64(sourceSize) == expectedByteCount, expectedByteCount <= 100_000_000_000 else {
+                    throw VaultStorageError.invalidArtifact
                 }
+                digest = try streamCopy(handle, to: staging, expectedByteCount: expectedByteCount)
+            }
+            let capabilityGeneration = authenticatedGeneration?.value ?? digest
+            guard capabilityGeneration.count == 64,
+                  capabilityGeneration.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                throw VaultStorageError.invalidArtifact
+            }
+            try writeProtectedData(Data("\(object.revision.uuidString):\(capabilityGeneration):\(digest)".utf8), to: stagingGeneration)
+            for oldBackup in [backup, backupGeneration] where fileManager.fileExists(atPath: oldBackup.path) {
+                try VaultSecureFileAccess.removeRegularFile(at: oldBackup)
+            }
+            if fileManager.fileExists(atPath: final.path) { try VaultSecureFileAccess.install(final, at: backup) }
+            if fileManager.fileExists(atPath: generation.path) { try VaultSecureFileAccess.install(generation, at: backupGeneration) }
+            do {
+                // Data Protection attributes were applied and fsynced on staging and
+                // survive rename. Never install first and protect afterward.
                 try VaultSecureFileAccess.install(staging, at: final)
                 try VaultSecureFileAccess.install(stagingGeneration, at: generation)
+                // The simulator cannot report the protection class after a
+                // rename, so carry the authenticated inode into its final
+                // paths for same-process reads and previews.
                 VaultSimulatorProtectionLedger.record(final)
                 VaultSimulatorProtectionLedger.record(generation)
-                for old in [backup, backupGeneration] where fileManager.fileExists(atPath: old.path) {
-                    try VaultSecureFileAccess.removeRegularFile(at: old)
+                for oldBackup in [backup, backupGeneration] where fileManager.fileExists(atPath: oldBackup.path) {
+                    try VaultSecureFileAccess.removeRegularFile(at: oldBackup)
                 }
-                if visibility { try markObjectReadyLocked(id) }
-                return final
             } catch {
-                try? VaultSecureFileAccess.removeRegularFile(at: staging)
-                try? VaultSecureFileAccess.removeRegularFile(at: stagingGeneration)
+                // Every source shares this rollback: a failed swap must not
+                // strand the object between its old and new generations.
+                if fileManager.fileExists(atPath: final.path) { try? VaultSecureFileAccess.removeRegularFile(at: final) }
+                if fileManager.fileExists(atPath: generation.path) { try? VaultSecureFileAccess.removeRegularFile(at: generation) }
+                if fileManager.fileExists(atPath: backup.path) { try VaultSecureFileAccess.install(backup, at: final) }
+                if fileManager.fileExists(atPath: backupGeneration.path) { try VaultSecureFileAccess.install(backupGeneration, at: generation) }
                 throw error
             }
+            if visibility { try markObjectReadyLocked(id) }
+            return final
+        } catch {
+            try? VaultSecureFileAccess.removeRegularFile(at: staging)
+            try? VaultSecureFileAccess.removeRegularFile(at: stagingGeneration)
+            throw error
         }
     }
 
@@ -720,6 +691,36 @@ public final class VaultRepository: @unchecked Sendable {
         }
     }
 
+    /// A cheap currency check for callers, such as the thumbnail cache, that
+    /// only need to know whether an object's installed content is still at a
+    /// given revision/generation. Unlike `localContentCapability`, this never
+    /// hashes the content file, so it stays O(1) against content up to
+    /// 100 GB; it authenticates nothing and must not stand in for a
+    /// capability wherever the bytes themselves are read.
+    public func currentContentGeneration(for id: VaultObjectID) throws -> (revision: UUID, generation: String)? {
+        try sync { () -> (revision: UUID, generation: String)? in
+            guard let object = try objectLocked(id), !object.isTombstone else { return nil }
+            let url = contentURL(id)
+            let markerURL = generationURL(id)
+            guard fileManager.fileExists(atPath: url.path),
+                  fileManager.fileExists(atPath: markerURL.path),
+                  try protectionApplier.hasRequiredProtection(at: url),
+                  try protectionApplier.hasRequiredProtection(at: markerURL),
+                  let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  values.isDirectory != true, values.isSymbolicLink != true,
+                  let markerData = try? readBoundedFile(markerURL, maximumBytes: 256),
+                  let marker = String(data: markerData, encoding: .utf8),
+                  let separator = marker.firstIndex(of: ":") else { return nil }
+            let markerRevision = String(marker[..<separator])
+            let remainder = String(marker[marker.index(after: separator)...])
+            let generation = remainder.split(separator: ":", omittingEmptySubsequences: false).map(String.init).first ?? ""
+            guard markerRevision == object.revision.uuidString,
+                  generation.count == 64,
+                  generation.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+            return (object.revision, generation)
+        }
+    }
+
     public func validateLocalContentCapability(_ capability: VaultLocalContentCapability) throws -> Bool {
         guard let current = try localContentCapability(for: capability.objectID) else { return false }
         return current == capability
@@ -740,8 +741,9 @@ public final class VaultRepository: @unchecked Sendable {
     }}
     /// A durable visibility bit separates a metadata row from an installed
     /// protected payload. Workers must not claim jobs for an object until this
-    /// bit is true; it survives process death and is repaired from the content
-    /// generation marker on the next repository launch.
+    /// bit is true. It survives process death; `upsert` and `tombstone` clear
+    /// it whenever the winning revision differs from the one it was last set
+    /// for, so a stale bit cannot outlive the revision it was published for.
     public func objectIsReady(_ id: VaultObjectID) throws -> Bool {
         try sync {
             var ready = false
@@ -764,15 +766,6 @@ public final class VaultRepository: @unchecked Sendable {
     public func putCache(_ entry:VaultCacheEntry,now:Date=Date())throws{try sync{var downgraded=false;try transaction{guard entry.byteCount >= 0 else{throw VaultStorageError.invalidArtifact};var wasFull=false;var wasPinned=false;var wasEvictable=true;try query("SELECT full_content,pinned,supports_eviction FROM cache WHERE object_id=?",[.text(entry.objectID.rawValue.uuidString)]){wasFull=$0.int(0) != 0;wasPinned=$0.int(1) != 0;wasEvictable=$0.int(2) != 0};downgraded=wasFull && !entry.fullContent;if downgraded{try enqueueCleanupLocked(entry.objectID)};try run("INSERT INTO cache(object_id,bytes,full_content,last_accessed,created_at,pinned,supports_eviction) VALUES(?,?,?,?,?,?,?) ON CONFLICT(object_id) DO UPDATE SET bytes=excluded.bytes,full_content=excluded.full_content,last_accessed=excluded.last_accessed,pinned=excluded.pinned,supports_eviction=excluded.supports_eviction",[.text(entry.objectID.rawValue.uuidString),.int(entry.byteCount),.int(entry.fullContent ? 1:0),.double(entry.lastAccessedAt.timeIntervalSinceReferenceDate),.double(entry.createdAt.timeIntervalSinceReferenceDate),.int((entry.pinned || wasPinned) ? 1:0),.int(entry.supportsEviction && wasEvictable ? 1:0)])};if downgraded{try drainPendingCleanup()};try evictLocked(now:now)}}
     public func cacheEntries()throws->[VaultCacheEntry]{try sync{var result=[VaultCacheEntry]();try query("SELECT object_id,bytes,full_content,last_accessed,created_at,pinned,supports_eviction FROM cache ORDER BY last_accessed DESC"){r in guard let u=UUID(uuidString:r.text(0) ?? "")else{throw VaultStorageError.sqlite("cache id")};result.append(VaultCacheEntry(objectID:VaultObjectID(rawValue:u),byteCount:r.int(1),fullContent:r.int(2) != 0,lastAccessedAt:Date(timeIntervalSinceReferenceDate:r.double(3)),createdAt:Date(timeIntervalSinceReferenceDate:r.double(4)),pinned:r.int(5) != 0,supportsEviction:supportsCacheEviction && r.int(6) != 0))};return result}}
     public func setPinned(_ id:VaultObjectID,pinned:Bool)throws{try sync{try run("UPDATE cache SET pinned=? WHERE object_id=?",[.int(pinned ? 1:0),.text(id.rawValue.uuidString)])}}
-    /// Holds a full-content cache entry while an active preview owns its URL.
-    /// This state is durable so a second process cannot evict bytes beneath a
-    /// reader that is still using them.
-    @available(*, deprecated, message: "Use beginPreviewLease(_:duration:)")
-    public func setPreviewActive(_ id: VaultObjectID, active: Bool,
-                                 now: Date = Date()) throws {
-        throw VaultStorageError.invalidTransition
-    }
-
     public func isPreviewActive(_ id: VaultObjectID, now: Date = Date()) throws -> Bool {
         try sync {
             let now = now.timeIntervalSinceReferenceDate
@@ -868,9 +861,11 @@ public final class VaultRepository: @unchecked Sendable {
                 whereClause = ""
                 values = []
             }
-            try query("SELECT id FROM jobs\(whereClause) ORDER BY created_at,id", values) { row in
-                if let raw = row.text(0), let id = UUID(uuidString: raw),
-                   let job = try jobLocked(id) { result.append(job) }
+            // One row carries every column a job needs, so a full listing
+            // decodes directly instead of issuing one extra query per id.
+            try query("SELECT id,kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision FROM jobs\(whereClause) ORDER BY created_at,id", values) { row in
+                guard let raw = row.text(0), let id = UUID(uuidString: raw) else { return }
+                result.append(try decodeJob(id, row, offset: 1))
             }
             return result
         }
@@ -882,7 +877,6 @@ public final class VaultRepository: @unchecked Sendable {
         let nowValue=now.timeIntervalSinceReferenceDate
         let eligible=(job.state == .queued || job.state == .retrying) && (job.nextAttemptAt == nil || job.nextAttemptAt! <= now) || (job.state == .running && (job.leaseExpiresAt ?? .distantFuture) <= now)
         guard eligible, try jobObjectIsReadyLocked(job) else { return nil }
-        guard eligible else{return nil}
         let token=UUID()
         try run("UPDATE jobs SET state='running',attempts=attempts+1,lease_owner=?,lease_token=?,lease_expires=?,updated_at=? WHERE id=?",[.text(owner),.text(token.uuidString),.double(now.addingTimeInterval(leaseDuration).timeIntervalSinceReferenceDate),.double(nowValue),.text(id.uuidString)])
         guard sqlite3_changes(db)==1 else{return nil};return try jobLocked(id)
@@ -910,7 +904,10 @@ public final class VaultRepository: @unchecked Sendable {
     public func transitionJob(id:UUID,leaseToken:UUID?=nil,state:VaultJobState,error:String?=nil,nextAttemptAt:Date?=nil,now:Date=Date())throws{try sync{try transaction{guard let job=try jobLocked(id)else{throw VaultStorageError.missingObject};guard legal(job.state,state)else{throw VaultStorageError.invalidTransition};let common:[SQLiteValue]=[.text(state.rawValue),error.map(SQLiteValue.text) ?? .null,nextAttemptAt.map{$0.timeIntervalSinceReferenceDate}.map(SQLiteValue.double) ?? .null,.double(now.timeIntervalSinceReferenceDate),.text(id.uuidString)];if job.state == .running{guard let leaseToken,job.leaseToken==leaseToken,let expiry=job.leaseExpiresAt,expiry>now else{throw VaultStorageError.invalidTransition};try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_token=NULL,lease_expires=NULL WHERE id=? AND state='running' AND lease_token=? AND lease_expires>?",common+[.text(leaseToken.uuidString),.double(now.timeIntervalSinceReferenceDate)])}else{try run("UPDATE jobs SET state=?,last_error=?,next_attempt=?,updated_at=?,lease_owner=NULL,lease_token=NULL,lease_expires=NULL WHERE id=? AND state=? AND updated_at=?",common+[.text(job.state.rawValue),.double(job.updatedAt.timeIntervalSinceReferenceDate)])};guard sqlite3_changes(db)==1 else{throw VaultStorageError.invalidTransition};return ()}}}
     private func legal(_ old:VaultJobState,_ new:VaultJobState)->Bool{switch(old,new){case(.queued,.running),(.queued,.cancelled),(.retrying,.running),(.retrying,.cancelled),(.running,.succeeded),(.running,.retrying),(.running,.failed),(.running,.cancelled):return true;default:return false}}
 
-    public func putEncryptedArtifact(_ artifact:VaultEncryptedArtifact)throws{guard artifact.vaultID==configuration.vaultID else{throw VaultStorageError.invalidArtifact};let validated=try VaultEncryptedArtifact(kind:artifact.kind,vaultID:artifact.vaultID,revision:artifact.revision,rootVersion:artifact.rootVersion,encryptedFrames:artifact.encryptedFrames);let payload=try JSONEncoder().encode(validated.encryptedFrames);try sync{try run("INSERT INTO encrypted_artifacts(kind,vault_id,object_id,payload,revision,root_version,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET vault_id=excluded.vault_id,object_id=excluded.object_id,payload=excluded.payload,revision=excluded.revision,root_version=excluded.root_version,updated_at=excluded.updated_at",[.text(validated.kind.rawValue),.text(validated.vaultID),.text(validated.objectID.rawValue.uuidString),.blob(payload),.text(validated.revision.uuidString),.int(Int64(validated.rootVersion)),.double(Date().timeIntervalSinceReferenceDate)])}}
+    // `artifact` was already validated by its own throwing initializer; that
+    // initializer is the type's only one, so re-running it here only paid
+    // its chunk-envelope validation loop twice for no added safety.
+    public func putEncryptedArtifact(_ artifact:VaultEncryptedArtifact)throws{guard artifact.vaultID==configuration.vaultID else{throw VaultStorageError.invalidArtifact};let payload=try JSONEncoder().encode(artifact.encryptedFrames);try sync{try run("INSERT INTO encrypted_artifacts(kind,vault_id,object_id,payload,revision,root_version,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET vault_id=excluded.vault_id,object_id=excluded.object_id,payload=excluded.payload,revision=excluded.revision,root_version=excluded.root_version,updated_at=excluded.updated_at",[.text(artifact.kind.rawValue),.text(artifact.vaultID),.text(artifact.objectID.rawValue.uuidString),.blob(payload),.text(artifact.revision.uuidString),.int(Int64(artifact.rootVersion)),.double(Date().timeIntervalSinceReferenceDate)])}}
     public func encryptedArtifact(_ kind:VaultEncryptedArtifact.Kind)throws->VaultEncryptedArtifact?{try sync{var artifact:VaultEncryptedArtifact?;try query("SELECT vault_id,object_id,payload,revision,root_version FROM encrypted_artifacts WHERE kind=?",[.text(kind.rawValue)]){r in guard r.text(0)==configuration.vaultID,let expectedObject=UUID(uuidString:r.text(1) ?? ""),let data=r.blob(2),let frames=try?JSONDecoder().decode([Data].self,from:data),let revision=UUID(uuidString:r.text(3) ?? "")else{throw VaultStorageError.invalidArtifact};let decoded=try VaultEncryptedArtifact(kind:kind,vaultID:configuration.vaultID,revision:revision,rootVersion:UInt32(r.int(4)),encryptedFrames:frames);guard decoded.objectID.rawValue==expectedObject else{throw VaultStorageError.invalidArtifact};artifact=decoded};return artifact}}
 
     public func removeDownloadedMaterial(for identity:VaultRemoteObjectIdentity)throws{try sync{
@@ -1010,8 +1007,16 @@ public final class VaultRepository: @unchecked Sendable {
         try execute("BEGIN EXCLUSIVE")
         do {
             var version = try scalar("PRAGMA user_version")
+            // A database that starts this call at version 0 has no rows to
+            // preserve. `cache_activity` is superseded by `preview_leases`
+            // (Stage 5) and is never read or written by current code; a
+            // brand-new database has no reason to gain the table at all. A
+            // database already partway through the version ladder still
+            // creates it below, at the exact step that historically did, so
+            // its later steps keep finding the table they expect.
+            let startingVersion = version
             if version == 0 {
-                try execute("CREATE TABLE IF NOT EXISTS objects(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL CHECK(logical_time>=0),device_id TEXT NOT NULL,size INTEGER NOT NULL CHECK(size>=0),content_type TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,tombstone INTEGER NOT NULL CHECK(tombstone IN(0,1)));CREATE TABLE IF NOT EXISTS tombstones(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL CHECK(logical_time>=0),device_id TEXT NOT NULL,deleted_at REAL NOT NULL);CREATE TABLE IF NOT EXISTS cache(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,bytes INTEGER NOT NULL CHECK(bytes>=0),full_content INTEGER NOT NULL CHECK(full_content IN(0,1)),last_accessed REAL NOT NULL,created_at REAL NOT NULL,pinned INTEGER NOT NULL CHECK(pinned IN(0,1)),supports_eviction INTEGER NOT NULL DEFAULT 1 CHECK(supports_eviction IN(0,1)));CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,idempotency_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL CHECK(kind IN('importFile','index','upload','download','delete')),object_id TEXT REFERENCES objects(id) ON DELETE CASCADE,state TEXT NOT NULL CHECK(state IN('queued','running','retrying','succeeded','failed','cancelled')),attempts INTEGER NOT NULL CHECK(attempts>=0),next_attempt REAL,last_error TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,lease_owner TEXT,lease_expires REAL,CHECK((state='running')=(lease_owner IS NOT NULL AND lease_expires IS NOT NULL)));CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(state,next_attempt,lease_expires)")
+                try execute("CREATE TABLE IF NOT EXISTS objects(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL CHECK(logical_time>=0),device_id TEXT NOT NULL,size INTEGER NOT NULL CHECK(size>=0),content_type TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,tombstone INTEGER NOT NULL CHECK(tombstone IN(0,1)));CREATE TABLE IF NOT EXISTS tombstones(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL CHECK(logical_time>=0),device_id TEXT NOT NULL,deleted_at REAL NOT NULL);CREATE TABLE IF NOT EXISTS cache(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,bytes INTEGER NOT NULL CHECK(bytes>=0),full_content INTEGER NOT NULL CHECK(full_content IN(0,1)),last_accessed REAL NOT NULL,created_at REAL NOT NULL,pinned INTEGER NOT NULL CHECK(pinned IN(0,1)),supports_eviction INTEGER NOT NULL DEFAULT 1 CHECK(supports_eviction IN(0,1)));CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,idempotency_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL CHECK(kind IN('importFile','index','upload','download','delete')),object_id TEXT REFERENCES objects(id) ON DELETE CASCADE,state TEXT NOT NULL CHECK(state IN('queued','running','retrying','succeeded','failed','cancelled')),attempts INTEGER NOT NULL CHECK(attempts>=0),next_attempt REAL,last_error TEXT,created_at REAL NOT NULL,updated_at REAL NOT NULL,lease_owner TEXT,lease_expires REAL,CHECK((state='running')=(lease_owner IS NOT NULL AND lease_expires IS NOT NULL)));CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(state,next_attempt,lease_expires)")
                 version = 1
             }
             if version == 1 {
@@ -1041,13 +1046,20 @@ public final class VaultRepository: @unchecked Sendable {
                 // table because its earlier branch did not own that feature.
                 try execute("CREATE TABLE IF NOT EXISTS extraction_artifacts(object_id TEXT NOT NULL,revision TEXT NOT NULL,model_version TEXT NOT NULL,payload BLOB NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(object_id,revision,model_version))")
                 if try !hasColumn("cache", "supports_eviction") { try execute("ALTER TABLE cache ADD COLUMN supports_eviction INTEGER NOT NULL DEFAULT 1 CHECK(supports_eviction IN(0,1))") }
-                try execute("CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL);PRAGMA user_version=6")
+                if startingVersion != 0 {
+                    try execute("CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL)")
+                }
+                try execute("PRAGMA user_version=6")
                 version = 6
             }
             if version == 6 {
                 // Keep this branch idempotent for databases created by an
-                // interrupted Stage 5 migration.
-                try execute("CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL)")
+                // interrupted Stage 5 migration. A database that started
+                // this call at version 0 never had the table and does not
+                // gain it here either.
+                if startingVersion != 0 {
+                    try execute("CREATE TABLE IF NOT EXISTS cache_activity(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,active_preview INTEGER NOT NULL DEFAULT 0 CHECK(active_preview IN(0,1)),updated_at REAL NOT NULL)")
+                }
             }
             if version == 6 {
                 try execute("CREATE TABLE IF NOT EXISTS object_visibility(object_id TEXT PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN(0,1)),updated_at REAL NOT NULL);CREATE INDEX IF NOT EXISTS object_visibility_ready ON object_visibility(ready);PRAGMA user_version=7")
@@ -1090,22 +1102,27 @@ public final class VaultRepository: @unchecked Sendable {
     }
     private func tombstoneLocked(_ id:VaultObjectID)throws->VaultTombstone?{var result:VaultTombstone?;try query("SELECT revision,logical_time,device_id,deleted_at FROM tombstones WHERE id=?",[.text(id.rawValue.uuidString)]){r in guard let rev=UUID(uuidString:r.text(0) ?? "")else{throw VaultStorageError.sqlite("tombstone")};result=VaultTombstone(id:id,revision:rev,logicalTime:r.int(1),deletedAt:Date(timeIntervalSinceReferenceDate:r.double(3)),deviceID:r.text(2) ?? "")};return result}
     private func decodeRecord(_ id:VaultObjectID,_ r:SQLiteRow,offset:Int=0)throws->VaultObjectRecord{guard let rev=UUID(uuidString:r.text(offset) ?? "")else{throw VaultStorageError.sqlite("revision")};return VaultObjectRecord(id:id,revision:rev,logicalTime:r.int(offset+1),size:r.int(offset+3),contentType:r.text(offset+4),createdAt:Date(timeIntervalSinceReferenceDate:r.double(offset+5)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+6)),accessedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+7)),isTombstone:r.int(offset+8) != 0,deviceID:r.text(offset+2) ?? "")}
-    private func jobLocked(_ id:UUID)throws->VaultJob?{var result:VaultJob?;try query("SELECT kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision FROM jobs WHERE id=?",[.text(id.uuidString)]){r in guard let kind=VaultJobKind(rawValue:r.text(0) ?? ""),let state=VaultJobState(rawValue:r.text(2) ?? "")else{throw VaultStorageError.sqlite("job")};result=VaultJob(id:id,kind:kind,objectID:r.text(1).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:state,attempts:Int(r.int(3)),nextAttemptAt:r.optionalDouble(4).map{Date(timeIntervalSinceReferenceDate:$0)},lastError:r.text(5),createdAt:Date(timeIntervalSinceReferenceDate:r.double(6)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(7)),idempotencyKey:r.text(8),revision:r.text(12).flatMap{UUID(uuidString:$0)},backendKey:r.text(13),payloadGeneration:r.text(14),remoteObjectKind:r.text(15),expectedRemoteRevision:r.text(16).flatMap{UUID(uuidString:$0)},leaseOwner:r.text(9),leaseToken:r.text(10).flatMap{UUID(uuidString:$0)},leaseExpiresAt:r.optionalDouble(11).map{Date(timeIntervalSinceReferenceDate:$0)})};return result}
+    private func jobLocked(_ id:UUID)throws->VaultJob?{var result:VaultJob?;try query("SELECT kind,object_id,state,attempts,next_attempt,last_error,created_at,updated_at,idempotency_key,lease_owner,lease_token,lease_expires,revision,backend_key,payload_generation,remote_object_kind,expected_remote_revision FROM jobs WHERE id=?",[.text(id.uuidString)]){r in result=try decodeJob(id,r)};return result}
+    private func decodeJob(_ id:UUID,_ r:SQLiteRow,offset:Int=0)throws->VaultJob{guard let kind=VaultJobKind(rawValue:r.text(offset) ?? ""),let state=VaultJobState(rawValue:r.text(offset+2) ?? "")else{throw VaultStorageError.sqlite("job")};return VaultJob(id:id,kind:kind,objectID:r.text(offset+1).flatMap{UUID(uuidString:$0)}.map{VaultObjectID(rawValue:$0)},state:state,attempts:Int(r.int(offset+3)),nextAttemptAt:r.optionalDouble(offset+4).map{Date(timeIntervalSinceReferenceDate:$0)},lastError:r.text(offset+5),createdAt:Date(timeIntervalSinceReferenceDate:r.double(offset+6)),updatedAt:Date(timeIntervalSinceReferenceDate:r.double(offset+7)),idempotencyKey:r.text(offset+8),revision:r.text(offset+12).flatMap{UUID(uuidString:$0)},backendKey:r.text(offset+13),payloadGeneration:r.text(offset+14),remoteObjectKind:r.text(offset+15),expectedRemoteRevision:r.text(offset+16).flatMap{UUID(uuidString:$0)},leaseOwner:r.text(offset+9),leaseToken:r.text(offset+10).flatMap{UUID(uuidString:$0)},leaseExpiresAt:r.optionalDouble(offset+11).map{Date(timeIntervalSinceReferenceDate:$0)})}
     private func compare(_ lt:Int64,_ ld:String,_ lr:UUID,_ rt:Int64,_ rd:String,_ rr:UUID)->Int{if lt != rt{return lt < rt ? -1:1};if ld != rd{return ld < rd ? -1:1};return lr.uuidString == rr.uuidString ? 0:(lr.uuidString < rr.uuidString ? -1:1)}
     private func contentURL(_ id:VaultObjectID)->URL{contentDirectory.appendingPathComponent(id.rawValue.uuidString).appendingPathComponent("content")}
     private func generationURL(_ id:VaultObjectID)->URL{contentDirectory.appendingPathComponent(id.rawValue.uuidString).appendingPathComponent(".content-generation")}
-    private func removeContentLocked(_ id:VaultObjectID)throws{let dir=contentDirectory.appendingPathComponent(id.rawValue.uuidString);if fileManager.fileExists(atPath:dir.path){try fileManager.removeItem(at:dir)}}
+    private func readGenerationMarkerToken(_ id: VaultObjectID) -> String {
+        (try? readBoundedFile(generationURL(id), maximumBytes: 256))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
     private func enqueueCleanupLocked(_ id:VaultObjectID)throws{
         let revision=try objectLocked(id)?.revision.uuidString ?? ""
-        let token=(try?String(contentsOf:generationURL(id),encoding:.utf8)) ?? ""
+        let token=readGenerationMarkerToken(id)
         try run("INSERT OR IGNORE INTO pending_file_cleanup(marker_id,object_id,revision,path_token,created_at) VALUES(?,?,?,?,?)",[.text(UUID().uuidString),.text(id.rawValue.uuidString),.text(revision),.text(token),.double(Date().timeIntervalSinceReferenceDate)])
     }
     private func drainPendingCleanup()throws{
         var entries=[(String,VaultObjectID,String,String)]();try query("SELECT marker_id,object_id,revision,path_token FROM pending_file_cleanup ORDER BY created_at"){r in if let marker=r.text(0),let raw=r.text(1),let uuid=UUID(uuidString:raw),let revision=r.text(2),let token=r.text(3){entries.append((marker,VaultObjectID(rawValue:uuid),revision,token))}}
         for(marker,id,revision,token)in entries{
-            let currentRevision=try objectLocked(id)?.revision.uuidString ?? "",currentToken=(try?String(contentsOf:generationURL(id),encoding:.utf8)) ?? ""
+            let currentRevision=try objectLocked(id)?.revision.uuidString ?? "",currentToken=readGenerationMarkerToken(id)
             guard currentRevision==revision,currentToken==token else{try run("DELETE FROM pending_file_cleanup WHERE marker_id=?",[.text(marker)]);continue}
-            let final=contentURL(id),generation=generationURL(id);if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)};if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)}
+            try VaultSecureFileAccess.removeRegularFile(at: contentURL(id))
+            try VaultSecureFileAccess.removeRegularFile(at: generationURL(id))
             try run("DELETE FROM pending_file_cleanup WHERE marker_id=?",[.text(marker)])
         }
     }
@@ -1161,7 +1178,17 @@ public final class VaultRepository: @unchecked Sendable {
             throw VaultStorageError.protectionRequired
         }
     }
-    private func protectDatabaseFiles()throws{for suffix in ["","-wal","-shm"]{let u=URL(fileURLWithPath:databaseURL.path+suffix);if fileManager.fileExists(atPath:u.path){do{try protect(u)}catch{if fileManager.fileExists(atPath:u.path){throw error}}}}}
+    private func protectDatabaseFiles()throws{
+        for suffix in ["","-wal","-shm"]{
+            let path=databaseURL.path+suffix
+            var info=stat()
+            guard stat(path,&info)==0 else{protectedDatabaseInodes.removeValue(forKey:path);continue}
+            guard protectedDatabaseInodes[path] != info.st_ino else{continue}
+            let u=URL(fileURLWithPath:path)
+            do{try protect(u);protectedDatabaseInodes[path]=info.st_ino}
+            catch{var recheck=stat();if stat(path,&recheck)==0{throw error}}
+        }
+    }
     private func sync<T>(_ body:()throws->T)throws->T{try queue.sync{let result=try body();try protectDatabaseFiles();return result}}
     private func transaction<T>(_ body:()throws->T)throws->T{try execute("BEGIN IMMEDIATE");do{let value=try body();try execute("COMMIT");return value}catch{try?execute("ROLLBACK");throw error}}
     private func retryingBusy<T>(attempts:Int=12,_ body:()throws->T)throws->T{var attempt=0;while true{do{return try body()}catch let error as VaultStorageError{if case.sqlite(let message)=error,(message.contains("locked")||message.contains("busy")),attempt<attempts{Thread.sleep(forTimeInterval:0.01*Double(attempt+1));attempt+=1;continue};throw error}}}
@@ -1195,5 +1222,4 @@ extension VaultRepository: VaultExtractionArtifactStoring, VaultExtractionJobSch
 private enum SQLiteValue{case null,text(String),int(Int64),double(Double),blob(Data);func bind(_ stmt:OpaquePointer,_ index:Int32)throws{let status:Int32;switch self{case.null:status=sqlite3_bind_null(stmt,index);case.text(let value):status=sqlite3_bind_text(stmt,index,value,-1,SQLITE_TRANSIENT);case.int(let value):status=sqlite3_bind_int64(stmt,index,value);case.double(let value):status=sqlite3_bind_double(stmt,index,value);case.blob(let value):status=value.withUnsafeBytes{sqlite3_bind_blob(stmt,index,$0.baseAddress,Int32(value.count),SQLITE_TRANSIENT)}};guard status==SQLITE_OK else{throw VaultStorageError.sqlite("bind")}}}
 private struct SQLiteRow{let stmt:OpaquePointer;init(_ stmt:OpaquePointer){self.stmt=stmt};func text(_ i:Int)->String?{guard let p=sqlite3_column_text(stmt,Int32(i))else{return nil};return String(cString:p)};func int(_ i:Int)->Int64{sqlite3_column_int64(stmt,Int32(i))};func double(_ i:Int)->Double{sqlite3_column_double(stmt,Int32(i))};func optionalDouble(_ i:Int)->Double?{sqlite3_column_type(stmt,Int32(i))==SQLITE_NULL ? nil:double(i)};func blob(_ i:Int)->Data?{guard sqlite3_column_type(stmt,Int32(i)) != SQLITE_NULL,let p=sqlite3_column_blob(stmt,Int32(i))else{return nil};return Data(bytes:p,count:Int(sqlite3_column_bytes(stmt,Int32(i))))}}
 private let SQLITE_TRANSIENT=unsafeBitCast(-1,to:sqlite3_destructor_type.self)
-private extension FileHandle{func closeAfterSynchronize()throws{try synchronize();try close()}}
 private extension UInt32{init(bigEndianBytes bytes:Data.SubSequence){self=bytes.reduce(UInt32(0)){($0<<8)|UInt32($1)}}}

@@ -4,6 +4,9 @@ import LunaVaultCrypto
 import LunaVaultMac
 import LunaVaultTailscale
 
+// Line-buffer stdout so lifecycle prints survive redirection to a log file.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 func value(after flag: String) -> String? {
     guard let index = arguments.firstIndex(of: flag),

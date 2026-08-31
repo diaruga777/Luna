@@ -71,6 +71,13 @@ hosts — never key material, ciphertext, or pairing secrets. The companion
 additionally prints lifecycle and per-connection lines to stdout with the
 same information.
 
+Two log paths inside tsnet: the spammy engine log goes through the fd Luna
+hands it (the `tsnet-go` category), while tsnet's few "user-facing" notices —
+including its own copy of the login URL — go to the process stderr (visible
+in Xcode's console when attached, and in the companion's terminal). The login
+URL Luna acts on always comes from the IPN bus, not from parsing logs;
+verified against the live control plane 2026-08-31.
+
 ## Pairing and channel security
 
 Pairing is application-level and independent of Tailscale:

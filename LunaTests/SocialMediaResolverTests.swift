@@ -408,8 +408,8 @@ final class SocialMediaResolverTests: XCTestCase {
             request.value(forHTTPHeaderField: "User-Agent"),
             MediaDownloadHTTP.googleCrawlerUserAgent)
         XCTAssertEqual(request.httpShouldHandleCookies, false)
-        XCTAssertEqual(request.url?.host, "www.instagram.com")
-        XCTAssertEqual(request.url?.path, "/p/DbripgRKlb_/")
+        XCTAssertEqual(
+            request.url?.absoluteString, "https://www.instagram.com/p/DbripgRKlb_/")
     }
 
     /// The persisted GraphQL query is the second stage: when the crawler page comes

@@ -137,8 +137,8 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertEqual(
             resolve.request.value(forHTTPHeaderField: "User-Agent"),
             MediaDownloadHTTP.googleCrawlerUserAgent)
-        XCTAssertEqual(resolve.request.url?.host, "www.instagram.com")
-        XCTAssertEqual(resolve.request.url?.path, "/p/DbripgRKlb_/")
+        XCTAssertEqual(
+            resolve.request.url?.absoluteString, "https://www.instagram.com/p/DbripgRKlb_/")
     }
 
     func testYouTubeBackgroundResolutionCanonicalizesCommonURLForms() throws {

@@ -1,13 +1,75 @@
 # Luna Vault Mac companion (v1 foundation)
 
 The Mac storage option is a companion process owned and installed by the user.
-Luna has no hosted relay, cloud bucket, or embedded Tailscale SDK. A user may
-install and configure Tailscale separately, then give Vault a Tailscale CGNAT
-address, Tailscale IPv6 address, or MagicDNS `*.ts.net` name. Tailscale chooses
-the path: a direct peer path when available, or a DERP relay when it is not.
-Luna cannot promise that a connection is direct. On the same LAN, the companion
-can publish `_lunavault._tcp` and the iPhone-side browser can discover it; manual
-`.local` entry remains a fallback.
+Luna has no hosted relay or cloud bucket. Since 2026-08 the Vault app and the
+companion EMBED Tailscale (tsnet, via the `LunaVaultTailscale` package —
+vendored TailscaleKit wrapper over a committed `LibTailscale.xcframework`):
+neither device needs the Tailscale app installed. Each side runs its own
+userspace tailnet node; the user authorizes each node once through the SDK's
+interactive web-auth flow (the control plane's `browseToURL`, opened in
+`SFSafariViewController` on the iPhone and in the default browser by the
+companion). Vault dials the companion's MagicDNS `*.ts.net` name, Tailscale
+CGNAT address, or Tailscale IPv6 address. Tailscale chooses the path: a direct
+peer path when available, or a DERP relay when it is not. Luna cannot promise
+that a connection is direct. On the same LAN, the companion can also publish
+`_lunavault._tcp` and the iPhone-side browser can discover it; manual `.local`
+entry remains a fallback that bypasses the embedded node entirely
+(`VaultTailscaleMacConnector` routes `.tailscale` endpoints through tsnet and
+`.lanBonjour` endpoints through the direct Network-framework path).
+
+## Embedded tailnet lifecycle
+
+The iPhone side owns one lazy `VaultTailnetNodeRunner` per process
+(state under Application Support/LunaVault/Tailscale, hostname
+`luna-vault-iphone`). Nothing starts the node until the Settings → Mac screen
+or a `.tailscale` dial needs it. Dialing NEVER triggers interactive auth: a
+node without a stored login fails closed with `needsLogin`, and sync reports
+an honest unavailable state. Connecting and logging out live on the Settings →
+Mac screen ("Tailscale routing" section), which drives
+`VaultTailnetControlling` — a protocol witness in LunaVaultBackend, so the UI
+never imports the Tailscale package. `tailscale_up` ignores task cancellation;
+a 45 s timeout closes and discards the node (the documented cancel), and the
+next attempt recreates it from persisted state.
+
+The companion (`LunaVaultMacCompanion`, now an executable of the
+`LunaVaultTailscale` package) runs its own node with
+`--tailscale-state <dir> [--tailscale-hostname <name>] [--tailscale-port <port>]`.
+On first run it prints and opens the web-auth URL, then prints the endpoint
+binding to paste into `--initialize` (`tailscale:<magicdns>:<port>`). It
+listens on the tailnet through tsnet and can ALSO keep the direct
+`--bind-host` listener; both transports share one `VaultMacConnectionGate`, so
+the connection and failure budgets hold for the process as a whole. The serve
+loop is transport-neutral (`VaultMacChannelServer` in LunaVaultMac); both
+listeners hand it authenticated frame channels.
+
+The wire format over tsnet is identical to the LAN path: a 4-byte big-endian
+length prefix per frame (`VaultTailscaleFrameChannel` mirrors
+`VaultMacNWFrameChannel`; `VaultTailscaleTransportTests` pins the parity over
+a socketpair). Everything above the channel — pairing, challenge handshake,
+AES-GCM sealing, replay guards — is unchanged and stays independent of
+Tailscale.
+
+## Debugging on a real device
+
+Every layer logs to the unified log under one subsystem. Attach the iPhone
+and run:
+
+```sh
+log stream --device --level debug \
+  --predicate 'subsystem == "com.hsanabria.luna.vault"'
+# or capture after the fact: log collect --device --last 30m
+```
+
+Categories: `tailnet` (node lifecycle, login flow, dials with timings),
+`tailnet-channel` (per-frame traffic and socket errors), `tailnet-listener`
+(companion accepts), `tsnet-go` (the Go engine's own log, relayed through a
+pipe pump — handshakes, DERP/direct path selection, netmap), `mac-client`
+(session auth, uploads/downloads with byte counts, per-request failures and
+timeouts), `mac-server` (companion sessions, per-request statuses, gate
+rejections). Logs carry operations, statuses, byte counts, and endpoint
+hosts — never key material, ciphertext, or pairing secrets. The companion
+additionally prints lifecycle and per-connection lines to stdout with the
+same information.
 
 ## Pairing and channel security
 

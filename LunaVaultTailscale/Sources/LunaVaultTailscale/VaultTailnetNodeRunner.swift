@@ -99,7 +99,7 @@ public actor VaultTailnetNodeRunner {
         return summary
     }
 
-    static func summary(from status: IpnState.Status) -> VaultTailnetStatusSummary {
+    public static func summary(from status: IpnState.Status) -> VaultTailnetStatusSummary {
         let ips = status.TailscaleIPs ?? []
         return VaultTailnetStatusSummary(
             backend: VaultTailnetStatusSummary.Backend(backendState: status.BackendState),

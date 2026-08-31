@@ -30,6 +30,35 @@ final class VaultSearchTests: XCTestCase {
         let result=try index.search("project",embedding:VaultEmbedding(values:[1,0],modelVersion:"v1"));XCTAssertEqual(result.first?.filename,"project.txt","exact filename dominates");let ocr=try XCTUnwrap(result.first{$0.filename=="scan.png"});XCTAssertEqual(ocr.snippetSource,.ocr);XCTAssertTrue(ocr.snippet.contains("receipt"));let transcript=try XCTUnwrap(result.first{$0.filename=="movie.mov"});XCTAssertEqual(transcript.snippetSource,.transcript);XCTAssertTrue(transcript.snippet.contains("03:21"))
     }
 
+    // The four tests below were folded in from the deleted package-level
+    // LunaVaultSearchTests target (a forbidden `.testTarget` whose 7 tests
+    // never ran); these four assert behavior this file did not already cover.
+
+    func testHybridSearchHasDeterministicTieBreakForEqualScores() throws {
+        let(index,_,_)=try makeIndex();try index.upsert(doc(1,filename:"alpha.txt",body:"shared phrase",vector:[1,0]));try index.upsert(doc(2,filename:"beta.txt",body:"shared phrase",vector:[1,0]))
+        let results=try index.search("shared phrase",embedding:VaultEmbedding(values:[1,0],modelVersion:"v1"),limit:10)
+        XCTAssertEqual(results.map(\.filename),["alpha.txt","beta.txt"],"equal-score hits break ties by object id, not insertion order")
+    }
+
+    func testCosineSearchIsIsolatedPerModelVersion() throws {
+        let(index,_,_)=try makeIndex();try index.upsert(doc(1,vector:[1,0]))
+        XCTAssertEqual(try index.cosineSearch(VaultEmbedding(values:[1,0],modelVersion:"v1")).first?.0,id(1))
+        XCTAssertTrue(try index.cosineSearch(VaultEmbedding(values:[1,0],modelVersion:"other-model")).isEmpty)
+    }
+
+    func testEvolveAutomaticGroupsKeepsFrozenGroupStableAcrossReEvolve() throws {
+        let(index,_,_)=try makeIndex();try index.upsert(doc(1,filename:"cats.jpg",body:"cats",vector:[1,0]));try index.upsert(doc(2,filename:"kitten.jpg",body:"cats",vector:[0.99,0.01]));try index.upsert(doc(3,filename:"ocean.jpg",body:"ocean",vector:[0,1]))
+        let first=try index.evolveAutomaticGroups(modelVersion:"v1",threshold:0.8);let cats=try XCTUnwrap(first.first{$0.memberIDs.count==2})
+        try index.renameGroup(cats.id,label:"Pinned",frozen:true);try index.evolveAutomaticGroups(modelVersion:"v1",threshold:0.8)
+        let pinned=try XCTUnwrap(try index.groups().first{$0.id==cats.id});XCTAssertEqual(pinned.label,"Pinned");XCTAssertEqual(pinned.memberIDs.count,2)
+    }
+
+    func testRebuildIsIdempotentAndPreservesSearchability() throws {
+        let(index,_,_)=try makeIndex();try index.upsert(doc(1,body:"idempotent word"))
+        try index.rebuild(modelVersion:"v1");try index.rebuild(modelVersion:"v1")
+        XCTAssertEqual(try index.search("idempotent").count,1)
+    }
+
     func testTotalRevisionOrderingUnknownDeleteAndNoResurrection() throws {
         let(index,_,_)=try makeIndex();let object=id(9);let deleteStamp=VaultIndexRevision(logicalTime:10,deviceID:"b",revision:revision(10));XCTAssertTrue(try index.delete(object,stamp:deleteStamp));XCTAssertTrue(try XCTUnwrap(index.document(object)).isTombstone)
         let stale=VaultIndexedDocument(id:object,revision:revision(11),logicalTime:10,deviceID:"a",filename:"stale",createdAt:Date(),updatedAt:Date(),accessedAt:Date());XCTAssertFalse(try index.upsert(stale));XCTAssertFalse(try index.delete(object,stamp:deleteStamp),"equal delete is idempotent");let fresh=VaultIndexedDocument(id:object,revision:revision(12),logicalTime:11,deviceID:"a",filename:"fresh",bodyText:"visible",createdAt:Date(),updatedAt:Date(),accessedAt:Date());XCTAssertTrue(try index.upsert(fresh));XCTAssertEqual(try index.search("visible").count,1)
@@ -73,8 +102,11 @@ final class VaultSearchTests: XCTestCase {
     }
 
     func testEncryptedExportFailsClosedWhenWALCheckpointIsBusy() throws {
-        let(index,_,_)=try makeIndex("search-export-busy");let root=try VaultRootKey(version:1,key:Data(repeating:7,count:32)),cryptor=VaultChunkedCryptor(vaultID:"search-tests",random:VaultTestRandomBytes(seed:99))
-        index.walCheckpointOverride={ 5 /* SQLITE_BUSY */ }
+        let directory=try VaultTemporaryDirectory(name:"search-export-busy");addTeardownBlock{ _ = directory }
+        let protection=RecordingSearchProtection()
+        let index=try VaultSearchIndex(databaseURL:directory.url.appendingPathComponent("vault-index.sqlite"),
+            protectionApplier:protection,walCheckpointing:BusyVaultWALCheckpointing())
+        let root=try VaultRootKey(version:1,key:Data(repeating:7,count:32)),cryptor=VaultChunkedCryptor(vaultID:"search-tests",random:VaultTestRandomBytes(seed:99))
         XCTAssertThrowsError(try index.encryptedExport(cryptor:cryptor,root:root,objectID:id(500),revision:revision(500))) { error in
             guard case let VaultSearchError.sqlite(message)=error else { return XCTFail("unexpected error: \(error)") }
             XCTAssertTrue(message.contains("WAL checkpoint failed"))
@@ -209,4 +241,5 @@ private func residentBytes() -> Int64 {
 }
 
 private final class RecordingSearchProtection: VaultFileProtectionApplying,@unchecked Sendable { private let lock=NSLock();private var storage:[String]=[];var paths:[String]{lock.withLock{storage}};func apply(to url:URL)throws{lock.withLock{storage.append(url.path)}};func hasRequiredProtection(at url:URL)throws->Bool{true} }
+private struct BusyVaultWALCheckpointing: VaultWALCheckpointing { func checkpoint(database: OpaquePointer) -> Int32 { 5 /* SQLITE_BUSY */ } }
 private final class LockedSearchFailures:@unchecked Sendable{private let lock=NSLock();private var storage:[Error]=[];var values:[Error]{lock.withLock{storage}};func append(_ error:Error){lock.withLock{storage.append(error)}}}

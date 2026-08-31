@@ -17,13 +17,17 @@ func fail(_ message: String) -> Never {
 if arguments.contains("--help") || arguments.isEmpty {
     print("Usage:")
     print("  LunaVaultMacCompanion --initialize --root <directory> --endpoint-binding <binding>")
+    print("  LunaVaultMacCompanion --initialize --root <directory> --tailscale-state <directory>")
+    print("      [--tailscale-hostname <name>] [--tailscale-port <port>]")
     print("  LunaVaultMacCompanion --root <directory> [--credential <file>]")
     print("      --tailscale-state <directory> [--tailscale-hostname <name>] [--tailscale-port <port>]")
     print("      [--bind-host <non-wildcard-address>] [--port <port>] [--bonjour-name <name>]")
     print("")
     print("Give at least one transport: --tailscale-state runs an embedded")
     print("Tailscale node (first run opens browser login), --bind-host listens")
-    print("directly on a LAN or system-Tailscale address.")
+    print("directly on a LAN or system-Tailscale address. Initializing with")
+    print("--tailscale-state logs the node in first and derives the endpoint")
+    print("binding from its MagicDNS name.")
     exit(0)
 }
 
@@ -38,20 +42,69 @@ func openInBrowser(_ url: URL) {
     try? process.run()
 }
 
+func makeRunner(statePath: String) -> VaultTailnetNodeRunner {
+    VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
+        stateDirectory: URL(fileURLWithPath: statePath),
+        hostName: value(after: "--tailscale-hostname") ?? "luna-vault-mac"))
+}
+
+/// Logs the embedded node in (browser web auth on first run) and returns its
+/// running status.
+func connectTailnet(_ runner: VaultTailnetNodeRunner) async throws -> VaultTailnetStatusSummary {
+    if await runner.statusSummary()?.backend != .running {
+        print("Connecting the embedded Tailscale node…")
+        for try await event in await runner.interactiveLoginEvents() {
+            switch event {
+            case .browseToURL(let url):
+                print("Finish Tailscale login in your browser: \(url.absoluteString)")
+                openInBrowser(url)
+            case .loginFinished:
+                print("Tailscale login accepted; waiting for the node…")
+            case .running:
+                break
+            }
+        }
+    }
+    return try await runner.ensureRunningWithExistingLogin()
+}
+
 do {
     if arguments.contains("--initialize") {
-        guard let endpointBinding = value(after: "--endpoint-binding"), !endpointBinding.isEmpty else {
-            fail("Missing --endpoint-binding.")
+        let writeCredential: (String) throws -> Void = { endpointBinding in
+            let random = SystemVaultRandomBytes()
+            let credential = try VaultMacPairingCredential(pairingID: UUID(),
+                secret: VaultMacPairingSecret(rawValue: random.bytes(count: 32)),
+                serverBinding: random.bytes(count: 32), endpointBinding: endpointBinding,
+                createdAt: Date())
+            try VaultMacPairedCredentialStore().save(credential, at: defaultCredentialURL)
+            print("Initialized owner-only pairing credential at \(defaultCredentialURL.path)")
+            print("Endpoint binding: \(endpointBinding)")
+            print("Server fingerprint: \(credential.fingerprint)")
         }
-        let random = SystemVaultRandomBytes()
-        let credential = try VaultMacPairingCredential(pairingID: UUID(),
-            secret: VaultMacPairingSecret(rawValue: random.bytes(count: 32)),
-            serverBinding: random.bytes(count: 32), endpointBinding: endpointBinding,
-            createdAt: Date())
-        try VaultMacPairedCredentialStore().save(credential, at: defaultCredentialURL)
-        print("Initialized owner-only pairing credential at \(defaultCredentialURL.path)")
-        print("Server fingerprint: \(credential.fingerprint)")
-        exit(0)
+        if let endpointBinding = value(after: "--endpoint-binding"), !endpointBinding.isEmpty {
+            try writeCredential(endpointBinding)
+            exit(0)
+        }
+        guard let statePath = value(after: "--tailscale-state") else {
+            fail("Missing --endpoint-binding (or --tailscale-state to derive one).")
+        }
+        guard let port = UInt16(value(after: "--tailscale-port") ?? "49200") else {
+            fail("Invalid --tailscale-port.")
+        }
+        let runner = makeRunner(statePath: statePath)
+        Task {
+            do {
+                let summary = try await connectTailnet(runner)
+                guard let host = summary.dnsName ?? summary.ipv4 else {
+                    fail("The node is running but reported no MagicDNS name or address.")
+                }
+                try writeCredential("tailscale:\(host):\(port)")
+                exit(0)
+            } catch {
+                fail("Unable to initialize over Tailscale: \(error)")
+            }
+        }
+        dispatchMain()
     }
 
     let bindHost = value(after: "--bind-host")
@@ -89,29 +142,12 @@ do {
         guard let tailscalePort = UInt16(value(after: "--tailscale-port") ?? "49200") else {
             fail("Invalid --tailscale-port. Use --help.")
         }
-        let hostName = value(after: "--tailscale-hostname") ?? "luna-vault-mac"
-        let runner = VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
-            stateDirectory: URL(fileURLWithPath: tailscaleStatePath),
-            hostName: hostName))
+        let runner = makeRunner(statePath: tailscaleStatePath)
         let server = VaultMacChannelServer(service: service, authority: authority,
                                            limits: limits, gate: gate)
         Task {
             do {
-                if await runner.statusSummary()?.backend != .running {
-                    print("Connecting the embedded Tailscale node…")
-                    for try await event in await runner.interactiveLoginEvents() {
-                        switch event {
-                        case .browseToURL(let url):
-                            print("Finish Tailscale login in your browser: \(url.absoluteString)")
-                            openInBrowser(url)
-                        case .loginFinished:
-                            print("Tailscale login accepted; waiting for the node…")
-                        case .running:
-                            break
-                        }
-                    }
-                }
-                let summary = try await runner.ensureRunningWithExistingLogin()
+                let summary = try await connectTailnet(runner)
                 let host = summary.dnsName ?? summary.ipv4
                 print("Embedded Tailscale node is running as \(host ?? "<unknown>")"
                       + (summary.tailnetName.map { " on tailnet \($0)" } ?? "") + ".")

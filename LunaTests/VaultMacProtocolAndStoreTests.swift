@@ -526,7 +526,10 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
                                 expectedRevision: nil)
             XCTFail("upload was not interrupted")
         }
-        catch { XCTAssertEqual(error as? VaultBackendError, .io) }
+        // A lost connection surfaces as `VaultMacProtocolError.unavailable`;
+        // `put` now maps that explicitly to `.unavailable` instead of
+        // folding every non-`VaultBackendError` failure into `.io`.
+        catch { XCTAssertEqual(error as? VaultBackendError, .unavailable) }
         let pendingBeforeRestart = try await VaultMacFileUploadStateStore(fileURL: stateURL)
             .pendingUpload(for: objectID)
         XCTAssertNotNil(pendingBeforeRestart)
@@ -540,6 +543,97 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
         XCTAssertEqual(storedRevision, pendingBeforeRestart?.revision)
         let downloaded = try await restarted.ciphertext(for: objectID)
         XCTAssertEqual(downloaded, fixture.bytes)
+    }
+
+    func testTerminalPartialOnFinalChunkIsRetryableAndPreservesPendingUpload() async throws {
+        let root = temporary("terminal-partial"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let authority = VaultMacSessionAuthority(credential: credential, random: DeterministicMacRandom(seed: 71))
+        // A companion that received every chunk's bytes but crashed or
+        // restarted before finishing assembly answers even the last chunk
+        // with `.partial` — it never sends `.accepted`. `stat` reports the
+        // object as never having existed, matching a fresh upload attempt.
+        let connector = StubMacConnector(authority: authority) { request in
+            switch request.operation {
+            case .stat:
+                return VaultMacResponse(status: .notFound, objectID: request.objectID)
+            default:
+                return VaultMacResponse(status: .partial, objectID: request.objectID, revision: request.revision)
+            }
+        }
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let stateURL = root.appendingPathComponent("state.json")
+        let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 72),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: stateURL))
+        let fixture = try makeFixture(root: root, plaintext: Data([1, 2, 3, 4]), revision: UUID())
+        do {
+            let outcome = try await backend.put(try fixture.payload.verified(rootKey: { _ in fixture.root }),
+                                                expectedRevision: nil)
+            XCTFail("terminal .partial was reported as \(outcome) instead of a retryable failure")
+        } catch {
+            XCTAssertEqual(error as? VaultBackendError, .unavailable)
+        }
+        let pending = try await VaultMacFileUploadStateStore(fileURL: stateURL).pendingUpload(for: objectID)
+        XCTAssertNotNil(pending, "a terminal .partial must keep the pending upload for the next retry")
+    }
+
+    func testStalePendingUploadWithMismatchedDigestStartsFreshInsteadOfFailingForever() async throws {
+        let root = temporary("stale-pending"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let connector = LoopbackMacConnector(service: VaultMacCompanionService(store: store),
+            authority: VaultMacSessionAuthority(credential: credential, random: DeterministicMacRandom(seed: 73)))
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let stateURL = root.appendingPathComponent("state.json")
+        let fixture = try makeFixture(root: root, plaintext: Data([5, 6, 7]), revision: UUID())
+        let verified = try fixture.payload.verified(rootKey: { _ in fixture.root })
+        // Plant a pending record for a DIFFERENT, now-irrelevant local edit
+        // of this same object: same objectID, unrelated byte count/digest.
+        let stateStore = VaultMacFileUploadStateStore(fileURL: stateURL)
+        let stalePending = try VaultMacPendingUpload(
+            objectID: objectID,
+            revision: VaultRevision(objectID: objectID, logicalTime: 1, deviceID: "iphone"),
+            expectedRevision: nil, totalCiphertextBytes: 999,
+            ciphertextDigest: Data(repeating: 0xEE, count: 32))
+        try await stateStore.savePendingUpload(stalePending)
+        let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 74), uploadStateStore: stateStore)
+        let outcome = try await backend.put(verified, expectedRevision: nil)
+        XCTAssertEqual(outcome, .current)
+        let downloaded = try await backend.ciphertext(for: objectID)
+        XCTAssertEqual(downloaded, fixture.bytes)
+    }
+
+    func testRemoveThrowsStaleVersionWhenRemoteRevisionDiffersFromIdentity() async throws {
+        let root = temporary("remove-stale"); defer { try? FileManager.default.removeItem(at: root) }
+        let credential = try makeCredential(now: Date())
+        let store = try VaultMacCompanionStore(rootURL: root, credential: credential)
+        let connector = LoopbackMacConnector(service: VaultMacCompanionService(store: store),
+            authority: VaultMacSessionAuthority(credential: credential, random: DeterministicMacRandom(seed: 75)))
+        let endpoint = try VaultMacEndpoint(binding: credential.endpointBinding)
+        let backend = try VaultMacRemoteBackend(endpoint: endpoint, credential: credential,
+            connector: connector, identityConfirmer: AlwaysConfirmMacIdentity(),
+            random: DeterministicMacRandom(seed: 76),
+            uploadStateStore: VaultMacFileUploadStateStore(fileURL: root.appendingPathComponent("state.json")))
+        let first = try makeFixture(root: root, plaintext: Data([9, 9, 9]), revision: UUID())
+        let firstVerified = try first.payload.verified(rootKey: { _ in first.root })
+        _ = try await backend.put(firstVerified, expectedRevision: nil)
+        // A second device's write lands a newer revision on the Mac.
+        let second = try makeFixture(root: root, plaintext: Data([1, 2, 3]), revision: UUID())
+        let secondVerified = try second.payload.verified(rootKey: { _ in second.root })
+        _ = try await backend.put(secondVerified, expectedRevision: firstVerified.identity.revision)
+        do {
+            try await backend.remove(firstVerified.identity, expectedRevision: firstVerified.identity.revision)
+            XCTFail("a delete queued against a superseded revision tombstoned newer remote data")
+        } catch {
+            XCTAssertEqual(error as? VaultBackendError, .staleVersion)
+        }
+        // The newer revision must survive the rejected delete.
+        let survivingDownload = try await backend.ciphertext(for: objectID)
+        XCTAssertEqual(survivingDownload, second.bytes)
     }
 
     func testClientConnectTimeoutIsBounded() async throws {
@@ -676,6 +770,44 @@ private actor LoopbackMacConnector: VaultMacFrameConnecting {
                         server.close(); return
                     }
                     try await server.send(JSONEncoder().encode(try sender.seal(JSONEncoder().encode(response))))
+                }
+            } catch { server.close() }
+        }
+        return client
+    }
+}
+
+/// Answers every request with a caller-supplied response instead of a real
+/// companion store. Used to reproduce server behavior that a healthy
+/// companion (`VaultMacCompanionService`) would never itself produce on
+/// request, such as a `.partial` status for a chunk the client considers
+/// its last.
+private final class StubMacConnector: VaultMacFrameConnecting {
+    let authority: VaultMacSessionAuthority
+    let respond: @Sendable (VaultMacRequest) -> VaultMacResponse
+    init(authority: VaultMacSessionAuthority, respond: @escaping @Sendable (VaultMacRequest) -> VaultMacResponse) {
+        self.authority = authority; self.respond = respond
+    }
+    func connect(to endpoint: VaultMacEndpoint) async throws -> VaultMacFrameChannel {
+        let clientInbound = LoopbackPipe(), serverInbound = LoopbackPipe()
+        let client = LoopbackChannel(incoming: clientInbound, outgoing: serverInbound)
+        let server = LoopbackChannel(incoming: serverInbound, outgoing: clientInbound)
+        Task { [authority, respond] in
+            do {
+                let challenge = try authority.issue()
+                try await server.send(JSONEncoder().encode(VaultMacHandshakeMessage(kind: .challenge, challenge: challenge)))
+                let message = try JSONDecoder().decode(VaultMacHandshakeMessage.self, from: try await server.receive())
+                guard let response = message.response else { throw VaultMacProtocolError.authenticationFailed }
+                let (_, keys, acceptance) = try authority.accept(response)
+                try await server.send(JSONEncoder().encode(VaultMacHandshakeMessage(
+                    kind: .accepted, acceptance: acceptance)))
+                let receiver = VaultMacReplayGuard(key: keys.requestKey, sessionID: challenge.sessionID, direction: .request)
+                let sender = VaultMacSendSequence(key: keys.responseKey, sessionID: challenge.sessionID, direction: .response)
+                while true {
+                    let frame = try JSONDecoder().decode(VaultMacAuthenticatedFrame.self, from: try await server.receive())
+                    let request = try JSONDecoder().decode(VaultMacRequest.self, from: receiver.open(frame))
+                    let answer = respond(request)
+                    try await server.send(JSONEncoder().encode(try sender.seal(JSONEncoder().encode(answer))))
                 }
             } catch { server.close() }
         }

@@ -173,6 +173,7 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
             }
             catch { throw Self.map(error) }
         }
+        try ensureVersionFileUnconflicted(versionPath(payload.identity))
         let fileState = try coordinator.state(for: path)
         guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
         guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
@@ -198,6 +199,7 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
                     expectedRevision: expectedRevision)
             } catch { throw Self.map(error) }
         }
+        try ensureVersionFileUnconflicted(versionPath(payload.identity))
         let fileState = try coordinator.state(for: objectPath(payload.identity))
         guard !fileState.hasUnresolvedConflicts else { throw VaultBackendError.conflict }
         guard !fileState.uploadFailed else { throw VaultBackendError.uploadFailed }
@@ -208,9 +210,13 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
 
     public func payload(for identity: VaultRemoteObjectIdentity) async throws -> VaultAuthenticatedCiphertext? {
         try ensureAvailable()
-        guard try coordinator.currentIdentity(at: versionPath(identity)) == identity else {
-            throw VaultBackendError.staleVersion
-        }
+        let versionRelativePath = versionPath(identity)
+        try ensureVersionFileUnconflicted(versionRelativePath)
+        // No current identity at all is a missing object (`nil` → `.notFound`
+        // upstream), not a version mismatch — only a PRESENT identity that
+        // differs from the one asked for is stale.
+        guard let current = try coordinator.currentIdentity(at: versionRelativePath) else { return nil }
+        guard current == identity else { throw VaultBackendError.staleVersion }
         let path = objectPath(identity)
         let fileState = try coordinator.state(for: path)
         guard fileState.exists else { return nil }
@@ -237,9 +243,10 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
     public func payloadFile(for identity: VaultRemoteObjectIdentity) async throws
         -> VaultAuthenticatedCiphertextFile? {
         try ensureAvailable()
-        guard try coordinator.currentIdentity(at: versionPath(identity)) == identity else {
-            throw VaultBackendError.staleVersion
-        }
+        let versionRelativePath = versionPath(identity)
+        try ensureVersionFileUnconflicted(versionRelativePath)
+        guard let current = try coordinator.currentIdentity(at: versionRelativePath) else { return nil }
+        guard current == identity else { throw VaultBackendError.staleVersion }
         let path = objectPath(identity)
         let state = try coordinator.state(for: path)
         guard state.exists else { return nil }
@@ -269,7 +276,8 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
         }
         #endif
         guard try await retrying(configuration.retryPolicy, operation: {
-            try self.coordinator.readToFile(at: path, destinationURL: temporary)
+            do { return try self.coordinator.readToFile(at: path, destinationURL: temporary) }
+            catch { throw Self.map(error) }
         }) != nil else { return nil }
         do {
             let result = try VaultAuthenticatedCiphertextFile(fileURL: temporary,
@@ -313,7 +321,14 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
 
     public func state(for identity: VaultRemoteObjectIdentity) async throws -> VaultRemoteObjectState {
         try ensureAvailable()
-        guard let current = try coordinator.currentIdentity(at: versionPath(identity)) else {
+        let versionRelativePath = versionPath(identity)
+        // `current.json` is the CAS arbiter. An unresolved NSFileVersion
+        // conflict on it can decode successfully (JSONDecoder just reads
+        // whichever version won locally) while another device's write sits
+        // unmerged, so its own conflict state must be checked too, not only
+        // the payload file's.
+        if try coordinator.state(for: versionRelativePath).hasUnresolvedConflicts { return .conflicted }
+        guard let current = try coordinator.currentIdentity(at: versionRelativePath) else {
             return .missing
         }
         guard current == identity else { return .conflicted }
@@ -330,6 +345,17 @@ public final class VaultICloudBackend: VaultStreamingBackendTransport, @unchecke
     private func ensureAvailable() throws {
         guard rootAvailable else { throw VaultBackendError.unavailable }
         guard coordinator.availability != .unavailable else { throw VaultBackendError.unavailable }
+    }
+
+    /// `current.json` is the CAS arbiter for an object's identity. Two
+    /// devices writing it in the same window can leave it with unresolved
+    /// NSFileVersion conflicts that nothing here resolves; every guard that
+    /// trusts a decoded identity must first confirm the file it came from
+    /// has none.
+    private func ensureVersionFileUnconflicted(_ versionRelativePath: String) throws {
+        guard !(try coordinator.state(for: versionRelativePath).hasUnresolvedConflicts) else {
+            throw VaultBackendError.conflict
+        }
     }
 
     private func objectPath(_ identity: VaultRemoteObjectIdentity) -> String {
@@ -434,6 +460,8 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
                 try data.write(to: payloadTarget, options: .atomic)
             }
             try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
+            self.pruneSupersededRevisions(objectDirectory: versionTarget.deletingLastPathComponent(),
+                                          keeping: payloadTarget.deletingLastPathComponent())
         }
     }
 
@@ -463,12 +491,19 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
                                                  withIntermediateDirectories: true)
             let staging = payloadTarget.deletingLastPathComponent()
                 .appendingPathComponent(".staging-\(UUID().uuidString)")
-            try self.copyFile(sourceURL, staging, expectedBytes: byteCount)
-            if self.fileManager.fileExists(atPath: payloadTarget.path) {
-                try self.fileManager.removeItem(at: payloadTarget)
+            do {
+                try self.copyFile(sourceURL, staging, expectedBytes: byteCount)
+                if self.fileManager.fileExists(atPath: payloadTarget.path) {
+                    try self.fileManager.removeItem(at: payloadTarget)
+                }
+                try self.fileManager.moveItem(at: staging, to: payloadTarget)
+                try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
+                self.pruneSupersededRevisions(objectDirectory: versionTarget.deletingLastPathComponent(),
+                                              keeping: payloadTarget.deletingLastPathComponent())
+            } catch {
+                try? self.fileManager.removeItem(at: staging)
+                throw error
             }
-            try self.fileManager.moveItem(at: staging, to: payloadTarget)
-            try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
         }
     }
 
@@ -508,6 +543,8 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
                 }
                 try self.fileManager.moveItem(at: staging, to: payloadTarget)
                 try JSONEncoder().encode(identity).write(to: versionTarget, options: .atomic)
+                self.pruneSupersededRevisions(objectDirectory: versionTarget.deletingLastPathComponent(),
+                                              keeping: payloadTarget.deletingLastPathComponent())
             } catch {
                 try? self.fileManager.removeItem(at: staging)
                 throw error
@@ -553,16 +590,18 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         guard let payloadURL = url(for: relativePath), let versionURL = url(for: versionPath) else {
             throw VaultBackendError.unavailable
         }
-        try coordinateWriting(payloadURL, versionURL) { payloadTarget, versionTarget in
+        try coordinateWriting(payloadURL, versionURL) { _, versionTarget in
             guard let current = try self.decodeIdentity(at: versionTarget) else { return }
             guard current == identity, current.revision == expectedRevision else {
                 throw VaultBackendError.staleVersion
             }
-            if self.fileManager.fileExists(atPath: payloadTarget.path) {
-                try self.fileManager.removeItem(at: payloadTarget)
-            }
-            if self.fileManager.fileExists(atPath: versionTarget.path) {
-                try self.fileManager.removeItem(at: versionTarget)
+            // The object's directory holds `current.json` plus one
+            // subdirectory per revision ever written. Removing only the
+            // current revision's payload and the version file would leave
+            // every superseded revision's ciphertext behind.
+            let objectDirectory = versionTarget.deletingLastPathComponent()
+            if self.fileManager.fileExists(atPath: objectDirectory.path) {
+                try self.fileManager.removeItem(at: objectDirectory)
             }
         }
     }
@@ -591,6 +630,25 @@ public final class SystemVaultUbiquitousFileCoordinator: VaultUbiquitousFileCoor
         VaultUbiquitousFileState(exists: false, isDownloadStatusKnown: false, isUbiquitous: false,
                                  isDownloaded: false, isCurrent: false,
                                  isDownloading: false, isUploaded: false)
+    }
+
+    /// Every write lands its ciphertext under its own revision subdirectory
+    /// beneath the object's root. Called after `current.json` has already
+    /// been repointed at the new revision, so any sibling directory left
+    /// here is a superseded revision's payload — without this, every update
+    /// permanently doubles the object's footprint in the user's iCloud
+    /// quota. Best-effort: a failure here does not undo the write that just
+    /// succeeded.
+    private func pruneSupersededRevisions(objectDirectory: URL, keeping currentRevisionDirectory: URL) {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: objectDirectory, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]) else { return }
+        let keptName = currentRevisionDirectory.lastPathComponent
+        for entry in entries {
+            guard entry.lastPathComponent != keptName,
+                  (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            try? fileManager.removeItem(at: entry)
+        }
     }
 
     private func coordinateWriting(_ url: URL, body: (URL) throws -> Void) throws {

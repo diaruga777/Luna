@@ -256,6 +256,15 @@ public extension VaultBackendTransport {
 
     /// Backend writes are idempotent by opaque object ID. This helper gives
     /// adapters one shared retry policy without hiding retries from tests.
+    ///
+    /// A CAS conflict or a stale-version mismatch is a deterministic read of
+    /// state already compared once; the operation's own inputs (an expected
+    /// revision, a compared byte range) do not change between attempts, so
+    /// an immediate retry only reproduces the same failure. Excluding them
+    /// here is local to this in-place retry loop: `VaultBackendError
+    /// .isTransient` is unchanged, so a caller one layer up (a sync job
+    /// scheduler that re-derives the expected revision before trying again)
+    /// still sees these as retryable at its own cadence.
     func retrying<T: Sendable>(_ policy: VaultBackendRetryPolicy = VaultBackendRetryPolicy(),
                                operation: @escaping @Sendable () async throws -> T) async throws -> T {
         var attempt = 0
@@ -263,7 +272,7 @@ public extension VaultBackendTransport {
         while true {
             do { return try await operation() }
             catch let error as VaultBackendError {
-                guard error.isTransient,
+                guard error.isTransient, error != .conflict, error != .staleVersion,
                       attempt + 1 < policy.maximumAttempts else { throw error }
                 attempt += 1
                 if delay > 0 { try await Task.sleep(nanoseconds: delay) }

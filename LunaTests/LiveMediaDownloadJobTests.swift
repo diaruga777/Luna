@@ -121,30 +121,24 @@ final class LiveMediaDownloadJobTests: XCTestCase {
     }
 
     /// The durable engine must open on the same stage the foreground resolver does —
-    /// the persisted GraphQL query, the only keyless source still returning a reel's
-    /// `video_url`. It has to be a GET: a background `URLSession` cannot upload a
-    /// request body, and the endpoint refuses a bodyless POST.
-    func testInstagramReelBackgroundResolutionStartsWithGraphQLQuery() throws {
+    /// the crawler-served post page, the only keyless source still returning a reel's
+    /// playable URL since Instagram login-walled the logged-out GraphQL endpoint.
+    /// It has to be a GET: a background `URLSession` cannot upload a request body.
+    func testInstagramReelBackgroundResolutionStartsWithCrawlerPostPage() throws {
         let source = try XCTUnwrap(URL(string:
             "https://www.instagram.com/jonfilipko/reel/DbripgRKlb_/"))
 
         let resolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: source))
 
-        XCTAssertEqual(resolve.kind, "instagramGraphQL")
+        XCTAssertEqual(resolve.kind, "instagramPostPage")
         XCTAssertNil(resolve.request.httpBody)
         XCTAssertEqual(resolve.request.httpMethod, "GET")
         XCTAssertEqual(resolve.request.httpShouldHandleCookies, false)
         XCTAssertEqual(
-            resolve.request.value(forHTTPHeaderField: "X-IG-App-ID"),
-            MediaDownloadHTTP.instagramWebAppID)
-        let components = try XCTUnwrap(resolve.request.url.flatMap {
-            URLComponents(url: $0, resolvingAgainstBaseURL: false)
-        })
-        XCTAssertEqual(components.host, "www.instagram.com")
-        XCTAssertEqual(components.path, "/graphql/query/")
-        XCTAssertEqual(
-            components.queryItems?.first(where: { $0.name == "variables" })?.value,
-            #"{"shortcode":"DbripgRKlb_"}"#)
+            resolve.request.value(forHTTPHeaderField: "User-Agent"),
+            MediaDownloadHTTP.googleCrawlerUserAgent)
+        XCTAssertEqual(resolve.request.url?.host, "www.instagram.com")
+        XCTAssertEqual(resolve.request.url?.path, "/p/DbripgRKlb_/")
     }
 
     func testYouTubeBackgroundResolutionCanonicalizesCommonURLForms() throws {

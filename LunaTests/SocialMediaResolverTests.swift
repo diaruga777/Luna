@@ -311,14 +311,115 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertTrue(post.declaresVideo)
     }
 
+    // MARK: - Instagram crawler post page
+
+    /// The crawler-served post page's `xig_polaris_media` node resolves a reel to
+    /// its playable MP4, with the cover frame riding along as the thumbnail.
+    func testInstagramCrawlerPageResolvesReelVideoWithPoster() throws {
+        let html = Self.instagramCrawlerPageHTML(#"""
+        {"media_type":2,"product_type":"clips",
+         "video_versions":[{"type":101,"url":"https://video.example.com/reel.mp4"}],
+         "image_versions2":{"candidates":[
+          {"url":"https://cdn.example.com/cover-frame.jpg","width":640,"height":1136}]}}
+        """#)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromPostPageHTML: html))
+        XCTAssertEqual(post.assets, [
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/cover-frame.jpg")!),
+        ])
+        XCTAssertTrue(post.declaresVideo)
+        XCTAssertFalse(post.isVideoMissingItsPlayableURL)
+    }
+
+    /// A crawler-page video node with no `video_versions` yields nothing: the
+    /// `image_versions2` still is the cover frame, not the reel.
+    func testInstagramCrawlerPageVideoWithoutPlayableURLYieldsNoStill() throws {
+        let html = Self.instagramCrawlerPageHTML(#"""
+        {"media_type":2,"product_type":"clips",
+         "image_versions2":{"candidates":[{"url":"https://cdn.example.com/cover-frame.jpg"}]}}
+        """#)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromPostPageHTML: html))
+        XCTAssertEqual(post.assets, [])
+        XCTAssertTrue(post.declaresVideo)
+        XCTAssertTrue(post.isVideoMissingItsPlayableURL)
+    }
+
+    /// Carousel children live under `carousel_media` on the crawler page (not the
+    /// GraphQL sources' `edge_sidecar_to_children`) and resolve in post order.
+    func testInstagramCrawlerPageCarouselResolvesEveryChildInOrder() throws {
+        let html = Self.instagramCrawlerPageHTML(#"""
+        {"media_type":8,"carousel_media":[
+         {"media_type":1,"image_versions2":{"candidates":[{"url":"https://cdn.example.com/one.jpg"}]}},
+         {"media_type":2,"video_versions":[{"type":101,"url":"https://video.example.com/two.mp4"}],
+          "image_versions2":{"candidates":[{"url":"https://cdn.example.com/two.jpg"}]}}]}
+        """#)
+
+        let post = try XCTUnwrap(InstagramMediaParser.post(fromPostPageHTML: html))
+        XCTAssertEqual(post.assets, [
+            MediaAsset(url: URL(string: "https://cdn.example.com/one.jpg")!, kind: .image),
+            MediaAsset(
+                url: URL(string: "https://video.example.com/two.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/two.jpg")!),
+        ])
+        XCTAssertTrue(post.declaresVideo)
+    }
+
+    /// A page with no logged-out media node — a browser-UA shell, a login wall, or a
+    /// gated post whose wrapper omits `if_not_gated_logged_out` — parses to nil so
+    /// the ladder falls through to the next source.
+    func testInstagramCrawlerPageWithoutMediaNodeParsesToNil() {
+        XCTAssertNil(InstagramMediaParser.post(
+            fromPostPageHTML: "<html><script>var page = 1;</script></html>"))
+        XCTAssertNil(InstagramMediaParser.post(fromPostPageHTML: #"""
+        <script type="application/json" data-sjs>
+        {"data":{"xig_polaris_media":{"pk":"1","gating_ruling":"gated"}}}</script>
+        """#))
+    }
+
     /// The user-facing shape of the bug: a `/(username)/reel/(code)/` permalink must
-    /// resolve to the MP4, and the resolver must ask the persisted GraphQL query for
-    /// it first — that endpoint is the only keyless one still returning `video_url`.
-    func testInstagramReelResolvesVideoThroughGraphQLQueryFirst() async throws {
+    /// resolve to the MP4, and the resolver must ask the crawler-served post page for
+    /// it first — Instagram login-walled the logged-out GraphQL endpoint, so that
+    /// page is the only keyless source still returning a reel's playable URL.
+    func testInstagramReelResolvesVideoThroughCrawlerPostPageFirst() async throws {
         let source = URL(string: "https://www.instagram.com/jonfilipko/reel/DbripgRKlb_/")!
+        var requests: [URLRequest] = []
+        let resolver = SocialMediaResolver { request in
+            requests.append(request)
+            return Data(Self.instagramCrawlerPageHTML(#"""
+            {"media_type":2,
+             "video_versions":[{"type":101,"url":"https://video.example.com/reel.mp4"}],
+             "image_versions2":{"candidates":[{"url":"https://cdn.example.com/cover-frame.jpg"}]}}
+            """#).utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(
+                url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
+                thumbnailURL: URL(string: "https://cdn.example.com/cover-frame.jpg")!),
+        ])
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "User-Agent"),
+            MediaDownloadHTTP.googleCrawlerUserAgent)
+        XCTAssertEqual(request.httpShouldHandleCookies, false)
+        XCTAssertEqual(request.url?.host, "www.instagram.com")
+        XCTAssertEqual(request.url?.path, "/p/DbripgRKlb_/")
+    }
+
+    /// The persisted GraphQL query is the second stage: when the crawler page comes
+    /// back walled it still resolves the reel the moment Instagram answers it again.
+    func testInstagramReelFallsBackToGraphQLQueryWhenCrawlerPageFails() async throws {
+        let source = URL(string: "https://www.instagram.com/reel/DbripgRKlb_/")!
         var requestedURLs: [URL] = []
         let resolver = SocialMediaResolver { request in
             request.url.map { requestedURLs.append($0) }
+            if requestedURLs.count == 1 { return nil }
             return Data(#"""
             {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
              "video_url":"https://video.example.com/reel.mp4",
@@ -333,8 +434,8 @@ final class SocialMediaResolverTests: XCTestCase {
                 url: URL(string: "https://video.example.com/reel.mp4")!, kind: .video,
                 thumbnailURL: URL(string: "https://cdn.example.com/cover-frame.jpg")!),
         ])
-        XCTAssertEqual(requestedURLs.count, 1)
-        let components = try XCTUnwrap(requestedURLs.first.flatMap {
+        XCTAssertEqual(requestedURLs.count, 2)
+        let components = try XCTUnwrap(requestedURLs.last.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)
         })
         XCTAssertEqual(components.host, "www.instagram.com")
@@ -352,7 +453,8 @@ final class SocialMediaResolverTests: XCTestCase {
         var fetchCount = 0
         let resolver = SocialMediaResolver { _ in
             fetchCount += 1
-            if fetchCount == 1 {
+            if fetchCount == 1 { return nil }
+            if fetchCount == 2 {
                 return Data(#"""
                 {"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
                  "product_type":"clips",
@@ -366,11 +468,11 @@ final class SocialMediaResolverTests: XCTestCase {
         let assets = await resolver.resolveAssets(for: source)
 
         XCTAssertEqual(assets, [])
-        XCTAssertEqual(fetchCount, 1, "the ladder must stop, not scrape a poster")
+        XCTAssertEqual(fetchCount, 2, "the ladder must stop, not scrape a poster")
     }
 
-    /// A photo post is unaffected: the GraphQL query answers with a still and it is
-    /// exactly what gets saved.
+    /// A photo post is unaffected by the login wall: whichever stage answers first —
+    /// here the GraphQL query, after a walled crawler page — hands back the still.
     func testInstagramPhotoPostStillResolvesAsImage() async {
         let source = URL(string: "https://www.instagram.com/p/AbCdEfGhIjK/")!
         let resolver = SocialMediaResolver { _ in
@@ -385,6 +487,19 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(assets, [
             MediaAsset(url: URL(string: "https://cdn.example.com/photo.jpg")!, kind: .image),
         ])
+    }
+
+    /// Wraps an api-v1 media node the way the crawler-served post page ships it: a
+    /// `data-sjs` script whose require/bbox scaffold nests
+    /// `xig_polaris_media.if_not_gated_logged_out`.
+    private static func instagramCrawlerPageHTML(_ media: String) -> String {
+        #"""
+        <html><head><script type="application/json" data-content-len="1" data-sjs>
+        {"require":[["ScheduledServerJS","handle",null,[{"__bbox":{"require":[
+        ["RelayPrefetchedStreamCache","next",[],["adp_PolarisPostRootQuery",
+        {"__bbox":{"result":{"data":{"xig_polaris_media":
+        {"pk":"1","if_not_gated_logged_out":\#(media)}}}}}]]]}}]]]}</script></head><body></body></html>
+        """#
     }
 
     /// Wraps a `shortcode_media` object the way the embed page ships it: JSON encoded

@@ -551,25 +551,37 @@ free. The corresponding `E174.1` disk-space required-reason declaration lives in
 
 `PlatformRecognizer` takes the shortcode out of any `(p|reel|reels|tv)/<code>`
 path, including the username-prefixed form Instagram now shares
-(`/<user>/reel/<code>/`). Resolution then runs a two-stage ladder, and the order
+(`/<user>/reel/<code>/`). Resolution then runs a three-stage ladder, and the order
 exists for one reason: **Instagram hands out a reel's cover frame freely and its
 playable MP4 from exactly one endpoint.**
 
-1. **The web client's persisted GraphQL query** — a GET to
+1. **The post page as served to a search crawler** — a cookie-free GET to
+   `/p/<code>/` with the Googlebot user agent
+   (`MediaDownloadHTTP.googleCrawlerUserAgent`). Instagram serves that UA the full
+   logged-out rehydration JSON it strips from the same page under a browser UA:
+   `data-sjs` script tags carrying `xig_polaris_media.if_not_gated_logged_out`, an
+   api-v1-shaped media node (`media_type`, `video_versions`, `image_versions2`,
+   `carousel_media`). Today this is the only keyless source that still returns a
+   reel's playable URL, and it serves stills and carousels too.
+2. **The web client's persisted GraphQL query** — a GET to
    `/graphql/query/?doc_id=…&variables={"shortcode":…}` with the public
    `X-IG-App-ID` instagram.com's own JavaScript sends. `doc_id` names a query
    Instagram has already registered server-side, so there is no key and no login.
-   This is today the only keyless source that still returns `video_url`. It is a
+   It returned `video_url` until Instagram login-walled the logged-out endpoint
+   (observed 2026-09: 401 `require_login` for every request); it stays in the
+   ladder because it answers again the moment that wall lifts. It is a
    GET rather than the POST the site itself issues because the durable background
    engine can only run plain download tasks (no request body) — and the endpoint
    answers this GET while 403-ing a bodyless POST.
-2. **The embed page** (`/p/<code>/embed/captioned/`) — its `contextJSON` blob
+3. **The embed page** (`/p/<code>/embed/captioned/`) — its `contextJSON` blob
    still carries stills and carousels, and any `video_url` it does hand back.
+   A copyright-flagged reel's embed reports `copyright_blocked` and never carries
+   the URL.
 
-Both endpoints return the same `shortcode_media` node shape, down to
-`edge_sidecar_to_children`; only `__typename` gains an `XDT` prefix on the GraphQL
-one, which is why video detection matches that name's suffix. One node parser
-serves both.
+The GraphQL and embed endpoints return the same `shortcode_media` node shape, down
+to `edge_sidecar_to_children`; only `__typename` gains an `XDT` prefix on the
+GraphQL one, which is why video detection matches that name's suffix. One node
+parser serves both; the crawler page's api-v1 node has its own.
 
 **A video node with no playable URL yields nothing, never its still.** Instagram's
 embed payload now describes a reel as a video (`is_video`, `video_duration`,
@@ -584,10 +596,10 @@ remains their last resort.
 
 `doc_id`s rotate. When this one is retired the query returns no media rather than
 wrong media, so the degradation is a reel that fails to download, not a reel that
-downloads the wrong thing. The durable background engine mirrors the same two
-stages (`instagramGraphQL` → `instagramEmbed`, via `startNextInstagramResolve`),
-the way its Facebook and YouTube ladders mirror theirs; reordering one means
-reordering both.
+downloads the wrong thing. The durable background engine mirrors the same three
+stages (`instagramPostPage` → `instagramGraphQL` → `instagramEmbed`, via
+`startNextInstagramResolve`), the way its Facebook and YouTube ladders mirror
+theirs; reordering one means reordering both.
 
 ## YouTube
 
@@ -676,7 +688,7 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
   resolver/downloader/Photo-library protocols.
 - `SocialMediaResolver.swift` dispatches to pure parsers for X, Instagram, TikTok, and
   Facebook. X uses fxtwitter JSON; TikTok parses hydration/reflow JSON; Instagram prefers
-  the persisted GraphQL query and never substitutes a still for a video (see the Instagram
+  the crawler-served post page and never substitutes a still for a video (see the Instagram
   section above); Facebook prefers playable URLs in browser-page JSON. Facebook share
   tracking is removed before every resolution stage (`v` is retained for `/watch/` identity),
   because tracked and stable permalinks can receive different logged-out response shapes.

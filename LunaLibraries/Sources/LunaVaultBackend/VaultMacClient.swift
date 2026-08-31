@@ -552,6 +552,13 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
             objectID: id, idempotencyKey: UUID().uuidString), client: client)
         switch stat.status {
         case .notFound:
+            // A deleted object answers .notFound but still carries its
+            // tombstone revision; a replacement put must present it as the
+            // expected revision or the server's revision guard conflicts.
+            if let revision = stat.revision {
+                revisions[id] = revision
+                return revision
+            }
             return nil
         case .accepted:
             guard let revision = stat.revision else { throw VaultMacProtocolError.invalidFrame }

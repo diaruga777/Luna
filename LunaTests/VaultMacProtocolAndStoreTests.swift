@@ -547,6 +547,7 @@ final class VaultMacProtocolAndStoreTests: XCTestCase {
 
     func testTerminalPartialOnFinalChunkIsRetryableAndPreservesPendingUpload() async throws {
         let root = temporary("terminal-partial"); defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let credential = try makeCredential(now: Date())
         let authority = VaultMacSessionAuthority(credential: credential, random: DeterministicMacRandom(seed: 71))
         // A companion that received every chunk's bytes but crashed or

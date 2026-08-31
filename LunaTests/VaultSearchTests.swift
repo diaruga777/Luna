@@ -21,8 +21,8 @@ final class VaultSearchTests: XCTestCase {
     }
     private func id(_ value: Int) -> VaultObjectID { VaultObjectID(rawValue: UUID(uuidString: String(format:"00000000-0000-0000-0000-%012d",value))!) }
     private func revision(_ value: Int) -> UUID { UUID(uuidString:String(format:"10000000-0000-0000-0000-%012d",value))! }
-    private func doc(_ value:Int, filename:String="file.txt", body:String="", ocr:String="", transcript:String="", vector:[Float]?=nil, logical:Int64?=nil, device:String="phone") -> VaultIndexedDocument {
-        let date=Date(timeIntervalSinceReferenceDate:TimeInterval(value));return VaultIndexedDocument(id:id(value),revision:revision(value),logicalTime:logical ?? Int64(value),deviceID:device,filename:filename,bodyText:body,ocrText:ocr,transcriptText:transcript,createdAt:date,updatedAt:date,accessedAt:date,embedding:vector.map{VaultEmbedding(values:$0,modelVersion:"v1")})
+    private func doc(_ value:Int, filename:String="file.txt", body:String="", ocr:String="", transcript:String="", vector:[Float]?=nil, logical:Int64?=nil, device:String="phone", accessed:TimeInterval?=nil) -> VaultIndexedDocument {
+        let date=Date(timeIntervalSinceReferenceDate:accessed ?? TimeInterval(value));return VaultIndexedDocument(id:id(value),revision:revision(value),logicalTime:logical ?? Int64(value),deviceID:device,filename:filename,bodyText:body,ocrText:ocr,transcriptText:transcript,createdAt:date,updatedAt:date,accessedAt:date,embedding:vector.map{VaultEmbedding(values:$0,modelVersion:"v1")})
     }
 
     func testGoldenHybridRankingAndMatchedSnippetProvenance() throws {
@@ -35,9 +35,9 @@ final class VaultSearchTests: XCTestCase {
     // never ran); these four assert behavior this file did not already cover.
 
     func testHybridSearchHasDeterministicTieBreakForEqualScores() throws {
-        let(index,_,_)=try makeIndex();try index.upsert(doc(1,filename:"alpha.txt",body:"shared phrase",vector:[1,0]));try index.upsert(doc(2,filename:"beta.txt",body:"shared phrase",vector:[1,0]))
+        let(index,_,_)=try makeIndex();try index.upsert(doc(2,filename:"beta.txt",body:"shared phrase",vector:[1,0],accessed:7));try index.upsert(doc(1,filename:"alpha.txt",body:"shared phrase",vector:[1,0],accessed:7))
         let results=try index.search("shared phrase",embedding:VaultEmbedding(values:[1,0],modelVersion:"v1"),limit:10)
-        XCTAssertEqual(results.map(\.filename),["alpha.txt","beta.txt"],"equal-score hits break ties by object id, not insertion order")
+        XCTAssertEqual(results.map(\.filename),["alpha.txt","beta.txt"],"equal score and access date break ties by object id, not insertion order")
     }
 
     func testCosineSearchIsIsolatedPerModelVersion() throws {

@@ -81,8 +81,10 @@ final class VaultStage5IntegrationTests: XCTestCase {
             })
         root.loadViewIfNeeded()
 
-        let recent = try XCTUnwrap(root.view.viewWithAccessibilityIdentifier(
-            "vault.recent.\(objectID.rawValue.uuidString)") as? UIButton)
+        // Recents and groups load off the main thread; poll for the row
+        // instead of reading the hierarchy synchronously after loadView.
+        let recent = try await waitForView(
+            in: root.view, identifier: "vault.recent.\(objectID.rawValue.uuidString)", as: UIButton.self)
         recent.sendActions(for: .touchUpInside)
         try await waitForPlans(plans, count: 1)
 
@@ -90,9 +92,8 @@ final class VaultStage5IntegrationTests: XCTestCase {
             VaultAccessibilityID.search) as? UITextField)
         search.text = "searchable"
         search.sendActions(for: .editingChanged)
-        try await Task.sleep(nanoseconds: 500_000_000)
-        let result = try XCTUnwrap(root.view.viewWithAccessibilityIdentifier(
-            "vault.result.open.\(objectID.rawValue.uuidString)") as? UIButton)
+        let result = try await waitForView(
+            in: root.view, identifier: "vault.result.open.\(objectID.rawValue.uuidString)", as: UIButton.self)
         result.sendActions(for: .touchUpInside)
         try await waitForPlans(plans, count: 2)
 
@@ -201,6 +202,17 @@ final class VaultStage5IntegrationTests: XCTestCase {
             XCTAssertEqual(plan.capability, capability)
         }
         for directory in directories { try? directory.cleanUp() }
+    }
+
+    @MainActor
+    private func waitForView<T: UIView>(in root: UIView, identifier: String,
+                                        as type: T.Type) async throws -> T {
+        for _ in 0..<40 {
+            if let view = root.viewWithAccessibilityIdentifier(identifier) as? T { return view }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("timed out waiting for view \(identifier)")
+        throw XCTSkip("view \(identifier) never appeared")
     }
 
     private func waitForPlans(_ plans: LockedPlanResults, count: Int) async throws {

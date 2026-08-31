@@ -1121,8 +1121,12 @@ public final class VaultRepository: @unchecked Sendable {
         for(marker,id,revision,token)in entries{
             let currentRevision=try objectLocked(id)?.revision.uuidString ?? "",currentToken=readGenerationMarkerToken(id)
             guard currentRevision==revision,currentToken==token else{try run("DELETE FROM pending_file_cleanup WHERE marker_id=?",[.text(marker)]);continue}
-            try VaultSecureFileAccess.removeRegularFile(at: contentURL(id))
-            try VaultSecureFileAccess.removeRegularFile(at: generationURL(id))
+            // The injected fileManager stays the removal seam here: cleanup
+            // failure must propagate through it so the marker survives for
+            // the next drain (pinned by VaultCryptoStorageTests).
+            let final=contentURL(id),generation=generationURL(id)
+            if fileManager.fileExists(atPath:final.path){try fileManager.removeItem(at:final)}
+            if fileManager.fileExists(atPath:generation.path){try fileManager.removeItem(at:generation)}
             try run("DELETE FROM pending_file_cleanup WHERE marker_id=?",[.text(marker)])
         }
     }

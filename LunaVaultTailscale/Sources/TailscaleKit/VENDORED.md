@@ -25,6 +25,12 @@ Luna changes inside vendored files are marked with a
 - `TailscaleNode.swift` also declares the `TailscaleHandle` /
   `TailscaleConnection` / `TailscaleListener` typealiases and `NetProtocol`,
   which upstream declares in the un-vendored `OutgoingConnection.swift`.
+- `TailscaleNode.swift` makes `up()`, `close()`, and `statusJSON()`
+  `nonisolated` and adds a `nonisolated interrupt()`, so a caller can
+  interrupt a blocked `tailscale_up` from another thread instead of the
+  close queuing behind it on the actor. A `closeOnce` guard keeps
+  `tailscale_close` to exactly one call across `interrupt()`, `close()`,
+  and `deinit`.
 
 Known upstream quirk kept as-is: `TailscaleNode.down()` calls `tailscale_up`.
 Luna never calls `down()`.

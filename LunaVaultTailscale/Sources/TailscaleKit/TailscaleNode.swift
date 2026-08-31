@@ -47,6 +47,26 @@ public struct Configuration: Sendable {
 
 public typealias IPAddresses = (ip4: String?, ip6: String?)
 
+// Luna vendoring change: single-flight guard so tailscale_close runs exactly
+// once even when interrupt(), an explicit close(), and deinit all race for
+// the same handle.
+private final class TailscaleNodeCloseGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var closed = false
+
+    /// Calls `tailscale_close` and returns its result the first time this
+    /// is reached for a handle; every later call is a no-op that returns
+    /// nil.
+    @discardableResult
+    func closeOnce(_ tailscale: TailscaleHandle) -> Int32? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return nil }
+        closed = true
+        return tailscale_close(tailscale)
+    }
+}
+
 /// TSInterface creates and manages a single userspace Tailscale application
 /// node.  You may instantiate several "nodes" in a single application.  Each
 /// will get a unique IP address on the Tailnet.
@@ -57,7 +77,11 @@ public actor TailscaleNode {
 
     /// Handle to the underlying Tailscale server.  Use this when instantiating
     /// new IncomingConnections or OutgoingConnections
-    public let tailscale: TailscaleHandle?
+    //
+    // Luna vendoring change: nonisolated. Immutable and Sendable, and
+    // VaultTailnetNodeRunner reads it off-actor to dial and to interrupt a
+    // wedged tailscale_up (see close()/interrupt() below).
+    public nonisolated let tailscale: TailscaleHandle?
 
     private let logger: LogSink?
 
@@ -102,9 +126,14 @@ public actor TailscaleNode {
         logger?.log("Tailscale started... \(tailscale)")
     }
 
+    // Luna vendoring change: a lock-guarded single-flight so tailscale_close
+    // fires exactly once no matter which of interrupt(), close(), and
+    // deinit reaches the handle first.
+    private let closeGuard = TailscaleNodeCloseGuard()
+
     deinit {
         if let tailscale {
-            tailscale_close(tailscale)
+            closeGuard.closeOnce(tailscale)
         }
     }
 
@@ -113,13 +142,23 @@ public actor TailscaleNode {
     /// @See tailscale_close in Tailscale.h
     ///
     /// @Throws TailscaleError on failure
-    public func close() async throws {
+    //
+    // Luna vendoring change: nonisolated and no longer async. up(), close(),
+    // and statusJSON() used to isolate to this actor, so a timeout's close()
+    // queued behind up()'s still-blocked C call instead of interrupting it.
+    // They touch only the immutable handle and logger, so nonisolated is
+    // sound, and callers now run them off the actor via a blocking queue
+    // (see VaultTailnetNodeRunner.runBlocking).
+    public nonisolated func close() throws {
         guard let tailscale else {
             throw TailscaleError.badInterfaceHandle
         }
 
         logger?.log("Closing Tailscale: \(tailscale)")
-        let res = tailscale_close(tailscale)
+        guard let res = closeGuard.closeOnce(tailscale) else {
+            // Already closed by interrupt() or a prior close(); idempotent.
+            return
+        }
 
         guard res == 0 else {
             throw TailscaleError.fromPosixErrCode(res, tailscale.getErrorMessage())
@@ -127,12 +166,24 @@ public actor TailscaleNode {
         logger?.log("Closed Tailscale:\(tailscale)")
     }
 
+    /// Cross-thread interrupt for a `tailscale_up` call blocked on another
+    /// thread: `tailscale_close` is the documented way to unblock it. Safe
+    /// to call concurrently with an in-flight `up()` because it never
+    /// touches actor-isolated state.
+    //
+    // Luna vendoring change: added so a bring-up timeout can unwedge a
+    // blocked tailscale_up without going through actor isolation.
+    public nonisolated func interrupt() {
+        guard let tailscale else { return }
+        _ = closeGuard.closeOnce(tailscale)
+    }
+
     /// Brings up the Tailscale server
     ///
     /// @See tailscale_up in Tailscale.h
     ///
     /// @throws TailscaleError on failure
-    public func up() async throws {
+    public nonisolated func up() throws {
         guard let tailscale else {
             throw TailscaleError.badInterfaceHandle
         }
@@ -157,7 +208,7 @@ public actor TailscaleNode {
     /// @See tailscale_status_json in Tailscale.h
     ///
     /// @throws TailscaleError on failure
-    public func statusJSON() async throws -> Data {
+    public nonisolated func statusJSON() throws -> Data {
         guard let tailscale else {
             throw TailscaleError.badInterfaceHandle
         }

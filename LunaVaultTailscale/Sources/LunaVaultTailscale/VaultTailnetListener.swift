@@ -43,10 +43,17 @@ public final class VaultTailnetListener: @unchecked Sendable {
         return isClosed
     }
 
+    /// Yields one entry per inbound connection. A single `tailscale_accept`
+    /// failure retries with backoff instead of ending the stream: a caller
+    /// that owns a second, independent listener (the companion CLI's
+    /// `--bind-host` LAN listener) would otherwise tear it down too when it
+    /// treats the tailnet stream ending as fatal. `poll`'s own failure still
+    /// ends the stream — it means the listener descriptor itself is bad.
     public func connections() -> AsyncThrowingStream<VaultTailnetAcceptedConnection, Error> {
         AsyncThrowingStream { continuation in
             continuation.onTermination = { [weak self] _ in self?.close() }
             queue.async { [self] in
+                var consecutiveAcceptFailures = 0
                 while !closed {
                     var descriptor = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
                     let ready = poll(&descriptor, 1, Self.pollTickMilliseconds)
@@ -58,19 +65,36 @@ public final class VaultTailnetListener: @unchecked Sendable {
                     guard ready > 0 else { continue }
                     do {
                         let (fd, remote) = try TailscaleSocket.accept(handle, listener: listener)
+                        consecutiveAcceptFailures = 0
                         VaultTailnetLog.listener.info("Accepted tailnet connection from \(remote ?? "unknown", privacy: .public) fd=\(fd, privacy: .public)")
                         continuation.yield(VaultTailnetAcceptedConnection(
                             channel: VaultTailscaleFrameChannel(fileDescriptor: fd),
                             peer: remote ?? "unknown"))
                     } catch {
-                        VaultTailnetLog.listener.error("Accept failed: \(String(describing: error), privacy: .public)")
-                        continuation.finish(throwing: error)
-                        return
+                        consecutiveAcceptFailures += 1
+                        let backoff = Self.acceptRetryBackoff(afterFailureCount: consecutiveAcceptFailures)
+                        VaultTailnetLog.listener.error("Accept failed; retrying in \(backoff, privacy: .public)s. failureCount=\(consecutiveAcceptFailures, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                        // Sleep in poll-tick-sized slices so close() from
+                        // another thread still stops the loop within one
+                        // tick instead of waiting out the full backoff.
+                        var remaining = backoff
+                        let slice = TimeInterval(Self.pollTickMilliseconds) / 1_000
+                        while remaining > 0, !closed {
+                            Thread.sleep(forTimeInterval: min(slice, remaining))
+                            remaining -= slice
+                        }
                     }
                 }
                 continuation.finish()
             }
         }
+    }
+
+    /// Exponential backoff capped at 30s, pure so it is cheap to pin without
+    /// driving the poll loop.
+    public static func acceptRetryBackoff(afterFailureCount count: Int) -> TimeInterval {
+        guard count > 0 else { return 0 }
+        return min(pow(2.0, Double(count - 1)), 30)
     }
 }
 

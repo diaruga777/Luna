@@ -21,6 +21,7 @@ public final class VaultTailscaleFrameChannel: VaultMacFrameChannel, @unchecked 
 
     public init(fileDescriptor: Int32) {
         self.fd = fileDescriptor
+        VaultTailnetLog.channel.debug("Channel opened. fd=\(fileDescriptor, privacy: .public)")
     }
 
     deinit {
@@ -33,7 +34,10 @@ public final class VaultTailscaleFrameChannel: VaultMacFrameChannel, @unchecked 
             isClosed = true
             return true
         }
-        if shouldShutDown { shutdown(fd, SHUT_RDWR) }
+        if shouldShutDown {
+            VaultTailnetLog.channel.debug("Channel closed. fd=\(self.fd, privacy: .public)")
+            shutdown(fd, SHUT_RDWR)
+        }
     }
 
     private var closed: Bool { lock.withLock { isClosed } }
@@ -46,16 +50,32 @@ public final class VaultTailscaleFrameChannel: VaultMacFrameChannel, @unchecked 
         var framed = Data(bytes: &size, count: 4)
         framed.append(frame)
         let payload = framed
-        try await run(on: writeQueue) { try self.blockingWrite(payload) }
+        do {
+            try await run(on: writeQueue) { try self.blockingWrite(payload) }
+            VaultTailnetLog.channel.debug("Sent frame. fd=\(self.fd, privacy: .public) bytes=\(frame.count, privacy: .public)")
+        } catch {
+            VaultTailnetLog.channel.error("Send failed. fd=\(self.fd, privacy: .public) bytes=\(frame.count, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            throw error
+        }
     }
 
     public func receive() async throws -> Data {
-        let header = try await run(on: readQueue) { try self.blockingRead(4) }
-        let size = header.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).bigEndian }
-        guard size > 0, size <= UInt32(VaultMacProtocol.maximumFrameBytes + 1024) else {
+        do {
+            let header = try await run(on: readQueue) { try self.blockingRead(4) }
+            let size = header.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).bigEndian }
+            guard size > 0, size <= UInt32(VaultMacProtocol.maximumFrameBytes + 1024) else {
+                VaultTailnetLog.channel.error("Received invalid frame length \(size, privacy: .public). fd=\(self.fd, privacy: .public)")
+                throw VaultMacProtocolError.frameTooLarge
+            }
+            let frame = try await run(on: readQueue) { try self.blockingRead(Int(size)) }
+            VaultTailnetLog.channel.debug("Received frame. fd=\(self.fd, privacy: .public) bytes=\(frame.count, privacy: .public)")
+            return frame
+        } catch VaultMacProtocolError.frameTooLarge {
             throw VaultMacProtocolError.frameTooLarge
+        } catch {
+            VaultTailnetLog.channel.error("Receive failed. fd=\(self.fd, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            throw error
         }
-        return try await run(on: readQueue) { try self.blockingRead(Int(size)) }
     }
 
     private func run<T: Sendable>(on queue: DispatchQueue,

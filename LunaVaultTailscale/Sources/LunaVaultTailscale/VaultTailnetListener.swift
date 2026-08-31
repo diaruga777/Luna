@@ -58,10 +58,12 @@ public final class VaultTailnetListener: @unchecked Sendable {
                     guard ready > 0 else { continue }
                     do {
                         let (fd, remote) = try TailscaleSocket.accept(handle, listener: listener)
+                        VaultTailnetLog.listener.info("Accepted tailnet connection from \(remote ?? "unknown", privacy: .public) fd=\(fd, privacy: .public)")
                         continuation.yield(VaultTailnetAcceptedConnection(
                             channel: VaultTailscaleFrameChannel(fileDescriptor: fd),
                             peer: remote ?? "unknown"))
                     } catch {
+                        VaultTailnetLog.listener.error("Accept failed: \(String(describing: error), privacy: .public)")
                         continuation.finish(throwing: error)
                         return
                     }

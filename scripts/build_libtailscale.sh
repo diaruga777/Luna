@@ -4,7 +4,8 @@
 # The xcframework is COMMITTED, so this script runs only when updating the
 # pinned libtailscale revision. Requires a Go toolchain and Xcode.
 #
-# Slices: ios-arm64 (device), ios-arm64-simulator, macos-arm64.
+# Slices: ios-arm64 (device), ios-arm64_x86_64-simulator (fat — a
+# generic-simulator app build links both architectures), macos-arm64.
 # After running, update the commit hash in
 # LunaVaultTailscale/Sources/TailscaleKit/VENDORED.md and re-apply the marked
 # Luna changes to any vendored Swift file upstream touched.
@@ -32,9 +33,13 @@ echo "Building iOS device archive…"
 CGO_ENABLED=1 GOOS=ios GOARCH=arm64 CC="$PWD/swift/script/clangwrap-ios.sh" \
   go build -ldflags -w -tags ios -buildmode=c-archive -o libtailscale_ios.a
 
-echo "Building iOS simulator arm64 archive…"
+echo "Building iOS simulator archives…"
 CGO_ENABLED=1 GOOS=ios GOARCH=arm64 CC="$PWD/swift/script/clangwrap-ios-sim-arm.sh" \
   go build -ldflags -w -tags ios -buildmode=c-archive -o libtailscale_ios_sim_arm64.a
+CGO_ENABLED=1 GOOS=ios GOARCH=amd64 CC="$PWD/swift/script/clangwrap-ios-sim-x86.sh" \
+  go build -ldflags -w -tags ios -buildmode=c-archive -o libtailscale_ios_sim_x86_64.a
+lipo -create -output libtailscale_ios_sim.a \
+  libtailscale_ios_sim_x86_64.a libtailscale_ios_sim_arm64.a
 
 for slice in ios sim macos; do
   mkdir -p "include-$slice"
@@ -46,7 +51,7 @@ done
 rm -rf "$VENDOR_DIR/LibTailscale.xcframework"
 xcodebuild -create-xcframework \
   -library libtailscale_ios.a -headers include-ios \
-  -library libtailscale_ios_sim_arm64.a -headers include-sim \
+  -library libtailscale_ios_sim.a -headers include-sim \
   -library libtailscale_macos.a -headers include-macos \
   -output "$VENDOR_DIR/LibTailscale.xcframework"
 

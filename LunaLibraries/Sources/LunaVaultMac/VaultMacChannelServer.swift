@@ -1,5 +1,8 @@
 import Foundation
 import LunaVaultBackend
+import os
+
+private let serverLog = os.Logger(subsystem: "com.hsanabria.luna.vault", category: "mac-server")
 
 public struct VaultMacListenerLimits: Equatable, Sendable {
     public let maximumConnections: Int
@@ -76,10 +79,18 @@ public final class VaultMacChannelServer: Sendable {
     /// fails or idles out, and records an authentication failure against the
     /// peer on error. Closes the channel before returning.
     public func run(_ channel: any VaultMacFrameChannel, peer: String) async {
-        guard gate.begin(peer: peer, now: Date()) else { channel.close(); return }
+        guard gate.begin(peer: peer, now: Date()) else {
+            serverLog.error("Rejected \(peer, privacy: .public): connection or failure budget exhausted.")
+            channel.close(); return
+        }
+        serverLog.info("Session opened for \(peer, privacy: .public).")
         defer { channel.close(); gate.end() }
-        do { try await serve(channel) }
-        catch { gate.failed(peer: peer, now: Date()) }
+        do {
+            try await serve(channel)
+        } catch {
+            serverLog.error("Session for \(peer, privacy: .public) ended: \(String(describing: error), privacy: .public)")
+            gate.failed(peer: peer, now: Date())
+        }
     }
 
     private func serve(_ channel: any VaultMacFrameChannel) async throws {
@@ -104,6 +115,7 @@ public final class VaultMacChannelServer: Sendable {
                 throw VaultMacProtocolError.revoked
             }
             let response = await service.handle(request)
+            serverLog.debug("Handled \(request.operation.rawValue, privacy: .public) object=\(request.objectID.rawValue.uuidString, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
             try await channel.send(JSONEncoder().encode(try sender.seal(JSONEncoder().encode(response))))
         }
     }

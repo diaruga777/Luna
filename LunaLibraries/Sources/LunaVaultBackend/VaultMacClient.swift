@@ -3,6 +3,13 @@ import Foundation
 import LunaVaultCrypto
 import LunaVaultModels
 import LunaVaultStorage
+import os
+
+/// Wire-client diagnostics. Logs carry operations, revisions, statuses,
+/// byte counts, and endpoint hosts — never key material or ciphertext.
+/// Capture on device with:
+///   log stream --level debug --predicate 'subsystem == "com.hsanabria.luna.vault"'
+let vaultMacClientLog = os.Logger(subsystem: "com.hsanabria.luna.vault", category: "mac-client")
 
 #if canImport(Network)
 import Network
@@ -352,6 +359,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         }
         let client = try await makeClient()
         defer { Task { await client.close() } }
+        vaultMacClientLog.info("Upload start. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(ciphertext.count, privacy: .public) chunks=\(plan.totalChunks, privacy: .public) resumed=\(pending != nil, privacy: .public)")
         for index in 0..<plan.totalChunks {
             let range = try plan.range(for: index)
             let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
@@ -363,6 +371,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 payloadGeneration: generation)
             let response = try await timedRequest(request, client: client)
             guard response.status == .partial || response.status == .accepted else {
+                vaultMacClientLog.error("Upload rejected. object=\(id.rawValue.uuidString, privacy: .public) chunk=\(index, privacy: .public)/\(plan.totalChunks, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
                 // A revision conflict means the durable pending revision can
                 // never be accepted by this server state. Drop only that
                 // stale marker; transient quota/unavailable errors remain
@@ -373,6 +382,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 throw VaultMacProtocolError.conflictingRevision
             }
         }
+        vaultMacClientLog.info("Upload complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(ciphertext.count, privacy: .public)")
         revisions[id] = upload.revision
         try await uploadStateStore.removePendingUpload(for: id)
     }
@@ -406,6 +416,7 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         }
         let client = try await makeClient()
         defer { Task { await client.close() } }
+        vaultMacClientLog.info("File upload start. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public) chunks=\(plan.totalChunks, privacy: .public) resumed=\(pending != nil, privacy: .public)")
         for index in 0..<plan.totalChunks {
             let range = try plan.range(for: index)
             let chunk = try payload.read(offset: UInt64(range.lowerBound), count: range.count)
@@ -417,13 +428,16 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 objectKind: kind, payloadGeneration: generation)
             let response = try await timedRequest(request, client: client)
             guard response.status == .partial || response.status == .accepted else {
+                vaultMacClientLog.error("File upload rejected. object=\(id.rawValue.uuidString, privacy: .public) chunk=\(index, privacy: .public)/\(plan.totalChunks, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
                 if response.status == .conflict { try? await uploadStateStore.removePendingUpload(for: id) }
                 throw VaultMacProtocolError.conflictingRevision
             }
         }
         guard try payload.digestBytes() == digest else {
+            vaultMacClientLog.error("File upload aborted: source digest changed mid-upload. object=\(id.rawValue.uuidString, privacy: .public)")
             throw VaultMacProtocolError.conflictingRevision
         }
+        vaultMacClientLog.info("File upload complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public)")
         revisions[id] = upload.revision
         try await uploadStateStore.removePendingUpload(for: id)
     }
@@ -448,9 +462,13 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
                 offset: offset, length: length, idempotencyKey: UUID().uuidString), client: client)
             guard response.status == .accepted, let bytes = response.ciphertext,
                   response.revision == statRevision,
-                  UInt64(bytes.count) == length else { throw VaultMacProtocolError.conflictingRevision }
+                  UInt64(bytes.count) == length else {
+                vaultMacClientLog.error("Range read failed. object=\(id.rawValue.uuidString, privacy: .public) offset=\(offset, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
+                throw VaultMacProtocolError.conflictingRevision
+            }
             output.append(bytes); offset += length
         }
+        vaultMacClientLog.info("Download complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(total, privacy: .public)")
         return output
     }
 
@@ -461,7 +479,11 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         let client = try await makeClient(); defer { Task { await client.close() } }
         let response = try await timedRequest(VaultMacRequest(operation: .delete, objectID: id,
             revision: tombstone, expectedRevision: current.revision, idempotencyKey: UUID().uuidString), client: client)
-        guard response.status == .accepted || response.status == .notFound else { throw VaultMacProtocolError.conflictingRevision }
+        guard response.status == .accepted || response.status == .notFound else {
+            vaultMacClientLog.error("Delete rejected. object=\(id.rawValue.uuidString, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
+            throw VaultMacProtocolError.conflictingRevision
+        }
+        vaultMacClientLog.info("Delete accepted. object=\(id.rawValue.uuidString, privacy: .public)")
         revisions[id] = tombstone
     }
 
@@ -476,8 +498,15 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
     }
 
     private func makeClient() async throws -> VaultMacSessionClient {
-        let channel = try await vaultMacWithTimeout(seconds: timeouts.connect) {
-            try await self.connector.connect(to: self.endpoint)
+        let started = Date()
+        let channel: any VaultMacFrameChannel
+        do {
+            channel = try await vaultMacWithTimeout(seconds: timeouts.connect) {
+                try await self.connector.connect(to: self.endpoint)
+            }
+        } catch {
+            vaultMacClientLog.error("Connect to \(self.endpoint.host, privacy: .public):\(self.endpoint.port, privacy: .public) (\(self.endpoint.reachability.rawValue, privacy: .public)) failed after \(Int(Date().timeIntervalSince(started) * 1_000), privacy: .public)ms: \(String(describing: error), privacy: .public)")
+            throw error
         }
         let client = VaultMacSessionClient(channel: channel,
             credential: credential, identityConfirmer: identityConfirmer, random: random)
@@ -485,16 +514,23 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
             try await vaultMacWithTimeout(seconds: timeouts.authenticate) {
                 try await client.authenticate()
             }
+            vaultMacClientLog.info("Authenticated session with \(self.endpoint.host, privacy: .public):\(self.endpoint.port, privacy: .public) in \(Int(Date().timeIntervalSince(started) * 1_000), privacy: .public)ms")
             return client
         } catch {
+            vaultMacClientLog.error("Session authentication with \(self.endpoint.host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             await client.close(); throw error
         }
     }
 
     private func timedRequest(_ request: VaultMacRequest,
                               client: VaultMacSessionClient) async throws -> VaultMacResponse {
-        try await vaultMacWithTimeout(seconds: timeouts.request) {
-            try await client.request(request)
+        do {
+            return try await vaultMacWithTimeout(seconds: timeouts.request) {
+                try await client.request(request)
+            }
+        } catch {
+            vaultMacClientLog.error("Request failed. op=\(request.operation.rawValue, privacy: .public) object=\(request.objectID.rawValue.uuidString, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            throw error
         }
     }
 
@@ -633,6 +669,7 @@ extension VaultMacRemoteBackend {
             let result = try VaultAuthenticatedCiphertextFile(fileURL: temporary,
                 expectedIdentity: identity, vaultID: self.identity.vaultID, ownsFile: true)
             keepTemporary = true
+            vaultMacClientLog.info("Streamed download complete. object=\(identity.objectID.rawValue.uuidString, privacy: .public) bytes=\(total, privacy: .public)")
             return result
         } catch {
             if let error = error as? VaultBackendError { throw error }

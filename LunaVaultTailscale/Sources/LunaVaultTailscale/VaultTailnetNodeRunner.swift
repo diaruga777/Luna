@@ -38,9 +38,13 @@ public actor VaultTailnetNodeRunner {
                                               qos: .userInitiated, attributes: .concurrent)
     private static let upTimeout: TimeInterval = 45
 
+    private let goLogPump = VaultTailnetGoLogPump()
+
     public init(configuration: VaultTailnetConfiguration, logger: LogSink? = nil) {
         self.configuration = configuration
-        self.logger = logger ?? VaultTailnetLogSink()
+        goLogPump.start()
+        self.logger = logger ?? VaultTailnetLogSink(logFileHandle: goLogPump.writeFileDescriptor)
+        VaultTailnetLog.node.info("Runner created. hostName=\(configuration.hostName, privacy: .public) stateDir=\(configuration.stateDirectory.path, privacy: .public)")
     }
 
     /// True when the node has stored control-plane state from a prior login.
@@ -53,21 +57,29 @@ public actor VaultTailnetNodeRunner {
 
     private func runningNode() throws -> TailscaleNode {
         if let node { return node }
-        try FileManager.default.createDirectory(at: configuration.stateDirectory,
-                                                withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        let config = Configuration(hostName: configuration.hostName,
-                                   path: configuration.stateDirectory.path,
-                                   authKey: nil,
-                                   controlURL: configuration.controlURL,
-                                   ephemeral: configuration.ephemeral)
-        let value = try TailscaleNode(config: config, logger: logger)
-        node = value
-        return value
+        VaultTailnetLog.node.info("Starting embedded node. persistedState=\(self.hasPersistedState, privacy: .public)")
+        do {
+            try FileManager.default.createDirectory(at: configuration.stateDirectory,
+                                                    withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            let config = Configuration(hostName: configuration.hostName,
+                                       path: configuration.stateDirectory.path,
+                                       authKey: nil,
+                                       controlURL: configuration.controlURL,
+                                       ephemeral: configuration.ephemeral)
+            let value = try TailscaleNode(config: config, logger: logger)
+            node = value
+            VaultTailnetLog.node.info("Embedded node started.")
+            return value
+        } catch {
+            VaultTailnetLog.node.error("Embedded node failed to start: \(String(describing: error), privacy: .public)")
+            throw error
+        }
     }
 
     public func shutDown() async {
         guard let node else { return }
+        VaultTailnetLog.node.info("Shutting the embedded node down.")
         self.node = nil
         try? await node.close()
     }
@@ -76,12 +88,15 @@ public actor VaultTailnetNodeRunner {
 
     public func statusSummary() async -> VaultTailnetStatusSummary? {
         guard node != nil || hasPersistedState else { return nil }
-        guard let node = try? runningNode(),
-              let data = try? await node.statusJSON(),
+        guard let node = try? runningNode() else { return nil }
+        guard let data = try? await node.statusJSON(),
               let status = try? JSONDecoder().decode(IpnState.Status.self, from: data) else {
+            VaultTailnetLog.node.error("Status query failed or did not decode.")
             return nil
         }
-        return Self.summary(from: status)
+        let summary = Self.summary(from: status)
+        VaultTailnetLog.node.info("Status: backend=\(status.BackendState, privacy: .public) dns=\(summary.dnsName ?? "-", privacy: .public) ip4=\(summary.ipv4 ?? "-", privacy: .public)")
+        return summary
     }
 
     static func summary(from status: IpnState.Status) -> VaultTailnetStatusSummary {
@@ -119,8 +134,10 @@ public actor VaultTailnetNodeRunner {
                 guard let self else { return }
                 switch step {
                 case .browse(let url):
+                    VaultTailnetLog.node.info("Login flow: control plane requests browser auth at host \(url.host ?? "-", privacy: .public)")
                     continuation.yield(.browseToURL(url))
                 case .finished:
+                    VaultTailnetLog.node.info("Login flow: login finished; bringing the node up.")
                     continuation.yield(.loginFinished)
                     Task {
                         do {
@@ -132,6 +149,7 @@ public actor VaultTailnetNodeRunner {
                         }
                     }
                 case .failed(let message):
+                    VaultTailnetLog.node.error("Login flow failed: \(message, privacy: .public)")
                     continuation.finish(throwing: VaultTailnetError.unavailable(message))
                 case .none:
                     break
@@ -140,8 +158,10 @@ public actor VaultTailnetNodeRunner {
             let processor = try await client.watchIPNBus(
                 mask: [.initialState, .rateLimitNetmaps], consumer: consumer)
             continuation.onTermination = { _ in processor.cancel() }
+            VaultTailnetLog.node.info("Login flow: requesting interactive login from the control plane.")
             try await client.startLoginInteractive()
         } catch {
+            VaultTailnetLog.node.error("Login flow could not start: \(String(describing: error), privacy: .public)")
             continuation.finish(throwing: error)
         }
     }
@@ -170,14 +190,30 @@ public actor VaultTailnetNodeRunner {
     }
 
     public func dialTailnet(host: String, port: UInt16) async throws -> Int32 {
-        try await ensureRunningWithExistingLogin()
+        do {
+            try await ensureRunningWithExistingLogin()
+        } catch {
+            VaultTailnetLog.node.error("Dial refused before connect. host=\(host, privacy: .public) port=\(port, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            throw error
+        }
         let node = try runningNode()
         let address = host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
         guard let handle = await node.tailscale else {
             throw VaultTailnetError.unavailable("no tailscale handle")
         }
-        return try await runBlocking {
-            try TailscaleSocket.dial(handle, address: address)
+        VaultTailnetLog.node.info("Dialing \(address, privacy: .public)…")
+        let started = Date()
+        do {
+            let fd = try await runBlocking {
+                try TailscaleSocket.dial(handle, address: address)
+            }
+            let elapsed = Int(Date().timeIntervalSince(started) * 1_000)
+            VaultTailnetLog.node.info("Dialed \(address, privacy: .public) in \(elapsed, privacy: .public)ms fd=\(fd, privacy: .public)")
+            return fd
+        } catch {
+            let elapsed = Int(Date().timeIntervalSince(started) * 1_000)
+            VaultTailnetLog.node.error("Dial failed for \(address, privacy: .public) after \(elapsed, privacy: .public)ms: \(String(describing: error), privacy: .public)")
+            throw error
         }
     }
 
@@ -188,6 +224,7 @@ public actor VaultTailnetNodeRunner {
     @discardableResult
     private func bringUp() async throws -> VaultTailnetStatusSummary {
         let node = try runningNode()
+        VaultTailnetLog.node.info("Bringing the node up (timeout \(Int(Self.upTimeout), privacy: .public)s)…")
         let outcome = VaultTailnetFirstOutcome()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task.detached {
@@ -201,13 +238,16 @@ public actor VaultTailnetNodeRunner {
             Task.detached { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(Self.upTimeout * 1_000_000_000))
                 guard outcome.take() else { return }
+                VaultTailnetLog.node.error("Node up timed out after \(Int(Self.upTimeout), privacy: .public)s; closing and discarding the node.")
                 continuation.resume(throwing: VaultTailnetError.timedOut)
                 await self?.discardNode(node)
             }
         }
         guard let summary = await statusSummary(), summary.backend == .running else {
+            VaultTailnetLog.node.error("Node up returned but the backend is not Running.")
             throw VaultTailnetError.unavailable("node did not reach Running")
         }
+        VaultTailnetLog.node.info("Node is up as \(summary.dnsName ?? summary.ipv4 ?? "-", privacy: .public).")
         return summary
     }
 
@@ -221,7 +261,13 @@ public actor VaultTailnetNodeRunner {
     public func logout() async throws {
         let node = try runningNode()
         let client = LocalAPIClient(localNode: node, logger: logger)
-        try await client.logout()
+        do {
+            try await client.logout()
+            VaultTailnetLog.node.info("Logged out of the tailnet.")
+        } catch {
+            VaultTailnetLog.node.error("Logout failed: \(String(describing: error), privacy: .public)")
+            throw error
+        }
     }
 
     private func runBlocking<T: Sendable>(_ operation: @escaping @Sendable () throws -> T) async throws -> T {
@@ -281,12 +327,15 @@ private actor VaultTailnetLoginConsumer: MessageConsumer {
     }
 }
 
+/// Routes the vendored wrapper's own log lines to the unified log, and hands
+/// the Go engine the pump's pipe so its stream lands there too.
 public struct VaultTailnetLogSink: LogSink {
     public var logFileHandle: Int32?
-    private let logger = os.Logger(subsystem: "com.hsanabria.luna.vault", category: "tailnet")
-    public init() {}
+    public init(logFileHandle: Int32? = nil) {
+        self.logFileHandle = logFileHandle
+    }
     public func log(_ message: String) {
-        logger.log("\(message, privacy: .public)")
+        VaultTailnetLog.node.debug("\(message, privacy: .public)")
     }
 }
 

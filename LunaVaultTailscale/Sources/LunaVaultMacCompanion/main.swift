@@ -121,6 +121,7 @@ do {
                 let listener = try await runner.tailnetListener(port: tailscalePort)
                 print("Listening on the tailnet at port \(tailscalePort).")
                 for try await connection in listener.connections() {
+                    print("[\(ISO8601DateFormatter().string(from: Date()))] Tailnet connection from \(connection.peer).")
                     Task { await server.run(connection.channel, peer: connection.peer) }
                 }
                 fail("The tailnet listener stopped.")

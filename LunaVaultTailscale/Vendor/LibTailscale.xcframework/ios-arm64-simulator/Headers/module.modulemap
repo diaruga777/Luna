@@ -1,4 +1,0 @@
-module LibTailscale {
-    header "tailscale.h"
-    export *
-}

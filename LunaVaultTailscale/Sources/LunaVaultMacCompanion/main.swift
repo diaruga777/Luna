@@ -17,6 +17,16 @@ func fail(_ message: String) -> Never {
     fputs("\(message)\n", stderr); exit(2)
 }
 
+/// Reports a bind failure the LAN/system-Tailscale listener could not recover
+/// from (for example the configured port is already in use). Without this,
+/// the listener stayed silently dead while the companion kept printing
+/// "Listening on host:port".
+struct TCPListenerFailureReporter: VaultMacListenerFailureObserving {
+    func vaultMacListenerFailed(_ error: Error) {
+        fail("TCP listener failed: \(error)")
+    }
+}
+
 if arguments.contains("--help") || arguments.isEmpty {
     print("Usage:")
     print("  LunaVaultMacCompanion --initialize --root <directory> --endpoint-binding <binding>")
@@ -133,7 +143,8 @@ do {
         }
         let listener = try VaultMacTCPListener(bindHost: bindHost, port: port,
             advertiseName: value(after: "--bonjour-name"), service: service,
-            authority: authority, limits: limits, gate: gate)
+            authority: authority, limits: limits, gate: gate,
+            failureObserver: TCPListenerFailureReporter())
         listener.start()
         print("Listening on \(bindHost):\(listener.port) (LAN or system-Tailscale route).")
     }

@@ -1,8 +1,11 @@
 import Foundation
 import LunaVaultBackend
+import os
 #if canImport(Darwin)
 import Darwin
 #endif
+
+private let networkLog = os.Logger(subsystem: "com.hsanabria.luna.vault", category: "mac-network")
 
 #if canImport(Network)
 import Network
@@ -12,6 +15,13 @@ public protocol VaultMacBonjourPublishing: Sendable {
     func stop()
 }
 
+/// Notified once if the listener's socket fails outright — for example the
+/// configured port is already bound. The listener does not retry on its own;
+/// the observer decides whether to log, exit, or retry with a different port.
+public protocol VaultMacListenerFailureObserving: Sendable {
+    func vaultMacListenerFailed(_ error: Error)
+}
+
 /// The listener cannot be constructed without an already-paired authority and
 /// a concrete non-wildcard bind host. It authenticates a fresh challenge before
 /// accepting encrypted application frames.
@@ -19,11 +29,13 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
     public let port: UInt16
     private let listener: NWListener
     private let server: VaultMacChannelServer
+    private let failureObserver: VaultMacListenerFailureObserving?
 
     public init(bindHost: String, port: UInt16 = 49_200, advertiseName: String? = nil,
                 service: VaultMacCompanionService, authority: VaultMacSessionAuthority,
                 limits: VaultMacListenerLimits = VaultMacListenerLimits(),
-                gate: VaultMacConnectionGate? = nil) throws {
+                gate: VaultMacConnectionGate? = nil,
+                failureObserver: VaultMacListenerFailureObserving? = nil) throws {
         guard port > 0, Self.isConcreteBindHost(bindHost) else {
             throw VaultMacProtocolError.invalidEndpoint
         }
@@ -37,9 +49,15 @@ public final class VaultMacTCPListener: VaultMacBonjourPublishing, @unchecked Se
         }
         self.server = VaultMacChannelServer(service: service, authority: authority,
                                             limits: limits, gate: gate)
+        self.failureObserver = failureObserver
     }
 
     public func start() {
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self, case .failed(let error) = state else { return }
+            networkLog.error("Listener on port \(self.port, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            self.failureObserver?.vaultMacListenerFailed(error)
+        }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: DispatchQueue(label: "com.hsanabria.luna.vault.mac-listener"))
     }

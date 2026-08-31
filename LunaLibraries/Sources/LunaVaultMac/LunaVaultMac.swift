@@ -10,7 +10,7 @@ import Darwin
 public enum LunaVaultMacModule { public static let identifier = "LunaVaultMac" }
 
 public enum VaultMacCompanionError: Error, Equatable, Sendable {
-    case invalidRevision, objectNotFound, conflict, incompleteUpload, invalidRange
+    case invalidRevision, conflict, incompleteUpload, invalidRange
     case diskFailure, quotaExceeded, symlinkRejected, manifestTooLarge, tooManyPartials
     case recoveryCancelled
 }
@@ -140,13 +140,8 @@ public final class VaultMacSessionAuthority: @unchecked Sendable {
             // handshake is unauthenticated up to this point; consuming it on
             // a bad response would let any peer burn a legitimate pairing
             // attempt and create a trivial denial of service.
-            let keys: VaultMacSessionKeys
-            do {
-                keys = try VaultMacSessionKeys(challenge: challenge, response: response,
+            let keys = try VaultMacSessionKeys(challenge: challenge, response: response,
                                                credential: credential, now: now)
-            } catch {
-                throw error
-            }
             pending.removeValue(forKey: response.sessionID)
             consumed.insert(response.sessionID)
             if consumed.count > 4_096 { consumed.removeAll(keepingCapacity: true) }
@@ -197,11 +192,14 @@ private struct StoredObject: Codable, Sendable {
 }
 private struct PartialUpload: Codable, Sendable {
     var revision: VaultRevision; var totalBytes: UInt64; var totalChunks: UInt32
-    var receivedChunks: [UInt32]; var receivedBytes: UInt64; var updatedAt: Date
+    // A Set, not an array: putChunk's `contains` + insert must be O(1)
+    // amortized rather than the O(n) contains + O(n log n) sort per chunk an
+    // array demanded, which made accepting an n-chunk upload O(n^2).
+    var receivedChunks: Set<UInt32>; var receivedBytes: UInt64; var updatedAt: Date
     var objectKind: VaultRemoteObjectKind? = nil; var payloadGeneration: String? = nil
 }
 private struct IdempotencyRecord: Codable, Sendable {
-    var signature: Data; var response: VaultMacResponse; var responseDigest: Data?; var createdAt: Date
+    var signature: Data; var response: VaultMacResponse; var createdAt: Date
 }
 private struct CompanionManifest: Codable, Sendable {
     var objects: [String: StoredObject] = [:]
@@ -250,45 +248,83 @@ public actor VaultMacCompanionStore {
         let signature = SHA256.hash(data: try signatureEncoder.encode(request)).withUnsafeBytes { Data($0) }
         if let existing = manifest.idempotency[request.idempotencyKey] {
             guard constantTimeEqual(existing.signature, signature) else { throw VaultMacCompanionError.conflict }
-            if request.operation == .readRange, let digest = existing.responseDigest {
-                let replay = try readRange(request)
-                let replayBytes = try signatureEncoder.encode(replay)
-                guard constantTimeEqual(digest, Data(SHA256.hash(data: replayBytes))) else {
-                    throw VaultMacCompanionError.conflict
-                }
-                return replay
-            }
+            if request.operation == .putChunk { return replayedPutChunkResponse(existing.response, for: request) }
             try cleanupCommittedState(for: request.objectID)
             return existing.response
         }
-        let response: VaultMacResponse
+        // `stat` and `readRange` have no side effect to make idempotent and
+        // are deterministic over the current object state, so recomputing
+        // them on every call is already correct. Returning here before any
+        // manifest write is what keeps a 100 GiB download's ~25,600
+        // readRange calls from each re-encrypting and fsyncing the whole
+        // manifest.
         switch request.operation {
-        case .putChunk: response = try putChunk(request, now: now)
-        case .stat: response = stat(request)
-        case .readRange: response = try readRange(request)
-        case .delete: response = try delete(request)
+        case .stat: return stat(request)
+        case .readRange: return try readRange(request)
+        case .putChunk:
+            let (response, committedStateChanged) = try putChunk(request, now: now)
+            try finalizeMutation(response, request: request, signature: signature, now: now,
+                                 committedStateChanged: committedStateChanged,
+                                 storedResponse: putChunkStorageResponse(response))
+            return response
+        case .delete:
+            let (response, committedStateChanged) = try delete(request)
+            try finalizeMutation(response, request: request, signature: signature, now: now,
+                                 committedStateChanged: committedStateChanged, storedResponse: response)
+            return response
         }
-        let responseBytes = try signatureEncoder.encode(response)
-        let storedResponse: VaultMacResponse
-        let responseDigest: Data?
-        if request.operation == .readRange {
-            storedResponse = VaultMacResponse(status: response.status, objectID: response.objectID,
-                currentRevision: response.currentRevision, revision: response.revision,
-                receivedChunks: response.receivedChunks,
-                totalCiphertextBytes: response.totalCiphertextBytes, message: response.message,
-                objectKind: response.objectKind, payloadGeneration: response.payloadGeneration)
-            responseDigest = Data(SHA256.hash(data: responseBytes))
-        } else {
-            storedResponse = response; responseDigest = nil
+    }
+
+    /// Only a durable partial or a committed upload is worth remembering.
+    /// Memoizing a `.conflict`/`.notFound`/`.invalid` response would freeze
+    /// this idempotency key against a legitimate retry for the rest of its
+    /// 30-day retention — the poisoning the client-side revision cache exists
+    /// to route around. `cleanupCommittedState` and the chunk-file sweep only
+    /// run when this request actually changed which revision is retained.
+    private func finalizeMutation(_ response: VaultMacResponse, request: VaultMacRequest, signature: Data,
+                                  now: Date, committedStateChanged: Bool, storedResponse: VaultMacResponse) throws {
+        if response.status == .accepted || response.status == .partial {
+            manifest.idempotency[request.idempotencyKey] = IdempotencyRecord(signature: signature,
+                response: storedResponse, createdAt: now)
+            trimIdempotency()
+            try persistManifest()
         }
-        manifest.idempotency[request.idempotencyKey] = IdempotencyRecord(signature: signature,
-            response: storedResponse, responseDigest: responseDigest, createdAt: now)
-        trimIdempotency()
-        try persistManifest()
-        try cleanupCommittedState(for: request.objectID)
+        if committedStateChanged { try cleanupCommittedState(for: request.objectID) }
         if request.operation == .putChunk, response.status == .accepted,
            let revision = request.revision { try removeChunkFiles(objectID: request.objectID, revision: revision.revision) }
-        return response
+    }
+
+    /// Strips the per-chunk `receivedChunks` array before a putChunk response
+    /// is memoized: keeping the whole growing list in each chunk's
+    /// idempotency record made the manifest grow O(n^2) in chunk count,
+    /// wedging uploads near 9.4 GiB against the documented 100 GiB contract.
+    private func putChunkStorageResponse(_ response: VaultMacResponse) -> VaultMacResponse {
+        VaultMacResponse(status: response.status, objectID: response.objectID,
+            currentRevision: response.currentRevision, revision: response.revision,
+            totalCiphertextBytes: response.totalCiphertextBytes, message: response.message,
+            objectKind: response.objectKind, payloadGeneration: response.payloadGeneration)
+    }
+
+    /// Rebuilds `receivedChunks` from live upload state on replay, the way
+    /// `readRange` rebuilds its answer from disk rather than a stored copy —
+    /// so a replay always reflects chunks received so far, not a value frozen
+    /// back when this particular chunk request first landed.
+    private func replayedPutChunkResponse(_ stored: VaultMacResponse, for request: VaultMacRequest) -> VaultMacResponse {
+        guard stored.status == .partial || stored.status == .accepted,
+              let revision = request.revision else { return stored }
+        let key = request.objectID.rawValue.uuidString
+        let receivedChunks: [UInt32]
+        if let object = manifest.objects[key], !object.deleted, object.revision.revision == revision.revision {
+            receivedChunks = Array(0..<object.totalChunks)
+        } else if let partial = manifest.partialUploads[key], partial.revision.revision == revision.revision {
+            receivedChunks = Array(partial.receivedChunks)
+        } else {
+            receivedChunks = []
+        }
+        return VaultMacResponse(status: stored.status, objectID: stored.objectID,
+            currentRevision: stored.currentRevision, revision: stored.revision,
+            receivedChunks: receivedChunks, totalCiphertextBytes: stored.totalCiphertextBytes,
+            message: stored.message, objectKind: stored.objectKind, payloadGeneration: stored.payloadGeneration)
     }
 
     public func currentRevision(for objectID: VaultObjectID) -> VaultRevision? {
@@ -329,7 +365,11 @@ public actor VaultMacCompanionStore {
             objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
-    private func putChunk(_ request: VaultMacRequest, now: Date) throws -> VaultMacResponse {
+    /// The second element reports whether the set of retained revision
+    /// directories changed — a fresh commit, or a stale partial just
+    /// discarded — so the caller only pays for `cleanupCommittedState`'s
+    /// directory scan and fsync when there is actually something to prune.
+    private func putChunk(_ request: VaultMacRequest, now: Date) throws -> (response: VaultMacResponse, committedStateChanged: Bool) {
         guard let revision = request.revision, let index = request.chunkIndex,
               let totalChunks = request.totalChunks, let totalBytes = request.totalCiphertextBytes,
               let ciphertext = request.ciphertext,
@@ -342,20 +382,38 @@ public actor VaultMacCompanionStore {
         if let current = manifest.objects[key] {
             let order = compare(revision, current.revision)
             guard request.expectedRevision == current.revision.revision, order > 0 else {
-                return VaultMacResponse(status: .conflict, objectID: request.objectID, revision: current.revision)
+                return (VaultMacResponse(status: .conflict, objectID: request.objectID, revision: current.revision), false)
             }
         } else if request.expectedRevision != nil {
-            return VaultMacResponse(status: .conflict, objectID: request.objectID)
+            return (VaultMacResponse(status: .conflict, objectID: request.objectID), false)
         }
-        if manifest.partialUploads[key] == nil, manifest.partialUploads.count >= limits.maximumPartialUploads {
-            throw VaultMacCompanionError.tooManyPartials
+        var partial: PartialUpload
+        var discardedStalePartial = false
+        if let existingPartial = manifest.partialUploads[key] {
+            if existingPartial.revision.revision == revision.revision {
+                partial = existingPartial
+            } else if compare(revision, existingPartial.revision) > 0 {
+                // A strictly newer revision supersedes a stale partial rather
+                // than conflicting forever. Without this, a client that lost
+                // its own pending-upload record (crash, reinstall) mints a
+                // new revision on every retry and wedges against the old
+                // partial for up to `partialUploadLifetime` (7 days).
+                partial = PartialUpload(revision: revision, totalBytes: totalBytes, totalChunks: totalChunks,
+                    receivedChunks: [], receivedBytes: 0, updatedAt: now, objectKind: objectKind,
+                    payloadGeneration: payloadGeneration)
+                discardedStalePartial = true
+            } else {
+                return (VaultMacResponse(status: .conflict, objectID: request.objectID, revision: existingPartial.revision), false)
+            }
+        } else {
+            guard manifest.partialUploads.count < limits.maximumPartialUploads else {
+                throw VaultMacCompanionError.tooManyPartials
+            }
+            partial = PartialUpload(revision: revision, totalBytes: totalBytes, totalChunks: totalChunks,
+                receivedChunks: [], receivedBytes: 0, updatedAt: now, objectKind: objectKind,
+                payloadGeneration: payloadGeneration)
         }
-        var partial = manifest.partialUploads[key] ?? PartialUpload(revision: revision,
-            totalBytes: totalBytes, totalChunks: totalChunks, receivedChunks: [],
-            receivedBytes: 0, updatedAt: now, objectKind: objectKind,
-            payloadGeneration: payloadGeneration)
-        guard partial.revision.revision == revision.revision, partial.totalBytes == totalBytes,
-              partial.totalChunks == totalChunks,
+        guard partial.totalBytes == totalBytes, partial.totalChunks == totalChunks,
               partial.objectKind == objectKind,
               partial.payloadGeneration == payloadGeneration else { throw VaultMacCompanionError.conflict }
         let directory = objectDirectoryURL(for: request.objectID, revision: revision.revision)
@@ -370,11 +428,11 @@ public actor VaultMacCompanionStore {
                                                   maximumBytes: VaultMacProtocol.maximumTransferBytes)
             partial.receivedBytes = try checkedAdd(partial.receivedBytes, UInt64(ciphertext.count))
         }
-        if !partial.receivedChunks.contains(index) { partial.receivedChunks.append(index); partial.receivedChunks.sort() }
+        partial.receivedChunks.insert(index)
         partial.updatedAt = now; manifest.partialUploads[key] = partial
         guard partial.receivedChunks.count == Int(totalChunks) else {
-            return VaultMacResponse(status: .partial, objectID: request.objectID,
-                receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes)
+            return (VaultMacResponse(status: .partial, objectID: request.objectID,
+                receivedChunks: Array(partial.receivedChunks), totalCiphertextBytes: totalBytes), discardedStalePartial)
         }
         guard partial.receivedBytes == totalBytes else { throw VaultMacCompanionError.incompleteUpload }
         try assemble(objectID: request.objectID, revision: revision.revision, totalChunks: totalChunks,
@@ -397,9 +455,9 @@ public actor VaultMacCompanionStore {
                                              objectKind: objectKind,
                                              payloadGeneration: payloadGeneration)
         manifest.partialUploads.removeValue(forKey: key)
-        return VaultMacResponse(status: .accepted, objectID: request.objectID, revision: revision,
-            receivedChunks: partial.receivedChunks, totalCiphertextBytes: totalBytes,
-            objectKind: objectKind, payloadGeneration: payloadGeneration)
+        return (VaultMacResponse(status: .accepted, objectID: request.objectID, revision: revision,
+            receivedChunks: Array(partial.receivedChunks), totalCiphertextBytes: totalBytes,
+            objectKind: objectKind, payloadGeneration: payloadGeneration), true)
     }
 
     private func readRange(_ request: VaultMacRequest) throws -> VaultMacResponse {
@@ -418,18 +476,20 @@ public actor VaultMacCompanionStore {
             objectKind: object.objectKind, payloadGeneration: object.payloadGeneration)
     }
 
-    private func delete(_ request: VaultMacRequest) throws -> VaultMacResponse {
+    private func delete(_ request: VaultMacRequest) throws -> (response: VaultMacResponse, committedStateChanged: Bool) {
         let key = request.objectID.rawValue.uuidString
-        guard let current = manifest.objects[key] else { return VaultMacResponse(status: .notFound, objectID: request.objectID) }
+        guard let current = manifest.objects[key] else {
+            return (VaultMacResponse(status: .notFound, objectID: request.objectID), false)
+        }
         guard let tombstone = request.revision,
               request.expectedRevision == current.revision.revision,
               compare(tombstone, current.revision) > 0 else {
-            return VaultMacResponse(status: .conflict, objectID: request.objectID, revision: current.revision)
+            return (VaultMacResponse(status: .conflict, objectID: request.objectID, revision: current.revision), false)
         }
         manifest.objects[key] = StoredObject(revision: tombstone, totalBytes: 0,
                                              totalChunks: 0, deleted: true)
         manifest.partialUploads.removeValue(forKey: key)
-        return VaultMacResponse(status: .accepted, objectID: request.objectID, revision: tombstone)
+        return (VaultMacResponse(status: .accepted, objectID: request.objectID, revision: tombstone), true)
     }
 
     private func validateChunkShape(totalBytes: UInt64, totalChunks: UInt32,
@@ -636,7 +696,6 @@ public actor VaultMacCompanionService {
         do { return try await store.handle(request) }
         catch VaultMacCompanionError.conflict { return VaultMacResponse(status: .conflict, objectID: request.objectID) }
         catch VaultMacCompanionError.quotaExceeded { return VaultMacResponse(status: .quotaExceeded, objectID: request.objectID) }
-        catch VaultMacCompanionError.objectNotFound { return VaultMacResponse(status: .notFound, objectID: request.objectID) }
         catch { return VaultMacResponse(status: .invalid, objectID: request.objectID, message: "request rejected") }
     }
 }
@@ -711,11 +770,6 @@ private enum VaultSecureFileSystem {
             throw VaultMacCompanionError.diskFailure
         }
         guard (info.st_mode & S_IFMT) != S_IFLNK else { throw VaultMacCompanionError.symlinkRejected }
-        #endif
-    }
-    static func rejectSymlinkComponents(_ url: URL) throws {
-        #if canImport(Darwin)
-        _ = try validatedComponents(url.path)
         #endif
     }
     static func directoryContents(_ url: URL, maximumEntries: Int? = nil) throws -> [URL] {

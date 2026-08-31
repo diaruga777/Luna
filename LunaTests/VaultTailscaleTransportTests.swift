@@ -30,16 +30,21 @@ final class VaultTailscaleTransportTests: XCTestCase {
         return (VaultTailscaleFrameChannel(fileDescriptor: fds[0]), fds[1])
     }
 
+    /// Sends run in a child task: a frame larger than the socketpair buffer
+    /// cannot complete until the peer drains it, so a sequential send-all-
+    /// then-receive-all test would deadlock on kernels with small buffers.
     func testFrameRoundtripInBothDirections() async throws {
         let (a, b) = try makeChannelPair()
         defer { a.close(); b.close() }
         let request = Data("stat-request".utf8)
         let response = Data(repeating: 0xAB, count: 300_000)
-        try await a.send(request)
+        let requestSend = Task { try await a.send(request) }
         let received = try await b.receive()
+        try await requestSend.value
         XCTAssertEqual(received, request)
-        try await b.send(response)
+        let responseSend = Task { try await b.send(response) }
         let answered = try await a.receive()
+        try await responseSend.value
         XCTAssertEqual(answered, response)
     }
 
@@ -47,11 +52,14 @@ final class VaultTailscaleTransportTests: XCTestCase {
         let (a, b) = try makeChannelPair()
         defer { a.close(); b.close() }
         let frames = [Data("one".utf8), Data(repeating: 7, count: 70_000), Data("three".utf8)]
-        for frame in frames { try await a.send(frame) }
+        let sender = Task {
+            for frame in frames { try await a.send(frame) }
+        }
         for frame in frames {
             let received = try await b.receive()
             XCTAssertEqual(received, frame)
         }
+        try await sender.value
     }
 
     /// The tailnet channel must speak exactly the NW channel's wire format:

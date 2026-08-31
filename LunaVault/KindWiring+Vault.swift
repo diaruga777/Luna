@@ -9,6 +9,7 @@ import LunaVaultSearch
 import LunaVaultSetup
 import LunaVaultStorage
 import LunaVaultSync
+import LunaVaultTailscale
 import LunaVaultUI
 
 /// The composition seam for Luna Vault. The app owns construction of the
@@ -33,6 +34,10 @@ import LunaVaultUI
     private static var documentImporter: VaultDocumentImportPresenter?
     private static var objectPreviewPresenter: VaultObjectPreviewPresenter?
     private static let identityConfirmer = VaultMacIdentityConfirmationPresenter()
+    /// One embedded tsnet node per process, created lazily: the node costs
+    /// memory and network activity, so nothing starts it until a Tailscale
+    /// endpoint dial or the settings screen needs it.
+    private static var tailnetRunner: VaultTailnetNodeRunner?
     /// The host owns import implementation. The UI only exposes the seam.
     static var importHandler: (() -> Void)?
     /// The host owns preview/rendering. The UI only forwards canonical IDs.
@@ -118,8 +123,21 @@ import LunaVaultUI
                 invalidateRuntime()
                 return .localOnly(reason: "The paired Mac must be revoked from its companion process.")
             },
-            credentialUnpaired: { credentialUnpairedHandler?($0) }
+            credentialUnpaired: { credentialUnpairedHandler?($0) },
+            tailnet: makeTailnetRunner()
         )
+    }
+
+    private static func makeTailnetRunner() -> VaultTailnetNodeRunner {
+        if let tailnetRunner { return tailnetRunner }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let runner = VaultTailnetNodeRunner(configuration: VaultTailnetConfiguration(
+            stateDirectory: base.appendingPathComponent("LunaVault/Tailscale", isDirectory: true),
+            hostName: "luna-vault-iphone"))
+        tailnetRunner = runner
+        return runner
     }
 
     private static func makeServices() -> VaultRuntimeServices? {
@@ -277,7 +295,9 @@ import LunaVaultUI
         if let credential, credential.revokedAt == nil {
             backend = try VaultMacRemoteBackend(
                 endpoint: VaultMacEndpoint(binding: credential.endpointBinding),
-                credential: credential, connector: VaultMacNWConnector(),
+                credential: credential,
+                connector: VaultTailscaleMacConnector(runner: makeTailnetRunner(),
+                                                      lan: VaultMacNWConnector()),
                 identityConfirmer: identityConfirmer)
         } else {
             backend = nil

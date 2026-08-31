@@ -57,7 +57,6 @@ let package = Package(
         .library(name: "LunaVaultSetup", targets: ["LunaVaultSetup"]),
         .library(name: "LunaVaultUI", targets: ["LunaVaultUI"]),
         .library(name: "LunaVaultMac", targets: ["LunaVaultMac"]),
-        .executable(name: "LunaVaultMacCompanion", targets: ["LunaVaultMacCompanion"]),
         .library(name: "VaultTestKit", targets: ["VaultTestKit"]),
     ],
     dependencies: [
@@ -260,13 +259,14 @@ let package = Package(
             "LunaVaultEmbeddings", "LunaVaultSearch", "LunaVaultBackend",
             "LunaVaultSync", "LunaVaultSetup",
         ]),
-        // The companion is macOS-only by product usage. Its public library is
+        // The companion library is macOS-only by product usage. It is
         // Foundation/Network based and keeps all transport state behind the
-        // Vault backend protocol; iOS never links this product.
+        // Vault backend protocol; iOS never links this product. The companion
+        // executable lives in the LunaVaultTailscale package, which carries
+        // the embedded-Tailscale binary this package must stay free of.
         .target(name: "LunaVaultMac", dependencies: [
             "LunaVaultModels", "LunaVaultCrypto", "LunaVaultBackend",
         ]),
-        .executableTarget(name: "LunaVaultMacCompanion", dependencies: ["LunaVaultMac"]),
         // Test support is a product so the existing app-hosted LunaTests bundle
         // can exercise the same public seams. Production targets never link it.
         .target(name: "VaultTestKit", dependencies: [

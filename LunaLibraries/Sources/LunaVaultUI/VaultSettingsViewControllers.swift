@@ -2,6 +2,7 @@ import Foundation
 import LunaVaultBackend
 import LunaVaultModels
 import LunaVaultSetup
+import SafariServices
 import UIKit
 
 public enum VaultICloudLocalState: Equatable, Sendable {
@@ -27,6 +28,9 @@ public struct VaultSettingsActions {
     public var credentialSaved: ((VaultMacPairingCredential) -> Void)?
     public var revokeMacCredential: ((VaultMacPairingCredential) async -> VaultMacRemoteRevocationOutcome)?
     public var credentialUnpaired: ((VaultMacRemoteRevocationOutcome) -> Void)?
+    /// Present when the host embeds a Tailscale node. The Mac screen shows
+    /// tailnet status and drives the interactive web-auth login through it.
+    public var tailnet: (any VaultTailnetControlling)?
 
     public init(storagePolicyChanged: ((VaultStoragePolicy) -> Void)? = nil,
                 clearCache: (() async throws -> Void)? = nil,
@@ -36,7 +40,8 @@ public struct VaultSettingsActions {
                 enrollmentPrepared: ((VaultMacPairingEnrollment) -> Void)? = nil,
                 credentialSaved: ((VaultMacPairingCredential) -> Void)? = nil,
                 revokeMacCredential: ((VaultMacPairingCredential) async -> VaultMacRemoteRevocationOutcome)? = nil,
-                credentialUnpaired: ((VaultMacRemoteRevocationOutcome) -> Void)? = nil) {
+                credentialUnpaired: ((VaultMacRemoteRevocationOutcome) -> Void)? = nil,
+                tailnet: (any VaultTailnetControlling)? = nil) {
         self.storagePolicyChanged = storagePolicyChanged
         self.clearCache = clearCache
         self.rebuildIndex = rebuildIndex
@@ -46,6 +51,7 @@ public struct VaultSettingsActions {
         self.credentialSaved = credentialSaved
         self.revokeMacCredential = revokeMacCredential
         self.credentialUnpaired = credentialUnpaired
+        self.tailnet = tailnet
     }
 }
 
@@ -133,6 +139,8 @@ public final class VaultSettingsViewController: UITableViewController {
             controller = VaultSecuritySettingsViewController()
         case .mac:
             let value = VaultMacPairingViewController(credentialStore: macCredentialStore)
+            value.tailnet = actions.tailnet
+            value.onTailnetChanged = actions.reconfigureRuntime
             value.onEnrollmentPrepared = actions.enrollmentPrepared
             value.onCredentialSaved = { [actions] credential in
                 actions.credentialSaved?(credential)
@@ -415,6 +423,15 @@ public final class VaultMacPairingViewController: UIViewController {
     public var onCredentialSaved: ((VaultMacPairingCredential) -> Void)?
     public var onRevokeCredential: ((VaultMacPairingCredential) async -> VaultMacRemoteRevocationOutcome)?
     public var onUnpaired: ((VaultMacRemoteRevocationOutcome) -> Void)?
+    public var tailnet: (any VaultTailnetControlling)?
+    public var onTailnetChanged: (() -> Void)?
+    private let tailnetHeading = UILabel()
+    private let tailnetInstructions = UILabel()
+    private let tailnetStatus = UILabel()
+    private let connectTailnetButton = UIButton(type: .system)
+    private let disconnectTailnetButton = UIButton(type: .system)
+    private var tailnetLoginTask: Task<Void, Never>?
+    private weak var tailnetLoginBrowser: SFSafariViewController?
     private let capsuleField = UITextView()
     private let pairingIDField = UITextField()
     private let endpointField = UITextField()
@@ -469,7 +486,10 @@ public final class VaultMacPairingViewController: UIViewController {
         let instructions = UILabel()
         instructions.text = "Paste the Mac's capsule, or enter every offer field exactly. Compare the fingerprint on both devices. Enrollment is exchanged out of band by file, copy, or share; Vault never sends it to an unauthenticated listener."
         instructions.numberOfLines = 0; instructions.textColor = .secondaryLabel
+        configureTailnetSection()
         let stack = UIStackView(arrangedSubviews: [
+            tailnetHeading, tailnetInstructions, tailnetStatus,
+            connectTailnetButton, disconnectTailnetButton,
             heading, instructions, fieldLabel("Pairing capsule (JSON or base64)"), capsuleField,
             labeledField("Pairing ID", pairingIDField), labeledField("Endpoint", endpointField),
             labeledField("Server binding (base64)", serverBindingField),
@@ -496,6 +516,123 @@ public final class VaultMacPairingViewController: UIViewController {
             credential = try credentialStore?.load()
             if let credential { status.text = "Paired Mac fingerprint: \(credential.fingerprint)" }
         } catch { status.text = "The saved Mac credential could not be loaded: \(error)." }
+    }
+
+    private func configureTailnetSection() {
+        tailnetHeading.text = "Tailscale routing"
+        tailnetHeading.font = .preferredFont(forTextStyle: .headline)
+        tailnetInstructions.text = "Vault reaches the Mac companion over its own embedded Tailscale connection. Connect once with your Tailscale account; pairing below stays separate and still authenticates the Mac."
+        tailnetInstructions.numberOfLines = 0
+        tailnetInstructions.textColor = .secondaryLabel
+        tailnetStatus.numberOfLines = 0
+        tailnetStatus.textColor = .secondaryLabel
+        tailnetStatus.accessibilityIdentifier = "vault.mac.tailnet.status"
+        connectTailnetButton.setTitle("Connect Tailscale…", for: .normal)
+        connectTailnetButton.addTarget(self, action: #selector(connectTailnet), for: .touchUpInside)
+        connectTailnetButton.accessibilityIdentifier = "vault.mac.tailnet.connect"
+        connectTailnetButton.accessibilityLabel = "Connect Tailscale"
+        disconnectTailnetButton.setTitle("Log out of Tailscale", for: .normal)
+        disconnectTailnetButton.setTitleColor(.systemRed, for: .normal)
+        disconnectTailnetButton.addTarget(self, action: #selector(disconnectTailnet), for: .touchUpInside)
+        disconnectTailnetButton.accessibilityIdentifier = "vault.mac.tailnet.disconnect"
+        disconnectTailnetButton.accessibilityLabel = "Log out of Tailscale"
+        let hidden = tailnet == nil
+        for view in [tailnetHeading, tailnetInstructions, tailnetStatus,
+                     connectTailnetButton, disconnectTailnetButton] {
+            view.isHidden = hidden
+        }
+        guard !hidden else { return }
+        renderTailnet(nil)
+        refreshTailnetStatus()
+    }
+
+    private func refreshTailnetStatus() {
+        guard let tailnet else { return }
+        Task { [weak self] in
+            let summary = await tailnet.statusSummary()
+            await MainActor.run { self?.renderTailnet(summary) }
+        }
+    }
+
+    private func renderTailnet(_ summary: VaultTailnetStatusSummary?) {
+        switch summary?.backend {
+        case .running:
+            let name = summary?.dnsName ?? summary?.ipv4 ?? "an unknown address"
+            let tailnetName = summary?.tailnetName.map { " on \($0)" } ?? ""
+            tailnetStatus.text = "Connected as \(name)\(tailnetName)."
+            connectTailnetButton.isHidden = true
+            disconnectTailnetButton.isHidden = false
+        case .starting, .stopped:
+            tailnetStatus.text = "Tailscale is signed in and will connect when the Mac is used."
+            connectTailnetButton.isHidden = true
+            disconnectTailnetButton.isHidden = false
+        default:
+            tailnetStatus.text = "Not connected. Tailscale endpoints stay unreachable until you connect."
+            connectTailnetButton.isHidden = false
+            connectTailnetButton.isEnabled = true
+            disconnectTailnetButton.isHidden = true
+        }
+    }
+
+    @objc private func connectTailnet() {
+        guard let tailnet else { return }
+        connectTailnetButton.isEnabled = false
+        tailnetStatus.text = "Contacting the Tailscale control plane…"
+        tailnetLoginTask?.cancel()
+        tailnetLoginTask = Task { [weak self] in
+            do {
+                for try await event in await tailnet.interactiveLoginEvents() {
+                    await MainActor.run { self?.handleTailnetEvent(event) }
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.tailnetLoginBrowser?.dismiss(animated: true)
+                    self.tailnetStatus.text = "Tailscale login was not completed: \(error)."
+                    self.connectTailnetButton.isEnabled = true
+                }
+            }
+        }
+    }
+
+    private func handleTailnetEvent(_ event: VaultTailnetAuthEvent) {
+        switch event {
+        case .browseToURL(let url):
+            tailnetStatus.text = "Finish the Tailscale login in the browser sheet."
+            let browser = SFSafariViewController(url: url)
+            tailnetLoginBrowser = browser
+            present(browser, animated: true)
+        case .loginFinished:
+            tailnetLoginBrowser?.dismiss(animated: true)
+            tailnetStatus.text = "Login accepted. Waiting for the tailnet…"
+        case .running(let summary):
+            tailnetLoginBrowser?.dismiss(animated: true)
+            renderTailnet(summary)
+            onTailnetChanged?()
+        }
+    }
+
+    @objc private func disconnectTailnet() {
+        guard let tailnet else { return }
+        disconnectTailnetButton.isEnabled = false
+        Task { [weak self] in
+            do {
+                try await tailnet.logout()
+                let summary = await tailnet.statusSummary()
+                await MainActor.run {
+                    guard let self else { return }
+                    self.disconnectTailnetButton.isEnabled = true
+                    self.renderTailnet(summary)
+                    self.onTailnetChanged?()
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.disconnectTailnetButton.isEnabled = true
+                    self.tailnetStatus.text = "Tailscale logout failed: \(error)."
+                }
+            }
+        }
     }
 
     private func configureEnrollmentOutput() {

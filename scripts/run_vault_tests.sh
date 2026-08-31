@@ -18,8 +18,8 @@ Usage: scripts/run_vault_tests.sh [--unit|--emulator|--device UDID] [--performan
        [--provider device|icloud|mac] [--live-provider device|icloud|mac] [-- ...]
 
 The iCloud and Mac provider modes require --live-provider explicitly. Device
-and deterministic tests never access an external service. Tailscale is not
-embedded by this harness; live Mac tests use the separately installed client.
+and deterministic tests never access an external service and never start the
+embedded Tailscale node; live Mac tests need a tailnet login on both devices.
 USAGE
 }
 

@@ -17,11 +17,16 @@ boundary, but there are no AWS, S3-compatible, Backblaze, Google, Azure, or
 Cloudflare adapters in v1. iCloud may keep a local working copy or evict it to
 free device space; this is one iCloud policy, not another backend.
 
-The Mac path uses the user's separately installed Tailscale client for
-MagicDNS/Tailscale-IP reachability from anywhere, with same-LAN discovery as a
-fallback. Tailscale is transport/discovery only: Vault still pairs the device
-and authenticates an app-level encrypted protocol. No Tailscale SDK or Luna
-relay/server is embedded in the app.
+The Mac path EMBEDS Tailscale: the Vault host and the Mac companion each run
+an in-process tsnet node from the `LunaVaultTailscale` package (vendored
+TailscaleKit over a committed libtailscale xcframework), authorized once per
+device through the SDK's interactive web-auth flow. Neither device needs the
+Tailscale app. Same-LAN discovery remains a fallback that bypasses the
+embedded node. Tailscale is transport/discovery only: Vault still pairs the
+device and authenticates an app-level encrypted protocol. Only the Vault host
+and the test bundle link the package — the other four apps, every extension,
+and LunaLibraries stay free of the binary. There is still no Luna
+relay/server. See `claudedocs/vault-mac.md`.
 
 The Vault target intentionally has an isolated source group and a minimal
 search-first UIKit root. It does not inherit the article, media, price,

@@ -13,10 +13,13 @@ this product.
 The v1 storage matrix is deliberately limited to `device`, `icloud`, and
 `mac`. `scripts/run_vault_tests.sh` defaults to deterministic device tests;
 iCloud and Mac live tests require an explicit `--live-provider icloud` or
-`--live-provider mac`. Mac live tests assume the separately installed
-Tailscale client and use it only for reachability; they still exercise Vault's
-app-level pairing/authenticated encrypted protocol. No test may contact a
-cloud provider or a Luna service implicitly.
+`--live-provider mac`. Mac live tests use the EMBEDDED tsnet node (the
+`LunaVaultTailscale` package) for reachability and require a tailnet login on
+both devices; they still exercise Vault's app-level pairing/authenticated
+encrypted protocol. The deterministic suite never starts a node or contacts
+the Tailscale control plane (`VaultTailscaleTransportTests` runs the frame
+channel over a socketpair and asserts that an unauthenticated dial fails
+closed). No test may contact a cloud provider or a Luna service implicitly.
 
 Until live iCloud/Mac suites land, both live flags fail with `NOT IMPLEMENTED`
 and exit 3. They never run the deterministic suite and report that as a live

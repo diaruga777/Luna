@@ -97,6 +97,8 @@
 		40FC28B283DC74F6D4CD213E /* VaultTestKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA3816329641750C54CDDCBC /* VaultTestKit */; };
 		4B0000000000000000000001 /* LunaVaultMac in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0000000000000000000002 /* LunaVaultMac */; };
 		4C1000000000000000000001 /* LunaVaultBackend in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000011 /* LunaVaultBackend */; };
+		7A70000000000000000000B1 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C1 /* LunaVaultTailscale */; };
+		7A70000000000000000000B2 /* LunaVaultTailscale in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C2 /* LunaVaultTailscale */; };
 		4C1000000000000000000002 /* LunaVaultCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000012 /* LunaVaultCrypto */; };
 		4C1000000000000000000003 /* LunaVaultStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000013 /* LunaVaultStorage */; };
 		4C1000000000000000000004 /* LunaVaultSync in Frameworks */ = {isa = PBXBuildFile; productRef = 4C1000000000000000000014 /* LunaVaultSync */; };
@@ -1043,6 +1045,7 @@
 				4C1000000000000000000005 /* LunaVaultSearch in Frameworks */,
 				4C1000000000000000000006 /* LunaVaultSetup in Frameworks */,
 				720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */,
+				7A70000000000000000000B1 /* LunaVaultTailscale in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1284,6 +1287,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C1W0000000000000000000015 /* LunaWeekly in Frameworks */,
+				7A70000000000000000000B2 /* LunaVaultTailscale in Frameworks */,
 				79E9F2763000949300329B57 /* LunaAudioPlayback in Frameworks */,
 				C100000000000000000000056 /* LunaModels in Frameworks */,
 				C100000000000000000000057 /* LunaFetch in Frameworks */,
@@ -1631,6 +1635,7 @@
 				4C1000000000000000000015 /* LunaVaultSearch */,
 				4C1000000000000000000016 /* LunaVaultSetup */,
 				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
+				7A70000000000000000000C1 /* LunaVaultTailscale */,
 			);
 			productName = LunaVault;
 			productReference = FF703AF04B63ED294953F60F /* LunaVault.app */;
@@ -2159,6 +2164,7 @@
 			name = LunaTests;
 			packageProductDependencies = (
 				C1W0000000000000000000001 /* LunaWeekly */,
+				7A70000000000000000000C2 /* LunaVaultTailscale */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* LunaIngest */,
@@ -2517,6 +2523,7 @@
 			packageReferences = (
 				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup.git" */,
 				C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */,
+				7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */,
 			);
 			productRefGroup = AA0900000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -5204,6 +5211,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LunaLibraries;
 		};
+		7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LunaVaultTailscale;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -5537,6 +5548,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
 			productName = LunaVaultMac;
+		};
+		7A70000000000000000000C1 /* LunaVaultTailscale */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
+			productName = LunaVaultTailscale;
+		};
+		7A70000000000000000000C2 /* LunaVaultTailscale */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A70000000000000000000A1 /* XCLocalSwiftPackageReference "LunaVaultTailscale" */;
+			productName = LunaVaultTailscale;
 		};
 		4C1000000000000000000011 /* LunaVaultBackend */ = {
 			isa = XCSwiftPackageProductDependency;

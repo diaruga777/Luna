@@ -1,5 +1,21 @@
 # Luna Vault review — findings and fix plan (2026-08-31)
 
+> **STATUS: COMPLETE.** All packages landed on `vault-review-pass` and merged to
+> main. Commit map: A `00382b3c4` (crypto), B `14eaba4b1` (storage),
+> E `52652f3eb` (tailnet), H `11af8e451` (UI/shell), G `87691805a` (search),
+> D `58f3371f8` (backend), F `199e078a8` (sync/setup), C `4d33e0658` (Mac
+> server), plus `fcfcafebe` and `d5e202f8c` (integration fallout: the
+> drainPendingCleanup fileManager seam restored, `remoteRevision` returns the
+> tombstone revision on `.notFound`, three test fixes).
+> Final full suite (fresh simulator): **3447 tests, 10 skipped, 6 failing
+> tests — every one pre-existing on main**, none in a Vault suite:
+> `ProductHistoryPillRenderTests` (12px vs 20px), `ScrollDirectionImmersionTrackerTests`,
+> `UtilCardTests.testAnExpiredEntryIsNoEntry`, `WeeklySaveTests.testAnExpiredRecordClearsTheRow`
+> (all four fail deterministically on main's checkout), and two intermittent
+> flakes (`ShareSurfaceDriverTests` product editor, `LinkImportPreviewLoaderTests`
+> in-flight fetch) that also fail/pass on main. The two expiry-named failures
+> look date-rot-shaped and predate this pass — worth a separate look.
+
 Reviewed at commit `3fcc26521` (main, clean tree). Eight parallel review agents swept
 every Vault production module — crypto, storage, Mac server + companion, backend
 clients, the embedded Tailscale layer, sync + setup, search/indexing, and UI/app

@@ -568,8 +568,8 @@ private final class VaultObjectPreviewPresenter {
         }
     }
 
-    private static func remoteIdentity(for objectID: VaultObjectID,
-                                       services: VaultRuntimeServices) -> VaultRemoteObjectIdentity? {
+    private nonisolated static func remoteIdentity(for objectID: VaultObjectID,
+                                                   services: VaultRuntimeServices) -> VaultRemoteObjectIdentity? {
         guard let backend = services.remoteBackend else { return nil }
         let jobs = (try? services.repository.jobs()) ?? []
         return jobs.sorted(by: { $0.updatedAt > $1.updatedAt }).compactMap { job in

@@ -164,6 +164,8 @@ public actor VaultMacSessionClient {
     private let now: @Sendable () -> Date
     private var sender: VaultMacSendSequence?
     private var receiver: VaultMacReplayGuard?
+    private var requestLockHeld = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(channel: VaultMacFrameChannel, credential: VaultMacPairingCredential,
                 identityConfirmer: VaultMacServerIdentityConfirming,
@@ -204,6 +206,8 @@ public actor VaultMacSessionClient {
 
     public func request(_ request: VaultMacRequest) async throws -> VaultMacResponse {
         guard let sender, let receiver else { throw VaultMacProtocolError.authenticationFailed }
+        await acquireRequestLock()
+        defer { releaseRequestLock() }
         let frame = try sender.seal(JSONEncoder().encode(try request.validated()))
         try await channel.send(JSONEncoder().encode(frame))
         let responseFrame = try JSONDecoder().decode(VaultMacAuthenticatedFrame.self, from: try await channel.receive())
@@ -211,6 +215,32 @@ public actor VaultMacSessionClient {
     }
 
     public func close() { channel.close() }
+
+    /// `request` awaits twice on the shared frame channel (send, then
+    /// receive), and an actor lets other calls interleave across those
+    /// suspension points. A second `request` racing in would send its own
+    /// frame while the first is still waiting on the reply, so a channel
+    /// read could return bytes meant for the other call and corrupt
+    /// framing. This lock keeps exactly one request in flight at a time.
+    private func acquireRequestLock() async {
+        if !requestLockHeld {
+            requestLockHeld = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append(continuation)
+        }
+    }
+
+    private func releaseRequestLock() {
+        guard !requestWaiters.isEmpty else {
+            requestLockHeld = false
+            return
+        }
+        // Hand the lock directly to the next waiter; `requestLockHeld` stays
+        // true throughout the handoff.
+        requestWaiters.removeFirst().resume()
+    }
 }
 
 public struct VaultMacClientTimeouts: Equatable, Sendable {
@@ -235,9 +265,13 @@ public struct VaultMacPendingUpload: Codable, Equatable, Sendable {
     public let expectedRevision: UUID?
     public let totalCiphertextBytes: UInt64
     public let ciphertextDigest: Data
+    /// Chunks `0..<acknowledgedChunkCount` already received a `.partial` or
+    /// `.accepted` response from the server for this exact revision. A
+    /// resumed upload skips re-sending their bodies.
+    public var acknowledgedChunkCount: UInt32
     public init(objectID: VaultObjectID, revision: VaultRevision,
                 expectedRevision: UUID?, totalCiphertextBytes: UInt64,
-                ciphertextDigest: Data) throws {
+                ciphertextDigest: Data, acknowledgedChunkCount: UInt32 = 0) throws {
         guard revision.objectID == objectID, totalCiphertextBytes > 0,
               totalCiphertextBytes <= VaultMacProtocol.maximumObjectBytes,
               ciphertextDigest.count == 32 else { throw VaultMacProtocolError.invalidRequest }
@@ -245,6 +279,24 @@ public struct VaultMacPendingUpload: Codable, Equatable, Sendable {
         self.expectedRevision = expectedRevision
         self.totalCiphertextBytes = totalCiphertextBytes
         self.ciphertextDigest = ciphertextDigest
+        self.acknowledgedChunkCount = acknowledgedChunkCount
+    }
+    private enum CodingKeys: String, CodingKey {
+        case objectID, revision, expectedRevision, totalCiphertextBytes
+        case ciphertextDigest, acknowledgedChunkCount
+    }
+    // A record persisted before this field existed has no
+    // `acknowledgedChunkCount` key; decode it as "nothing acknowledged yet"
+    // rather than failing the whole pending-uploads file.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        objectID = try container.decode(VaultObjectID.self, forKey: .objectID)
+        revision = try container.decode(VaultRevision.self, forKey: .revision)
+        expectedRevision = try container.decodeIfPresent(UUID.self, forKey: .expectedRevision)
+        totalCiphertextBytes = try container.decode(UInt64.self, forKey: .totalCiphertextBytes)
+        ciphertextDigest = try container.decode(Data.self, forKey: .ciphertextDigest)
+        acknowledgedChunkCount = try container.decodeIfPresent(
+            UInt32.self, forKey: .acknowledgedChunkCount) ?? 0
     }
 }
 
@@ -304,6 +356,12 @@ public actor VaultMacFileUploadStateStore: VaultMacUploadStateStoring {
 }
 
 public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
+    /// `ciphertext(for:)` materializes its whole result in memory. A Mac
+    /// object can be up to 100 GiB; capping this path at artifact scale
+    /// keeps it from jetsamming the process. Anything larger must go
+    /// through the streaming `payloadFile(for:)` path instead.
+    private static let maximumInMemoryCiphertextBytes: UInt64 = 16 * 1024 * 1024
+
     private let endpoint: VaultMacEndpoint
     private let credential: VaultMacPairingCredential
     private let connector: VaultMacFrameConnecting
@@ -325,73 +383,104 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         self.uploadStateStore = uploadStateStore
     }
 
-    public func putCiphertext(_ ciphertext: Data, for id: VaultObjectID) async throws {
-        let previous = try await remoteRevision(for: id)
-        let revision = VaultRevision(objectID: id,
-            logicalTime: try nextLogicalTime(after: previous?.logicalTime), deviceID: "iphone")
-        try await putCiphertext(ciphertext, for: id, revision: revision,
-                                expectedRevision: previous?.revision)
-    }
-
-    /// Uploads an already-authenticated Vault payload while retaining its
-    /// immutable remote identity.  The Stage 4 sync coordinator uses this
-    /// path; the legacy raw-byte helper above remains convenient for the Mac
-    /// protocol tests.
-    private func putCiphertext(_ ciphertext: Data, for id: VaultObjectID,
-                               revision: VaultRevision,
-                               expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
-                               generation: String? = nil) async throws {
-        let plan = try VaultMacChunkPlan(byteCount: UInt64(ciphertext.count))
-        let digest = Data(SHA256.hash(data: ciphertext))
-        let pending = try await uploadStateStore.pendingUpload(for: id)
-        let upload: VaultMacPendingUpload
-        if let pending {
-            guard pending.totalCiphertextBytes == UInt64(ciphertext.count),
-                  pending.ciphertextDigest == digest else {
-                throw VaultMacProtocolError.conflictingRevision
-            }
-            upload = pending
+    /// Runs the resumable chunked-upload state machine shared by the
+    /// byte-array and file-backed put paths. It resolves or replaces the
+    /// pending record, skips chunks the server already acknowledged, and
+    /// requires `.accepted` on the terminal chunk before the caller may
+    /// treat the object as durably committed — a terminal `.partial` is a
+    /// retryable failure, so the pending record and any staged local
+    /// payload must both survive it.
+    private func performChunkedUpload(
+        id: VaultObjectID, byteCount: UInt64, digest: Data,
+        revision: VaultRevision, expectedRevision: UUID?,
+        kind: VaultRemoteObjectKind?, generation: String?, logPrefix: String,
+        verifyUnchanged: (() throws -> Bool)? = nil,
+        readChunk: (Range<Int>) throws -> Data
+    ) async throws {
+        let plan = try VaultMacChunkPlan(byteCount: byteCount)
+        let existingPending = try await uploadStateStore.pendingUpload(for: id)
+        var upload: VaultMacPendingUpload
+        if let existingPending, existingPending.totalCiphertextBytes == byteCount,
+           existingPending.ciphertextDigest == digest {
+            upload = existingPending
         } else {
+            if existingPending != nil {
+                // The retained record no longer matches this content: it is
+                // stale, not merely incomplete. Drop it and start a fresh
+                // upload rather than permanently blocking the object on a
+                // digest that can never match again.
+                vaultMacClientLog.error("\(logPrefix, privacy: .public) pending record is stale; starting a fresh upload. object=\(id.rawValue.uuidString, privacy: .public)")
+                try? await uploadStateStore.removePendingUpload(for: id)
+            }
             upload = try VaultMacPendingUpload(objectID: id, revision: revision,
-                expectedRevision: expectedRevision, totalCiphertextBytes: UInt64(ciphertext.count),
+                expectedRevision: expectedRevision, totalCiphertextBytes: byteCount,
                 ciphertextDigest: digest)
             try await uploadStateStore.savePendingUpload(upload)
         }
         let client = try await makeClient()
         defer { Task { await client.close() } }
-        vaultMacClientLog.info("Upload start. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(ciphertext.count, privacy: .public) chunks=\(plan.totalChunks, privacy: .public) resumed=\(pending != nil, privacy: .public)")
-        for index in 0..<plan.totalChunks {
+        // Never skip the final chunk: an earlier attempt's terminal response
+        // for it may have been `.partial`, and only a fresh response tells
+        // us whether the server has since committed the object.
+        let startIndex = min(upload.acknowledgedChunkCount, plan.totalChunks - 1)
+        vaultMacClientLog.info("\(logPrefix, privacy: .public) start. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public) chunks=\(plan.totalChunks, privacy: .public) resumeFrom=\(startIndex, privacy: .public)")
+        var finalStatus: VaultMacResponseStatus = .partial
+        for index in startIndex..<plan.totalChunks {
             let range = try plan.range(for: index)
+            let chunk = try readChunk(range)
             let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
                 expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
-                totalCiphertextBytes: UInt64(ciphertext.count),
+                totalCiphertextBytes: byteCount,
                 idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id,
-                    revision: upload.revision.revision, chunkIndex: index),
-                ciphertext: Data(ciphertext[range]), objectKind: kind,
-                payloadGeneration: generation)
-            let response = try await timedRequest(request, client: client)
+                    revision: upload.revision.revision, chunkIndex: index), ciphertext: chunk,
+                objectKind: kind, payloadGeneration: generation)
+            let response = try await timedRequest(request, client: client,
+                timeout: requestTimeout(forCiphertextBytes: chunk.count))
             guard response.status == .partial || response.status == .accepted else {
-                vaultMacClientLog.error("Upload rejected. object=\(id.rawValue.uuidString, privacy: .public) chunk=\(index, privacy: .public)/\(plan.totalChunks, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
-                // A revision conflict means the durable pending revision can
-                // never be accepted by this server state. Drop only that
-                // stale marker; transient quota/unavailable errors remain
-                // resumable with the same revision on the next attempt.
+                vaultMacClientLog.error("\(logPrefix, privacy: .public) rejected. object=\(id.rawValue.uuidString, privacy: .public) chunk=\(index, privacy: .public)/\(plan.totalChunks, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
                 if response.status == .conflict {
+                    // The server's conflict response carries its current
+                    // revision. Refresh the cache from it so the next
+                    // attempt (from `put`) derives the right expected
+                    // revision instead of repeating the same stale compare.
+                    if let revision = response.revision { revisions[id] = revision }
                     try? await uploadStateStore.removePendingUpload(for: id)
                 }
                 throw VaultMacProtocolError.conflictingRevision
             }
+            finalStatus = response.status
+            upload.acknowledgedChunkCount = index + 1
+            try await uploadStateStore.savePendingUpload(upload)
         }
-        vaultMacClientLog.info("Upload complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(ciphertext.count, privacy: .public)")
+        if let verifyUnchanged {
+            guard try verifyUnchanged() else {
+                vaultMacClientLog.error("\(logPrefix, privacy: .public) aborted: source changed mid-upload. object=\(id.rawValue.uuidString, privacy: .public)")
+                throw VaultMacProtocolError.conflictingRevision
+            }
+        }
+        guard finalStatus == .accepted else {
+            vaultMacClientLog.error("\(logPrefix, privacy: .public) not committed: final chunk returned \(String(describing: finalStatus), privacy: .public). object=\(id.rawValue.uuidString, privacy: .public)")
+            throw VaultMacProtocolError.unavailable
+        }
+        vaultMacClientLog.info("\(logPrefix, privacy: .public) complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public)")
         revisions[id] = upload.revision
         try await uploadStateStore.removePendingUpload(for: id)
+    }
+
+    private func putCiphertext(_ ciphertext: Data, for id: VaultObjectID,
+                               revision: VaultRevision,
+                               expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
+                               generation: String? = nil) async throws {
+        let digest = Data(SHA256.hash(data: ciphertext))
+        try await performChunkedUpload(id: id, byteCount: UInt64(ciphertext.count), digest: digest,
+            revision: revision, expectedRevision: expectedRevision, kind: kind, generation: generation,
+            logPrefix: "Upload") { range in Data(ciphertext[range]) }
     }
 
     private func putCiphertextFile(_ payload: VaultVerifiedCiphertextFile, byteCount: UInt64,
                                    for id: VaultObjectID, revision: VaultRevision,
                                    expectedRevision: UUID?, kind: VaultRemoteObjectKind? = nil,
                                    generation: String? = nil) async throws {
-        let plan = try VaultMacChunkPlan(byteCount: byteCount)
         guard payload.ciphertextByteCount == byteCount else {
             throw VaultMacProtocolError.conflictingRevision
         }
@@ -400,46 +489,11 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         // chunk read below therefore refer to one immutable inode, never a
         // reopened pathname.
         let digest = try payload.digestBytes()
-        let pending = try await uploadStateStore.pendingUpload(for: id)
-        let upload: VaultMacPendingUpload
-        if let pending {
-            guard pending.totalCiphertextBytes == byteCount,
-                  pending.ciphertextDigest == digest else {
-                throw VaultMacProtocolError.conflictingRevision
-            }
-            upload = pending
-        } else {
-            upload = try VaultMacPendingUpload(objectID: id, revision: revision,
-                expectedRevision: expectedRevision, totalCiphertextBytes: byteCount,
-                ciphertextDigest: digest)
-            try await uploadStateStore.savePendingUpload(upload)
-        }
-        let client = try await makeClient()
-        defer { Task { await client.close() } }
-        vaultMacClientLog.info("File upload start. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public) chunks=\(plan.totalChunks, privacy: .public) resumed=\(pending != nil, privacy: .public)")
-        for index in 0..<plan.totalChunks {
-            let range = try plan.range(for: index)
-            let chunk = try payload.read(offset: UInt64(range.lowerBound), count: range.count)
-            let request = VaultMacRequest(operation: .putChunk, objectID: id, revision: upload.revision,
-                expectedRevision: upload.expectedRevision, chunkIndex: index, totalChunks: plan.totalChunks,
-                totalCiphertextBytes: byteCount,
-                idempotencyKey: VaultMacRequestFactory.idempotencyKey(objectID: id,
-                    revision: upload.revision.revision, chunkIndex: index), ciphertext: chunk,
-                objectKind: kind, payloadGeneration: generation)
-            let response = try await timedRequest(request, client: client)
-            guard response.status == .partial || response.status == .accepted else {
-                vaultMacClientLog.error("File upload rejected. object=\(id.rawValue.uuidString, privacy: .public) chunk=\(index, privacy: .public)/\(plan.totalChunks, privacy: .public) status=\(String(describing: response.status), privacy: .public)")
-                if response.status == .conflict { try? await uploadStateStore.removePendingUpload(for: id) }
-                throw VaultMacProtocolError.conflictingRevision
-            }
-        }
-        guard try payload.digestBytes() == digest else {
-            vaultMacClientLog.error("File upload aborted: source digest changed mid-upload. object=\(id.rawValue.uuidString, privacy: .public)")
-            throw VaultMacProtocolError.conflictingRevision
-        }
-        vaultMacClientLog.info("File upload complete. object=\(id.rawValue.uuidString, privacy: .public) bytes=\(byteCount, privacy: .public)")
-        revisions[id] = upload.revision
-        try await uploadStateStore.removePendingUpload(for: id)
+        try await performChunkedUpload(id: id, byteCount: byteCount, digest: digest,
+            revision: revision, expectedRevision: expectedRevision, kind: kind, generation: generation,
+            logPrefix: "File upload",
+            verifyUnchanged: { try payload.digestBytes() == digest }
+        ) { range in try payload.read(offset: UInt64(range.lowerBound), count: range.count) }
     }
 
     public func ciphertext(for id: VaultObjectID) async throws -> Data? {
@@ -453,6 +507,10 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         guard stat.status == .accepted, let total = stat.totalCiphertextBytes,
               let statRevision = stat.revision, total > 0,
               total <= VaultMacProtocol.maximumObjectBytes else { throw VaultMacProtocolError.invalidFrame }
+        // This path buffers the whole object in memory. A Mac object can be
+        // up to 100 GiB; only an artifact-scale download may use it. Anything
+        // larger must stream through `payloadFile(for:)` instead.
+        guard total <= Self.maximumInMemoryCiphertextBytes else { throw VaultMacProtocolError.objectTooLarge }
         revisions[id] = statRevision
         var output = Data(); if total <= UInt64(Int.max) { output.reserveCapacity(Int(total)) }
         var offset: UInt64 = 0
@@ -492,9 +550,26 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         let client = try await makeClient(); defer { Task { await client.close() } }
         let stat = try await timedRequest(VaultMacRequest(operation: .stat,
             objectID: id, idempotencyKey: UUID().uuidString), client: client)
-        guard stat.status == .accepted || stat.status == .notFound,
-              let revision = stat.revision else { return nil }
-        revisions[id] = revision; return revision
+        switch stat.status {
+        case .notFound:
+            // A deleted object answers .notFound but still carries its
+            // tombstone revision; a replacement put must present it as the
+            // expected revision or the server's revision guard conflicts.
+            if let revision = stat.revision {
+                revisions[id] = revision
+                return revision
+            }
+            return nil
+        case .accepted:
+            guard let revision = stat.revision else { throw VaultMacProtocolError.invalidFrame }
+            revisions[id] = revision
+            return revision
+        default:
+            // Any other status (`.invalid`, `.failed`, …) is not a safe
+            // "object absent" answer — silently returning nil here would
+            // let a caller proceed as if the object had no remote history.
+            throw VaultMacProtocolError.invalidFrame
+        }
     }
 
     private func makeClient() async throws -> VaultMacSessionClient {
@@ -522,16 +597,27 @@ public actor VaultMacRemoteBackend: VaultStreamingBackendTransport {
         }
     }
 
-    private func timedRequest(_ request: VaultMacRequest,
-                              client: VaultMacSessionClient) async throws -> VaultMacResponse {
+    private func timedRequest(_ request: VaultMacRequest, client: VaultMacSessionClient,
+                              timeout: TimeInterval? = nil) async throws -> VaultMacResponse {
         do {
-            return try await vaultMacWithTimeout(seconds: timeouts.request) {
+            return try await vaultMacWithTimeout(seconds: timeout ?? timeouts.request) {
                 try await client.request(request)
             }
         } catch {
             vaultMacClientLog.error("Request failed. op=\(request.operation.rawValue, privacy: .public) object=\(request.objectID.rawValue.uuidString, privacy: .public) error=\(String(describing: error), privacy: .public)")
             throw error
         }
+    }
+
+    /// A flat request timeout implies a fixed minimum transfer speed for the
+    /// largest chunk it must carry — at the default 60s/4 MiB that is
+    /// ~70 KB/s, which fails chunk 0 outright on a slow relay path. Scale the
+    /// wait for a `putChunk` request by the chunk's own byte count instead;
+    /// every other request keeps the configured flat timeout.
+    private func requestTimeout(forCiphertextBytes byteCount: Int) -> TimeInterval {
+        guard byteCount > 0 else { return timeouts.request }
+        let scale = Double(byteCount) / Double(VaultMacProtocol.maximumTransferBytes)
+        return max(timeouts.request, timeouts.request * scale)
     }
 
     private func nextLogicalTime(after previous: Int64?) throws -> Int64 {
@@ -567,43 +653,49 @@ extension VaultMacRemoteBackend {
         guard payload.vaultID == identity.vaultID else {
             throw VaultBackendError.corruptPayload
         }
-        let identity = payload.identity
-        let logicalTime = Int64(Date().timeIntervalSince1970 * 1_000)
-        let revision = VaultRevision(objectID: identity.objectID,
-            revision: identity.revision, logicalTime: logicalTime, deviceID: "iphone")
-        let discoveredExpectedRevision: UUID?
-        if let expectedRevision {
-            discoveredExpectedRevision = expectedRevision
-        } else {
-            discoveredExpectedRevision = try await remoteRevision(for: identity.objectID)?.revision
-        }
-        try await putCiphertext(try payload.encodedFileData(), for: identity.objectID,
-                                revision: revision, expectedRevision: discoveredExpectedRevision,
-                                kind: identity.kind, generation: identity.generation)
-        return .current
+        do {
+            let identity = payload.identity
+            let current = try await remoteRevision(for: identity.objectID)
+            let discoveredExpectedRevision = expectedRevision ?? current?.revision
+            let revision = VaultRevision(objectID: identity.objectID, revision: identity.revision,
+                logicalTime: try nextLogicalTime(after: current?.logicalTime), deviceID: "iphone")
+            try await putCiphertext(try payload.encodedFileData(), for: identity.objectID,
+                                    revision: revision, expectedRevision: discoveredExpectedRevision,
+                                    kind: identity.kind, generation: identity.generation)
+            return .current
+        } catch { throw Self.mapPutError(error) }
     }
 
     public func put(_ payload: VaultVerifiedCiphertextFile,
                     expectedRevision: UUID?) async throws -> VaultBackendWriteOutcome {
         guard payload.vaultID == identity.vaultID else { throw VaultBackendError.corruptPayload }
-        let remoteRevision = VaultRevision(objectID: payload.identity.objectID,
-            revision: payload.identity.revision,
-            logicalTime: Int64(Date().timeIntervalSince1970 * 1_000), deviceID: "iphone")
         do {
-            let discoveredExpectedRevision: UUID?
-            if let expectedRevision {
-                discoveredExpectedRevision = expectedRevision
-            } else {
-                discoveredExpectedRevision = try await self.remoteRevision(
-                    for: payload.identity.objectID)?.revision
-            }
+            let current = try await self.remoteRevision(for: payload.identity.objectID)
+            let discoveredExpectedRevision = expectedRevision ?? current?.revision
+            let revision = VaultRevision(objectID: payload.identity.objectID,
+                revision: payload.identity.revision,
+                logicalTime: try nextLogicalTime(after: current?.logicalTime), deviceID: "iphone")
             try await putCiphertextFile(payload,
                 byteCount: payload.ciphertextByteCount, for: payload.identity.objectID,
-                revision: remoteRevision, expectedRevision: discoveredExpectedRevision,
+                revision: revision, expectedRevision: discoveredExpectedRevision,
                 kind: payload.identity.kind, generation: payload.identity.generation)
             return .current
-        } catch let error as VaultBackendError { throw error }
-        catch { throw VaultBackendError.io }
+        } catch { throw Self.mapPutError(error) }
+    }
+
+    /// Maps a wire-level `VaultMacProtocolError` onto the transport-neutral
+    /// `VaultBackendError` contract every caller of `put` switches on. A
+    /// cancelled operation is never turned into a backend error — the caller
+    /// must see the real `CancellationError` rather than a mapped `.io`.
+    private static func mapPutError(_ error: Error) -> Error {
+        if error is CancellationError { return error }
+        if error is VaultBackendError { return error }
+        guard let protocolError = error as? VaultMacProtocolError else { return VaultBackendError.io }
+        switch protocolError {
+        case .conflictingRevision: return VaultBackendError.conflict
+        case .expired, .unavailable: return VaultBackendError.unavailable
+        default: return VaultBackendError.io
+        }
     }
 
     public func payload(for identity: VaultRemoteObjectIdentity) async throws
@@ -682,6 +774,14 @@ extension VaultMacRemoteBackend {
         if let expectedRevision, expectedRevision != identity.revision {
             throw VaultBackendError.staleVersion
         }
+        // `expectedRevision == identity.revision` only checks the caller's
+        // own claim against itself. The remote's actual current revision
+        // must also match `identity.revision`, or a delete queued against an
+        // older revision could tombstone data a newer write already landed.
+        guard let current = try await remoteRevision(for: identity.objectID) else { return }
+        guard current.revision == identity.revision else {
+            throw VaultBackendError.staleVersion
+        }
         try await removeCiphertext(for: identity.objectID)
     }
 
@@ -702,37 +802,6 @@ extension VaultMacRemoteBackend {
             return .failed
         }
         return .current
-    }
-
-    private static func readFile(_ fileURL: URL, range: Range<Int>) throws -> Data {
-        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: fileURL)
-        defer { try? handle.close() }
-        return try readFile(handle, range: range)
-    }
-
-    private static func readFile(_ handle: FileHandle, range: Range<Int>) throws -> Data {
-        try handle.seek(toOffset: UInt64(range.lowerBound))
-        guard let data = try handle.read(upToCount: range.count), data.count == range.count else {
-            throw VaultMacProtocolError.invalidFrame
-        }
-        return data
-    }
-}
-
-private extension SHA256 {
-    static func hashFile(at url: URL, byteCount: UInt64) throws -> Data {
-        let handle = try VaultSecureFileAccess.openRegularReadOnly(at: url)
-        defer { try? handle.close() }
-        var hasher = SHA256(); var remaining = byteCount
-        while remaining > 0 {
-            guard let chunk = try handle.read(upToCount: Int(min(UInt64(1_048_576), remaining))),
-                  !chunk.isEmpty else { throw VaultMacProtocolError.invalidFrame }
-            hasher.update(data: chunk); remaining -= UInt64(chunk.count)
-        }
-        guard try handle.read(upToCount: 1)?.isEmpty != false else {
-            throw VaultMacProtocolError.invalidFrame
-        }
-        return Data(hasher.finalize())
     }
 }
 

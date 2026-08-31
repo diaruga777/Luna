@@ -10,11 +10,15 @@ import LunaVaultStorage
 public final class VaultDeviceBackend: @unchecked Sendable {
     private let store: VaultObjectStoring
 
+    // `content(for:range:)` below reads the entire object and slices it
+    // locally — the underlying `VaultObjectStoring` has no ranged read.
+    // Advertising native range support here would be false: it does not
+    // save any I/O over a caller doing the same full read itself.
     public let capabilities = VaultBackendCapabilities(
         location: .device,
         availability: .available,
         supportsAtomicWrites: true,
-        supportsRangeReads: true,
+        supportsRangeReads: false,
         supportsEviction: false,
         requiresClientSideEncryption: false)
 

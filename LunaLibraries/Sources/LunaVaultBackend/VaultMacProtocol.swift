@@ -538,9 +538,12 @@ public struct VaultMacEndpoint: Codable, Equatable, Hashable, Sendable {
         }
     }
     private static func validHostname(_ value: String) -> Bool {
+        // `isLetter`/`isNumber` are Unicode-aware, so a non-ASCII or
+        // confusable label would otherwise pass this "strict" shape check.
+        // Every label a real Bonjour or Tailscale name uses is ASCII.
         value.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
             !$0.isEmpty && $0.count <= 63 && $0.first != "-" && $0.last != "-" &&
-            $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
+            $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
         }
     }
     private static func ipv4Bytes(_ value: String) -> [UInt8]? {

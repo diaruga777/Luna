@@ -130,11 +130,4 @@ public final class VaultRuntimeServices: @unchecked Sendable {
                                         rootKey: { try keyManager.key(version: $0) },
                                         payloadDirectory: staging.appendingPathComponent("uploads", isDirectory: true)))
     }
-
-    public static func productionFromDefaults(_ defaults: UserDefaults = .standard) throws -> VaultRuntimeServices {
-        let location = defaults.string(forKey: "LunaVault.storageLocation")
-            .flatMap(VaultStorageLocation.init(rawValue:)) ?? .device
-        let keepLocal = defaults.object(forKey: "LunaVault.keepLocalCopy") as? Bool ?? true
-        return try production(policy: VaultStoragePolicy(location: location, keepLocalCopy: keepLocal))
-    }
 }

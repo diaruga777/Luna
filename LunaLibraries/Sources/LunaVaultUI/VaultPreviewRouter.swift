@@ -131,11 +131,11 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                 case .unavailable: return VaultPreviewPlan(availability: .unavailable, message: "Vault storage is unavailable.")
                 case .failed: return VaultPreviewPlan(availability: .failed, message: "Vault storage reported an error.")
                 case .available, .evicting:
-                    _ = remoteIdentity
+                    // The backend itself is fine; this object still needs an
+                    // explicit download before it can preview, same as the
+                    // no-backend and no-downloader cases below.
+                    break
                 }
-            }
-            if downloadRequester == nil {
-                return VaultPreviewPlan(availability: .needsDownload, message: "Download this file to preview it.")
             }
             return VaultPreviewPlan(availability: .needsDownload, message: "Download this file to preview it.")
         }
@@ -204,24 +204,19 @@ public final class VaultPreviewRouter: @unchecked Sendable {
                                                        capability: capability)
     }
 
+    /// `makeViewController` is the only caller: it begins this lease and
+    /// hands it to `VaultPreviewLeaseHostingViewController`, which owns the
+    /// whole lease lifecycle from there (renewing while visible, ending on
+    /// disappear). A caller of `plan`/`makeViewController` never needs its
+    /// own separate lease.
     @discardableResult
-    public func beginPreview(_ capability: VaultLocalContentCapability) throws -> VaultPreviewLease {
+    private func beginPreview(_ capability: VaultLocalContentCapability) throws -> VaultPreviewLease {
         guard capability.authenticated,
               try repository.validateLocalContentCapability(capability) else {
             throw VaultPreviewError.unprotectedLocalFile
         }
         let lease = try repository.beginPreviewLease(capability)
         return lease
-    }
-
-    public func endPreview(_ lease: VaultPreviewLease) throws {
-        try repository.endPreviewLease(lease)
-    }
-
-    @discardableResult
-    public func renewPreview(_ lease: VaultPreviewLease,
-                             duration: TimeInterval = 15 * 60) throws -> VaultPreviewLease {
-        try repository.renewPreviewLease(lease, duration: duration)
     }
 
     private func kind(for contentType: String?, fileName: String) -> VaultPreviewKind {
@@ -339,45 +334,102 @@ public final class VaultPreviewStatusViewController: UIViewController {
     }
 }
 
+/// A centered spinner shown while a preview's file loads off main. Every
+/// preview kind that reads its whole file (image, PDF, text) shows this
+/// until the load completes, instead of blocking `viewDidLoad`.
+@MainActor
+private func vaultPreviewSpinner(in view: UIView, color: UIColor? = nil) -> UIActivityIndicatorView {
+    let spinner = UIActivityIndicatorView(style: .medium)
+    if let color { spinner.color = color }
+    spinner.translatesAutoresizingMaskIntoConstraints = false
+    spinner.startAnimating()
+    view.addSubview(spinner)
+    NSLayoutConstraint.activate([
+        spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+    ])
+    return spinner
+}
+
 public final class VaultImagePreviewViewController: UIViewController {
     private let url: URL
+    private let imageView = UIImageView()
     public init(url: URL) { self.url = url; super.init(nibName: nil, bundle: nil) }
     @available(*, unavailable) public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     public override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .black
-        let imageView = UIImageView(frame: view.bounds)
+        imageView.frame = view.bounds
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         imageView.contentMode = .scaleAspectFit
-        imageView.image = UIImage(contentsOfFile: url.path)
         view.addSubview(imageView)
+        let spinner = vaultPreviewSpinner(in: view, color: .white)
+        let url = self.url
+        Task { [weak self, weak spinner] in
+            let image = await Task.detached(priority: .userInitiated) {
+                UIImage(contentsOfFile: url.path)
+            }.value
+            spinner?.removeFromSuperview()
+            self?.imageView.image = image
+        }
     }
 }
 
 public final class VaultPDFPreviewViewController: UIViewController {
     private let url: URL
+    private let pdfView = PDFView()
     public init(url: URL) { self.url = url; super.init(nibName: nil, bundle: nil) }
     @available(*, unavailable) public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     public override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .systemBackground
-        let pdf = PDFView(frame: view.bounds)
-        pdf.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        pdf.autoScales = true
-        pdf.document = PDFDocument(url: url)
-        view.addSubview(pdf)
+        pdfView.frame = view.bounds
+        pdfView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        pdfView.autoScales = true
+        view.addSubview(pdfView)
+        let spinner = vaultPreviewSpinner(in: view)
+        let url = self.url
+        Task { [weak self, weak spinner] in
+            let document = await Task.detached(priority: .userInitiated) {
+                PDFDocument(url: url)
+            }.value
+            spinner?.removeFromSuperview()
+            self?.pdfView.document = document
+        }
     }
 }
 
 public final class VaultTextPreviewViewController: UIViewController {
+    /// Vault's text preview is for skimming, not a full read. Capping the
+    /// load keeps a large plaintext object's preview off main and bounded in
+    /// memory instead of reading the whole file.
+    private static let maximumPreviewBytes = 262_144
     private let url: URL
+    private let textView = UITextView()
     public init(url: URL) { self.url = url; super.init(nibName: nil, bundle: nil) }
     @available(*, unavailable) public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     public override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .systemBackground
-        let textView = UITextView(frame: view.bounds)
+        textView.frame = view.bounds
         textView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         textView.isEditable = false
-        textView.text = try? String(contentsOf: url, encoding: .utf8)
         view.addSubview(textView)
+        let spinner = vaultPreviewSpinner(in: view)
+        let url = self.url
+        Task { [weak self, weak spinner] in
+            let text = await Task.detached(priority: .userInitiated) {
+                Self.loadBoundedText(at: url)
+            }.value
+            spinner?.removeFromSuperview()
+            self?.textView.text = text
+        }
+    }
+
+    private static func loadBoundedText(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maximumPreviewBytes) else { return nil }
+        var text = String(decoding: data, as: UTF8.self)
+        if data.count == maximumPreviewBytes { text += "\n\n[Preview truncated]" }
+        return text
     }
 }
 

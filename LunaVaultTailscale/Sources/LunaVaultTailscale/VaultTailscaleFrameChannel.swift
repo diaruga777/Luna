@@ -21,6 +21,15 @@ public final class VaultTailscaleFrameChannel: VaultMacFrameChannel, @unchecked 
 
     public init(fileDescriptor: Int32) {
         self.fd = fileDescriptor
+        // A write after the peer closes raises SIGPIPE by default, which
+        // kills the process instead of failing the write. SO_NOSIGPIPE
+        // turns that into a normal EPIPE, which blockingWrite already
+        // handles through its errno path. Covers both the dial path
+        // (VaultTailscaleMacConnector) and the accept path
+        // (VaultTailnetListener): both construct a channel only here.
+        var noSigPipe: Int32 = 1
+        setsockopt(fileDescriptor, SOL_SOCKET, SO_NOSIGPIPE,
+                  &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         VaultTailnetLog.channel.debug("Channel opened. fd=\(fileDescriptor, privacy: .public)")
     }
 

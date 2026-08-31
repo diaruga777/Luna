@@ -29,6 +29,11 @@ public struct VaultZIPArchivePreflight: VaultArchivePreflighting {
             guard compressed != Int64(UInt32.max), uncompressed != Int64(UInt32.max) else {
                 throw VaultExtractionError.unsafeArchive("ZIP64 unsupported")
             }
+            // A non-empty compressed stream that claims zero uncompressed
+            // bytes passes every size/ratio limit below yet still drives
+            // inflate's doubling search up to its 64MiB-per-entry ceiling —
+            // reject it outright rather than let each entry retry that search.
+            guard compressed == 0 || uncompressed > 0 else { throw VaultExtractionError.unsafeArchive("uncompressed size") }
             guard uncompressed <= policy.maximumArchiveEntryBytes else { throw VaultExtractionError.unsafeArchive("entry size") }
             total = try total.addingWithoutOverflow(uncompressed)
             guard total <= policy.maximumArchiveTotalBytes else { throw VaultExtractionError.unsafeArchive("total size") }
@@ -55,14 +60,21 @@ public struct VaultZIPArchivePreflight: VaultArchivePreflighting {
 }
 
 private extension Data {
+    // `offset` is a zero-based logical index; `Data`'s own subscript is not —
+    // a slice (as opposed to a freshly loaded whole `Data`) can start at a
+    // non-zero index, and indexing it with a bare `offset` would read the
+    // wrong bytes or trap. Every read goes through `startIndex` so this stays
+    // correct for a slice as well as a top-level `Data`.
     func leUInt16(at offset: Int) throws -> UInt16 {
         guard offset >= 0, offset <= count - 2 else { throw VaultExtractionError.unsafeArchive("integer bounds") }
-        return UInt16(self[offset]) | UInt16(self[offset + 1]) << 8
+        let base = startIndex + offset
+        return UInt16(self[base]) | UInt16(self[base + 1]) << 8
     }
     func leUInt32(at offset: Int) throws -> UInt32 {
         guard offset >= 0, offset <= count - 4 else { throw VaultExtractionError.unsafeArchive("integer bounds") }
-        return UInt32(self[offset]) | UInt32(self[offset + 1]) << 8 |
-            UInt32(self[offset + 2]) << 16 | UInt32(self[offset + 3]) << 24
+        let base = startIndex + offset
+        return UInt32(self[base]) | UInt32(self[base + 1]) << 8 |
+            UInt32(self[base + 2]) << 16 | UInt32(self[base + 3]) << 24
     }
 }
 

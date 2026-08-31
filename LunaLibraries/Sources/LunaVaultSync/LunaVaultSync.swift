@@ -108,13 +108,18 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
         guard payload.vaultID == backend.identity.vaultID else {
             throw VaultSyncError.backend(.corruptPayload)
         }
-        try await payloadSource.stageUpload(payload)
         let job = makeJob(kind: .upload, identity: payload.identity,
                           expectedRemoteRevision: expectedRemoteRevision, now: now)
         let claimed = try prepareAndClaim(job, wakeReason: wakeReason, now: now)
+        // A job that is already terminal (a replay of a completed
+        // idempotency key) must not stage a payload nobody will ever remove.
         if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(payload.identity, claimed) }
+        try await payloadSource.stageUpload(payload)
         return try await finishClaim(claimed, identity: payload.identity, now: now) {
-            if try await self.backend.state(for: payload.identity) == .current { return .succeeded }
+            if try await self.backend.state(for: payload.identity) == .current {
+                try await self.payloadSource.removeUploadPayload(for: payload.identity)
+                return .succeeded
+            }
             guard let staged = try await self.payloadSource.uploadPayload(for: payload.identity) else {
                 throw VaultSyncError.sync(.missingPayload)
             }
@@ -135,11 +140,13 @@ public final class VaultSyncCoordinator: @unchecked Sendable {
               let transport = backend as? VaultStreamingBackendTransport else {
             throw VaultSyncError.sync(.invalidArtifact)
         }
-        try await source.stageUploadFile(payload)
         let proposed = makeJob(kind: .upload, identity: payload.identity,
                                expectedRemoteRevision: expectedRemoteRevision, now: now)
         let claimed = try prepareAndClaim(proposed, wakeReason: wakeReason, now: now)
+        // A job that is already terminal (a replay of a completed
+        // idempotency key) must not stage a payload nobody will ever remove.
         if [.succeeded, .failed, .cancelled].contains(claimed.state) { return result(payload.identity, claimed) }
+        try await source.stageUploadFile(payload)
         return try await finishClaim(claimed, identity: payload.identity, now: now) {
             if try await self.backend.state(for: payload.identity) == .current {
                 try await source.removeUploadPayload(for: payload.identity)

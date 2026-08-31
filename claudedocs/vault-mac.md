@@ -22,14 +22,28 @@ entry remains a fallback that bypasses the embedded node entirely
 The iPhone side owns one lazy `VaultTailnetNodeRunner` per process
 (state under Application Support/LunaVault/Tailscale, hostname
 `luna-vault-iphone`). Nothing starts the node until the Settings → Mac screen
-or a `.tailscale` dial needs it. Dialing NEVER triggers interactive auth: a
-node without a stored login fails closed with `needsLogin`, and sync reports
-an honest unavailable state. Connecting and logging out live on the Settings →
+or a `.tailscale` dial needs it. Dialing NEVER triggers interactive auth: it
+gates on a Luna-owned "login completed" marker in the state directory (set on
+first `.running`, cleared on logout) rather than on the directory being
+non-empty — tsnet writes state as soon as a node ever starts, including a
+login the user cancelled partway through, so the marker is what tells a
+completed login apart from an abandoned one. A node that fails the gate never
+starts; a dial against it fails closed with `needsLogin`, and sync reports an
+honest unavailable state. Connecting and logging out live on the Settings →
 Mac screen ("Tailscale routing" section), which drives
 `VaultTailnetControlling` — a protocol witness in LunaVaultBackend, so the UI
-never imports the Tailscale package. `tailscale_up` ignores task cancellation;
-a 45 s timeout closes and discards the node (the documented cancel), and the
-next attempt recreates it from persisted state.
+never imports the Tailscale package.
+
+`tailscale_up` ignores task cancellation, so a 45 s timeout has to interrupt
+it rather than cancel it: `tailscale_close` is the documented cross-thread
+interrupt. `up()`, `close()`, and the new `interrupt()` on `TailscaleNode` are
+`nonisolated` and every call runs through `VaultTailnetNodeRunner`'s own
+concurrent dispatch queue (`runBlocking`) rather than the actor's executor —
+so a timed-out `up()` and the interrupt that unblocks it run on two different
+threads instead of the interrupt queuing behind the very call it needs to
+stop. A `closeOnce` guard on `TailscaleNode` keeps `tailscale_close` to
+exactly one call across `interrupt()`, an explicit `close()`, and `deinit`.
+The next dial attempt recreates the node from persisted state.
 
 The companion (`LunaVaultMacCompanion`, now an executable of the
 `LunaVaultTailscale` package) runs its own node with
@@ -40,14 +54,21 @@ listens on the tailnet through tsnet and can ALSO keep the direct
 `--bind-host` listener; both transports share one `VaultMacConnectionGate`, so
 the connection and failure budgets hold for the process as a whole. The serve
 loop is transport-neutral (`VaultMacChannelServer` in LunaVaultMac); both
-listeners hand it authenticated frame channels.
+listeners hand it authenticated frame channels. A single `tailscale_accept`
+failure retries with exponential backoff (capped at 30 s) inside
+`VaultTailnetListener.connections()` instead of ending the stream — a
+sibling `--bind-host` LAN listener stays up through a transient tailnet
+accept hiccup instead of the companion exiting and tearing both down.
 
 The wire format over tsnet is identical to the LAN path: a 4-byte big-endian
 length prefix per frame (`VaultTailscaleFrameChannel` mirrors
 `VaultMacNWFrameChannel`; `VaultTailscaleTransportTests` pins the parity over
 a socketpair). Everything above the channel — pairing, challenge handshake,
 AES-GCM sealing, replay guards — is unchanged and stays independent of
-Tailscale.
+Tailscale. `VaultTailscaleFrameChannel.init` sets `SO_NOSIGPIPE` on the raw
+descriptor (dial and accept both construct the channel only there), so a peer
+disconnecting mid-send surfaces as the channel's own `.unavailable` error
+through `send()`'s errno path instead of SIGPIPE terminating the process.
 
 ## Debugging on a real device
 

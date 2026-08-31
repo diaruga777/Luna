@@ -7,6 +7,21 @@ import LunaVaultStorage
 
 private let vaultSearchSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+/// Performs the SQLite WAL checkpoint used before an encrypted export or a
+/// maintenance truncation. Production always checkpoints the real database
+/// handle; a test witness can return SQLITE_BUSY/SQLITE_ERROR to prove export
+/// fails closed without a live lock contest.
+public protocol VaultWALCheckpointing: Sendable {
+    func checkpoint(database: OpaquePointer) -> Int32
+}
+
+public struct SystemVaultWALCheckpointing: VaultWALCheckpointing {
+    public init() {}
+    public func checkpoint(database: OpaquePointer) -> Int32 {
+        sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+    }
+}
+
 public final class VaultSearchIndex: @unchecked Sendable {
     public let databaseURL: URL
     private var db: OpaquePointer?
@@ -14,16 +29,13 @@ public final class VaultSearchIndex: @unchecked Sendable {
     private let configuration: VaultSearchConfiguration
     private let namer: VaultGroupNaming
     private let protection: VaultFileProtectionApplying
-    /// Test-only checkpoint seam. Production always calls SQLite directly; a
-    /// test may inject SQLITE_BUSY/SQLITE_ERROR to prove export fails closed.
-    /// Optional test seam for SQLite checkpoint status. It should remain nil
-    /// in production; the closure is evaluated while the index queue is held.
-    public var walCheckpointOverride: (() -> Int32)?
+    private let walCheckpointing: any VaultWALCheckpointing
 
     public init(databaseURL: URL,
                 configuration: VaultSearchConfiguration = VaultSearchConfiguration(),
                 namer: VaultGroupNaming = KeywordVaultGroupNamer(),
-                protectionApplier: VaultFileProtectionApplying = SystemVaultFileProtectionApplier()) throws {
+                protectionApplier: VaultFileProtectionApplying = SystemVaultFileProtectionApplier(),
+                walCheckpointing: any VaultWALCheckpointing = SystemVaultWALCheckpointing()) throws {
         guard (1...1_000).contains(configuration.maximumResults),
               configuration.maximumLexicalCandidates >= configuration.maximumResults,
               configuration.maximumLexicalCandidates <= 20_000,
@@ -32,13 +44,19 @@ public final class VaultSearchIndex: @unchecked Sendable {
         }
         self.databaseURL = databaseURL; self.configuration = configuration
         self.namer = namer; protection = protectionApplier
-        walCheckpointOverride = nil
+        self.walCheckpointing = walCheckpointing
         try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try protection.apply(to: databaseURL.deletingLastPathComponent())
         var opened: OpaquePointer?
-        guard sqlite3_open_v2(databaseURL.path, &opened,
-                              SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
-              let opened else { throw VaultSearchError.sqlite("open") }
+        let openStatus = sqlite3_open_v2(databaseURL.path, &opened,
+                                         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
+        // sqlite3_open_v2 can hand back a live (partially initialized) handle
+        // even when it reports failure; SQLite's own contract requires
+        // closing it either way to avoid leaking the connection.
+        guard openStatus == SQLITE_OK, let opened else {
+            if let opened { sqlite3_close_v2(opened) }
+            throw VaultSearchError.sqlite("open")
+        }
         db = opened
         do {
             sqlite3_busy_timeout(opened, 5_000)
@@ -231,7 +249,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
             accessed_at=excluded.accessed_at,source=excluded.source,tombstone=excluded.tombstone
             """, values)
         }
-        try removeProjectionsLocked(document.id, prepared: prepared)
+        try removeFTSProjectionLocked(document.id, prepared: prepared)
         if !document.isTombstone {
             let ftsValues: [SQLiteValue] = [
                 .text(document.id.rawValue.uuidString), .text(document.filename), .text(document.bodyText),
@@ -239,7 +257,18 @@ public final class VaultSearchIndex: @unchecked Sendable {
             ]
             if let prepared { try prepared.insertFTS.execute(ftsValues) }
             else { try run("INSERT INTO vault_fts(id,filename,body,ocr,transcript) VALUES(?,?,?,?,?)", ftsValues) }
+            // Record the FTS5 rowid this document now owns so a later
+            // upsert/delete can target `vault_fts` by rowid instead of
+            // scanning it by the UNINDEXED `id` column.
+            guard let db else { throw VaultSearchError.sqlite("database closed") }
+            let rowIDValues: [SQLiteValue] = [.int(sqlite3_last_insert_rowid(db)), .text(document.id.rawValue.uuidString)]
+            if let prepared { try prepared.setFTSRowID.execute(rowIDValues) }
+            else { try run("UPDATE documents SET fts_rowid=? WHERE id=?", rowIDValues) }
             if let embedding = document.embedding {
+                // Scope the delete to the incoming model version: re-indexing
+                // this object under model B must not destroy a stored model-A
+                // vector, since the schema is deliberately multi-model.
+                try removeEmbeddingsLocked(document.id, modelVersion: embedding.modelVersion, prepared: prepared)
                 let embeddingValues: [SQLiteValue] = [
                     .text(document.id.rawValue.uuidString), .text(embedding.modelVersion),
                     .int(Int64(embedding.dimension)), .blob(Self.encode(embedding.values)),
@@ -248,6 +277,9 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 else { try run("INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)", embeddingValues) }
             }
         } else {
+            // The object itself is gone: clear its embeddings under every
+            // model, not just one, along with every other projection.
+            try removeEmbeddingsLocked(document.id, modelVersion: nil, prepared: prepared)
             let id: [SQLiteValue] = [.text(document.id.rawValue.uuidString)]
             if let prepared {
                 try prepared.deleteGroupMembers.execute(id)
@@ -314,10 +346,12 @@ public final class VaultSearchIndex: @unchecked Sendable {
     /// checkpointed database footprint without reading every row.
     public func checkpointWAL() throws {
         try sync {
-            let status = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            guard let db else { throw VaultSearchError.sqlite("database closed") }
+            let status = walCheckpointing.checkpoint(database: db)
             guard status == SQLITE_OK else {
                 throw VaultSearchError.sqlite("WAL checkpoint failed (status \(status)): \(String(cString: sqlite3_errmsg(db)))")
             }
+            try protectDatabaseFiles()
         }
     }
 
@@ -346,6 +380,9 @@ public final class VaultSearchIndex: @unchecked Sendable {
             }
             try run("DELETE FROM vault_fts")
             try run("INSERT INTO vault_fts(id,filename,body,ocr,transcript) SELECT id,filename,body,ocr,transcript FROM documents WHERE tombstone=0")
+            // The bulk rebuild assigns fresh FTS5 rowids; refresh the stored
+            // mapping so the next upsert/delete can still target them directly.
+            try run("UPDATE documents SET fts_rowid=(SELECT vault_fts.rowid FROM vault_fts WHERE vault_fts.id=documents.id)")
         } } }
     }
 
@@ -439,7 +476,12 @@ public final class VaultSearchIndex: @unchecked Sendable {
                     try addGroupMember(groupID: centroids[index].id, objectID: candidate.id)
                     centroids[index].add(candidate.values)
                     try persistCentroid(centroids[index])
-                } else {
+                } else if centroids.count < configuration.maximumAutomaticGroups {
+                    // Every centroid is frozen (`ranked` is empty) or none
+                    // qualifies, and the group cap still has room: mint a new
+                    // automatic group. When the cap is already full, fall
+                    // through and leave this candidate unclustered rather
+                    // than growing past `maximumAutomaticGroups`.
                     let now = Date(), id = UUID()
                     let doc = try documentLocked(candidate.id).map { [$0] } ?? []
                     let centroid = AutomaticCentroid(id: id, frozen: false, values: candidate.values,
@@ -506,9 +548,17 @@ public final class VaultSearchIndex: @unchecked Sendable {
             guard let original = try vectorLocked(canonical, modelVersion: modelVersion) else {
                 throw VaultSearchError.missingDocument
             }
-            try addGroupMember(groupID: groupID, objectID: canonical)
+            let joined = try addGroupMember(groupID: groupID, objectID: canonical)
             if let existing = try aliasLocked(originalID: canonical, groupID: groupID, modelVersion: modelVersion) {
                 return existing
+            }
+            // A manual add can target an automatic group (the UI allows it);
+            // keep member_count honest for evolve's incremental-average
+            // weighting instead of leaving it stuck at its automatic value.
+            if joined {
+                try run("UPDATE groups SET member_count=member_count+1,updated_at=? WHERE id=?", [
+                    .double(Date().timeIntervalSinceReferenceDate), .text(groupID.uuidString),
+                ])
             }
             let memberVectors = try groupVectors(groupID: groupID, modelVersion: modelVersion)
             let label = Self.centroid(memberVectors)
@@ -549,11 +599,13 @@ public final class VaultSearchIndex: @unchecked Sendable {
     public func encryptedExport(cryptor: VaultChunkedCryptor, root: VaultRootKey,
                                 objectID: VaultObjectID, revision: UUID) throws -> VaultEncryptedArtifact {
         try sync {
-            let status = walCheckpointOverride?() ?? sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            guard let db else { throw VaultSearchError.sqlite("database closed") }
+            let status = walCheckpointing.checkpoint(database: db)
             guard status == SQLITE_OK else {
                 let message = String(cString: sqlite3_errmsg(db))
                 throw VaultSearchError.sqlite("WAL checkpoint failed (status \(status)): \(message)")
             }
+            try protectDatabaseFiles()
             guard let plaintext = FileManager.default.contents(atPath: databaseURL.path) else {
                 throw VaultSearchError.invalidArtifact
             }
@@ -581,11 +633,24 @@ public final class VaultSearchIndex: @unchecked Sendable {
             try protectionApplier.apply(to: staging)
             _ = try FileManager.default.replaceItemAt(databaseURL, withItemAt: staging)
         } catch CocoaError.fileNoSuchFile {
-            try FileManager.default.moveItem(at: staging, to: databaseURL)
+            do {
+                try FileManager.default.moveItem(at: staging, to: databaseURL)
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                throw error
+            }
         } catch {
             try? FileManager.default.removeItem(at: staging); throw error
         }
         try protectionApplier.apply(to: databaseURL)
+        // A restored snapshot must never be reopened alongside the PRIOR
+        // database's WAL/SHM: SQLite would recover those stale frames onto
+        // this snapshot and silently corrupt it. `removeItem` unlinks a
+        // matching symlink itself rather than following it, so a sibling
+        // swapped for a symlink cannot redirect this cleanup either.
+        for suffix in ["-wal", "-shm"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + suffix))
+        }
     }
 
     public func integrityCheck() throws -> String {
@@ -593,45 +658,74 @@ public final class VaultSearchIndex: @unchecked Sendable {
     }
     public func foreignKeysEnabled() throws -> Bool { try sync { try scalar("PRAGMA foreign_keys") == 1 } }
 
+    /// Every step below runs inside the shared `transaction {}` helper, so a
+    /// crash mid-migration rolls back to the schema `user_version` still
+    /// names rather than stranding half-created tables. `CREATE TABLE IF NOT
+    /// EXISTS` is kept as belt-and-braces re-entry safety on top of that.
     private func migrate() throws {
         var version = try scalar("PRAGMA user_version")
         if version == 0 {
-            try execute("""
-                CREATE TABLE documents(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL,device_id TEXT NOT NULL,filename TEXT NOT NULL,body TEXT NOT NULL,ocr TEXT NOT NULL,transcript TEXT NOT NULL,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,source TEXT NOT NULL,tombstone INTEGER NOT NULL CHECK(tombstone IN(0,1)));
-                CREATE VIRTUAL TABLE vault_fts USING fts5(id UNINDEXED,filename,body,ocr,transcript);
-                CREATE TABLE model_spaces(model_version TEXT PRIMARY KEY,dimension INTEGER NOT NULL CHECK(dimension>0));
-                CREATE TABLE embeddings(object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,PRIMARY KEY(object_id,model_version));
-                CREATE TABLE groups(id TEXT PRIMARY KEY,label TEXT NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),automatic INTEGER NOT NULL CHECK(automatic IN(0,1)),created_at REAL NOT NULL,updated_at REAL NOT NULL,model_version TEXT,dimension INTEGER,centroid BLOB,member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count>=0));
-                CREATE TABLE group_members(group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
-                CREATE TABLE query_groups(id TEXT PRIMARY KEY,query TEXT NOT NULL,live INTEGER NOT NULL CHECK(live IN(0,1)),created_at REAL NOT NULL);
-                CREATE TABLE query_group_members(group_id TEXT NOT NULL REFERENCES query_groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
-                CREATE TABLE aliases(id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,UNIQUE(original_id,group_id,model_version));
-                CREATE INDEX embeddings_model ON embeddings(model_version);
-                CREATE INDEX aliases_model ON aliases(model_version);
-                PRAGMA user_version=2;
-                """)
+            try transaction {
+                try execute("""
+                    CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,revision TEXT NOT NULL,logical_time INTEGER NOT NULL,device_id TEXT NOT NULL,filename TEXT NOT NULL,body TEXT NOT NULL,ocr TEXT NOT NULL,transcript TEXT NOT NULL,created_at REAL NOT NULL,updated_at REAL NOT NULL,accessed_at REAL NOT NULL,source TEXT NOT NULL,tombstone INTEGER NOT NULL CHECK(tombstone IN(0,1)));
+                    CREATE VIRTUAL TABLE IF NOT EXISTS vault_fts USING fts5(id UNINDEXED,filename,body,ocr,transcript);
+                    CREATE TABLE IF NOT EXISTS model_spaces(model_version TEXT PRIMARY KEY,dimension INTEGER NOT NULL CHECK(dimension>0));
+                    CREATE TABLE IF NOT EXISTS embeddings(object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,PRIMARY KEY(object_id,model_version));
+                    CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY,label TEXT NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),automatic INTEGER NOT NULL CHECK(automatic IN(0,1)),created_at REAL NOT NULL,updated_at REAL NOT NULL,model_version TEXT,dimension INTEGER,centroid BLOB,member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count>=0));
+                    CREATE TABLE IF NOT EXISTS group_members(group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
+                    CREATE TABLE IF NOT EXISTS query_groups(id TEXT PRIMARY KEY,query TEXT NOT NULL,live INTEGER NOT NULL CHECK(live IN(0,1)),created_at REAL NOT NULL);
+                    CREATE TABLE IF NOT EXISTS query_group_members(group_id TEXT NOT NULL REFERENCES query_groups(id) ON DELETE CASCADE,object_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(group_id,object_id));
+                    CREATE TABLE IF NOT EXISTS aliases(id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,model_version TEXT NOT NULL REFERENCES model_spaces(model_version),dimension INTEGER NOT NULL CHECK(dimension>0),\"values\" BLOB NOT NULL,UNIQUE(original_id,group_id,model_version));
+                    CREATE INDEX IF NOT EXISTS embeddings_model ON embeddings(model_version);
+                    CREATE INDEX IF NOT EXISTS aliases_model ON aliases(model_version);
+                    """)
+                try execute("PRAGMA user_version=2")
+            }
             version = 2
         }
         if version == 1 {
-            try execute("ALTER TABLE documents ADD COLUMN logical_time INTEGER NOT NULL DEFAULT 0")
-            try execute("ALTER TABLE documents ADD COLUMN device_id TEXT NOT NULL DEFAULT ''")
-            try execute("CREATE TABLE model_spaces(model_version TEXT PRIMARY KEY,dimension INTEGER NOT NULL CHECK(dimension>0))")
-            try execute("INSERT INTO model_spaces SELECT model_version,MIN(dimension) FROM embeddings GROUP BY model_version")
-            let inconsistent = try scalar("SELECT COUNT(*) FROM (SELECT model_version FROM embeddings GROUP BY model_version HAVING MIN(dimension)<>MAX(dimension))")
-            guard inconsistent == 0 else { throw VaultSearchError.mixedModelSpace }
-            try execute("ALTER TABLE groups ADD COLUMN model_version TEXT")
-            try execute("ALTER TABLE groups ADD COLUMN dimension INTEGER")
-            try execute("ALTER TABLE groups ADD COLUMN centroid BLOB")
-            try execute("ALTER TABLE groups ADD COLUMN member_count INTEGER NOT NULL DEFAULT 0")
-            try execute("CREATE UNIQUE INDEX aliases_unique_membership ON aliases(original_id,group_id,model_version)")
-            try execute("CREATE INDEX embeddings_model ON embeddings(model_version)")
-            try execute("CREATE INDEX aliases_model ON aliases(model_version)")
-            try execute("PRAGMA user_version=2")
+            try transaction {
+                try execute("ALTER TABLE documents ADD COLUMN logical_time INTEGER NOT NULL DEFAULT 0")
+                try execute("ALTER TABLE documents ADD COLUMN device_id TEXT NOT NULL DEFAULT ''")
+                try execute("CREATE TABLE IF NOT EXISTS model_spaces(model_version TEXT PRIMARY KEY,dimension INTEGER NOT NULL CHECK(dimension>0))")
+                try execute("INSERT INTO model_spaces SELECT model_version,MIN(dimension) FROM embeddings GROUP BY model_version")
+                let inconsistent = try scalar("SELECT COUNT(*) FROM (SELECT model_version FROM embeddings GROUP BY model_version HAVING MIN(dimension)<>MAX(dimension))")
+                guard inconsistent == 0 else { throw VaultSearchError.mixedModelSpace }
+                try execute("ALTER TABLE groups ADD COLUMN model_version TEXT")
+                try execute("ALTER TABLE groups ADD COLUMN dimension INTEGER")
+                try execute("ALTER TABLE groups ADD COLUMN centroid BLOB")
+                try execute("ALTER TABLE groups ADD COLUMN member_count INTEGER NOT NULL DEFAULT 0")
+                try execute("CREATE UNIQUE INDEX IF NOT EXISTS aliases_unique_membership ON aliases(original_id,group_id,model_version)")
+                try execute("CREATE INDEX IF NOT EXISTS embeddings_model ON embeddings(model_version)")
+                try execute("CREATE INDEX IF NOT EXISTS aliases_model ON aliases(model_version)")
+                try execute("PRAGMA user_version=2")
+            }
             version = 2
         }
-        guard version == 2 else { throw VaultSearchError.sqlite("unsupported schema \(version)") }
+        if version == 2 {
+            try transaction {
+                // `vault_fts` declares `id UNINDEXED`, so a delete keyed on it
+                // used to run a full FTS scan. `fts_rowid` records each
+                // document's FTS5 rowid so upsert/delete can target it
+                // directly; the backfill below recovers it for every
+                // pre-existing row from the one FTS5 lookup that scan needed
+                // anyway, so later deletes never pay for it again.
+                try execute("ALTER TABLE documents ADD COLUMN fts_rowid INTEGER")
+                try execute("UPDATE documents SET fts_rowid=(SELECT vault_fts.rowid FROM vault_fts WHERE vault_fts.id=documents.id)")
+                try execute("CREATE INDEX IF NOT EXISTS documents_accessed_at ON documents(accessed_at)")
+                try execute("CREATE INDEX IF NOT EXISTS group_members_object_id ON group_members(object_id)")
+                try execute("PRAGMA user_version=3")
+            }
+            version = 3
+        }
+        guard version == 3 else { throw VaultSearchError.sqlite("unsupported schema \(version)") }
     }
 
+    /// Ranking is decided from lightweight candidate metadata only — never
+    /// the up-to-16MB body/OCR/transcript text — so a large lexical or vector
+    /// candidate set never retains full document text for hits that lose the
+    /// ranking. Full text is fetched once, in one batched query, for exactly
+    /// the winning `limit` hits after they are chosen.
     private func searchLocked(_ text: String, embedding: VaultEmbedding?, limit: Int) throws -> [VaultSearchHit] {
         var seeds: [VaultObjectID: HitSeed] = [:]
         let candidateLimit = min(configuration.maximumLexicalCandidates, max(limit * 8, limit))
@@ -645,43 +739,52 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 WHERE vault_fts MATCH ? AND d.tombstone=0
                 ORDER BY bm25(vault_fts) ASC,d.id ASC LIMIT ?
                 """, [.text(match), .int(Int64(candidateLimit))]) { row in
+                // Matching-field detection needs the row's own text, but only
+                // transiently: the decoded document is discarded once its
+                // matched fields are read off, not retained in the seed.
                 let document = try self.decodeSearchDocument(row)
                 let fields = Self.matchingFields(document, text: text, tokens: tokens)
-                seeds[document.id] = HitSeed(document: document, displayedID: document.id,
-                    alias: false, lexical: Self.bm25Score(row.double(12)), exact: 0,
-                    vector: 0, fields: fields, displayScore: Self.bm25Score(row.double(12)))
+                let lexical = Self.bm25Score(row.double(12))
+                seeds[document.id] = HitSeed(id: document.id, filename: document.filename,
+                    createdAt: document.createdAt, updatedAt: document.updatedAt, accessedAt: document.accessedAt,
+                    source: document.source, displayedID: document.id, alias: false,
+                    lexical: lexical, exact: 0, vector: 0, fields: fields, displayScore: lexical)
             }
         }
         try queryRows("""
-            SELECT id,revision,logical_time,device_id,filename,body,ocr,transcript,
-                   created_at,updated_at,accessed_at,source
+            SELECT id,filename,created_at,updated_at,accessed_at,source
             FROM documents WHERE tombstone=0 AND filename LIKE ? ESCAPE '\\'
             ORDER BY accessed_at DESC,id ASC LIMIT ?
             """, [.text("%\(Self.escapeLike(text))%"), .int(Int64(candidateLimit))]) { row in
-            let document = try self.decodeSearchDocument(row)
-            var seed = seeds[document.id] ?? HitSeed(document: document, displayedID: document.id,
-                alias: false, lexical: 0, exact: 0, vector: 0, fields: [.filename], displayScore: 4)
+            let candidate = try self.decodeCandidateMetadata(row)
+            var seed = seeds[candidate.id] ?? HitSeed(id: candidate.id, filename: candidate.filename,
+                createdAt: candidate.createdAt, updatedAt: candidate.updatedAt, accessedAt: candidate.accessedAt,
+                source: candidate.source, displayedID: candidate.id, alias: false,
+                lexical: 0, exact: 0, vector: 0, fields: [.filename], displayScore: 4)
             seed.exact = 1
             if seed.displayScore < 4 {
-                seed.displayedID = document.id
+                seed.displayedID = candidate.id
                 seed.alias = false
                 seed.displayScore = 4
             }
             if !seed.fields.contains(.filename) { seed.fields.append(.filename) }
-            seeds[document.id] = seed
+            seeds[candidate.id] = seed
         }
         // A label is a symbolic lexical entry for every manually linked object.
+        // The match is against the group label, not the document's own text,
+        // so this query never needed body/OCR/transcript columns at all.
         try queryRows("""
-            SELECT a.id,d.id,d.revision,d.logical_time,d.device_id,d.filename,d.body,d.ocr,d.transcript,
-                   d.created_at,d.updated_at,d.accessed_at,d.source
+            SELECT a.id,d.id,d.filename,d.created_at,d.updated_at,d.accessed_at,d.source
             FROM aliases a JOIN groups g ON g.id=a.group_id JOIN documents d ON d.id=a.original_id
             WHERE d.tombstone=0 AND g.label LIKE ? ESCAPE '\\' ORDER BY g.label,a.id LIMIT ?
             """, [.text("%\(Self.escapeLike(text))%"), .int(Int64(candidateLimit))]) { row in
             guard let aliasUUID = UUID(uuidString: row.text(0) ?? "") else { return }
-            let document = try self.decodeSearchDocument(row, offset: 1)
+            let candidate = try self.decodeCandidateMetadata(row, offset: 1)
             let aliasID = VaultObjectID(rawValue: aliasUUID)
-            var seed = seeds[document.id] ?? HitSeed(document: document,
-                displayedID: aliasID, alias: true, lexical: 0, exact: 0, vector: 0, fields: [])
+            var seed = seeds[candidate.id] ?? HitSeed(id: candidate.id, filename: candidate.filename,
+                createdAt: candidate.createdAt, updatedAt: candidate.updatedAt, accessedAt: candidate.accessedAt,
+                source: candidate.source, displayedID: aliasID, alias: true,
+                lexical: 0, exact: 0, vector: 0, fields: [])
             let aliasScore = 1.0
             if aliasScore > seed.displayScore ||
                 (aliasScore == seed.displayScore && Self.displayID(aliasID, alias: true, beats: seed.displayedID, currentAlias: seed.alias)) {
@@ -691,15 +794,15 @@ public final class VaultSearchIndex: @unchecked Sendable {
             }
             seed.lexical = max(seed.lexical, aliasScore)
             if !seed.fields.contains(.aliasLabel) { seed.fields.append(.aliasLabel) }
-            seeds[document.id] = seed
+            seeds[candidate.id] = seed
         }
         if let embedding {
             for candidate in try vectorCandidates(embedding, limit: candidateLimit) {
-                guard let document = try documentLocked(candidate.canonicalID), !document.isTombstone else { continue }
-                var seed = seeds[document.id] ?? HitSeed(document: document,
-                    displayedID: candidate.displayedID, alias: candidate.alias,
-                    lexical: 0, exact: 0, vector: 0, fields: [.vector],
-                    displayScore: candidate.score)
+                guard let metadata = try candidateMetadataLocked(candidate.canonicalID) else { continue }
+                var seed = seeds[candidate.canonicalID] ?? HitSeed(id: candidate.canonicalID, filename: metadata.filename,
+                    createdAt: metadata.createdAt, updatedAt: metadata.updatedAt, accessedAt: metadata.accessedAt,
+                    source: metadata.source, displayedID: candidate.displayedID, alias: candidate.alias,
+                    lexical: 0, exact: 0, vector: 0, fields: [.vector], displayScore: candidate.score)
                 let candidateDisplayWins = candidate.score > seed.displayScore ||
                     (candidate.score == seed.displayScore && Self.displayID(candidate.displayedID, alias: candidate.alias,
                         beats: seed.displayedID, currentAlias: seed.alias))
@@ -710,21 +813,35 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 }
                 seed.vector = max(seed.vector, candidate.score)
                 if !seed.fields.contains(.vector) { seed.fields.append(.vector) }
-                seeds[document.id] = seed
+                seeds[candidate.canonicalID] = seed
             }
         }
         let sorted = seeds.values.sorted {
             if $0.score != $1.score { return $0.score > $1.score }
-            if $0.document.accessedAt != $1.document.accessedAt { return $0.document.accessedAt > $1.document.accessedAt }
-            return $0.document.id.rawValue.uuidString < $1.document.id.rawValue.uuidString
+            if $0.accessedAt != $1.accessedAt { return $0.accessedAt > $1.accessedAt }
+            return $0.id.rawValue.uuidString < $1.id.rawValue.uuidString
         }
-        return sorted.prefix(limit).map { seed in
-            let source = Self.preferredSnippetField(seed.fields, document: seed.document, text: text)
-            return VaultSearchHit(objectID: seed.displayedID, canonicalObjectID: seed.document.id,
-                filename: seed.document.filename, snippet: Self.snippet(seed.document, field: source, text: text),
-                snippetSource: source, score: seed.score, createdAt: seed.document.createdAt,
-                updatedAt: seed.document.updatedAt, accessedAt: seed.document.accessedAt,
-                source: seed.document.source, matchedFields: seed.fields.map(\.rawValue),
+        let winners = Array(sorted.prefix(limit))
+        var texts: [VaultObjectID: (body: String, ocr: String, transcript: String)] = [:]
+        if !winners.isEmpty {
+            let placeholders = Array(repeating: "?", count: winners.count).joined(separator: ",")
+            try queryRows("SELECT id,body,ocr,transcript FROM documents WHERE id IN (\(placeholders))",
+                          winners.map { .text($0.id.rawValue.uuidString) }) { row in
+                guard let uuid = UUID(uuidString: row.text(0) ?? "") else { return }
+                texts[VaultObjectID(rawValue: uuid)] = (row.text(1) ?? "", row.text(2) ?? "", row.text(3) ?? "")
+            }
+        }
+        return winners.map { seed in
+            let fetched = texts[seed.id]
+            let bodyText = fetched?.body ?? "", ocrText = fetched?.ocr ?? "", transcriptText = fetched?.transcript ?? ""
+            let source = Self.preferredSnippetField(seed.fields, bodyTextIsEmpty: bodyText.isEmpty)
+            let snippetText = Self.snippet(filename: seed.filename, bodyText: bodyText, ocrText: ocrText,
+                                           transcriptText: transcriptText, field: source, text: text)
+            return VaultSearchHit(objectID: seed.displayedID, canonicalObjectID: seed.id,
+                filename: seed.filename, snippet: snippetText,
+                snippetSource: source, score: seed.score, createdAt: seed.createdAt,
+                updatedAt: seed.updatedAt, accessedAt: seed.accessedAt,
+                source: seed.source, matchedFields: seed.fields.map(\.rawValue),
                 isSymbolicAlias: seed.alias)
         }
     }
@@ -734,27 +851,28 @@ public final class VaultSearchIndex: @unchecked Sendable {
         if let expected = try modelDimension(query.modelVersion), expected != query.dimension {
             throw VaultSearchError.dimensionMismatch(expected: expected, actual: query.dimension)
         }
-        // Keep only the best `limit` canonical candidates while SQLite streams
-        // rows. The previous dictionary retained one vector for every object,
-        // which made a 100k-file search allocate hundreds of megabytes even
-        // though the caller requested at most a few dozen hits.
+        // Keep only the best-scoring candidates while SQLite streams rows,
+        // deduped by canonical object. A `[VaultObjectID: Int]` index makes
+        // dedupe O(1) instead of an O(n) scan per row, and the buffer is only
+        // sorted and trimmed once it overflows to 2x the limit rather than on
+        // every single insertion, so a 100k-embedding scan pays for a handful
+        // of sorts instead of one per candidate.
         var result: [VectorCandidate] = []
+        var resultIndex: [VaultObjectID: Int] = [:]
+        func trim() {
+            result.sort(by: Self.candidateOrder)
+            if result.count > limit { result.removeLast(result.count - limit) }
+            resultIndex.removeAll(keepingCapacity: true)
+            for (position, candidate) in result.enumerated() { resultIndex[candidate.canonicalID] = position }
+        }
         func consider(_ candidate: VectorCandidate) {
-            if let index = result.firstIndex(where: { $0.canonicalID == candidate.canonicalID }) {
-                if Self.preferred(candidate, over: result[index]) { result[index] = candidate }
+            if let position = resultIndex[candidate.canonicalID] {
+                if Self.preferred(candidate, over: result[position]) { result[position] = candidate }
             } else {
                 result.append(candidate)
+                resultIndex[candidate.canonicalID] = result.count - 1
             }
-            if result.count > limit {
-                result.sort {
-                    if $0.score != $1.score { return $0.score > $1.score }
-                    if $0.displayedID.rawValue.uuidString != $1.displayedID.rawValue.uuidString {
-                        return $0.displayedID.rawValue.uuidString < $1.displayedID.rawValue.uuidString
-                    }
-                    return $0.canonicalID.rawValue.uuidString < $1.canonicalID.rawValue.uuidString
-                }
-                result.removeLast()
-            }
+            if result.count > limit * 2 { trim() }
         }
         try queryRows("""
             SELECT e.object_id,e.dimension,e.\"values\" FROM embeddings e
@@ -783,13 +901,7 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 score: score)
             consider(candidate)
         }
-        return result.sorted {
-            if $0.score != $1.score { return $0.score > $1.score }
-            if $0.displayedID.rawValue.uuidString != $1.displayedID.rawValue.uuidString {
-                return $0.displayedID.rawValue.uuidString < $1.displayedID.rawValue.uuidString
-            }
-            return $0.canonicalID.rawValue.uuidString < $1.canonicalID.rawValue.uuidString
-        }.prefix(limit).map { $0 }
+        return result.sorted(by: Self.candidateOrder).prefix(limit).map { $0 }
     }
 
     private func ensureModelSpace(_ version: String, dimension: Int) throws {
@@ -805,15 +917,37 @@ public final class VaultSearchIndex: @unchecked Sendable {
         var value: Int?; try queryRows("SELECT dimension FROM model_spaces WHERE model_version=?", [.text(version)]) { value = Int($0.int(0)) }; return value
     }
 
-    private func removeProjectionsLocked(_ id: VaultObjectID,
-                                         prepared: PreparedBulkStatements? = nil) throws {
+    /// Removes an object's `vault_fts` row by rowid rather than by its
+    /// UNINDEXED `id` column, so this stays a point lookup instead of a full
+    /// FTS scan on every upsert/delete. `fts_rowid` is cleared even when
+    /// nothing matched, so a rowid can never be reused across objects if
+    /// SQLite recycles it for an unrelated later insert.
+    private func removeFTSProjectionLocked(_ id: VaultObjectID,
+                                           prepared: PreparedBulkStatements? = nil) throws {
         let values: [SQLiteValue] = [.text(id.rawValue.uuidString)]
         if let prepared {
             try prepared.deleteFTS.execute(values)
-            try prepared.deleteEmbeddings.execute(values)
+            try prepared.clearFTSRowID.execute(values)
         } else {
-            try run("DELETE FROM vault_fts WHERE id=?", values)
-            try run("DELETE FROM embeddings WHERE object_id=?", values)
+            try run("DELETE FROM vault_fts WHERE rowid IN (SELECT fts_rowid FROM documents WHERE id=?)", values)
+            try run("UPDATE documents SET fts_rowid=NULL WHERE id=?", values)
+        }
+    }
+
+    /// Deletes an object's embeddings. Passing a `modelVersion` scopes the
+    /// delete to that model so re-indexing under a new model space cannot
+    /// destroy a vector stored under another; passing nil clears every model,
+    /// which only a tombstone (a real object deletion) should ask for.
+    private func removeEmbeddingsLocked(_ id: VaultObjectID, modelVersion: String?,
+                                        prepared: PreparedBulkStatements? = nil) throws {
+        if let modelVersion {
+            let values: [SQLiteValue] = [.text(id.rawValue.uuidString), .text(modelVersion)]
+            if let prepared { try prepared.deleteEmbeddingsForModel.execute(values) }
+            else { try run("DELETE FROM embeddings WHERE object_id=? AND model_version=?", values) }
+        } else {
+            let values: [SQLiteValue] = [.text(id.rawValue.uuidString)]
+            if let prepared { try prepared.deleteEmbeddings.execute(values) }
+            else { try run("DELETE FROM embeddings WHERE object_id=?", values) }
         }
     }
 
@@ -887,6 +1021,25 @@ public final class VaultSearchIndex: @unchecked Sendable {
             isTombstone: includesTombstone && row.int(offset + 12) != 0)
     }
 
+    /// Lightweight candidate metadata for ranking: filename, dates and source,
+    /// never the (up to 16MB each) body/OCR/transcript columns a candidate
+    /// query does not need until it wins.
+    private struct CandidateMetadata { let id: VaultObjectID; let filename: String; let createdAt: Date; let updatedAt: Date; let accessedAt: Date; let source: VaultDocumentSource }
+    private func decodeCandidateMetadata(_ row: SQLiteRow, offset: Int = 0) throws -> CandidateMetadata {
+        guard let id = UUID(uuidString: row.text(offset) ?? ""),
+              let source = VaultDocumentSource(rawValue: row.text(offset + 5) ?? "") else { throw VaultSearchError.sqlite("document") }
+        return CandidateMetadata(id: VaultObjectID(rawValue: id), filename: row.text(offset + 1) ?? "",
+            createdAt: Date(timeIntervalSinceReferenceDate: row.double(offset + 2)),
+            updatedAt: Date(timeIntervalSinceReferenceDate: row.double(offset + 3)),
+            accessedAt: Date(timeIntervalSinceReferenceDate: row.double(offset + 4)), source: source)
+    }
+    private func candidateMetadataLocked(_ id: VaultObjectID) throws -> CandidateMetadata? {
+        var result: CandidateMetadata?
+        try queryRows("SELECT id,filename,created_at,updated_at,accessed_at,source FROM documents WHERE id=? AND tombstone=0",
+                      [.text(id.rawValue.uuidString)]) { result = try self.decodeCandidateMetadata($0) }
+        return result
+    }
+
     private func groupsLocked() throws -> [VaultGroup] {
         var result: [VaultGroup] = []
         try queryRows("SELECT id,label,frozen,automatic,created_at,updated_at FROM groups ORDER BY label,id") { row in
@@ -935,7 +1088,12 @@ public final class VaultSearchIndex: @unchecked Sendable {
     }
 
     private func groupExists(_ id: UUID) throws -> Bool { try scalar("SELECT COUNT(*) FROM groups WHERE id=?", [.text(id.uuidString)]) == 1 }
-    private func addGroupMember(groupID: UUID, objectID: VaultObjectID) throws { try run("INSERT OR IGNORE INTO group_members(group_id,object_id) VALUES(?,?)", [.text(groupID.uuidString),.text(objectID.rawValue.uuidString)]) }
+    @discardableResult
+    private func addGroupMember(groupID: UUID, objectID: VaultObjectID) throws -> Bool {
+        try run("INSERT OR IGNORE INTO group_members(group_id,object_id) VALUES(?,?)", [.text(groupID.uuidString),.text(objectID.rawValue.uuidString)])
+        guard let db else { throw VaultSearchError.sqlite("database closed") }
+        return sqlite3_changes(db) > 0
+    }
     private func isAutomaticMember(_ id: VaultObjectID) throws -> Bool { try scalar("SELECT COUNT(*) FROM group_members gm JOIN groups g ON g.id=gm.group_id WHERE gm.object_id=? AND g.automatic=1", [.text(id.rawValue.uuidString)]) > 0 }
 
     private func aliasLocked(originalID: VaultObjectID, groupID: UUID, modelVersion: String) throws -> VaultSymbolicAlias? {
@@ -970,13 +1128,13 @@ public final class VaultSearchIndex: @unchecked Sendable {
         let fields: [(VaultSearchField,String)] = [(.filename,document.filename),(.text,document.bodyText),(.ocr,document.ocrText),(.transcript,document.transcriptText)]
         return fields.compactMap { field,value in let lower=value.lowercased();return lower.contains(text.lowercased()) || tokens.contains(where:lower.contains) ? field:nil }
     }
-    private static func preferredSnippetField(_ fields: [VaultSearchField], document: VaultIndexedDocument, text: String) -> VaultSearchField {
+    private static func preferredSnippetField(_ fields: [VaultSearchField], bodyTextIsEmpty: Bool) -> VaultSearchField {
         for field in [VaultSearchField.filename,.text,.ocr,.transcript,.aliasLabel,.vector] where fields.contains(field) { return field }
-        return document.bodyText.isEmpty ? .filename : .text
+        return bodyTextIsEmpty ? .filename : .text
     }
-    private static func snippet(_ document: VaultIndexedDocument, field: VaultSearchField, text: String) -> String {
+    private static func snippet(filename: String, bodyText: String, ocrText: String, transcriptText: String, field: VaultSearchField, text: String) -> String {
         let value: String
-        switch field { case .filename:value=document.filename;case .text:value=document.bodyText;case .ocr:value=document.ocrText;case .transcript:value=document.transcriptText;case .aliasLabel,.vector:value=document.bodyText.isEmpty ? document.filename:document.bodyText }
+        switch field { case .filename:value=filename;case .text:value=bodyText;case .ocr:value=ocrText;case .transcript:value=transcriptText;case .aliasLabel,.vector:value=bodyText.isEmpty ? filename:bodyText }
         guard let range=value.range(of:text,options:.caseInsensitive)else{return String(value.prefix(220))}
         let start=value.index(range.lowerBound,offsetBy:-90,limitedBy:value.startIndex) ?? value.startIndex
         let end=value.index(range.upperBound,offsetBy:110,limitedBy:value.endIndex) ?? value.endIndex
@@ -1002,6 +1160,13 @@ public final class VaultSearchIndex: @unchecked Sendable {
         return displayID(candidate.displayedID, alias: candidate.alias,
                          beats: incumbent.displayedID, currentAlias: incumbent.alias)
     }
+    private static func candidateOrder(_ lhs: VectorCandidate, _ rhs: VectorCandidate) -> Bool {
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.displayedID.rawValue.uuidString != rhs.displayedID.rawValue.uuidString {
+            return lhs.displayedID.rawValue.uuidString < rhs.displayedID.rawValue.uuidString
+        }
+        return lhs.canonicalID.rawValue.uuidString < rhs.canonicalID.rawValue.uuidString
+    }
     private static func cosine(_ lhs:[Float], bytes: UnsafeRawBufferPointer, count: Int)->Double? {
         guard count == lhs.count, count > 0,
               bytes.count == count * MemoryLayout<Float>.size,
@@ -1023,10 +1188,14 @@ public final class VaultSearchIndex: @unchecked Sendable {
     private static func encode(_ values:[Float])->Data{values.withUnsafeBufferPointer{Data(buffer:$0)}}
     private static func decodeFinite(_ data:Data?,count:Int)->[Float]?{guard count>0,let data,data.count==count*MemoryLayout<Float>.size else{return nil};let values=data.withUnsafeBytes{Array($0.bindMemory(to:Float.self))};return values.allSatisfy(\.isFinite) ? values:nil}
 
+    // Re-applying file protection on every `sync` call — including plain
+    // reads — meant a protection failure could fail an otherwise successful
+    // query. It now runs only where it matters: at init (below), after a WAL
+    // checkpoint/restore, and after a write transaction commits.
     private func protectDatabaseFiles() throws { for suffix in ["","-wal","-shm"] { let url=URL(fileURLWithPath:databaseURL.path+suffix);if FileManager.default.fileExists(atPath:url.path){try protection.apply(to:url)} } }
-    private func sync<T>(_ body:()throws->T)throws->T{try queue.sync{let value=try body();try protectDatabaseFiles();return value}}
+    private func sync<T>(_ body:()throws->T)throws->T{try queue.sync(execute:body)}
     private func retryBusy<T>(attempts:Int=8,_ body:()throws->T)throws->T{var attempt=0;while true{do{return try body()}catch let error as VaultSearchError{if case .sqlite(let message)=error,(message.contains("locked")||message.contains("busy")),attempt<attempts{Thread.sleep(forTimeInterval:0.01*Double(attempt+1));attempt += 1;continue};throw error}}}
-    private func transaction<T>(_ body:()throws->T)throws->T{try execute("BEGIN IMMEDIATE");do{let value=try body();try execute("COMMIT");return value}catch{try?execute("ROLLBACK");throw error}}
+    private func transaction<T>(_ body:()throws->T)throws->T{try execute("BEGIN IMMEDIATE");do{let value=try body();try execute("COMMIT");try protectDatabaseFiles();return value}catch{try?execute("ROLLBACK");throw error}}
     private func execute(_ sql:String)throws{var message:UnsafeMutablePointer<CChar>?;let status=sqlite3_exec(db,sql,nil,nil,&message);guard status==SQLITE_OK else{let text=message.map{String(cString:$0)} ?? String(cString:sqlite3_errmsg(db));sqlite3_free(message);throw VaultSearchError.sqlite(text)};sqlite3_free(message)}
     private func scalar(_ sql:String,_ values:[SQLiteValue]=[])throws->Int64{var result:Int64?;try queryRows(sql,values){if result==nil{result=$0.int(0)}};guard let result else{throw VaultSearchError.sqlite("scalar")};return result}
     private func run(_ sql:String,_ values:[SQLiteValue]=[])throws{try statement(sql,values){guard sqlite3_step($0)==SQLITE_DONE else{throw VaultSearchError.sqlite(String(cString:sqlite3_errmsg(db)))}}}
@@ -1041,7 +1210,10 @@ public final class VaultSearchIndex: @unchecked Sendable {
         let modelDimension: PreparedStatement
         let insertModelSpace: PreparedStatement
         let deleteFTS: PreparedStatement
+        let clearFTSRowID: PreparedStatement
+        let setFTSRowID: PreparedStatement
         let deleteEmbeddings: PreparedStatement
+        let deleteEmbeddingsForModel: PreparedStatement
         let insertFTS: PreparedStatement
         let insertEmbedding: PreparedStatement
         let deleteGroupMembers: PreparedStatement
@@ -1065,8 +1237,11 @@ public final class VaultSearchIndex: @unchecked Sendable {
                 """)
             modelDimension = try PreparedStatement(database: database, sql: "SELECT dimension FROM model_spaces WHERE model_version=?")
             insertModelSpace = try PreparedStatement(database: database, sql: "INSERT INTO model_spaces(model_version,dimension) VALUES(?,?)")
-            deleteFTS = try PreparedStatement(database: database, sql: "DELETE FROM vault_fts WHERE id=?")
+            deleteFTS = try PreparedStatement(database: database, sql: "DELETE FROM vault_fts WHERE rowid IN (SELECT fts_rowid FROM documents WHERE id=?)")
+            clearFTSRowID = try PreparedStatement(database: database, sql: "UPDATE documents SET fts_rowid=NULL WHERE id=?")
+            setFTSRowID = try PreparedStatement(database: database, sql: "UPDATE documents SET fts_rowid=? WHERE id=?")
             deleteEmbeddings = try PreparedStatement(database: database, sql: "DELETE FROM embeddings WHERE object_id=?")
+            deleteEmbeddingsForModel = try PreparedStatement(database: database, sql: "DELETE FROM embeddings WHERE object_id=? AND model_version=?")
             insertFTS = try PreparedStatement(database: database, sql: "INSERT INTO vault_fts(id,filename,body,ocr,transcript) VALUES(?,?,?,?,?)")
             insertEmbedding = try PreparedStatement(database: database, sql: "INSERT INTO embeddings(object_id,model_version,dimension,\"values\") VALUES(?,?,?,?)")
             deleteGroupMembers = try PreparedStatement(database: database, sql: "DELETE FROM group_members WHERE object_id=?")
@@ -1153,30 +1328,12 @@ public final class VaultSearchIndex: @unchecked Sendable {
             }
             return Int(sqlite3_column_int64(statement, 0))
         }
-
-        func fetchRevision(_ values: [SQLiteValue]) throws -> VaultIndexRevision? {
-            defer {
-                sqlite3_reset(statement)
-                sqlite3_clear_bindings(statement)
-            }
-            for (index, value) in values.enumerated() {
-                try value.bind(statement, Int32(index + 1))
-            }
-            let status = sqlite3_step(statement)
-            if status == SQLITE_DONE { return nil }
-            guard status == SQLITE_ROW else {
-                throw VaultSearchError.sqlite(String(cString: sqlite3_errmsg(database)))
-            }
-            guard let revision = UUID(uuidString: SQLiteRow(statement).text(2) ?? "") else {
-                throw VaultSearchError.sqlite("revision")
-            }
-            return VaultIndexRevision(logicalTime: sqlite3_column_int64(statement, 0),
-                                      deviceID: SQLiteRow(statement).text(1) ?? "",
-                                      revision: revision)
-        }
     }
 
-    private struct HitSeed{let document:VaultIndexedDocument;var displayedID:VaultObjectID;var alias:Bool;var lexical:Double;var exact:Double;var vector:Double;var fields:[VaultSearchField];var displayScore:Double = 0;var score:Double{exact*4+lexical+vector*2}}
+    /// Ranking-only candidate state. Deliberately excludes body/OCR/transcript
+    /// text — `searchLocked` fetches that once, only for the winning hits,
+    /// after ranking is decided.
+    private struct HitSeed{let id:VaultObjectID;let filename:String;let createdAt:Date;let updatedAt:Date;let accessedAt:Date;let source:VaultDocumentSource;var displayedID:VaultObjectID;var alias:Bool;var lexical:Double;var exact:Double;var vector:Double;var fields:[VaultSearchField];var displayScore:Double = 0;var score:Double{exact*4+lexical+vector*2}}
     private struct VectorCandidate{let displayedID:VaultObjectID;let canonicalID:VaultObjectID;let alias:Bool;let score:Double}
     private struct AutomaticCentroid{let id:UUID;let frozen:Bool;var values:[Float];var count:Int;let modelVersion:String;mutating func add(_ vector:[Float]){guard vector.count==values.count else{return};let next=Double(count+1);for index in values.indices{values[index]=Float((Double(values[index])*Double(count)+Double(vector[index]))/next)};count += 1}}
     private enum SQLiteValue{case null,text(String),int(Int64),double(Double),blob(Data);func bind(_ statement:OpaquePointer,_ index:Int32)throws{let status:Int32;switch self{case .null:status=sqlite3_bind_null(statement,index);case .text(let value):status=sqlite3_bind_text(statement,index,value,-1,vaultSearchSQLiteTransient);case .int(let value):status=sqlite3_bind_int64(statement,index,value);case .double(let value):status=sqlite3_bind_double(statement,index,value);case .blob(let value):status=value.withUnsafeBytes{sqlite3_bind_blob(statement,index,$0.baseAddress,Int32(value.count),vaultSearchSQLiteTransient)}};guard status==SQLITE_OK else{throw VaultSearchError.sqlite("bind")}}}

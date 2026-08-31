@@ -65,8 +65,18 @@ public struct VaultIndexRevision: Codable, Hashable, Sendable, Comparable {
     }
     public static func < (lhs: Self, rhs: Self) -> Bool {
         if lhs.logicalTime != rhs.logicalTime { return lhs.logicalTime < rhs.logicalTime }
-        if lhs.deviceID != rhs.deviceID { return lhs.deviceID < rhs.deviceID }
-        return lhs.revision.uuidString < rhs.revision.uuidString
+        if lhs.deviceID != rhs.deviceID { return Self.utf8Precedes(lhs.deviceID, rhs.deviceID) }
+        return Self.utf8Precedes(lhs.revision.uuidString, rhs.revision.uuidString)
+    }
+
+    /// SQLite's default BINARY collation orders TEXT by raw UTF-8 byte
+    /// sequence; Swift's `String <` orders by Unicode canonical comparison
+    /// instead, which can diverge for non-ASCII device IDs. The bulk upsert
+    /// path's `WHERE excluded.device_id > documents.device_id` runs in
+    /// SQLite, so this comparison must match it byte-for-byte or the two
+    /// paths can pick different winners for the same conflicting pair.
+    private static func utf8Precedes(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
     }
 }
 
@@ -129,16 +139,6 @@ public struct VaultSearchHit: Equatable, Sendable {
     }
 }
 
-public protocol VaultVectorIndex: Sendable {
-    func cosineSearch(query: VaultEmbedding, limit: Int) throws -> [(VaultObjectID, Double)]
-}
-
-public struct BruteForceVaultVectorIndex: VaultVectorIndex {
-    private let search: @Sendable (VaultEmbedding, Int) throws -> [(VaultObjectID, Double)]
-    public init(search: @escaping @Sendable (VaultEmbedding, Int) throws -> [(VaultObjectID, Double)]) { self.search = search }
-    public func cosineSearch(query: VaultEmbedding, limit: Int) throws -> [(VaultObjectID, Double)] { try search(query, limit) }
-}
-
 public protocol VaultGroupNaming: Sendable { func name(for members: [VaultIndexedDocument]) -> String }
 
 public struct KeywordVaultGroupNamer: VaultGroupNaming {
@@ -196,8 +196,4 @@ public enum VaultSearchError: Error, Equatable, Sendable {
     case invalidSnapshotMember
     case invalidArtifact
     case invalidBatchSize(Int)
-}
-
-public protocol VaultSearching: Sendable {
-    func matchingObjectIDs(for query: String) async throws -> [VaultObjectID]
 }

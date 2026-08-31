@@ -57,18 +57,6 @@ public struct VaultTombstone: Codable, Hashable, Sendable {
     }
 }
 
-public struct VaultHLC: Codable, Hashable, Sendable, Comparable {
-    public let physicalMilliseconds: Int64
-    public let counter: Int64
-    public init(physicalMilliseconds: Int64, counter: Int64 = 0) {
-        self.physicalMilliseconds = physicalMilliseconds; self.counter = counter
-    }
-    public static func < (lhs: VaultHLC, rhs: VaultHLC) -> Bool {
-        lhs.physicalMilliseconds == rhs.physicalMilliseconds ? lhs.counter < rhs.counter : lhs.physicalMilliseconds < rhs.physicalMilliseconds
-    }
-    public var encoded: Int64 { physicalMilliseconds &* 1_000_000 &+ counter }
-}
-
 public enum VaultJobKind: String, Codable, Sendable { case importFile, index, upload, download, delete }
 public enum VaultJobState: String, Codable, Sendable { case queued, running, retrying, succeeded, failed, cancelled }
 public struct VaultJob: Codable, Hashable, Sendable {

@@ -87,7 +87,10 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
             throw VaultCryptoError.malformedEnvelope
         }
         let chunkSize = first.ciphertext.count - 16
-        guard chunkSize >= 0 else { throw VaultCryptoError.malformedEnvelope }
+        guard chunkSize >= 0,
+              chunkSize > 0 || first.plaintextLength == 0 else {
+            throw VaultCryptoError.malformedEnvelope
+        }
         for (index, frame) in encryptedFrames.dropFirst().enumerated() {
             if Task.isCancelled { throw VaultCryptoError.malformedEnvelope }
             let envelope = try VaultChunkEnvelope.decode(
@@ -183,7 +186,24 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
     /// retaining the decrypted bytes. Remote downloads must pass this check
     /// before they are installed into a durable local store.
     public func authenticate(rootKey: (UInt32) throws -> VaultRootKey) throws {
-        _ = try open(rootKey: rootKey)
+        let first = try VaultChunkEnvelope.decode(
+            encryptedFrames[1], maximumBytes: 8_388_608 + VaultChunkEnvelope.headerSize + 16)
+        let inferredChunkSize = max(1, first.ciphertext.count - 16)
+        let cryptor = VaultChunkedCryptor(chunkSize: inferredChunkSize, vaultID: vaultID)
+        if first.plaintextLength == 0 {
+            _ = try cryptor.openFrame(encryptedFrames[0], frame: encryptedFrames[1],
+                objectID: identity.objectID, revision: identity.revision,
+                role: identity.kind.envelopeRole, chunkIndex: 0,
+                plaintextLength: 0, rootKey: rootKey)
+        } else {
+            for index in 0..<(encryptedFrames.count - 1) {
+                if Task.isCancelled { throw VaultCryptoError.malformedEnvelope }
+                _ = try cryptor.openFrame(encryptedFrames[0], frame: encryptedFrames[index + 1],
+                    objectID: identity.objectID, revision: identity.revision,
+                    role: identity.kind.envelopeRole, chunkIndex: UInt32(index),
+                    plaintextLength: first.plaintextLength, rootKey: rootKey)
+            }
+        }
     }
 
     /// Authenticates every envelope and returns the plaintext. Callers that
@@ -229,13 +249,13 @@ public struct VaultAuthenticatedCiphertext: Equatable, Sendable {
     }
 
     private static func generation(for frames: [Data]) -> String {
-        var digestInput = Data()
+        var digest = SHA256()
         for frame in frames {
             var length = UInt64(frame.count).bigEndian
-            withUnsafeBytes(of: &length) { digestInput.append(contentsOf: $0) }
-            digestInput.append(frame)
+            withUnsafeBytes(of: &length) { digest.update(data: Data($0)) }
+            digest.update(data: frame)
         }
-        return SHA256.hash(data: digestInput).map { String(format: "%02x", $0) }.joined()
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private struct Wire: Codable {

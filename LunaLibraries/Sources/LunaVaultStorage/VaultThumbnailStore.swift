@@ -63,6 +63,11 @@ public struct VaultThumbnailConfiguration: Equatable, Sendable {
 /// full-content cache.
 public final class VaultThumbnailStore: @unchecked Sendable {
     private static let maximumRepairEntries = 4_096
+    /// A read-only access bump to `lastAccessedAt` is durability-optional —
+    /// losing the last few is only a minor LRU ordering drift, not a
+    /// correctness issue. Coalescing this many accesses into one write
+    /// avoids paying a full protected-JSON re-encode and fsync per cache hit.
+    private static let accessPersistThreshold = 20
     public let rootURL: URL
     private let fileManager: FileManager
     private let protection: VaultFileProtectionApplying
@@ -71,6 +76,7 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     private let repository: VaultRepository?
     private let lock = NSLock()
     private var entriesByKey: [VaultThumbnailKey: VaultThumbnailEntry]
+    private var dirtyAccessCount = 0
 
     public init(rootURL: URL,
                 configuration: VaultThumbnailConfiguration = VaultThumbnailConfiguration(),
@@ -134,9 +140,9 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                 let handle = try VaultSecureFileAccess.openForWriting(at: staging)
                 try handle.write(contentsOf: data)
                 try handle.synchronize(); try handle.close()
-                if fileManager.fileExists(atPath: destination.path) {
-                    try VaultSecureFileAccess.removeRegularFile(at: destination)
-                }
+                // `install` replaces an existing destination atomically via
+                // `renameat`; removing it first would open a crash window
+                // with neither the old nor the new payload in place.
                 try VaultSecureFileAccess.install(staging, at: destination)
                 VaultSimulatorProtectionLedger.record(destination)
                 entriesByKey[key] = VaultThumbnailEntry(key: key,
@@ -192,7 +198,8 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             }
             if entry.lastAccessedAt != now {
                 entriesByKey[key]?.lastAccessedAt = now
-                try persistIndex()
+                dirtyAccessCount += 1
+                if dirtyAccessCount >= Self.accessPersistThreshold { try persistIndex() }
             }
             return data
         }
@@ -268,14 +275,26 @@ public final class VaultThumbnailStore: @unchecked Sendable {
     }
 
     private func removeLocked(_ key: VaultThumbnailKey) throws {
+        let payload = payloadURL(for: key)
+        if fileManager.fileExists(atPath: payload.path) {
+            try VaultSecureFileAccess.removeRegularFile(at: payload)
+        }
+        entriesByKey.removeValue(forKey: key)
+        // The directory is shared by every generation of one object
+        // revision. Only remove it once no other index entry still points
+        // into it — otherwise a sibling generation's payload is deleted
+        // while its index entry survives, and a later read for it finds a
+        // missing file instead of self-healing through `data(for:)`.
         let directory = directoryURL(for: key)
-        if fileManager.fileExists(atPath: directory.path) {
+        let hasSurvivingSibling = entriesByKey.keys.contains {
+            $0.objectID == key.objectID && $0.revision == key.revision
+        }
+        if !hasSurvivingSibling, fileManager.fileExists(atPath: directory.path) {
             // The directory contains only opaque thumbnail payloads. Remove
             // it through the anchored storage boundary so a swapped revision
             // component cannot redirect cleanup outside Vault.
             try VaultSecureFileAccess.removeTree(at: directory)
         }
-        entriesByKey.removeValue(forKey: key)
     }
 
     private func persistIndex() throws {
@@ -290,11 +309,13 @@ public final class VaultThumbnailStore: @unchecked Sendable {
             let handle = try VaultSecureFileAccess.openForWriting(at: staging)
             try handle.write(contentsOf: encoder.encode(Array(entriesByKey.values)))
             try handle.synchronize(); try handle.close()
-            if fileManager.fileExists(atPath: metadataURL.path) {
-                try VaultSecureFileAccess.removeRegularFile(at: metadataURL)
-            }
+            // `install` replaces an existing index file atomically via
+            // `renameat`. A pre-remove here would leave a crash window with
+            // no `index.json` at all, and `init`/`repair()` then treat every
+            // payload on disk as an orphan and delete the whole cache.
             try VaultSecureFileAccess.install(staging, at: metadataURL)
             VaultSimulatorProtectionLedger.record(metadataURL)
+            dirtyAccessCount = 0
         } catch {
             try? VaultSecureFileAccess.removeRegularFile(at: staging)
             throw VaultThumbnailError.persistence
@@ -313,9 +334,13 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                       object.revision == key.revision else {
                     entriesByKey.removeValue(forKey: key); continue
                 }
-                guard let capability = try? repository.localContentCapability(for: key.objectID),
-                      capability.revision == key.revision,
-                      capability.generation == key.generation else {
+                // The cheap generation-marker check is enough here: `repair`
+                // already re-hashes every surviving thumbnail payload below,
+                // so re-hashing the (possibly enormous) content file too
+                // would authenticate bytes this pass never reads.
+                guard let current = try? repository.currentContentGeneration(for: key.objectID),
+                      current.revision == key.revision,
+                      current.generation == key.generation else {
                     entriesByKey.removeValue(forKey: key); continue
                 }
             }
@@ -356,30 +381,28 @@ public final class VaultThumbnailStore: @unchecked Sendable {
                                                                               includingPropertiesForKeys: nil)) ?? [])
                     .prefix(Self.maximumRepairEntries))
                 if payloads.isEmpty { try? fileManager.removeItem(at: revisionDirectory) }
-                for payload in payloads {
-                    let matching = entriesByKey.contains {
-                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
-                        payload == payloadURL(for: $0.key)
+                // One lookup table per revision directory replaces three
+                // linear scans of the whole index per payload file, each of
+                // which also recomputed `payloadURL`'s SHA-256 of the
+                // generation string for every entry it walked past.
+                let expectedByPayloadURL: [URL: VaultThumbnailEntry] = entriesByKey.values
+                    .reduce(into: [:]) { map, entry in
+                        guard entry.key.objectID.rawValue == objectID, entry.key.revision == revision else { return }
+                        map[payloadURL(for: entry.key)] = entry
                     }
+                for payload in payloads {
+                    let expected = expectedByPayloadURL[payload]
                     let values = try? payload.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
                     let attrs = try? fileManager.attributesOfItem(atPath: payload.path)
                     let size = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
-                    let expectedSize = entriesByKey.first(where: {
-                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
-                        payload == payloadURL(for: $0.key)
-                    })?.value.byteCount
                     let payloadDigest = (try? VaultSecureFileAccess.openRegularReadOnly(at: payload)).flatMap { descriptor in
                         defer { try? descriptor.close() }
                         return try? Self.digest(descriptor, maximumBytes: configuration.maximumBytes)
                     }
-                    let expectedDigest = entriesByKey.first(where: {
-                        $0.key.objectID.rawValue == objectID && $0.key.revision == revision &&
-                        payload == payloadURL(for: $0.key)
-                    })?.value.digest
-                    if payload.lastPathComponent.hasPrefix(".staging-") || !matching ||
+                    if payload.lastPathComponent.hasPrefix(".staging-") || expected == nil ||
                         values?.isDirectory == true || values?.isSymbolicLink == true ||
-                        !isProtected(payload) || size != expectedSize ||
-                        payloadDigest == nil || payloadDigest != expectedDigest {
+                        !isProtected(payload) || size != expected?.byteCount ||
+                        payloadDigest == nil || payloadDigest != expected?.digest {
                         try? fileManager.removeItem(at: payload)
                     }
                 }
@@ -388,12 +411,15 @@ public final class VaultThumbnailStore: @unchecked Sendable {
         try persistIndex()
     }
 
+    /// Checks currency against the object row and the content generation
+    /// marker only. This intentionally skips authenticating the installed
+    /// bytes (`localContentCapability` re-hashes the whole content file, up
+    /// to 100 GB) — a thumbnail is a low-stakes derived preview, not the
+    /// content itself, so a cheap check is the right cost for every read.
     private func isCurrent(_ key: VaultThumbnailKey) -> Bool {
         guard let repository else { return true }
-        guard let object = try? repository.object(key.objectID),
-              !object.isTombstone, object.revision == key.revision else { return false }
-        guard let capability = try? repository.localContentCapability(for: key.objectID) else { return false }
-        return capability.revision == key.revision && capability.generation == key.generation
+        guard let current = try? repository.currentContentGeneration(for: key.objectID) else { return false }
+        return current.revision == key.revision && current.generation == key.generation
     }
 
     private func directoryURL(for key: VaultThumbnailKey) -> URL {
@@ -476,13 +502,5 @@ public final class VaultCacheCoordinator: @unchecked Sendable {
 
     public func evict(now: Date = Date()) throws {
         try repository.evictExpired(now: now)
-    }
-
-    public func beginPreview(_ objectID: VaultObjectID, now: Date = Date()) throws {
-        throw VaultStorageError.invalidTransition
-    }
-
-    public func endPreview(_ objectID: VaultObjectID, now: Date = Date()) throws {
-        throw VaultStorageError.invalidTransition
     }
 }

@@ -97,7 +97,11 @@ public struct VaultExtractionPipeline: Sendable {
                 if error is CancellationError { transition = (.cancelled, nil) }
                 else if error as? VaultExtractionError == .timedOut { transition = (.retrying, Date().addingTimeInterval(60)) }
                 else { transition = (.failed, nil) }
-                try jobCoordinator?.transitionExtractionJob(lease, to: transition.0,
+                // The job-state transition is bookkeeping, not the result.
+                // A failure here must never replace the real extraction
+                // error the caller is about to see; it just leaves the job
+                // `.running` until its lease expires.
+                try? jobCoordinator?.transitionExtractionJob(lease, to: transition.0,
                                                               error: String(describing: error),
                                                               retryAt: transition.1, now: Date())
             }
@@ -137,8 +141,14 @@ public struct VaultExtractionPipeline: Sendable {
         var metadataOnly = route == .metadataOnly || metadata.isMetadataOnly
 
         switch route {
-        case .plainText, .markdown, .html, .richText, .pdf:
+        case .plainText, .markdown, .html, .pdf:
             chunks = try textChunks(route: route, request: request, startedAt: startedAt)
+        case .richText:
+            do {
+                chunks = try textChunks(route: route, request: request, startedAt: startedAt)
+            } catch VaultExtractionError.malformed {
+                metadataOnly = true
+            }
         case .wordDocument, .epub:
             do {
                 try archivePreflight.validate(request.data, policy: policy)
@@ -224,14 +234,30 @@ public struct VaultExtractionPipeline: Sendable {
                 throw VaultExtractionError.malformed(request.descriptor.fileName)
             }
             try checkBudget(startedAt)
-            return makeChunks(text: content.blocks.map(\.text).joined(separator: "\n\n"),
-                              provenance: route == .epub ? .epub : .wordDocument)
+            // Accumulate block-by-block instead of joining every block first:
+            // a document with many small blocks that individually pass the
+            // archive preflight can still combine into far more text than the
+            // policy allows, and joining first would peak-allocate all of it.
+            var text = ""
+            for block in content.blocks {
+                appendBounded(block.text + "\n\n", to: &text)
+                if text.utf8.count >= policy.maximumTextBytes { break }
+            }
+            return makeChunks(text: text, provenance: route == .epub ? .epub : .wordDocument)
         }
         let bytes = request.data.prefix(policy.maximumTextBytes)
         if route == .richText {
-            let attributed = try NSAttributedString(data: Data(bytes),
-                                                    options: [.documentType: NSAttributedString.DocumentType.rtf],
-                                                    documentAttributes: nil)
+            // RTF is a structured format: truncating the bytes to
+            // maximumTextBytes before parsing routinely hands the parser an
+            // unbalanced document that fails to parse at all, failing the
+            // whole extraction instead of degrading. Parse the full input
+            // (already bounded to maximumMaterializedInputBytes upstream) and
+            // bound the resulting plain-text string instead.
+            guard let attributed = try? NSAttributedString(data: request.data,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil) else {
+                throw VaultExtractionError.malformed("RTF")
+            }
             return makeChunks(text: attributed.string, provenance: .richText)
         }
         guard let text = String(data: bytes, encoding: .utf8) ?? String(data: bytes, encoding: .isoLatin1) else {
@@ -314,8 +340,13 @@ public struct VaultExtractionPipeline: Sendable {
     private func makeSpeechChunks(_ segments: [VaultSpokenWordSegment]) -> [VaultTextChunk] {
         var chunks: [VaultTextChunk] = []; var bytes = 0
         for segment in segments where chunks.count < policy.maximumChunks {
-            let text = String(decoding: segment.text.utf8.prefix(max(0, policy.maximumTextBytes - bytes)), as: UTF8.self)
-            guard !text.isEmpty else { break }; bytes += text.utf8.count
+            // Stop only once the byte budget is truly exhausted. An empty
+            // segment (silence, a filler word the transcriber dropped) is not
+            // budget exhaustion; skip it and keep reading later segments.
+            guard bytes < policy.maximumTextBytes else { break }
+            let text = String(decoding: segment.text.utf8.prefix(policy.maximumTextBytes - bytes), as: UTF8.self)
+            guard !text.isEmpty else { continue }
+            bytes += text.utf8.count
             chunks.append(VaultTextChunk(index: chunks.count, text: text, provenance: .speech,
                                          location: VaultTextLocation(startTime: segment.startTime,
                                                                      endTime: segment.startTime + segment.duration)))

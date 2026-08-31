@@ -14,25 +14,23 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
     private var observerTokens: [NSObjectProtocol] = []
     private var activeTask: Task<Void, Never>?
 
+    /// The BGTask identifier this controller submits and handles. The app
+    /// registers this string with `BGTaskScheduler` exactly once at launch
+    /// (before any runtime instance exists); this controller only submits
+    /// requests and answers deliveries routed to it, and never registers.
+    public static func taskIdentifier(bundle: Bundle = .main) -> String? {
+        bundle.bundleIdentifier.map { $0 + ".sync" }
+    }
+
     public init?(services: VaultRuntimeServices, bundle: Bundle = .main,
                  notificationCenter: NotificationCenter = .default) {
         guard let sync = services.syncCoordinator,
-              let bundleID = bundle.bundleIdentifier else { return nil }
+              let identifier = Self.taskIdentifier(bundle: bundle) else { return nil }
         self.sync = sync
-        taskIdentifier = bundleID + ".sync"
+        taskIdentifier = identifier
         metadataQuery = services.policy.location == .iCloud ? NSMetadataQuery() : nil
         self.notificationCenter = notificationCenter
         super.init()
-
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: taskIdentifier, using: nil
-        ) { [weak self] task in
-            guard let self, let processing = task as? BGProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            self.handle(processing)
-        }
 
         if let metadataQuery {
             metadataQuery.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
@@ -75,7 +73,11 @@ public final class VaultSyncRuntimeController: NSObject, @unchecked Sendable {
         }
     }
 
-    private func handle(_ task: BGProcessingTask) {
+    /// Answers a delivered `BGProcessingTask` for this controller's task
+    /// identifier. The app's launch handler is the only caller; it looks up
+    /// the current controller through `VaultWiring` each time the system
+    /// fires the task, since a Settings change can replace this instance.
+    public func handle(_ task: BGProcessingTask) {
         lock.lock()
         guard activeTask == nil else {
             lock.unlock()

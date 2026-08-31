@@ -123,7 +123,7 @@ public final class VaultSetupCoordinator: @unchecked Sendable {
                 rootKeyManager: VaultRootKeyManager? = nil) {
         self.configuration = configuration; self.store = store
         self.rootKeyManager = rootKeyManager ?? Self.makeRootKeyManager(configuration)
-        current = configuration.storagePolicy.map { _ in .firstRun } ?? .firstRun
+        current = .firstRun
     }
 
     /// Current in-memory state. `load()` should be called once at app launch.

@@ -35,6 +35,23 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
             guard (try? protection.hasRequiredProtection(at: directory)) == true else {
                 throw VaultSyncError.backend(.permissionDenied)
             }
+            Self.sweepOrphans(in: directory, fileManager: fileManager)
+        }
+    }
+
+    /// A crash inside `write`/`copy` can leave a `.staging-*` partial file
+    /// behind, and a crash inside `installDownloadedPayloadFile` can leave a
+    /// `.plaintext-*` decrypted temporary. Both are private to this store, so
+    /// a fresh launch removes any that survived rather than retaining them --
+    /// notably the plaintext one, which would otherwise violate "no
+    /// plaintext retained".
+    private static func sweepOrphans(in directory: URL, fileManager: FileManager) {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil) else { return }
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix(".staging-") || name.hasPrefix(".plaintext-") else { continue }
+            try? VaultSecureFileAccess.removeRegularFile(at: entry)
         }
     }
 
@@ -79,7 +96,10 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
         do { plaintext = try payload.open(rootKey: rootKey) }
         catch { throw VaultSyncError.backend(.corruptPayload) }
         try lock.withLock {
-            try write(payload, to: url(for: payload.identity, area: "downloads"))
+            // Nothing ever reads a downloaded object back from this store --
+            // only `removeAllPayloads` cleans it up -- so it is never staged
+            // here; the repository install below is this object's one durable
+            // copy.
             guard let repository else { return }
             switch payload.identity.kind {
             case .content:
@@ -102,46 +122,51 @@ public final class VaultFileSyncPayloadStore: VaultStreamingSyncPayloadSource, @
 
     public func installDownloadedPayloadFile(_ payload: VaultAuthenticatedCiphertextFile) async throws {
         guard payload.vaultID == vaultID else { throw VaultSyncError.backend(.corruptPayload) }
-        do { _ = try payload.verified(rootKey: rootKey) }
+        let verified: VaultVerifiedCiphertextFile
+        do { verified = try payload.verified(rootKey: rootKey) }
         catch { throw VaultSyncError.backend(.corruptPayload) }
         try lock.withLock {
-            let destination = url(for: payload.identity, area: "downloads")
-            try copy(payload.fileURL, to: destination)
+            // Nothing ever reads a downloaded object back from this store --
+            // only `removeAllPayloads` cleans it up -- so it is never staged
+            // here; the repository install below is this object's one
+            // durable copy.
             guard let repository else { return }
-            let temporary = destination.deletingLastPathComponent()
-                .appendingPathComponent(".plaintext-\(UUID().uuidString)")
-            var temporaryCreated = false
-            defer {
-                if temporaryCreated { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
-            }
-            let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
-            temporaryCreated = true
-            try created.close()
             do {
-                try protection.apply(to: temporary)
-                guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
-                    throw VaultSyncError.backend(.permissionDenied)
-                }
-                _ = try payload.decrypt(to: temporary, rootKey: rootKey)
                 switch payload.identity.kind {
                 case .content:
                     guard let record = try repository.object(payload.identity.objectID),
                           !record.isTombstone, record.revision == payload.identity.revision else {
                         throw VaultSyncError.backend(.staleVersion)
                     }
-                    let verified = try payload.verified(rootKey: rootKey)
+                    let directory = rootURL.appendingPathComponent("downloads", isDirectory: true)
+                    let temporary = directory.appendingPathComponent(".plaintext-\(UUID().uuidString)")
+                    var temporaryCreated = false
+                    defer {
+                        if temporaryCreated { try? VaultSecureFileAccess.removeRegularFile(at: temporary) }
+                    }
+                    let created = try VaultSecureFileAccess.createEmptyFile(at: temporary)
+                    temporaryCreated = true
+                    try created.close()
+                    try protection.apply(to: temporary)
+                    guard (try? protection.hasRequiredProtection(at: temporary)) == true else {
+                        throw VaultSyncError.backend(.permissionDenied)
+                    }
+                    // `decrypt` authenticates every frame while it
+                    // materialises plaintext, so it is already the auth
+                    // pass; the generation from the `verified()` call above
+                    // is reused rather than authenticating the whole file
+                    // a second time.
+                    _ = try payload.decrypt(to: temporary, rootKey: rootKey)
                     _ = try repository.writeContent(from: temporary,
                                                     expectedByteCount: Int64(payload.plaintextByteCount),
                                                     for: payload.identity.objectID,
                                                     authenticatedGeneration: verified.authenticatedGeneration)
                 case .metadata, .manifest, .index:
-                    // Artifacts remain encrypted at rest in their repository
-                    // table; they are small by construction and can use the
-                    // existing artifact API after the frame file has already
-                    // been authenticated and decrypted.
-                    let plaintext = try Data(contentsOf: temporary)
+                    // Artifacts stay encrypted at rest in their repository
+                    // table. Install directly from the already-authenticated
+                    // envelope frames -- no plaintext temp file is needed for
+                    // this kind.
                     let kind: VaultEncryptedArtifact.Kind = payload.identity.kind == .index ? .index : .manifest
-                    _ = plaintext // metadata artifacts are installed from the authenticated envelope below.
                     let artifact = try VaultEncryptedArtifact(kind: kind, vaultID: vaultID,
                         revision: payload.identity.revision, rootVersion: payload.rootVersion,
                         encryptedFrames: try collectFrames(payload))

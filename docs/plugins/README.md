@@ -110,8 +110,11 @@ in `produces`.
 
 `classify` CAN call `luna.fetch`/`luna.html` if it genuinely needs to look at
 the page (say, a redirecting share link with no id in it), but most plugins
-never need to. It cannot call anything else — no `luna.storage`, no
-`luna.ui` — those calls throw at this point in the lifecycle.
+never need to. It should not call anything else — `luna.storage`, `luna.ui`
+and the rest are for `ingest` and later, not this quick a decision — mainly
+because of the budget: `classify` gets 8 seconds total, and a call that waits
+on a modal or a slow write eats into the same window every other matched
+plugin's `classify` also has to fit inside.
 
 The FIRST plugin to claim a URL wins; Luna does not ask any lower-priority
 plugin after that. If every matched plugin declines, Luna's own built-in

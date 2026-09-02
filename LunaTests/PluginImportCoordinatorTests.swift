@@ -66,6 +66,20 @@ final class PluginImportCoordinatorTests: XCTestCase {
             replacesVersion: nil, sourceText: "luna.register({});")
     }
 
+    /// An update that declares no capability beyond what was already
+    /// consented to — `requiresConsent` is false, so the full consent screen
+    /// never appears, but a replacement is still a replacement.
+    private func sameCapabilityUpdatePreview() -> PluginImportPreview {
+        PluginImportPreview(
+            summary: PluginSummary(
+                id: "test.plugin", name: "Test Plugin", version: "1.1.0", priority: 0,
+                matchesAnyHost: true, hostPatterns: [], produces: [.article],
+                hooks: [.classify], export: nil, isBundled: false),
+            description: nil, capabilities: [.fetch], runsInBackground: false,
+            addedCapabilities: [], requiresConsent: false,
+            replacesVersion: "1.0.0", sourceText: "luna.register({});")
+    }
+
     /// `begin(from:sourceView:)` is what wires the coordinator's own presenter —
     /// every other entry point is a delegate callback the coordinator never
     /// presents anything without it having run first. The action sheet it puts
@@ -174,6 +188,31 @@ final class PluginImportCoordinatorTests: XCTestCase {
         pump()
 
         XCTAssertTrue(importer.installCalls.isEmpty, "declining must not install")
+        XCTAssertEqual(observer.finishedCount, 0)
+    }
+
+    // MARK: - A same-capability update
+
+    /// `requiresConsent` is false when an update adds no capability, so the
+    /// full consent screen is skipped on purpose — but that must not mean no
+    /// signal at all that an installed plugin's whole script was replaced.
+    func testASameCapabilityUpdateAsksForConfirmationBeforeInstalling() {
+        let importer = FakeImporter()
+        importer.previewResult = .success(sameCapabilityUpdatePreview())
+        let observer = FakeObserver()
+        let coordinator = PluginImportCoordinator(importer: importer)
+        coordinator.observer = observer
+        let paste = wireAndPresentPaste(coordinator)
+
+        coordinator.pluginPasteImport(paste, didSubmit: "luna.register({});")
+        pollUntil { self.presenter.presentedViewController is UIAlertController }
+
+        guard let alert = presenter.presentedViewController as? UIAlertController else {
+            return XCTFail("expected a confirmation alert for a same-capability update")
+        }
+        XCTAssertEqual(alert.actions.map(\.style), [.cancel, .default])
+        XCTAssertTrue(
+            importer.installCalls.isEmpty, "install must wait for the confirmation")
         XCTAssertEqual(observer.finishedCount, 0)
     }
 

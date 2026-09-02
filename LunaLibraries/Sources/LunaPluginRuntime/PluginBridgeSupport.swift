@@ -89,6 +89,19 @@ public enum PluginBridgeValue {
         context.exception = JSValue(newErrorFromMessage: message, in: context)
     }
 
+    /// An optional string argument a plugin may leave out.
+    ///
+    /// A `@convention(block)` parameter typed `String?` does NOT answer nil for a
+    /// missing argument: JavaScriptCore converts `undefined` through
+    /// `JSValue.toString()`, so the block receives the literal text
+    /// "undefined". Every optional string a bridge takes is therefore a
+    /// `JSValue` read through this.
+    public static func optionalString(_ value: JSValue?) -> String? {
+        guard let value, !value.isUndefined, !value.isNull else { return nil }
+        guard let text = value.toString(), !text.isEmpty else { return nil }
+        return text
+    }
+
     /// Reads `data` written as text or as `{ base64: "…" }`.
     public static func data(from value: Any?) -> Data? {
         if let text = value as? String { return Data(text.utf8) }

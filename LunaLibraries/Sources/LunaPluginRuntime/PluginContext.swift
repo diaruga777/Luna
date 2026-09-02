@@ -335,9 +335,3 @@ final class PluginContext {
 public enum PluginBrowserDeferral {
     public static let code = "browser-deferred"
 }
-
-extension PluginHook: CaseIterable {
-    public static var allCases: [PluginHook] {
-        [.classify, .ingest, .export, .onBluetooth, .onSettingsChanged, .onAction]
-    }
-}

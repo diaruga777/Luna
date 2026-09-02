@@ -36,6 +36,7 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
     public func install(into namespace: PluginCapabilityNamespace) {
         let outerContext = namespace.context
         let pluginID = namespace.pluginID
+        let invocationID = namespace.target.invocationID
         let fetcher = self.fetcher
         let scheduler = self.scheduler
         let diagnostics = self.diagnostics
@@ -47,7 +48,9 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
             if object.isEmpty, argument?.isString == true, let urlString = argument?.toString() {
                 object = ["url": urlString]
             }
-            guard let request = PluginFetchRequestDecoder.decode(object) else {
+            guard let request = PluginFetchRequestDecoder.decode(
+                object, invocationID: invocationID())
+            else {
                 PluginBridgeValue.raise(
                     "luna.fetch needs a url: luna.fetch({ url: \"https://…\" })", in: context)
                 return nil
@@ -81,7 +84,7 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
 /// Reads the request a plugin wrote (§6.2).
 enum PluginFetchRequestDecoder {
 
-    static func decode(_ object: [String: Any]) -> PluginFetchRequest? {
+    static func decode(_ object: [String: Any], invocationID: String) -> PluginFetchRequest? {
         guard let urlString = PluginBridgeValue.string(object, "url"),
               let url = URL(string: urlString), url.scheme != nil
         else { return nil }
@@ -115,7 +118,8 @@ enum PluginFetchRequestDecoder {
             maxBytes: ceiling,
             timeout: PluginBridgeValue.double(object, "timeout") ?? 20,
             responseForm: PluginBridgeValue.string(object, "as")
-                .flatMap(PluginFetchRequest.ResponseForm.init(rawValue:)) ?? .text)
+                .flatMap(PluginFetchRequest.ResponseForm.init(rawValue:)) ?? .text,
+            invocationID: invocationID)
     }
 
     /// The five body shapes §6.2 allows. `form`, `json` and `multipart` set the

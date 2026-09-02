@@ -482,6 +482,12 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     }
 }
 
+/// The fetch service reports byte progress here, so a long download keeps an
+/// idle-budgeted `ingest` alive rather than being abandoned mid-transfer.
+extension PluginRuntime: PluginIdleTouching {
+    public func touchIdle() { notePluginActivity() }
+}
+
 /// One pending hook call: its settled value, and when it last saw progress.
 final class PluginPendingCall {
     private let lock = NSLock()

@@ -99,15 +99,20 @@ enum PluginUnavailableNamespace {
         guard let factory = context.evaluateScript(
             """
             (function (ns) {
-                return new Proxy({}, {
+                function refuse(member) {
+                    const where = member ? "luna." + ns + "." + member : "luna." + ns;
+                    return Promise.reject(new luna.LunaError(
+                        "unavailable-here", where + " is not available in this process"));
+                }
+                // The target is a FUNCTION, because a namespace may be called
+                // directly (`luna.fetch(…)`) as well as read from
+                // (`luna.storage.get(…)`). A plain object target would throw a
+                // TypeError the plugin author cannot act on.
+                return new Proxy(function () {}, {
+                    apply: function () { return refuse(null); },
                     get: function (_target, property) {
                         if (property === "then") { return undefined; }
-                        return function () {
-                            return Promise.reject(new luna.LunaError(
-                                "unavailable-here",
-                                "luna." + ns + "." + String(property)
-                                    + " is not available in this process"));
-                        };
+                        return function () { return refuse(String(property)); };
                     }
                 });
             })

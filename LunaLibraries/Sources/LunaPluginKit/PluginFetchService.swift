@@ -44,12 +44,16 @@ public struct PluginFetchRequest: Equatable, Sendable {
     /// slow large download is not a timeout and a stalled one is.
     public let timeout: TimeInterval
     public let responseForm: ResponseForm
+    /// Names the scratch directory an `as: "file"` response is written into. The
+    /// service is shared by every plugin, so the invocation rides the REQUEST
+    /// rather than a property two hooks could race over.
+    public let invocationID: String
 
     public init(
         url: URL, method: String = "GET", headers: [String: String] = [:], body: Data? = nil,
         cookies: CookiePolicy = .shared, redirect: RedirectPolicy = .follow,
         maxBytes: Int = WebFetchConstants.maxBytes, timeout: TimeInterval = 20,
-        responseForm: ResponseForm = .text
+        responseForm: ResponseForm = .text, invocationID: String = "shared"
     ) {
         self.url = url
         self.method = method.uppercased()
@@ -60,6 +64,7 @@ public struct PluginFetchRequest: Equatable, Sendable {
         self.maxBytes = max(1, min(maxBytes, WebFetchConstants.maxBytes))
         self.timeout = timeout
         self.responseForm = responseForm
+        self.invocationID = invocationID
     }
 }
 
@@ -152,10 +157,6 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     /// its own fixtures this way; `URLProtocol.registerClass` reaches only the
     /// shared session, never one built from a configuration.
     private let protocolClasses: [AnyClass]
-    /// Names the invocation whose scratch directory a `file` response is written
-    /// into.
-    public var invocationID: String = "shared"
-
     public init(protocolClasses: [AnyClass] = []) {
         self.protocolClasses = protocolClasses
         super.init()
@@ -185,7 +186,8 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         let probe = PluginFetchRequest(
             url: request.url, method: "HEAD", headers: request.headers, body: nil,
             cookies: request.cookies, redirect: .follow, maxBytes: request.maxBytes,
-            timeout: request.timeout, responseForm: request.responseForm)
+            timeout: request.timeout, responseForm: request.responseForm,
+            invocationID: request.invocationID)
         start(probe) { [weak self] outcome in
             guard let self else { return }
             let landing = (try? outcome.get()).flatMap { URL(string: $0.finalURL) } ?? request.url
@@ -193,7 +195,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
                 url: landing, method: request.method, headers: request.headers,
                 body: request.body, cookies: request.cookies, redirect: .follow,
                 maxBytes: request.maxBytes, timeout: request.timeout,
-                responseForm: request.responseForm)
+                responseForm: request.responseForm, invocationID: request.invocationID)
             self.start(follow, completion: completion)
         }
     }
@@ -218,7 +220,8 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
             self.start(PluginFetchRequest(
                 url: request.url, method: request.method, headers: headers, body: request.body,
                 cookies: .none, redirect: request.redirect, maxBytes: request.maxBytes,
-                timeout: request.timeout, responseForm: request.responseForm),
+                timeout: request.timeout, responseForm: request.responseForm,
+                invocationID: request.invocationID),
                 completion: completion)
         }
     }
@@ -390,7 +393,7 @@ extension PluginFetchService: URLSessionDataDelegate {
             file = try? writer.writeFile(
                 transfer.body, suggestedName: finalURL.lastPathComponent,
                 mime: headers.first { $0.key.lowercased() == "content-type" }?.value,
-                invocationID: invocationID)
+                invocationID: transfer.request.invocationID)
         }
         transfer.completion(.success(PluginFetchResponse(
             status: response.statusCode, finalURL: finalURL.absoluteString, headers: headers,

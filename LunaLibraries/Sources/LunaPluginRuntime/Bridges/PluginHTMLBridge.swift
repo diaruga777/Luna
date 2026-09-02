@@ -14,27 +14,32 @@ import SwiftSoup
 /// it: SwiftSoup here, `DOMParser` in the Safari world, and `linkedom` in the
 /// node harness. `LunaTests/Fixtures/Plugins/html-subset.spec.js` is the
 /// specification; every backing runs the same file.
+/// Nothing is `null`, never `undefined`. A JSExport method that answers a nil
+/// Swift object bridges to `undefined`, while the Safari world's `DOMParser`
+/// answers `null` — so a plugin's `=== null` would be true in one backing and
+/// false in the other. Every member that may find nothing therefore answers a
+/// `JSValue` built in the caller's own context.
 @objc protocol PluginHTMLNodeExports: JSExport {
-    func querySelector(_ css: String) -> PluginHTMLNodeHandle?
+    func querySelector(_ css: String) -> JSValue
     func querySelectorAll(_ css: String) -> [PluginHTMLNodeHandle]
-    func getAttribute(_ name: String) -> String?
+    func getAttribute(_ name: String) -> JSValue
     func hasAttribute(_ name: String) -> Bool
     func matches(_ css: String) -> Bool
-    func closest(_ css: String) -> PluginHTMLNodeHandle?
+    func closest(_ css: String) -> JSValue
     /// Resolves an `href`/`src`-style attribute against `baseURI`.
-    func absoluteURL(_ attribute: String) -> String?
+    func absoluteURL(_ attribute: String) -> JSValue
     var textContent: String { get }
     var innerHTML: String { get }
     var outerHTML: String { get }
     var children: [PluginHTMLNodeHandle] { get }
-    var parentElement: PluginHTMLNodeHandle? { get }
+    var parentElement: JSValue { get }
     var tagName: String { get }
     var attributes: [String: String] { get }
     var baseURI: String { get }
     var title: String { get }
-    var documentElement: PluginHTMLNodeHandle? { get }
-    var body: PluginHTMLNodeHandle? { get }
-    var head: PluginHTMLNodeHandle? { get }
+    var documentElement: JSValue { get }
+    var body: JSValue { get }
+    var head: JSValue { get }
 }
 
 /// One node a plugin holds. It wraps a SwiftSoup element; the document is the
@@ -50,9 +55,8 @@ import SwiftSoup
 
     // MARK: - Queries
 
-    public func querySelector(_ css: String) -> PluginHTMLNodeHandle? {
-        guard let found = try? element.select(css).first() else { return nil }
-        return PluginHTMLNodeHandle(found)
+    public func querySelector(_ css: String) -> JSValue {
+        Self.value((try? element.select(css).first()).map(PluginHTMLNodeHandle.init))
     }
 
     public func querySelectorAll(_ css: String) -> [PluginHTMLNodeHandle] {
@@ -64,31 +68,31 @@ import SwiftSoup
         (try? element.iS(css)) ?? false
     }
 
-    public func closest(_ css: String) -> PluginHTMLNodeHandle? {
+    public func closest(_ css: String) -> JSValue {
         var current: Element? = element
         while let node = current {
-            if (try? node.iS(css)) == true { return PluginHTMLNodeHandle(node) }
+            if (try? node.iS(css)) == true { return Self.value(PluginHTMLNodeHandle(node)) }
             current = node.parent()
         }
-        return nil
+        return Self.value(nil)
     }
 
     // MARK: - Attributes
 
-    public func getAttribute(_ name: String) -> String? {
-        guard element.hasAttr(name) else { return nil }
-        return try? element.attr(name)
+    public func getAttribute(_ name: String) -> JSValue {
+        guard element.hasAttr(name) else { return Self.value(nil) }
+        return Self.value((try? element.attr(name)) ?? "")
     }
 
     public func hasAttribute(_ name: String) -> Bool {
         element.hasAttr(name)
     }
 
-    public func absoluteURL(_ attribute: String) -> String? {
+    public func absoluteURL(_ attribute: String) -> JSValue {
         guard element.hasAttr(attribute), let resolved = try? element.absUrl(attribute),
               !resolved.isEmpty
-        else { return nil }
-        return resolved
+        else { return Self.value(nil) }
+        return Self.value(resolved)
     }
 
     public var attributes: [String: String] {
@@ -112,8 +116,8 @@ import SwiftSoup
         element.children().array().map(PluginHTMLNodeHandle.init)
     }
 
-    public var parentElement: PluginHTMLNodeHandle? {
-        element.parent().map(PluginHTMLNodeHandle.init)
+    public var parentElement: JSValue {
+        Self.value(element.parent().map(PluginHTMLNodeHandle.init))
     }
 
     /// Upper case, as the DOM reports it.
@@ -128,20 +132,32 @@ import SwiftSoup
         return (try? document.title()) ?? ""
     }
 
-    public var documentElement: PluginHTMLNodeHandle? {
-        guard let document = element as? Document else { return nil }
-        guard let root = try? document.select("html").first() else { return nil }
-        return PluginHTMLNodeHandle(root)
+    public var documentElement: JSValue {
+        guard let document = element as? Document,
+              let root = try? document.select("html").first()
+        else { return Self.value(nil) }
+        return Self.value(PluginHTMLNodeHandle(root))
     }
 
-    public var body: PluginHTMLNodeHandle? {
-        guard let document = element as? Document, let body = document.body() else { return nil }
-        return PluginHTMLNodeHandle(body)
+    public var body: JSValue {
+        guard let document = element as? Document, let body = document.body() else {
+            return Self.value(nil)
+        }
+        return Self.value(PluginHTMLNodeHandle(body))
     }
 
-    public var head: PluginHTMLNodeHandle? {
-        guard let document = element as? Document, let head = document.head() else { return nil }
-        return PluginHTMLNodeHandle(head)
+    public var head: JSValue {
+        guard let document = element as? Document, let head = document.head() else {
+            return Self.value(nil)
+        }
+        return Self.value(PluginHTMLNodeHandle(head))
+    }
+
+    /// A value in the CALLING context, so nothing reads as `undefined`.
+    private static func value(_ object: Any?) -> JSValue {
+        let context = JSContext.current() ?? JSContext()!
+        guard let object else { return JSValue(nullIn: context) }
+        return JSValue(object: object, in: context) ?? JSValue(nullIn: context)
     }
 }
 
@@ -161,13 +177,13 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
         let outerContext = namespace.context
         let html = namespace.makeNamespaceObject()
 
-        let parse: @convention(block) (String?, String?) -> PluginHTMLNodeHandle? = { source, base in
+        let parse: @convention(block) (String?, JSValue?) -> PluginHTMLNodeHandle? = { source, base in
             let context = JSContext.current() ?? outerContext
             guard let source else {
                 PluginBridgeValue.raise("luna.html.parse needs HTML text", in: context)
                 return nil
             }
-            let baseURI = (base?.isEmpty ?? true) ? "" : base!
+            let baseURI = PluginBridgeValue.optionalString(base) ?? ""
             guard let document = try? SwiftSoup.parse(source, baseURI) else {
                 PluginBridgeValue.raise("luna.html.parse could not read that HTML", in: context)
                 return nil
@@ -182,11 +198,10 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
             return (try? document.text()) ?? ""
         }
 
-        let jsonScripts: @convention(block) (JSValue?, String?) -> [Any] = { value, type in
-            guard let handle = value?.toObjectOf(PluginHTMLNodeHandle.self)
-                as? PluginHTMLNodeHandle
-            else { return [] }
-            return PluginHTMLBridge.jsonScripts(in: handle.element, type: type)
+        let jsonScripts: @convention(block) (JSValue?, JSValue?) -> [Any] = { value, type in
+            guard let handle = value?.toObject() as? PluginHTMLNodeHandle else { return [] }
+            return PluginHTMLBridge.jsonScripts(
+                in: handle.element, type: PluginBridgeValue.optionalString(type))
         }
 
         html.setObject(parse, forKeyedSubscript: "parse" as NSString)
@@ -202,7 +217,10 @@ public final class PluginHTMLBridge: PluginCapabilityInstalling {
             ?? "script[type=application/ld+json], script[type=application/json]"
         guard let scripts = try? element.select(selector) else { return [] }
         return scripts.array().compactMap { script in
-            guard let source = try? script.html(), !source.isEmpty else { return nil }
+            // A script's body is a data node, so `data()` is its text; `html()`
+            // escapes it.
+            let source = script.data().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !source.isEmpty else { return nil }
             return try? JSONSerialization.jsonObject(
                 with: Data(source.utf8), options: [.fragmentsAllowed])
         }

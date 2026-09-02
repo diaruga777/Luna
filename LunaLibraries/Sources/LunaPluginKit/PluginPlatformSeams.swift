@@ -22,7 +22,7 @@ public enum PluginCapabilityName: String, CaseIterable, Codable, Sendable {
 
 // MARK: - Hooks
 
-public enum PluginHook: String, Codable, Sendable {
+public enum PluginHook: String, Codable, Sendable, CaseIterable {
     case classify, ingest, export, onBluetooth, onSettingsChanged, onAction
 }
 

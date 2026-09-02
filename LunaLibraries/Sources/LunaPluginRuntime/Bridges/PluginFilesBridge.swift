@@ -40,7 +40,7 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
         let workQueue = self.workQueue
         let invocationID = namespace.target.invocationID
 
-        let write: @convention(block) (String?, JSValue?, String?) -> JSValue? = {
+        let write: @convention(block) (String?, JSValue?, JSValue?) -> JSValue? = {
             name, value, mime in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
@@ -58,10 +58,11 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
                 return promise
             }
             let invocation = invocationID()
+            let mimeText = PluginBridgeValue.optionalString(mime)
             workQueue.async {
                 do {
                     let descriptor = try scratch.writeFile(
-                        data, suggestedName: name, mime: mime, invocationID: invocation)
+                        data, suggestedName: name, mime: mimeText, invocationID: invocation)
                     box.fulfill(Self.jsObject(descriptor))
                 } catch {
                     box.fail(error.localizedDescription, code: "write-failed")
@@ -70,13 +71,14 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
             return promise
         }
 
-        let read: @convention(block) (JSValue?, String?) -> JSValue? = { handle, form in
+        let read: @convention(block) (JSValue?, JSValue?) -> JSValue? = { handle, form in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
             guard let descriptor = Self.descriptor(from: handle) else {
                 box.fail("luna.files.read needs a file handle", code: "bad-argument")
                 return promise
             }
+            let wantsBase64 = PluginBridgeValue.optionalString(form) == "base64"
             workQueue.async {
                 guard let url = scratch.fileURL(for: descriptor),
                       let data = try? Data(contentsOf: url)
@@ -84,7 +86,7 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
                     box.fail("that file is gone", code: "not-found")
                     return
                 }
-                if form == "base64" {
+                if wantsBase64 {
                     box.fulfill(data.base64EncodedString())
                 } else {
                     box.fulfill(String(decoding: data, as: UTF8.self))

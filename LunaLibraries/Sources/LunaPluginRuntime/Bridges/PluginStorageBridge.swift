@@ -92,11 +92,12 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
             return promise
         }
 
-        let keys: @convention(block) (String?) -> JSValue? = { prefix in
+        let keys: @convention(block) (JSValue?) -> JSValue? = { prefix in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let text = PluginBridgeValue.optionalString(prefix)
             workQueue.async {
-                box.fulfill(store.keys(pluginID: pluginID, prefix: prefix))
+                box.fulfill(store.keys(pluginID: pluginID, prefix: text))
             }
             return promise
         }

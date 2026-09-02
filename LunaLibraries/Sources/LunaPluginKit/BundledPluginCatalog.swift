@@ -14,14 +14,30 @@ import Foundation
 /// which is what a process with no bundled plugins should see.
 public final class BundledPluginCatalog {
 
-    private let bundle: Bundle?
-    private let subdirectory: String
+    /// Where the shipped `.js` files are read from.
+    public enum Source {
+        case bundle(Bundle, subdirectory: String)
+        /// A plain directory of `.js` files. The staged catalogs and the test
+        /// fixtures use it; a resource bundle is a directory with a wrapper.
+        case directory(URL)
+        /// A process that carries no bundled plugins.
+        case empty
+    }
+
+    private let source: Source
     private let store: PluginStore
 
-    public init(bundle: Bundle?, subdirectory: String = "Plugins", store: PluginStore = .shared) {
-        self.bundle = bundle
-        self.subdirectory = subdirectory
+    public init(source: Source, store: PluginStore = .shared) {
+        self.source = source
         self.store = store
+    }
+
+    public convenience init(
+        bundle: Bundle?, subdirectory: String = "Plugins", store: PluginStore = .shared
+    ) {
+        self.init(
+            source: bundle.map { .bundle($0, subdirectory: subdirectory) } ?? .empty,
+            store: store)
     }
 
     /// Every bundled plugin whose header parses, id order.
@@ -41,11 +57,19 @@ public final class BundledPluginCatalog {
         .sorted { $0.id < $1.id }
     }
 
-    /// The `.js` files in the bundle's plugins subdirectory.
+    /// The `.js` files the source holds, file-name order.
     public func sourceURLs() -> [URL] {
-        guard let bundle else { return [] }
-        let urls = bundle.urls(
-            forResourcesWithExtension: "js", subdirectory: subdirectory) ?? []
+        let urls: [URL]
+        switch source {
+        case .empty:
+            urls = []
+        case .bundle(let bundle, let subdirectory):
+            urls = bundle.urls(forResourcesWithExtension: "js", subdirectory: subdirectory) ?? []
+        case .directory(let directory):
+            let contents = (try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+            urls = contents.filter { $0.pathExtension == "js" }
+        }
         return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 

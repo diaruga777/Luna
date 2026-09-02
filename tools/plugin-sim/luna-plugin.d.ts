@@ -144,9 +144,17 @@ export interface PluginHooks {
   classify?(input: ClassifyInput): ClassifyResult | Promise<ClassifyResult>;
   ingest?(input: IngestInput): Promise<PluginModel | null>;
   export?(input: ExportInput): Promise<ExportResult>;
-  onBluetooth?(event: BluetoothEvent, session: BluetoothSession | null): Promise<void>;
+  // A hook is called with exactly one JSON argument (the runtime does
+  // `JSON.parse` on an encoded string and calls the hook with that one
+  // value) — a native session object cannot ride along as a second
+  // parameter. Read the live session with `luna.bluetooth.session()`
+  // instead; it stays live for the whole invocation, including a nested
+  // `export` call `luna.exports.deliverQueued()` triggers.
+  onBluetooth?(event: BluetoothEvent): Promise<void>;
   onSettingsChanged?(changes: Record<string, unknown>): Promise<void>;
-  onAction?(key: string): Promise<void>;
+  // Same one-argument rule: the settings screen and `PluginDetailScreen`
+  // both call this with `{ key }`, never a bare string.
+  onAction?(input: { key: string }): Promise<void>;
 }
 
 // ------------------------------------------------------------------- Models
@@ -266,6 +274,9 @@ export interface LunaHTML {
 
 // ---- luna.fetch (§6.2) ----
 
+// No `file` field: the request encoder only reads `text` or `base64` for a
+// part. Uploading a downloaded/exported file over multipart means reading
+// it to base64 first (`luna.files.read(handle, "base64")`).
 export interface MultipartPart { name: string; filename?: string; mime?: string; text?: string; base64?: string }
 
 export interface FetchRequest {
@@ -347,6 +358,9 @@ export interface Crypto {
 }
 
 // ---- luna.downloads (§6.9 — app/share/action only, read only) ----
+// No bridge installs this capability anywhere yet: a plugin declaring
+// `downloads` sees the `unavailable-here` stand-in for every call. Typed
+// here for forward compatibility with the design; do not assume it works.
 
 export interface DownloadJob {
   saveId: string; sourceURL: string; title?: string;
@@ -399,6 +413,10 @@ export interface Bluetooth {
   pairedDevices(): Promise<BluetoothDevice[]>;
   unpair(deviceId: string): Promise<void>;
   connect(deviceId: string, opts?: { timeout?: number }): Promise<BluetoothSession>;
+  // Synchronous on purpose: the answer is "is a link live right now", and an
+  // awaited call could not tell "no session" from "not yet". Live for the
+  // whole `onBluetooth` invocation that is holding the connection.
+  session(): BluetoothSession | null;
 }
 
 export interface Wifi {

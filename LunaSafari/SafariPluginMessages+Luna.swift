@@ -334,7 +334,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
               let plugin = enabledPlugin(id: id)
         else { return ["error": "capability-not-declared"] }
         let field = plugin.manifest.settings.first { $0.key == key }
-        let stored = PluginKVStore.shared.settingsValueJSON(pluginID: id, key: key)
+        let stored = PluginKVStore.shared.valueJSON(pluginID: id, key: key)
         if field?.isSecret == true {
             return stored != nil ? ["value": ""] : [:]
         }

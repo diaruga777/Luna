@@ -161,9 +161,11 @@ public final class PluginStore {
     /// Writes the plugin's own text verbatim under its id and version, replacing
     /// whatever that id held.
     ///
-    /// The replace happens through a scratch folder, so a failed write cannot
-    /// leave the plugin half-installed. Older versions are removed: only the
-    /// newest is ever loaded, and a stale copy would confuse the source view.
+    /// The replace happens through a scratch folder AND the new version lands
+    /// before any old one is removed, so a failed write cannot leave the plugin
+    /// half-installed or with no version at all. Older versions are removed
+    /// after: only the newest is ever loaded, and a stale copy would confuse the
+    /// source view.
     @discardableResult
     public func install(
         source: String, manifest: PluginManifest, origin: PluginImportOrigin, now: Date = Date()
@@ -178,11 +180,13 @@ public final class PluginStore {
             try Data(source.utf8).write(
                 to: scratch.appendingPathComponent("plugin.js"), options: .atomic)
             try fileManager.createDirectory(at: idFolder, withIntermediateDirectories: true)
-            for stale in versions(of: manifest.id) {
+            let replaced = versions(of: manifest.id).filter { $0 != manifest.version }
+            try? fileManager.removeItem(at: destination)
+            try fileManager.moveItem(at: scratch, to: destination)
+            for stale in replaced {
                 try? fileManager.removeItem(
                     at: idFolder.appendingPathComponent(stale.description, isDirectory: true))
             }
-            try fileManager.moveItem(at: scratch, to: destination)
         } catch {
             try? fileManager.removeItem(at: scratch)
             throw PluginStoreError.fileSystem(detail: error.localizedDescription)

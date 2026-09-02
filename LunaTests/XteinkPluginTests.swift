@@ -102,7 +102,7 @@ final class XteinkPluginTests: XCTestCase {
         let data = Data((0..<bytes).map { UInt8($0 % 251) })
         let descriptor = try runner.scratch.writeFile(
             data, suggestedName: "Article.epub", mime: "application/epub+zip",
-            invocationID: "fixture")
+            pluginID: pluginID, generation: "fixture")
         exports.queued.append(FakePluginExportsBridge.QueuedSend(
             saveId: saveID, url: "https://example.com/article", title: "An Article",
             file: .init(
@@ -285,7 +285,7 @@ final class XteinkPluginTests: XCTestCase {
         let data = Data(repeating: 7, count: 2048)
         let descriptor = try runner.scratch.writeFile(
             data, suggestedName: "Article.epub", mime: "application/epub+zip",
-            invocationID: "fixture")
+            pluginID: pluginID, generation: "fixture")
         let send = FakePluginExportsBridge.QueuedSend(
             saveId: "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
             url: "https://example.com/a", title: "An Article",

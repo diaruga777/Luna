@@ -42,7 +42,8 @@ public final class PluginSecretsBridge: PluginCapabilityInstalling {
 
         let get: @convention(block) (String?) -> JSValue? = { key in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let key, !key.isEmpty else {
                 box.fail("luna.secrets.get needs a key", code: "bad-argument")
                 return promise
@@ -55,7 +56,8 @@ public final class PluginSecretsBridge: PluginCapabilityInstalling {
 
         let set: @convention(block) (String?, String?) -> JSValue? = { key, value in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard isWritable else {
                 box.fail(
                     "luna.secrets.set runs in the app only", code: "unavailable-here")
@@ -74,7 +76,8 @@ public final class PluginSecretsBridge: PluginCapabilityInstalling {
 
         let remove: @convention(block) (String?) -> JSValue? = { key in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard isWritable else {
                 box.fail(
                     "luna.secrets.delete runs in the app only", code: "unavailable-here")

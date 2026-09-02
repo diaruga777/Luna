@@ -7,12 +7,12 @@ import Foundation
 import JavaScriptCore
 import LunaPluginKit
 
-/// `luna.files` (§6.7): a per-invocation scratch directory under the App Group.
+/// `luna.files` (§6.7): a per-generation scratch directory under the App Group.
 ///
 /// A handle is a descriptor, never a path: a plugin can hand one back to Luna
 /// (an export result, a multipart part) but cannot name a file it did not
-/// write. The directory is reaped when the hook settles, unless the export
-/// stage retained it for a file it is about to pass on.
+/// write. One generation is open while anything of the plugin is in flight, and
+/// its directory is reaped when the last of those calls ends.
 public final class PluginFilesBridge: PluginCapabilityInstalling {
 
     public let capabilityName = PluginCapabilityName.files
@@ -38,12 +38,14 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
         let scratch = self.scratch
         let scheduler = self.scheduler
         let workQueue = self.workQueue
-        let invocationID = namespace.target.invocationID
+        let pluginID = namespace.pluginID
+        let scratchGeneration = namespace.target.scratchGeneration
 
         let write: @convention(block) (String?, JSValue?, JSValue?) -> JSValue? = {
             name, value, mime in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let name, !name.isEmpty,
                   let data = PluginBridgeValue.data(from: value?.toObject())
             else {
@@ -57,12 +59,13 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
                     code: "too-large")
                 return promise
             }
-            let invocation = invocationID()
+            let generation = scratchGeneration()
             let mimeText = PluginBridgeValue.optionalString(mime)
             workQueue.async {
                 do {
                     let descriptor = try scratch.writeFile(
-                        data, suggestedName: name, mime: mimeText, invocationID: invocation)
+                        data, suggestedName: name, mime: mimeText, pluginID: pluginID,
+                        generation: generation)
                     box.fulfill(Self.jsObject(descriptor))
                 } catch {
                     box.fail(error.localizedDescription, code: "write-failed")
@@ -73,7 +76,8 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
 
         let read: @convention(block) (JSValue?, JSValue?) -> JSValue? = { handle, form in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let descriptor = Self.descriptor(from: handle) else {
                 box.fail("luna.files.read needs a file handle", code: "bad-argument")
                 return promise
@@ -88,16 +92,26 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
                 }
                 if wantsBase64 {
                     box.fulfill(data.base64EncodedString())
-                } else {
-                    box.fulfill(String(decoding: data, as: UTF8.self))
+                    return
                 }
+                // Decoding invalid UTF-8 would answer a plausible string of
+                // U+FFFD, so a plugin reading a downloaded MP4 or EPUB without
+                // "base64" would get silently mangled bytes.
+                guard let text = String(data: data, encoding: .utf8) else {
+                    box.fail(
+                        "that file is not UTF-8 text; read it with \"base64\"",
+                        code: "not-text")
+                    return
+                }
+                box.fulfill(text)
             }
             return promise
         }
 
         let size: @convention(block) (JSValue?) -> JSValue? = { handle in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let descriptor = Self.descriptor(from: handle) else {
                 box.fail("luna.files.size needs a file handle", code: "bad-argument")
                 return promise

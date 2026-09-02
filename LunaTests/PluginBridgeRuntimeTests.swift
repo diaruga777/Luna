@@ -209,20 +209,27 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(json, "[-1,-1]")
     }
 
-    func testAScratchDirectoryIsReapedUnlessItWasRetained() throws {
+    /// A nested call joins the generation the outer one opened, so the outer
+    /// call's files survive the inner call's end.
+    func testAGenerationOutlivesANestedHolder() throws {
         let scratch = PluginScratchStore(
-            pluginID: "p", rootURL: runner.containerURL.appendingPathComponent("scratch2"))
-        let kept = try scratch.writeFile(
-            Data("a".utf8), suggestedName: "a.txt", mime: nil, invocationID: "keep")
-        let dropped = try scratch.writeFile(
-            Data("b".utf8), suggestedName: "b.txt", mime: nil, invocationID: "drop")
+            rootURL: runner.containerURL.appendingPathComponent("scratch2"))
+        let outer = scratch.openScratchGeneration(pluginID: "p")
+        let inner = scratch.openScratchGeneration(pluginID: "p")
+        XCTAssertEqual(inner, outer)
+        let file = try scratch.writeFile(
+            Data("a".utf8), suggestedName: "a.txt", mime: nil, pluginID: "p",
+            generation: outer)
+        let neighbour = try scratch.writeFile(
+            Data("b".utf8), suggestedName: "b.txt", mime: nil, pluginID: "q",
+            generation: scratch.openScratchGeneration(pluginID: "q"))
 
-        scratch.retain(invocationID: "keep")
-        XCTAssertEqual(scratch.reap(invocationID: "keep"), .retained)
-        XCTAssertEqual(scratch.reap(invocationID: "drop"), .reaped)
+        scratch.closeScratchGeneration(pluginID: "p")
+        XCTAssertNotNil(scratch.fileURL(for: file))
 
-        XCTAssertNotNil(scratch.fileURL(for: kept))
-        XCTAssertNil(scratch.fileURL(for: dropped))
+        scratch.closeScratchGeneration(pluginID: "p")
+        XCTAssertNil(scratch.fileURL(for: file))
+        XCTAssertNotNil(scratch.fileURL(for: neighbour), "one plugin's reap leaves another's")
     }
 
     // MARK: - secrets

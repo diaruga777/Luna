@@ -11,10 +11,12 @@ import LunaURLClassification
 public struct PluginFetchRequest: Equatable, Sendable {
 
     /// Whose cookie jar a request uses. The shared jar carries a site's consent
-    /// state, an ephemeral jar gets the logged-out page, none at all is how a
-    /// crawler identity asks, and `browser` is what the lock modal earned.
+    /// state, an ephemeral jar gets the logged-out page, and none at all is how
+    /// a crawler identity asks. A plugin that wants the session the browser
+    /// modal earned reads `cookieHeader` off the browser result and sets the
+    /// header itself.
     public enum CookiePolicy: String, Equatable, Sendable {
-        case shared, ephemeral, none, browser
+        case shared, ephemeral, none
     }
 
     /// What happens at a 3xx.
@@ -44,16 +46,20 @@ public struct PluginFetchRequest: Equatable, Sendable {
     /// slow large download is not a timeout and a stalled one is.
     public let timeout: TimeInterval
     public let responseForm: ResponseForm
-    /// Names the scratch directory an `as: "file"` response is written into. The
-    /// service is shared by every plugin, so the invocation rides the REQUEST
-    /// rather than a property two hooks could race over.
+    /// Whose scratch directory an `as: "file"` response is written into, and
+    /// whose in-flight hooks the byte-progress touch keeps alive. The service is
+    /// shared by every plugin, so both ride the REQUEST rather than a property
+    /// two hooks could race over.
+    public let pluginID: String
+    /// Names the scratch generation an `as: "file"` response is written into.
     public let invocationID: String
 
     public init(
         url: URL, method: String = "GET", headers: [String: String] = [:], body: Data? = nil,
         cookies: CookiePolicy = .shared, redirect: RedirectPolicy = .follow,
         maxBytes: Int = WebFetchConstants.maxBytes, timeout: TimeInterval = 20,
-        responseForm: ResponseForm = .text, invocationID: String = "shared"
+        responseForm: ResponseForm = .text, invocationID: String = "shared",
+        pluginID: String = "shared"
     ) {
         self.url = url
         self.method = method.uppercased()
@@ -65,6 +71,7 @@ public struct PluginFetchRequest: Equatable, Sendable {
         self.timeout = timeout
         self.responseForm = responseForm
         self.invocationID = invocationID
+        self.pluginID = pluginID
     }
 }
 
@@ -109,17 +116,6 @@ public struct PluginFetchError: Error, Equatable {
     }
 }
 
-/// Hands over the cookies a `WKWebsiteDataStore` holds for a URL.
-///
-/// WebKit is not available to `LunaPluginKit` — the Safari appex links it and
-/// carries no UIKit tier — so `cookies: "browser"` is served through a witness
-/// the app installs. With no witness the request is refused, rather than
-/// quietly downgraded to the shared jar: a plugin asking for the browser's
-/// cookies is asking for the session the lock modal earned.
-public protocol PluginBrowserCookieProviding: AnyObject {
-    func browserCookies(for url: URL, completion: @escaping ([HTTPCookie]) -> Void)
-}
-
 /// The network leg of `luna.fetch`, as a witness a caller installs.
 public protocol PluginURLFetching: AnyObject {
     func fetch(
@@ -137,8 +133,6 @@ public protocol PluginURLFetching: AnyObject {
 /// the last hop of a follow.
 public final class PluginFetchService: NSObject, PluginURLFetching {
 
-    /// Serves `cookies: "browser"`. Installed by the app; nil everywhere else.
-    public var browserCookies: PluginBrowserCookieProviding?
     /// Writes the body when a request asked for `as: "file"`.
     public var fileWriter: PluginFileWriting?
     /// Touched on every chunk, so a long download keeps the ingest watchdog
@@ -147,20 +141,32 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
 
     private let delegateQueue = OperationQueue()
     /// One session per cookie policy, made on first use. A session is expensive
-    /// and a policy is one of three (`browser` reuses the ephemeral jar and
-    /// carries its cookies in a header).
+    /// and a policy is one of three.
     private var sessions: [PluginFetchRequest.CookiePolicy: URLSession] = [:]
-    private var transfers: [Int: Transfer] = [:]
+    /// Keyed by the task OBJECT: `taskIdentifier` is unique within one session,
+    /// and three sessions each hand out a task 1.
+    private var transfers: [ObjectIdentifier: Transfer] = [:]
     private let lock = NSLock()
 
     /// Protocol classes every session gets, ahead of the system's. A test serves
     /// its own fixtures this way; `URLProtocol.registerClass` reaches only the
     /// shared session, never one built from a configuration.
     private let protocolClasses: [AnyClass]
+    /// The sessions' delegate. A `URLSession` retains its delegate until it is
+    /// invalidated, so the service cannot be the delegate itself: the cycle
+    /// would keep every replaced service, its sessions and its delegate queue
+    /// alive for the life of the process.
+    private let delegateProxy = PluginFetchSessionDelegate()
+
     public init(protocolClasses: [AnyClass] = []) {
         self.protocolClasses = protocolClasses
         super.init()
         delegateQueue.maxConcurrentOperationCount = 1
+        delegateProxy.service = self
+    }
+
+    deinit {
+        for session in sessions.values { session.finishTasksAndInvalidate() }
     }
 
     public func fetch(
@@ -173,10 +179,6 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
             completion(.failure(PluginFetchError("\(error)", code: "network-refused")))
             return
         }
-        guard request.cookies != .browser else {
-            resolveBrowserCookies(request, completion: completion)
-            return
-        }
         guard request.redirect == .headThenGet else {
             start(request, completion: completion)
             return
@@ -187,7 +189,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
             url: request.url, method: "HEAD", headers: request.headers, body: nil,
             cookies: request.cookies, redirect: .follow, maxBytes: request.maxBytes,
             timeout: request.timeout, responseForm: request.responseForm,
-            invocationID: request.invocationID)
+            invocationID: request.invocationID, pluginID: request.pluginID)
         start(probe) { [weak self] outcome in
             guard let self else { return }
             let landing = (try? outcome.get()).flatMap { URL(string: $0.finalURL) } ?? request.url
@@ -195,34 +197,9 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
                 url: landing, method: request.method, headers: request.headers,
                 body: request.body, cookies: request.cookies, redirect: .follow,
                 maxBytes: request.maxBytes, timeout: request.timeout,
-                responseForm: request.responseForm, invocationID: request.invocationID)
+                responseForm: request.responseForm, invocationID: request.invocationID,
+                pluginID: request.pluginID)
             self.start(follow, completion: completion)
-        }
-    }
-
-    /// Turns `cookies: "browser"` into a `Cookie` header over the ephemeral jar,
-    /// so the browser's session is used without the shared jar being written.
-    private func resolveBrowserCookies(
-        _ request: PluginFetchRequest,
-        completion: @escaping (Result<PluginFetchResponse, PluginFetchError>) -> Void
-    ) {
-        guard let provider = browserCookies else {
-            completion(.failure(PluginFetchError(
-                "cookies: \"browser\" needs the app's web view, which this process has not",
-                code: "unavailable-here")))
-            return
-        }
-        provider.browserCookies(for: request.url) { [weak self] cookies in
-            guard let self else { return }
-            var headers = request.headers
-            let header = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-            if !header.isEmpty { headers["Cookie"] = header }
-            self.start(PluginFetchRequest(
-                url: request.url, method: request.method, headers: headers, body: request.body,
-                cookies: .none, redirect: request.redirect, maxBytes: request.maxBytes,
-                timeout: request.timeout, responseForm: request.responseForm,
-                invocationID: request.invocationID),
-                completion: completion)
         }
     }
 
@@ -246,7 +223,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         let session = self.session(for: request.cookies)
         let task = session.dataTask(with: urlRequest)
         lock.lock()
-        transfers[task.taskIdentifier] = Transfer(request: request, completion: completion)
+        transfers[ObjectIdentifier(task)] = Transfer(request: request, completion: completion)
         lock.unlock()
         task.resume()
     }
@@ -259,7 +236,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         switch policy {
         case .shared:
             configuration = .default
-        case .ephemeral, .browser:
+        case .ephemeral:
             configuration = .ephemeral
         case .none:
             configuration = .ephemeral
@@ -269,7 +246,7 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
         }
         configuration.protocolClasses = protocolClasses + (configuration.protocolClasses ?? [])
         let session = URLSession(
-            configuration: configuration, delegate: self, delegateQueue: delegateQueue)
+            configuration: configuration, delegate: delegateProxy, delegateQueue: delegateQueue)
         sessions[policy] = session
         return session
     }
@@ -277,13 +254,13 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     private func transfer(_ task: URLSessionTask) -> Transfer? {
         lock.lock()
         defer { lock.unlock() }
-        return transfers[task.taskIdentifier]
+        return transfers[ObjectIdentifier(task)]
     }
 
     private func finishTransfer(_ task: URLSessionTask) -> Transfer? {
         lock.lock()
         defer { lock.unlock() }
-        return transfers.removeValue(forKey: task.taskIdentifier)
+        return transfers.removeValue(forKey: ObjectIdentifier(task))
     }
 
     /// One request's accumulating state.
@@ -308,9 +285,9 @@ public final class PluginFetchService: NSObject, PluginURLFetching {
     }
 }
 
-extension PluginFetchService: URLSessionDataDelegate {
+extension PluginFetchService {
 
-    public func urlSession(
+    fileprivate func urlSession(
         _ session: URLSession, task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
@@ -329,7 +306,7 @@ extension PluginFetchService: URLSessionDataDelegate {
         }
     }
 
-    public func urlSession(
+    fileprivate func urlSession(
         _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
@@ -337,14 +314,14 @@ extension PluginFetchService: URLSessionDataDelegate {
         completionHandler(.allow)
     }
 
-    public func urlSession(
+    fileprivate func urlSession(
         _ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data
     ) {
         guard let transfer = transfer(dataTask) else { return }
         // Progress, not a wall clock: a large response that keeps arriving keeps
         // both watchdogs alive.
         IdleTimeLimit.touch()
-        idle?.touchIdle()
+        idle?.touchIdle(pluginID: transfer.request.pluginID)
         let room = transfer.request.maxBytes - transfer.body.count
         guard room > 0 else {
             transfer.truncated = true
@@ -360,7 +337,7 @@ extension PluginFetchService: URLSessionDataDelegate {
         }
     }
 
-    public func urlSession(
+    fileprivate func urlSession(
         _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
     ) {
         guard let transfer = finishTransfer(task) else { return }
@@ -390,14 +367,72 @@ extension PluginFetchService: URLSessionDataDelegate {
                     "as: \"file\" needs the \"files\" capability", code: "unavailable-here")))
                 return
             }
-            file = try? writer.writeFile(
-                transfer.body, suggestedName: finalURL.lastPathComponent,
-                mime: headers.first { $0.key.lowercased() == "content-type" }?.value,
-                invocationID: transfer.request.invocationID)
+            do {
+                file = try writer.writeFile(
+                    transfer.body, suggestedName: finalURL.lastPathComponent,
+                    mime: headers.first { $0.key.lowercased() == "content-type" }?.value,
+                    pluginID: transfer.request.pluginID,
+                    generation: transfer.request.invocationID)
+            } catch {
+                transfer.completion(.failure(PluginFetchError(
+                    "the response could not be written to a file: "
+                        + error.localizedDescription,
+                    code: "write-failed")))
+                return
+            }
         }
         transfer.completion(.success(PluginFetchResponse(
             status: response.statusCode, finalURL: finalURL.absoluteString, headers: headers,
             body: transfer.body, truncated: transfer.truncated,
             redirected: transfer.redirected, file: file)))
+    }
+}
+
+/// The sessions' delegate, holding the service weakly.
+///
+/// `URLSession` retains its delegate until it is invalidated, so a service that
+/// was its own delegate could never be released — and
+/// `PluginPlatformComposition.install` builds a fresh service on every run.
+private final class PluginFetchSessionDelegate: NSObject, URLSessionDataDelegate {
+
+    weak var service: PluginFetchService?
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let service else {
+            completionHandler(request)
+            return
+        }
+        service.urlSession(
+            session, task: task, willPerformHTTPRedirection: response, newRequest: request,
+            completionHandler: completionHandler)
+    }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard let service else {
+            completionHandler(.allow)
+            return
+        }
+        service.urlSession(
+            session, dataTask: dataTask, didReceive: response,
+            completionHandler: completionHandler)
+    }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data
+    ) {
+        service?.urlSession(session, dataTask: dataTask, didReceive: data)
+    }
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
+    ) {
+        service?.urlSession(session, task: task, didCompleteWithError: error)
     }
 }

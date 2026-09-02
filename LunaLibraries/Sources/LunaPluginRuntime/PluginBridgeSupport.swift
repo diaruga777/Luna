@@ -14,8 +14,17 @@ import JavaScriptCore
 public protocol PluginCallbackScheduling: AnyObject {
     func schedulePluginCallback(_ work: @escaping () -> Void)
     /// Records that the plugin is still doing useful work, so an idle-budgeted
-    /// hook is not abandoned mid-fetch.
-    func notePluginActivity()
+    /// hook is not abandoned mid-fetch. A nil `pluginID` touches every plugin
+    /// in flight, which is what a bridge that cannot name one must ask for.
+    func notePluginActivity(pluginID: String?)
+    /// Hands over a promise no bridge has settled yet. The runtime releases its
+    /// two `JSValue`s when the plugin's last call is abandoned, so an unsettled
+    /// bridge cannot pin the plugin's `JSContext` for the life of the process.
+    func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?)
+}
+
+public extension PluginCallbackScheduling {
+    func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?) {}
 }
 
 /// Runs a callback on the calling thread. A caller driving one context by hand
@@ -23,7 +32,7 @@ public protocol PluginCallbackScheduling: AnyObject {
 public final class ImmediatePluginCallbackScheduler: PluginCallbackScheduling {
     public init() {}
     public func schedulePluginCallback(_ work: @escaping () -> Void) { work() }
-    public func notePluginActivity() {}
+    public func notePluginActivity(pluginID: String?) {}
 }
 
 /// The value conversions every bridge does at the JavaScript boundary.
@@ -120,23 +129,49 @@ public final class PluginPromiseBox {
     private var resolve: JSValue?
     private var reject: JSValue?
     private let scheduler: PluginCallbackScheduling
+    private let pluginID: String?
     private let lock = NSLock()
 
-    private init(scheduler: PluginCallbackScheduling) { self.scheduler = scheduler }
+    private init(scheduler: PluginCallbackScheduling, pluginID: String?) {
+        self.scheduler = scheduler
+        self.pluginID = pluginID
+    }
 
     /// Makes a pending promise in `context` and the box that settles it.
+    ///
+    /// A bridge that names its plugin gets two things: its idle touches reach
+    /// that plugin's in-flight calls, and an abandoned call releases the box's
+    /// settle functions.
     public static func make(
-        in context: JSContext, scheduler: PluginCallbackScheduling
+        in context: JSContext, scheduler: PluginCallbackScheduling, pluginID: String? = nil
     ) -> (promise: JSValue, box: PluginPromiseBox) {
-        let box = PluginPromiseBox(scheduler: scheduler)
+        let box = PluginPromiseBox(scheduler: scheduler, pluginID: pluginID)
         let promise = JSValue(newPromiseIn: context) { resolve, reject in
             box.resolve = resolve
             box.reject = reject
         }
+        scheduler.trackPendingPromise(box, pluginID: pluginID)
         return (promise ?? JSValue(undefinedIn: context), box)
     }
 
     public func fulfill(_ value: Any) { settle(value, rejecting: false) }
+
+    /// Fulfils with JavaScript `undefined` rather than `null`. A key that holds
+    /// nothing and a key holding a stored `null` must answer differently.
+    public func fulfillUndefined() { settle(PluginPromiseBox.undefined, rejecting: false) }
+
+    /// Releases the settle functions of a promise nothing will settle.
+    func discard() {
+        lock.lock()
+        resolve = nil
+        reject = nil
+        lock.unlock()
+    }
+
+    /// The marker `fulfillUndefined` settles with, turned into the calling
+    /// context's own `undefined` at settle time.
+    private enum Undefined { case value }
+    private static let undefined = Undefined.value
 
     /// Rejects with a `LunaError` carrying `code`, so a plugin can branch on the
     /// reason rather than on a message it has to match by text.
@@ -145,7 +180,7 @@ public final class PluginPromiseBox {
     }
 
     private func settle(_ value: Any, rejecting: Bool) {
-        scheduler.notePluginActivity()
+        scheduler.notePluginActivity(pluginID: pluginID)
         scheduler.schedulePluginCallback { [self] in
             lock.lock()
             let function = rejecting ? reject : resolve
@@ -159,6 +194,8 @@ public final class PluginPromiseBox {
                     code: object["code"] as? String ?? "bridge-failed",
                     message: object["message"] as? String ?? "", in: context)
                 function.call(withArguments: [error as Any])
+            } else if value is Undefined {
+                function.call(withArguments: [JSValue(undefinedIn: context) as Any])
             } else {
                 function.call(withArguments: [value])
             }

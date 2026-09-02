@@ -26,17 +26,16 @@ public struct PluginCollectionDocument: Equatable, Sendable {
 /// plugin-scoped document collections.
 ///
 /// Every row carries the plugin id, so two plugins may use the same key or
-/// collection name and never see each other's rows. Plugin SETTINGS live in the
-/// same table under `settings.<key>`, which is why this type is also the
-/// `PluginSettingsStoring` witness — one table, one place that scopes it.
+/// collection name and never see each other's rows. A plugin SETTINGS value is
+/// a row in the same table under the field's OWN bare key, which is why this
+/// type is also the `PluginSettingsStoring` witness — one table, one place that
+/// scopes it.
 public final class PluginKVStore: PluginSettingsStoring, @unchecked Sendable {
 
     public static let shared = PluginKVStore()
 
     /// The largest value one key may hold (§6.5).
     public static let maxValueBytes = 256 * 1024
-    /// The prefix a settings value is stored under.
-    public static let settingsKeyPrefix = "settings."
 
     private let fileURL: URL?
     private let openLock = NSLock()

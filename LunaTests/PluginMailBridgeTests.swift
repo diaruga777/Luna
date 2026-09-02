@@ -159,7 +159,8 @@ final class PluginMailBridgeTests: XCTestCase {
     func testAnAttachmentComesOffDiskThroughItsHandle() async throws {
         let descriptor = try scratch.writeFile(
             Data("book-bytes".utf8), suggestedName: "Article.epub",
-            mime: "application/epub+zip", invocationID: "one")
+            mime: "application/epub+zip", pluginID: Self.pluginID,
+            generation: "one")
         try install("""
             await luna.mail.send({
                 to: ["reader@example.com"],

@@ -307,54 +307,6 @@ final class PluginFetchTests: XCTestCase {
         XCTAssertEqual(response?.body.count, 100)
     }
 
-    func testBrowserCookiesWithNoWitnessRefuseRatherThanFallBackToTheSharedJar() {
-        let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
-        let expectation = expectation(description: "the request is refused")
-        var error: PluginFetchError?
-
-        service.fetch(PluginFetchRequest(
-            url: URL(string: "https://example.com/x")!, cookies: .browser)
-        ) { outcome in
-            if case .failure(let failure) = outcome { error = failure }
-            expectation.fulfill()
-        }
-        wait(for: [expectation], timeout: 10)
-
-        XCTAssertEqual(error?.code, "unavailable-here")
-        XCTAssertTrue(PluginStubURLProtocol.requests.isEmpty)
-    }
-
-    func testBrowserCookiesReachTheRequestAsACookieHeaderWhenAWitnessIsInstalled() {
-        let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
-        service.browserCookies = StubBrowserCookieProvider(header: "sid=abc")
-        PluginStubURLProtocol.respond(to: "https://example.com/x", status: 200, body: "")
-        let expectation = expectation(description: "the request completes")
-
-        service.fetch(PluginFetchRequest(
-            url: URL(string: "https://example.com/x")!, cookies: .browser)
-        ) { _ in expectation.fulfill() }
-        wait(for: [expectation], timeout: 10)
-
-        XCTAssertEqual(
-            PluginStubURLProtocol.requests.first?.value(forHTTPHeaderField: "Cookie"), "sid=abc")
-    }
-}
-
-/// Hands over one fixed cookie, so the `browser` policy can be asserted without
-/// a web view.
-private final class StubBrowserCookieProvider: PluginBrowserCookieProviding {
-    private let header: String
-
-    init(header: String) { self.header = header }
-
-    func browserCookies(for url: URL, completion: @escaping ([HTTPCookie]) -> Void) {
-        let parts = header.split(separator: "=", maxSplits: 1).map(String.init)
-        let cookie = HTTPCookie(properties: [
-            .name: parts.first ?? "", .value: parts.last ?? "",
-            .domain: url.host ?? "", .path: "/",
-        ])
-        completion([cookie].compactMap { $0 })
-    }
 }
 
 /// Answers `PluginFetchService`'s requests from a table and records what it was

@@ -20,26 +20,26 @@ import SwiftSoup
 /// false in the other. Every member that may find nothing therefore answers a
 /// `JSValue` built in the caller's own context.
 @objc protocol PluginHTMLNodeExports: JSExport {
-    func querySelector(_ css: String) -> JSValue
+    func querySelector(_ css: String) -> JSValue?
     func querySelectorAll(_ css: String) -> [PluginHTMLNodeHandle]
-    func getAttribute(_ name: String) -> JSValue
+    func getAttribute(_ name: String) -> JSValue?
     func hasAttribute(_ name: String) -> Bool
     func matches(_ css: String) -> Bool
-    func closest(_ css: String) -> JSValue
+    func closest(_ css: String) -> JSValue?
     /// Resolves an `href`/`src`-style attribute against `baseURI`.
-    func absoluteURL(_ attribute: String) -> JSValue
+    func absoluteURL(_ attribute: String) -> JSValue?
     var textContent: String { get }
     var innerHTML: String { get }
     var outerHTML: String { get }
     var children: [PluginHTMLNodeHandle] { get }
-    var parentElement: JSValue { get }
+    var parentElement: JSValue? { get }
     var tagName: String { get }
     var attributes: [String: String] { get }
     var baseURI: String { get }
     var title: String { get }
-    var documentElement: JSValue { get }
-    var body: JSValue { get }
-    var head: JSValue { get }
+    var documentElement: JSValue? { get }
+    var body: JSValue? { get }
+    var head: JSValue? { get }
 }
 
 /// One node a plugin holds. It wraps a SwiftSoup element; the document is the
@@ -55,7 +55,7 @@ import SwiftSoup
 
     // MARK: - Queries
 
-    public func querySelector(_ css: String) -> JSValue {
+    public func querySelector(_ css: String) -> JSValue? {
         Self.value((try? element.select(css).first()).map(PluginHTMLNodeHandle.init))
     }
 
@@ -68,7 +68,7 @@ import SwiftSoup
         (try? element.iS(css)) ?? false
     }
 
-    public func closest(_ css: String) -> JSValue {
+    public func closest(_ css: String) -> JSValue? {
         var current: Element? = element
         while let node = current {
             if (try? node.iS(css)) == true { return Self.value(PluginHTMLNodeHandle(node)) }
@@ -79,7 +79,7 @@ import SwiftSoup
 
     // MARK: - Attributes
 
-    public func getAttribute(_ name: String) -> JSValue {
+    public func getAttribute(_ name: String) -> JSValue? {
         guard element.hasAttr(name) else { return Self.value(nil) }
         return Self.value((try? element.attr(name)) ?? "")
     }
@@ -88,7 +88,7 @@ import SwiftSoup
         element.hasAttr(name)
     }
 
-    public func absoluteURL(_ attribute: String) -> JSValue {
+    public func absoluteURL(_ attribute: String) -> JSValue? {
         guard element.hasAttr(attribute), let resolved = try? element.absUrl(attribute),
               !resolved.isEmpty
         else { return Self.value(nil) }
@@ -116,7 +116,7 @@ import SwiftSoup
         element.children().array().map(PluginHTMLNodeHandle.init)
     }
 
-    public var parentElement: JSValue {
+    public var parentElement: JSValue? {
         Self.value(element.parent().map(PluginHTMLNodeHandle.init))
     }
 
@@ -132,21 +132,21 @@ import SwiftSoup
         return (try? document.title()) ?? ""
     }
 
-    public var documentElement: JSValue {
+    public var documentElement: JSValue? {
         guard let document = element as? Document,
               let root = try? document.select("html").first()
         else { return Self.value(nil) }
         return Self.value(PluginHTMLNodeHandle(root))
     }
 
-    public var body: JSValue {
+    public var body: JSValue? {
         guard let document = element as? Document, let body = document.body() else {
             return Self.value(nil)
         }
         return Self.value(PluginHTMLNodeHandle(body))
     }
 
-    public var head: JSValue {
+    public var head: JSValue? {
         guard let document = element as? Document, let head = document.head() else {
             return Self.value(nil)
         }
@@ -154,8 +154,12 @@ import SwiftSoup
     }
 
     /// A value in the CALLING context, so nothing reads as `undefined`.
-    private static func value(_ object: Any?) -> JSValue {
-        let context = JSContext.current() ?? JSContext()!
+    ///
+    /// A bare `JSContext()` would mint a whole new virtual machine, and the
+    /// value it returned would belong to a machine the plugin's context cannot
+    /// read. A member read outside a JS call answers `undefined` instead.
+    private static func value(_ object: Any?) -> JSValue? {
+        guard let context = JSContext.current() else { return nil }
         guard let object else { return JSValue(nullIn: context) }
         return JSValue(object: object, in: context) ?? JSValue(nullIn: context)
     }

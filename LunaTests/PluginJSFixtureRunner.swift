@@ -14,8 +14,8 @@ import XCTest
 /// Runs plugin JavaScript in `LunaTests` the way the app runs it.
 ///
 /// Everything the app wires at launch is wired here from the SAME types: a real
-/// `PluginStore` on a scratch directory, a real `PluginRuntime` on an isolated
-/// virtual machine, and the shipped bridges — with a stub network unless the
+/// `PluginStore` on a scratch directory, a real `PluginRuntime`, a real
+/// `PluginScratchStore` and the shipped bridges — with a stub network unless the
 /// test hands one over. So a test asserts on the shipped bridge, not on a
 /// double of it.
 ///
@@ -43,8 +43,7 @@ final class PluginJSFixtureRunner {
     init(
         processKind: PluginProcessKind = .app,
         fetcher: StubPluginFetcher = StubPluginFetcher(),
-        installBridges: Bool = true,
-        virtualMachine: PluginVirtualMachineScope = .processWide
+        installBridges: Bool = true
     ) {
         self.fetcher = fetcher
         containerURL = fileManager.temporaryDirectory
@@ -53,17 +52,17 @@ final class PluginJSFixtureRunner {
         store = PluginStore(rootURL: containerURL.appendingPathComponent("Plugins"))
         kv = PluginKVStore(fileURL: containerURL.appendingPathComponent("saves.sqlite"))
         scratch = PluginScratchStore(
-            pluginID: "fixture", rootURL: containerURL.appendingPathComponent("scratch"))
+            rootURL: containerURL.appendingPathComponent("scratch"))
         runtime = PluginRuntime(
             store: store,
             bundled: BundledPluginCatalog(bundle: nil, store: store),
             capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind),
             diagnostics: DiscardedPluginDiagnostics(),
-            virtualMachine: virtualMachine)
+            scratch: scratch)
         guard installBridges else { return }
         capabilities.register(PluginFetchBridge(
-            fetcher: fetcher, scheduler: runtime,
+            fetcher: fetcher, scheduler: runtime, files: scratch,
             diagnostics: DiscardedPluginDiagnostics()))
         capabilities.register(PluginHTMLBridge())
         capabilities.register(PluginStorageBridge(store: kv, scheduler: runtime))

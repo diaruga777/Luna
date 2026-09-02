@@ -38,7 +38,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let get: @convention(block) (String?) -> JSValue? = { key in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let key, !key.isEmpty else {
                 box.fail("luna.storage.get needs a key", code: "bad-argument")
                 return promise
@@ -47,7 +48,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 guard let json = store.valueJSON(pluginID: pluginID, key: key) else {
                     // `undefined` is the answer for a key that holds nothing;
                     // `null` is a value a plugin may have stored on purpose.
-                    box.fulfill(NSNull())
+                    // The Safari relay answers the same way.
+                    box.fulfillUndefined()
                     return
                 }
                 box.fulfill(PluginBridgeValue.jsonValue(json) ?? NSNull())
@@ -57,7 +59,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let set: @convention(block) (String?, JSValue?) -> JSValue? = { key, value in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let key, !key.isEmpty else {
                 box.fail("luna.storage.set needs a key", code: "bad-argument")
                 return promise
@@ -80,7 +83,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let remove: @convention(block) (String?) -> JSValue? = { key in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let key, !key.isEmpty else {
                 box.fail("luna.storage.delete needs a key", code: "bad-argument")
                 return promise
@@ -94,7 +98,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let keys: @convention(block) (JSValue?) -> JSValue? = { prefix in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             let text = PluginBridgeValue.optionalString(prefix)
             workQueue.async {
                 box.fulfill(store.keys(pluginID: pluginID, prefix: text))
@@ -105,8 +110,13 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
         let collection: @convention(block) (String?) -> JSValue? = { name in
             let context = JSContext.current() ?? outerContext
             guard let name, !name.isEmpty else {
-                PluginBridgeValue.raise("luna.storage.collection needs a name", in: context)
-                return nil
+                // Every other failure of a `luna.storage` call is a rejected
+                // `LunaError`, so this one is too rather than a bare synchronous
+                // throw a plugin cannot read a code off.
+                let (promise, box) = PluginPromiseBox.make(
+                    in: context, scheduler: scheduler, pluginID: pluginID)
+                box.fail("luna.storage.collection needs a name", code: "bad-argument")
+                return promise
             }
             return PluginStorageBridge.collectionObject(
                 name: name, pluginID: pluginID, store: store, scheduler: scheduler,
@@ -131,7 +141,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
         let put: @convention(block) (String?, JSValue?, JSValue?) -> JSValue? = {
             id, document, index in
             let context = JSContext.current() ?? context
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let id, !id.isEmpty,
                   let json = PluginBridgeValue.jsonText(document?.toObject())
             else {
@@ -157,7 +168,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let get: @convention(block) (String?) -> JSValue? = { id in
             let context = JSContext.current() ?? context
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let id else {
                 box.fail("collection.get needs an id", code: "bad-argument")
                 return promise
@@ -176,7 +188,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let remove: @convention(block) (String?) -> JSValue? = { id in
             let context = JSContext.current() ?? context
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let id else {
                 box.fail("collection.delete needs an id", code: "bad-argument")
                 return promise
@@ -190,7 +203,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let find: @convention(block) (JSValue?, JSValue?) -> JSValue? = { where_, options in
             let context = JSContext.current() ?? context
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             let keys = PluginBridgeValue.dictionary(where_)
             let opts = PluginBridgeValue.dictionary(options)
             workQueue.async {
@@ -210,7 +224,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
 
         let count: @convention(block) (JSValue?) -> JSValue? = { where_ in
             let context = JSContext.current() ?? context
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             let keys = PluginBridgeValue.dictionary(where_)
             workQueue.async {
                 box.fulfill(store.count(

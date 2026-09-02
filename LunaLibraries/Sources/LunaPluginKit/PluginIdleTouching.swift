@@ -13,5 +13,8 @@ import Foundation
 /// touches it — a 30-second read of a slow server keeps the save alive, and a
 /// plugin that stops asking for anything does not.
 public protocol PluginIdleTouching: AnyObject {
-    func touchIdle()
+    /// `pluginID` names whose in-flight hooks the touch keeps alive. Two hooks
+    /// of one plugin can overlap, and a bridge callback cannot tell which of
+    /// them it belongs to, so both are touched.
+    func touchIdle(pluginID: String)
 }

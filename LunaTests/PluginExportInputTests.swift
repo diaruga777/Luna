@@ -31,7 +31,7 @@ final class PluginExportInputTests: XCTestCase {
         try FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true)
         store = SavesStore(containerURL: containerURL)
         scratch = PluginScratchStore(
-            pluginID: "fixture", rootURL: containerURL.appendingPathComponent("scratch"))
+            rootURL: containerURL.appendingPathComponent("scratch"))
     }
 
     override func tearDown() {
@@ -91,7 +91,7 @@ final class PluginExportInputTests: XCTestCase {
         return try await producer.makeInput(
             saveID: item.id, format: format,
             options: options ?? PluginExportFixtures.export(input: format.rawValue),
-            auto: false, scratch: scratch, invocationID: "one")
+            auto: false, scratch: scratch, pluginID: "test.plugin", generation: "one")
     }
 
     private func data(of handle: PluginExportFileHandle) throws -> Data {
@@ -280,7 +280,8 @@ final class PluginExportInputTests: XCTestCase {
         let producer = PluginExportInputProducer(store: store)
         let input = try await producer.makeInput(
             saveID: ready.id, format: .url, options: PluginExportFixtures.export(input: "url"),
-            auto: true, queuedRemaining: 3, scratch: scratch, invocationID: "one")
+            auto: true, queuedRemaining: 3, scratch: scratch, pluginID: "test.plugin",
+            generation: "one")
 
         XCTAssertEqual(input.saveID, ready.id)
         XCTAssertEqual(input.url, "https://example.com/article")

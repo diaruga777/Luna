@@ -41,6 +41,7 @@ enum KindWiring {
         EmailStageCatalog.install()
         MediaStageCatalog.install()
         ProductStageCatalog.install()
+        PluginStageCatalog.install()
         #endif
 
         // One install call per kind this app handles. What each kind
@@ -136,6 +137,7 @@ enum KindWiring {
             SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
                 DownloadsSettingsScreen()
             },
+            PluginsSettingsCategory.make(),
         ]
     }
 

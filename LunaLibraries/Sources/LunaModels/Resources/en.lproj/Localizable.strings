@@ -1179,6 +1179,12 @@
 /* ===== ShareExtension_rescueFailure — RescueFailureViewController.swift ===== */
 "ShareExtension_rescueFailure_manualInstructionMessage_Luna" = "Open Luna to finish saving this.";
 
+/* ===== PluginBrowser — the plugin browser step and the lock it leaves behind (LunaPluginUI) ===== */
+"PluginBrowser_defaultTitle_Luna" = "Finishing the Save";
+"PluginBrowser_failedMessage_Luna" = "This page didn't get there. Open it in Safari and try the save again.";
+"PluginBrowser_timedOutMessage_Luna" = "This is taking too long. Open the page in Safari and try the save again.";
+"PluginBrowser_workingStatus_Luna" = "Working on it…";
+
 /* ===== Plugins — Settings → Plugins, import, consent, capability copy (LunaPluginUI) ===== */
 "Plugins_aboutSectionHeader_Luna" = "About";
 "Plugins_actionFailedTitle_Luna" = "Couldn't Complete That";

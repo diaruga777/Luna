@@ -150,17 +150,9 @@ public final class PluginUIPresenter: PluginUIPresenting {
         }
     }
 
-    private static func foregroundWindow() -> UIWindow? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        return scene?.windows.first(where: \.isKeyWindow) ?? scene?.windows.first
-    }
+    private static func foregroundWindow() -> UIWindow? { PluginTopPresenter.window() }
 
-    private static func topViewController() -> UIViewController? {
-        var top = foregroundWindow()?.rootViewController
-        while let presented = top?.presentedViewController { top = presented }
-        return top
-    }
+    private static func topViewController() -> UIViewController? { PluginTopPresenter.current() }
 }
 
 /// `PluginUIPresenter`'s own copy, kept out of `L10n` on purpose: "OK" and

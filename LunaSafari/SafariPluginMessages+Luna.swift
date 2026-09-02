@@ -47,6 +47,16 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
 
     private let fetchService = PluginFetchService()
 
+    /// The enabled set, read once and kept for the life of the appex process.
+    /// Every `plugins.*` message otherwise rescans the store's directory and
+    /// re-parses every manifest, and one classify makes twenty of them inside
+    /// an ~80 MB appex whose message chain blocks the page.
+    /// `plugins.catalog` — the page's FIRST message, and the one that builds
+    /// the stamp the content script caches by — rebuilds it, so a plugin the
+    /// user enabled or removed in the app is picked up on the next page.
+    private var cachedEnabledPlugins: [InstalledPlugin]?
+    private let cacheLock = NSLock()
+
     /// This type is compiled only into the central appex, so being reached at
     /// all IS the "central host" signal — no bundle-id check needed here.
     var supportsPlugins: Bool { true }
@@ -99,6 +109,16 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         return true
     }
 
+    /// The plugin is installed and enabled but never declared the capability
+    /// this message needs. Reserved for exactly that: a malformed message
+    /// answers `bad-argument` instead, so an author debugging a typo is not
+    /// told their manifest is wrong.
+    private static let notDeclared: [String: Any] = ["error": "capability-not-declared"]
+
+    private static func badArgument(_ detail: String) -> [String: Any] {
+        ["error": "bad-argument", "message": detail]
+    }
+
     private func complete(_ context: NSExtensionContext, with payload: [String: Any]) {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: payload]
@@ -118,12 +138,17 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     /// Bundled plugins plus imported ones, imported wins on a shared id,
     /// disabled plugins dropped. The content script never sees a plugin the
     /// user (or a repeated timeout) turned off.
-    private func enabledPlugins() -> [InstalledPlugin] {
+    private func enabledPlugins(rescanning: Bool = false) -> [InstalledPlugin] {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if !rescanning, let cachedEnabledPlugins { return cachedEnabledPlugins }
         let installed = PluginStore.shared.installedPlugins()
         let bundledCatalog = BundledPluginCatalog(
             bundle: bundledPluginsResourceBundle, subdirectory: "Plugins")
-        return (bundledCatalog.plugins(shadowedBy: installed) + installed)
+        let enabled = (bundledCatalog.plugins(shadowedBy: installed) + installed)
             .filter(\.state.isEnabled)
+        cachedEnabledPlugins = enabled
+        return enabled
     }
 
     private func enabledPlugin(id: String) -> InstalledPlugin? {
@@ -143,7 +168,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     /// randomized per launch, so a real digest would invalidate every page's
     /// cache on every relaunch for no reason.
     private func pluginCatalogPayload() -> [String: Any] {
-        let plugins = enabledPlugins().filter(\.manifest.isIngestPlugin)
+        let plugins = enabledPlugins(rescanning: true).filter(\.manifest.isIngestPlugin)
         let stamp = plugins
             .map { "\($0.id)@\($0.manifest.version.description)" }
             .sorted()
@@ -185,7 +210,7 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
             return
         }
         guard pluginDeclares(id: id, capability: .fetch) else {
-            complete(context, with: ["error": "capability-not-declared"])
+            complete(context, with: Self.notDeclared)
             return
         }
         let request: PluginFetchRequest
@@ -230,72 +255,109 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
 
     // MARK: - Storage
 
+    /// An absent `value` field IS a missing key: the content script reads
+    /// `r.value` off the reply and answers `undefined`, the same answer
+    /// `PluginStorageBridge.get` gives.
     private func pluginStorageGet(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String,
-              pluginDeclares(id: id, capability: .storage), let key = message?["key"] as? String
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let key = message?["key"] as? String, !key.isEmpty
+        else { return Self.badArgument("luna.storage.get needs a key") }
         guard let json = PluginKVStore.shared.valueJSON(pluginID: id, key: key) else { return [:] }
         return ["value": Self.nativeValue(fromJSON: json) as Any]
     }
 
+    /// `undefined` is not a value, and a native message drops an undefined
+    /// field — so an absent `value` IS `luna.storage.set(key, undefined)`,
+    /// which `PluginStorageBridge.set` rejects `bad-argument` too. A row over
+    /// the cap answers `too-large` rather than `ok: false`, which the content
+    /// script used to read as a successful write.
     private func pluginStorageSet(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String,
-              pluginDeclares(id: id, capability: .storage), let key = message?["key"] as? String,
-              let json = Self.jsonString(fromNativeValue: message?["value"])
-        else { return ["error": "capability-not-declared"] }
-        let ok = PluginKVStore.shared.setValueJSON(json, pluginID: id, key: key, now: Date())
-        return ["ok": ok]
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let key = message?["key"] as? String, !key.isEmpty
+        else { return Self.badArgument("luna.storage.set needs a key") }
+        guard let value = message?["value"] else {
+            return Self.badArgument(
+                "luna.storage.set needs a value; use delete to remove a key")
+        }
+        guard let json = Self.jsonString(fromNativeValue: value) else {
+            return Self.badArgument("luna.storage.set needs a JSON value")
+        }
+        guard PluginKVStore.shared.setValueJSON(json, pluginID: id, key: key, now: Date()) else {
+            return [
+                "error": "too-large",
+                "message": "the value is larger than the "
+                    + "\(PluginKVStore.maxValueBytes / 1024) KB one key may hold",
+            ]
+        }
+        return ["ok": true]
     }
 
     private func pluginStorageDelete(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String,
-              pluginDeclares(id: id, capability: .storage), let key = message?["key"] as? String
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let key = message?["key"] as? String, !key.isEmpty
+        else { return Self.badArgument("luna.storage.delete needs a key") }
         _ = PluginKVStore.shared.setValueJSON(nil, pluginID: id, key: key, now: Date())
         return ["ok": true]
     }
 
     private func pluginStorageKeys(message: [String: Any]?) -> [String: Any] {
         guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
-        else { return ["error": "capability-not-declared"] }
+        else { return Self.notDeclared }
         return ["keys": PluginKVStore.shared.keys(pluginID: id, prefix: message?["prefix"] as? String)]
     }
 
     private func pluginCollectionPut(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage),
-              let collection = message?["collection"] as? String,
-              let docID = message?["docId"] as? String,
-              let json = Self.jsonString(fromNativeValue: message?["doc"] ?? [String: Any]())
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let collection = message?["collection"] as? String, !collection.isEmpty,
+              let docID = message?["docId"] as? String, !docID.isEmpty
+        else { return Self.badArgument("a collection put needs a collection and a document id") }
+        guard let json = Self.jsonString(fromNativeValue: message?["doc"] ?? [String: Any]())
+        else { return Self.badArgument("a collection document must be JSON") }
         let document = PluginCollectionDocument(
             id: docID, json: json, k1: message?["k1"] as? String, k2: message?["k2"] as? String)
-        return ["ok": PluginKVStore.shared.putDocument(document, collection: collection, pluginID: id)]
+        guard PluginKVStore.shared.putDocument(document, collection: collection, pluginID: id)
+        else {
+            return [
+                "error": "too-large",
+                "message": "the document is larger than one row may hold",
+            ]
+        }
+        return ["ok": true]
     }
 
     private func pluginCollectionGet(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage),
-              let collection = message?["collection"] as? String,
-              let docID = message?["docId"] as? String
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let collection = message?["collection"] as? String, !collection.isEmpty,
+              let docID = message?["docId"] as? String, !docID.isEmpty
+        else { return Self.badArgument("a collection get needs a collection and a document id") }
         guard let document = PluginKVStore.shared.document(id: docID, collection: collection, pluginID: id)
         else { return [:] }
         return ["doc": Self.nativeValue(fromJSON: document.json) as Any]
     }
 
+    /// Removing a document that was never there is not a failure — the
+    /// JavaScriptCore bridge resolves either way — so the reply is always
+    /// `ok`, and `ok: false` stays a signal the content script may reject on.
     private func pluginCollectionDelete(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage),
-              let collection = message?["collection"] as? String,
-              let docID = message?["docId"] as? String
-        else { return ["error": "capability-not-declared"] }
-        return [
-            "ok": PluginKVStore.shared.removeDocument(id: docID, collection: collection, pluginID: id),
-        ]
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let collection = message?["collection"] as? String, !collection.isEmpty,
+              let docID = message?["docId"] as? String, !docID.isEmpty
+        else { return Self.badArgument("a collection delete needs a collection and a document id") }
+        _ = PluginKVStore.shared.removeDocument(id: docID, collection: collection, pluginID: id)
+        return ["ok": true]
     }
 
     private func pluginCollectionFind(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage),
-              let collection = message?["collection"] as? String
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let collection = message?["collection"] as? String, !collection.isEmpty
+        else { return Self.badArgument("a collection find needs a collection") }
         let documents = PluginKVStore.shared.find(
             collection: collection, pluginID: id,
             k1: message?["k1"] as? String, k2: message?["k2"] as? String,
@@ -304,9 +366,10 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     }
 
     private func pluginCollectionCount(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage),
-              let collection = message?["collection"] as? String
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
+        else { return Self.notDeclared }
+        guard let collection = message?["collection"] as? String, !collection.isEmpty
+        else { return Self.badArgument("a collection count needs a collection") }
         return [
             "count": PluginKVStore.shared.count(
                 collection: collection, pluginID: id,
@@ -316,36 +379,51 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
 
     // MARK: - Log / settings / browser / queueModel
 
-    /// Always present at the bridge (§6.1) — logging needs no capability.
+    /// Always present at the bridge (§5) — logging needs no capability. It
+    /// still needs a PLUGIN: the id names a category in the shared diagnostic
+    /// log, so an id no enabled plugin owns writes nothing.
     private func pluginLog(message: [String: Any]?) {
-        guard let id = message?["id"] as? String, let text = message?["message"] as? String
+        guard let id = message?["id"] as? String, enabledPlugin(id: id) != nil,
+              let text = message?["message"] as? String
         else { return }
         DiagnosticLog.shared.record(text, category: "plugin.\(id)")
     }
 
-    /// A field marked secret answers `""` once set and never the value it
-    /// holds (§6.11) — the plugin gets to know a key exists, not what it is.
+    /// The stored value, or the manifest field's own default — the answer
+    /// `PluginSettingsBridge.value` gives in the app, so a plugin reading a
+    /// setting nobody has touched works the same on both surfaces. A field
+    /// marked secret answers `""` once set and never the value it holds
+    /// (§5.4): the plugin gets to know a key exists, not what it is.
     private func pluginSettingsGet(message: [String: Any]?) -> [String: Any] {
         guard let id = message?["id"] as? String,
-              pluginDeclares(id: id, capability: .settings), let key = message?["key"] as? String,
-              let plugin = enabledPlugin(id: id)
-        else { return ["error": "capability-not-declared"] }
-        let field = plugin.manifest.settings.first { $0.key == key }
+              pluginDeclares(id: id, capability: .settings), let plugin = enabledPlugin(id: id)
+        else { return Self.notDeclared }
+        guard let key = message?["key"] as? String, !key.isEmpty
+        else { return Self.badArgument("luna.settings.get needs a key") }
         let stored = PluginKVStore.shared.valueJSON(pluginID: id, key: key)
-        if field?.isSecret == true {
+        // A key starting with `_` is Luna's own, is never declared, and has no
+        // default — it answers whatever is stored.
+        guard !key.hasPrefix("_") else {
+            guard let stored else { return [:] }
+            return ["value": Self.nativeValue(fromJSON: stored) as Any]
+        }
+        guard let field = plugin.manifest.settings.first(where: { $0.key == key })
+        else { return [:] }
+        if field.isSecret {
             return stored != nil ? ["value": ""] : [:]
         }
-        guard let stored else { return [:] }
-        return ["value": Self.nativeValue(fromJSON: stored) as Any]
+        guard let json = stored ?? field.defaultJSON else { return [:] }
+        return ["value": Self.nativeValue(fromJSON: json) as Any]
     }
 
     /// No save exists yet in Safari (§8.2): the plugin's `luna.browser.open`
     /// always rejects, and the deep link it hands back starts a fresh save in
     /// the app, which reaches the real browser modal with the user present.
     private func pluginBrowserDeferred(message: [String: Any]?) -> [String: Any] {
-        guard let id = message?["id"] as? String, let urlString = message?["url"] as? String,
-              pluginDeclares(id: id, capability: .browser)
-        else { return ["error": "capability-not-declared"] }
+        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .browser)
+        else { return Self.notDeclared }
+        guard let urlString = message?["url"] as? String, !urlString.isEmpty
+        else { return Self.badArgument("luna.browser.open needs a url") }
         let encoded = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
         return ["openLuna": "\(hostScheme)://save?url=\(encoded)"]
     }

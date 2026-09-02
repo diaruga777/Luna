@@ -16,12 +16,17 @@ var LunaPluginHost = (function () {
 
     // ---------------------------------------------------------------- errors
 
+    /// `(code, message, details)`, character for character the constructor
+    /// `PluginBootstrapScript.swift` declares for the JavaScriptCore backing
+    /// and `bridge.mjs` for the node harness. A plugin branching on
+    /// `error.code` reads the same thing in every process;
+    /// `PluginBridgeParityTests` pins the three to each other.
     class LunaError extends Error {
-        constructor(message, code, details) {
-            super(message);
+        constructor(code, message, details) {
+            super(message === undefined || message === null ? String(code) : String(message));
             this.name = "LunaError";
-            this.code = code || "error";
-            if (details !== undefined) { this.details = details; }
+            this.code = String(code);
+            this.details = details;
         }
     }
 
@@ -221,6 +226,39 @@ var LunaPluginHost = (function () {
         };
     }
 
+    /// A messaging failure as a `LunaError`. A plugin catches one code shape
+    /// off every `luna.*` call, never a bare `Error` from WebKit's own
+    /// `sendMessage`.
+    function relayFailure(error) {
+        if (error instanceof LunaError) { return error; }
+        return new LunaError(
+            "bridge-failed", (error && error.message) || "the app did not answer that call");
+    }
+
+    /// Rejects one call on a namespace this process serves only in part.
+    function refuseHere(namespace, member) {
+        return Promise.reject(new LunaError(
+            "unavailable-here",
+            (member ? "luna." + namespace + "." + member : "luna." + namespace)
+                + " is not available in this process"));
+    }
+
+    /// The stand-in for a capability the plugin DECLARED and Safari cannot
+    /// serve at all. It matches `PluginUnavailableNamespace` in
+    /// `LunaPluginRuntime/PluginCapabilityRegistry.swift`: the Proxy target is
+    /// a FUNCTION, because a namespace may be called directly
+    /// (`luna.fetch(…)`) as well as read from (`luna.storage.get(…)`), and a
+    /// plain object would throw a TypeError the author cannot branch on.
+    function unavailableNamespace(name) {
+        return new Proxy(function () {}, {
+            apply: function () { return refuseHere(name, null); },
+            get: function (_target, property) {
+                if (property === "then") { return undefined; }
+                return function () { return refuseHere(name, String(property)); };
+            },
+        });
+    }
+
     // --------------------------------------------------------- localization
 
     /// Resolves a `name`/`label`-shaped value the identical way the manifest
@@ -252,6 +290,26 @@ var LunaPluginHost = (function () {
     /// security boundary, it is the plugin's own contract with itself).
     function createBridge(config, sendNative) {
         var send = makeSequencer(sendNative);
+        /// One relayed call. A reply carrying an `error` code, an explicit
+        /// `ok: false` (a storage write whose row was over the cap answers
+        /// that way), or a messaging failure all reject a `LunaError` —
+        /// reading past one let a plugin carry on as though a failed write
+        /// had landed.
+        var relay = function (type, payload) {
+            return send(type, payload).then(function (reply) {
+                if (!reply) {
+                    throw new LunaError("bridge-failed", "the app did not answer that call");
+                }
+                if (reply.error) {
+                    throw new LunaError(reply.error, reply.message || "the app refused that call");
+                }
+                if (reply.ok === false) {
+                    throw new LunaError(
+                        "bridge-failed", reply.message || "the app refused that call");
+                }
+                return reply;
+            }, function (error) { throw relayFailure(error); });
+        };
         var declared = {};
         (config.capabilities || []).forEach(function (name) { declared[name] = true; });
         var registeredHooks = null;
@@ -260,10 +318,10 @@ var LunaPluginHost = (function () {
 
         luna.register = function (hooks) {
             if (registeredHooks) {
-                throw new LunaError("luna.register was called more than once", "already-registered");
+                throw new LunaError("already-registered", "luna.register was called more than once");
             }
             if (!hooks || typeof hooks !== "object") {
-                throw new LunaError("luna.register needs an object of hooks", "invalid-hooks");
+                throw new LunaError("invalid-hooks", "luna.register needs an object of hooks");
             }
             registeredHooks = hooks;
         };
@@ -321,68 +379,89 @@ var LunaPluginHost = (function () {
         }
 
         if (declared.fetch) {
+            // `ok: false` is a real answer here — a 404 whose body the plugin
+            // still reads — so only an `error` code is a rejection.
             luna.fetch = function (request) {
                 var req = typeof request === "string" ? { url: request } : (request || {});
                 return send("plugins.fetch", { id: config.pluginId, request: req })
                     .then(function (response) {
                         if (!response || response.error) {
                             throw new LunaError(
-                                (response && response.message) || "fetch failed",
-                                (response && response.error) || "fetch-failed");
+                                (response && response.error) || "fetch-failed",
+                                (response && response.message) || "the fetch failed");
                         }
                         return response;
-                    });
+                    }, function (error) { throw relayFailure(error); });
             };
         }
 
         if (declared.storage) {
             luna.storage = {
+                // A key that holds nothing answers `undefined`;
+                // `PluginStorageBridge` answers the same, so `null` stays a
+                // value a plugin may have stored on purpose.
                 get: function (key) {
-                    return send("plugins.storage.get", { id: config.pluginId, key: key })
-                        .then(function (r) { return r ? r.value : undefined; });
+                    return relay("plugins.storage.get", { id: config.pluginId, key: key })
+                        .then(function (r) { return r.value; });
                 },
+                // `undefined` is not a value: a native message drops an
+                // undefined field, so this would otherwise reach the store as
+                // JSON null. `PluginStorageBridge.set` rejects it too.
                 set: function (key, value) {
-                    return send("plugins.storage.set", { id: config.pluginId, key: key, value: value })
-                        .then(function () {});
+                    if (value === undefined) {
+                        return Promise.reject(new LunaError(
+                            "bad-argument",
+                            "luna.storage.set needs a value; use delete to remove a key"));
+                    }
+                    return relay(
+                        "plugins.storage.set", { id: config.pluginId, key: key, value: value }
+                    ).then(function () {});
                 },
                 delete: function (key) {
-                    return send("plugins.storage.delete", { id: config.pluginId, key: key })
+                    return relay("plugins.storage.delete", { id: config.pluginId, key: key })
                         .then(function () {});
                 },
                 keys: function (prefix) {
-                    return send("plugins.storage.keys", { id: config.pluginId, prefix: prefix })
-                        .then(function (r) { return (r && r.keys) || []; });
+                    return relay("plugins.storage.keys", { id: config.pluginId, prefix: prefix })
+                        .then(function (r) { return r.keys || []; });
                 },
+                // A nameless collection rejects rather than throwing, so a
+                // plugin reads a code off it — `PluginStorageBridge.collection`
+                // answers a rejected promise from the same call.
                 collection: function (name) {
+                    if (typeof name !== "string" || name === "") {
+                        return Promise.reject(new LunaError(
+                            "bad-argument", "luna.storage.collection needs a name"));
+                    }
                     return {
                         put: function (id, doc, index) {
-                            return send("plugins.collection.put", {
+                            return relay("plugins.collection.put", {
                                 id: config.pluginId, collection: name, docId: id, doc: doc,
                                 k1: index && index.k1, k2: index && index.k2,
                             }).then(function () {});
                         },
                         get: function (id) {
-                            return send("plugins.collection.get", {
+                            return relay("plugins.collection.get", {
                                 id: config.pluginId, collection: name, docId: id,
-                            }).then(function (r) { return r ? r.doc : undefined; });
+                            }).then(function (r) { return "doc" in r ? r.doc : null; });
                         },
                         delete: function (id) {
-                            return send("plugins.collection.delete", {
+                            return relay("plugins.collection.delete", {
                                 id: config.pluginId, collection: name, docId: id,
                             }).then(function () {});
                         },
                         find: function (where, opts) {
-                            return send("plugins.collection.find", {
+                            return relay("plugins.collection.find", {
                                 id: config.pluginId, collection: name,
                                 k1: where && where.k1, k2: where && where.k2,
                                 limit: opts && opts.limit, offset: opts && opts.offset,
-                            }).then(function (r) { return (r && r.items) || []; });
+                            }).then(function (r) { return r.items || []; });
                         },
                         count: function (where) {
-                            return send("plugins.collection.count", {
+                            return relay("plugins.collection.count", {
                                 id: config.pluginId, collection: name,
                                 k1: where && where.k1, k2: where && where.k2,
-                            }).then(function (r) { return (r && r.count) || 0; });
+                            }).then(function (r) { return r.count || 0; });
                         },
                     };
                 },
@@ -391,10 +470,19 @@ var LunaPluginHost = (function () {
 
         if (declared.settings) {
             luna.settings = {
+                // Native answers the manifest field's own default for a key
+                // the user never touched, and `null` for a key the schema does
+                // not declare — the two answers `PluginSettingsBridge.value`
+                // gives in the app.
                 get: function (key) {
-                    return send("plugins.settings.get", { id: config.pluginId, key: key })
-                        .then(function (r) { return r ? r.value : undefined; });
+                    return relay("plugins.settings.get", { id: config.pluginId, key: key })
+                        .then(function (r) { return "value" in r ? r.value : null; });
                 },
+                // Writing a setting from a page would change what the user
+                // sees in Settings from a process they cannot see, and reading
+                // the whole schema has no relay.
+                set: function () { return refuseHere("settings", "set"); },
+                all: function () { return refuseHere("settings", "all"); },
             };
         }
 
@@ -414,11 +502,22 @@ var LunaPluginHost = (function () {
                     return send("plugins.browserDeferred", {
                         id: config.pluginId, url: request && request.url, request: request,
                     }).catch(function () {}).then(function () {
-                        throw new LunaError("browser-deferred", "browser-deferred");
+                        throw new LunaError(
+                            "browser-deferred", "no save exists yet in Safari");
                     });
                 },
             };
         }
+
+        // A capability the plugin DECLARED that no Safari relay serves still
+        // EXISTS, and every call on it rejects `unavailable-here` — the same
+        // contract `PluginUnavailableNamespace` gives the JavaScriptCore
+        // processes, so `error.code` is the one thing a plugin has to handle
+        // rather than a TypeError it cannot catch by code.
+        Object.keys(declared).forEach(function (name) {
+            if (luna[name] !== undefined) { return; }
+            luna[name] = unavailableNamespace(name);
+        });
 
         return luna;
     }

@@ -289,18 +289,24 @@
         if (saved && saved.catch) { saved.catch(function () {}); }
     }
 
-    /// One native round trip per page (§13.1): it always asks, but a page
-    /// that already has a catalog cached from an earlier page in this session
+    /// One native round trip per page (§12.1): it always asks, but a page that
+    /// already has a catalog cached from an earlier page in this session
     /// decides against that cache immediately rather than waiting on the round
-    /// trip, which only refreshes the cache for the NEXT page.
+    /// trip. The reply carries a stamp naming the enabled set, and the cache is
+    /// rewritten only when that stamp differs — so an unchanged set costs no
+    /// `storage.local` write, and a changed one takes effect on the NEXT page
+    /// rather than mid-decision on this one.
     function loadPluginCatalog() {
+        var cachedPromise = getCachedPluginCatalog();
         var refreshed = browser.runtime.sendMessage({ type: "plugins.catalog" }).then(function (resp) {
             if (!resp || !Array.isArray(resp.plugins)) { return null; }
             var fresh = { stamp: resp.stamp || "", plugins: resp.plugins };
-            setCachedPluginCatalog(fresh);
-            return fresh;
+            return cachedPromise.then(function (cached) {
+                if (!cached || cached.stamp !== fresh.stamp) { setCachedPluginCatalog(fresh); }
+                return fresh;
+            });
         }, function () { return null; });
-        return getCachedPluginCatalog().then(function (cached) {
+        return cachedPromise.then(function (cached) {
             if (cached) {
                 refreshed.catch(function () {});
                 return cached;
@@ -394,6 +400,32 @@
         return promise;
     }
 
+    /// The rendered page as a hook sees it (§3.1's `PageSnapshot`). The app's
+    /// ingest stage builds one from what the pipeline fetched and names it
+    /// `fetch`; here the browser already has the real thing, so a plugin need
+    /// not declare `page` or refetch what is on screen. Built at most once per
+    /// URL — `outerHTML` on a heavy page is not free — and never sent
+    /// natively, so the native message ceiling does not apply.
+    var pluginPageSnapshot = null;
+    function pageSnapshotForPlugins() {
+        if (!pluginPageSnapshot || pluginPageSnapshot.url !== location.href) {
+            pluginPageSnapshot = {
+                url: location.href,
+                html: document.documentElement ? document.documentElement.outerHTML : "",
+                title: document.title || "",
+                source: "safari"
+            };
+        }
+        return pluginPageSnapshot;
+    }
+
+    /// The classify half of the walk. A claim counts only when the plugin
+    /// DECLARES that kind: `PluginIngestStage.claim` refuses the same claim,
+    /// and the pill is built from the kind, so an undeclared one would offer
+    /// the user a route the app then refuses at `plugins.queueModel`.
+    ///
+    /// The answered walk carries the list it came from and its own place in
+    /// it, so an `ingest` that declines can resume from the next plugin.
     function walkClassify(matched, index) {
         if (index >= matched.length) { return Promise.resolve(null); }
         var meta = matched[index];
@@ -401,11 +433,20 @@
             if (typeof loaded.hooks.classify !== "function") { return walkClassify(matched, index + 1); }
             return withTimeout(
                 Promise.resolve().then(function () {
-                    return loaded.hooks.classify({ url: location.href, context: "safari" });
+                    return loaded.hooks.classify({
+                        url: location.href, page: pageSnapshotForPlugins(), context: "safari"
+                    });
                 }),
                 PLUGIN_CLASSIFY_TIMEOUT_MS
             ).then(function (claim) {
-                if (claim && claim.kind) { return { plugin: meta, claim: claim }; }
+                if (claim && claim.kind && (meta.produces || []).indexOf(claim.kind) >= 0) {
+                    return { plugin: meta, claim: claim, matched: matched, index: index };
+                }
+                if (claim && claim.kind) {
+                    logPluginSkip(
+                        meta.id, "classify",
+                        new Error("claimed " + claim.kind + ", which it does not declare in produces"));
+                }
                 return walkClassify(matched, index + 1);
             }, function (error) {
                 logPluginSkip(meta.id, "classify", error);
@@ -426,28 +467,45 @@
         }, function () { return null; });
     }
 
-    /// Runs the claiming plugin's `ingest` hook. Resolves to `{ model, raw }`
+    /// Runs ONE plugin's `ingest` hook. Resolves to `{ model, raw, pluginId }`
     /// on a Model, `null` on a decline (the plugin read the page and passed),
     /// and REJECTS with the `browser-deferred` `LunaError` so the caller can
-    /// route to the save-first hand-off instead of the plain one (§8.2).
-    function runPluginIngestForWalk(walk, url, reason) {
+    /// route to the save-first hand-off instead of the plain one (§7.2).
+    function runPluginIngestOnce(walk, url, reason) {
         return loadPluginRuntime(walk.plugin).then(function (loaded) {
             if (typeof loaded.hooks.ingest !== "function") { return null; }
             return withTimeout(
                 Promise.resolve().then(function () {
                     return loaded.hooks.ingest({
-                        url: url, claim: walk.claim, context: "safari", reason: reason
+                        url: url, claim: walk.claim, page: pageSnapshotForPlugins(),
+                        context: "safari", reason: reason
                     });
                 }),
                 PLUGIN_INGEST_TIMEOUT_MS
             );
         }).then(function (model) {
             if (!model) { return null; }
-            return { model: model, raw: JSON.stringify(model) };
+            return { model: model, raw: JSON.stringify(model), pluginId: walk.plugin.id };
         }, function (error) {
             if (error && error.code === "browser-deferred") { throw error; }
             logPluginSkip(walk.plugin.id, "ingest", error);
             return null;
+        });
+    }
+
+    /// "Claimed, then declined": a plugin that reads the page and answers null
+    /// must not consume the URL. The walk carries on with the NEXT matched
+    /// plugin's `classify`, exactly as `PluginIngestStage` does, and resolves
+    /// to null only once every one of them has passed.
+    function runPluginIngestForWalk(walk, url, reason) {
+        return runPluginIngestOnce(walk, url, reason).then(function (outcome) {
+            if (outcome) { return outcome; }
+            var matched = walk.matched || [];
+            if (walk.index + 1 >= matched.length) { return null; }
+            return walkClassify(matched, walk.index + 1).then(function (nextWalk) {
+                if (!nextWalk) { return null; }
+                return runPluginIngestForWalk(nextWalk, url, reason);
+            });
         });
     }
 
@@ -489,7 +547,7 @@
                     pill.style.pointerEvents = "none";
                 }
                 runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
-                    if (outcome) { return queueModelAndNavigate(walk.plugin.id, outcome.raw, resp); }
+                    if (outcome) { return queueModelAndNavigate(outcome.pluginId, outcome.raw, resp); }
                     window.location.href = pluginSaveDeepLink(resp);
                 }, function (error) {
                     if (error && error.code === "browser-deferred") {
@@ -515,12 +573,17 @@
         };
         if (resp && resp.videoPlayer === false) { return handoff; }
         var pendingModelJSON = null;
+        // The walk may carry on past the claiming plugin when its `ingest`
+        // declines, so the Model is queued against whichever plugin produced
+        // it rather than whichever one claimed the page.
+        var pendingModelPluginId = walk.plugin.id;
         var resolveMedia = function (url) {
             return runPluginIngestForWalk(walk, url, "save").then(function (outcome) {
                 if (!outcome || outcome.model.kind !== "media" || !Array.isArray(outcome.model.assets)) {
                     return { assets: [] };
                 }
                 pendingModelJSON = outcome.raw;
+                pendingModelPluginId = outcome.pluginId;
                 return {
                     assets: outcome.model.assets.map(function (asset) {
                         var mapped = { url: asset.url, kind: asset.type };
@@ -533,7 +596,8 @@
         var performDownload = function () {
             if (!pendingModelJSON) { return Promise.resolve(null); }
             return browser.runtime.sendMessage({
-                type: "plugins.queueModel", id: walk.plugin.id, url: location.href, model: pendingModelJSON
+                type: "plugins.queueModel", id: pendingModelPluginId, url: location.href,
+                model: pendingModelJSON
             }).then(function (qr) { return (qr && qr.deepLink) || null; }, function () { return null; });
         };
         return {

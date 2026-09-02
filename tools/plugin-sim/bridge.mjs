@@ -15,12 +15,16 @@ import { fetch as undiciFetch } from "undici";
 import { parseHTML } from "linkedom";
 import crypto from "node:crypto";
 
+/// `(code, message, details)`, the same order `PluginBootstrapScript.swift`
+/// declares for the JavaScriptCore backing and `plugin_host.js` for the Safari
+/// content-script world. A plugin branching on `error.code` reads the same
+/// thing here as it does in the app; `PluginBridgeParityTests` pins the three.
 export class LunaError extends Error {
-  constructor(message, code, details) {
-    super(message);
+  constructor(code, message, details) {
+    super(message === undefined || message === null ? String(code) : String(message));
     this.name = "LunaError";
-    this.code = code || "error";
-    if (details !== undefined) this.details = details;
+    this.code = String(code);
+    this.details = details;
   }
 }
 
@@ -238,13 +242,13 @@ export function makeFiles() {
       async write(name, data, mime) { return handle(write(name, data, mime)); },
       async read(h, as) {
         const entry = files.get(h?.id);
-        if (!entry) throw new LunaError("that file is gone", "not-found");
+        if (!entry) throw new LunaError("not-found", "that file is gone");
         if (as === "base64") return entry.bytes.toString("base64");
         return entry.bytes.toString("utf8");
       },
       async size(h) {
         const entry = files.get(h?.id);
-        if (!entry) throw new LunaError("that file is gone", "not-found");
+        if (!entry) throw new LunaError("not-found", "that file is gone");
         return entry.size;
       },
       // The harness's own way in: a fixture hands a plugin a file to export.
@@ -274,11 +278,11 @@ function encodeMultipart(parts, boundary, files) {
     let mime = part.mime;
     if (part.file) {
       const entry = files?.entryFor(part.file);
-      if (!entry) throw new LunaError("that file is gone", "not-found");
+      if (!entry) throw new LunaError("not-found", "that file is gone");
       if (entry.size > MAX_FILE_BYTES) {
         throw new LunaError(
-          `a multipart file part may be at most ${MAX_FILE_BYTES / (1024 * 1024)} MB`,
-          "too-large");
+          "too-large",
+          `a multipart file part may be at most ${MAX_FILE_BYTES / (1024 * 1024)} MB`);
       }
       content = entry.bytes;
       filename = filename ?? entry.name;
@@ -309,7 +313,7 @@ function fetchFactory(fetchImpl, files) {
     if (req.userAgent && !headers["User-Agent"]) headers["User-Agent"] = req.userAgent;
     if (req.cookies && !["shared", "ephemeral", "none"].includes(req.cookies)) {
       throw new LunaError(
-        'cookies must be "shared", "ephemeral" or "none"', "bad-argument");
+        "bad-argument", 'cookies must be "shared", "ephemeral" or "none"');
     }
     let body;
     if (typeof req.body === "string") body = req.body;
@@ -345,7 +349,7 @@ function fetchFactory(fetchImpl, files) {
     else if (req.as === "file") {
       if (!files) {
         throw new LunaError(
-          'as: "file" needs the "files" capability', "unavailable-here");
+          "unavailable-here", 'as: "file" needs the "files" capability');
       }
       const name = new URL(result.url).pathname.split("/").pop() || "file";
       result.file = files.api.put(
@@ -355,13 +359,59 @@ function fetchFactory(fetchImpl, files) {
   };
 }
 
+// -------------------------------------------------------------- luna.settings
+
+/// `luna.settings` over the manifest's own `settings` array, applying the three
+/// rules `PluginSettingsBridge` applies in the app: an unset field reads its
+/// declared `default`, a `secret` field reads back `""` once set and never the
+/// value it holds, and `set` on a key the schema does not declare rejects
+/// `bad-argument`. A key starting with `_` is Luna's own — a manifest can never
+/// declare one, and `_status` is how a destination plugin drives its share-row
+/// dot — so it is read and written without a declaration. A missing value reads
+/// `null`, the answer the app's bridge gives.
+///
+/// Called with no schema the harness stores anything under any key, which is
+/// what a fixture that hands over a bare value map expects.
+function makeSettings(values, schema) {
+  const fields = schema ? new Map(schema.map((field) => [field.key, field])) : null;
+  const read = (key) => {
+    if (!fields) return values.get(key);
+    if (String(key).startsWith("_")) return values.has(key) ? values.get(key) : null;
+    const field = fields.get(key);
+    if (!field) return null;
+    if (field.secret) return values.has(key) ? "" : null;
+    if (values.has(key)) return values.get(key);
+    return field.default === undefined ? null : field.default;
+  };
+  return {
+    get: async (key) => read(key),
+    set: async (key, value) => {
+      if (fields && !String(key).startsWith("_") && !fields.has(key)) {
+        throw new LunaError("bad-argument", `no setting named "${key}" is declared`);
+      }
+      values.set(key, value);
+    },
+    all: async () => {
+      if (!fields) return Object.fromEntries(values);
+      const all = {};
+      for (const field of schema) {
+        const value = read(field.key);
+        if (value !== null && value !== undefined) all[field.key] = value;
+      }
+      return all;
+    },
+  };
+}
+
 // ----------------------------------------------------------------- bridge
 
 /// `config`: `{ pluginId, version, locale, languages?: string[], capabilities:
-/// string[], fetchImpl?, storage?, settings?, downloads? }`. `languages` defaults
-/// to `[locale || "en"]` when omitted. `fetchImpl` lets `run.mjs --fixture`
-/// answer `luna.fetch` from recorded files instead of the network; `downloads`
-/// is the fixed `DownloadJob[]` `luna.downloads` reads.
+/// string[], fetchImpl?, storage?, settings?, settingsSchema?, downloads? }`.
+/// `languages` defaults to `[locale || "en"]` when omitted. `fetchImpl` lets
+/// `run.mjs --fixture` answer `luna.fetch` from recorded files instead of the
+/// network; `settings` is the stored-value `Map` and `settingsSchema` the
+/// manifest's `settings` array those values are read against; `downloads` is
+/// the fixed `DownloadJob[]` `luna.downloads` reads.
 export function createBridge(config = {}) {
   const capabilities = new Set(config.capabilities || []);
   let registeredHooks = null;
@@ -369,10 +419,10 @@ export function createBridge(config = {}) {
 
   luna.register = (hooks) => {
     if (registeredHooks) {
-      throw new LunaError("luna.register was called more than once", "already-registered");
+      throw new LunaError("already-registered", "luna.register was called more than once");
     }
     if (!hooks || typeof hooks !== "object") {
-      throw new LunaError("luna.register needs an object of hooks", "invalid-hooks");
+      throw new LunaError("invalid-hooks", "luna.register needs an object of hooks");
     }
     registeredHooks = hooks;
   };
@@ -421,12 +471,7 @@ export function createBridge(config = {}) {
   }
 
   if (capabilities.has("settings")) {
-    const values = config.settings || new Map();
-    luna.settings = {
-      get: async (key) => values.get(key),
-      set: async (key, value) => { values.set(key, value); },
-      all: async () => Object.fromEntries(values),
-    };
+    luna.settings = makeSettings(config.settings || new Map(), config.settingsSchema);
   }
 
   const files = capabilities.has("files") ? makeFiles() : null;
@@ -446,7 +491,7 @@ export function createBridge(config = {}) {
       jobs: async () => jobs,
       job: async (saveId) => {
         if (typeof saveId !== "string" || !uuidPattern.test(saveId)) {
-          throw new LunaError("luna.downloads.job needs a save id", "bad-argument");
+          throw new LunaError("bad-argument", "luna.downloads.job needs a save id");
         }
         const matches = jobs.filter((job) => job.saveId === saveId);
         return matches.length ? matches[matches.length - 1] : null;
@@ -461,7 +506,8 @@ export function createBridge(config = {}) {
   if (capabilities.has("browser")) {
     luna.browser = {
       async open() {
-        throw new LunaError("luna.browser is not available in the node harness", "unavailable-here");
+        throw new LunaError(
+          "unavailable-here", "luna.browser is not available in the node harness");
       },
     };
   }

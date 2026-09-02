@@ -202,47 +202,50 @@ public final class PluginIngestStage: PluginIngestStaging {
             adopted = await adopter.adopt(product, url: input.url, pluginID: plugin.id)
         }
 
-        switch adopted {
-        case .declined:
-            SaveDiagnostics.record(
-                "plugin \(plugin.id): the \(model.kind.rawValue) adopter kept nothing",
-                category: "plugin")
+        guard let outcome = PluginOutcomeMapping.outcome(
+            from: adopted, productInfo: PluginProductInfoBuilder.make(from:imageURL:))
+        else {
+            // An adopter that kept nothing — because the Model held nothing it
+            // could use, or because it could not read it — leaves the save to
+            // the next matched plugin and then to the Swift classifier.
+            switch adopted {
+            case let .failed(reason):
+                SaveDiagnostics.record(
+                    "plugin \(plugin.id): adoption failed"
+                        + (reason.map { " (\($0))" } ?? "") + " — the walk continues",
+                    category: "plugin")
+            default:
+                SaveDiagnostics.record(
+                    "plugin \(plugin.id): the \(model.kind.rawValue) adopter kept nothing",
+                    category: "plugin")
+            }
             return .continueWalk
-        case let .failed(reason):
-            SaveDiagnostics.record(
-                "plugin \(plugin.id): adoption failed", category: "plugin")
-            return .produced(.failed(reason))
-        case let .media(assets, platform, itemID, _, _):
+        }
+
+        switch (adopted, outcome) {
+        case let (.media(assets, _, _, _, _), _):
             SaveDiagnostics.record(
                 "plugin \(plugin.id): adopted \(assets.count) media asset(s)", category: "plugin")
-            // The same two outcomes the Swift platform path produces, so the
-            // media card, the Live Activity and the auto-download policy see no
-            // difference. `PluginMediaResolver` re-runs the plugin to hand the
-            // download engine these assets.
-            let hasTimeline = assets.contains { $0.kind == .video || $0.kind == .audio }
-            return .produced(
-                hasTimeline
-                    ? .video(platform ?? .web, itemID: itemID)
-                    : .social(platform ?? .web, itemID: itemID))
-        case let .article(content, sourceHTML):
+        case let (_, .article(content, _)):
             SaveDiagnostics.record(
                 "plugin \(plugin.id): adopted an article, \(content.bodyTextLength)ch",
                 category: "plugin")
-            return .produced(.article(content, html: sourceHTML ?? ""))
-        case let .product(productModel, imageURL):
-            let info = PluginProductInfoBuilder.make(from: productModel, imageURL: imageURL)
+        case let (_, .product(info, _)):
             SaveDiagnostics.record(
                 "plugin \(plugin.id): adopted a product, \(info.sellers.count) seller(s)",
                 category: "plugin")
-            return .produced(.product(info, html: ""))
+        default:
+            SaveDiagnostics.record(
+                "plugin \(plugin.id): adopted a \(model.kind.rawValue) Model", category: "plugin")
         }
+        return .produced(outcome)
     }
 
     // MARK: - Helpers
 
-    /// The page the surface already has, as the hooks see it. A capture the
-    /// pipeline made itself and a Safari hand-off both arrive as `fetch` here;
-    /// only the Safari world names itself, and it builds its own snapshot.
+    /// The page the pipeline already fetched, as the hooks see it. This process
+    /// renders nothing, so the snapshot always names `fetch`; the Safari content
+    /// script builds its own and names it `safari` (§12.1).
     private static func snapshot(of input: IngestInput) -> PluginPageSnapshot? {
         guard let html = input.page.html else { return nil }
         return PluginPageSnapshot(url: input.url.absoluteString, html: html, source: "fetch")

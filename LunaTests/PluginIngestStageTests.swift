@@ -111,6 +111,32 @@ final class PluginIngestStageTests: XCTestCase {
         }
     }
 
+    /// An adopter answering `.failed` is the same case: the plugin's Model was
+    /// unreadable, and the Swift floor has not had its turn yet.
+    func testAnAdopterFailureDoesNotFailTheSave() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id: "a")]
+        invoker.classifyAnswers["a"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["a"] = .json(Self.mediaModel)
+        adopter.outcome = .failed(.notReadable)
+        guard case .passed = await run(invoker) else { return XCTFail("expected .passed") }
+    }
+
+    func testAnAdopterFailureLetsTheNextMatchedPluginTry() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id: "a"), .fake(id: "b")]
+        invoker.classifyAnswers["a"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["a"] = .json(Self.mediaModel)
+        invoker.classifyAnswers["b"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["b"] = .json(Self.mediaModel)
+        PluginModelAdopters.media = FailingForOnePluginMediaAdopter(failingPluginID: "a")
+
+        guard case let .outcome(_, pluginID) = await run(invoker) else {
+            return XCTFail("expected an outcome")
+        }
+        XCTAssertEqual(pluginID, "b")
+    }
+
     // MARK: - The browser lock
 
     func testBrowserDeferredLocksTheSaveAndNamesTheOwner() async {
@@ -257,6 +283,21 @@ final class PluginIngestStageTests: XCTestCase {
         invoker.ingestAnswers["a"] = .json(Self.mediaModel)
         _ = await run(invoker)
         XCTAssertEqual(invoker.ingestReasons, ["save"])
+    }
+}
+
+/// Fails adoption for one plugin id and adopts for every other, so a test can
+/// watch the walk carry on past a failed adoption.
+private final class FailingForOnePluginMediaAdopter: MediaModelAdopting {
+    private let failingPluginID: String
+
+    init(failingPluginID: String) { self.failingPluginID = failingPluginID }
+
+    func adopt(_ model: MediaModel, url: URL, pluginID: String) async -> PluginAdoptedOutcome {
+        guard pluginID != failingPluginID else { return .failed(.notReadable) }
+        return .media(
+            assets: model.assets.map { MediaAsset(url: $0.url, kind: .video) },
+            platform: .web, itemID: model.itemID, title: model.title, thumbnailURL: nil)
     }
 }
 

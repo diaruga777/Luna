@@ -25,6 +25,16 @@ public final class PluginPriceFetcher: PluginPriceFetching {
     }
 
     public func price(forStoreURL url: URL, pluginID: String) async -> PluginStorePrice? {
+        // A tracker stamps its plugin onto every store it owns, alternative
+        // sellers included, and those sit on hosts the plugin never claimed.
+        // Asking it for a price there either wastes an invocation or lets a lax
+        // plugin report the canonical product's price into a seller's history.
+        guard let host = url.host?.lowercased(), !host.isEmpty,
+              let plugin = invoker.matchedPlugins(forHost: host)
+                  .first(where: { $0.id == pluginID }),
+              plugin.produces.contains(.product)
+        else { return nil }
+
         let answer = await invoker.invoke(
             .ingest, pluginID: pluginID,
             argument: PluginIngestHookInput(

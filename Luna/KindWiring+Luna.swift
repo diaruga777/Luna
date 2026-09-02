@@ -65,6 +65,7 @@ enum KindWiring {
                     + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
             })
         PluginUIComposition.installAppWitnesses()
+        PluginModelDrain.returnOpener = SystemPluginModelReturnOpener()
         // The export tier reads the runtime the call above built, so it comes
         // after it. It also retires the Swift destinations its plugins take
         // over — `KindleDestination` is the Kindle plugin's now.

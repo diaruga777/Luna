@@ -74,6 +74,12 @@ private final class FakeProductAdopter: ProductModelAdopting {
     }
 }
 
+/// The drain's return-to-Safari witness, recording instead of opening.
+private final class RecordingReturnOpener: PluginModelReturnOpening {
+    private(set) var opened: [URL] = []
+    func open(_ url: URL) async { opened.append(url) }
+}
+
 /// Swaps the three handler slots for the duration of one test and restores
 /// them, the `IngestorKindHandlers` twin of `PluginAdopterScope`.
 private struct IngestorHandlerScope {
@@ -165,11 +171,11 @@ final class PluginModelDrainTests: XCTestCase {
     }
 
     func testAnAudiolessMediaOutcomeBecomesASocialOutcomeNotVideo() {
-        let outcome = PluginModelDrain.outcome(
+        let outcome = PluginOutcomeMapping.outcome(
             from: .media(
                 assets: [MediaAsset(url: URL(string: "https://cdn.test/i.jpg")!, kind: .image)],
                 platform: .instagram, itemID: "abc", title: nil, thumbnailURL: nil),
-            productInfoBuilder: productInfoBuilder)
+            productInfo: productInfoBuilder)
         guard case let .social(platform, itemID) = outcome else {
             return XCTFail("expected .social for an image-only asset list")
         }
@@ -217,8 +223,8 @@ final class PluginModelDrainTests: XCTestCase {
     // MARK: - Decline / failure mapping
 
     func testADeclinedOrFailedAdoptionMapsToNoOutcome() {
-        XCTAssertNil(PluginModelDrain.outcome(from: .declined, productInfoBuilder: productInfoBuilder))
-        XCTAssertNil(PluginModelDrain.outcome(from: .failed(nil), productInfoBuilder: productInfoBuilder))
+        XCTAssertNil(PluginOutcomeMapping.outcome(from: .declined, productInfo: productInfoBuilder))
+        XCTAssertNil(PluginOutcomeMapping.outcome(from: .failed(nil), productInfo: productInfoBuilder))
     }
 
     // MARK: - run() drains the whole queue
@@ -242,6 +248,68 @@ final class PluginModelDrainTests: XCTestCase {
         }
         XCTAssertEqual(media.calls.count, 1)
         XCTAssertTrue(pending.peek().isEmpty, "a drained row must not be handled twice")
+    }
+
+    // MARK: - Returning to Safari
+
+    /// The bounce is the hand-off's own marker, not just the deep link's flag:
+    /// a row lives an hour, and a manual launch after the marker expired must
+    /// stay in the app.
+    func testTheDrainReopensTheSourcePageWhileTheReturnMarkerIsFresh() async {
+        let opener = RecordingReturnOpener()
+        PluginModelDrain.returnOpener = opener
+        defer { PluginModelDrain.returnOpener = nil }
+
+        await drainOneRow(returnToSourceUntil: Date().addingTimeInterval(30), opener: opener)
+        XCTAssertEqual(opener.opened.map(\.absoluteString), ["https://example.com/p/abc"])
+    }
+
+    func testAnExpiredReturnMarkerKeepsTheUserInTheApp() async {
+        let opener = RecordingReturnOpener()
+        PluginModelDrain.returnOpener = opener
+        defer { PluginModelDrain.returnOpener = nil }
+
+        await drainOneRow(returnToSourceUntil: Date().addingTimeInterval(-1), opener: opener)
+        XCTAssertTrue(opener.opened.isEmpty)
+    }
+
+    func testARowThatNeverCarriedAReturnMarkerDoesNotBounce() async {
+        let opener = RecordingReturnOpener()
+        PluginModelDrain.returnOpener = opener
+        defer { PluginModelDrain.returnOpener = nil }
+
+        await drainOneRow(returnToSourceUntil: nil, opener: opener)
+        XCTAssertTrue(opener.opened.isEmpty)
+    }
+
+    /// Drains one media row with `ret=safari` set, and waits for the media
+    /// handler to have run — the drain's last step is the bounce, so the
+    /// opener has been called or skipped by then.
+    private func drainOneRow(
+        returnToSourceUntil: Date?, opener: RecordingReturnOpener
+    ) async {
+        PluginModelAdopters.media = FakeMediaAdopter()
+        let media = FakeIngestorMediaHandling()
+        IngestorKindHandlers.media = media
+
+        let pending = PendingPluginModelStore(saves: store)
+        pending.put(PendingPluginModel(
+            urlString: "https://example.com/p/abc",
+            modelJSON: #"{"kind":"media","assets":[{"url":"https://cdn.test/v.mp4","type":"video"}]}"#,
+            pluginID: "app.luna.test", returnToSourceUntil: returnToSourceUntil))
+
+        PluginModelDrain.run(
+            returningToSource: true, productInfoBuilder: productInfoBuilder,
+            pendingStore: pending, store: store, ingestor: ingestor)
+
+        let deadline = Date().addingTimeInterval(5)
+        while media.calls.isEmpty, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        // The open is one hop past the adoption; give that hop a turn.
+        for _ in 0..<10 where opener.opened.isEmpty {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 
     // MARK: - Deep link

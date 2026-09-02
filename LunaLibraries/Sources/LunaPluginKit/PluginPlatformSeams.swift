@@ -248,4 +248,9 @@ public enum PluginPlatformServices {
     public static var catalog: PluginCatalogProviding?
     public static var importer: PluginImporting?
     public static var settings: PluginSettingsStoring?
+    /// The scratch directories this process's `luna.files` is serving. The
+    /// export tier writes a hook's input file into the SAME store: a
+    /// descriptor's id-to-file map is in memory, so a second store could not
+    /// resolve a handle this one handed to the plugin.
+    public static var scratch: PluginScratchStore?
 }

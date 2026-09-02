@@ -17,6 +17,28 @@ No UI taps needed once configured: an incoming article either goes out
 automatically per its capture source (below), or the user sends it explicitly
 from the saves list's long-press menu.
 
+## Where the Kindle destination lives, per app
+
+**Central Luna sends to Kindle through the bundled `kindle.js` plugin**
+(`claudedocs/plans/plugin-platform.md` §9.5); **Luna Reader keeps
+`KindleDestination`**. The plugin keeps the `kindle` destination id
+(`PluginDestinationLegacyIDs`), so everything below — the send states, the
+sent dates, the retry counts, the per-source auto-send toggles — applies to it
+unchanged. What differs in the central app:
+
+- The address and the sender-note toggle are the plugin's own settings, in
+  Settings → Plugins → Kindle. The one-time migration seeds the address from
+  `KindleSendSettings` at launch, and re-seeds it while the plugin's own
+  setting is empty (which is what carries an address typed in Luna Reader
+  across). Editing it in one app after that does not reach the other.
+- The Kindle settings CATEGORY is gone from the central app, so Kindle's
+  auto-send-by-source screen is reachable in Luna Reader only.
+- The EPUB is built by `ExportInputProducer` rather than the coordinator, from
+  the same `EpubBuilder` and the same image preparation.
+- `PluginDestination.isConfigured` still requires a connected account: the
+  plugin declares the `mail` capability, and a mail-sending export plugin is
+  no more configured than the account is.
+
 ## Destinations
 
 `ArticleDestination` (`LunaLibraries/Sources/LunaSend/ArticleSendCoordinator.swift`)

@@ -83,6 +83,34 @@ public final class PluginScratchStore: PluginFileWriting, @unchecked Sendable {
         return PluginFileDescriptor(id: id, name: name, size: data.count, mime: mime)
     }
 
+    /// Takes an EXISTING file into this invocation's directory and describes
+    /// it, without reading it into memory: a media save's download can be
+    /// hundreds of megabytes, and the export hook gets a handle to it rather
+    /// than its bytes. A hard link keeps one copy on disk; a volume that
+    /// refuses one falls back to a copy, and the library's own file is never
+    /// moved.
+    @discardableResult
+    public func adoptFile(
+        at url: URL, suggestedName: String? = nil, mime: String? = nil, invocationID: String
+    ) throws -> PluginFileDescriptor {
+        let directory = directoryURL(invocationID: invocationID)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let name = Self.safeName(suggestedName ?? url.lastPathComponent)
+        let id = UUID().uuidString
+        let destination = directory.appendingPathComponent("\(id)-\(name)")
+        do {
+            try fileManager.linkItem(at: url, to: destination)
+        } catch {
+            try fileManager.copyItem(at: url, to: destination)
+        }
+        let size = (try? fileManager.attributesOfItem(atPath: destination.path)[.size] as? Int)
+            .flatMap { $0 } ?? 0
+        lock.lock()
+        files[id] = destination
+        lock.unlock()
+        return PluginFileDescriptor(id: id, name: name, size: size, mime: mime)
+    }
+
     /// The file a descriptor names, or nil when it was reaped or never written
     /// by this store.
     public func fileURL(for descriptor: PluginFileDescriptor) -> URL? {

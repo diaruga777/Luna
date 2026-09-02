@@ -1425,3 +1425,76 @@ Not reached, and why:
   manifest carries its own setting labels and `xteink.js` its own notification
   text; `L10n` resolves against the app's table and a plugin is not part of it.
   That is the platform's design, and it means plugin copy is not localized.
+
+### Wave 3A landed
+
+§9 runs end to end, and central Luna's Kindle is `kindle.js`. Seven placements
+and departures worth carrying forward.
+
+1. **A plugin destination keeps the id of the Swift destination it replaces.**
+   `PluginDestinationLegacyIDs` maps `app.luna.kindle` → `kindle`, and
+   `PluginExportComposition.install()` retires the Swift `KindleDestination`
+   through `ArticleDestinationRegistry.install(_:replacingBuiltInIDs:)`. §9.4
+   says `id = plugin.id`; that would have orphaned every `send_states` row,
+   sent date and `SourceSendSettings` toggle the store already holds, which
+   reads as "Luna forgot every article it ever sent". A plugin with no entry in
+   the table still delivers under its own id.
+2. **The coordinator calls `deliver(item:context:)`, and the DEFAULT builds
+   the EPUB.** `ArticleSendContext` gained the `SavesStore` for exactly that,
+   so the default implementation reads the store the coordinator was given.
+   The "couldn't build the EPUB" terminal failure is now
+   `ArticleDeliveryError.noArticleContent`, and `SendHardFailureError` is the
+   general marker `isHardFailure` asks — a destination says a failure is
+   terminal rather than having its message pattern-matched.
+3. **`inputOptions.epub.images: false` builds a book with NO pictures**, not
+   just one that skipped the download: `ExportInputProducer
+   .effectiveEpubProfile` maps it to the text-only profile, since embedding
+   whatever happened to be on disk already would answer neither request.
+   `compact` maps to `EpubBuilder.Profile.xteink` as §9.1 says, and
+   `PluginDestination.epubBuildProfile` still reports the DECLARED profile.
+4. **Share rows cross the tiers as VALUES, through `PluginExportSeams`
+   (LunaModels).** `AppReaderProviders`, `MediaCardFactory` and
+   `ProductCardPresenter` compile into Luna Reader, the Downloader and the
+   Price Tracker, and none of those link LunaPluginExport, so they cannot name
+   the export tier at all. `ReaderShareSheet.pluginRows` (LunaSocialUI, which
+   every app links) is the one mapping. `ArticleDestination
+   .providesOwnShareRow` keeps a plugin destination out of
+   `configuredDestinations()`, so the menu cannot offer it twice.
+5. **Two app-only witnesses only `KindWiring+Luna` can build**: where a media
+   save's file is (`PluginExportMediaFileLocating` → `SavedMediaStore`) and
+   `luna.mail`'s recipient picker (`PluginMailRecipientPicking` →
+   `RecipientPickerViewController`). The picker reports only a SEND, so its
+   DISMISSAL is what reports a cancel; without that the plugin's promise never
+   settles.
+6. **`details.hard` is not reachable, so the terminal signal is the CODE.**
+   `PluginContext.failure(fromRejection:)` keeps a rejection's `code` and
+   `message` and drops `details`, and `PluginInvocationFailure.exception` has
+   no slot for it. A plugin makes a throw terminal with
+   `throw new luna.LunaError("hard", "…")`; `PluginExportStage.isTerminal`
+   reads that prefix. A `{status:"failed", hard:true}` result is unaffected.
+7. **Three fixes the tier needed in Wave-1 code.** `PluginKVStore
+   .isConfigured` looked under a `settings.` prefix no writer uses, so it
+   answered false for every plugin; `luna.settings.set` refused the reserved
+   `_status` key §9.3 has a destination write (leading-underscore keys are now
+   accepted and stay out of the schema); `PluginScratchStore` gained
+   `adoptFile(at:…)`, which hard-links an existing file into an invocation
+   directory — a media export hands over a handle to the download, never a
+   copy of it in memory.
+
+**Not reached, and the reasons.** (a) `SourceSendSettings.appIntentsMode`
+answers `.off` for an unknown destination id, so a destination plugin that
+replaces nothing can never auto-send from App Intents or in-app saves; its
+manual row works. A per-id mode key is the fix and it needs UI. (b) The Kindle
+settings CATEGORY is gone from central Luna, so Kindle's auto-send-by-source
+screen is reachable in Luna Reader only (`claudedocs/send-to-kindle.md`
+records it). (c) `sendTestDocument` throws for a plugin destination: it hands
+over loose EPUB bytes with no save to export from. Nothing calls it for one
+now that the Kindle category is gone. (d) Nothing reaps a scratch invocation
+yet, so retention is a contract rather than an observed saving.
+
+**A build trap this wave hit twice.** After editing a package module,
+`xcodebuild build-for-testing` compiles the test bundle against the STALE
+`.swiftmodule` and reports "type X has no member Y" or "inaccessible due to
+internal protection level" for a symbol that is plainly public in the source.
+Run `xcodebuild build` first (or the same command twice); moving the test file
+aside does not help.

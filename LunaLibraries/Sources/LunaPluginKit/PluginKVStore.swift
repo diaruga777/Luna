@@ -231,6 +231,9 @@ extension PluginKVStore {
 
     public func isConfigured(pluginID: String, fields: [PluginSettingField]) -> Bool {
         let values = allValuesJSON(pluginID: pluginID)
+        // The key a settings value is stored under is the field's own name:
+        // both writers — `luna.settings.set` and the settings screen — go
+        // through `setValueJSON`, which prefixes nothing.
         for field in fields where field.isRequired {
             guard let json = values[field.key],
                   !json.isEmpty, json != "null", json != "\"\"", json != "false"

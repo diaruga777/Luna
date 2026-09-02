@@ -79,6 +79,7 @@ public enum PluginPlatformComposition {
         PluginPlatformServices.importer = PluginImporter(
             store: store, bundled: bundled, runtime: runtime)
         PluginPlatformServices.settings = keyValueStore
+        PluginPlatformServices.scratch = scratch
 
         let reports = runtime.loadAll()
 

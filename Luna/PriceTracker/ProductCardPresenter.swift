@@ -15,6 +15,7 @@ import LunaDesignSystem
 import LunaModels
 import LunaPriceUI
 import LunaSavesUI
+import LunaSocialUI
 import LunaStorage
 import UIKit
 
@@ -128,6 +129,8 @@ final class ProductCardPresenter: CardKindPresenting {
                 self.share(item, host: host, sourceView: host.cardView(forItemID: item.id))
             },
         ]
+            // An export plugin that handles `product` sits beside Share (§9.3).
+            + ReaderShareSheet.pluginMenuElements(forSaveID: item.id, kind: .product)
     }
 
     /// What a product shares is the seller's page, not the save row's

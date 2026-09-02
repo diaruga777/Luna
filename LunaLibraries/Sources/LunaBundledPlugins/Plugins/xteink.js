@@ -65,7 +65,12 @@ const CONTROL_ACK_TIMEOUT = 15;
 const CHECKPOINT_TIMEOUT = 10;
 /// How long the reader gets to hand back the next batch of finished ids.
 const READ_ACK_TIMEOUT = 3;
+/// The reader publishes at most this many finished ids per status.
+const READ_ID_BATCH = 2;
 const UPLOAD_PATH = "/upload?path=/Books";
+const UPLOAD_PORT = 80;
+/// Mirrors `XteinkCrossPointTransferRouter.uploadRetryPause`.
+const UPLOAD_RETRY_PAUSE = 2;
 
 /// The window's authenticated link, while one is open.
 ///
@@ -114,8 +119,16 @@ function frame(sequence, payload) {
 /// CrossPoint's X3-side filename validator permits only this ASCII set. The
 /// display title is untouched; only the transport name is normalized, and
 /// deterministically, so a resume targets the same remote file.
+///
+/// `Array.from` iterates code POINTS, which is what `XteinkCrossPointTransfer
+/// .x3FileName` does with `unicodeScalars`. A regular expression over UTF-16
+/// units would turn one emoji into two dashes here and one in Luna Reader,
+/// and the two apps would name the same book differently on the same reader.
 function x3FileName(name) {
-    const normalized = String(name || "").replace(/[^A-Za-z0-9._-]/g, "-");
+    const permitted = /[A-Za-z0-9._-]/;
+    const normalized = Array.from(String(name || ""))
+        .map(function (character) { return permitted.test(character) ? character : "-"; })
+        .join("");
     return normalized.length > 0 ? normalized : "Luna.epub";
 }
 
@@ -299,9 +312,25 @@ async function sendOverWiFi(session, link, base64, fileName, title) {
         }
     }
     try {
-        await upload(offer.ip, fileName, base64);
+        await uploadOnce(joined, offer.ip, fileName, base64);
     } finally {
         if (joined) { await luna.wifi.forget(offer.ssid); }
+    }
+}
+
+/// Uploads, and on a joined access point tries once more.
+///
+/// The reader binds its HTTP server moments after its AP accepts the phone,
+/// and one early connect can land in that gap — the same window
+/// `XteinkCrossPointTransferRouter.uploadRetryPause` covers. Waiting on the
+/// port is both the pause and the readiness check.
+async function uploadOnce(joined, host, fileName, base64) {
+    try {
+        await upload(host, fileName, base64);
+    } catch (error) {
+        if (!joined) { throw error; }
+        await luna.wifi.isReachable(host, UPLOAD_PORT, { timeout: UPLOAD_RETRY_PAUSE });
+        await upload(host, fileName, base64);
     }
 }
 
@@ -343,7 +372,11 @@ async function reconcile(session, link) {
             }
         }
         await writeControl(session, "read_ack", { ids: ids });
-        if (link.readIDs.length === 0) { await collectMoreReadIDs(session, link); }
+        // A short batch means the reader's queue is drained; only a full one
+        // is worth waiting on, so an ordinary window spends nothing here.
+        if (link.readIDs.length === 0 && ids.length >= READ_ID_BATCH) {
+            await collectMoreReadIDs(session, link);
+        }
     }
 }
 
@@ -451,10 +484,12 @@ luna.register({
         }
     },
 
+    /// A `pairedDevice` row names the action it wants; a plain `action` row
+    /// only carries its key.
     async onAction(input) {
-        const key = input && input.key;
-        if (key === "pair") { return pairReader(); }
-        if (key === "unpair") { return unpairReader(); }
+        const action = (input && input.action) || (input && input.key);
+        if (action === "pair") { return pairReader(); }
+        if (action === "unpair") { return unpairReader(); }
     },
 
     async onSettingsChanged(changes) {

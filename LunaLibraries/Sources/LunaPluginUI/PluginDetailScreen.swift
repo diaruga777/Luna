@@ -217,59 +217,73 @@ public final class PluginDetailScreen: NavHeaderTableController {
             // with a "set" placeholder rather than showing dots a plugin
             // author could mistake for the actual value and resave verbatim.
             let isSetSecret = field.isSecret && values[field.key] != nil
-            return PluginFieldEditCell(
+            let cell = PluginFieldEditCell(
                 field: field, currentValue: isSetSecret ? "" : displayValue(for: field),
                 placeholderOverride: isSetSecret ? L10n.string("Plugins_secretSetPlaceholder") : nil,
-                hasValue: isSetSecret || values[field.key] != nil
-            ) { [weak self] text in self?.commitTextField(field, text: text) }
+                hasValue: isSetSecret || values[field.key] != nil)
+            cell.delegate = self
+            return cell
         case .toggle:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            let cell = subtitleCell(field, value: nil)
             cell.selectionStyle = .none
-            cell.textLabel?.text = field.label
             let toggle = UISwitch()
             toggle.isOn = PluginSettingValueCoding.decodeBool(values[field.key])
             toggle.addAction(
                 UIAction { [weak self] action in
                     guard let toggle = action.sender as? UISwitch else { return }
                     self?.commitValue(
-                        field, json: PluginSettingValueCoding.encodeBool(toggle.isOn))
+                        field, json: PluginSettingValueCoding.encodeBool(toggle.isOn),
+                        reloadsRows: true)
                 }, for: .valueChanged)
             cell.accessoryView = toggle
             return cell
         case .choice:
-            let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
-            cell.textLabel?.text = field.label
             let selectedID = PluginSettingValueCoding.decodeString(values[field.key])
-            cell.detailTextLabel?.text = field.options.first { $0.id == selectedID }?.label
+            let cell = subtitleCell(
+                field, value: field.options.first { $0.id == selectedID }?.label)
             cell.accessoryType = .disclosureIndicator
             markIfRequiredAndEmpty(cell, field: field, isEmpty: selectedID == nil)
             return cell
         case .pairedDevice:
-            let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
-            cell.textLabel?.text = field.label
             let value = PluginSettingValueCoding.decodeString(values[field.key])
-            cell.detailTextLabel?.text = value ?? L10n.string("Plugins_pairedDeviceNotPaired")
+            let cell = subtitleCell(
+                field, value: value ?? L10n.string("Plugins_pairedDeviceNotPaired"))
             let button = UIButton(configuration: .plain())
             button.configuration?.title = value == nil
                 ? L10n.string("Plugins_pairButton") : L10n.string("Plugins_unpairButton")
+            let action = value == nil ? PluginFieldAction.pair : .unpair
             button.addAction(
-                UIAction { [weak self] _ in self?.invokeAction(for: field) }, for: .touchUpInside)
+                UIAction { [weak self] _ in self?.invokeAction(for: field, action: action) },
+                for: .touchUpInside)
             button.sizeToFit()
             cell.accessoryView = button
             return cell
         case .action:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.textLabel?.text = field.label
+            let cell = subtitleCell(field, value: nil)
             cell.textLabel?.textColor = .tintColor
             return cell
         case .info:
-            let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+            let cell = subtitleCell(
+                field, value: PluginSettingValueCoding.decodeString(values[field.key]))
             cell.selectionStyle = .none
-            cell.textLabel?.text = field.label
-            cell.detailTextLabel?.text = field.help ?? PluginSettingValueCoding.decodeString(values[field.key])
-            cell.detailTextLabel?.numberOfLines = 0
             return cell
         }
+    }
+
+    /// One cell shape for every field: the label, then the current value and
+    /// the schema's `help` under it. `help` is the only explanation a plugin
+    /// author can write, so every type shows it.
+    private func subtitleCell(
+        _ field: PluginSettingField, value: String?
+    ) -> UITableViewCell {
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        cell.textLabel?.text = field.label
+        cell.textLabel?.numberOfLines = 0
+        cell.detailTextLabel?.text = [value, field.help]
+            .compactMap { $0 }.filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        cell.detailTextLabel?.numberOfLines = 0
+        return cell
     }
 
     /// The text a non-secret field shows on load. A secret's display text is
@@ -284,7 +298,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         cell.textLabel?.textColor = LunaColors.errorAccent
     }
 
-    private func commitTextField(_ field: PluginSettingField, text: String) {
+    fileprivate func commitTextField(_ field: PluginSettingField, text: String) {
         guard !field.isSecret || !text.isEmpty else { return }
         switch field.type {
         case .number:
@@ -295,33 +309,43 @@ public final class PluginDetailScreen: NavHeaderTableController {
         }
     }
 
-    private func commitValue(_ field: PluginSettingField, json: String) {
+    /// `reloadsRows` redraws the table so a picked or toggled value is the one
+    /// on screen. A text field commits mid-edit, where a reload would rebuild
+    /// the row under the keyboard, so it stays false there.
+    fileprivate func commitValue(
+        _ field: PluginSettingField, json: String, reloadsRows: Bool = false
+    ) {
         do {
             try settingsStore.setValueJSON(json, pluginID: listing.summary.id, key: field.key)
             values[field.key] = json
             notifySettingsChanged(key: field.key, valueJSON: json)
+            if reloadsRows { reloadValues() }
         } catch {
             presentError(error)
         }
     }
 
+    /// The hook takes the CHANGES, keyed by the setting that changed — the map
+    /// `docs/plugins/api.md`, the `.d.ts` and `xteink.js` all read.
     private func notifySettingsChanged(key: String, valueJSON: String) {
         guard let invoker else { return }
-        struct Argument: Encodable { let key: String; let value: PluginRawJSON }
         Task { @MainActor in
             _ = await invoker.invoke(
                 .onSettingsChanged, pluginID: listing.summary.id,
-                argument: Argument(key: key, value: PluginRawJSON(json: valueJSON)),
+                argument: PluginSettingsChanges([key: PluginRawJSON(json: valueJSON)]),
                 timeout: 5, decode: PluginHookAck.self)
         }
     }
 
-    private func invokeAction(for field: PluginSettingField) {
+    private func invokeAction(
+        for field: PluginSettingField, action: PluginFieldAction? = nil
+    ) {
         guard let invoker else { return }
-        struct Argument: Encodable { let key: String }
+        struct Argument: Encodable { let key: String; let action: String? }
         Task { @MainActor in
             _ = await invoker.invoke(
-                .onAction, pluginID: listing.summary.id, argument: Argument(key: field.key),
+                .onAction, pluginID: listing.summary.id,
+                argument: Argument(key: field.key, action: action?.rawValue),
                 timeout: 30, decode: PluginHookAck.self)
             self.reloadValues()
         }
@@ -348,9 +372,8 @@ public final class PluginDetailScreen: NavHeaderTableController {
 
     private func pushChoice(for field: PluginSettingField) {
         let selectedID = PluginSettingValueCoding.decodeString(values[field.key])
-        let screen = PluginChoiceScreen(field: field, selectedID: selectedID) { [weak self] id in
-            self?.commitValue(field, json: PluginSettingValueCoding.encodeString(id))
-        }
+        let screen = PluginChoiceScreen(field: field, selectedID: selectedID)
+        screen.delegate = self
         navigationController?.pushViewController(screen, animated: true)
     }
 
@@ -415,6 +438,49 @@ public final class PluginDetailScreen: NavHeaderTableController {
     }
 }
 
+extension PluginDetailScreen: PluginChoiceScreenDelegate {
+    public func choiceScreen(
+        _ screen: PluginChoiceScreen, didSelectOptionID id: String,
+        for field: PluginSettingField
+    ) {
+        commitValue(field, json: PluginSettingValueCoding.encodeString(id), reloadsRows: true)
+    }
+}
+
+extension PluginDetailScreen: PluginFieldEditCellDelegate {
+    func fieldEditCell(
+        _ cell: PluginFieldEditCell, didCommit text: String, for field: PluginSettingField
+    ) {
+        commitTextField(field, text: text)
+    }
+}
+
+/// What a `pairedDevice` row is asking for. The key alone cannot say it: the
+/// one row offers both, and a plugin branches on the answer.
+private enum PluginFieldAction: String {
+    case pair, unpair
+}
+
+/// The `onSettingsChanged` argument: a map of the keys that changed.
+private struct PluginSettingsChanges: Encodable {
+    private let changes: [String: PluginRawJSON]
+    init(_ changes: [String: PluginRawJSON]) { self.changes = changes }
+
+    struct Key: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Key.self)
+        for (key, value) in changes {
+            try container.encode(value, forKey: Key(stringValue: key))
+        }
+    }
+}
+
 /// Wraps an already-encoded JSON fragment so it can sit inside another
 /// `Encodable` payload without a round trip through a concrete Swift type.
 private struct PluginRawJSON: Encodable {
@@ -454,21 +520,31 @@ private enum JSONPassthrough: Codable {
     }
 }
 
+/// Reports a finished edit to the screen that owns the row.
+protocol PluginFieldEditCellDelegate: AnyObject {
+    func fieldEditCell(
+        _ cell: PluginFieldEditCell, didCommit text: String, for field: PluginSettingField)
+}
+
 /// An inline-editable settings row: a label and a text field, keyboard typed
 /// to the field's schema type.
-private final class PluginFieldEditCell: UITableViewCell {
+final class PluginFieldEditCell: UITableViewCell {
+
+    weak var delegate: (any PluginFieldEditCellDelegate)?
 
     private let valueField = UITextField()
-    private let onCommit: (String) -> Void
+    private let field: PluginSettingField
 
     init(
         field: PluginSettingField, currentValue: String, placeholderOverride: String? = nil,
-        hasValue: Bool? = nil, onCommit: @escaping (String) -> Void
+        hasValue: Bool? = nil
     ) {
-        self.onCommit = onCommit
-        super.init(style: .default, reuseIdentifier: nil)
+        self.field = field
+        super.init(style: .subtitle, reuseIdentifier: nil)
         selectionStyle = .none
         textLabel?.text = field.label
+        detailTextLabel?.text = field.help
+        detailTextLabel?.numberOfLines = 0
 
         valueField.text = currentValue
         valueField.placeholder = placeholderOverride ?? field.placeholder
@@ -502,6 +578,6 @@ private final class PluginFieldEditCell: UITableViewCell {
     required init?(coder: NSCoder) { nil }
 
     @objc private func editingEnded() {
-        onCommit(valueField.text ?? "")
+        delegate?.fieldEditCell(self, didCommit: valueField.text ?? "", for: field)
     }
 }

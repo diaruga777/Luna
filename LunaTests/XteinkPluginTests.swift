@@ -11,7 +11,7 @@ import LunaPluginKit
 import LunaPluginRuntime
 import LunaPluginTransport
 import LunaPluginUI
-import LunaSend
+@testable import LunaSend
 import LunaStorage
 import XCTest
 
@@ -104,11 +104,11 @@ final class XteinkPluginTests: XCTestCase {
     @discardableResult
     private func queueSend(
         bytes: Int, saveID: String = "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
-        queuedRemaining: Int = 3
+        queuedRemaining: Int = 3, fileName: String = "Article.epub"
     ) throws -> Data {
         let data = Data((0..<bytes).map { UInt8($0 % 251) })
         let descriptor = try runner.scratch.writeFile(
-            data, suggestedName: "Article.epub", mime: "application/epub+zip",
+            data, suggestedName: fileName, mime: "application/epub+zip",
             invocationID: "fixture")
         exports.queued.append(FakePluginExportsBridge.QueuedSend(
             saveId: saveID, url: "https://example.com/article", title: "An Article",
@@ -301,6 +301,27 @@ final class XteinkPluginTests: XCTestCase {
         try queueSend(bytes: 210 * 1024)
         runRendezvous()
         XCTAssertEqual(exports.results, ["failed"])
+        XCTAssertEqual(
+            runner.fetcher.requests.count, 1,
+            "a station upload the phone did not join is not retried")
+    }
+
+    /// The reader binds its HTTP server moments after its access point accepts
+    /// the phone, so one early connect lands in that gap. Luna Reader's Swift
+    /// router waits and uploads once more; the plugin must too, or the same
+    /// book fails here and goes through there.
+    func testAJoinedAccessPointUploadIsTriedOnceMoreAfterTheServerBindGap() throws {
+        maker.transport.wifiOffer = [
+            "mode": "ap", "ssid": "CrossPoint-X3", "password": "sekrit", "ip": "192.168.4.1",
+        ]
+        runner.fetcher.respond(
+            to: "http://192.168.4.1/upload?path=/Books", status: 500, body: "no")
+        try queueSend(bytes: 210 * 1024)
+        runRendezvous()
+
+        XCTAssertEqual(runner.fetcher.requests.count, 2, "one retry, not a loop")
+        XCTAssertEqual(joiner.probes.map(\.host), ["192.168.4.1"], "the retry waits on the port")
+        XCTAssertEqual(joiner.forgotten, ["CrossPoint-X3"])
     }
 
     // MARK: - Enqueue-only
@@ -427,6 +448,47 @@ final class XteinkPluginTests: XCTestCase {
         XCTAssertEqual(exports.sentRemoteNames, ["Article.epub"])
     }
 
+    // MARK: - Pairing
+
+    /// The paired-device row names the action it wants. The field's key is
+    /// `device`, which says nothing about pair versus unpair, so a plugin can
+    /// only act on the action — and without it pairing is unreachable, which
+    /// leaves the destination permanently unconfigured.
+    func testTheDeviceRowsPairActionReachesTheAccessoryPicker() async {
+        _ = await runner.invoke(
+            .onAction, pluginID: pluginID,
+            argument: FieldAction(key: "device", action: "pair"), timeout: 10,
+            as: EmptyAnswer?.self)
+        XCTAssertTrue(maker.pairing.pickerWasShown)
+    }
+
+    func testADeviceRowWithNoActionDoesNothing() async {
+        _ = await runner.invoke(
+            .onAction, pluginID: pluginID,
+            argument: FieldAction(key: "device", action: nil), timeout: 10,
+            as: EmptyAnswer?.self)
+        XCTAssertFalse(
+            maker.pairing.pickerWasShown, "the plugin must not guess which action was meant")
+    }
+
+    // MARK: - Names on the wire
+
+    /// The remote basename is the delete key too, so Luna Reader and central
+    /// Luna have to derive the same one. Swift maps per unicode SCALAR; a
+    /// regular expression over UTF-16 units turns one emoji into two dashes.
+    func testAnAstralCharacterBecomesOneDashJustAsInSwift() throws {
+        let item = store.add(urlString: "https://example.com/emoji")
+        try queueSend(bytes: 4096, saveID: item.id.uuidString, fileName: "Party 🎉 Time.epub")
+        runRendezvous()
+
+        // Two spaces and one emoji: three scalars, three dashes. Over UTF-16
+        // units the emoji would be two, and the two apps would name the same
+        // book differently on the same reader.
+        let expected = XteinkCrossPointTransferRouter.x3FileName("Party 🎉 Time.epub")
+        XCTAssertEqual(expected, "Party---Time.epub")
+        XCTAssertEqual(exports.sentRemoteNames, [expected])
+    }
+
     /// The rendezvous dot follows the link.
     func testTheStatusSettingFollowsTheLink() throws {
         runRendezvous()
@@ -437,6 +499,14 @@ final class XteinkPluginTests: XCTestCase {
         }
     }
 }
+
+/// An `onAction` argument as `PluginDetailScreen` encodes it.
+private struct FieldAction: Encodable {
+    let key: String
+    let action: String?
+}
+
+private struct EmptyAnswer: Decodable {}
 
 extension FakeXteinkReaderTransport {
     func fireDisconnect(_ device: PluginBluetoothDevice) {

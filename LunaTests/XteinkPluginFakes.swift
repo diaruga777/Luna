@@ -37,8 +37,11 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     var canWrite = true
     /// A read-report ping window: the reader opened it purely to hand ids back.
     var isReadReportWindow = false
-    /// Finished-reading ids the reader hands back after the hello ack.
+    /// Finished-reading ids the reader hands back. It publishes at most
+    /// `readIDBatch` per status and sends the next batch after each
+    /// `read_ack`, which is what the firmware does.
     var readIDs: [String] = []
+    let readIDBatch = 2
     /// A protocol error to answer `start_put` with, e.g. "exists".
     var startPutError: String?
     /// The network the reader offers for an oversized book.
@@ -49,6 +52,7 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     private(set) var assembled = Data()
     private(set) var maximumUnconfirmedBytes = 0
     private var lastConfirmed = 0
+    private var remainingReadIDs: [String]?
 
     var operationNames: [String] {
         lock.lock()
@@ -134,7 +138,11 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
         case "hello":
             var status: [String: Any] = ["op_ack": "hello", "ok": true, "nonce": nonce]
             if isReadReportWindow { status["win"] = "rr" }
-            if !readIDs.isEmpty { status["read_ids"] = Array(readIDs.prefix(2)) }
+            lock.lock()
+            let pending = remainingReadIDs ?? readIDs
+            remainingReadIDs = pending
+            lock.unlock()
+            if !pending.isEmpty { status["read_ids"] = Array(pending.prefix(readIDBatch)) }
             publish(status)
         case "start_put":
             if let startPutError {
@@ -155,7 +163,14 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
             if let wifiOffer { status["wifi"] = wifiOffer }
             publish(status)
         case "read_ack":
-            break
+            // A plain write, not a control operation: no op_ack. The reader
+            // drops the acked ids and offers the next batch.
+            let acked = Set((object["ids"] as? [String]) ?? [])
+            lock.lock()
+            remainingReadIDs = (remainingReadIDs ?? readIDs).filter { !acked.contains($0) }
+            let next = Array((remainingReadIDs ?? []).prefix(readIDBatch))
+            lock.unlock()
+            if !next.isEmpty { publish(["read_ids": next]) }
         default:
             publish(["op_ack": op, "ok": true])
         }
@@ -194,11 +209,42 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     }
 }
 
+/// The system accessory picker, recording rather than presenting. Answering
+/// nil is the "user dismissed it" path, which is enough to see whether the
+/// plugin asked for the picker at all.
+final class FakeXteinkAccessoryPairing: PluginAccessoryPairing, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var pickerRequests = 0
+    private(set) var removedAccessories: [String] = []
+
+    func showPicker(
+        serviceUUIDs: [String], displayName: String,
+        completion: @escaping (Result<PluginBluetoothDevice?, PluginTransportError>) -> Void
+    ) {
+        lock.lock(); pickerRequests += 1; lock.unlock()
+        completion(.success(nil))
+    }
+
+    func removeSetUpAccessories(completion: @escaping () -> Void) { completion() }
+
+    func removeAccessory(deviceID: String, completion: @escaping () -> Void) {
+        lock.lock(); removedAccessories.append(deviceID); lock.unlock()
+        completion()
+    }
+
+    var pickerWasShown: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return pickerRequests > 0
+    }
+}
+
 /// The transport witnesses for a fake reader.
 final class FakeXteinkTransportMaker: PluginTransportMaking, @unchecked Sendable {
 
     let transport = FakeXteinkReaderTransport()
     let lease = FakePluginBackgroundLease()
+    let pairing = FakeXteinkAccessoryPairing()
     private let serviceLock: BluetoothServiceLock
 
     init(lockFileURL: URL) {
@@ -206,7 +252,7 @@ final class FakeXteinkTransportMaker: PluginTransportMaking, @unchecked Sendable
     }
 
     func makeTransport(pluginID: String) -> any PluginBluetoothTransporting { transport }
-    func makePairing(pluginID: String) -> (any PluginAccessoryPairing)? { nil }
+    func makePairing(pluginID: String) -> (any PluginAccessoryPairing)? { pairing }
     func makeServiceLock(serviceUUID: String) -> BluetoothServiceLock { serviceLock }
     func makeLease() -> (any PluginBackgroundLeasing)? { lease }
 }

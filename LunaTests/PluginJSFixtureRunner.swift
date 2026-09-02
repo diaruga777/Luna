@@ -19,8 +19,15 @@ import XCTest
 /// test hands one over. So a test asserts on the shipped bridge, not on a
 /// double of it.
 ///
-/// The virtual machine is isolated so a fixture that wedges its own runtime
-/// does not stall every other plugin in the test host.
+/// The runtime shares the process-wide `JSVirtualMachine`, which is what the
+/// app uses. A machine of its own per fixture is what a fixture wants in the
+/// abstract, and it kills the test host in practice: one process runs the whole
+/// suite, `PluginHTMLSubsetTests` alone builds one runner per spec case, and
+/// after some hundreds of machines JavaScriptCore faults inside its own heap on
+/// the plugin queue — no exception, no message, and XCTest discards the totals
+/// of every suite that had already passed. Contexts on a shared machine are
+/// cheap, and `PluginRuntime` pairs that machine with one execution queue, so
+/// two runtimes still never enter it at once.
 final class PluginJSFixtureRunner {
 
     let runtime: PluginRuntime
@@ -36,7 +43,8 @@ final class PluginJSFixtureRunner {
     init(
         processKind: PluginProcessKind = .app,
         fetcher: StubPluginFetcher = StubPluginFetcher(),
-        installBridges: Bool = true
+        installBridges: Bool = true,
+        virtualMachine: PluginVirtualMachineScope = .processWide
     ) {
         self.fetcher = fetcher
         containerURL = fileManager.temporaryDirectory
@@ -52,7 +60,7 @@ final class PluginJSFixtureRunner {
             capabilities: capabilities,
             processContext: PluginProcessContext(kind: processKind),
             diagnostics: DiscardedPluginDiagnostics(),
-            virtualMachine: .isolated)
+            virtualMachine: virtualMachine)
         guard installBridges else { return }
         capabilities.register(PluginFetchBridge(
             fetcher: fetcher, scheduler: runtime,

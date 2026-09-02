@@ -142,6 +142,10 @@ struct StageDescriptor {
         case media
         /// Product-handling apps: trackers, the price graph, alerts.
         case product
+        /// Settings → Plugins and the import/consent flow. Central Luna only
+        /// for now — `LunaPluginUI` is not linked by the three sibling apps
+        /// yet (`claudedocs/plans/plugin-platform.md` §11.2).
+        case plugin
 
         /// The apps this kind is compiled into. The default `apps` for a stage.
         var apps: [LunaApp] {
@@ -151,6 +155,7 @@ struct StageDescriptor {
             case .email: return LunaApp.allCases.filter(\.sharesByEmail)
             case .media: return LunaApp.allCases.filter(\.handlesMedia)
             case .product: return LunaApp.allCases.filter(\.handlesProducts)
+            case .plugin: return [.luna]
             }
         }
     }

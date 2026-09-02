@@ -1,6 +1,37 @@
 # Plugin platform hardening — the gap closure and review pass
 
-Status: PLAN (2026-09-02). Branch `plugin-hardening`, worktree
+## Status (2026-09-03)
+
+Phase 1 LANDED on `main`: WP-A, WP-B, WP-C, WP-D and WP-F3 in full, each
+verified by its own test classes and then by the merged classes on the
+integration branch. Of WP-F1, two commits landed (one fetch request shaping
+shared by JSC and the Safari relay, `PluginFetchRequestShaping`; one
+`outcome(from:)` mapping and an adopter failure that keeps the Swift floor —
+R2#1, #3, #13, #15, #16, #20, #21, #23).
+
+NOT landed — the phase-2 agents were stopped by an API spend limit before
+they produced verified work:
+
+- **WP-E** (kind-neutral auto-send for media/product destinations, §2 WP-E):
+  not started. `claudedocs/plugins.md` §14 still lists the gap, correctly.
+- **WP-F1**, the rest (§5.6): Safari-world parity — `LunaError` argument
+  order in `plugin_host.js`/`bridge.mjs` (R2#2), the Safari walk continuing
+  on a `null` ingest and refusing an undeclared kind (R2#10/#11), Safari
+  `settings.get` defaults and `set`/`all` stubs (R2#8), storage semantics
+  (R2#9/#19), the `PageSnapshot` (R2#14), `plugins.log`'s id check and the
+  cached enabled set (R2#17/#18), the catalog stamp (R2#22), `returnToSourceUntil`
+  (R2#5), the `unavailable-here` Proxy in Safari (R4#10), the sim's settings
+  schema (R4#15), and the cross-backing parity suite (R2#25). The stopped
+  agent's worktree `/Users/hsp/Desktop/Luna-wp-f1` (branch
+  `wp-f1-safari-parity`) holds UNVERIFIED, uncommitted edits to
+  `content.js`, `plugin_host.js` and `SafariPluginMessages+Luna.swift` toward
+  these items — read them as a starting point, not as done work.
+- **WP-F2** (§5.7): not started.
+
+To resume: new worktrees off `main` per §0, one agent per remaining package,
+§3/§6 order (F1 before F2, since F2's docs describe F1's Safari facts).
+
+Status when written: PLAN (2026-09-02). Branch `plugin-hardening`, worktree
 `/Users/hsp/Desktop/Luna-plugin-hardening`, off `main` at `aff524cc6`.
 `claudedocs/plugins.md` is the current reference; this plan changes it and
 must leave it true. Section numbers below (§5.1, §14 …) refer to that file.

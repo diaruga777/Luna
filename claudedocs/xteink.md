@@ -1,5 +1,16 @@
 # Send to Xteink
 
+**Two implementations, one reader.** Luna Reader runs the Swift path this
+document describes. **Central Luna runs it as a bundled PLUGIN**,
+`LunaBundledPlugins/Plugins/xteink.js`, over `luna.bluetooth` / `luna.wifi`
+(`LunaPluginTransport`, `claudedocs/plans/plugin-platform.md` §10): the
+plugin owns the rendezvous sweep, the transfer and its own settings screen,
+and `KindWiring+Luna` installs no `XteinkBLECentral`. Both processes take one
+`BluetoothServiceLock` keyed by the CrossPoint service UUID, so only one of
+them ever talks to a given window. Every wire behaviour below is shared, and
+`XteinkPluginTests` pins the plugin against the same protocol — a fix to one
+side that is not mirrored is a fix that only half the apps get.
+
 Delivery of saved articles to an Xteink X3 pocket e-reader. No account or
 email is involved. Luna builds an image-free, compressed Xteink EPUB and
 delivers it only while the CrossPoint BLE rendezvous is already active — a
@@ -340,9 +351,9 @@ on.
 
 ## UI
 
-- **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, compiled
-  into Luna and LunaReader; membership-excluded from Downloader and Price
-  Tracker like the other article settings screens): enable switch,
+- **Settings → Xteink** (`Luna/Settings/XteinkSettingsScreen.swift`, reached
+  from `KindWiring+Reader` only; central Luna shows the plugin's own settings
+  screen under Settings → Plugins instead): enable switch,
   AccessorySetupKit pairing (above), Auto-Send by Source
   (`AutoSendBySourceScreen`, already destination-generic), and Unpair (shown
   once paired). There is no phone-side "transfer now" row — it contradicted

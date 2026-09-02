@@ -112,4 +112,34 @@ final class PaywallDetectorTests: XCTestCase {
         XCTAssertTrue(ArticleExtraction.isReadableArticle(
             article, html: #"{"isAccessibleForFree":false}"#))
     }
+
+    /// The Information failure case: the publisher sends no full body, but the
+    /// fallback extractor can collect enough navigation/subscription prose to look
+    /// like a long article. Explicit `fullText: null` is stronger than body length.
+    func testExplicitlyWithheldArticleBodyBeatsLongShell() {
+        let shell = content([
+            String(repeating: "Data tools, company directories, event listings, and subscription benefits. ", count: 60),
+        ])
+        let html = #"""
+        <script type="application/ld+json">
+          {"@type":"NewsArticle","isAccessibleForFree":"False"}
+        </script>
+        <script type="application/json" data-component-name="Article">
+          {"article":{"access":"locked","freeBlurb":"Preview","fullText":null}}
+        </script>
+        """#
+        XCTAssertGreaterThan(shell.bodyTextLength, PaywallDetector.shortBodyThreshold)
+        XCTAssertTrue(PaywallDetector.htmlDeclaresBodyWithheld(html))
+        XCTAssertTrue(PaywallDetector.looksPaywalled(content: shell, html: html))
+        XCTAssertFalse(ArticleExtraction.isReadableArticle(shell, html: html))
+    }
+
+    func testCompleteArticleComponentDoesNotDeclareBodyWithheld() {
+        let unlocked = #"""
+        <script type="application/json" data-component-name="Article">
+          {"article":{"access":"subscriber","fullText":"Complete reported prose."}}
+        </script>
+        """#
+        XCTAssertFalse(PaywallDetector.htmlDeclaresBodyWithheld(unlocked))
+    }
 }

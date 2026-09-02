@@ -11,7 +11,7 @@ import XCTest
 /// Pins the Stage-2 `ArticleExtraction` component: the one
 /// `isReadableArticle(content:html:)` predicate that decides readable vs.
 /// locked, driven per-site over readable and paywalled-stub fixtures
-/// (nytimes / washingtonpost / wsj / smh.com.au / theparisreview).
+/// (nytimes / washingtonpost / wsj / smh.com.au / theparisreview / The Information).
 ///
 /// This is the only sweep of the `Fixtures/Readable/*` corpus; it reads each
 /// fixture once. `PaywallDetectorTests` pins the predicate's own decision
@@ -53,6 +53,10 @@ final class ArticleExtractionTests: XCTestCase {
             // cut off by the `.paywall` gate, against the pre-paywall Wayback capture of
             // the same interview. Only `TruncationGateDetector` separates these two.
             ("parisreview", "https://www.theparisreview.org/interviews/3810/the-art-of-fiction-no-45-john-steinbeck"),
+            // The locked page explicitly withholds `fullText`, but its page shell is
+            // long enough to beat both readability thresholds. The readable capture
+            // keeps stale premium schema while carrying a non-locked Article payload.
+            ("theinformation", "https://www.theinformation.com/articles/model-security"),
         ]
         for c in cases {
             guard let (readable, readableHTML) = extract("\(c.site)-readable.html", c.host) else {

@@ -92,7 +92,10 @@ public enum ArticleResolver {
         // captured the already-unlocked on-screen article) is accepted on
         // body length alone: the page's stale schema.org lock would
         // otherwise re-reject the very content the user is looking at,
-        // sending them back through the whole archive dance.
+        // sending them back through the whole archive dance. The exception
+        // is an explicit publisher state saying the full body was withheld;
+        // no amount of surrounding page-furniture text can make that a
+        // trusted article capture.
         //
         // But a capture that still reads as locked is only a floor, never
         // the winner: Safari can apply a rule's script-blocking half yet
@@ -118,7 +121,8 @@ public enum ArticleResolver {
                 return .readable(direct.content, html: direct.sourceHTML)
             }
             if case .unlockedCapture = page,
-               direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold {
+               direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold,
+               !PaywallDetector.htmlDeclaresBodyWithheld(direct.sourceHTML) {
                 trustedCapture = direct
             }
         }

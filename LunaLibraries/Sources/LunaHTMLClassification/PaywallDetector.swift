@@ -5,6 +5,7 @@
 
 import LunaModels
 import Foundation
+import SwiftSoup
 
 /// Decides whether a page/extracted article is a subscription wall (a metered
 /// teaser / "subscribe to continue" stub) rather than the real article — the
@@ -62,6 +63,7 @@ public enum PaywallDetector {
         let textPaywalled = textLooksPaywalled(content.wholeText, bodyLength: content.bodyTextLength)
         if textPaywalled { return true }
         guard let html else { return false }
+        if htmlDeclaresBodyWithheld(html) { return true }
         if htmlDeclaresLocked(html), content.bodyTextLength < shortBodyThreshold {
             return true
         }
@@ -95,6 +97,40 @@ public enum PaywallDetector {
                 || compact.contains("content=\"\(value)\"property=\"article:content_tier")
                 || compact.contains("content=\"\(value)\"name=\"article:content_tier")
         }
+    }
+
+    /// A stronger publisher state than schema.org's generic "this is premium"
+    /// label: the page's own article component explicitly says access is locked AND
+    /// that the full body was not sent. This is the shape The Information serves to
+    /// signed-out readers. Its only `<article>` is a headline/lock card, while several
+    /// thousand characters of navigation and subscription copy elsewhere in `<body>`
+    /// can make the extractor's last-resort layer look long enough to read.
+    ///
+    /// Unlike `htmlDeclaresLocked`, this signal applies at any extracted length. A
+    /// long body cannot disprove an explicit `fullText: null`; that length came from
+    /// page furniture, not article prose. Scope the JSON read to the publisher's
+    /// `Article` React component so an unrelated locked card in a recommendation rail
+    /// cannot reject a complete article.
+    public static func htmlDeclaresBodyWithheld(_ html: String) -> Bool {
+        let compact = html.lowercased().filter { !$0.isWhitespace }
+        guard compact.contains("data-component-name=\"article\""),
+              compact.contains("\"access\":\"locked\""),
+              compact.contains("\"fulltext\":null"),
+              let document = try? SwiftSoup.parse(html),
+              let scripts = try? document.select(
+                "script[type=application/json][data-component-name=Article]")
+        else { return false }
+
+        for script in scripts {
+            guard let data = script.data().data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let article = root["article"] as? [String: Any],
+                  (article["access"] as? String)?.lowercased() == "locked",
+                  article.keys.contains("fullText"), article["fullText"] is NSNull
+            else { continue }
+            return true
+        }
+        return false
     }
 
     /// The structural paywall signal: a subscribe gate standing where the rest of the

@@ -197,6 +197,24 @@ final class ArticleResolverTests: XCTestCase {
         if case .readable = result {} else { XCTFail("trusted prefetch should be readable, got \(result)") }
     }
 
+    /// A Safari capture is trusted past stale premium metadata, but not past the
+    /// publisher explicitly saying it sent no `fullText`. The Information's long
+    /// navigation/subscription shell used to satisfy the capture length floor and
+    /// come back after every real bypass failed.
+    func testTrustedSafariCaptureCannotRescueExplicitlyWithheldBody() async throws {
+        let articleURL = URL(string: "https://www.theinformation.com/articles/model-security")!
+        let html = BypassFixtures.html("Readable/theinformation-paywalled.html")
+        let extracted = try ArticleExtraction().extract(html: html, baseURL: articleURL)
+        XCTAssertGreaterThanOrEqual(
+            extracted.bodyTextLength, ArticleContent.readableBodyThreshold,
+            "fixture must reproduce the long-shell false positive")
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, page: .safariHandoff(html: html), fetcher: MockArticleFetcher())
+
+        XCTAssertEqual(result, .paywalled(title: "Model Technique Sparks Security Concerns"))
+    }
+
     // MARK: - trusted Safari capture is a floor, not a winner
 
     /// Readable prose of `paragraphs` × 30 sentences, with no lock declaration.

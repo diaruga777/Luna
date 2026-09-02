@@ -120,8 +120,8 @@ public struct PluginExportInputProducer {
         scratch: PluginScratchStore?, invocationID: String
     ) async throws -> PluginExportFileHandle {
         guard let scratch else { throw PluginExportInputError.noScratchStore }
-        let profile = Self.epubProfile(options)
-        let wantsImages = format != .epub || (profile.includesImages && options.epubImages)
+        let profile = Self.effectiveEpubProfile(options)
+        let wantsImages = format != .epub || profile.includesImages
         if wantsImages { await images.prepareImages(for: item) }
         let fresh = store.item(withID: item.id) ?? item
         guard let content = store.content(for: fresh) else {
@@ -244,6 +244,14 @@ public struct PluginExportInputProducer {
     /// is text-only by contract.
     public static func epubProfile(_ options: PluginExportSummary) -> EpubBuilder.Profile {
         options.epubProfile == "compact" ? .xteink : .standard
+    }
+
+    /// The profile the book is actually built with. `images: false` means the
+    /// plugin wants no pictures, and the text-only profile is what produces a
+    /// book with none — asking for images while embedding whatever happened to
+    /// be on disk would answer neither request.
+    static func effectiveEpubProfile(_ options: PluginExportSummary) -> EpubBuilder.Profile {
+        options.epubImages ? epubProfile(options) : .xteink
     }
 
     static func fileExtension(_ format: PluginExportInputFormat) -> String {

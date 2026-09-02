@@ -44,22 +44,42 @@ final class PluginExportInputTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func readyArticle(withImageNamed imageName: String? = nil) -> SavedItem {
+    private func readyArticle() -> SavedItem {
         let item = store.add(urlString: "https://example.com/article")
-        var blocks = [ArticleContent.Block(kind: .paragraph, text: "Words.", links: [])]
-        if let imageName {
-            let pixel = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
-                UIColor.red.setFill()
-                context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
-            }
-            try? pixel.pngData()?.write(
-                to: store.articlesDirectory.appendingPathComponent(imageName))
-            blocks.append(ArticleContent.Block(
-                kind: .image, text: "Alt", links: [], imageURLString: nil,
-                imageFileName: imageName))
-        }
         return store.saveContent(
-            ArticleContent(title: "An Article", blocks: blocks), for: item)
+            ArticleContent(
+                title: "An Article",
+                blocks: [ArticleContent.Block(kind: .paragraph, text: "Words.", links: [])]),
+            for: item)
+    }
+
+    /// A save whose one image is already on disk, named the way the article
+    /// image downloader names one — `saveContent` drops a name the store
+    /// cannot take ownership of.
+    private func readyArticleWithAnImage() throws -> (item: SavedItem, imageName: String) {
+        let item = store.add(urlString: "https://example.com/illustrated")
+        let name = ArticleImageFiles.newFileName(fileExtension: "png")
+        let pixel = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+        try XCTUnwrap(pixel.pngData()).write(
+            to: store.articlesDirectory.appendingPathComponent(name))
+        let saved = store.saveContent(
+            ArticleContent(
+                title: "An Article",
+                blocks: [
+                    ArticleContent.Block(kind: .paragraph, text: "Words.", links: []),
+                    ArticleContent.Block(
+                        kind: .image, text: "Alt", links: [],
+                        imageURLString: "https://example.com/photo.png", imageFileName: name),
+                ]),
+            for: item)
+        let stored = try XCTUnwrap(store.content(for: saved))
+        XCTAssertEqual(
+            stored.blocks.first(where: { $0.kind == .image })?.imageFileName, name,
+            "the fixture's image must survive the content write")
+        return (saved, name)
     }
 
     private func produce(
@@ -91,7 +111,7 @@ final class PluginExportInputTests: XCTestCase {
     /// standard profile embeds is absent from the compact book, which is the
     /// difference the declaration is asking for.
     func testCompactEpubProfileDropsTheArticleImage() async throws {
-        let item = readyArticle(withImageNamed: "picture.png")
+        let (item, imageName) = try readyArticleWithAnImage()
 
         let standard = try await produce(
             item, format: .epub, options: PluginExportFixtures.export(epubProfile: "standard"))
@@ -101,13 +121,26 @@ final class PluginExportInputTests: XCTestCase {
         let standardBytes = try data(of: try XCTUnwrap(standard.file))
         let compactBytes = try data(of: try XCTUnwrap(compact.file))
         XCTAssertTrue(
-            Self.contains(standardBytes, "picture.png"),
+            Self.contains(standardBytes, imageName),
             "the standard profile embeds the article's image")
         XCTAssertFalse(
-            Self.contains(compactBytes, "picture.png"),
+            Self.contains(compactBytes, imageName),
             "the compact profile is text only")
         XCTAssertEqual(standard.file?.mime, "application/epub+zip")
         XCTAssertTrue(standard.file?.name.hasSuffix(".epub") == true)
+    }
+
+    /// `images: false` is a request for a book with no pictures, so it drops
+    /// the one already on disk rather than only skipping the download.
+    func testEpubImagesFalseDropsTheArticleImage() async throws {
+        let (item, imageName) = try readyArticleWithAnImage()
+
+        let input = try await produce(
+            item, format: .epub,
+            options: PluginExportFixtures.export(epubProfile: "standard", epubImages: false))
+
+        XCTAssertFalse(
+            Self.contains(try data(of: try XCTUnwrap(input.file)), imageName))
     }
 
     func testTextFormatsCarryTextAndNoFile() async throws {

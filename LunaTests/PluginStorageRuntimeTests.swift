@@ -220,7 +220,7 @@ final class PluginStorageRuntimeTests: XCTestCase {
 
         runner.kv.setValueJSON(
             "\"a@b.test\"", pluginID: "p",
-            key: PluginKVStore.settingsKeyPrefix + "address", now: Date())
+            key: "address", now: Date())
 
         XCTAssertTrue(runner.kv.isConfigured(pluginID: "p", fields: fields))
     }
@@ -230,7 +230,7 @@ final class PluginStorageRuntimeTests: XCTestCase {
             PluginSettingField(key: "address", type: .email, label: "Address", isRequired: true),
         ]
         runner.kv.setValueJSON(
-            "\"\"", pluginID: "p", key: PluginKVStore.settingsKeyPrefix + "address", now: Date())
+            "\"\"", pluginID: "p", key: "address", now: Date())
 
         XCTAssertFalse(runner.kv.isConfigured(pluginID: "p", fields: fields))
     }

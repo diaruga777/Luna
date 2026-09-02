@@ -212,12 +212,8 @@ public final class PluginKVStore: PluginSettingsStoring, @unchecked Sendable {
 extension PluginKVStore {
 
     /// The settings half of the seam. A settings value is one `plugin_kv` row
-    /// under `settings.<key>`; a SECRET field's value is in the Keychain, and
+    /// under the field's own key; a SECRET field's value is in the Keychain, and
     /// the row holds only the marker that says one is set.
-    public func settingsValueJSON(pluginID: String, key: String) -> String? {
-        valueJSON(pluginID: pluginID, key: Self.settingsKeyPrefix + key)
-    }
-
     public func setValueJSON(_ json: String?, pluginID: String, key: String) throws {
         guard setValueJSON(json, pluginID: pluginID, key: key, now: Date()) else {
             throw PluginStoreError.fileSystem(detail: "plugin_kv refused the write")
@@ -236,7 +232,7 @@ extension PluginKVStore {
     public func isConfigured(pluginID: String, fields: [PluginSettingField]) -> Bool {
         let values = allValuesJSON(pluginID: pluginID)
         for field in fields where field.isRequired {
-            guard let json = values[Self.settingsKeyPrefix + field.key],
+            guard let json = values[field.key],
                   !json.isEmpty, json != "null", json != "\"\"", json != "false"
             else { return false }
         }

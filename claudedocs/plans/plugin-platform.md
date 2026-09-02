@@ -1353,3 +1353,75 @@ captured; docs current.
 1. Whether the Downloader app should later adopt the plugin platform too (decision 3 says no for this pivot).
 2. Whether media/product export destinations should gain auto-send (needs a kind-neutral coordinator).
 3. URL import and update checking (deferred by decision 13).
+
+### Wave 3B landed
+
+§10 runs end to end. Central Luna reaches an Xteink reader through the bundled
+`xteink.js` over `luna.bluetooth` / `luna.wifi`; Luna Reader keeps the Swift
+path, and the two exclude each other through one lock file. Six things worth
+knowing before touching this tier.
+
+1. **A hook takes exactly one JSON argument, so `onBluetooth(event, session)`
+   is not buildable.** `PluginContext.call` does `JSON.parse` on the argument
+   and calls the hook with that one value; a native session object cannot ride
+   along. The session is `luna.bluetooth.session()` instead — synchronous, and
+   live for the whole `onBluetooth` invocation INCLUDING the nested `export`
+   calls `luna.exports.deliverQueued()` produces. `xteink.js` keeps the
+   window's authenticated link in a module variable so `export` inherits the
+   hello rather than sending a second one. `onAction` likewise receives
+   `{ key }`, not a string — `PluginDetailScreen` is the caller and that is
+   what it sends.
+2. **A `CBCentralManager` is what raises the system Bluetooth prompt, so the
+   center builds its transport lazily.** It is created by `start()`, `pair()`
+   or `connect()`, never at load: a plugin nobody set up must not cost the user
+   a permission alert. `PluginBluetoothCenterStore.startAll()` runs the gate —
+   every `required` setting filled, and an `enabled` toggle not turned off —
+   and it runs from `KindWiring+Luna.appDidLaunch()`, so a plugin that IS set
+   up still has its manager during launch and state restoration works (TN3115).
+   `luna.bluetooth.state()` answers `unknown` rather than building one.
+3. **`PluginKVStore.isConfigured` looks for `settings.<key>` but every writer
+   writes the bare key.** `PluginSettingsBridge` and `PluginDetailScreen` both
+   go through `PluginSettingsStoring.setValueJSON`, which does not prefix, so
+   `isConfigured` answers false for any plugin with a `required` field — which
+   is every export plugin with `requiresSettings`. The transport tier's gate
+   reads the bare key to match the writers; the store's own method is left as
+   found. **3A's `PluginDestination.isConfigured` will hit this**: fix it in
+   one place (prefix in the protocol conformance, or drop the prefix in
+   `isConfigured`) rather than working around it twice.
+4. **`luna.settings.set` now accepts a `_`-prefixed key.** A manifest cannot
+   declare one (the parser refuses), so a reserved key can never collide, and
+   `_status` — the share row's dot (§9.3) — was otherwise unwritable.
+5. **The lock is `BluetoothServiceLock` (LunaStorage), keyed by service UUID.**
+   Its file path is a pure function of the UUID, so the Reader's Swift sweep
+   and the plugin bridge derive the same file without sharing a constant;
+   `XteinkRendezvousSweepLock` is now that instance for the CrossPoint service,
+   so neither `KindWiring` changed. A center that cannot take the lock invokes
+   NOTHING — no hook, no lease, no answer to the device.
+6. **Session calls serialize until they SETTLE, not until they start.** The
+   transport answers from a delegate callback, so an "is the queue running"
+   flag cleared when `start` returns lets two operations interleave on one
+   GATT link — which the reader rejects with `resume_mismatch`.
+
+Not reached, and why:
+
+- **Dequeue-on-read and remote-delete-on-read have no plugin-visible signal.**
+  Both key off a save's `readState` (`XteinkReadStateReconciler`,
+  `SavesStore.markFinishedReading`), and `luna.*` exposes no read state and no
+  save-change event. `xteink.js` drains its own `pendingDeletes` collection and
+  the drain is pinned, but nothing fills it yet: the device-reported ids go
+  through `luna.exports.markSent`, and an in-app finish is invisible to the
+  plugin. A `luna.saves`-shaped read hook, or a core-side witness that files a
+  pending delete on the owning plugin's behalf, is the missing piece.
+- **`ArticleSendCoordinator` still defaults to `[KindleDestination(),
+  XteinkDestination()]`** (LunaSend), so central Luna keeps the Swift Xteink
+  DESTINATION until 3A's destination seam lands. What 3B retired from
+  `KindWiring+Luna` is the rendezvous scan, the sweep observer, the read-state
+  reconciler and the settings category. The share row is 3A's
+  `AppReaderShareProvider.pluginRows` too.
+- **`Luna/Settings/XteinkSettingsScreen.swift` still compiles into the central
+  target**, unreferenced: excluding it needs a `membershipExceptions` entry in
+  `project.pbxproj`, which agents do not edit. One line for the orchestrator.
+- **The plugin's copy is in the plugin file, not the strings table.** A
+  manifest carries its own setting labels and `xteink.js` its own notification
+  text; `L10n` resolves against the app's table and a plugin is not part of it.
+  That is the platform's design, and it means plugin copy is not localized.

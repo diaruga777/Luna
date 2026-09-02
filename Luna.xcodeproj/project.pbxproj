@@ -908,6 +908,7 @@
 				"Resources/Luna Price Tracker.shortcut",
 				"Resources/Luna Reader.shortcut",
 				"Resources/Luna Video.shortcut",
+				Settings/XteinkSettingsScreen.swift,
 			);
 			target = F73C67777995F8F752A0056A /* Luna */;
 		};

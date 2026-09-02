@@ -480,7 +480,15 @@ fires on a 401/403/410 task failure, a job whose `expires_at` has passed
 before start, and once per job older than 6 hours on
 `resumeUnfinishedDownloads`; assets are matched by `(kind, quality)` — schema
 13's `media_download_jobs.quality` column exists for exactly this, one TEXT
-column since a job persists exactly one asset, not a list.
+column since a job persists exactly one asset, not a list. A re-resolve is
+capped by `mediaAttempts` — the same counter `retryOrFail` bumps for a
+transient download failure — so a plugin that keeps answering with a dead URL
+falls into the retry ladder (and then fails the job) rather than looping
+forever. `MediaReresolving.reresolve`'s `saveID` is the save that owns the
+download, looked up from the job's source URL at the moment of the
+re-resolve, not the download engine's own job id — it is nil only when that
+save has since been deleted, so a plugin can otherwise correlate it with the
+`saveId` it saw at save time.
 
 ### 6.2 Price refresh
 

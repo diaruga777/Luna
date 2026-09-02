@@ -196,7 +196,12 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertEqual(job.mediaKind, .video)
     }
 
+    /// Persistence is the SQLite row (`MediaDownloadJobRow`), not the hand-written
+    /// `Codable` pair — nothing in production JSON-round-trips this type. Writing
+    /// through the real store and reading back is what proves a field survives.
     func testRedditCompanionURLsSurviveJobPersistence() throws {
+        let (store, root) = makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
         let audio = "https://v.redd.it/clip/audio"
         let manifest = "https://v.redd.it/clip/DASHPlaylist.mpd"
         let job = LiveMediaDownloadJob(
@@ -205,13 +210,16 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             mediaKind: .video, title: "Clip", resolveKind: .reddit,
             phase: .downloading, progress: 0.25,
             resolveAttempts: 0, mediaAttempts: 0, ownership: .downloader,
-            audioURLString: audio, dashManifestURLString: manifest)
+            audioURLString: audio, dashManifestURLString: manifest,
+            quality: "720p")
+        store.upsert(job)
+        defer { store.remove(job.id) }
 
-        let restored = try JSONDecoder().decode(
-            LiveMediaDownloadJob.self, from: JSONEncoder().encode(job))
+        let restored = try XCTUnwrap(store.job(id: job.id))
 
         XCTAssertEqual(restored.audioURLString, audio)
         XCTAssertEqual(restored.dashManifestURLString, manifest)
+        XCTAssertEqual(restored.quality, "720p")
     }
 
     /// Safari returns once the destination and recoverable job are durable. The

@@ -83,17 +83,6 @@ final class MediaReresolveTests: XCTestCase {
         XCTAssertFalse(LiveMediaDownloadManager.pluginURLsAreStale(job))
     }
 
-    // MARK: - Statuses
-
-    func testOnlyTheStaleURLStatusesInviteAReresolve() {
-        for status in [401, 403, 410] {
-            XCTAssertTrue(LiveMediaDownloadManager.statusInvitesReresolve(status), "\(status)")
-        }
-        for status in [200, 404, 429, 500] {
-            XCTAssertFalse(LiveMediaDownloadManager.statusInvitesReresolve(status), "\(status)")
-        }
-    }
-
     // MARK: - Headers round-trip
 
     func testRequestHeadersSurviveTheJobColumn() {

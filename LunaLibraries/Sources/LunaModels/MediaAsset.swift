@@ -145,8 +145,10 @@ public protocol SocialMediaResolving {
 /// (`claudedocs/plans/plugin-platform.md` §7.6).
 public protocol MediaReresolving {
     /// The post's assets as the plugin resolves them now, or nil when the plugin
-    /// is gone, declined, or failed.
-    func reresolve(sourceURL: URL, pluginID: String, saveID: String) async -> [MediaAsset]?
+    /// is gone, declined, or failed. `saveID` is the save that owns the
+    /// download, resolved from the job's source URL — nil when that save has
+    /// since been deleted, never the download engine's own job id.
+    func reresolve(sourceURL: URL, pluginID: String, saveID: String?) async -> [MediaAsset]?
 }
 
 /// The media seams a plugin platform fills, held at the bottom of the stack.

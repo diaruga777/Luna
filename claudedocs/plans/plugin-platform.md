@@ -1181,11 +1181,10 @@ LunaReaderUI, not LunaArticleIngest, because a `document` Model needs
 
 **Carried into Wave 2.** `MediaAsset` gained `quality`, `pluginID` and
 `expiresAt` so the resolver's answer reaches the job; `media_download_jobs`
-still keeps no quality and no creation time, so `MediaReresolveMatching` falls
-back to kind plus display order on a cold resume and staleness is read off the
-job's own files. `PluginMediaResolver.swiftFallbackEnabled` is true until the
-bundled media plugins ship. A media or product save in `.needsCaptcha` draws no
-locked overlay yet — 2B routes the three card presenters.
+keeps the quality from Wave 2A on, and still keeps no creation time, so
+staleness is read off the job's own files. A media or product save in
+`.needsCaptcha` draws no locked overlay yet — 2B routes the three card
+presenters.
 
 Merge order 1A → 1B → 1C. Exit: an imported toy plugin claims a URL, returns
 a `media` Model, the download starts, the save renders on the existing media
@@ -1199,6 +1198,46 @@ pass unchanged.
 | 2A media plugins | Opus | `LunaBundledPlugins` media files, `LunaTests/Fixtures/Plugins`, `<Platform>PluginTests`, `MediaShellWiring`/`URLRescueWiring` resolver installs, engine reresolve | The seven plugins with fixture parity; central Luna off `SocialMediaResolver`; `LiveMediaDownloadManager` reresolve + headers + expiry. |
 | 2B lock flow | Opus | `PluginBrowserViewController`, `LunaArchiveReader` helper extraction, locked-card routing in the three card presenters, `LunaDeepLink.saveURL`, resume path | §8 end to end, in app and from the share/action extensions. |
 | 2C Safari | Sonnet | `LunaSafari/plugin_host.js`, `content.js`/`background.js` additions, handler message types, `PendingPluginModelStore` drain, `PluginHTMLParityTests`, `tools/plugin-sim` | §13.1, §13.3, §13.4. |
+
+**Wave 2A landed**, with five design points worth carrying forward.
+
+1. **`PluginPlatformComposition.install` builds the platform.** Its signature is
+   `install(processKind:bundledPluginsBundle:additionalBridges:store:keyValueStore:)`
+   — the resource bundle is INJECTED because LunaPluginIngest sits below
+   LunaBundledPlugins in the link graph, and the two stores are defaulted so a
+   test can boot the whole platform on a scratch container. `swiftMediaResolver`
+   is gone: `PluginMediaResolver` holds no fallback, and the three central roots
+   build no `SocialMediaResolver`.
+2. **`MediaAssetResolution` (LunaMediaDownload) answers "which resolver".**
+   `MediaShellWiring` is shared by central Luna and the Downloader, so the file
+   cannot name either answer; it asks the media module, which reads
+   `PluginMediaSeams.resolver` and falls back to `SocialMediaResolver`.
+   `PluginPlatformBootTests` pins that neither `KindWiring+Luna` nor
+   `MediaShellWiring` names a Swift resolver.
+3. **No bundled media plugin sets `headers`.** `LiveMediaDownloadManager`
+   already sends the per-platform User-Agent and Referer those CDNs ask for,
+   keyed off the save's own URL, and a plugin's headers OVERRIDE those. The
+   `headers` field stays for a CDN the engine's defaults miss.
+4. **Schema 13**: `media_download_jobs.quality`, so `MediaReresolveMatching`
+   matches on (kind, quality) rather than on kind plus display order. One TEXT
+   column, not a JSON list — a job persists exactly one asset.
+   `PluginModelCaps` also gained a URL cap of its own (4096); a signed YouTube
+   stream URL carries its whole signature in the query and failed the
+   1000-character prose cap the decoder was reusing.
+5. **`match.any` for `direct-media.js`**, with `priority: 90` declared as the
+   plan says. An any-host plugin runs after every host-matched plugin whatever
+   its priority, which is the ordering a URL-shape fallback wants: a platform's
+   own plugin keeps a post page whose path happens to end in `.mp4`.
+
+Not reached: a bundled plugin's ingest now runs at SAVE time, so saving a
+YouTube, TikTok or Facebook link costs its resolver's round trips inside the
+walk (the Swift path decided the kind from the URL alone and resolved later).
+A failure still falls through to the Swift classifier, so the cost is latency
+rather than correctness. `KindCompositionRootTests
+.testNoCompositionRootWritesThePluginRegistriesDirectly` fails on the merged
+1B+1C base: `Luna/Settings/PluginsSettingsCategory.swift` READS
+`PluginPlatformServices`, and the check greps for the name rather than for a
+write.
 
 Exit: media-download parity checklist (from `claudedocs/media-download.md`)
 green on the simulator via `-LunaStage` + a device check for Safari; the

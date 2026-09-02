@@ -958,6 +958,19 @@
 "Downloader_media_retention_threeDays_Luna" = "3 days";
 "Downloader_media_retention_twoWeeks_Luna" = "2 weeks";
 
+/* ===== PluginImportError — PluginManifestError.swift + PluginStoreError.swift (what the import screen shows when a plugin file is refused), in reading order ===== */
+"PluginImportError_noHeader_Luna" = "This file has no plugin header. A plugin starts with a block comment whose first line is luna-plugin, holding its manifest JSON.";
+"PluginImportError_headerNotJSON_Luna" = "The plugin header on line %lld is not a JSON object: %@";
+"PluginImportError_missingField_Luna" = "The plugin header needs a \"%@\" field (line %lld).";
+"PluginImportError_invalidField_Luna" = "The plugin header's \"%@\" on line %lld is not usable: %@";
+"PluginImportError_apiTooNew_Luna" = "This plugin needs plugin API %lld. This build has %lld, so it cannot run the plugin. Update Luna.";
+"PluginImportError_unknownCapability_Luna" = "The plugin header names a capability Luna does not have: \"%@\" (line %lld).";
+"PluginImportError_notText_Luna" = "%@ is not UTF-8 text.";
+"PluginImportError_sourceTooLarge_Luna" = "A plugin file may be at most %lld KB.";
+"PluginImportError_writeFailed_Luna" = "The plugin could not be written to disk: %@";
+"PluginImportError_notInstalled_Luna" = "No plugin named %@ is installed.";
+"PluginImportError_bundledCannotBeDeleted_Luna" = "%@ ships with Luna. It can be switched off, but not deleted.";
+
 /* ===== PriceTracker_productCard — ProductDetailViewController.swift + SellerRowView.swift (the product surface both apps and both extensions show) ===== */
 "PriceTracker_productCard_discountFormat_Luna" = "%lld%% off";
 "PriceTracker_productCard_noPriceValue_Luna" = "No price";

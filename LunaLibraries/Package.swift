@@ -278,8 +278,11 @@ let package = Package(
         ]),
         // Resources only: the plugins Luna ships with. `.copy` keeps the
         // directory shape, so the catalog enumerates one folder rather than a
-        // flattened bundle root.
-        .target(name: "LunaBundledPlugins", resources: [.copy("Resources")]),
+        // flattened bundle root. The folder is NOT named `Resources`: a
+        // directory by that name at a bundle's root makes `codesign` read the
+        // bundle as a framework layout and refuse it as "bundle format
+        // unrecognized, invalid, or unsuitable".
+        .target(name: "LunaBundledPlugins", resources: [.copy("Plugins")]),
         // Luna Vault is deliberately layered independently from the legacy
         // URL-save graph. The extraction, embedding and search tiers have no
         // dependency path to a backend or networking target, so their work can

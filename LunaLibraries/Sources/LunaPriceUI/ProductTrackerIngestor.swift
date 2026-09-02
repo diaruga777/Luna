@@ -65,6 +65,7 @@ public final class ProductTrackerIngestor {
             PriceTrackerSaveAnnouncement.post(
                 itemID: matchID, source: item.effectiveCaptureSource,
                 isMerge: true, highlightedURL: highlightedURL)
+            reportReadiness(itemID: matchID, store: store)
             finishSeeding(itemID: matchID)
             return
         }
@@ -105,7 +106,20 @@ public final class ProductTrackerIngestor {
         PriceTrackerSaveAnnouncement.post(
             itemID: item.id, source: item.effectiveCaptureSource,
             isMerge: false, highlightedURL: nil)
+        reportReadiness(itemID: item.id, store: store)
         finishSeeding(itemID: item.id)
+    }
+
+    /// Reports the tracker's save, so an export destination that takes products
+    /// can auto-send it. The tracker payload IS a product save's content —
+    /// `savePriceTracker` writes it and marks the row `.ready` in one step — so
+    /// this is the readiness moment for both routes in: a brand-new tracker and
+    /// the existing one a duplicate save merged into.
+    private func reportReadiness(itemID: UUID, store: SavesStore) {
+        guard let observer = SaveReadiness.observer,
+              let item = store.item(withID: itemID)
+        else { return }
+        observer.saveBecameReady(item)
     }
 
     /// Regenerates the compact history index (Feature 3's data source) and

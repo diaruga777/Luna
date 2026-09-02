@@ -81,6 +81,12 @@ public final class PluginDestination: ArticleDestination {
         PluginExportConfiguration.isConfigured(pluginID: pluginID, export: export)
     }
 
+    /// The kinds the plugin declared. A media or product destination therefore
+    /// auto-sends, queues and retries on the same terms an article one does.
+    public func accepts(_ item: SavedItem) -> Bool {
+        export.kinds.contains(item.exportKind)
+    }
+
     public func sendMode(for item: SavedItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
             forDestination: id, source: item.effectiveCaptureSource,

@@ -69,7 +69,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
     private var second: MockDestination!
     private var coordinator: ArticleSendCoordinator!
     private var currentDate: Date!
-    /// Every background delivery task `articleBecameReady`/`retryPendingSends`
+    /// Every background delivery task `saveBecameReady`/`retryPendingSends`
     /// starts, collected through the coordinator's `deliveryTaskObserver` seam
     /// so `drainDeliveries()` can await them instead of sleeping.
     private let taskLock = NSLock()
@@ -279,44 +279,44 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertNil(sendState(item, kindle.id))
     }
 
-    func testArticleBecameReadySendsQueuedItem() async {
+    func testSaveBecameReadySendsQueuedItem() async {
         kindle.mode = .off
         let item = makeReadyItem()
         store.setSendState(.queued, for: item.id, destination: kindle.id)
         guard let fresh = store.item(withID: item.id) else { return XCTFail("item gone") }
-        coordinator.articleBecameReady(fresh)
+        coordinator.saveBecameReady(fresh)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
     }
 
-    func testArticleBecameReadySendsToAllAllSavesDestinations() async {
+    func testSaveBecameReadySendsToAllAllSavesDestinations() async {
         kindle.mode = .allSaves
         second.mode = .allSaves
         let item = makeReadyItem()
-        coordinator.articleBecameReady(item)
+        coordinator.saveBecameReady(item)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertEqual(sendState(item, second.id), .sent)
     }
 
-    func testArticleBecameReadyRespectsPerDestinationMode() async {
+    func testSaveBecameReadyRespectsPerDestinationMode() async {
         kindle.mode = .allSaves
         second.mode = .off
         let item = makeReadyItem()
-        coordinator.articleBecameReady(item)
+        coordinator.saveBecameReady(item)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertNil(sendState(item, second.id))
         XCTAssertTrue(second.sentTitles.isEmpty)
     }
 
-    func testArticleBecameReadyRespectsCaptureSource() async {
+    func testSaveBecameReadyRespectsCaptureSource() async {
         // Email auto-sends; paste does not.
         kindle.modeForSource = { $0 == .email ? .allSaves : .off }
         let emailItem = makeReadyItem("https://example.com/email", source: .email)
         let pasteItem = makeReadyItem("https://example.com/paste", source: .paste)
-        coordinator.articleBecameReady(emailItem)
-        coordinator.articleBecameReady(pasteItem)
+        coordinator.saveBecameReady(emailItem)
+        coordinator.saveBecameReady(pasteItem)
         await drainDeliveries()
         XCTAssertEqual(sendState(emailItem, kindle.id), .sent)
         XCTAssertNil(sendState(pasteItem, kindle.id))

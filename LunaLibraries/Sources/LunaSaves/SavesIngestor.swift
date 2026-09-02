@@ -817,7 +817,7 @@ public final class SavesIngestor: PluginLockedSaveResuming {
         }
         let saved = store.saveContent(content, for: item)
         if saved.state == .ready {
-            IngestorKindHandlers.article?.articleBecameReady(saved)
+            SaveReadiness.observer?.saveBecameReady(saved)
         }
         return saved
     }

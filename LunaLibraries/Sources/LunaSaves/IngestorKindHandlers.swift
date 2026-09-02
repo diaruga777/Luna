@@ -14,7 +14,8 @@ import Foundation
 /// LunaSend) into every app. The heavy lifting lives in
 /// `LunaReaderUI.ArticleIngestHandler`. The app shell's adapter bridges the
 /// send methods to `ArticleSendCoordinator`, since LunaReaderUI must not
-/// depend on LunaSend.
+/// depend on LunaSend. A newly-ready save is reported through
+/// `SaveReadiness.observer` instead, which every kind shares.
 public protocol IngestorArticleHandling {
     /// Persists a readable article: downloads its images + cover art, saves the
     /// content, and flips ready (then finishes non-critical artifacts async).
@@ -30,9 +31,6 @@ public protocol IngestorArticleHandling {
     /// Repairs ready and locked web articles that have no row thumbnail (see
     /// `SavesIngestor.backfillMissingThumbnails`).
     func backfillMissingThumbnails(store: SavesStore)
-    /// A saved item just flipped `.ready` — kicks the auto-send pipeline
-    /// (Kindle/ereaders). Bridged to `ArticleSendCoordinator.articleBecameReady`.
-    func articleBecameReady(_ item: SavedItem)
     /// Eagerly preloads the current pasteboard candidate's links (see
     /// `PreloadCoordinator.preloadPasteboard`).
     func preloadPasteboard(content: ArticleContent, sourceURL: URL)

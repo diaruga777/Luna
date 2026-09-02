@@ -36,7 +36,6 @@ private final class FakeIngestorArticleHandling: IngestorArticleHandling {
     func ingestDocument(_ item: SavedItem, store: SavesStore) async {}
     func backfillMissingWebArchives(store: SavesStore) {}
     func backfillMissingThumbnails(store: SavesStore) {}
-    func articleBecameReady(_ item: SavedItem) {}
     func preloadPasteboard(content: ArticleContent, sourceURL: URL) {}
     func doubleSaveDestinationIDs() -> [String] { [] }
     func sendToDestination(_ item: SavedItem, destinationID: String) async {}

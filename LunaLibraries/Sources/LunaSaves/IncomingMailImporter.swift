@@ -213,7 +213,7 @@ public final class IncomingMailImporter {
             let ready = store.saveContent(content, for: item)
             // Article-kind hook for Kindle/ereader auto-send. A no-op in apps
             // without article handling — they have no send destination.
-            if ready.state == .ready { IngestorKindHandlers.article?.articleBecameReady(ready) }
+            if ready.state == .ready { SaveReadiness.observer?.saveBecameReady(ready) }
         } else if let url = incoming.urls.first, let item = store.addIfAbsent(
             urlString: url.absoluteString, source: .email) {
             recordSender(message, contact: contact, itemID: item.id)

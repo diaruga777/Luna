@@ -204,6 +204,16 @@ public struct SavedItem: Identifiable, Equatable {
     /// A recognized platform item (vs. a plain article/document).
     public var isPlatformItem: Bool { contentPlatform != nil }
 
+    /// Which of the three kinds this save is, read off its own shape — the way
+    /// each card deck decides. The send coordinator asks it to match a save
+    /// against a destination's declared kinds, and the export tier asks it to
+    /// tell an export hook what it is handing over.
+    public var exportKind: PluginModelKind {
+        if priceTracker != nil { return .product }
+        if isPlatformItem { return .media }
+        return .article
+    }
+
     /// An imported document (PDF/text/etc.) rather than a web link or video.
     public var isDocument: Bool { documentType != nil }
 

@@ -358,7 +358,25 @@ public final class SavedMediaStore {
             throw error
         }
         notifyChanged()
+        reportSaveReadiness(saveID: id)
         return persistedItem
+    }
+
+    /// Reports the save that now owns a downloaded file, so an export
+    /// destination that takes media can auto-send it.
+    ///
+    /// This is the readiness moment for a media save, not the `saves` row
+    /// flipping `.ready`: `SavesStore.savePlatformMetadata` marks the row ready
+    /// as soon as the post's title and thumbnail land, minutes before any bytes
+    /// arrive, while a media export's input is the FILE
+    /// (`PluginExportInputProducer.mediaFile`). A Photos-backed save reports
+    /// nothing — its bytes are in the photo library, where Luna has no file
+    /// handle to hand a plugin.
+    private func reportSaveReadiness(saveID: UUID) {
+        guard let observer = SaveReadiness.observer,
+              let item = ownershipStore().item(withID: saveID)
+        else { return }
+        observer.saveBecameReady(item)
     }
 
     /// Commits a PhotoKit durable identifier before releasing the app-owned file

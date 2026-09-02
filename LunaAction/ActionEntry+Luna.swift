@@ -34,8 +34,7 @@ final class ActionEntry: ShareViewController {
         PluginPlatformComposition.install(
             processKind: .action,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: [],
-            swiftMediaResolver: SocialMediaResolver())
+            additionalBridges: [])
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

@@ -39,8 +39,6 @@ public enum PluginPlatformComposition {
     /// injected because LunaPluginIngest sits below that target in the link
     /// graph. `additionalBridges` are the capability bridges higher tiers own
     /// (browser, ui, settings); the runtime's own six are registered here.
-    /// `swiftMediaResolver` is the Wave-1 floor under a URL no media plugin
-    /// claims; it goes away when the bundled media plugins ship.
     ///
     /// Idempotent: calling it twice replaces the same witnesses.
     @discardableResult
@@ -48,7 +46,6 @@ public enum PluginPlatformComposition {
         processKind: PluginProcessKind,
         bundledPluginsBundle: Bundle?,
         additionalBridges: [any PluginCapabilityInstalling] = [],
-        swiftMediaResolver: (any SocialMediaResolving)? = nil,
         store: PluginStore = .shared,
         keyValueStore: PluginKVStore = .shared
     ) -> [PluginLoadReport] {
@@ -86,8 +83,7 @@ public enum PluginPlatformComposition {
 
         IngestPipeline.pluginStage = PluginIngestStage(
             invoker: runtime, processKind: processKind)
-        let resolver = PluginMediaResolver(
-            invoker: runtime, processKind: processKind, fallback: swiftMediaResolver)
+        let resolver = PluginMediaResolver(invoker: runtime, processKind: processKind)
         PluginMediaSeams.resolver = resolver
         PluginMediaSeams.reresolver = resolver
         PluginPriceSeams.fetcher = PluginPriceFetcher(

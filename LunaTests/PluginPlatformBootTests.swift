@@ -124,6 +124,23 @@ final class PluginPlatformBootTests: XCTestCase {
         XCTAssertEqual(pluginID, Self.toyPluginID)
     }
 
+    /// Central Luna resolves media through its bundled plugins. Its two media
+    /// wiring files must therefore name no Swift resolver: one that did would be
+    /// a second, invisible answer to "what resolved this asset", and the
+    /// Downloader's resolvers would quietly go on running in the central app.
+    /// The shared shell asks `MediaAssetResolution`, which answers per app.
+    func testTheCentralAppsMediaWiringNamesNoSwiftResolver() throws {
+        let root = URL(fileURLWithPath: "\(#filePath)").deletingLastPathComponent()
+            .deletingLastPathComponent()
+        for path in ["Luna/KindWiring+Luna.swift", "Luna/MediaShellWiring.swift"] {
+            let source = try String(
+                contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertFalse(
+                source.contains("SocialMediaResolver("),
+                "\(path) builds a Swift media resolver; central Luna uses its plugins")
+        }
+    }
+
     func testASecondInstallReplacesTheRuntimeWithoutDuplicatingThePlugin() throws {
         try install()
         let first = try XCTUnwrap(PluginPlatformServices.invoker)

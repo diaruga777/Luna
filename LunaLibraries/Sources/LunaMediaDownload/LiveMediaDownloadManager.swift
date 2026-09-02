@@ -663,7 +663,7 @@ public final class LiveMediaDownloadManager: NSObject {
             sourceURL: sourceURL, pluginID: pluginID, saveID: persistedJob.id)
         guard let assets, !assets.isEmpty,
               let asset = MediaReresolveMatching.pick(
-                kind: persistedJob.mediaKind, quality: nil, from: assets)
+                kind: persistedJob.mediaKind, quality: persistedJob.quality, from: assets)
         else { return false }
 
         store.removeResumeData(for: persistedJob)
@@ -674,6 +674,7 @@ public final class LiveMediaDownloadManager: NSObject {
             job.mediaKind = asset.kind
             job.requestHeadersJSON = Self.headersJSON(asset.requestHeaders)
             job.expiresAt = asset.expiresAt
+            job.quality = asset.quality
             job.resumeDataFileName = nil
             job.progress = 0
             job.receivedByteCount = nil
@@ -733,6 +734,7 @@ public final class LiveMediaDownloadManager: NSObject {
             job.pluginID = asset.pluginID
             job.requestHeadersJSON = Self.headersJSON(asset.requestHeaders)
             job.expiresAt = asset.expiresAt
+            job.quality = asset.quality
             job.phase = .downloading
             job.errorMessage = nil
         }) else { return }

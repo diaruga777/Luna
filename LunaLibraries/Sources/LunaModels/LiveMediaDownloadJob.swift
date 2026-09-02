@@ -121,6 +121,11 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
     /// When the resolved asset URLs go stale. Past this the engine re-resolves
     /// before starting or resuming rather than downloading a 403.
     public var expiresAt: Date?
+    /// The quality label the resolver gave the leg this job is downloading
+    /// ("1080p", "hd"). `MediaReresolveMatching` reads it to pick the same leg
+    /// out of a re-resolved answer, so a resumed 1080p transfer does not come
+    /// back as the 360p one. Nil for a job whose resolver named no quality.
+    public var quality: String?
 
     public var isTerminal: Bool { phase == .finished || phase == .failed }
 
@@ -140,7 +145,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         backgroundSessionIdentifier: String? = nil,
         audioURLString: String? = nil, dashManifestURLString: String? = nil,
         pluginID: String? = nil, requestHeadersJSON: String? = nil,
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil, quality: String? = nil
     ) {
         self.id = id
         self.sourceURLString = sourceURLString
@@ -170,6 +175,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         self.pluginID = pluginID
         self.requestHeadersJSON = requestHeadersJSON
         self.expiresAt = expiresAt
+        self.quality = quality
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -183,7 +189,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         case resolvedVideoID, youtubeVisitorData
         case errorMessage, errorKind, resolveAttempts, mediaAttempts, suspendDeadline, ownership
         case backgroundSessionIdentifier
-        case pluginID, requestHeadersJSON, expiresAt
+        case pluginID, requestHeadersJSON, expiresAt, quality
     }
 
     public init(from decoder: Decoder) throws {
@@ -227,6 +233,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
         requestHeadersJSON = try c.decodeIfPresent(String.self, forKey: .requestHeadersJSON)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+        quality = try c.decodeIfPresent(String.self, forKey: .quality)
     }
 
     public func encode(to encoder: Encoder) throws {

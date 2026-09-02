@@ -57,8 +57,7 @@ enum KindWiring {
         PluginPlatformComposition.install(
             processKind: .app,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: [],
-            swiftMediaResolver: SocialMediaResolver())
+            additionalBridges: [])
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See

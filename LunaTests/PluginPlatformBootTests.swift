@@ -23,6 +23,7 @@ import XCTest
 ///
 /// It replaces the test host's own platform while it runs, and `tearDown` puts
 /// the shipped one back.
+@MainActor
 final class PluginPlatformBootTests: XCTestCase {
 
     private var containerURL: URL!

@@ -64,13 +64,18 @@ public final class PluginDestination: ArticleDestination {
     public let pluginID: String
     private let export: PluginExportSummary
     private let stage: PluginExportStage?
+    /// Where a media save's downloaded file is, for `accepts`. Nil in
+    /// production, where the installed locator answers.
+    private let mediaFiles: (any PluginExportMediaFileLocating)?
 
     public init(
-        pluginID: String, export: PluginExportSummary, stage: PluginExportStage? = nil
+        pluginID: String, export: PluginExportSummary, stage: PluginExportStage? = nil,
+        mediaFiles: (any PluginExportMediaFileLocating)? = nil
     ) {
         self.pluginID = pluginID
         self.export = export
         self.stage = stage
+        self.mediaFiles = mediaFiles
     }
 
     public var id: String { PluginDestinationLegacyIDs.destinationID(forPluginID: pluginID) }
@@ -83,8 +88,20 @@ public final class PluginDestination: ArticleDestination {
 
     /// The kinds the plugin declared. A media or product destination therefore
     /// auto-sends, queues and retries on the same terms an article one does.
+    ///
+    /// A `file` input carries one more condition: the downloaded file must
+    /// exist. A media save's row is `.ready` from its post metadata alone, so
+    /// without this the lifecycle sweep would queue a save whose bytes have not
+    /// arrived and spend the whole retry budget on an input that cannot be
+    /// built yet. The landed file reports readiness itself
+    /// (`SavedMediaStore.addDownloadedFile`), which is what queues it then.
     public func accepts(_ item: SavedItem) -> Bool {
-        export.kinds.contains(item.exportKind)
+        guard export.kinds.contains(item.exportKind) else { return false }
+        guard export.input == PluginExportInputFormat.file.rawValue else { return true }
+        let locator = mediaFiles ?? PluginExportMediaFiles.locator
+        guard let url = locator?.mediaFileURL(forSaveID: item.id)
+        else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
     public func sendMode(for item: SavedItem) -> ArticleSendMode {

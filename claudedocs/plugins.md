@@ -709,6 +709,12 @@ moment its save gains the content a destination would deliver:
 | media | `SavedMediaStore.addDownloadedFile` | the downloaded FILE lands. NOT the `saves` row flipping `.ready` — `savePlatformMetadata` does that the moment the post's title and thumbnail arrive, minutes before any bytes, while a media export's input is the file (`PluginExportInputProducer.mediaFile`). A Photos-backed save reports nothing: its bytes are in the photo library, where there is no file handle to hand a plugin |
 | product | `ProductTrackerIngestor` (both routes: a new tracker and the existing one a duplicate save merged into) | the tracker is written, which `savePriceTracker` does in the same step as marking the row `.ready` |
 
+A `file` destination's `accepts` carries the same condition the trigger does:
+the downloaded file must exist. Without it the lifecycle sweep
+(`retryPendingSends`, which reconciles any `.ready` all-saves save into a
+queue row) would queue a media save whose bytes have not arrived and spend the
+whole retry budget failing to build its input.
+
 **The double-save press stays article-only.** `doubleSaveDestinationIDs()`
 reports every configured destination in `.doubleSave` mode regardless of kind,
 but the press itself is gated upstream: a platform item's second press is

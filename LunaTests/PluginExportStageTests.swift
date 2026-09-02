@@ -314,7 +314,8 @@ final class PluginExportStageTests: XCTestCase {
             invoker: invoker,
             producer: PluginExportInputProducer(store: store, mediaFiles: mediaFiles),
             scratch: scratch, presenter: presenter)
-        return PluginDestination(pluginID: id, export: export, stage: stage)
+        return PluginDestination(
+            pluginID: id, export: export, stage: stage, mediaFiles: mediaFiles)
     }
 
     private func coordinator(_ destination: PluginDestination) -> ArticleSendCoordinator {
@@ -470,12 +471,31 @@ final class PluginExportStageTests: XCTestCase {
             argument.contains("\"size\":\(Data("movie-bytes".utf8).count)"), argument)
     }
 
+    /// A media save's row is ready from its post metadata alone, so a `file`
+    /// destination must refuse it until the bytes are there — otherwise the
+    /// lifecycle sweep queues a save whose input cannot be built and spends the
+    /// whole retry budget on it.
+    func testAFileDestinationRefusesAMediaSaveWhoseDownloadHasNotLanded() {
+        let item = readyMedia()
+        let destination = destination(
+            PluginExportFixtures.export(
+                kinds: [.media], input: "file", isDestination: true),
+            mediaFiles: FixedMediaFileLocator(
+                url: containerURL.appendingPathComponent("absent.mp4")))
+
+        XCTAssertEqual(item.state, .ready)
+        XCTAssertFalse(destination.accepts(item))
+    }
+
     /// The kinds a destination declared are the kinds it is offered. An article
     /// destination beside the media one never sees the download.
-    func testADestinationRefusesASaveOfAKindItDidNotDeclare() {
+    func testADestinationRefusesASaveOfAKindItDidNotDeclare() throws {
+        let downloaded = containerURL.appendingPathComponent("Declared.mp4")
+        try Data("movie-bytes".utf8).write(to: downloaded)
         let media = destination(
             PluginExportFixtures.export(
-                kinds: [.media], input: "file", isDestination: true))
+                kinds: [.media], input: "file", isDestination: true),
+            mediaFiles: FixedMediaFileLocator(url: downloaded))
         let article = destination(
             PluginExportFixtures.export(input: "url", isDestination: true),
             id: "test.luna.article")

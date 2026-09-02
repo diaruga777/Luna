@@ -258,6 +258,46 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "plugins.consent",
+      "screen": "Plugin consent",
+      "variant": "first install",
+      "summary": "The one screen a plugin is imported through: what it declares, each capability in plain language, and the containment sentence.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.import.paste",
+      "screen": "Paste source",
+      "variant": "empty",
+      "summary": "The 'Paste source' leg of the Add button: a bare text view and Import.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.settings.detail",
+      "screen": "Plugin detail",
+      "variant": "full settings schema",
+      "summary": "One plugin's settings screen: every field type the schema supports, a stopped status with Re-enable, and Delete for an imported plugin.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.settings.empty",
+      "screen": "Settings → Plugins",
+      "variant": "no plugins",
+      "summary": "Settings → Plugins with nothing installed: the empty row and the Add button.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.settings.list",
+      "screen": "Settings → Plugins",
+      "variant": "three plugins",
+      "summary": "Three installed plugins: one enabled, one disabled, and one the runtime stopped after repeated timeouts.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
       "id": "price.editor.alerting",
       "screen": "Price editor",
       "variant": "price drop",

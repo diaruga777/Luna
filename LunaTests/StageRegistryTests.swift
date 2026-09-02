@@ -82,6 +82,7 @@ final class StageRegistryTests: XCTestCase {
         XCTAssertEqual(StageDescriptor.Kind.email.apps, [.luna, .reader])
         XCTAssertEqual(StageDescriptor.Kind.media.apps, [.luna, .downloader])
         XCTAssertEqual(StageDescriptor.Kind.product.apps, [.luna, .priceTracker])
+        XCTAssertEqual(StageDescriptor.Kind.plugin.apps, [.luna])
     }
 
     /// Every app has at least the shared stages, and only the central app has
@@ -108,7 +109,7 @@ final class StageRegistryTests: XCTestCase {
     /// reason: no unit test can load four composition roots that each compile
     /// into a different binary.
     private static let expectedCatalogs: [String: Set<String>] = [
-        "Luna/KindWiring+Luna.swift": ["Shared", "Article", "Email", "Media", "Product"],
+        "Luna/KindWiring+Luna.swift": ["Shared", "Article", "Email", "Media", "Product", "Plugin"],
         "Luna/KindWiring+Reader.swift": ["Shared", "Article", "Email"],
         "Luna/KindWiring+Downloader.swift": ["Shared", "Media"],
         "Luna/KindWiring+PriceTracker.swift": ["Shared", "Product"],
@@ -122,7 +123,7 @@ final class StageRegistryTests: XCTestCase {
     }
 
     func testEachAppRootInstallsExactlyItsOwnStageCatalogs() throws {
-        let all = ["Shared", "Article", "Email", "Media", "Product"]
+        let all = ["Shared", "Article", "Email", "Media", "Product", "Plugin"]
         for (path, expected) in Self.expectedCatalogs.sorted(by: { $0.key < $1.key }) {
             let source = try String(
                 contentsOf: repositoryRoot.appendingPathComponent(path), encoding: .utf8)

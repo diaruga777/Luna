@@ -46,6 +46,13 @@ let package = Package(
         .library(name: "LunaSocialUI", targets: ["LunaSocialUI"]),
         .library(name: "LunaIntents", targets: ["LunaIntents"]),
         .library(name: "LunaSavesUI", targets: ["LunaSavesUI"]),
+        .library(name: "LunaPluginKit", targets: ["LunaPluginKit"]),
+        .library(name: "LunaPluginRuntime", targets: ["LunaPluginRuntime"]),
+        .library(name: "LunaPluginIngest", targets: ["LunaPluginIngest"]),
+        .library(name: "LunaPluginExport", targets: ["LunaPluginExport"]),
+        .library(name: "LunaPluginTransport", targets: ["LunaPluginTransport"]),
+        .library(name: "LunaPluginUI", targets: ["LunaPluginUI"]),
+        .library(name: "LunaBundledPlugins", targets: ["LunaBundledPlugins"]),
         .library(name: "LunaVaultModels", targets: ["LunaVaultModels"]),
         .library(name: "LunaVaultCrypto", targets: ["LunaVaultCrypto"]),
         .library(name: "LunaVaultStorage", targets: ["LunaVaultStorage"]),
@@ -220,6 +227,59 @@ let package = Package(
         // (implementations in LunaReaderUI / LunaPlatforms / LunaPriceUI),
         // registered by each app's `KindWiring` composition root.
         .target(name: "LunaSaves", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaMailAccount", "LunaMailTransport", "LunaSocial"]),
+        // The plugin platform (claudedocs/plans/plugin-platform.md §2.2). One
+        // JavaScript file extends ingest and export; render stays native. Only
+        // the CENTRAL Luna app and its extensions link any of this — the three
+        // sibling apps are untouched by the pivot.
+        //
+        // Foundation-only floor: the manifest and its parser, the plugin store in
+        // the App Group, the bundled catalog reader, and the App-Group-backed
+        // fetch / kv / secrets / browser-request / pending-model stores. The
+        // central Safari appex links it, so it carries no UIKit and no
+        // JavaScriptCore.
+        .target(name: "LunaPluginKit", dependencies: [
+            "LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification",
+        ]),
+        // The JavaScriptCore host: one context per loaded plugin, hook invocation,
+        // result decoding, and the bridges a hook may call. SwiftSoup backs
+        // `luna.html`; JavaScriptCore is a system framework, so it is linked
+        // rather than declared as a package dependency.
+        .target(
+            name: "LunaPluginRuntime",
+            dependencies: ["LunaPluginKit", .product(name: "SwiftSoup", package: "SwiftSoup")],
+            linkerSettings: [.linkedFramework("JavaScriptCore")]),
+        // The classify + ingest walk that runs BEFORE the Swift classifier, the
+        // Model decoding and adoption, and the browser deferral.
+        .target(name: "LunaPluginIngest", dependencies: [
+            "LunaPluginRuntime", "LunaIngest", "LunaFetch",
+        ]),
+        // The export stage, the export-input producers and plugin destinations.
+        // App only: the mail transport and the share sheet do not exist in an
+        // extension.
+        .target(name: "LunaPluginExport", dependencies: [
+            "LunaPluginRuntime", "LunaSend", "LunaEpub", "LunaMailAccount",
+        ]),
+        // `luna.bluetooth` and `luna.wifi`. CoreBluetooth, AccessorySetupKit and
+        // NetworkExtension are system frameworks; AccessorySetupKit needs iOS 18,
+        // which is the package's floor.
+        .target(
+            name: "LunaPluginTransport",
+            dependencies: ["LunaPluginRuntime", "LunaSend"],
+            linkerSettings: [
+                .linkedFramework("CoreBluetooth"),
+                .linkedFramework("AccessorySetupKit"),
+                .linkedFramework("NetworkExtension"),
+            ]),
+        // Settings -> Plugins, import and consent, the settings-schema renderer,
+        // the prompts and the browser lock modal.
+        .target(name: "LunaPluginUI", dependencies: [
+            "LunaPluginRuntime", "LunaPluginIngest", "LunaPluginExport",
+            "LunaDesignSystem", "LunaSavesUI", "LunaArchiveReader",
+        ]),
+        // Resources only: the plugins Luna ships with. `.copy` keeps the
+        // directory shape, so the catalog enumerates one folder rather than a
+        // flattened bundle root.
+        .target(name: "LunaBundledPlugins", resources: [.copy("Resources")]),
         // Luna Vault is deliberately layered independently from the legacy
         // URL-save graph. The extraction, embedding and search tiers have no
         // dependency path to a backend or networking target, so their work can

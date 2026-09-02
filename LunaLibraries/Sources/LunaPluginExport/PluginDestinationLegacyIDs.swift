@@ -19,6 +19,7 @@ public enum PluginDestinationLegacyIDs {
     /// Plugin id → the Swift destination id it replaces.
     public static let byPluginID: [String: String] = [
         KindlePlugin.pluginID: ArticleDestinationID.kindle,
+        "app.luna.xteink": ArticleDestinationID.xteink,
     ]
 
     /// The destination id a plugin delivers under: the replaced Swift id when

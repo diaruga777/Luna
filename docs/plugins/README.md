@@ -251,15 +251,18 @@ write is sent as-is.
 
 `cookies` controls whose cookie jar the request uses: `"shared"` (default —
 the site's normal, logged-out consent state), `"ephemeral"` (a fresh jar,
-nothing remembered), `"none"`, or `"browser"` (the cookies a `luna.browser`
-step just earned — see §7). `redirect` is `"follow"` (default), `"manual"`
-(stop at the 3xx and read `Location` yourself), or `"headThenGet"`.
+nothing remembered), or `"none"`. To reuse the session a `luna.browser` step
+just earned (§7), set the `Cookie` header from the result's `cookieHeader`;
+any other `cookies` value rejects `bad-argument`. `redirect` is `"follow"`
+(default), `"manual"` (stop at the 3xx and read `Location` yourself), or
+`"headThenGet"`.
 
 A POST body can be a plain string, `{ base64: "…" }`, `{ form: {...} }`,
 `{ json: {...} }`, or `{ multipart: [...] }` (each part is `{ name, filename?,
-mime?, text?, base64? }` — note there is no `file` field here; read a
-`FileHandle` to base64 with `luna.files.read` first if you need to upload
-one). Luna sets `Content-Type` for `form`/`json`/`multipart` bodies for you.
+mime?, text?, base64?, file? }` — `file` takes a `FileHandle` and uploads the
+bytes straight off disk, defaulting `filename` and `mime` to the handle's own;
+it needs the `files` capability, so it works everywhere except Safari). Luna
+sets `Content-Type` for `form`/`json`/`multipart` bodies for you.
 
 ## 5. Storage, secrets, and settings
 

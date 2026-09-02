@@ -114,6 +114,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     supportsArticles: !!(resp && resp.supportsArticles),
                     supportsMedia: !!(resp && resp.supportsMedia),
                     supportsProducts: !!(resp && resp.supportsProducts),
+                    supportsPlugins: !!(resp && resp.supportsPlugins),
                     // ABSENT means ON, exactly as the native side reads the key:
                     // a non-media host never sends it, and a media host omits
                     // nothing — so only an explicit `false` suppresses the
@@ -133,6 +134,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     supportsArticles: false,
                     supportsMedia: false,
                     supportsProducts: false,
+                    supportsPlugins: false,
                     videoPlayer: true,
                     celebrateSetup: false,
                     appName: ""
@@ -224,6 +226,16 @@ browser.runtime.onMessage.addListener(function (message) {
                 };
             })
             .catch(function () { return { found: false, failed: true }; });
+    }
+    // Every plugin.* message (catalog/source/fetch/storage/collection/log/
+    // settings.get/browserDeferred/queueModel) carries everything the native
+    // handler needs in its own body, so one relay forwards the message
+    // verbatim and hands back whatever the handler answered — see
+    // SafariWebExtensionHandler's "Plugins" section and content.js's plugin
+    // walk (`claudedocs/plans/plugin-platform.md` §13.1).
+    if (typeof message.type === "string" && message.type.indexOf("plugins.") === 0) {
+        return browser.runtime.sendNativeMessage("application.id", message)
+            .catch(function () { return { error: "native-unavailable" }; });
     }
 });
 

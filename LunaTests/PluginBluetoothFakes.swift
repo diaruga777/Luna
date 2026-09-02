@@ -230,6 +230,30 @@ final class RecordingPluginInvoker: PluginHookInvoking, @unchecked Sendable {
     var rivalLockFileURL: URL?
     /// Held before answering, so a test can watch the lock while a hook runs.
     var hookDuration: TimeInterval = 0
+    /// The center each hook is asked about, so a test sees whether the link a
+    /// sweep was dispatched for was still open while its hook ran.
+    weak var observedCenter: PluginBluetoothCenter?
+    /// For each invocation, whether that center had a live session.
+    private(set) var sessionWasLiveDuringHook: [Bool] = []
+    /// The most invocations that overlapped. §9 promises one at a time.
+    private(set) var maximumConcurrentInvocations = 0
+    private var activeInvocations = 0
+    private var gated = false
+
+    /// While true a hook parks instead of answering, so a test can hold one
+    /// invocation open and watch the next event wait for it.
+    var isGated: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return gated
+        }
+        set {
+            lock.lock()
+            gated = newValue
+            lock.unlock()
+        }
+    }
 
     var loadedPlugins: [PluginSummary] = []
     var disabledPlugins: [String: String] = [:]
@@ -249,13 +273,21 @@ final class RecordingPluginInvoker: PluginHookInvoking, @unchecked Sendable {
             lockWasFree = rival.acquire()
             if lockWasFree { rival.release() }
         }
+        let sessionWasLive = observedCenter?.liveSession?.isLive == true
         lock.lock()
         invocations.append((hook, pluginID, json))
         lockWasFreeDuringHook.append(lockWasFree)
+        sessionWasLiveDuringHook.append(sessionWasLive)
+        activeInvocations += 1
+        maximumConcurrentInvocations = max(maximumConcurrentInvocations, activeInvocations)
         lock.unlock()
         if hookDuration > 0 {
             try? await Task.sleep(nanoseconds: UInt64(hookDuration * 1_000_000_000))
         }
+        while isGated { try? await Task.sleep(nanoseconds: 5_000_000) }
+        lock.lock()
+        activeInvocations -= 1
+        lock.unlock()
         guard let boxed = try? JSONDecoder().decode(
             Box<T>.self, from: Data("{\"value\":null}".utf8))
         else { return .failure(.malformedResult("the fake cannot build \(T.self)")) }

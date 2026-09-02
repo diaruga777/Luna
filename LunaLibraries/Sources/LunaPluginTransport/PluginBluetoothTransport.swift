@@ -49,6 +49,12 @@ public struct PluginTransportError: Error, Equatable, Sendable {
     static func timedOut(_ message: String) -> PluginTransportError {
         PluginTransportError(code: "timed-out", message: message)
     }
+    /// A second `connect` for a device whose first connect is still waiting.
+    /// Replacing the waiter would leave the first promise pending for the rest
+    /// of the hook's budget.
+    static let alreadyConnecting = PluginTransportError(
+        code: "already-connecting",
+        message: "a connect to that device is already waiting for its link")
 }
 
 /// The one comparison spelling for a Bluetooth UUID.

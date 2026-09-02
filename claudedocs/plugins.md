@@ -660,9 +660,15 @@ pure function of the UUID, so the two derive the same lock file path without
 sharing a constant. A center that cannot take the lock invokes NOTHING: no
 hook call, no lease, no answer to the device.
 
-`onBluetooth` events serialize per session; a session's queued/in-flight
-calls settle (not merely start) before another may run on the same GATT
-link, or the reader would reject the interleave as `resume_mismatch`.
+`onBluetooth` events serialize per center: one event's hook settles before
+the next event's hook starts, so a `disconnected` cannot run in JavaScript
+beside a `connected` sweep and clobber the link a destination plugin keeps
+for its nested `export`. Inside a session, queued and in-flight calls settle
+(not merely start) before another may run on the same GATT link, or the
+reader would reject the interleave as `resume_mismatch`. A `connected` sweep
+takes the service lock when its turn comes and closes only the session it
+was dispatched for, so a link that drops and comes back mid-hook leaves the
+reconnect's session to the sweep that follows it.
 
 `xteink.js` (`LunaLibraries/Sources/LunaBundledPlugins/Plugins/xteink.js`)
 is the full worked example: HMAC-SHA256 hello over the pairing secret

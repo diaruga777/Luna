@@ -124,6 +124,71 @@ final class PluginBluetoothCenterTests: XCTestCase {
         XCTAssertNotNil(center)
     }
 
+    /// Events run one at a time, and a link that drops and comes back while a
+    /// hook is in flight belongs to the sweep that follows: the sweep in flight
+    /// must not close the session the reconnect built, nor read the lock it
+    /// holds itself as another process owning the rendezvous.
+    func testEventsRunOneAtATimeAndAReconnectKeepsItsNewLink() {
+        let center = makeCenter(standingConnect: false)
+        invoker.observedCenter = center
+        center.start()
+        invoker.isGated = true
+        maker.transport.fireConnect(device)
+        waitUntil("the first hook started") { self.invoker.hooks.count == 1 }
+
+        maker.transport.fireDisconnect(device)
+        maker.transport.fireConnect(device)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(
+            invoker.hooks.count, 1, "a queued event waits for the hook in flight")
+
+        invoker.isGated = false
+        waitUntil("every event ran") { self.invoker.hooks.count == 3 }
+        XCTAssertEqual(invoker.eventTypes, ["connected", "disconnected", "connected"])
+        XCTAssertEqual(invoker.maximumConcurrentInvocations, 1)
+        XCTAssertEqual(
+            invoker.sessionWasLiveDuringHook, [true, true, true],
+            "the reconnect's session outlives the sweep that was running")
+        XCTAssertEqual(
+            invoker.lockWasFreeDuringHook, [false, true, false],
+            "each sweep holds the service lock for its own hook")
+    }
+
+    // MARK: - Connecting
+
+    /// A connect that never links answers its caller rather than leaving a
+    /// promise pending for the rest of the hook's budget.
+    func testAConnectThatNeverLinksFailsWithItsOwnTimeout() {
+        let center = makeCenter(standingConnect: false)
+        var code: String?
+        let failed = expectation(description: "failed")
+        center.connect(deviceID: device.id, timeout: 0.2) { result in
+            if case .failure(let error) = result { code = error.code }
+            failed.fulfill()
+        }
+        wait(for: [failed], timeout: 3)
+        XCTAssertEqual(code, "timed-out")
+        XCTAssertTrue(maker.transport.calls.contains("connect(\(device.id))"))
+    }
+
+    /// A second connect for a device already waiting refuses with its own code.
+    /// Replacing the waiter would strand the first promise for good.
+    func testASecondConnectForADeviceAlreadyWaitingIsRefused() {
+        let center = makeCenter(standingConnect: false)
+        var first: Result<PluginBluetoothSession, PluginTransportError>?
+        center.connect(deviceID: device.id, timeout: 2) { first = $0 }
+        var secondCode: String?
+        center.connect(deviceID: device.id, timeout: 2) { result in
+            if case .failure(let error) = result { secondCode = error.code }
+        }
+        XCTAssertEqual(secondCode, "already-connecting")
+        XCTAssertNil(first, "the first connect is still waiting for its link")
+
+        maker.transport.fireConnect(device)
+        waitUntil("the first connect got its link") { first != nil }
+        XCTAssertNotNil(try? first?.get())
+    }
+
     // MARK: - The radio gate
 
     /// A scan is what raises the system Bluetooth prompt, so a plugin whose

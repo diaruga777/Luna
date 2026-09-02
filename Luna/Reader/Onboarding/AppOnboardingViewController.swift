@@ -1604,7 +1604,10 @@ final class AppOnboardingViewController: UIViewController {
                         self.completeOnboardingWithRealSave(animated: true)
                     }
                 }
-            case .failed, .needsArchive:
+            case .failed, .needsArchive, .locked:
+                // A plugin lock needs a browser step onboarding has no room
+                // for; the paste reports the same "couldn't load" it does for
+                // a paywall.
                 await MainActor.run {
                     self.isHandlingPaste = false
                     self.intro.setPasteError(

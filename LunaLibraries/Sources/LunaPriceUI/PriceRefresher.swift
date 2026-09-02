@@ -93,6 +93,21 @@ public struct PriceRefresher {
         return await refreshTracker(tracker, itemID: itemID)
     }
 
+    /// One store's current price. A store a plugin owns
+    /// (`tracker_stores.plugin_id`) is refreshed by re-running that plugin;
+    /// everything else, and a plugin that answered nothing, goes through the
+    /// Swift price extraction.
+    private func price(for storeListing: PriceTrackerStore) async -> ProductPrice? {
+        if let pluginID = storeListing.pluginID,
+           let fetcher = PluginPriceSeams.fetcher,
+           let url = storeListing.url,
+           let answer = await fetcher.price(forStoreURL: url, pluginID: pluginID) {
+            return ProductPrice(amount: answer.amount, currency: answer.currency)
+        }
+        return await priceFetcher.fetchPrice(
+            forURLString: storeListing.urlString, prefetchedHTML: nil)
+    }
+
     /// Refreshes one tracker: fetches each store, re-extracts its price, persists,
     /// and computes the outcome. Returns nil only if the item vanished mid-refresh.
     public func refreshTracker(_ tracker: PriceTracker, itemID: UUID) async -> PriceRefreshOutcome? {
@@ -101,8 +116,7 @@ public struct PriceRefresher {
         let timestamp = now()
 
         for storeListing in tracker.stores {
-            guard let price = await priceFetcher.fetchPrice(
-                forURLString: storeListing.urlString, prefetchedHTML: nil) else {
+            guard let price = await price(for: storeListing) else {
                 // Stamp the attempt time even on failure so it doesn't monopolize
                 // the stalest-first queue every run.
                 updated.setPrice(storeListing.lastPrice, currency: nil,

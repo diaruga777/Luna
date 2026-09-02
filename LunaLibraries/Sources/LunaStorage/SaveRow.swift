@@ -260,11 +260,13 @@ enum SaveRow {
 
     // MARK: - tracker_stores / tracker_price_points
 
-    static let storeColumns = "id, save_id, position, url_string, last_price, currency, last_refreshed"
+    static let storeColumns =
+        "id, save_id, position, url_string, last_price, currency, last_refreshed, plugin_id"
 
     static let insertStoreSQL = """
-        INSERT INTO tracker_stores (save_id, position, url_string, last_price, currency, last_refreshed)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO tracker_stores
+            (save_id, position, url_string, last_price, currency, last_refreshed, plugin_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """
 
     static func bindStore(
@@ -276,6 +278,7 @@ enum SaveRow {
         try row.bind(4, decimal: store.lastPrice)
         try row.bind(5, store.currency)
         try row.bind(6, date: store.lastRefreshed)
+        try row.bind(7, store.pluginID)
     }
 
     static func store(from row: SavesStatement, priceHistory: [PriceDaySnapshot]) -> PriceTrackerStore {
@@ -284,7 +287,8 @@ enum SaveRow {
             lastPrice: row.decimal(4),
             currency: row.string(5) ?? "USD",
             lastRefreshed: row.date(6),
-            priceHistory: priceHistory)
+            priceHistory: priceHistory,
+            pluginID: row.string(7))
     }
 
     static let pricePointColumns = "store_id, day, lowest_price, currency, fx_rate"

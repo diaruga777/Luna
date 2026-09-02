@@ -145,7 +145,9 @@ public final class ShareSurfaceDriver {
                 _ = store.updateURL(url.absoluteString, for: item.id)
             }
         }
-        present(result.outcome, url: url, blockedItemID: pendingItemID)
+        present(
+            result.outcome, url: url, blockedItemID: pendingItemID,
+            pluginID: result.pluginID)
     }
 
     /// The exhaustive per-surface presenter over the unified `Outcome` (no
@@ -159,7 +161,9 @@ public final class ShareSurfaceDriver {
     /// the store, and the generic unsupported-kind error is presented
     /// instead of any save UI, never a "Saved" checkmark. A supported
     /// outcome, or `.failed`'s nil owner, persists and presents normally.
-    public func present(_ outcome: Outcome, url: URL, blockedItemID: UUID? = nil) {
+    public func present(
+        _ outcome: Outcome, url: URL, blockedItemID: UUID? = nil, pluginID: String? = nil
+    ) {
         guard let host else { return }
 
         if case let .unsupported(owner) = surfaceGate.decision(for: outcome) {
@@ -173,6 +177,12 @@ public final class ShareSurfaceDriver {
         // save that succeeded on a retry of an item that had failed
         // before — otherwise that case would keep exporting a stale story.
         if case .failed = outcome {} else { discardDiagnostics(url: url) }
+
+        // A plugin-produced save carries its owner from here on, so a later
+        // refresh or re-resolution in the app reaches the same plugin.
+        if let pluginID, let item = store.item(forURLString: url.absoluteString) {
+            store.setPluginID(pluginID, for: item.id)
+        }
 
         switch outcome {
         case let .article(content, html):
@@ -253,7 +263,27 @@ public final class ShareSurfaceDriver {
                 SaveFailureStore.shared.recordFailure(item.id, reason: .unknown)
             }
             host.completeSilently()
+
+        case let .locked(pluginID):
+            // A plugin asked for a browser no extension can present. The save
+            // is parked in the same lock a paywalled article gets, and the app
+            // finishes it. The request row itself is written by the browser
+            // bridge that deferred (§8.2).
+            presentPluginLock(url: url, pluginID: pluginID)
         }
+    }
+
+    /// A plugin-locked save: park the row in the same `.needsCaptcha` lock the
+    /// archive path parks in, and confirm the save. The extension shows no
+    /// modal — only the app can present a plugin's browser step.
+    private func presentPluginLock(url: URL, pluginID: String) {
+        guard let host else { return }
+        guard let saved = store.item(forURLString: url.absoluteString) else {
+            host.confirmSavedThenComplete()
+            return
+        }
+        store.markPluginLocked(saved.id, pluginID: pluginID, title: saved.title)
+        host.confirmSavedThenComplete()
     }
 
     /// The action-extension failure card: shows the page, writes a

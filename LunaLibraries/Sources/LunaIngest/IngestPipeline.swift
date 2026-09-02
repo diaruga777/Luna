@@ -82,6 +82,12 @@ public enum Outcome: Equatable {
     /// (`SurfaceSupport`); the central Luna app registers every processor and
     /// never produces this case.
     case unsupported(owner: LunaApp)
+    /// A plugin asked for a browser the running process cannot present, so the
+    /// save is parked in the `.needsCaptcha` lock and finished in the app.
+    /// Carries the owning plugin, which is what routes the resume back to it.
+    /// Only the central Luna app can produce this — the sibling apps install no
+    /// plugin stage (`claudedocs/plans/plugin-platform.md` §8).
+    case locked(pluginID: String)
 
     public static func == (lhs: Outcome, rhs: Outcome) -> Bool {
         switch (lhs, rhs) {
@@ -94,6 +100,7 @@ public enum Outcome: Equatable {
         case let (.needsArchive(lt), .needsArchive(rt)): return lt == rt
         case let (.failed(l), .failed(r)): return l == r
         case let (.unsupported(lo), .unsupported(ro)): return lo == ro
+        case let (.locked(lp), .locked(rp)): return lp == rp
         default: return false
         }
     }
@@ -105,10 +112,15 @@ public enum Outcome: Equatable {
 public struct IngestResult: Equatable {
     public let url: URL
     public let outcome: Outcome
+    /// The plugin that produced `outcome`, when one did. A store writer stamps
+    /// it onto the save (`saves.plugin_id`), which is what routes a later
+    /// price refresh or asset re-resolution back to the same plugin.
+    public let pluginID: String?
 
-    public init(url: URL, outcome: Outcome) {
+    public init(url: URL, outcome: Outcome, pluginID: String? = nil) {
         self.url = url
         self.outcome = outcome
+        self.pluginID = pluginID
     }
 }
 
@@ -229,6 +241,28 @@ public enum IngestPipeline {
         if unwrapped.didUnwrap {
             SaveDiagnostics.record(
                 "pipeline: unwrapped → \(SaveDiagnostics.url(url))", category: "ingest")
+        }
+
+        // (1b) Plugins run before the Swift classifier and may claim a host
+        // Swift already knows. A plugin that declines, breaks or times out
+        // falls through to the classifier below, so the Swift path is the
+        // floor under every plugin. Nil in the three sibling apps, which link
+        // no plugin platform.
+        if let pluginStage = pluginStage {
+            switch await pluginStage.run(
+                IngestInput(
+                    url: url, source: input.source, documentType: input.documentType,
+                    page: input.page, forceArticle: input.forceArticle),
+                fetcher: fetcher)
+            {
+            case .passed:
+                break
+            case let .outcome(outcome, pluginID):
+                return IngestResult(url: url, outcome: outcome, pluginID: pluginID)
+            case let .locked(pluginID):
+                return IngestResult(
+                    url: url, outcome: .locked(pluginID: pluginID), pluginID: pluginID)
+            }
         }
 
         // (2) Classify deterministically, from the URL only. Platform, video,

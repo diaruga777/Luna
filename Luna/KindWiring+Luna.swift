@@ -12,6 +12,8 @@
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
+import LunaPluginIngest
+import LunaPluginKit
 import LunaModels
 import LunaPriceUI
 import LunaReaderUI
@@ -51,6 +53,8 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
+        PluginPlatformComposition.install(
+            processKind: .app, swiftMediaResolver: SocialMediaResolver())
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See

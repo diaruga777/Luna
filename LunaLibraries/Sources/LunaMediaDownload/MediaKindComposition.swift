@@ -3,6 +3,7 @@
 //  LunaMediaDownload
 //
 
+import LunaModels
 import LunaShareSurface
 import Foundation
 
@@ -24,5 +25,8 @@ public enum MediaKindComposition {
     @MainActor
     public static func install() {
         ShareKindPresenters.media = ExtensionMediaPresenter()
+        // The plugin platform's media half. Harmless where no plugin runs: the
+        // walk that reads it only exists in the central app's processes.
+        PluginModelAdopters.media = MediaModelAdopter()
     }
 }

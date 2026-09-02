@@ -22,6 +22,13 @@ public extension Outcome {
             return .priceTracker
         case let .unsupported(owner):
             return owner
+        case .locked:
+            // A plugin-locked save belongs to the app that runs plugins. Only
+            // the central Luna app installs a plugin stage, so this case never
+            // reaches a sibling app's gate; if it ever did, the gate would drop
+            // it as central-Luna-owned rather than store a lock nothing there
+            // can open.
+            return .luna
         case .failed:
             return nil
         }

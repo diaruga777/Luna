@@ -47,6 +47,15 @@ public struct MediaAsset: Codable, Equatable {
     /// task and persists them with the job, so a background resume after process
     /// death still sends what the CDN demands.
     public var requestHeaders: [String: String]
+    /// The quality label a plugin gave this leg ("1080p", "audio-128k"). It is
+    /// what matches a re-resolved asset back to the job that was downloading it
+    /// (`MediaReresolving`). Nil for every Swift-resolved asset.
+    public let quality: String?
+    /// The plugin that resolved this asset, and when its URLs go stale. The
+    /// download engine persists both with the job, so a background resume hours
+    /// later knows whom to ask for a fresh URL. Nil for a Swift-resolved asset.
+    public let pluginID: String?
+    public let expiresAt: Date?
 
     public init(
         url: URL,
@@ -56,7 +65,10 @@ public struct MediaAsset: Codable, Equatable {
         thumbnailURL: URL? = nil,
         estimatedByteCount: Int64? = nil,
         timeRange: MediaTimeRange? = nil,
-        requestHeaders: [String: String] = [:]
+        requestHeaders: [String: String] = [:],
+        quality: String? = nil,
+        pluginID: String? = nil,
+        expiresAt: Date? = nil
     ) {
         self.url = url
         self.kind = kind
@@ -66,11 +78,14 @@ public struct MediaAsset: Codable, Equatable {
         self.estimatedByteCount = estimatedByteCount
         self.timeRange = timeRange
         self.requestHeaders = requestHeaders
+        self.quality = quality
+        self.pluginID = pluginID
+        self.expiresAt = expiresAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case url, kind, audioURL, dashManifestURL, thumbnailURL
-        case estimatedByteCount, timeRange, requestHeaders
+        case estimatedByteCount, timeRange, requestHeaders, quality, pluginID, expiresAt
     }
 
     /// Hand-written so an asset written before `requestHeaders` existed still
@@ -87,6 +102,9 @@ public struct MediaAsset: Codable, Equatable {
         estimatedByteCount = try c.decodeIfPresent(Int64.self, forKey: .estimatedByteCount)
         timeRange = try c.decodeIfPresent(MediaTimeRange.self, forKey: .timeRange)
         requestHeaders = try c.decodeIfPresent([String: String].self, forKey: .requestHeaders) ?? [:]
+        quality = try c.decodeIfPresent(String.self, forKey: .quality)
+        pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
     }
 }
 
@@ -116,4 +134,31 @@ public protocol SocialMediaResolving {
     /// Returns the post's media assets in display order, or an empty array when the
     /// URL is unsupported or no media could be resolved.
     func resolveAssets(for url: URL) async -> [MediaAsset]
+}
+
+/// Re-runs the plugin that owns a download when its asset URLs go stale.
+///
+/// A CDN URL a plugin returned is short-lived and often IP-bound, so a job that
+/// resumes hours later gets a 403 instead of bytes. The durable engine calls
+/// this, matches the answers back to the job by `(kind, quality)`, and restarts
+/// the transfer with the new URL and headers
+/// (`claudedocs/plans/plugin-platform.md` §7.6).
+public protocol MediaReresolving {
+    /// The post's assets as the plugin resolves them now, or nil when the plugin
+    /// is gone, declined, or failed.
+    func reresolve(sourceURL: URL, pluginID: String, saveID: String) async -> [MediaAsset]?
+}
+
+/// The media seams a plugin platform fills, held at the bottom of the stack.
+///
+/// LunaPluginIngest cannot import LunaMediaDownload — the media module knows
+/// nothing about plugins and the package edge does not exist — so the plugin
+/// side writes its witnesses here and the media side reads them at the moment it
+/// needs one. `PluginPlatformComposition.install()` is the only writer.
+public enum PluginMediaSeams {
+    /// The plugin walk as an asset resolver. Central Luna hands this to URL
+    /// Rescue in place of the Swift `SocialMediaResolver`.
+    public static var resolver: (any SocialMediaResolving)?
+    /// The §7.6 re-resolution witness, read by `LiveMediaDownloadManager`.
+    public static var reresolver: (any MediaReresolving)?
 }

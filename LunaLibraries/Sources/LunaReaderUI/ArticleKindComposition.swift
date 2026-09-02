@@ -5,6 +5,7 @@
 
 import LunaArticleIngest
 import LunaIngest
+import LunaModels
 import LunaShareSurface
 import Foundation
 
@@ -47,5 +48,6 @@ public enum ArticleKindComposition {
         IngestKindProcessors.socialText = XPostIngestProcessor()
         // Extension presentation — the reader / archive screens.
         ShareKindPresenters.article = ExtensionArticlePresenter()
+        PluginModelAdopters.article = ArticleModelAdopter()
     }
 }

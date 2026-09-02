@@ -206,7 +206,9 @@ struct RescueDirectiveApplier {
         switch result.outcome {
         case .article, .product:
             return .rescued(result, method: method)
-        case .social, .video, .document, .needsArchive, .failed, .unsupported:
+        case .social, .video, .document, .needsArchive, .failed, .unsupported, .locked:
+            // A rescue that ends in a plugin lock has not recovered the save:
+            // the lock still needs a browser step the rescue cannot run.
             return .unrescuable
         }
     }

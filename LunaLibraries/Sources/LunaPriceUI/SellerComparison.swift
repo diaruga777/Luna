@@ -66,6 +66,13 @@ public enum SellerComparison {
     ) -> Bool {
         guard SellerComparisonRunner.installed != nil else { return false }
         guard var tracker = store.item(withID: itemID)?.priceTracker else { return false }
+        // A plugin that returned `sellers` owns comparison for this tracker: it
+        // already produced more than one store, all stamped with its id, so the
+        // Swift fan-out would only re-find what the plugin handed over
+        // (`claudedocs/plans/plugin-platform.md` §5.3). A plugin product with a
+        // single store is compared normally.
+        guard !(tracker.stores.count > 1 && tracker.stores.contains { $0.pluginID != nil })
+        else { return false }
         tracker.beginPendingComparison(sourceURLString: sourceURL.absoluteString, at: now)
         store.updatePriceTracker(tracker, for: itemID)
         return true

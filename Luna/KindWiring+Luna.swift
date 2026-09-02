@@ -151,6 +151,14 @@ enum KindWiring {
         MediaShellWiring.drainPendingResolvedMedia(returningToSource: returningToSource)
     }
 
+    /// Drains what the Safari content script queued through
+    /// `plugins.queueModel` (`claudedocs/plans/plugin-platform.md` §13.1).
+    static func drainPendingPluginModels(returningToSource: Bool) {
+        PluginModelDrain.run(
+            returningToSource: returningToSource,
+            productInfoBuilder: PluginProductInfoBuilder.make(from:imageURL:))
+    }
+
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
@@ -202,6 +210,7 @@ enum KindWiring {
     static func sceneDidForeground() {
         MediaShellWiring.sceneDidForeground()
         ArticleShellWiring.sceneDidForeground()
+        drainPendingPluginModels(returningToSource: false)
         if XteinkSendSettings.isEnabled {
             XteinkBLECentral.shared.beginRendezvousScan()
         }

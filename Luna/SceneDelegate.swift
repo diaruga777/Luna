@@ -127,6 +127,16 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 returningToSource: LunaDeepLink.requestsReturnToSource(url))
             return
         }
+        if LunaDeepLink.isPluginModelLink(url) {
+            // Safari's plugin walk already ran `ingest` and wrote the Model to
+            // the App Group; this link carries no payload, it just says
+            // "drain" (`claudedocs/plans/plugin-platform.md` §13.1).
+            AppLaunchTransition.holdForHandoff()
+            mainNavigationController?.popToRootViewController(animated: false)
+            KindWiring.drainPendingPluginModels(
+                returningToSource: LunaDeepLink.requestsReturnToSource(url))
+            return
+        }
         if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),
            url.host == "settings", url.path == "/photos" {
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {

@@ -111,6 +111,11 @@ enum KindWiring {
     /// it.
     static func drainPendingResolvedMedia(returningToSource: Bool) {}
 
+    /// Central Luna only (`claudedocs/plans/plugin-platform.md` §2.1); Price
+    /// Tracker runs no plugin platform, so its own queue can never hold
+    /// anything.
+    static func drainPendingPluginModels(returningToSource: Bool) {}
+
     /// Runs one price-refresh pass and returns the processed-tracker count.
     /// Non-nil only in product-handling apps; its presence is what arms the
     /// price-refresh BGTask registration/scheduling in AppDelegate.

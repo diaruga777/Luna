@@ -114,10 +114,25 @@ public enum LunaDeepLink {
         return url.host == resolvedMediaHost
     }
 
+    /// `<scheme>://pluginmodel` — the Safari plugin walk's save/download
+    /// hand-off (`claudedocs/plans/plugin-platform.md` §13.1). Payload-free for
+    /// the same reason `resolvedMediaHost` is: the Model travels in
+    /// `PendingPluginModelStore` (App Group). Mirrored in `content.js`.
+    public static let pluginModelHost = "pluginmodel"
+
+    /// True for `<any Luna scheme>://pluginmodel` — an app that runs no plugin
+    /// platform simply drains nothing, so the broad scheme check is correct
+    /// here too (only central Luna's queue is ever non-empty).
+    public static func isPluginModelLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
+        return url.host == pluginModelHost
+    }
+
     /// The hosts whose links may ask to bounce back to Safari: a pill save
-    /// (`read`) and the in-page player's download (`resolvedmedia`). Every other
-    /// host is refused even when it carries the flag.
-    private static let returnToSourceHosts = ["read", resolvedMediaHost]
+    /// (`read`), the in-page player's download (`resolvedmedia`), and the
+    /// plugin walk's hand-off (`pluginmodel`). Every other host is refused
+    /// even when it carries the flag.
+    private static let returnToSourceHosts = ["read", resolvedMediaHost, pluginModelHost]
 
     /// True for a `<scheme>://read?url=…&ret=safari` link — a media or product
     /// pill tap (never the article pill's `readTarget`, which never carries the

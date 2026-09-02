@@ -4,7 +4,6 @@
 //
 
 import LunaAppConfig
-import LunaBundledPlugins
 import LunaMediaResolve
 import LunaModels
 import LunaPluginKit
@@ -351,14 +350,24 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let pluginFetchService = PluginFetchService()
 
+    /// This file is the ONE shared source built into all four Safari appexes,
+    /// but only the central host's target links `LunaBundledPlugins` (the
+    /// three single-kind hosts run no plugin platform at all). A hard `import`
+    /// would link-fail the other three, so the resource bundle it ships is
+    /// found at runtime by name instead — absent there, present only in the
+    /// central appex's own bundle.
+    private static var bundledPluginsResourceBundle: Bundle? {
+        Bundle.main.url(forResource: "LunaLibraries_LunaBundledPlugins", withExtension: "bundle")
+            .flatMap(Bundle.init(url:))
+    }
+
     /// Bundled plugins plus imported ones, imported wins on a shared id,
     /// disabled plugins dropped. The content script never sees a plugin the
     /// user (or a repeated timeout) turned off.
     private static func enabledPlugins() -> [InstalledPlugin] {
         let installed = PluginStore.shared.installedPlugins()
         let bundledCatalog = BundledPluginCatalog(
-            bundle: LunaBundledPluginsBundle.bundle,
-            subdirectory: LunaBundledPluginsBundle.pluginsSubdirectory)
+            bundle: bundledPluginsResourceBundle, subdirectory: "Plugins")
         return (bundledCatalog.plugins(shadowedBy: installed) + installed)
             .filter(\.state.isEnabled)
     }

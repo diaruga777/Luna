@@ -8,6 +8,7 @@ import JavaScriptCore
 import LunaModels
 import LunaPluginKit
 import LunaPluginRuntime
+import LunaPluginUI
 import LunaStorage
 import XCTest
 
@@ -70,6 +71,10 @@ final class PluginJSFixtureRunner {
         capabilities.register(PluginFilesBridge(scratch: scratch, scheduler: runtime))
         capabilities.register(PluginSecretsBridge(
             scheduler: runtime, processKind: processKind))
+        // Reads and writes `PluginPlatformServices.settings`, so a suite that
+        // exercises `luna.settings` points that at its own `kv` first.
+        capabilities.register(PluginSettingsBridge(
+            processKind: processKind, scheduler: runtime))
     }
 
     /// Removes the scratch container. Call from `tearDown`.

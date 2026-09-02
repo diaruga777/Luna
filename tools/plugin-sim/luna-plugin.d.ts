@@ -253,6 +253,8 @@ export interface ParsedURL {
 }
 
 export class LunaErrorType extends Error {
+  /// `(code, message, details)` — the code comes FIRST, in every backing.
+  constructor(code: string, message?: string, details?: unknown);
   code: string;
   details?: unknown;
 }

@@ -305,9 +305,13 @@ Always present, no capability needed: `luna.register`, `luna.parseURL`,
 `PluginBootstrapScript.swift`). Every other namespace is installed ONLY
 when its capability is both declared and served
 by an installer in this process — an undeclared one is `undefined`
-(`Object.keys(luna)` matches exactly what was granted), never a stub
 (`PluginRuntime.load`'s grant/stray check enforces this at load time, not
-just at call time). `env.languages` is `Locale.preferredLanguages`
+just at call time). A capability the plugin DID declare that this process
+cannot serve is neither missing nor a working stub: it is a Proxy whose
+every call rejects `unavailable-here`, so `Object.keys(luna)` still matches
+the manifest and a plugin branches on `error.code` rather than catching a
+TypeError. `PluginUnavailableNamespace` (`LunaPluginRuntime/PluginCapabilityRegistry.swift`)
+and `plugin_host.js`'s `unavailableNamespace` are the same Proxy. `env.languages` is `Locale.preferredLanguages`
 (`navigator.languages` in Safari, `config.languages` in `bridge.mjs`), most-
 preferred first; `env.locale` is always `env.languages[0]`. `luna.localize`
 resolves a `{ "<tag>": "…" }` table a plugin builds at runtime against that
@@ -326,7 +330,7 @@ same list, the identical rule the manifest parser applies to `name`/
 | `crypto` | `luna.crypto` | CryptoKit | CryptoKit | SubtleCrypto | `PluginCryptoBridge.swift` / `plugin_host.js` |
 | `browser` | `luna.browser` | presents the modal | stores + rejects `browser-deferred` | rejects `browser-deferred` immediately | `PluginBrowserBridge.swift` (LunaPluginUI) / `plugin_host.js` |
 | `downloads` | `luna.downloads` | yes | yes | — (no relay) | `PluginDownloadsBridge.swift` |
-| `settings` | `luna.settings` | get/set/all | get/all (`set` rejects `unavailable-here`) | get only, relayed | `PluginSettingsBridge.swift` |
+| `settings` | `luna.settings` | get/set/all | get/all (`set` rejects `unavailable-here`) | `get` relayed, the manifest default included (`set`/`all` reject `unavailable-here`) | `PluginSettingsBridge.swift` |
 | `ui` | `luna.ui` | yes | — (`unavailable-here`) | — | `PluginUIBridge.swift` |
 | `mail` | `luna.mail` | yes | — | — | `PluginMailBridge.swift` |
 | `notifications` | `luna.notifications` | yes | — | — | `PluginNotificationsBridge.swift` |
@@ -378,7 +382,8 @@ knowing:
   appends the bytes, defaulting `filename` and `mime` to the handle's own.
   It needs the `files` capability, so it serves the app and the
   share/action extensions and never Safari (`plugin_host.js` has no `files`
-  bridge to resolve a handle with). A handle whose generation was reaped
+  bridge to resolve a handle with, and the appex answers
+  `unavailable-here` for such a part). A handle whose generation was reaped
   fails the whole fetch with `not-found`, and one over
   `PluginFilesBridge.maxFileBytes` with `too-large`, both BEFORE the request
   leaves. `xteink.js`'s Wi-Fi upload leg sends the EPUB this way; only its
@@ -403,6 +408,12 @@ is why the file is the specification rather than "whatever SwiftSoup does."
 ### 5.3 `luna.browser` and the lock flow — §7
 
 ### 5.4 `luna.settings`
+
+The Safari relay answers what the app's bridge answers: the stored value, or
+the manifest field's own `default` for a key nobody has touched, or `null` for
+a key the schema does not declare (`SafariPluginMessages+Luna.pluginSettingsGet`).
+`set` and `all` reject `unavailable-here` there — a page must not change what
+the user sees in Settings, and reading the whole schema has no relay.
 
 `PluginSettingsBridge.value` masks a `secret` field's stored value back to
 `""` once set (never the plaintext — that only ever reaches the network
@@ -927,12 +938,34 @@ mechanism.
 `content.js`'s `startPillDecision` runs the plugin walk FIRST (§6's ordering
 decision) and only falls back to the Swift-parity heuristics when no plugin
 claims the page (`buttonContext.supportsPlugins`, true only for the central
-host). Per page load: one `plugins.catalog` round trip (cached by a stamp
-hash, refreshed on mismatch), then for each host-matched plugin one
-`plugins.source` fetch (≤ 1.5 MB, else skipped and logged), evaluated with
-`plugin_host.js`'s text concatenated ahead of the plugin's own source inside
-one `new Function` body — each plugin gets its own `luna`, its own grants,
-its own scope.
+host). Per page load: one `plugins.catalog` round trip, then for each host-matched
+plugin one `plugins.source` fetch (≤ 1.5 MB, else skipped and logged),
+evaluated with `plugin_host.js`'s text concatenated ahead of the plugin's own
+source inside one `new Function` body — each plugin gets its own `luna`, its
+own grants, its own scope.
+
+The catalog reply carries a STAMP naming the enabled set (each id at its
+version, sorted). A page with a cached catalog decides against that cache
+immediately rather than waiting on the round trip, and `loadPluginCatalog`
+rewrites the cache only when the fresh stamp differs — so an unchanged set
+costs no `storage.local` write, and a changed one takes effect on the next
+page rather than mid-decision on this one. The handler builds the stamp from
+the enabled set it reads for that message, which is also when it REBUILDS the
+set it caches for the process: every other `plugins.*` message would otherwise
+rescan the store's directory and re-parse every manifest, and one classify
+makes twenty of them.
+
+The walk itself matches `PluginIngestStage` step for step. A claim whose
+`kind` is not in the plugin's `produces` is refused and logged, so the pill is
+never built from a kind the app then rejects at `plugins.queueModel`. An
+`ingest` that answers `null` — "claimed, then declined" — does not consume
+the URL: the walk carries on with the next matched plugin's `classify`, and
+only falls back to the plain `save?url=` hand-off once every one of them has
+passed. `classify` and `ingest` both receive a `PageSnapshot`
+(§3.1) built from the live DOM and naming `source: "safari"`, so a plugin
+standing on the rendered page needs neither the `page` capability nor a
+refetch; it is built at most once per URL and never leaves the content-script
+world, so the native message ceiling does not apply.
 
 `SafariWebExtensionHandler` dispatches every `plugins.*` message type through
 one seam, `SafariPluginMessaging.handle(type:message:context:) -> Bool`:
@@ -941,7 +974,21 @@ one seam, `SafariPluginMessaging.handle(type:message:context:) -> Bool`:
 `plugins.log`, `plugins.settings.get`, `plugins.browserDeferred`,
 `plugins.queueModel`. Native re-checks the plugin's id is installed, enabled
 and has the capability declared before serving — the content script is not
-trusted to enforce its own grants.
+trusted to enforce its own grants. `plugins.log` needs no capability and
+still needs a PLUGIN: the id names a category in the shared diagnostic log.
+A failed grant check answers `capability-not-declared` and nothing else
+answers it; a malformed message answers `bad-argument`, so an author
+debugging a typo'd key is not told their manifest is wrong.
+
+Every relayed call reaches the plugin as a `LunaError` it can branch on. A
+reply carrying an `error` code rejects with that code (a storage row over the
+256 KB cap answers `too-large`), an explicit `ok: false` rejects
+`bridge-failed`, and a messaging failure rejects `bridge-failed` too — the
+one reply where `ok: false` is a real answer is `plugins.fetch`, whose 404 a
+plugin still reads the body of. `luna.storage.set(key, undefined)` rejects
+`bad-argument` in the content script before it sends, because a native
+message drops an undefined field and the write would otherwise land as JSON
+null.
 
 A `media` claim plays the existing in-page video overlay and posts
 `plugins.queueModel` on Download; an `article`/`product` claim does the same
@@ -965,7 +1012,12 @@ the deep-link handoff (§7.2) starts the save fresh in the app.
 backing inside `SafariJSTestHarness`'s shared WKWebView against
 `html-subset.spec.js`; `LunaTests/SafariPluginHostTests.swift` and
 `LunaTests/SafariPluginHandlerSourceTests.swift` cover the rest of the
-content-script/native-handler contract. `SafariPluginHandlerSourceTests` is a
+content-script/native-handler contract. `LunaTests/PluginBridgeParityTests.swift`
+runs ONE probe script through both backings — the JavaScriptCore bridges via
+`PluginJSFixtureRunner`, `plugin_host.js` via `SafariJSTestHarness` — and
+asserts they answer the same error codes, storage semantics and settings
+values. It runs the JavaScriptCore side as a SHARE process, because Safari's
+`luna` is the extension contract rather than the app's. `SafariPluginHandlerSourceTests` is a
 SOURCE-TEXT pin, not a behavior test — `NSExtensionContext` has no fake
 anywhere in this codebase, matching the existing pattern for this file family.
 Per-hook capability restriction (§3.1's "classify may call only

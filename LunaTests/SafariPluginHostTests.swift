@@ -85,6 +85,51 @@ final class SafariPluginHostTests: XCTestCase {
         XCTAssertEqual(dict["itemId"] as? String, "abc")
     }
 
+    /// `luna.register`'s own refusals carry their CODE first, the order every
+    /// bundled plugin and `docs/plugins/api.md` use. Reading the message as
+    /// the code is what made a plugin branching on `error.code` behave
+    /// differently in Safari than in the app.
+    ///
+    /// `api.md` attributes `already-registered`/`invalid-hooks` to Safari
+    /// alone for a reason: the JavaScriptCore side counts `register` calls
+    /// while a plugin LOADS (`PluginContext.registerCount`) and a later call
+    /// from inside a hook is not an error there.
+    func testRegisteringTwiceThrowsALunaErrorCodedAlreadyRegistered() {
+        loadPlugin(capabilities: [], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1 }
+            */
+            luna.register({});
+            """)
+        let outcome = js.string("""
+            (function () {
+                try { window.__lunaTestLuna.register({}); return "no throw"; }
+                catch (e) { return e.name + "|" + e.code + "|" + e.message; }
+            })()
+            """)
+        XCTAssertEqual(
+            outcome, "LunaError|already-registered|luna.register was called more than once")
+    }
+
+    func testRegisteringSomethingOtherThanAnObjectThrowsInvalidHooks() {
+        loadPlugin(capabilities: [], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1 }
+            */
+            luna.register({});
+            """)
+        let code = js.string("""
+            (function () {
+                var fresh = LunaPluginHost.createBridge(
+                    { pluginId: "app.luna.test", capabilities: [] },
+                    function () { return Promise.resolve({}); });
+                try { fresh.register("nope"); return "no throw"; }
+                catch (e) { return e.code; }
+            })()
+            """)
+        XCTAssertEqual(code, "invalid-hooks")
+    }
+
     // MARK: - capability gating
 
     func testObjectKeysMatchesOnlyTheDeclaredCapabilitiesPlusAlwaysPresent() {
@@ -144,6 +189,76 @@ final class SafariPluginHostTests: XCTestCase {
             """)
         _ = js.evaluate("void 0") // let the microtask settle
         XCTAssertEqual(js.string("window.__lunaBrowserOutcome"), "browser-deferred")
+    }
+
+    // MARK: - native replies become rejections
+
+    /// A native reply carrying an `error` code rejects the plugin's promise
+    /// with that code. Reading past one — a `set` whose row was over the cap,
+    /// say — let a plugin carry on as though the write had landed.
+    func testANativeErrorReplyRejectsWithTheCodeNativeNamed() {
+        loadPlugin(capabilities: ["storage"], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1,
+              "capabilities": ["storage"] }
+            */
+            luna.register({});
+            """)
+        _ = js.evaluate("""
+            window.__lunaSetSendNativeReply(
+                "plugins.storage.set", { error: "too-large", message: "too big" });
+            window.__lunaStorageOutcome = "pending";
+            window.__lunaTestLuna.storage.set("k", "v").then(
+                function () { window.__lunaStorageOutcome = "resolved"; },
+                function (e) { window.__lunaStorageOutcome = e.code + "|" + e.name; });
+            "kicked"
+            """)
+        _ = js.evaluate("void 0")
+        XCTAssertEqual(js.string("window.__lunaStorageOutcome"), "too-large|LunaError")
+    }
+
+    /// `ok: false` with no code is still a refusal, not a completed write.
+    func testANativeOkFalseReplyRejectsRatherThanResolving() {
+        loadPlugin(capabilities: ["storage"], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1,
+              "capabilities": ["storage"] }
+            */
+            luna.register({});
+            """)
+        _ = js.evaluate("""
+            window.__lunaSetSendNativeReply("plugins.collection.put", { ok: false });
+            window.__lunaPutOutcome = "pending";
+            window.__lunaTestLuna.storage.collection("c").put("1", { a: 1 }).then(
+                function () { window.__lunaPutOutcome = "resolved"; },
+                function (e) { window.__lunaPutOutcome = e.code; });
+            "kicked"
+            """)
+        _ = js.evaluate("void 0")
+        XCTAssertEqual(js.string("window.__lunaPutOutcome"), "bridge-failed")
+    }
+
+    /// A `luna.fetch` answer is NOT a failure just because the page was a 404
+    /// — the plugin reads that body. Only an `error` code rejects.
+    func testANonOKFetchStatusStillResolvesForThePlugin() {
+        loadPlugin(capabilities: ["fetch"], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1,
+              "capabilities": ["fetch"] }
+            */
+            luna.register({});
+            """)
+        _ = js.evaluate("""
+            window.__lunaSetSendNativeReply(
+                "plugins.fetch", { ok: false, status: 404, text: "gone" });
+            window.__lunaFetchOutcome = "pending";
+            window.__lunaTestLuna.fetch("https://example.com/x").then(
+                function (r) { window.__lunaFetchOutcome = "resolved:" + r.status; },
+                function (e) { window.__lunaFetchOutcome = "rejected:" + e.code; });
+            "kicked"
+            """)
+        _ = js.evaluate("void 0")
+        XCTAssertEqual(js.string("window.__lunaFetchOutcome"), "resolved:404")
     }
 
     // MARK: - localization (parity with PluginLocalizedText.resolve)

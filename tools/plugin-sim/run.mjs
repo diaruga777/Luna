@@ -80,6 +80,7 @@ async function main() {
 
   const luna = createBridge({
     pluginId: manifest.id, version: manifest.version, capabilities: manifest.capabilities || [],
+    settingsSchema: manifest.settings,
     fetchImpl: fixture ? fixtureFetch(fixture) : undefined,
   });
   const factory = new Function("luna", `${source}\nreturn luna.__registeredHooks;`);

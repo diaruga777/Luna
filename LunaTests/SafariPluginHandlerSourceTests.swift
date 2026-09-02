@@ -95,6 +95,75 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         XCTAssertTrue(lunaVariantSource.contains("://save?url="))
     }
 
+    /// `capability-not-declared` is the grant answer and nothing else: a
+    /// malformed message answers `bad-argument`, so an author debugging a
+    /// typo'd key is not told their manifest lacks the capability. Every
+    /// reader of the refusal is the tail of a `pluginDeclares` guard.
+    func testAMalformedMessageAnswersBadArgumentRatherThanAPermissionDenial() {
+        let text = lunaVariantSource
+        XCTAssertTrue(text.contains(#"["error": "capability-not-declared"]"#))
+        XCTAssertTrue(text.contains(#"["error": "bad-argument", "message": detail]"#))
+        var searched = text.startIndex..<text.endIndex
+        var uses = 0
+        while let found = text.range(of: "Self.notDeclared", range: searched) {
+            searched = found.upperBound..<text.endIndex
+            let lookBack = text.index(
+                found.lowerBound, offsetBy: -200, limitedBy: text.startIndex)
+                ?? text.startIndex
+            uses += 1
+            XCTAssertTrue(
+                text[lookBack..<found.lowerBound].contains("pluginDeclares(id: id, capability:"),
+                "capability-not-declared is answered without a grant check")
+        }
+        XCTAssertGreaterThan(uses, 5, "the refusal payload is no longer shared")
+    }
+
+    /// A row the store refused for size answers a code, never `ok: false`
+    /// — the content script rejects on a code, and a bare `ok: false` used to
+    /// read as a completed write.
+    func testAStorageRowOverTheCapAnswersTooLarge() {
+        let text = lunaVariantSource
+        XCTAssertTrue(text.contains(#""error": "too-large""#))
+        XCTAssertTrue(text.contains("PluginKVStore.maxValueBytes"))
+    }
+
+    /// `luna.settings.get` answers the manifest field's own default, the same
+    /// answer `PluginSettingsBridge.value` gives in the app — a plugin
+    /// reading a setting nobody has touched must not have to write its call
+    /// twice.
+    func testASettingsReadAnswersTheManifestDefault() {
+        XCTAssertTrue(lunaVariantSource.contains("field.defaultJSON"))
+    }
+
+    /// Logging needs no capability, but it does need a PLUGIN: the id names a
+    /// category in the shared diagnostic log.
+    func testTheLogMessageChecksThePluginIsEnabled() {
+        let text = lunaVariantSource
+        guard let range = text.range(of: "private func pluginLog(") else {
+            return XCTFail("pluginLog is gone from the handler")
+        }
+        let body = text[range.lowerBound...].prefix(400)
+        XCTAssertTrue(
+            body.contains("enabledPlugin(id: id) != nil"),
+            "plugins.log serves an id no enabled plugin owns")
+    }
+
+    /// One directory scan and one manifest parse per process, not per message:
+    /// a classify makes twenty `plugins.*` calls inside an appex with an
+    /// ~80 MB ceiling. `plugins.catalog` — the page's first message, and the
+    /// one that builds the stamp the content script caches by — rescans.
+    func testTheEnabledSetIsCachedForTheProcessAndRescannedByTheCatalog() {
+        let text = lunaVariantSource
+        XCTAssertTrue(text.contains("private var cachedEnabledPlugins: [InstalledPlugin]?"))
+        XCTAssertTrue(text.contains("if !rescanning, let cachedEnabledPlugins { return cachedEnabledPlugins }"))
+        guard let range = text.range(of: "private func pluginCatalogPayload(") else {
+            return XCTFail("pluginCatalogPayload is gone from the handler")
+        }
+        XCTAssertTrue(
+            text[range.lowerBound...].prefix(200).contains("enabledPlugins(rescanning: true)"),
+            "the catalog message must rebuild the cached enabled set")
+    }
+
     /// The whole point of the split: the shared file (built into all four
     /// Safari appexes) must never name the module only the central target
     /// links, and must never gate on `canImport` (CLAUDE.md: not a reliable

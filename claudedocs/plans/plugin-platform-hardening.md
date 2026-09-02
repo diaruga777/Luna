@@ -23,18 +23,19 @@ bullet is struck.
 NOT landed — the phase-2 agents were stopped by an API spend limit before
 they produced verified work:
 
-- **WP-F1**, the rest (§5.6): Safari-world parity — `LunaError` argument
-  order in `plugin_host.js`/`bridge.mjs` (R2#2), the Safari walk continuing
-  on a `null` ingest and refusing an undeclared kind (R2#10/#11), Safari
-  `settings.get` defaults and `set`/`all` stubs (R2#8), storage semantics
-  (R2#9/#19), the `PageSnapshot` (R2#14), `plugins.log`'s id check and the
-  cached enabled set (R2#17/#18), the catalog stamp (R2#22), `returnToSourceUntil`
-  (R2#5), the `unavailable-here` Proxy in Safari (R4#10), the sim's settings
-  schema (R4#15), and the cross-backing parity suite (R2#25). The stopped
-  agent's worktree `/Users/hsp/Desktop/Luna-wp-f1` (branch
-  `wp-f1-safari-parity`) holds UNVERIFIED, uncommitted edits to
-  `content.js`, `plugin_host.js` and `SafariPluginMessages+Luna.swift` toward
-  these items — read them as a starting point, not as done work.
+- **WP-F1** is now COMPLETE. The remainder landed on branch
+  `wp-f1b-safari-parity`: `LunaError(code, message, details)` in
+  `plugin_host.js` and `bridge.mjs` (R2#2 = R4#6), the Safari walk continuing
+  on a `null` ingest and refusing a claim outside `produces` (R2#10/#11),
+  Safari `settings.get` defaults with `set`/`all` refusing `unavailable-here`
+  (R2#8), storage semantics and `bad-argument` for a malformed message
+  (R2#9 Safari half, R2#19), the `PageSnapshot` (R2#14), `plugins.log`'s id
+  check and the process-cached enabled set (R2#17/#18), the catalog stamp
+  compared in `loadPluginCatalog` (R2#22 second bullet), the
+  `unavailable-here` Proxy in Safari (R4#10), the sim's settings schema
+  (R4#15 settings part), and the cross-backing suite
+  `PluginBridgeParityTests` (R2#25). R2#5 (`returnToSourceUntil`) was
+  already landed by the earlier `4af80740d`, tests included.
 - **WP-F2** (§5.7): not started.
 
 To resume: new worktrees off `main` per §0, one agent per remaining package,

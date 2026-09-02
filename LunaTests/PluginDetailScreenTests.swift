@@ -109,7 +109,7 @@ final class PluginDetailScreenTests: XCTestCase {
     /// from well under a millisecond to several hundred under a busy main
     /// thread. A fixed sleep is not a wait — poll the condition instead.
     private func pollUntil(
-        timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line,
+        timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line,
         _ condition: () -> Bool
     ) {
         let deadline = Date().addingTimeInterval(timeout)

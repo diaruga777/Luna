@@ -2,14 +2,9 @@
 //  StageCatalog+Plugins.swift
 //  Luna
 //
-//  Plugin-kind stages. Only the central Luna app installs these — `install()`
-//  gates on `LunaApp.current` at registration time rather than a membership
-//  exception (`claudedocs/plans/plugin-platform.md` §14): the three sibling
-//  apps do not yet link `LunaPluginUI`, and this file is not excluded from
-//  their Sources phase the way the other per-kind catalogs are, so it must
-//  not reference plugin UI types at the top level of anything they compile.
-//  Once the orchestrator adds a membership exception for this file, the
-//  runtime gate below can be dropped.
+//  Plugin stages. This file compiles only into the central Luna target: a
+//  membership exception excludes it from the three sibling apps, and
+//  `StageRegistryTests` pins that exclusion like the other kind catalogs.
 //
 
 #if DEBUG

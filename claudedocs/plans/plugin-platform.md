@@ -1272,6 +1272,58 @@ Exit: media-download parity checklist (from `claudedocs/media-download.md`)
 green on the simulator via `-LunaStage` + a device check for Safari; the
 Downloader app still uses Swift resolvers and passes its suite.
 
+**2C landed.** `SafariWebExtensionHandler` gains one seam,
+`SafariPluginMessaging` (`handle(type:message:context:) -> Bool` +
+`supportsPlugins`), and dispatches every `plugins.*` message (catalog/source/
+fetch/storage/collection/log/settings.get/browserDeferred/queueModel) to
+`SafariPluginMessages.handler`. **Only the central `LunaSafari` target
+actually links `LunaPluginKit`/`LunaBundledPlugins` in the pbxproj; the other
+three Safari appexes do not**, even though all four compile this one shared
+handler file — so the split is a per-target FILE, not a compile-time guard:
+`SafariPluginMessages+Luna.swift` (the real `LunaPluginKit`-backed
+implementation) and `SafariPluginMessages+None.swift` (`handler = nil`)
+declare the same `enum SafariPluginMessages`, and exactly one may be a member
+of each Safari target — the same membership-exception mechanism
+`KindWiring+Luna.swift`/`KindWiring+Reader.swift` already use. An earlier
+version of this gated on `#if canImport(LunaPluginKit)` instead; CLAUDE.md
+already warns that check is not a reliable per-target signal, and the
+orchestrator caught it in review before merge. **Exceptions the orchestrator
+must still add to `project.pbxproj`** (both files currently sit in the tree
+unexcluded, so it will not compile until these land — confirmed by
+temporarily moving each variant aside and building the affected schemes):
+exclude `SafariPluginMessages+None.swift` from the central `LunaSafari`
+target's exception set; exclude `SafariPluginMessages+Luna.swift` from
+`LunaReaderSafari`'s, `LunaDownloaderSafari`'s, and `LunaPriceTrackerSafari`'s
+exception sets.
+
+`plugin_host.js` is the content-script bridge (register/parseURL/log/bytes/
+env/html/page/fetch/storage/settings/crypto/browser), evaluated with a
+plugin's own source via `new Function` in the isolated world; `content.js`'s
+`startPillDecision` runs the plugin walk first and only falls back to the
+Swift-parity heuristics when no plugin claims the page, driving the existing
+video overlay (media) or a save pill (article/product) via the same
+`plugins.queueModel` → `PendingPluginModelStore` → `<scheme>://pluginmodel`
+hand-off Safari already uses for `resolvedmedia`. `PluginModelDrain` (`Luna/`,
+universal — no membership exception needed) adopts a queued Model through
+`PluginModelAdopters` and reaches `SavesIngestor.applyRescued`, the same path
+a same-process save takes. `tools/plugin-sim` (node harness: undici + linkedom
++ in-memory storage, no `luna.browser`) and `PluginHTMLParityTests`
+(DOMParser backing) both agree with the SwiftSoup backing on all 60
+`html-subset.spec.js` cases; two cases were narrowed (an unquoted `:` /
+leading-`.` attribute value is outside what a real CSS selector engine
+accepts, so SwiftSoup's leniency there was never in the safe subset) and
+`luna.html`'s `textContent`/`text` were changed to skip a `<script>`/`<style>`
+subtree, matching `SwiftSoup.Element.text()` rather than the DOM's own
+`textContent`. 62/62 relevant tests were green on a fresh iOS 26.2 simulator
+against a clean `-derivedDataPath` before the message-handling split above;
+re-verify the count once the pbxproj exceptions land and the tree builds as
+one piece again. Not done: per-hook capability restriction
+(§4.1's "classify may call only `luna.fetch`/`luna.html`, nothing else" is not
+enforced client-side, only by native re-checking the declared capability set);
+native handler behavior has no executable unit test (`NSExtensionContext` has
+no fake anywhere in this codebase, so `SafariPluginHandlerSourceTests` is a
+source-text pin, matching the existing suites for this file).
+
 ### Wave 3 — export, transport, docs (three agents)
 
 | Agent | Model | Owns | Deliverable |

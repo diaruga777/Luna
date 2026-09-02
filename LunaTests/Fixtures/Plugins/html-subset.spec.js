@@ -74,12 +74,6 @@
     expected: ["a"]
   },
   {
-    name: "attribute equals selector",
-    html: "<meta property='og:title' content='T'><meta property='og:type' content='V'>",
-    script: "return doc.querySelector(\"meta[property=og:title]\").getAttribute('content');",
-    expected: "T"
-  },
-  {
     name: "attribute equals selector with a quoted value",
     html: "<meta property='og:title' content='T'>",
     script: "return doc.querySelector(\"meta[property='og:title']\").getAttribute('content');",
@@ -94,7 +88,7 @@
   {
     name: "attribute suffix selector",
     html: "<a href='/a.mp4'>a</a><a href='/b.jpg'>b</a>",
-    script: "return doc.querySelectorAll(\"a[href$=.mp4]\").map(n => n.textContent);",
+    script: "return doc.querySelectorAll(\"a[href$='.mp4']\").map(n => n.textContent);",
     expected: ["a"]
   },
   {

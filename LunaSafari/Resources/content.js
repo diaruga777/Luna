@@ -205,10 +205,10 @@
             // (Wikipedia in Downloader) — while `mode: "never"` silences pills,
             // not the proof that setup worked. Pills resume when it dismisses.
             if (resp && resp.celebrateSetup) {
-                presentSetupCelebration(resp, function () { offerLunaButton(resp); });
+                presentSetupCelebration(resp, function () { startPillDecision(resp); });
                 return;
             }
-            offerLunaButton(resp);
+            startPillDecision(resp);
         }).catch(function () {});
 
         // Reveal the article body in Safari (the Referer rewrite that unlocks the
@@ -228,6 +228,354 @@
             if (escapeSubscribeInterstitial()) { return; }
             revealArticle();
         }).catch(function () {});
+    }
+
+    // ── Plugins (claudedocs/plans/plugin-platform.md §13.1) ──────────────────
+    //
+    // Only the central app's extension ever sees `supportsPlugins: true`; the
+    // three single-kind hosts never leave `offerLunaButton`'s fixed heuristics.
+    // Plugins run FIRST (§2 decision 8): a claim from the walk below wins the
+    // pill outright, and only the absence of one falls through to the rest of
+    // this file.
+
+    var PLUGIN_CATALOG_CACHE_KEY = "lunaPluginCatalogCache";
+    var PLUGIN_CLASSIFY_TIMEOUT_MS = 8000;
+    var PLUGIN_INGEST_TIMEOUT_MS = 20000;
+
+    function withTimeout(promise, ms) {
+        return new Promise(function (resolve, reject) {
+            var settled = false;
+            var timer = setTimeout(function () {
+                if (settled) { return; }
+                settled = true;
+                reject(new Error("timed out"));
+            }, ms);
+            promise.then(function (value) {
+                if (settled) { return; }
+                settled = true;
+                clearTimeout(timer);
+                resolve(value);
+            }, function (error) {
+                if (settled) { return; }
+                settled = true;
+                clearTimeout(timer);
+                reject(error);
+            });
+        });
+    }
+
+    function logPluginSkip(pluginId, stage, error) {
+        if (typeof browser === "undefined") { return; }
+        var text = "safari plugin " + pluginId + " skipped at " + stage + ": "
+            + (error && error.message ? error.message : String(error));
+        var sent = browser.runtime.sendMessage({ type: "plugins.log", id: pluginId, message: text });
+        if (sent && sent.catch) { sent.catch(function () {}); }
+    }
+
+    function getCachedPluginCatalog() {
+        if (typeof browser === "undefined" || !browser.storage || !browser.storage.local) {
+            return Promise.resolve(null);
+        }
+        return browser.storage.local.get(PLUGIN_CATALOG_CACHE_KEY).then(function (stored) {
+            return (stored && stored[PLUGIN_CATALOG_CACHE_KEY]) || null;
+        }, function () { return null; });
+    }
+
+    function setCachedPluginCatalog(catalog) {
+        if (typeof browser === "undefined" || !browser.storage || !browser.storage.local) { return; }
+        var obj = {};
+        obj[PLUGIN_CATALOG_CACHE_KEY] = catalog;
+        var saved = browser.storage.local.set(obj);
+        if (saved && saved.catch) { saved.catch(function () {}); }
+    }
+
+    /// One native round trip per page (§13.1): it always asks, but a page
+    /// that already has a catalog cached from an earlier page in this session
+    /// decides against that cache immediately rather than waiting on the round
+    /// trip, which only refreshes the cache for the NEXT page.
+    function loadPluginCatalog() {
+        var refreshed = browser.runtime.sendMessage({ type: "plugins.catalog" }).then(function (resp) {
+            if (!resp || !Array.isArray(resp.plugins)) { return null; }
+            var fresh = { stamp: resp.stamp || "", plugins: resp.plugins };
+            setCachedPluginCatalog(fresh);
+            return fresh;
+        }, function () { return null; });
+        return getCachedPluginCatalog().then(function (cached) {
+            if (cached) {
+                refreshed.catch(function () {});
+                return cached;
+            }
+            return refreshed;
+        });
+    }
+
+    function pluginHostMatches(host, patterns) {
+        host = (host || "").toLowerCase();
+        for (var i = 0; i < (patterns || []).length; i++) {
+            var pattern = String(patterns[i]).toLowerCase();
+            if (pattern.indexOf("*.") === 0) {
+                var suffix = pattern.slice(1);
+                if (host === pattern.slice(2) || host.slice(-suffix.length) === suffix) { return true; }
+            } else if (host === pattern) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Host-matched plugins first (highest priority first, then id), then
+    /// `any: true` plugins in the same order — mirrors the runtime's
+    /// `matchedPlugins(forHost:)` ordering (§7.1).
+    function matchedPluginsForHost(catalog, host) {
+        var exact = [];
+        var anyHost = [];
+        ((catalog && catalog.plugins) || []).forEach(function (p) {
+            if (!p || !Array.isArray(p.produces) || p.produces.length === 0) { return; }
+            if (p.any) { anyHost.push(p); }
+            else if (pluginHostMatches(host, p.hosts)) { exact.push(p); }
+        });
+        var byPriorityThenId = function (a, b) {
+            if ((b.priority || 0) !== (a.priority || 0)) { return (b.priority || 0) - (a.priority || 0); }
+            return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+        };
+        exact.sort(byPriorityThenId);
+        anyHost.sort(byPriorityThenId);
+        return exact.concat(anyHost);
+    }
+
+    var pluginHostSourcePromise = null;
+    function fetchPluginHostSource() {
+        if (pluginHostSourcePromise) { return pluginHostSourcePromise; }
+        pluginHostSourcePromise = fetch(browser.runtime.getURL("plugin_host.js"))
+            .then(function (r) { return r.text(); });
+        return pluginHostSourcePromise;
+    }
+
+    var pluginRuntimeCache = {};
+    /// Loads and evaluates one plugin's source in the isolated world, and
+    /// answers its registered hooks. `plugin_host.js`'s text and the plugin's
+    /// own text are concatenated into ONE `new Function` body, so
+    /// `LunaPluginHost` (a `var` at the top of that body) and the plugin's
+    /// top-level `luna.register(...)` share a scope private to this one
+    /// evaluation — a second plugin gets its own `luna`, its own grants.
+    function loadPluginRuntime(meta) {
+        if (pluginRuntimeCache[meta.id]) { return pluginRuntimeCache[meta.id]; }
+        var promise = Promise.all([
+            fetchPluginHostSource(),
+            browser.runtime.sendMessage({ type: "plugins.source", id: meta.id })
+        ]).then(function (parts) {
+            var hostSource = parts[0];
+            var sourceResp = parts[1];
+            if (!sourceResp || typeof sourceResp.source !== "string") {
+                throw new Error((sourceResp && sourceResp.error) || "no source");
+            }
+            var body = hostSource + "\n;\n"
+                + "var luna = LunaPluginHost.createBridge(__pluginConfig, __pluginSendNative);\n"
+                + sourceResp.source + "\n"
+                + "return luna;";
+            var factory = new Function("__pluginConfig", "__pluginSendNative", body);
+            var config = {
+                pluginId: meta.id, version: "", capabilities: meta.capabilities || [],
+                locale: (navigator.language || "en").slice(0, 2)
+            };
+            var sendNative = function (type, payload) {
+                var merged = { type: type };
+                for (var key in payload) {
+                    if (Object.prototype.hasOwnProperty.call(payload, key)) { merged[key] = payload[key]; }
+                }
+                return browser.runtime.sendMessage(merged);
+            };
+            var luna = factory(config, sendNative);
+            var hooks = luna && luna.__registeredHooks;
+            if (!hooks) { throw new Error("plugin never called luna.register"); }
+            return { hooks: hooks, meta: meta };
+        });
+        pluginRuntimeCache[meta.id] = promise;
+        return promise;
+    }
+
+    function walkClassify(matched, index) {
+        if (index >= matched.length) { return Promise.resolve(null); }
+        var meta = matched[index];
+        return loadPluginRuntime(meta).then(function (loaded) {
+            if (typeof loaded.hooks.classify !== "function") { return walkClassify(matched, index + 1); }
+            return withTimeout(
+                Promise.resolve().then(function () {
+                    return loaded.hooks.classify({ url: location.href, context: "safari" });
+                }),
+                PLUGIN_CLASSIFY_TIMEOUT_MS
+            ).then(function (claim) {
+                if (claim && claim.kind) { return { plugin: meta, claim: claim }; }
+                return walkClassify(matched, index + 1);
+            }, function (error) {
+                logPluginSkip(meta.id, "classify", error);
+                return walkClassify(matched, index + 1);
+            });
+        }, function (error) {
+            logPluginSkip(meta.id, "load", error);
+            return walkClassify(matched, index + 1);
+        });
+    }
+
+    function runPluginWalkForPage() {
+        if (typeof browser === "undefined") { return Promise.resolve(null); }
+        return loadPluginCatalog().then(function (catalog) {
+            var matched = matchedPluginsForHost(catalog, location.hostname);
+            if (matched.length === 0) { return null; }
+            return walkClassify(matched, 0);
+        }, function () { return null; });
+    }
+
+    /// Runs the claiming plugin's `ingest` hook. Resolves to `{ model, raw }`
+    /// on a Model, `null` on a decline (the plugin read the page and passed),
+    /// and REJECTS with the `browser-deferred` `LunaError` so the caller can
+    /// route to the save-first hand-off instead of the plain one (§8.2).
+    function runPluginIngestForWalk(walk, url, reason) {
+        return loadPluginRuntime(walk.plugin).then(function (loaded) {
+            if (typeof loaded.hooks.ingest !== "function") { return null; }
+            return withTimeout(
+                Promise.resolve().then(function () {
+                    return loaded.hooks.ingest({
+                        url: url, claim: walk.claim, context: "safari", reason: reason
+                    });
+                }),
+                PLUGIN_INGEST_TIMEOUT_MS
+            );
+        }).then(function (model) {
+            if (!model) { return null; }
+            return { model: model, raw: JSON.stringify(model) };
+        }, function (error) {
+            if (error && error.code === "browser-deferred") { throw error; }
+            logPluginSkip(walk.plugin.id, "ingest", error);
+            return null;
+        });
+    }
+
+    function pluginSaveDeepLink(resp) { return ownSchemeTarget(resp, location.href); }
+
+    /// `<scheme>://save?url=…` — no save exists yet in Safari, so a deferred
+    /// browser step starts one from scratch; the app reaches the real modal
+    /// with the user present (§8.2, §8.3).
+    function pluginBrowserDeferredLink(resp) {
+        return ((resp && resp.scheme) || "") + "://save?url=" + encodeURIComponent(location.href);
+    }
+
+    function queueModelAndNavigate(pluginId, modelJSON, resp) {
+        return browser.runtime.sendMessage(
+            { type: "plugins.queueModel", id: pluginId, url: location.href, model: modelJSON }
+        ).then(function (qr) {
+            window.location.href = (qr && qr.deepLink) || pluginSaveDeepLink(resp);
+        }, function () {
+            window.location.href = pluginSaveDeepLink(resp);
+        });
+    }
+
+    /// The article/product save pill for a plugin claim: its tap runs
+    /// `ingest` and hands the Model to the app, falling back to the plain
+    /// `read?url=` hand-off when ingest declines, times out, or throws — a
+    /// broken plugin must not leave the user with no way to save the page.
+    function pluginSaveTargetFor(resp, walk) {
+        var isProduct = walk.claim.kind === "product";
+        return {
+            label: localizedMessage(isProduct ? "trackInLuna" : "readInLuna"),
+            tint: isProduct ? KIND_TINTS.product : KIND_TINTS.article,
+            captureContent: false,
+            url: function () { return pluginSaveDeepLink(resp); },
+            present: function () {
+                var pill = document.getElementById(PILL_ID);
+                if (pill) {
+                    pill.textContent = localizedMessage("openingLuna");
+                    pill.style.opacity = "0.7";
+                    pill.style.pointerEvents = "none";
+                }
+                runPluginIngestForWalk(walk, location.href, "save").then(function (outcome) {
+                    if (outcome) { return queueModelAndNavigate(walk.plugin.id, outcome.raw, resp); }
+                    window.location.href = pluginSaveDeepLink(resp);
+                }, function (error) {
+                    if (error && error.code === "browser-deferred") {
+                        window.location.href = pluginBrowserDeferredLink(resp);
+                        return;
+                    }
+                    window.location.href = pluginSaveDeepLink(resp);
+                });
+            }
+        };
+    }
+
+    /// The video overlay target for a plugin's media claim: `ingest` runs
+    /// when the panel opens (the same timing the native flow's `resolveMedia`
+    /// round trip has), and Download hands the resolved Model to the app
+    /// instead of the native `queueResolvedDownload` round trip.
+    function pluginVideoOverlayTargetFor(resp, walk) {
+        var handoff = {
+            label: localizedMessage("downloadInLuna"),
+            tint: KIND_TINTS.media,
+            captureContent: false,
+            url: function () { return pluginSaveDeepLink(resp) + "&ret=safari"; }
+        };
+        if (resp && resp.videoPlayer === false) { return handoff; }
+        var pendingModelJSON = null;
+        var resolveMedia = function (url) {
+            return runPluginIngestForWalk(walk, url, "save").then(function (outcome) {
+                if (!outcome || outcome.model.kind !== "media" || !Array.isArray(outcome.model.assets)) {
+                    return { assets: [] };
+                }
+                pendingModelJSON = outcome.raw;
+                return {
+                    assets: outcome.model.assets.map(function (asset) {
+                        var mapped = { url: asset.url, kind: asset.type };
+                        if (asset.thumbnailURL) { mapped.thumbnailURL = asset.thumbnailURL; }
+                        return mapped;
+                    })
+                };
+            }, function () { return { assets: [] }; });
+        };
+        var performDownload = function () {
+            if (!pendingModelJSON) { return Promise.resolve(null); }
+            return browser.runtime.sendMessage({
+                type: "plugins.queueModel", id: walk.plugin.id, url: location.href, model: pendingModelJSON
+            }).then(function (qr) { return (qr && qr.deepLink) || null; }, function () { return null; });
+        };
+        return {
+            label: handoff.label,
+            tint: handoff.tint,
+            captureContent: false,
+            url: handoff.url,
+            present: function () {
+                presentVideoOverlay(
+                    resp, handoff, { resolveMedia: resolveMedia, performDownload: performDownload });
+            }
+        };
+    }
+
+    function presentPluginClaim(resp, walk) {
+        if (walk.claim.kind === "media") {
+            var target = pluginVideoOverlayTargetFor(resp, walk);
+            injectLunaButton(target);
+            // The plugin already classified THIS url as media — a stronger
+            // signal than the heuristic table `autoPresentVideoOverlay` exists
+            // for — so the panel opens once, immediately, rather than through
+            // that table's URL-shape/DOM-signal retry schedule.
+            if (typeof target.present === "function" && !videoOverlayDismissed) {
+                target.present();
+            }
+            return;
+        }
+        injectLunaButton(pluginSaveTargetFor(resp, walk));
+    }
+
+    /// The gate every pill decision passes through: a plugin claim wins
+    /// outright (§2 decision 8 — plugins run first); no claim falls back to
+    /// the fixed Swift-parity heuristics in `offerLunaButton` below.
+    function startPillDecision(resp) {
+        if (!(resp && resp.supportsPlugins)) {
+            offerLunaButton(resp);
+            return;
+        }
+        runPluginWalkForPage().then(function (walk) {
+            if (walk && walk.claim) { presentPluginClaim(resp, walk); return; }
+            offerLunaButton(resp);
+        }, function () { offerLunaButton(resp); });
     }
 
     /// Decides which pill (if any) this page earns, from the native context.
@@ -2246,7 +2594,26 @@
         return value > 0 ? value : 0;
     }
 
-    function presentVideoOverlay(context, handoff) {
+    // Native's own "queue what you resolved" round trip: the default download
+    // step for a page whose media the SWIFT resolver handled. A plugin-driven
+    // page passes its own `performDownload` to `presentVideoOverlay` instead
+    // (see `presentPluginVideoOverlay`), since the app must be told to run
+    // `plugins.queueModel`, not `queueResolvedDownload`.
+    function defaultPerformResolvedDownload(sourceURL, context) {
+        // No extension host (the bare WKWebView test harness): there is
+        // nothing to queue through, so go straight to the drain link, exactly
+        // as `requestResolvedMedia`'s own no-`browser` branch always resolved
+        // to an already-answered result instead of degrading.
+        if (typeof browser === "undefined") { return Promise.resolve(resolvedMediaTarget(context)); }
+        return browser.runtime.sendMessage({ type: "queueResolvedDownload", url: sourceURL })
+            .then(function (resp) { return (resp && resp.queued) ? resolvedMediaTarget(context) : null; })
+            .catch(function () { return null; });
+    }
+
+    function presentVideoOverlay(context, handoff, options) {
+        options = options || {};
+        var resolveMedia = options.resolveMedia || requestResolvedMedia;
+        var performDownload = options.performDownload || defaultPerformResolvedDownload;
         if (document.getElementById(VIDEO_OVERLAY_ID)) { return; }
         var sourceURL = location.href;
         var tint = (handoff && handoff.tint) || KIND_TINTS.media;
@@ -2537,13 +2904,9 @@
                 window.location.href = handoff.url();
                 return;
             }
-            var open = function () { window.location.href = resolvedMediaTarget(context); };
-            if (typeof browser === "undefined") { open(); return; }
-            browser.runtime.sendMessage({ type: "queueResolvedDownload", url: sourceURL })
-                .then(function (resp) {
-                    if (resp && resp.queued) { open(); } else { window.location.href = handoff.url(); }
-                })
-                .catch(function () { window.location.href = handoff.url(); });
+            performDownload(sourceURL, context).then(function (destination) {
+                window.location.href = destination || handoff.url();
+            });
         });
 
         // Before our own <video> exists, so this only ever reaches the page's.
@@ -2565,7 +2928,7 @@
         }
         window.addEventListener("orientationchange", onViewportResize);
 
-        var resolved = requestResolvedMedia(sourceURL, document.title || "");
+        var resolved = resolveMedia(sourceURL, document.title || "");
         resolved.then(function (result) {
             if (closed) { return; }
             var asset = (result.assets || [])[0];

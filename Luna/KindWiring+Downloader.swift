@@ -77,6 +77,11 @@ enum KindWiring {
         MediaShellWiring.drainPendingResolvedMedia(returningToSource: returningToSource)
     }
 
+    /// Central Luna only (`claudedocs/plans/plugin-platform.md` §2.1);
+    /// Downloader runs no plugin platform, so its own queue can never hold
+    /// anything.
+    static func drainPendingPluginModels(returningToSource: Bool) {}
+
     static func appDidLaunch() {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         MediaShellWiring.appDidLaunch()

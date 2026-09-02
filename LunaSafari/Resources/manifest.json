@@ -46,5 +46,11 @@
             { "id": "referer", "enabled": false, "path": "rules_referer.json" },
             { "id": "blockers", "enabled": false, "path": "rules_blockers.json" }
         ]
-    }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": ["plugin_host.js"],
+            "matches": ["http://*/*", "https://*/*"]
+        }
+    ]
 }

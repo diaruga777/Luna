@@ -183,6 +183,10 @@ enum KindWiring {
     /// on `hostHandlesMedia`), so nothing can ever queue a download for it.
     static func drainPendingResolvedMedia(returningToSource: Bool) {}
 
+    /// Central Luna only (`claudedocs/plans/plugin-platform.md` §2.1); Reader
+    /// runs no plugin platform, so its own queue can never hold anything.
+    static func drainPendingPluginModels(returningToSource: Bool) {}
+
     /// Reader handles no products, so there is no runner. AppDelegate never
     /// registers or schedules the price-refresh BGTask.
     static let priceRefreshRunner: (any PriceRefreshRunning)? = nil

@@ -11,6 +11,28 @@ import LunaStorage
 import LunaURLClassification
 import SafariServices
 
+/// The plugin platform's message-handling seam
+/// (`claudedocs/plans/plugin-platform.md` §13.1). Only the central Luna app
+/// runs any plugin platform at all, and this file is the ONE shared source
+/// built into all four Safari appexes — so it names no plugin-runtime module
+/// at the source level, and it never guards on the compiler's module-
+/// visibility check (that check resolves per this file's own compilation and
+/// is not a reliable per-TARGET signal; see CLAUDE.md). `SafariPluginMessages
+/// .handler` is the real per-target answer instead: the central appex
+/// compiles `SafariPluginMessages+Luna.swift` (a genuine implementation), and
+/// the other three compile `SafariPluginMessages+None.swift` (`nil`) — a
+/// membership-exception split, the same mechanism
+/// `KindWiring+Luna.swift`/`KindWiring+Reader.swift` use.
+protocol SafariPluginMessaging: AnyObject {
+    /// Whether this host offers plugins at all — `buttonContext`'s
+    /// `supportsPlugins` field.
+    var supportsPlugins: Bool { get }
+    /// Handles one `plugins.*` message, completing `context` itself (directly
+    /// or from a Task) when it returns `true`. `false` means this handler did
+    /// not recognize `type` — the caller then answers `{"error":"unsupported"}`.
+    func handle(type: String, message: [String: Any]?, context: NSExtensionContext) -> Bool
+}
+
 /// Receives native messages from the extension's JavaScript. It stores the active
 /// Safari URL for the SaveLink intent, answers the button-visibility and
 /// paywall-unlock questions the scripts ask, stores already-unlocked article HTML
@@ -86,6 +108,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["supportsArticles"] = Self.hostHandlesArticles
             payload["supportsMedia"] = Self.hostHandlesMedia
             payload["supportsProducts"] = Self.hostHandlesProducts
+            // Only the central app's extension runs the plugin walk: the three
+            // single-kind apps keep their fixed Swift heuristics.
+            payload["supportsPlugins"] = SafariPluginMessages.handler?.supportsPlugins ?? false
             // Whether a media page opens the in-page player. It rides the context
             // the page already asks for; a non-media host never sends it, since its
             // pages have no player to suppress. An absent key means ON.
@@ -175,6 +200,16 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // a Task — see `comparableSellers(…)`.
             comparableSellers(message: message, context: context)
             return
+        case let type? where type.hasPrefix("plugins."):
+            // Every `plugins.*` message goes through the per-target seam:
+            // a real answer from the central host
+            // (`SafariPluginMessages+Luna.swift`), or nothing from the other
+            // three (`SafariPluginMessages+None.swift`, `handler == nil`).
+            if let handler = SafariPluginMessages.handler,
+               handler.handle(type: type, message: message, context: context) {
+                return
+            }
+            payload["error"] = "unsupported"
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SafariURLStore.record(urlString)

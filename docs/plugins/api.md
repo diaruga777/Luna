@@ -83,7 +83,7 @@ luna.register(hooks: PluginHooks): void;
 Call this exactly once, at the top level. **Every hook is called with
 exactly one JSON argument** — this is why `onBluetooth` takes `event` alone
 (read the live session with the separate, synchronous
-`luna.bluetooth.session()`) and `onAction` takes `{ key }` rather than a bare
+`luna.bluetooth.session()`) and `onAction` takes `{ key, action? }` rather than a bare
 string.
 
 ```ts
@@ -93,7 +93,7 @@ interface PluginHooks {
   export?(input: ExportInput): Promise<ExportResult>;
   onBluetooth?(event: BluetoothEvent): Promise<void>;
   onSettingsChanged?(changes: Record<string, unknown>): Promise<void>;
-  onAction?(input: { key: string }): Promise<void>;
+  onAction?(input: { key: string; action?: "pair" | "unpair" }): Promise<void>;
 }
 ```
 
@@ -370,8 +370,11 @@ separate transfer API.
 
 ```ts
 luna.exports.deliverQueued(): Promise<{ delivered: number; remaining: number }>;
-luna.exports.queued(): Promise<{ saveId: string; title: string; queuedAt: string }[]>;
+luna.exports.queued(): Promise<{ saveId: string; title: string; queuedAt?: string }[]>;
 luna.exports.markSent(saveId: string): Promise<void>;
+luna.exports.pendingDeletes(): Promise<{ saveId: string; title: string; remoteName: string }[]>;
+luna.exports.markRemoteDeleted(saveId: string): Promise<void>;
+luna.exports.markReadOnDevice(saveId: string): Promise<void>;
 ```
 
 `deliverQueued` runs your `export` hook once per item Luna has queued for
@@ -380,6 +383,14 @@ this destination, ignoring the normal backoff delay — call it from
 `markSent` is for reconciliation: tell Luna an item is delivered when the
 DEVICE reports it (rather than your `export` hook itself), e.g. an
 e-reader that reports which books it already has on its next connection.
+
+The last three are for a device that tracks reading of its own.
+`markReadOnDevice` says the DEVICE finished the save: Luna marks it read,
+scores it complete and files it away, and records that the device already
+holds it so no delete is asked for. `pendingDeletes` lists the saves you
+delivered whose reading finished IN Luna, each with the `remoteName` your
+`export` reported — delete those on the device, then `markRemoteDeleted` each
+one. Answer `remoteName` from `export` or Luna has no name to give back.
 
 ## Models
 

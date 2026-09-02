@@ -351,9 +351,17 @@ async export(input) {
 itself and there is nothing more to show; return `{ file }`/`{ text }`/
 `{ url }` to hand something to the system share sheet instead;
 `destination: true` plugins additionally return `{ status: "sent" |
-"failed" | "retry", message?, hard? }` — Luna's own send queue, retry
-backoff, and per-source auto-send settings apply to a `destination` plugin
-exactly as they do to Luna's own Kindle/Xteink code. `requiresSettings`
+"failed" | "retry", message?, hard?, remoteName? }` — Luna's own send queue,
+retry backoff, and per-source auto-send settings apply to a `destination`
+plugin exactly as they do to Luna's own Kindle/Xteink code. `retry` is a
+DEFERRAL: it costs no failure count and no backoff, which is what makes an
+"enqueue until the device wakes" destination workable. `remoteName` is the
+name the receiver filed the save under; report it and Luna can ask the
+receiver to delete that exact file later (see `luna.exports` in `api.md`).
+Add `"dequeueOnRead": true` to the `export` block when your receiver tracks
+reading of its own: Luna then drops a queued send whose save was finished in
+Luna before the send went out, rather than delivering a book its owner has
+already moved past. `requiresSettings`
 gates when the share row is even offered — Luna checks those keys have a
 value before showing "Send to Kindle" at all.
 

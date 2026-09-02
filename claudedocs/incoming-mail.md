@@ -72,7 +72,7 @@ still KEEPS only its own kinds from what it imports.
   fallback name. Reader cards resolve that email through Contacts at display
   time, so renaming a contact immediately updates the card's “From …” label.
   Items are tagged `captureSource: .email`; auto-send is then handled by
-  `ArticleSendCoordinator.articleBecameReady` per the destination's
+  `ArticleSendCoordinator.saveBecameReady` per the destination's
   email-source setting (Kindle's reuses `autoSendToKindle`; see
   send-to-kindle.md → "Auto-send by capture source"). Advances the cursor.
   Coalesces overlapping runs. Its `isConfigured` gate means the shared account

@@ -33,6 +33,12 @@ enum ArticleShellWiring {
     @MainActor
     static func install() {
         IngestorKindHandlers.article = ArticleKindHandler()
+        // The ONE readiness path. Every kind's report — a persisted article, a
+        // landed media download, a new price tracker — arrives here, and each
+        // installed destination decides for itself whether it takes that save.
+        // The two apps with no send tier leave this nil, where a report is a
+        // no-op.
+        SaveReadiness.observer = SendCoordinatorReadiness()
 
         // A completion written before a force-quit never received the normal
         // background callback. Promote it before constructing the Reader UI.
@@ -213,11 +219,12 @@ private struct ArticleIntentExporter: IntentArticleExporting {
     }
 }
 
-/// A newly-ready article reaches the send pipeline, so Kindle/ereader auto-sends
-/// keep firing. LunaSend is outside LunaReaderUI's tier, hence the bridge here.
-private struct SendCoordinatorReadiness: ArticleReadinessObserving {
-    func articleBecameReady(_ item: SavedItem) {
-        ArticleSendCoordinator.shared.articleBecameReady(item)
+/// Every newly-ready save reaches the send pipeline, so auto-sends keep firing
+/// for whatever kinds the installed destinations accept. LunaSend is outside
+/// the kind modules' tier, hence the bridge here.
+private struct SendCoordinatorReadiness: SaveReadinessObserving {
+    func saveBecameReady(_ item: SavedItem) {
+        ArticleSendCoordinator.shared.saveBecameReady(item)
     }
 }
 
@@ -226,8 +233,7 @@ private struct SendCoordinatorReadiness: ArticleReadinessObserving {
 /// in LunaSend (`ArticleSendCoordinator`). The composition root is the one
 /// place allowed to see both tiers at once.
 private struct ArticleKindHandler: IngestorArticleHandling {
-    private let handler = ArticleIngestHandler(
-        readinessObserver: SendCoordinatorReadiness())
+    private let handler = ArticleIngestHandler()
 
     func persistArticle(
         _ content: ArticleContent, html: String, for item: SavedItem,
@@ -246,10 +252,6 @@ private struct ArticleKindHandler: IngestorArticleHandling {
 
     func backfillMissingThumbnails(store: SavesStore) {
         handler.backfillMissingThumbnails(store: store)
-    }
-
-    func articleBecameReady(_ item: SavedItem) {
-        ArticleSendCoordinator.shared.articleBecameReady(item)
     }
 
     func preloadPasteboard(content: ArticleContent, sourceURL: URL) {

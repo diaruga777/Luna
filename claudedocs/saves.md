@@ -296,7 +296,7 @@ affordance.
   `handleSavePress(urlString:)` is the save entry point for intents and the
   in-app add: a new URL saves+ingests, a repeat press within 12 s may send to
   Kindle (see `send-to-kindle.md`), any other repeat press is ignored. After a
-  successful `saveContent` it notifies `ArticleSendCoordinator.articleBecameReady`.
+  successful `saveContent` it reports readiness through `SaveReadiness.observer`.
   New-save automation (auto-share to always-friends `fireAutoShares` +
   `armSemanticSuggestionIfNeeded`) is factored out and shared with
   `saveNewWithContent(urlString:content:)` — the latter persists already-fetched

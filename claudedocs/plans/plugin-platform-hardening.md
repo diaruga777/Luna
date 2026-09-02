@@ -9,11 +9,20 @@ shared by JSC and the Safari relay, `PluginFetchRequestShaping`; one
 `outcome(from:)` mapping and an adopter failure that keeps the Swift floor —
 R2#1, #3, #13, #15, #16, #20, #21, #23).
 
+WP-E (kind-neutral auto-send for media/product destinations, §2 WP-E) LANDED
+on branch `wp-e-kind-neutral-send`: `ArticleDestination.accepts(_:)` gates
+every queue, send and retry; `PluginDestination` answers from its declared
+kinds; `articleBecameReady` became `saveBecameReady` behind one seam,
+`SaveReadiness.observer` (LunaModels rather than LunaSaves — LunaMediaDownload
+and LunaPriceUI link no LunaSaves, so a registry there could not be reached by
+the two kinds that had to report). A media save reports when its downloaded
+FILE lands (`SavedMediaStore.addDownloadedFile`), a product save when its
+tracker is written. `claudedocs/plugins.md` §8.3 documents the scope and §14's
+bullet is struck.
+
 NOT landed — the phase-2 agents were stopped by an API spend limit before
 they produced verified work:
 
-- **WP-E** (kind-neutral auto-send for media/product destinations, §2 WP-E):
-  not started. `claudedocs/plugins.md` §14 still lists the gap, correctly.
 - **WP-F1**, the rest (§5.6): Safari-world parity — `LunaError` argument
   order in `plugin_host.js`/`bridge.mjs` (R2#2), the Safari walk continuing
   on a `null` ingest and refusing an undeclared kind (R2#10/#11), Safari
@@ -512,7 +521,7 @@ the UI items that touch them land here rather than in WP-F2.
 | R4#24 | `PluginFieldEditCell.onCommit` and `PluginChoiceScreen.onSelect` become weak delegates |
 | R4 "also noticed" | `luna.exports.queued()` — make `queuedAt` nullable in the `.d.ts` or always present |
 
-### 5.5 WP-E — unchanged
+### 5.5 WP-E — landed (see the Status section)
 
 ### 5.6 WP-F1 — Safari parity and the ingest walk (opus; after WP-A merges)
 

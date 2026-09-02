@@ -688,6 +688,40 @@ where nothing presents. The coordinator's retry/backoff, double-save gating
 and auto-send-by-source logic are otherwise unchanged; only the delivery step
 is a plugin call instead of an EPUB attach.
 
+**A destination auto-sends whatever kinds it declared.** `ArticleDestination`
+asks `accepts(_ item:)` before it queues, sends or retries, and
+`PluginDestination` answers `export.kinds.contains(item.exportKind)` — so a
+media or product destination is queued, auto-sent by capture source, backed off
+and retried exactly as an article one is. The default `accepts` is an article,
+which is what the two Swift destinations (`KindleDestination`,
+`XteinkDestination`) keep: their payload is a book built from reader content.
+
+The readiness report that starts an automatic send is kind-neutral too, and
+there is one of it: `SaveReadiness.observer` (LunaModels), which
+`ArticleShellWiring.install()` fills with an adapter onto
+`ArticleSendCoordinator.saveBecameReady(_:)`. The two apps that link no send
+tier leave it nil, where every report is a no-op. Each kind reports at the
+moment its save gains the content a destination would deliver:
+
+| Kind | Reported from | The moment |
+| --- | --- | --- |
+| article | `ArticleIngestHandler` (`persistArticle`, `ingestDocument`), `SavesIngestor`, `IncomingMailImporter` | the row flips `.ready`, which for an article means its reader content is on disk |
+| media | `SavedMediaStore.addDownloadedFile` | the downloaded FILE lands. NOT the `saves` row flipping `.ready` — `savePlatformMetadata` does that the moment the post's title and thumbnail arrive, minutes before any bytes, while a media export's input is the file (`PluginExportInputProducer.mediaFile`). A Photos-backed save reports nothing: its bytes are in the photo library, where there is no file handle to hand a plugin |
+| product | `ProductTrackerIngestor` (both routes: a new tracker and the existing one a duplicate save merged into) | the tracker is written, which `savePriceTracker` does in the same step as marking the row `.ready` |
+
+A `file` destination's `accepts` carries the same condition the trigger does:
+the downloaded file must exist. Without it the lifecycle sweep
+(`retryPendingSends`, which reconciles any `.ready` all-saves save into a
+queue row) would queue a media save whose bytes have not arrived and spend the
+whole retry budget failing to build its input.
+
+**The double-save press stays article-only.** `doubleSaveDestinationIDs()`
+reports every configured destination in `.doubleSave` mode regardless of kind,
+but the press itself is gated upstream: a platform item's second press is
+always `.ignore` (`claudedocs/send-to-kindle.md`). `sendTestDocument` is
+article-shaped for the same reason and still throws
+`PluginDestinationError.unsupportedPayload` for any plugin destination.
+
 A destination that declares `export.dequeueOnRead: true` joins
 `ReadStateSendReconciler`'s set: a save finished in Luna before its send went
 out is dropped from that destination's queue rather than delivered.
@@ -992,10 +1026,6 @@ body; treat the pbxproj as authoritative). Stage ids: `plugins.settings.empty`,
 Collected from every implementation wave's landed notes, so nothing is lost
 between the plan document and this one:
 
-- **Media/product export destinations get no auto-send.**
-  `ArticleSendCoordinator` is article-shaped; a media or product export
-  plugin gets a manual share row only, never queued/retried automatically.
-  Recorded by the plan as a deliberate scope cut, not a bug.
 - **Per-hook capability restriction is not enforced client-side in Safari.**
   §3.1's "classify may call only `luna.fetch`/`luna.html`" is checked by
   native re-validating the declared capability set on every message, not by

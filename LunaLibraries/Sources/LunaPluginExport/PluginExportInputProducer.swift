@@ -54,13 +54,11 @@ public struct PluginExportInputProducer {
         self.mediaFiles = mediaFiles
     }
 
-    /// The kind an export hook is told a save is. It reads the save's own
-    /// shape, the way each card deck does.
-    public static func kind(of item: SavedItem) -> PluginModelKind {
-        if item.priceTracker != nil { return .product }
-        if item.isPlatformItem { return .media }
-        return .article
-    }
+    /// The kind an export hook is told a save is. The derivation is the save's
+    /// own (`SavedItem.exportKind`), so the send coordinator matching a save
+    /// against a destination's declared kinds and the hook argument built here
+    /// can never disagree.
+    public static func kind(of item: SavedItem) -> PluginModelKind { item.exportKind }
 
     /// Builds the input, writing any file into the plugin's open scratch
     /// generation.

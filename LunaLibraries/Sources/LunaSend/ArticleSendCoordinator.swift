@@ -22,6 +22,10 @@ public protocol ArticleDestination {
     var displayName: String { get }
     /// Whether sends can actually go out (credentials/config present).
     var isConfigured: Bool { get }
+    /// Whether this destination delivers this save at all. The coordinator asks
+    /// before it queues, sends or retries, so a destination never sees a kind it
+    /// cannot build a payload for.
+    func accepts(_ item: SavedItem) -> Bool
     /// The auto-send mode for an item, resolved from its capture source (email,
     /// App Intents, share sheet, friend shares, …).
     func sendMode(for item: SavedItem) -> ArticleSendMode
@@ -99,6 +103,10 @@ public extension ArticleDestination {
     /// otherwise: dropping a queued send is only right for a receiver that
     /// tracks reading of its own.
     var dequeuesOnRead: Bool { false }
+
+    /// An EPUB destination takes articles. The default `deliver` builds a book
+    /// from the save's reader content, which only an article has.
+    func accepts(_ item: SavedItem) -> Bool { item.exportKind == .article }
 
     /// An EPUB destination: fetch the article's missing images when this
     /// destination's profile carries images, build the book, hand it over.
@@ -314,7 +322,7 @@ public final class ArticleSendCoordinator {
     private var inFlight = Set<String>()
     private let lock = NSLock()
 
-    /// Testing seam. `articleBecameReady`/`retryPendingSends` are synchronous
+    /// Testing seam. `saveBecameReady`/`retryPendingSends` are synchronous
     /// entry points that fan delivery out into detached `Task`s; with nothing
     /// to await, a test can only sleep and hope. When an observer is attached,
     /// every task they start is handed over so the test can await it instead.
@@ -394,12 +402,16 @@ public final class ArticleSendCoordinator {
         await sendBuildingEPUB(item, to: destination, respectBackoff: false)
     }
 
-    /// Called by the ingestor when an article becomes ready: per destination,
-    /// delivers anything queued by an earlier press, plus everything when that
-    /// destination's mode is "all saves".
-    public func articleBecameReady(_ item: SavedItem) {
-        guard !item.isPlatformItem else { return }
-        for destination in destinations where destination.isConfigured {
+    /// Called when a save gains the content a destination delivers: per
+    /// destination, delivers anything queued by an earlier press, plus
+    /// everything when that destination's mode is "all saves".
+    ///
+    /// Each destination is asked whether it takes this save, so one report
+    /// serves every kind — an article destination ignores a landed media
+    /// download, and a media destination ignores an article.
+    public func saveBecameReady(_ item: SavedItem) {
+        for destination in destinations
+        where destination.isConfigured && destination.accepts(item) {
             let state = item.sendState(for: destination.id)
             let shouldAutoSend = destination.sendMode(for: item) == .allSaves && state == nil
             let shouldSend = state == .queued || shouldAutoSend
@@ -468,7 +480,8 @@ public final class ArticleSendCoordinator {
                 // launch/foreground the ready row is therefore the only signal
                 // that an all-saves source needs an automatic send. Reconcile
                 // that missing queue row before sweeping existing work.
-                guard let current = store.item(withID: item.id) else { continue }
+                guard let current = store.item(withID: item.id),
+                      destination.accepts(current) else { continue }
                 if current.state == .ready,
                    current.sendState(for: destination.id) == nil,
                    destination.sendMode(for: current) == .allSaves {
@@ -502,7 +515,7 @@ public final class ArticleSendCoordinator {
     ) async -> Error? {
         guard destination.isConfigured else { return nil }
         guard let fresh = store.item(withID: item.id) else { return nil }
-        guard !fresh.isPlatformItem else { return nil } // platform items have no article EPUB
+        guard destination.accepts(fresh) else { return nil }
         guard shouldAttempt(fresh, destinationID: destination.id, respectBackoff: respectBackoff) else {
             return nil
         }

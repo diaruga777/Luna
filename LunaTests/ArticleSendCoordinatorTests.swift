@@ -58,6 +58,39 @@ private final class MockDestination: ArticleDestination {
     }
 }
 
+/// A destination that takes whatever kinds it is told to. Its payload is a
+/// SAVE, not a book — a media or product destination has no EPUB to build — so
+/// it overrides `deliver` and records the saves it was handed.
+private final class MockKindDestination: ArticleDestination {
+    let id: String
+    let displayName = "Kinds"
+    let kinds: Set<PluginModelKind>
+    var configured = true
+    var mode: ArticleSendMode = .off
+    private(set) var deliveredIDs: [UUID] = []
+
+    init(id: String, kinds: Set<PluginModelKind>) {
+        self.id = id
+        self.kinds = kinds
+    }
+
+    var isConfigured: Bool { configured }
+
+    func accepts(_ item: SavedItem) -> Bool { kinds.contains(item.exportKind) }
+
+    func sendMode(for item: SavedItem) -> ArticleSendMode { mode }
+
+    var appIntentsSendMode: ArticleSendMode { mode }
+
+    func send(epubData: Data, fileName: String, title: String) async throws {
+        XCTFail("a kind destination is never handed loose EPUB bytes")
+    }
+
+    func deliver(item: SavedItem, context: ArticleSendContext) async throws {
+        deliveredIDs.append(item.id)
+    }
+}
+
 final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObserving {
 
     private var store: SavesStore!
@@ -69,7 +102,7 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
     private var second: MockDestination!
     private var coordinator: ArticleSendCoordinator!
     private var currentDate: Date!
-    /// Every background delivery task `articleBecameReady`/`retryPendingSends`
+    /// Every background delivery task `saveBecameReady`/`retryPendingSends`
     /// starts, collected through the coordinator's `deliveryTaskObserver` seam
     /// so `drainDeliveries()` can await them instead of sleeping.
     private let taskLock = NSLock()
@@ -129,6 +162,19 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
             title: "An Article",
             blocks: [ArticleContent.Block(kind: .paragraph, text: "Words.", links: [])])
         return store.saveContent(content, for: item)
+    }
+
+    /// A ready MEDIA save: a recognized platform item, which is what
+    /// `SavedItem.exportKind` reads. Its row is ready with no reader content at
+    /// all, which is the shape an article destination must refuse.
+    private func makeReadyMediaItem(
+        _ url: String = "https://www.youtube.com/watch?v=abc",
+        itemID: String = "abc"
+    ) -> SavedItem {
+        let item = store.add(urlString: url)
+        return store.savePlatformMetadata(
+            platform: .youtube, platformItemID: itemID, title: "A Video",
+            thumbnailFileName: nil, for: item.id) ?? item
     }
 
     private func sendState(_ item: SavedItem, _ destinationID: String) -> SavedItem.SendState? {
@@ -279,44 +325,44 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         XCTAssertNil(sendState(item, kindle.id))
     }
 
-    func testArticleBecameReadySendsQueuedItem() async {
+    func testSaveBecameReadySendsQueuedItem() async {
         kindle.mode = .off
         let item = makeReadyItem()
         store.setSendState(.queued, for: item.id, destination: kindle.id)
         guard let fresh = store.item(withID: item.id) else { return XCTFail("item gone") }
-        coordinator.articleBecameReady(fresh)
+        coordinator.saveBecameReady(fresh)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
     }
 
-    func testArticleBecameReadySendsToAllAllSavesDestinations() async {
+    func testSaveBecameReadySendsToAllAllSavesDestinations() async {
         kindle.mode = .allSaves
         second.mode = .allSaves
         let item = makeReadyItem()
-        coordinator.articleBecameReady(item)
+        coordinator.saveBecameReady(item)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertEqual(sendState(item, second.id), .sent)
     }
 
-    func testArticleBecameReadyRespectsPerDestinationMode() async {
+    func testSaveBecameReadyRespectsPerDestinationMode() async {
         kindle.mode = .allSaves
         second.mode = .off
         let item = makeReadyItem()
-        coordinator.articleBecameReady(item)
+        coordinator.saveBecameReady(item)
         await drainDeliveries()
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertNil(sendState(item, second.id))
         XCTAssertTrue(second.sentTitles.isEmpty)
     }
 
-    func testArticleBecameReadyRespectsCaptureSource() async {
+    func testSaveBecameReadyRespectsCaptureSource() async {
         // Email auto-sends; paste does not.
         kindle.modeForSource = { $0 == .email ? .allSaves : .off }
         let emailItem = makeReadyItem("https://example.com/email", source: .email)
         let pasteItem = makeReadyItem("https://example.com/paste", source: .paste)
-        coordinator.articleBecameReady(emailItem)
-        coordinator.articleBecameReady(pasteItem)
+        coordinator.saveBecameReady(emailItem)
+        coordinator.saveBecameReady(pasteItem)
         await drainDeliveries()
         XCTAssertEqual(sendState(emailItem, kindle.id), .sent)
         XCTAssertNil(sendState(pasteItem, kindle.id))
@@ -423,5 +469,79 @@ final class ArticleSendCoordinatorTests: XCTestCase, ArticleDeliveryTaskObservin
         fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.sendState(for: kindle.id), .sent)
         XCTAssertEqual(kindle.sentTitles, ["An Article"])
+    }
+
+    // MARK: - Kinds
+
+    /// One readiness report serves every kind: the destination that declared
+    /// media takes the finished download, and the article destination beside it
+    /// — auto-sending everything — never sees it.
+    func testAMediaDestinationAutoSendsAMediaSaveAndAnArticleOneDoesNot() async {
+        let media = MockKindDestination(id: "mediaPlace", kinds: [.media])
+        media.mode = .allSaves
+        kindle.mode = .allSaves
+        coordinator = ArticleSendCoordinator(
+            store: store, destinations: [kindle, media],
+            retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
+            now: { self.currentDate })
+        coordinator.deliveryTaskObserver = self
+
+        let item = makeReadyMediaItem()
+        coordinator.saveBecameReady(item)
+        await drainDeliveries()
+
+        XCTAssertEqual(media.deliveredIDs, [item.id])
+        XCTAssertEqual(sendState(item, media.id), .sent)
+        XCTAssertNil(sendState(item, kindle.id))
+        XCTAssertTrue(kindle.sentTitles.isEmpty)
+    }
+
+    /// The same report the other way round: an article reaches the article
+    /// destination and the media destination declines it.
+    func testAnArticleSaveReachesOnlyTheDestinationThatTakesArticles() async {
+        let media = MockKindDestination(id: "mediaPlace", kinds: [.media])
+        media.mode = .allSaves
+        kindle.mode = .allSaves
+        coordinator = ArticleSendCoordinator(
+            store: store, destinations: [kindle, media],
+            retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
+            now: { self.currentDate })
+        coordinator.deliveryTaskObserver = self
+
+        let item = makeReadyItem()
+        coordinator.saveBecameReady(item)
+        await drainDeliveries()
+
+        XCTAssertEqual(kindle.sentTitles, ["An Article"])
+        XCTAssertTrue(media.deliveredIDs.isEmpty)
+        XCTAssertNil(sendState(item, media.id))
+    }
+
+    /// The lifecycle sweep reconciles an all-saves source into a queue row of
+    /// its own, so it has to ask the same question: a media save is not queued
+    /// for an article destination, and an explicit queue row for one is never
+    /// attempted.
+    func testRetryPendingSendsHonoursWhatEachDestinationTakes() async {
+        let media = MockKindDestination(id: "mediaPlace", kinds: [.media])
+        media.mode = .allSaves
+        kindle.mode = .allSaves
+        coordinator = ArticleSendCoordinator(
+            store: store, destinations: [kindle, media],
+            retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
+            now: { self.currentDate })
+        coordinator.deliveryTaskObserver = self
+
+        let item = makeReadyMediaItem()
+        // A queue row an earlier build could have written for the article
+        // destination: the sweep must leave it alone rather than fail it.
+        store.setSendState(.queued, for: item.id, destination: kindle.id)
+
+        coordinator.retryPendingSends()
+        await drainDeliveries()
+
+        XCTAssertEqual(sendState(item, kindle.id), .queued)
+        XCTAssertEqual(kindle.attemptCount, 0)
+        XCTAssertEqual(media.deliveredIDs, [item.id])
+        XCTAssertEqual(sendState(item, media.id), .sent)
     }
 }

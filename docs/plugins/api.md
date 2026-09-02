@@ -55,13 +55,16 @@ Codes you will see, and where they come from:
 | --- | --- | --- |
 | `bad-argument` | almost every bridge | a required argument was missing or the wrong shape |
 | `unavailable-here` | any bridge, for a capability this process can't serve | you're calling something the current process (extension/Safari) doesn't support — check the availability table above |
+| `capability-not-declared` | Safari's native handler, on every relayed `plugins.*` message | the manifest never declared this capability — the content script is not trusted to enforce its own grants, so native re-checks on every call |
 | `bridge-failed` | the default `PluginPromiseBox.fail` code | an unclassified native-side failure |
+| `runtime` | `luna.crypto.randomBytes` | the system random source refused |
 | `cancelled` | `luna.ui.*`, `luna.mail.send` (no `to` given, user dismissed the picker), `luna.browser.open` (the modal was dismissed) | the person cancelled a prompt/picker/browser step |
 | `browser-deferred` | `luna.browser.open`, outside the app | not really an error to handle — let it propagate out of `ingest`; Luna locks the save and finishes later (see README §6) |
 | `not-found` | `luna.files.read`, `luna.fetch` with a multipart `file` part | the scratch file behind that `FileHandle` is gone (its generation was reaped) |
 | `not-text` | `luna.files.read` without `"base64"` | the file is not UTF-8 text; read it with `"base64"` |
-| `too-large` | `luna.storage.collection(...).put`, `luna.files.write`, a multipart `file` part | the document is over the 256 KB per-row cap, or the file over 8 MB |
+| `too-large` | `luna.storage.set`, `luna.storage.collection(...).put`, `luna.files.write`, a multipart `file` part | the value is over the 256 KB per-key/per-row cap, or the file over 8 MB |
 | `write-failed` | `luna.files.write`, `luna.fetch` with `as: "file"` | the scratch write failed |
+| `not-configured` | `luna.mail.send` | no email account is connected — the documented `send-failed` branch never fires for this, the most common failure |
 | `send-failed` | `luna.mail.send` | the mail transport itself failed |
 | `fetch-failed` | `luna.fetch`, generic | the request failed for a reason with no more specific code |
 | `network-refused` | `luna.fetch` | `LiveNetworkPolicy` refused the request before it was sent |
@@ -70,6 +73,7 @@ Codes you will see, and where they come from:
 | `timed-out` | `luna.bluetooth.connect`, a session's `next`, a session's `write` waiting for controller room | the operation's own timeout elapsed |
 | `already-connecting` | `luna.bluetooth.connect` | a connect to that device is already waiting for its link — the first call's promise still stands, so await that one |
 | `background` | `luna.wifi.join` | iOS only joins a network while Luna is in the foreground; catch this and prompt the person to open Luna instead of failing silently |
+| `join-failed` | `luna.wifi.join` | the hotspot configuration itself failed to apply |
 | `already-registered` / `invalid-hooks` | Safari's `luna.register`, if called twice or with something other than an object | a bug in your plugin, not a runtime condition to handle |
 
 `throw new luna.LunaError(code, message)` from your own plugin code to

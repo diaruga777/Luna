@@ -271,7 +271,7 @@ write is sent as-is.
 `cookies` controls whose cookie jar the request uses: `"shared"` (default —
 the site's normal, logged-out consent state), `"ephemeral"` (a fresh jar,
 nothing remembered), or `"none"`. To reuse the session a `luna.browser` step
-just earned (§7), set the `Cookie` header from the result's `cookieHeader`;
+just earned (§6), set the `Cookie` header from the result's `cookieHeader`;
 any other `cookies` value rejects `bad-argument`. `redirect` is `"follow"`
 (default), `"manual"` (stop at the 3xx and read `Location` yourself), or
 `"headThenGet"`.
@@ -296,9 +296,50 @@ sets `Content-Type` for `form`/`json`/`multipart` bodies for you.
   token, not `luna.storage` — it is never returned to JavaScript in cleartext
   from an extension.
 - **`luna.settings`** — reads/writes the values your manifest's `settings`
-  schema declares (see §7 for the schema itself). `get`/`all` work
+  schema declares (see "Settings schema" below). `get`/`all` work
   everywhere; `set` is app-only (Settings itself is where a user edits
   values; a plugin usually only reads them).
+
+### Settings schema
+
+A manifest's `settings` array is what draws your plugin's row in
+Settings → Plugins → *your plugin*, one field per entry:
+
+```json
+"settings": [
+  { "key": "apiKey", "type": "password", "label": "API Key", "secret": true,
+    "required": true, "help": "From your account's Developer page." },
+  { "key": "mode", "type": "choice", "label": "Mode", "default": "auto",
+    "options": [{ "id": "auto", "label": "Automatic" }, { "id": "manual", "label": "Manual" }] }
+]
+```
+
+Each entry is `{ key, type, label, help?, placeholder?, options?, default?,
+required?, secret? }`. `key` is ASCII letters, digits and `_` only, and may
+never start with `_` — that prefix is reserved for keys Luna itself writes
+(`_status`, the dot a destination plugin's own share row shows). `type` is
+one of:
+
+| `type` | What the detail screen renders |
+| --- | --- |
+| `text`, `email`, `url`, `password`, `number` | An inline text field, with the matching keyboard; `password` masks input |
+| `toggle` | A switch row |
+| `choice` | A row that pushes a picker over `options`, and redraws once one is chosen |
+| `pairedDevice` | A row with Pair/Unpair buttons, calling `onAction({ key, action: "pair" \| "unpair" })` |
+| `action` | A plain button row calling `onAction({ key })` |
+| `info` | Read-only text — no stored value, just `label`/`help` |
+
+Every type shows `help` under its label when you set it. `default` is the
+value `luna.settings.get(key)` answers before anything is stored — JSON, so
+a string default still needs its own quotes in the manifest
+(`"default": "auto"`, not `"default": auto`). `secret: true` masks a stored
+value back to `""` in `luna.settings.get`/`.all` — the plaintext only ever
+reaches your plugin through `luna.secrets`, never through the settings you
+declared here. `required: true` means Luna treats your plugin as
+unconfigured — no export row, no auto-send — until this field holds a
+value; naming the same key in your `export`'s own `requiresSettings` (§7)
+checks it a second time, for a field an export needs but a settings screen
+does not otherwise require.
 
 ## 6. The browser step, and why a hook re-runs
 

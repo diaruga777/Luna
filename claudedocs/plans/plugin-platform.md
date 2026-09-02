@@ -1,5 +1,34 @@
 # Plan: the Luna plugin platform (ingest + export plugins)
 
+## Status (2026-09-02)
+
+**Waves 0 through 3 are landed.** Central Luna runs the plugin platform
+described below end to end: ingest (classify + ingest, media resolution and
+reresolution), the browser lock flow, export (Kindle and Xteink as bundled
+plugins replacing their Swift destinations under the same ids), Bluetooth/
+Wi-Fi transport, and Safari. The reference for what actually shipped —
+which supersedes this plan wherever the two disagree — is
+`claudedocs/plugins.md`. That document also collects every verified
+departure from this plan (real hook argument shapes, the settings-key fix,
+the Xteink destination-id fix, known gaps) in its own "Known gaps" and
+"Where the plan and the code disagree" sections; this plan's own inline
+"landed" notes below record the same history from each wave's own vantage
+point and are kept for that record, not as a second source of truth.
+
+Merge commits, in order:
+
+```
+5003896e3 merge: plugin platform Wave 0 (scaffolding, models, schema 12)
+47b945050 merge: plugin platform Wave 1A — JavaScriptCore runtime, Kit bridges and store
+0f212c3e9 Merge branch 'plugin-w1-ui' into merge-1c
+1544fb7bc Merge branch 'plugin-w1-ingest' into merge-1b
+b411f110f Merge branch 'plugin-w2-media' into merge-2a
+bde3008f7 merge: plugin platform Wave 2B — browser lock flow, with the UI bridges wired
+55fbb88e1 Merge branch 'plugin-w2-safari' into merge-2c
+6bed0b22b merge: plugin platform Wave 3B — Bluetooth/Wi-Fi bridges and the Xteink plugin
+343a867a2 merge: plugin platform Wave 3A — export framework, mail/notifications/exports bridges, Kindle plugin
+```
+
 Status: approved direction, staged execution. Written 2026-09-02 from five
 codebase surveys (ingest pipeline, media/price/article ingest, export/send/
 Xteink/Safari, locked-save and hand-off paths, and a salvage review of the

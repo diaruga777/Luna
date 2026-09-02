@@ -16,8 +16,15 @@ import UIKit
 public protocol PluginExportSharePresenting: AnyObject {
     /// Hands `items` to the system share sheet, anchored on `sourceView` when
     /// one is still on screen.
+    ///
+    /// `completion` runs once the sheet is gone, whether it shared or was
+    /// cancelled, and runs immediately when nothing can be presented. The stage
+    /// deletes the shared file's directory there: the sheet reads the file
+    /// after the hook that made it has settled, so nothing else knows when it
+    /// stops being needed.
     func presentExportShare(
-        items: [Any], from presenter: UIViewController?, sourceView: UIView?)
+        items: [Any], from presenter: UIViewController?, sourceView: UIView?,
+        completion: @escaping () -> Void)
 }
 
 /// What one export run produced.
@@ -103,14 +110,20 @@ public final class PluginExportStage {
                 .failed(message: "\(pluginID) declares an input Luna cannot build", hard: true),
                 pluginID: pluginID)
         }
-        let invocationID = "export-\(UUID().uuidString)"
         let scratch = activeScratch
+        // The stage holds the plugin's scratch generation open across the input
+        // file, the hook and the sink. The hook's own call joins the same
+        // generation, so the input handle it was given still resolves while the
+        // result is being shared.
+        let generation = scratch?.openScratchGeneration(pluginID: pluginID)
+            ?? PluginScratchStore.idleGeneration
+        defer { scratch?.closeScratchGeneration(pluginID: pluginID) }
         let input: PluginExportInput
         do {
             input = try await self.producer.makeInput(
                 saveID: saveID, format: format, options: export, auto: auto,
                 queuedRemaining: queuedRemaining, scratch: scratch,
-                invocationID: invocationID)
+                pluginID: pluginID, generation: generation)
         } catch {
             return record(
                 .failed(message: "\(pluginID) export input: \(error)", hard: isHard(error)),
@@ -127,8 +140,8 @@ public final class PluginExportStage {
                     message: Self.message(for: failure), hard: Self.isTerminal(failure)),
                 pluginID: pluginID)
         case .success(let result):
-            return await sink(
-                result, pluginID: pluginID, invocationID: invocationID, scratch: scratch,
+            return sink(
+                result, pluginID: pluginID, scratch: scratch,
                 from: presenter, sourceView: sourceView)
         }
     }
@@ -136,9 +149,9 @@ public final class PluginExportStage {
     // MARK: - Sink
 
     private func sink(
-        _ result: PluginExportResult, pluginID: String, invocationID: String,
+        _ result: PluginExportResult, pluginID: String,
         scratch: PluginScratchStore?, from presenter: UIViewController?, sourceView: UIView?
-    ) async -> PluginExportOutcome {
+    ) -> PluginExportOutcome {
         switch result {
         case .handled:
             return record(.handled, pluginID: pluginID)
@@ -150,17 +163,19 @@ public final class PluginExportStage {
                     .failed(message: "\(pluginID) answered an unusable url", hard: true),
                     pluginID: pluginID)
             }
-            present([url], from: presenter, sourceView: sourceView)
+            present([url], directory: nil, from: presenter, sourceView: sourceView)
             return record(.presented, pluginID: pluginID)
         case .text(let text, let name, let mime):
-            guard let url = Self.writeTemporaryFile(
+            guard let shared = Self.writeTemporaryFile(
                 Data(text.utf8), name: name ?? Self.temporaryName(mime: mime))
             else {
                 return record(
                     .failed(message: "\(pluginID) text result could not be written", hard: false),
                     pluginID: pluginID)
             }
-            present([url], from: presenter, sourceView: sourceView)
+            present(
+                [shared.file], directory: shared.directory, from: presenter,
+                sourceView: sourceView)
             return record(.presented, pluginID: pluginID)
         case .file(let handle, let name, _):
             guard let scratch, let source = scratch.fileURL(for: handle.descriptor) else {
@@ -168,10 +183,9 @@ public final class PluginExportStage {
                     .failed(message: "\(pluginID) named a file Luna no longer holds", hard: false),
                     pluginID: pluginID)
             }
-            // The handle outlives the hook: the share sheet reads the file
-            // after the invocation that made it has settled.
-            scratch.retain(
-                invocationID: source.deletingLastPathComponent().lastPathComponent)
+            // The share sheet reads the file after this stage has let go of the
+            // plugin's scratch generation, so the bytes are handed on into a
+            // directory of the share's own.
             guard let shared = Self.linkTemporaryFile(
                 at: source, name: name ?? handle.name)
             else {
@@ -179,14 +193,27 @@ public final class PluginExportStage {
                     .failed(message: "\(pluginID) file result could not be shared", hard: false),
                     pluginID: pluginID)
             }
-            present([shared], from: presenter, sourceView: sourceView)
+            present(
+                [shared.file], directory: shared.directory, from: presenter,
+                sourceView: sourceView)
             return record(.presented, pluginID: pluginID)
         }
     }
 
-    private func present(_ items: [Any], from presenter: UIViewController?, sourceView: UIView?) {
-        self.presenter?.presentExportShare(
-            items: items, from: presenter, sourceView: sourceView)
+    /// Presents `items` and removes `directory` once the sheet is gone.
+    private func present(
+        _ items: [Any], directory: URL?, from presenter: UIViewController?, sourceView: UIView?
+    ) {
+        guard let sharePresenter = self.presenter else {
+            if let directory { try? FileManager.default.removeItem(at: directory) }
+            return
+        }
+        sharePresenter.presentExportShare(
+            items: items, from: presenter, sourceView: sourceView
+        ) {
+            guard let directory else { return }
+            try? FileManager.default.removeItem(at: directory)
+        }
     }
 
     // MARK: - Failure reading
@@ -253,11 +280,16 @@ public final class PluginExportStage {
 
     // MARK: - Temporary files
 
+    /// One share's own directory, removed when the sheet closes.
+    struct SharedFile {
+        let directory: URL
+        let file: URL
+    }
+
     /// Hard-links the scratch file under the name the plugin asked for, so the
     /// share sheet offers "Article.epub" rather than "<uuid>-Article.epub".
-    static func linkTemporaryFile(at source: URL, name: String) -> URL? {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("plugin-export-\(UUID().uuidString)", isDirectory: true)
+    static func linkTemporaryFile(at source: URL, name: String) -> SharedFile? {
+        let directory = shareDirectory()
         let destination = directory.appendingPathComponent(safeName(name))
         do {
             try FileManager.default.createDirectory(
@@ -267,24 +299,30 @@ public final class PluginExportStage {
             } catch {
                 try FileManager.default.copyItem(at: source, to: destination)
             }
-            return destination
+            return SharedFile(directory: directory, file: destination)
         } catch {
+            try? FileManager.default.removeItem(at: directory)
             return nil
         }
     }
 
-    static func writeTemporaryFile(_ data: Data, name: String) -> URL? {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("plugin-export-\(UUID().uuidString)", isDirectory: true)
+    static func writeTemporaryFile(_ data: Data, name: String) -> SharedFile? {
+        let directory = shareDirectory()
         let destination = directory.appendingPathComponent(safeName(name))
         do {
             try FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true)
             try data.write(to: destination, options: .atomic)
-            return destination
+            return SharedFile(directory: directory, file: destination)
         } catch {
+            try? FileManager.default.removeItem(at: directory)
             return nil
         }
+    }
+
+    private static func shareDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("plugin-export-\(UUID().uuidString)", isDirectory: true)
     }
 
     static func temporaryName(mime: String?) -> String {
@@ -315,11 +353,16 @@ public final class SystemPluginExportSharePresenter: PluginExportSharePresenting
     public init() {}
 
     public func presentExportShare(
-        items: [Any], from presenter: UIViewController?, sourceView: UIView?
+        items: [Any], from presenter: UIViewController?, sourceView: UIView?,
+        completion: @escaping () -> Void
     ) {
-        guard let host = presenter ?? PluginExportTopPresenter.current() else { return }
+        guard let host = presenter ?? PluginExportTopPresenter.current() else {
+            completion()
+            return
+        }
         let activity = UIActivityViewController(
             activityItems: items, applicationActivities: nil)
+        activity.completionWithItemsHandler = { _, _, _, _ in completion() }
         let anchor = sourceView ?? host.view
         activity.popoverPresentationController?.sourceView = anchor
         activity.popoverPresentationController?.sourceRect = CGRect(

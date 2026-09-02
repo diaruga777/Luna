@@ -83,7 +83,8 @@ final class KindlePluginTests: XCTestCase {
         try load(address: "reader@kindle.com")
         let epub = try runner.scratch.writeFile(
             Data("epub-bytes".utf8), suggestedName: "An Article.epub",
-            mime: "application/epub+zip", invocationID: "one")
+            mime: "application/epub+zip", pluginID: KindlePlugin.pluginID,
+            generation: "one")
 
         let answer = await runner.invoke(
             .export, pluginID: KindlePlugin.pluginID, argument: input(file: epub),
@@ -109,7 +110,8 @@ final class KindlePluginTests: XCTestCase {
         try load(address: "reader@kindle.com", senderNote: false)
         let epub = try runner.scratch.writeFile(
             Data("epub-bytes".utf8), suggestedName: "An Article.epub",
-            mime: "application/epub+zip", invocationID: "one")
+            mime: "application/epub+zip", pluginID: KindlePlugin.pluginID,
+            generation: "one")
 
         _ = await runner.invoke(
             .export, pluginID: KindlePlugin.pluginID, argument: input(file: epub),
@@ -128,7 +130,8 @@ final class KindlePluginTests: XCTestCase {
         try load(address: nil)
         let epub = try runner.scratch.writeFile(
             Data("epub-bytes".utf8), suggestedName: "An Article.epub",
-            mime: "application/epub+zip", invocationID: "one")
+            mime: "application/epub+zip", pluginID: KindlePlugin.pluginID,
+            generation: "one")
 
         let failure = await runner.invokeExpectingFailure(
             .export, pluginID: KindlePlugin.pluginID, argument: input(file: epub),

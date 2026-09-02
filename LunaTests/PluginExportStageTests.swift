@@ -38,7 +38,7 @@ final class PluginExportStageTests: XCTestCase {
         try FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true)
         store = SavesStore(containerURL: containerURL)
         scratch = PluginScratchStore(
-            pluginID: "fixture", rootURL: containerURL.appendingPathComponent("scratch"))
+            rootURL: containerURL.appendingPathComponent("scratch"))
         invoker = ExportFakeInvoker()
         presenter = RecordingExportSharePresenter()
         settings = FakePluginSettingsStore()
@@ -119,12 +119,14 @@ final class PluginExportStageTests: XCTestCase {
     }
 
     /// The handle a plugin returns outlives the hook that made it, and reaches
-    /// the share sheet under its own name rather than the scratch file's.
+    /// the share sheet under its own name rather than the scratch file's, and
+    /// the share's own directory goes when the sheet closes.
     func testAFileResultIsSharedUnderItsHandleName() async throws {
         let item = readyArticle()
+        let generation = scratch.openScratchGeneration(pluginID: Self.pluginID)
         let descriptor = try scratch.writeFile(
             Data("book".utf8), suggestedName: "Article.epub",
-            mime: "application/epub+zip", invocationID: "made-by-the-plugin")
+            mime: "application/epub+zip", pluginID: Self.pluginID, generation: generation)
         invoker.resultJSON = """
             {"file":{"id":"\(descriptor.id)","name":"Article.epub","size":4,\
             "mime":"application/epub+zip"}}
@@ -137,9 +139,15 @@ final class PluginExportStageTests: XCTestCase {
         let url = try XCTUnwrap(presenter.sharedURLs.first)
         XCTAssertEqual(url.lastPathComponent, "Article.epub")
         XCTAssertEqual(try Data(contentsOf: url), Data("book".utf8))
-        XCTAssertEqual(
-            scratch.reap(invocationID: "made-by-the-plugin"), .retained,
-            "the invocation that made a shared file is not reaped")
+
+        presenter.finishShares()
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: url.path),
+            "the share's own directory goes when the sheet closes")
+        scratch.closeScratchGeneration(pluginID: Self.pluginID)
+        XCTAssertNil(
+            scratch.fileURL(for: descriptor),
+            "the plugin's generation is reaped once nothing holds it")
     }
 
     func testANullResultPresentsNothing() async {

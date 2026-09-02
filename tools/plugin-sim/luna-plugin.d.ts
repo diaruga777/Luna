@@ -281,10 +281,16 @@ export interface LunaHTML {
 
 // ---- luna.fetch (§6.2) ----
 
-// No `file` field: the request encoder only reads `text` or `base64` for a
-// part. Uploading a downloaded/exported file over multipart means reading
-// it to base64 first (`luna.files.read(handle, "base64")`).
-export interface MultipartPart { name: string; filename?: string; mime?: string; text?: string; base64?: string }
+// A part carries text, base64 or a `FileHandle`. `file` reads the bytes off
+// disk, so a downloaded or exported file uploads without a base64 round trip;
+// `filename` and `mime` default to the handle's own. It needs the `files`
+// capability, so it works in the app and the share/action extensions, never in
+// Safari. A handle whose scratch generation is gone rejects `not-found` before
+// the request leaves, and one over 8 MB rejects `too-large`.
+export interface MultipartPart {
+  name: string; filename?: string; mime?: string;
+  text?: string; base64?: string; file?: FileHandle;
+}
 
 export interface FetchRequest {
   url: string;
@@ -293,7 +299,9 @@ export interface FetchRequest {
   userAgent?: "safari" | "googlebot" | "googlebot-mobile" | "bingbot" | "facebookbot" | string;
   body?: string | { base64: string } | { form: Record<string, string> } | { json: unknown }
     | { multipart: MultipartPart[] };
-  cookies?: "shared" | "ephemeral" | "none" | "browser";
+  // A page's own session is not a policy: read `cookieHeader` off the browser
+  // result and set the header. Any other value rejects `bad-argument`.
+  cookies?: "shared" | "ephemeral" | "none";
   redirect?: "follow" | "manual" | "headThenGet";
   maxBytes?: number;
   timeout?: number;
@@ -324,6 +332,8 @@ export interface Collection {
 }
 
 export interface Storage {
+  // `undefined` for a key that holds nothing; `null` is a value a plugin may
+  // have stored on purpose.
   get(key: string): Promise<unknown | undefined>;
   set(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<void>;
@@ -335,6 +345,10 @@ export interface Storage {
 
 export interface BrowserRequest {
   url: string;
+  // Which save the browser step belongs to. Only needed when the plugin has
+  // several `ingest` calls in flight at once, and rejects `bad-argument`
+  // otherwise.
+  saveId?: string;
   userAgent?: "device-safari" | string;
   headers?: Record<string, string>;
   cookies?: "persistent" | "ephemeral";
@@ -496,6 +510,7 @@ export interface Luna {
   secrets?: { get(key: string): Promise<string | undefined>; set(key: string, value: string): Promise<void>; delete(key: string): Promise<void> };
   files?: {
     write(name: string, data: string | { base64: string }, mime?: string): Promise<FileHandle>;
+    // Without "base64", bytes that are not UTF-8 reject `not-text`.
     read(handle: FileHandle, as: "text" | "base64"): Promise<string>;
     size(handle: FileHandle): Promise<number>;
   };

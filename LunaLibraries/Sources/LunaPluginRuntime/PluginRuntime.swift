@@ -7,17 +7,6 @@ import Foundation
 import JavaScriptCore
 import LunaPluginKit
 
-/// Which `JSVirtualMachine` a runtime's contexts share.
-public enum PluginVirtualMachineScope {
-    /// One VM for the whole process — the shipped choice. Contexts are far
-    /// cheaper to make on a shared VM, and the cost is that they serialize under
-    /// that VM's lock, which the execution queue does anyway.
-    case processWide
-    /// A VM of this runtime's own. A caller that must not be wedged by another
-    /// runtime's plugins uses it; the fixture runner does.
-    case isolated
-}
-
 /// One plugin the runtime is holding.
 public struct LoadedPlugin: Equatable, Sendable {
     public let manifest: PluginManifest
@@ -97,11 +86,6 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// wake-ups.
     static let pollInterval: TimeInterval = 0.01
 
-    /// Receives every failure, including those a walk swallows to carry on to
-    /// the next plugin. Held strongly — a reporter is a launch seam, not a
-    /// view's delegate.
-    public var exceptionReporter: PluginExceptionReporting?
-
     private static let sharedVirtualMachine = JSVirtualMachine()!
     /// Every runtime on the process-wide virtual machine runs its JavaScript on
     /// THIS queue. The queue is what serializes entry into a virtual machine,
@@ -118,6 +102,9 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     private let virtualMachine: JSVirtualMachine
     private let executionQueue: PluginExecutionQueue
     private let diagnostics: PluginDiagnosticsRecording
+    /// Opens a plugin's scratch generation for the length of a call. Nil where
+    /// no scratch store is wired, and then nothing writes files either.
+    private let scratch: (any PluginScratchGenerating)?
 
     private let lock = NSLock()
     /// Load order: host-matched before any-host, then priority descending, then
@@ -125,9 +112,17 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     private var ordered: [(plugin: LoadedPlugin, context: PluginContext)] = []
     private var disabledReasons: [String: PluginDisableReason] = [:]
     private var timeoutCounts: [String: Int] = [:]
-    private var invocationID = "boot"
-    /// The call whose idle budget the bridges are feeding, if any.
-    private var activeCall: PluginPendingCall?
+    /// Plugin id → the calls of that plugin the runtime is still waiting on.
+    ///
+    /// Hooks DO overlap: `onBluetooth` → `luna.exports.deliverQueued()` runs an
+    /// `export` inside a live `onBluetooth`, and a save walk can run beside a
+    /// media re-resolve. One slot per runtime made the inner call's bookkeeping
+    /// erase the outer one's.
+    private var inFlight: [String: [PluginPendingCall]] = [:]
+    /// Promises a bridge has not settled, by plugin. An abandoned call drops
+    /// them: a box holding its `resolve`/`reject` values pins the plugin's whole
+    /// `JSContext`.
+    private var pendingPromises: [String: [WeakPluginPromiseBox]] = [:]
 
     public init(
         store: PluginStore = .shared,
@@ -135,22 +130,16 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         capabilities: PluginCapabilityRegistry = PluginCapabilityRegistry(),
         processContext: PluginProcessContext,
         diagnostics: PluginDiagnosticsRecording = PluginDiagnostics.shared,
-        virtualMachine scope: PluginVirtualMachineScope = .processWide
+        scratch: (any PluginScratchGenerating)? = nil
     ) {
         self.store = store
         self.bundled = bundled
         self.capabilities = capabilities
         self.processContext = processContext
         self.diagnostics = diagnostics
-        switch scope {
-        case .processWide:
-            virtualMachine = PluginRuntime.sharedVirtualMachine
-            executionQueue = PluginRuntime.sharedExecutionQueue
-        case .isolated:
-            virtualMachine = JSVirtualMachine()!
-            executionQueue = PluginExecutionQueue(
-                label: "com.hsanabria.luna.pluginRuntime.isolated")
-        }
+        self.scratch = scratch
+        virtualMachine = PluginRuntime.sharedVirtualMachine
+        executionQueue = PluginRuntime.sharedExecutionQueue
     }
 
     // MARK: - Loading
@@ -218,20 +207,43 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         lock.unlock()
     }
 
+    /// Builds one plugin's context.
+    ///
+    /// Every step of this runs JavaScript, so all of it enters the virtual
+    /// machine from the execution queue — a load on the calling thread would
+    /// race a hook already running there, and would block that thread behind a
+    /// plugin that never returns.
     private func load(_ installed: InstalledPlugin) -> PluginLoadReport {
         guard let source = installed.sourceText() else {
             return fail(installed, PluginJSFailure(
                 pluginID: installed.id, hook: "<load>", reason: .notLoaded,
                 message: "the plugin file could not be read"))
         }
-        let context = PluginContext(
-            manifest: installed.manifest, virtualMachine: virtualMachine,
-            registry: capabilities, processKind: processContext.kind,
-            invocationID: { [weak self] in self?.currentInvocationID ?? "boot" },
-            log: { [weak self, id = installed.id] line in
-                self?.diagnostics.record(line, pluginID: id)
-            })
-        if let failure = context.evaluate(source: source) {
+        guard !executionQueue.isWedged else {
+            return fail(installed, PluginJSFailure(
+                pluginID: installed.id, hook: "<load>", reason: .wedged,
+                message: "an earlier abandoned plugin call still holds the execution queue"))
+        }
+        // Whatever a killed process left under this plugin's scratch root is
+        // reaped before its new context can serve a handle out of it. A
+        // generation something still holds — a call in flight, or an export
+        // between its hook and its share — is left alone.
+        if scratch?.hasOpenScratchGeneration(pluginID: installed.id) != true {
+            scratch?.reapAll(pluginID: installed.id)
+        }
+        let context = executionQueue.sync {
+            PluginContext(
+                manifest: installed.manifest, virtualMachine: virtualMachine,
+                registry: capabilities, processKind: processContext.kind,
+                scratchGeneration: { [weak self] in
+                    self?.scratchGeneration(pluginID: installed.id)
+                        ?? PluginScratchStore.idleGeneration
+                },
+                log: { [weak self, id = installed.id] line in
+                    self?.diagnostics.record(line, pluginID: id)
+                })
+        }
+        if let failure = executionQueue.sync({ context.evaluate(source: source) }) {
             return fail(installed, failure)
         }
         if let failure = context.registrationFailure {
@@ -244,14 +256,15 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                 message: "the manifest needs these hooks, which the plugin did not register: "
                     + missing.map(\.rawValue).sorted().joined(separator: ", ")))
         }
-        context.seal()
         // The grant a plugin can SEE and the grant its manifest asked for are
         // produced by two different things. A disagreement is a wiring fault:
         // an undeclared namespace reaching a plugin would be an ungranted
         // capability, and a granted one missing would be a silent degradation.
-        let granted = context.grantedNamespaces
+        let (granted, stray) = executionQueue.sync { () -> (Set<PluginCapabilityName>, Set<String>) in
+            context.seal()
+            return (context.grantedNamespaces, context.strayNamespaces)
+        }
         let declared = Set(installed.manifest.capabilities)
-        let stray = context.strayNamespaces
         guard granted == declared, stray.isEmpty else {
             return fail(installed, PluginJSFailure(
                 pluginID: installed.id, hook: "<capabilities>", reason: .capabilityMismatch,
@@ -351,10 +364,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         loadedPlugins.filter { $0.matches(host: host) }
     }
 
-    private var currentInvocationID: String {
-        lock.lock()
-        defer { lock.unlock() }
-        return invocationID
+    /// The scratch generation this plugin's bridges write into now.
+    private func scratchGeneration(pluginID: String) -> String {
+        scratch?.currentScratchGeneration(pluginID: pluginID)
+            ?? PluginScratchStore.idleGeneration
     }
 
     // MARK: - Calling a hook
@@ -419,46 +432,75 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
 
         let call = PluginPendingCall()
         let item = PluginQueueItem()
-        lock.lock()
-        invocationID = UUID().uuidString
-        activeCall = call
-        lock.unlock()
+        beginCall(pluginID: pluginID, call: call)
         executionQueue.enqueue(item: item) {
+            // The budget's clock starts here, so a call that waited behind
+            // another plugin is not charged for the wait.
+            call.touch()
             entry.context.call(hook, argumentJSON: argumentJSON) { call.settle($0) }
         }
 
         let isIdleBudget = hook == .ingest
-        let deadline = Date().addingTimeInterval(timeout)
+        let enqueuedAt = Date()
+        var neverStarted = false
         while true {
-            if let outcome = call.outcome { noteSettled(pluginID); return outcome }
-            let expired = isIdleBudget
-                ? call.idleSeconds >= timeout
-                : Date() >= deadline
-            if expired { break }
+            if let outcome = call.outcome { noteSettled(pluginID, call: call); return outcome }
+            if let startedAt = item.startedAt {
+                let expired = isIdleBudget
+                    ? call.idleSeconds >= timeout
+                    : Date().timeIntervalSince(startedAt) >= timeout
+                if expired { break }
+            } else if Date().timeIntervalSince(enqueuedAt) >= timeout {
+                neverStarted = true
+                break
+            }
             try? await Task.sleep(nanoseconds: UInt64(Self.pollInterval * 1_000_000_000))
         }
-        if let outcome = call.outcome { noteSettled(pluginID); return outcome }
+        if let outcome = call.outcome { noteSettled(pluginID, call: call); return outcome }
         // The caller stops waiting. A body still running holds the queue, so the
-        // runtime reports itself wedged until it returns.
+        // runtime reports itself wedged until it returns; one that never started
+        // is cancelled and costs the plugin nothing.
         if !item.hasReturned { executionQueue.abandon(item) }
         call.abandon()
-        noteTimeout(pluginID)
-        lock.lock()
-        if activeCall === call { activeCall = nil }
-        lock.unlock()
+        if !neverStarted { noteTimeout(pluginID) }
+        endCall(pluginID: pluginID, call: call)
         return .failure(PluginJSFailure(
             pluginID: pluginID, hook: hook.rawValue, reason: .timeout,
-            message: "\(hook.rawValue) passed its \(Int(timeout))s budget and was abandoned; "
-                + "the JavaScript may keep running"))
+            message: neverStarted
+                ? "\(hook.rawValue) waited \(Int(timeout))s for the plugin queue and never ran"
+                : "\(hook.rawValue) passed its \(Int(timeout))s budget and was abandoned; "
+                    + "the JavaScript may keep running"))
     }
 
-    /// Clears the strike count after a hook that answered, and drops the active
-    /// call so a later bridge callback touches nothing.
-    private func noteSettled(_ pluginID: String) {
+    // MARK: - In-flight calls
+
+    /// Counts one call in and opens the plugin's scratch generation if it is the
+    /// first.
+    private func beginCall(pluginID: String, call: PluginPendingCall) {
+        lock.lock()
+        inFlight[pluginID, default: []].append(call)
+        lock.unlock()
+        scratch?.openScratchGeneration(pluginID: pluginID)
+    }
+
+    /// Counts one call out. The generation is reaped when the last holder goes.
+    private func endCall(pluginID: String, call: PluginPendingCall) {
+        lock.lock()
+        var calls = inFlight[pluginID] ?? []
+        calls.removeAll { $0 === call }
+        inFlight[pluginID] = calls.isEmpty ? nil : calls
+        let dropped = calls.isEmpty ? pendingPromises.removeValue(forKey: pluginID) : nil
+        lock.unlock()
+        for box in dropped ?? [] { box.value?.discard() }
+        scratch?.closeScratchGeneration(pluginID: pluginID)
+    }
+
+    /// Clears the strike count after a hook that answered.
+    private func noteSettled(_ pluginID: String, call: PluginPendingCall) {
         lock.lock()
         timeoutCounts[pluginID] = 0
-        activeCall = nil
         lock.unlock()
+        endCall(pluginID: pluginID, call: call)
     }
 
     private func noteTimeout(_ pluginID: String) {
@@ -474,7 +516,6 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
 
     private func report(_ failure: PluginJSFailure) {
         diagnostics.record(failure.logLine, pluginID: failure.pluginID)
-        exceptionReporter?.pluginDidFail(failure)
     }
 
     // MARK: - PluginCallbackScheduling
@@ -483,20 +524,40 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         executionQueue.enqueue(work)
     }
 
-    public func notePluginActivity() {
+    /// Touches EVERY in-flight call of `pluginID`, because a bridge callback
+    /// cannot tell which of a plugin's overlapping hooks its continuation
+    /// belongs to. Two concurrent calls of one plugin therefore keep each other
+    /// alive while either is active. A caller that cannot name a plugin — a
+    /// bridge above this tier — touches them all.
+    public func notePluginActivity(pluginID: String?) {
         lock.lock()
-        let call = activeCall
+        let calls = pluginID.map { inFlight[$0] ?? [] } ?? inFlight.values.flatMap { $0 }
         let idle = processContext.idle
         lock.unlock()
-        call?.touch()
-        idle?.touchIdle()
+        for call in calls { call.touch() }
+        idle?.touchIdle(pluginID: pluginID ?? "")
+    }
+
+    public func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?) {
+        guard let pluginID else { return }
+        lock.lock()
+        var boxes = (pendingPromises[pluginID] ?? []).filter { $0.value != nil }
+        boxes.append(WeakPluginPromiseBox(box))
+        pendingPromises[pluginID] = boxes
+        lock.unlock()
     }
 }
 
 /// The fetch service reports byte progress here, so a long download keeps an
 /// idle-budgeted `ingest` alive rather than being abandoned mid-transfer.
 extension PluginRuntime: PluginIdleTouching {
-    public func touchIdle() { notePluginActivity() }
+    public func touchIdle(pluginID: String) { notePluginActivity(pluginID: pluginID) }
+}
+
+/// One tracked promise, held weakly so a settled box is freed on schedule.
+struct WeakPluginPromiseBox {
+    weak var value: PluginPromiseBox?
+    init(_ value: PluginPromiseBox) { self.value = value }
 }
 
 /// One pending hook call: its settled value, and when it last saw progress.

@@ -314,7 +314,7 @@ same list, the identical rule the manifest parser applies to `name`/
 | Capability | Namespace | app | share/action | Safari world | Bridge file |
 | --- | --- | --- | --- | --- | --- |
 | — | `register`,`parseURL`,`log`,`bytes`,`env`,`LunaError`,`localize` | yes | yes | yes | `PluginContext.swift` / `plugin_host.js` |
-| `fetch` | `luna.fetch` | yes | yes | relayed (`plugins.fetch`) | `PluginFetchBridge.swift` |
+| `fetch` | `luna.fetch` | yes | yes | relayed (`plugins.fetch`; no multipart `file` part, which needs `files`) | `PluginFetchBridge.swift` |
 | `html` | `luna.html` | SwiftSoup | SwiftSoup | DOMParser | `PluginHTMLBridge.swift` / `plugin_host.js` |
 | `page` | `luna.page` | — | — | live DOM | `plugin_host.js` only |
 | `storage` | `luna.storage` | yes | yes | relayed | `PluginStorageBridge.swift` |
@@ -348,10 +348,11 @@ message for it.
 
 ### 5.1 `luna.fetch` — `PluginFetchService` (`LunaLibraries/Sources/LunaPluginKit/PluginFetchService.swift`)
 
-Matches the plan's `FetchRequest`/`FetchResponse` shapes exactly, including
-`cookies: "shared"|"ephemeral"|"none"|"browser"`, `redirect: "follow"|
-"manual"|"headThenGet"`, `as: "text"|"base64"|"file"`, and body shapes
-`string | {base64} | {form} | {json} | {multipart}`. Two things worth
+Matches the plan's `FetchRequest`/`FetchResponse` shapes, with one
+deliberate departure: the cookie policy is `"shared"|"ephemeral"|"none"`
+and there is no `"browser"`. `redirect: "follow"|"manual"|"headThenGet"`,
+`as: "text"|"base64"|"file"`, and body shapes
+`string | {base64} | {form} | {json} | {multipart}`. Three things worth
 knowing:
 
 - **`userAgent` names**: `PluginCrawlerIdentity` (`LunaLibraries/Sources/LunaPluginKit/PluginCrawlerIdentity.swift`)
@@ -359,12 +360,21 @@ knowing:
   `"bingbot"`, `"facebookbot"` — a copy of `CrawlerAgent`'s strings, pinned
   against it by `PluginCrawlerIdentityParityTests`. Anything else is sent
   verbatim as the literal `User-Agent` header.
-- **`multipart` cannot carry a `FileHandle` directly.** `PluginFetchRequestDecoder.encodeMultipart`
-  only reads `text` or `base64` per part — there is no `file` field, though
-  the plan's TypeScript shows one. `xteink.js` works around this by reading
-  its EPUB into base64 with `luna.files.read` first, then putting `{base64}`
-  in the multipart part. Any plugin uploading a `FileHandle` must do the
-  same; see §12, "known gaps."
+- **A `multipart` part may carry a `FileHandle`.** `PluginFetchRequestDecoder
+  .encodeMultipart` resolves a part's `file` through the scratch store and
+  appends the bytes, defaulting `filename` and `mime` to the handle's own.
+  It needs the `files` capability, so it serves the app and the
+  share/action extensions and never Safari (`plugin_host.js` has no `files`
+  bridge to resolve a handle with). A handle whose generation was reaped
+  fails the whole fetch with `not-found`, and one over
+  `PluginFilesBridge.maxFileBytes` with `too-large`, both BEFORE the request
+  leaves. `xteink.js`'s Wi-Fi upload leg sends the EPUB this way; only its
+  BLE leg still reads the bytes into JavaScript.
+- **There is no `cookies: "browser"`.** A plugin that wants the session the
+  browser modal earned reads `cookieHeader` off the `luna.browser.open`
+  result and sets the header itself. The policy used to be declared and was
+  served by nothing in any process; a decoded `"browser"` (or any other
+  unknown value) now rejects `bad-argument`.
 
 ### 5.2 `luna.html` — the subset
 
@@ -455,13 +465,33 @@ plugin not claim this URL."
 | `onBluetooth` | 25 s wall, inside a background lease | session closed, event recorded |
 | `onAction`/`onSettingsChanged` | 10 s wall | reported in Settings |
 
-Three consecutive timeouts of any kind disable a plugin (`PluginRuntime
-.timeoutsBeforeDisable`) with status `.stopped` in Settings and a Re-enable
-button. Because JavaScriptCore has no interrupt, an abandoned call's thread
-may still be running: `PluginExecutionQueue.isWedged` reports this and every
-further call to that runtime fails with `.wedged` until the abandoned call
-eventually returns. The consent screen states this plainly (§10) — Luna
-limits what a plugin can REACH, but cannot stop one that does not finish.
+A budget's clock starts when the hook's body enters the plugin's context,
+not when the call is enqueued: one plugin holding the shared serial queue
+must not charge a timeout to another that executed nothing. A call still
+waiting to start when its budget passes is CANCELLED — no strike, and no
+wedge, because it holds nothing.
+
+Three consecutive timeouts of a call that DID run disable a plugin
+(`PluginRuntime.timeoutsBeforeDisable`) with status `.stopped` in Settings
+and a Re-enable button. Because JavaScriptCore has no interrupt, an
+abandoned call's thread may still be running: `PluginExecutionQueue.isWedged`
+reports this and every further call to that runtime fails with `.wedged`
+until the abandoned call eventually returns. Loading a plugin also runs
+JavaScript, so `PluginRuntime.load` hops onto the same queue and refuses a
+wedged one rather than blocking the caller. The consent screen states this
+plainly (§10) — Luna limits what a plugin can REACH, but cannot stop one
+that does not finish.
+
+**Hooks overlap, and the runtime counts them per plugin.** `onBluetooth`
+calling `luna.exports.deliverQueued()` runs an `export` inside a live
+`onBluetooth`, and `SavesIngestor` spawns one walk per pending row. The
+runtime holds every in-flight call of a plugin and a bridge touch reaches
+ALL of them, because a bridge callback cannot tell which hook's continuation
+is running — two concurrent calls of one plugin therefore keep each other
+alive while either is active. `PluginIngestScope` is keyed the same way, so
+`luna.browser.open` files its deferred request against the right save; with
+several ingests of one plugin in flight the request must name a `saveId`, or
+it rejects `bad-argument`.
 
 ### 6.1 `PluginMediaResolver` — the media port
 
@@ -741,8 +771,22 @@ BARE key (no `settings.` prefix anywhere in the store).
   user/<id>/<version>/plugin.js     installed verbatim
   user/<id>/state.json              { enabled, installedAt, origin, consentedCapabilities }
   state/<bundledId>.json            { enabled }  (absent = enabled)
-  scratch/<id>/<invocation>/        luna.files, reaped after the hook settles
+  scratch/<id>/<generation>/        luna.files, reaped when the plugin's
+                                    last in-flight call ends
 ```
+
+One `PluginScratchStore` serves the process, keyed by (plugin id,
+generation). A generation opens when the first holder arrives and its
+directory is reaped when the last one goes, so a nested call
+(`onBluetooth` → `export`) writes beside the call that started it rather
+than into a directory the outer settle would delete. Holders are every
+in-flight hook call (`PluginRuntime`) and the export stage, which keeps one
+open across the input file, the hook and the share. `PluginRuntime.load`
+calls `reapAll(pluginID:)` first, which is what clears a killed process's
+leftovers; `PluginStore.delete` removes the same `scratch/<id>` path. An
+export's file result is copied into a directory of the SHARE's own, removed
+in the share sheet's completion handler, so nothing has to outlive a
+generation.
 
 Values (`luna.storage`, `luna.settings`) live in `saves.sqlite`'s
 `plugin_kv` and `plugin_collections` tables (§11) — not in the filesystem —
@@ -878,7 +922,7 @@ composition root.
 | --- | --- | --- |
 | Fixture runner | Loads a real `PluginRuntime` on an isolated VM, answers `luna.fetch` from recorded HTML/JSON fixtures, runs `classify`+`ingest`, decodes Models | `LunaTests/PluginJSFixtureRunner.swift`, `LunaTests/MediaPluginHarness.swift`, per-platform `*PluginTests.swift` (Direct, X, Instagram, TikTok, Facebook, Reddit, YouTube, Kindle, Xteink), fixtures under `LunaTests/Fixtures/Plugins/<platform>/` |
 | `luna.html` parity | Same 60-case spec across three backings | `LunaTests/PluginHTMLSubsetTests.swift` (SwiftSoup), `LunaTests/PluginHTMLParityTests.swift` (DOMParser via `SafariJSTestHarness`), `tools/plugin-sim/spec.mjs` (linkedom) |
-| Runtime/bridge unit tests | Manifest parsing, hook invocation, timeouts/disable, each bridge's argument validation and error codes | `PluginManifestParserTests`, `PluginRuntimeTests`, `PluginBridgeRuntimeTests`, `PluginFetchTests`/`PluginFetchParityTests`, `PluginStorageRuntimeTests`, `PluginBluetoothCenterTests`/`PluginBluetoothSessionTests`, `PluginWifiBridgeTests`, `PluginMailBridgeTests`, `PluginExportInputTests`/`PluginExportStageTests` |
+| Runtime/bridge unit tests | Manifest parsing, hook invocation, timeouts/disable, each bridge's argument validation and error codes | `PluginManifestParserTests`, `PluginRuntimeTests`, `PluginConcurrencyTests`, `PluginBridgeRuntimeTests`, `PluginFetchTests`/`PluginFetchParityTests`, `PluginStorageRuntimeTests`, `PluginBluetoothCenterTests`/`PluginBluetoothSessionTests`, `PluginWifiBridgeTests`, `PluginMailBridgeTests`, `PluginExportInputTests`/`PluginExportStageTests` |
 | Ingest/export integration | The walk end to end, decline-then-continue, lock/resume, adoption into Outcome | `PluginIngestStageTests`, `PluginIngestPersistenceTests`, `PluginModelAdopterTests`, `PluginModelDecodingTests`, `PluginResumeTests`, `PluginLockedSaveRoutingTests`, `PluginBrowserBridgeTests`, `PluginBrowserViewControllerTests` |
 | UI | Settings → Plugins, import/consent, per-plugin detail | `PluginsSettingsScreenTests`, `PluginDetailScreenTests`, `PluginImportCoordinatorTests`, `PluginCapabilityCopyTests` |
 | Safari | Handler dispatch, content-script bridge | `SafariPluginHostTests`, `SafariPluginHandlerSourceTests` |
@@ -914,11 +958,6 @@ body; treat the pbxproj as authoritative). Stage ids: `plugins.settings.empty`,
 Collected from every implementation wave's landed notes, so nothing is lost
 between the plan document and this one:
 
-- **`luna.fetch`'s `multipart` body cannot carry a `FileHandle`.**
-  `PluginFetchRequestDecoder.encodeMultipart` only reads a part's `text` or
-  `base64`. A plugin uploading a downloaded/exported file over multipart must
-  read it to base64 first (`xteink.js` does exactly this for its Wi-Fi
-  upload leg).
 - **Media/product export destinations get no auto-send.**
   `ArticleSendCoordinator` is article-shaped; a media or product export
   plugin gets a manual share row only, never queued/retried automatically.
@@ -946,11 +985,6 @@ between the plan document and this one:
   (`PluginDestinationError.unsupportedPayload`). Nothing calls it for a
   plugin destination now that the Kindle settings CATEGORY is gone from
   central Luna (test-send lived on that category's own screen).
-- **Nothing reaps a scratch export invocation yet.** `PluginScratchStore`
-  retention past the hook that created it is a contract other code is
-  expected to honor (a share-sheet file's directory is retained explicitly),
-  not something actively swept — an observed leak has not been measured, but
-  nothing proves there is none either.
 - **`SafariPluginHandlerSourceTests` is a source-text pin, not a behavior
   test** — there is no `NSExtensionContext` fake in this codebase to drive
   the real dispatch path.

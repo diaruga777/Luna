@@ -22,24 +22,30 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
     private let fetcher: PluginURLFetching
     private let scheduler: PluginCallbackScheduling
     private let diagnostics: PluginDiagnosticsRecording
+    /// Resolves a `file` part of a multipart body. Nil where no `luna.files`
+    /// serves this process, and then a `file` part is refused.
+    private let files: (any PluginFileReading)?
 
     public init(
         fetcher: PluginURLFetching,
         scheduler: PluginCallbackScheduling,
+        files: (any PluginFileReading)? = nil,
         diagnostics: PluginDiagnosticsRecording = PluginDiagnostics.shared
     ) {
         self.fetcher = fetcher
         self.scheduler = scheduler
+        self.files = files
         self.diagnostics = diagnostics
     }
 
     public func install(into namespace: PluginCapabilityNamespace) {
         let outerContext = namespace.context
         let pluginID = namespace.pluginID
-        let invocationID = namespace.target.invocationID
+        let scratchGeneration = namespace.target.scratchGeneration
         let fetcher = self.fetcher
         let scheduler = self.scheduler
         let diagnostics = self.diagnostics
+        let files = self.files
 
         let fetch: @convention(block) (JSValue?) -> JSValue? = { argument in
             let context = JSContext.current() ?? outerContext
@@ -48,14 +54,21 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
             if object.isEmpty, argument?.isString == true, let urlString = argument?.toString() {
                 object = ["url": urlString]
             }
-            guard let request = PluginFetchRequestDecoder.decode(
-                object, invocationID: invocationID())
-            else {
-                PluginBridgeValue.raise(
-                    "luna.fetch needs a url: luna.fetch({ url: \"https://…\" })", in: context)
-                return nil
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
+            let request: PluginFetchRequest
+            switch PluginFetchRequestDecoder.decode(
+                object, pluginID: pluginID, generation: scratchGeneration(), files: files)
+            {
+            case .failure(let error):
+                // A malformed request is a rejected `LunaError` like every other
+                // fetch failure, so `luna.fetch(req).catch(…)` is the one place a
+                // plugin handles them.
+                box.fail(error.message, code: error.code)
+                return promise
+            case .success(let decoded):
+                request = decoded
             }
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
             diagnostics.record(
                 "fetch \(request.method) \(request.url.absoluteString) "
                     + "cookies=\(request.cookies.rawValue) redirect=\(request.redirect.rawValue)",
@@ -84,10 +97,27 @@ public final class PluginFetchBridge: PluginCapabilityInstalling {
 /// Reads the request a plugin wrote (§6.2).
 enum PluginFetchRequestDecoder {
 
-    static func decode(_ object: [String: Any], invocationID: String) -> PluginFetchRequest? {
+    static func decode(
+        _ object: [String: Any], pluginID: String, generation: String,
+        files: (any PluginFileReading)?
+    ) -> Result<PluginFetchRequest, PluginFetchError> {
         guard let urlString = PluginBridgeValue.string(object, "url"),
               let url = URL(string: urlString), url.scheme != nil
-        else { return nil }
+        else {
+            return .failure(PluginFetchError(
+                "luna.fetch needs a url: luna.fetch({ url: \"https://…\" })",
+                code: "bad-argument"))
+        }
+        var cookies = PluginFetchRequest.CookiePolicy.shared
+        if let named = PluginBridgeValue.string(object, "cookies") {
+            guard let policy = PluginFetchRequest.CookiePolicy(rawValue: named) else {
+                return .failure(PluginFetchError(
+                    "cookies must be \"shared\", \"ephemeral\" or \"none\"; a page's own "
+                        + "session is read off the browser result's cookieHeader",
+                    code: "bad-argument"))
+            }
+            cookies = policy
+        }
         var headers = PluginBridgeValue.stringDictionary(object, "headers")
         // `Host` and `Content-Length` are URLSession's to set; a plugin that
         // writes them would produce a request the server reads as malformed.
@@ -104,51 +134,58 @@ enum PluginFetchRequestDecoder {
                 headers["User-Agent"] = userAgent
             }
         }
-        let body = self.body(object["body"], headers: &headers)
+        let body: Data?
+        switch self.body(object["body"], headers: &headers, files: files) {
+        case .failure(let error): return .failure(error)
+        case .success(let data): body = data
+        }
         let ceiling = PluginBridgeValue.int(object, "maxBytes") ?? WebFetchConstants.maxBytes
-        return PluginFetchRequest(
+        return .success(PluginFetchRequest(
             url: url,
             method: PluginBridgeValue.string(object, "method") ?? "GET",
             headers: headers,
             body: body,
-            cookies: PluginBridgeValue.string(object, "cookies")
-                .flatMap(PluginFetchRequest.CookiePolicy.init(rawValue:)) ?? .shared,
+            cookies: cookies,
             redirect: PluginBridgeValue.string(object, "redirect")
                 .flatMap(PluginFetchRequest.RedirectPolicy.init(rawValue:)) ?? .follow,
             maxBytes: ceiling,
             timeout: PluginBridgeValue.double(object, "timeout") ?? 20,
             responseForm: PluginBridgeValue.string(object, "as")
                 .flatMap(PluginFetchRequest.ResponseForm.init(rawValue:)) ?? .text,
-            invocationID: invocationID)
+            invocationID: generation,
+            pluginID: pluginID))
     }
 
     /// The five body shapes §6.2 allows. `form`, `json` and `multipart` set the
     /// content type themselves, because getting those three headers right is
     /// exactly the work a plugin should not have to repeat.
-    static func body(_ value: Any?, headers: inout [String: String]) -> Data? {
-        guard let value else { return nil }
-        if let text = value as? String { return Data(text.utf8) }
-        guard let object = value as? [String: Any] else { return nil }
+    static func body(
+        _ value: Any?, headers: inout [String: String], files: (any PluginFileReading)?
+    ) -> Result<Data?, PluginFetchError> {
+        guard let value else { return .success(nil) }
+        if let text = value as? String { return .success(Data(text.utf8)) }
+        guard let object = value as? [String: Any] else { return .success(nil) }
         if let base64 = object["base64"] as? String {
-            return Data(base64Encoded: base64)
+            return .success(Data(base64Encoded: base64))
         }
         if let form = object["form"] as? [String: Any] {
             setIfAbsent(&headers, "Content-Type", "application/x-www-form-urlencoded")
-            return Data(encodeForm(form).utf8)
+            return .success(Data(encodeForm(form).utf8))
         }
         if let json = object["json"] {
             setIfAbsent(&headers, "Content-Type", "application/json")
             guard let data = try? JSONSerialization.data(
                 withJSONObject: json, options: [.fragmentsAllowed])
-            else { return nil }
-            return data
+            else { return .success(nil) }
+            return .success(data)
         }
         if let parts = object["multipart"] as? [[String: Any]] {
             let boundary = "luna-\(UUID().uuidString)"
             setIfAbsent(&headers, "Content-Type", "multipart/form-data; boundary=\(boundary)")
-            return encodeMultipart(parts, boundary: boundary)
+            return encodeMultipart(parts, boundary: boundary, files: files)
+                .map { Optional($0) }
         }
-        return nil
+        return .success(nil)
     }
 
     private static func setIfAbsent(
@@ -172,30 +209,95 @@ enum PluginFetchRequestDecoder {
         }.joined(separator: "&")
     }
 
-    static func encodeMultipart(_ parts: [[String: Any]], boundary: String) -> Data {
+    /// Builds the body, resolving every `file` part BEFORE the request leaves.
+    /// A handle whose generation was reaped fails the whole fetch rather than
+    /// posting a part with nothing in it.
+    static func encodeMultipart(
+        _ parts: [[String: Any]], boundary: String, files: (any PluginFileReading)?
+    ) -> Result<Data, PluginFetchError> {
         var body = Data()
         for part in parts {
             guard let name = part["name"] as? String else { continue }
-            var disposition = "form-data; name=\"\(name)\""
-            if let filename = part["filename"] as? String {
-                disposition += "; filename=\"\(filename)\""
+            var content: Data?
+            var filename = part["filename"] as? String
+            var mime = part["mime"] as? String
+            if let handle = part["file"] as? [String: Any] {
+                switch fileBytes(handle, files: files) {
+                case .failure(let error): return .failure(error)
+                case .success(let resolved):
+                    content = resolved.data
+                    filename = filename ?? resolved.descriptor.name
+                    mime = mime ?? resolved.descriptor.mime
+                }
+            } else if let text = part["text"] as? String {
+                content = Data(text.utf8)
+            } else if let base64 = part["base64"] as? String {
+                content = Data(base64Encoded: base64)
+            }
+            var disposition = "form-data; name=\"\(headerParameter(name))\""
+            if let filename {
+                disposition += "; filename=\"\(headerParameter(filename))\""
             }
             body.append(Data("--\(boundary)\r\n".utf8))
             body.append(Data("Content-Disposition: \(disposition)\r\n".utf8))
-            if let mime = part["mime"] as? String {
-                body.append(Data("Content-Type: \(mime)\r\n".utf8))
+            if let mime {
+                body.append(Data("Content-Type: \(headerToken(mime))\r\n".utf8))
             }
             body.append(Data("\r\n".utf8))
-            if let text = part["text"] as? String {
-                body.append(Data(text.utf8))
-            } else if let base64 = part["base64"] as? String,
-                      let data = Data(base64Encoded: base64) {
-                body.append(data)
-            }
+            if let content { body.append(content) }
             body.append(Data("\r\n".utf8))
         }
         body.append(Data("--\(boundary)--\r\n".utf8))
-        return body
+        return .success(body)
+    }
+
+    private static func fileBytes(
+        _ handle: [String: Any], files: (any PluginFileReading)?
+    ) -> Result<(descriptor: PluginFileDescriptor, data: Data), PluginFetchError> {
+        guard let id = PluginBridgeValue.string(handle, "id") else {
+            return .failure(PluginFetchError(
+                "a multipart file part needs a file handle", code: "bad-argument"))
+        }
+        guard let files else {
+            return .failure(PluginFetchError(
+                "a multipart file part needs the \"files\" capability, which this process "
+                    + "has not", code: "unavailable-here"))
+        }
+        let descriptor = PluginFileDescriptor(
+            id: id,
+            name: PluginBridgeValue.string(handle, "name") ?? "file",
+            size: PluginBridgeValue.int(handle, "size") ?? 0,
+            mime: PluginBridgeValue.string(handle, "mime"))
+        guard let url = files.fileURL(for: descriptor) else {
+            return .failure(PluginFetchError("that file is gone", code: "not-found"))
+        }
+        let onDisk = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
+            as? Int).flatMap { $0 } ?? 0
+        guard onDisk <= PluginFilesBridge.maxFileBytes else {
+            return .failure(PluginFetchError(
+                "a multipart file part may be at most "
+                    + "\(PluginFilesBridge.maxFileBytes / (1024 * 1024)) MB",
+                code: "too-large"))
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            return .failure(PluginFetchError("that file is gone", code: "not-found"))
+        }
+        return .success((descriptor, data))
+    }
+
+    /// A quoted part-header parameter that cannot forge a header or a part.
+    /// Browsers percent-encode the three bytes that would; so does this.
+    static func headerParameter(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "\"", with: "%22")
+            .replacingOccurrences(of: "\r", with: "%0D")
+            .replacingOccurrences(of: "\n", with: "%0A")
+    }
+
+    /// A bare header value — a MIME type — with the same three bytes removed.
+    static func headerToken(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "\"", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
     }
 }
 

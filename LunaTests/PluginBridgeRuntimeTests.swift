@@ -226,20 +226,147 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(json, "[-1,-1]")
     }
 
-    func testAScratchDirectoryIsReapedUnlessItWasRetained() throws {
+    /// The bytes of a `luna.files` handle go when the call that made them
+    /// ends: the generation it wrote into has no holder left.
+    func testAFileAPluginWroteIsReapedWhenItsCallEnds() async throws {
+        let json = await answer("""
+            const handle = await luna.files.write("note.txt", "hello");
+            return { value: handle };
+        """, capabilities: ["files"])
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data((json ?? "").utf8)) as? [String: Any])
+        let descriptor = PluginFileDescriptor(
+            id: try XCTUnwrap(object["id"] as? String), name: "note.txt", size: 5,
+            mime: "text/plain")
+
+        XCTAssertNil(
+            runner.scratch.fileURL(for: descriptor),
+            "nothing holds the plugin's generation once its hook has settled")
+    }
+
+    /// Reading a downloaded file without `"base64"` used to answer a plausible
+    /// string of U+FFFD.
+    func testReadingNonTextBytesWithoutBase64IsRefused() async {
+        let json = await answer("""
+            const handle = await luna.files.write(
+                "clip.bin", { base64: luna.bytes.toBase64([0xff, 0xfe, 0x00]) });
+            try {
+                await luna.files.read(handle);
+                return { value: "read" };
+            } catch (error) {
+                return { value: [error.code, await luna.files.read(handle, "base64")] };
+            }
+        """, capabilities: ["files"])
+        XCTAssertEqual(json, "[\"not-text\",\"//4A\"]")
+    }
+
+    // MARK: - luna.fetch, multipart
+
+    /// A part carries the handle itself, so a plugin uploading an EPUB never
+    /// turns it into a base64 string.
+    func testAMultipartFilePartCarriesTheHandlesBytesAndName() async throws {
+        runner.fetcher.respond(to: "https://example.com/upload", body: "ok")
+        _ = await answer("""
+            const handle = await luna.files.write("An Article.epub", "book-bytes",
+                                                  "application/epub+zip");
+            await luna.fetch({
+                url: "https://example.com/upload",
+                method: "POST",
+                body: { multipart: [{ name: "file", file: handle }] } });
+            return { value: 1 };
+        """, capabilities: ["files", "fetch"])
+
+        let request = try XCTUnwrap(runner.fetcher.requests.first)
+        let body = String(decoding: try XCTUnwrap(request.body), as: UTF8.self)
+        XCTAssertTrue(
+            body.contains("Content-Disposition: form-data; name=\"file\"; "
+                + "filename=\"An Article.epub\""), body)
+        XCTAssertTrue(body.contains("Content-Type: application/epub+zip"), body)
+        XCTAssertTrue(body.contains("book-bytes"), body)
+        XCTAssertTrue(
+            request.headers.contains { $0.key == "Content-Type"
+                && $0.value.hasPrefix("multipart/form-data; boundary=luna-") },
+            "\(request.headers)")
+    }
+
+    /// A part name a plugin chose cannot forge a header or a second part.
+    func testAMultipartPartNameCannotForgeAHeader() async throws {
+        runner.fetcher.respond(to: "https://example.com/upload", body: "ok")
+        _ = await answer("""
+            await luna.fetch({
+                url: "https://example.com/upload",
+                method: "POST",
+                body: { multipart: [
+                    { name: "a\\"\\r\\nX-Injected: yes", text: "v" }] } });
+            return { value: 1 };
+        """, capabilities: ["fetch"])
+
+        let request = try XCTUnwrap(runner.fetcher.requests.first)
+        let body = String(decoding: try XCTUnwrap(request.body), as: UTF8.self)
+        XCTAssertFalse(
+            body.contains("\r\nX-Injected: yes"), "the text stays inside the name: \(body)")
+        XCTAssertTrue(body.contains("name=\"a%22%0D%0AX-Injected: yes\""), body)
+    }
+
+    /// The whole fetch fails before the request leaves, rather than posting a
+    /// part with nothing in it.
+    func testAMultipartFilePartWhoseHandleIsGoneRefusesTheFetch() async {
+        runner.fetcher.respond(to: "https://example.com/upload", body: "ok")
+        let json = await answer("""
+            try {
+                await luna.fetch({
+                    url: "https://example.com/upload",
+                    method: "POST",
+                    body: { multipart: [
+                        { name: "file", file: { id: "no-such-file", name: "x" } }] } });
+                return { value: "sent" };
+            } catch (error) {
+                return { value: error.code };
+            }
+        """, capabilities: ["files", "fetch"])
+
+        XCTAssertEqual(json, "\"not-found\"")
+        XCTAssertTrue(runner.fetcher.requests.isEmpty)
+    }
+
+    /// The policy that served nothing in any process is gone, and an unknown
+    /// value is a rejected `LunaError` rather than a silent fall back to the
+    /// shared jar.
+    func testABrowserCookiePolicyIsRefused() async {
+        let json = await answer("""
+            try {
+                await luna.fetch({ url: "https://example.com/x", cookies: "browser" });
+                return { value: "sent" };
+            } catch (error) {
+                return { value: error.code };
+            }
+        """, capabilities: ["fetch"])
+
+        XCTAssertEqual(json, "\"bad-argument\"")
+        XCTAssertTrue(runner.fetcher.requests.isEmpty)
+    }
+
+    /// A nested call joins the generation the outer one opened, so the outer
+    /// call's files survive the inner call's end.
+    func testAGenerationOutlivesANestedHolder() throws {
         let scratch = PluginScratchStore(
-            pluginID: "p", rootURL: runner.containerURL.appendingPathComponent("scratch2"))
-        let kept = try scratch.writeFile(
-            Data("a".utf8), suggestedName: "a.txt", mime: nil, invocationID: "keep")
-        let dropped = try scratch.writeFile(
-            Data("b".utf8), suggestedName: "b.txt", mime: nil, invocationID: "drop")
+            rootURL: runner.containerURL.appendingPathComponent("scratch2"))
+        let outer = scratch.openScratchGeneration(pluginID: "p")
+        let inner = scratch.openScratchGeneration(pluginID: "p")
+        XCTAssertEqual(inner, outer)
+        let file = try scratch.writeFile(
+            Data("a".utf8), suggestedName: "a.txt", mime: nil, pluginID: "p",
+            generation: outer)
+        let neighbour = try scratch.writeFile(
+            Data("b".utf8), suggestedName: "b.txt", mime: nil, pluginID: "q",
+            generation: scratch.openScratchGeneration(pluginID: "q"))
 
-        scratch.retain(invocationID: "keep")
-        XCTAssertEqual(scratch.reap(invocationID: "keep"), .retained)
-        XCTAssertEqual(scratch.reap(invocationID: "drop"), .reaped)
+        scratch.closeScratchGeneration(pluginID: "p")
+        XCTAssertNotNil(scratch.fileURL(for: file))
 
-        XCTAssertNotNil(scratch.fileURL(for: kept))
-        XCTAssertNil(scratch.fileURL(for: dropped))
+        scratch.closeScratchGeneration(pluginID: "p")
+        XCTAssertNil(scratch.fileURL(for: file))
+        XCTAssertNotNil(scratch.fileURL(for: neighbour), "one plugin's reap leaves another's")
     }
 
     // MARK: - secrets

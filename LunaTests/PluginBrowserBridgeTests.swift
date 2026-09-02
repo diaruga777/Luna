@@ -82,7 +82,7 @@ final class PluginBrowserBridgeTests: XCTestCase {
 
     /// One `onAction` call, inside a save's scope unless `saveID` is nil.
     private func answer(scopedTo saveID: UUID?) async -> String? {
-        await PluginIngestScope.run(saveID: saveID, reason: .save) {
+        await PluginIngestScope.run(saveID: saveID, pluginID: Self.pluginID) {
             await runner.invoke(
                 .onAction, pluginID: Self.pluginID, as: Answer.self)?.value
         }

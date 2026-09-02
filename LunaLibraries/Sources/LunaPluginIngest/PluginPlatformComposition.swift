@@ -52,19 +52,20 @@ public enum PluginPlatformComposition {
     ) -> [PluginLoadReport] {
         let bundled = BundledPluginCatalog(bundle: bundledPluginsBundle, store: store)
         let capabilities = PluginCapabilityRegistry()
+        // One scratch store serves every plugin, keyed by (plugin, generation):
+        // a generation is open while anything of that plugin is in flight, and
+        // its directory is reaped when the last of those calls ends.
+        let scratch = PluginScratchStore(rootURL: store.scratchRootURL)
         let runtime = PluginRuntime(
             store: store, bundled: bundled, capabilities: capabilities,
-            processContext: PluginProcessContext(kind: processKind))
+            processContext: PluginProcessContext(kind: processKind), scratch: scratch)
         Self.runtime = runtime
 
         let fetcher = PluginFetchService()
         fetcher.idle = runtime
-        // One scratch store serves every plugin: the invocation id, which the
-        // runtime rotates per hook call, is what separates two hooks' files.
-        let scratch = PluginScratchStore(
-            pluginID: "shared", rootURL: store.scratchRootURL)
         fetcher.fileWriter = scratch
-        capabilities.register(PluginFetchBridge(fetcher: fetcher, scheduler: runtime))
+        capabilities.register(PluginFetchBridge(
+            fetcher: fetcher, scheduler: runtime, files: scratch))
         capabilities.register(PluginHTMLBridge())
         capabilities.register(PluginStorageBridge(store: keyValueStore, scheduler: runtime))
         capabilities.register(PluginSecretsBridge(

@@ -62,7 +62,8 @@ public struct PluginExportInputProducer {
         return .article
     }
 
-    /// Builds the input, writing any file into `scratch` under `invocationID`.
+    /// Builds the input, writing any file into the plugin's open scratch
+    /// generation.
     ///
     /// `options` carries the declaration's `inputOptions`: a `compact` EPUB
     /// profile is the Xteink profile, and `images: false` skips the image
@@ -70,7 +71,7 @@ public struct PluginExportInputProducer {
     public func makeInput(
         saveID: UUID, format: PluginExportInputFormat, options: PluginExportSummary,
         auto: Bool, queuedRemaining: Int? = nil,
-        scratch: PluginScratchStore?, invocationID: String
+        scratch: PluginScratchStore?, pluginID: String, generation: String
     ) async throws -> PluginExportInput {
         guard let item = store.item(withID: saveID) else { throw PluginExportInputError.noSave }
         let kind = Self.kind(of: item)
@@ -88,7 +89,7 @@ public struct PluginExportInputProducer {
         case .epub, .pdf, .docx:
             file = try await articleFile(
                 item: item, format: format, options: options,
-                scratch: scratch, invocationID: invocationID)
+                scratch: scratch, pluginID: pluginID, generation: generation)
         case .markdown:
             text = try articleText(.markdown, item: item)
         case .text:
@@ -101,7 +102,8 @@ public struct PluginExportInputProducer {
         case .json:
             json = try jsonPayload(kind: kind, item: item)
         case .file:
-            file = try mediaFile(item: item, scratch: scratch, invocationID: invocationID)
+            file = try mediaFile(
+                item: item, scratch: scratch, pluginID: pluginID, generation: generation)
         }
 
         return PluginExportInput(
@@ -117,7 +119,7 @@ public struct PluginExportInputProducer {
     /// seconds after it landed would otherwise carry none.
     private func articleFile(
         item: SavedItem, format: PluginExportInputFormat, options: PluginExportSummary,
-        scratch: PluginScratchStore?, invocationID: String
+        scratch: PluginScratchStore?, pluginID: String, generation: String
     ) async throws -> PluginExportFileHandle {
         guard let scratch else { throw PluginExportInputError.noScratchStore }
         let profile = Self.effectiveEpubProfile(options)
@@ -146,7 +148,8 @@ public struct PluginExportInputProducer {
         return try write(
             data, name: ArticleSendCoordinator.fileName(
                 forTitle: title, extension: Self.fileExtension(format)),
-            mime: Self.mimeType(format), scratch: scratch, invocationID: invocationID)
+            mime: Self.mimeType(format), scratch: scratch, pluginID: pluginID,
+            generation: generation)
     }
 
     private func articleText(
@@ -209,7 +212,7 @@ public struct PluginExportInputProducer {
     // MARK: - Media file
 
     private func mediaFile(
-        item: SavedItem, scratch: PluginScratchStore?, invocationID: String
+        item: SavedItem, scratch: PluginScratchStore?, pluginID: String, generation: String
     ) throws -> PluginExportFileHandle {
         guard let scratch else { throw PluginExportInputError.noScratchStore }
         let locator = mediaFiles ?? PluginExportMediaFiles.locator
@@ -218,7 +221,7 @@ public struct PluginExportInputProducer {
         else { throw PluginExportInputError.noContent }
         do {
             let descriptor = try scratch.adoptFile(
-                at: url, mime: nil, invocationID: invocationID)
+                at: url, mime: nil, pluginID: pluginID, generation: generation)
             return PluginExportFileHandle(descriptor)
         } catch {
             throw PluginExportInputError.writeFailed("\(error)")
@@ -229,11 +232,12 @@ public struct PluginExportInputProducer {
 
     private func write(
         _ data: Data, name: String, mime: String?, scratch: PluginScratchStore,
-        invocationID: String
+        pluginID: String, generation: String
     ) throws -> PluginExportFileHandle {
         do {
             let descriptor = try scratch.writeFile(
-                data, suggestedName: name, mime: mime, invocationID: invocationID)
+                data, suggestedName: name, mime: mime, pluginID: pluginID,
+                generation: generation)
             return PluginExportFileHandle(descriptor)
         } catch {
             throw PluginExportInputError.writeFailed("\(error)")

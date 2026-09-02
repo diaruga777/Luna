@@ -71,8 +71,12 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
                         + "luna.browser.open({ url, detect })", in: context)
                 return nil
             }
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: bridge.scheduler)
-            bridge.open(request, pluginID: pluginID, box: box)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: bridge.scheduler, pluginID: pluginID)
+            // A plugin running several saves at once names the one it means.
+            let named = PluginBridgeValue.string(
+                PluginBridgeValue.dictionary(argument), "saveId").flatMap(UUID.init(uuidString:))
+            bridge.open(request, pluginID: pluginID, saveID: named, box: box)
             return promise
         }
 
@@ -84,15 +88,28 @@ public final class PluginBrowserBridge: PluginCapabilityInstalling {
     // MARK: - The three answers
 
     private func open(
-        _ request: PluginBrowserRequest, pluginID: String, box: PluginPromiseBox
+        _ request: PluginBrowserRequest, pluginID: String, saveID named: UUID?,
+        box: PluginPromiseBox
     ) {
         // A browser step belongs to a save: it is stored against one, and the
         // resume reads it back by id. A hook called outside a save walk — a
         // refresh, a re-resolution — has nowhere to park one.
-        guard let saveID = PluginIngestScope.currentSaveID else {
+        let inFlight = PluginIngestScope.saveIDs(pluginID: pluginID)
+        let saveID: UUID
+        if let named, inFlight.contains(named) {
+            saveID = named
+        } else if inFlight.count == 1 {
+            saveID = inFlight[0]
+        } else if inFlight.isEmpty {
             box.fail(
                 "luna.browser.open is only available while a save is being ingested",
                 code: "unavailable-here")
+            return
+        } else {
+            box.fail(
+                "this plugin is ingesting \(inFlight.count) saves at once; pass saveId to say "
+                    + "which one the browser step belongs to",
+                code: "bad-argument")
             return
         }
         switch processKind {

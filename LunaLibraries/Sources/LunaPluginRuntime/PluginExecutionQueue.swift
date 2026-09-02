@@ -34,6 +34,15 @@ final class PluginExecutionQueue {
         return abandonedItems > 0
     }
 
+    /// Runs `work` on the plugin queue and waits for it.
+    ///
+    /// Loading a plugin evaluates its top level, seals `luna` and reads the
+    /// grant back — all JavaScript, and all of it must enter the virtual
+    /// machine from this one queue. The caller already blocks.
+    func sync<T>(_ work: () -> T) -> T {
+        queue.sync(execute: work)
+    }
+
     /// Runs `work` on the plugin queue without waiting for it.
     ///
     /// A capability bridge whose work finishes elsewhere — a fetch completing on
@@ -50,6 +59,10 @@ final class PluginExecutionQueue {
     /// the bridge callbacks the hook is waiting on.
     func enqueue(item: PluginQueueItem, _ work: @escaping () -> Void) {
         queue.async { [weak self] in
+            // A caller that gave up before the queue reached this item
+            // cancelled it. Running the body now would enter a context for an
+            // answer nobody is waiting for.
+            guard item.markStarted() else { return }
             work()
             guard let self else { return }
             self.lock.lock()
@@ -58,8 +71,12 @@ final class PluginExecutionQueue {
         }
     }
 
-    /// Marks the item's caller as having given up. A body still running holds
-    /// the queue, so the runtime reports itself wedged until it returns.
+    /// Marks the item's caller as having given up.
+    ///
+    /// An item whose body is running holds the queue, so the runtime reports
+    /// itself wedged until it returns. An item that never STARTED holds
+    /// nothing: it is cancelled, and the queue counts no wedge — otherwise one
+    /// slow plugin would fail every later call of every healthy one.
     func abandon(_ item: PluginQueueItem) {
         lock.lock()
         if item.markAbandoned() { abandonedItems += 1 }
@@ -67,12 +84,14 @@ final class PluginExecutionQueue {
     }
 }
 
-/// One queued call's state: whether its synchronous body has returned, and
-/// whether its caller gave up first.
+/// One queued call's state: when its synchronous body started, whether it has
+/// returned, and whether its caller gave up first.
 final class PluginQueueItem {
     private let lock = NSLock()
+    private var started: Date?
     private var returned = false
     private var abandoned = false
+    private var cancelled = false
 
     init() {}
 
@@ -80,6 +99,24 @@ final class PluginQueueItem {
         lock.lock()
         defer { lock.unlock() }
         return returned
+    }
+
+    /// When the body entered the plugin's context, or nil while the item is
+    /// still queued. A hook's wall-clock budget runs from here, not from the
+    /// enqueue: a hook that has not started has executed nothing to charge.
+    var startedAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
+    }
+
+    /// False when the caller already abandoned the item, so the body is skipped.
+    fileprivate func markStarted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return false }
+        started = Date()
+        return true
     }
 
     /// True when this marked an ABANDONED item as returned, so the queue can
@@ -91,11 +128,16 @@ final class PluginQueueItem {
         return abandoned
     }
 
-    /// True when the item was still running, so the queue counts a new wedge.
+    /// True when a RUNNING item was abandoned, so the queue counts a new wedge.
+    /// An unstarted item is cancelled instead.
     fileprivate func markAbandoned() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard !returned, !abandoned else { return false }
+        guard !returned, !abandoned, !cancelled else { return false }
+        guard started != nil else {
+            cancelled = true
+            return false
+        }
         abandoned = true
         return true
     }

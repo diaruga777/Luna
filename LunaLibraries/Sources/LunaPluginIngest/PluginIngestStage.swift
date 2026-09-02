@@ -130,7 +130,7 @@ public final class PluginIngestStage: PluginIngestStaging {
         let argument = PluginIngestHookInput(
             url: input.url.absoluteString, claim: claim, page: page,
             reason: reason, context: processKind, saveID: saveID?.uuidString)
-        let result = await PluginIngestScope.run(saveID: saveID, reason: reason) {
+        let result = await PluginIngestScope.run(saveID: saveID, pluginID: plugin.id) {
             await invoker.invoke(
                 .ingest, pluginID: plugin.id, argument: argument,
                 timeout: Self.ingestTimeout, decode: PluginIngestAnswer.self)

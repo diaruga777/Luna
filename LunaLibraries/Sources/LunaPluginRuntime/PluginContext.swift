@@ -23,8 +23,6 @@ final class PluginContext {
     let manifest: PluginManifest
     /// The hooks `luna.register` was given, by name.
     private(set) var registeredHooks: Set<PluginHook> = []
-    /// The capability namespaces actually installed, as the registry reports.
-    private(set) var installedCapabilities: Set<PluginCapabilityName> = []
 
     private let context: JSContext
     private var hooks: JSValue?
@@ -42,7 +40,7 @@ final class PluginContext {
         virtualMachine: JSVirtualMachine,
         registry: PluginCapabilityRegistry,
         processKind: PluginProcessKind,
-        invocationID: @escaping () -> String,
+        scratchGeneration: @escaping () -> String,
         log: @escaping (String) -> Void
     ) {
         self.pluginID = manifest.id
@@ -79,7 +77,7 @@ final class PluginContext {
         luna.setObject(register, forKeyedSubscript: "register" as NSString)
 
         let target = PluginBridgeTarget(
-            pluginID: manifest.id, manifest: manifest, invocationID: invocationID)
+            pluginID: manifest.id, manifest: manifest, scratchGeneration: scratchGeneration)
         for name in manifest.capabilities.sorted(by: { $0.rawValue < $1.rawValue }) {
             let namespace = PluginCapabilityNamespace(
                 target: target, context: context, object: luna)
@@ -91,7 +89,6 @@ final class PluginContext {
                 // every call on it rejects with `unavailable-here` (§7.2).
                 PluginUnavailableNamespace.install(name, into: namespace)
             }
-            installedCapabilities.insert(name)
         }
         pendingException = nil
     }
@@ -115,12 +112,10 @@ final class PluginContext {
     }
 
     /// The namespaces a plugin can actually SEE on its `luna` object, read back
-    /// out of the built context rather than from the table that filled it.
-    ///
-    /// Two different things produce this and `installedCapabilities`: one is
-    /// what the registry said it did, the other is what the context holds. The
-    /// runtime compares them, so a bridge that installs under a second name — or
-    /// under none — cannot pass for a correct grant.
+    /// out of the built context rather than from the manifest that asked for
+    /// them. `PluginRuntime.load` compares this against the manifest, so a
+    /// bridge that installs under a second name — or under none — cannot pass
+    /// for a correct grant.
     var grantedNamespaces: Set<PluginCapabilityName> {
         let names = context.evaluateScript("Object.keys(luna)")?.toArray() as? [String] ?? []
         pendingException = nil
@@ -136,9 +131,6 @@ final class PluginContext {
             .subtracting(Self.ungatedNames)
             .subtracting(PluginCapabilityName.allCases.map(\.rawValue))
     }
-
-    /// True once the body called `luna.register` exactly once with an object.
-    var isRegistered: Bool { registerCount == 1 && hooks != nil }
 
     var registrationFailure: PluginJSFailure? {
         switch registerCount {
@@ -323,9 +315,7 @@ final class PluginContext {
 
     private static func installLog(on luna: JSValue, log: @escaping (String) -> Void) {
         let write: @convention(block) (JSValue?, JSValue?) -> Void = { message, data in
-            var line = message?.isString == true
-                ? (message?.toString() ?? "")
-                : (message?.toString() ?? "")
+            var line = message?.toString() ?? ""
             if let data, !data.isUndefined, !data.isNull,
                let text = PluginBridgeValue.jsonText(data.toObject()) {
                 line += " \(text)"

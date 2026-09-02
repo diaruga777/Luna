@@ -185,7 +185,7 @@ final class PluginResumeTests: XCTestCase {
             timeout: TimeInterval, decode: T.Type
         ) async -> Result<T, PluginInvocationFailure> {
             if hook == .ingest {
-                scopedSaveIDs.append(PluginIngestScope.currentSaveID)
+                scopedSaveIDs.append(PluginIngestScope.saveIDs(pluginID: pluginID).last)
                 let data = (try? JSONEncoder().encode(argument)) ?? Data()
                 let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 reasons.append(object?["reason"] as? String ?? "")

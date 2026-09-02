@@ -213,13 +213,104 @@ export function makeStorage() {
   };
 }
 
+// -------------------------------------------------------------- luna.files
+
+/// `luna.files` over an in-memory map. A handle is a descriptor, as it is in
+/// the app, so multipart `{ file }` and `as: "file"` behave the same here.
+export function makeFiles() {
+  const files = new Map();
+  function write(name, data, mime) {
+    const bytes = typeof data === "string"
+      ? Buffer.from(data, "utf8")
+      : Buffer.from(data.base64, "base64");
+    const id = crypto.randomUUID();
+    const safe = String(name).replace(/[/\\]/g, "_").replace(/\.\./g, "_") || "file";
+    files.set(id, { id, name: safe, size: bytes.length, mime: mime ?? null, bytes });
+    return files.get(id);
+  }
+  function handle(entry) {
+    return { id: entry.id, name: entry.name, size: entry.size, mime: entry.mime };
+  }
+  return {
+    bytesFor: (h) => files.get(h?.id)?.bytes,
+    entryFor: (h) => files.get(h?.id),
+    api: {
+      async write(name, data, mime) { return handle(write(name, data, mime)); },
+      async read(h, as) {
+        const entry = files.get(h?.id);
+        if (!entry) throw new LunaError("that file is gone", "not-found");
+        if (as === "base64") return entry.bytes.toString("base64");
+        return entry.bytes.toString("utf8");
+      },
+      async size(h) {
+        const entry = files.get(h?.id);
+        if (!entry) throw new LunaError("that file is gone", "not-found");
+        return entry.size;
+      },
+      // The harness's own way in: a fixture hands a plugin a file to export.
+      put: (name, data, mime) => handle(write(name, data, mime)),
+    },
+  };
+}
+
 // -------------------------------------------------------------- luna.fetch
 
-function fetchFactory(fetchImpl) {
+/// The largest file a multipart `file` part may carry, as
+/// `PluginFilesBridge.maxFileBytes` caps it in the app.
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+
+/// One multipart body, built the way `PluginFetchRequestDecoder` builds it: the
+/// three bytes that could forge a header are percent-encoded in a quoted
+/// parameter and dropped from a bare one.
+function encodeMultipart(parts, boundary, files) {
+  const parameter = (raw) => String(raw)
+    .replace(/"/g, "%22").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+  const token = (raw) => String(raw).replace(/["\r\n]/g, "");
+  const chunks = [];
+  for (const part of parts) {
+    if (typeof part?.name !== "string") continue;
+    let content;
+    let filename = part.filename;
+    let mime = part.mime;
+    if (part.file) {
+      const entry = files?.entryFor(part.file);
+      if (!entry) throw new LunaError("that file is gone", "not-found");
+      if (entry.size > MAX_FILE_BYTES) {
+        throw new LunaError(
+          `a multipart file part may be at most ${MAX_FILE_BYTES / (1024 * 1024)} MB`,
+          "too-large");
+      }
+      content = entry.bytes;
+      filename = filename ?? entry.name;
+      mime = mime ?? entry.mime ?? undefined;
+    } else if (typeof part.text === "string") {
+      content = Buffer.from(part.text, "utf8");
+    } else if (typeof part.base64 === "string") {
+      content = Buffer.from(part.base64, "base64");
+    }
+    let disposition = `form-data; name="${parameter(part.name)}"`;
+    if (filename !== undefined && filename !== null) {
+      disposition += `; filename="${parameter(filename)}"`;
+    }
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: ${disposition}\r\n`, "utf8"));
+    if (mime) chunks.push(Buffer.from(`Content-Type: ${token(mime)}\r\n`, "utf8"));
+    chunks.push(Buffer.from("\r\n", "utf8"));
+    if (content) chunks.push(content);
+    chunks.push(Buffer.from("\r\n", "utf8"));
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`, "utf8"));
+  return Buffer.concat(chunks);
+}
+
+function fetchFactory(fetchImpl, files) {
   return async function lunaFetch(request) {
     const req = typeof request === "string" ? { url: request } : request || {};
     const headers = { ...(req.headers || {}) };
     if (req.userAgent && !headers["User-Agent"]) headers["User-Agent"] = req.userAgent;
+    if (req.cookies && !["shared", "ephemeral", "none"].includes(req.cookies)) {
+      throw new LunaError(
+        'cookies must be "shared", "ephemeral" or "none"', "bad-argument");
+    }
     let body;
     if (typeof req.body === "string") body = req.body;
     else if (req.body?.base64) body = Buffer.from(req.body.base64, "base64");
@@ -229,6 +320,11 @@ function fetchFactory(fetchImpl) {
     } else if (req.body?.form) {
       body = new URLSearchParams(req.body.form).toString();
       headers["Content-Type"] = headers["Content-Type"] || "application/x-www-form-urlencoded";
+    } else if (req.body?.multipart) {
+      const boundary = `luna-${crypto.randomUUID()}`;
+      body = encodeMultipart(req.body.multipart, boundary, files);
+      headers["Content-Type"] = headers["Content-Type"]
+        || `multipart/form-data; boundary=${boundary}`;
     }
     const response = await fetchImpl(req.url, {
       method: req.method || "GET", headers, body,
@@ -246,7 +342,15 @@ function fetchFactory(fetchImpl) {
       truncated, bytes: capped.length,
     };
     if (req.as === "base64") result.base64 = capped.toString("base64");
-    else result.text = capped.toString("utf8");
+    else if (req.as === "file") {
+      if (!files) {
+        throw new LunaError(
+          'as: "file" needs the "files" capability', "unavailable-here");
+      }
+      const name = new URL(result.url).pathname.split("/").pop() || "file";
+      result.file = files.api.put(
+        name, { base64: capped.toString("base64") }, responseHeaders["content-type"]);
+    } else result.text = capped.toString("utf8");
     return result;
   };
 }
@@ -325,8 +429,11 @@ export function createBridge(config = {}) {
     };
   }
 
+  const files = capabilities.has("files") ? makeFiles() : null;
+  if (files) luna.files = files.api;
+
   if (capabilities.has("fetch")) {
-    luna.fetch = fetchFactory(config.fetchImpl || undiciFetch);
+    luna.fetch = fetchFactory(config.fetchImpl || undiciFetch, files);
   }
 
   // In-memory, fed from `config.downloads` (a `DownloadJob[]`) — the harness

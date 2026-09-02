@@ -58,9 +58,16 @@ final class PluginStorageRuntimeTests: XCTestCase {
         XCTAssertEqual(json, "{\"name\":\"a\",\"tags\":[1,2]}")
     }
 
-    func testAKeyThatWasNeverSetAnswersNothing() async {
-        let json = await answer("return { value: await luna.storage.get(\"missing\") };")
-        XCTAssertEqual(json, "null")
+    /// A key that holds nothing and a key holding a stored `null` are two
+    /// different answers, so a plugin may use `null` as a sentinel.
+    func testAKeyThatWasNeverSetAnswersUndefinedRatherThanNull() async {
+        let json = await answer("""
+            await luna.storage.set("stored", null);
+            return { value: [
+                typeof (await luna.storage.get("missing")),
+                (await luna.storage.get("stored")) === null] };
+        """)
+        XCTAssertEqual(json, "[\"undefined\",true]")
     }
 
     func testSettingTheSameKeyTwiceKeepsOnlyTheSecondValue() async {

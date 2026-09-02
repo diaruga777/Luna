@@ -60,9 +60,8 @@ public final class PluginCatalog: PluginCatalogProviding {
         }
         try store.delete(pluginID: pluginID)
         kv.removeAll(pluginID: pluginID)
-        runtime.unload(pluginID: pluginID)
-        // A bundled plugin of the same id becomes live again, so the runtime is
-        // asked to load whatever the id now resolves to.
+        // `reload` unloads first, and a bundled plugin of the same id becomes
+        // live again, so this loads whatever the id now resolves to.
         runtime.reload(pluginID: pluginID)
     }
 

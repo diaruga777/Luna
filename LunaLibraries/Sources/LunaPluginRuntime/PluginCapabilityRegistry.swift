@@ -11,14 +11,18 @@ import LunaPluginKit
 public struct PluginBridgeTarget {
     public let pluginID: String
     public let manifest: PluginManifest
-    /// Names the scratch directory and the diagnostics of ONE hook call. The
-    /// runtime rotates it per invocation.
-    public let invocationID: () -> String
+    /// Names the scratch directory the plugin's files land in. One generation
+    /// is open while anything of this plugin is in flight, so a nested call
+    /// writes beside the call that started it rather than into a directory of
+    /// its own that the outer call's settle would reap.
+    public let scratchGeneration: () -> String
 
-    public init(pluginID: String, manifest: PluginManifest, invocationID: @escaping () -> String) {
+    public init(
+        pluginID: String, manifest: PluginManifest, scratchGeneration: @escaping () -> String
+    ) {
         self.pluginID = pluginID
         self.manifest = manifest
-        self.invocationID = invocationID
+        self.scratchGeneration = scratchGeneration
     }
 }
 
@@ -67,8 +71,14 @@ public protocol PluginCapabilityInstalling: AnyObject {
 /// capability the plugin DID declare but that this process cannot serve gets
 /// the `unavailable-here` stand-in instead (§7.2) — the grant stays honest and
 /// `Object.keys(luna)` still matches the manifest.
-public final class PluginCapabilityRegistry {
+///
+/// The table is read while a plugin loads and written while a composition root
+/// installs, and those can be two threads: `PluginPlatformComposition.install`
+/// is re-runnable, so a second install registers while an earlier runtime is
+/// still loading. The lock is what makes that safe.
+public final class PluginCapabilityRegistry: @unchecked Sendable {
 
+    private let lock = NSLock()
     private var installers: [PluginCapabilityName: PluginCapabilityInstalling] = [:]
 
     public init() {}
@@ -76,14 +86,22 @@ public final class PluginCapabilityRegistry {
     /// Registering a second installer for the same name replaces the first — a
     /// composition root installs each capability once.
     public func register(_ installer: PluginCapabilityInstalling) {
+        lock.lock()
         installers[installer.capabilityName] = installer
+        lock.unlock()
     }
 
     public func installer(for name: PluginCapabilityName) -> PluginCapabilityInstalling? {
-        installers[name]
+        lock.lock()
+        defer { lock.unlock() }
+        return installers[name]
     }
 
-    public var registeredCapabilities: Set<PluginCapabilityName> { Set(installers.keys) }
+    public var registeredCapabilities: Set<PluginCapabilityName> {
+        lock.lock()
+        defer { lock.unlock() }
+        return Set(installers.keys)
+    }
 }
 
 /// The stand-in for a capability this process cannot serve.

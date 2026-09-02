@@ -28,10 +28,12 @@ public final class PluginCryptoBridge: PluginCapabilityInstalling {
         let outerContext = namespace.context
         let crypto = namespace.makeNamespaceObject()
         let scheduler = self.scheduler
+        let pluginID = namespace.pluginID
 
         let sha256: @convention(block) (JSValue?) -> JSValue? = { value in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let data = PluginBridgeValue.data(from: value?.toObject()) else {
                 box.fail("luna.crypto.sha256 needs text or { base64 }", code: "bad-argument")
                 return promise
@@ -42,7 +44,8 @@ public final class PluginCryptoBridge: PluginCapabilityInstalling {
 
         let hmac: @convention(block) (JSValue?, JSValue?) -> JSValue? = { key, value in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             guard let keyData = PluginBridgeValue.data(from: key?.toObject()),
                   let data = PluginBridgeValue.data(from: value?.toObject())
             else {
@@ -58,7 +61,8 @@ public final class PluginCryptoBridge: PluginCapabilityInstalling {
 
         let random: @convention(block) (JSValue?) -> JSValue? = { count in
             let context = JSContext.current() ?? outerContext
-            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            let (promise, box) = PluginPromiseBox.make(
+                in: context, scheduler: scheduler, pluginID: pluginID)
             let requested = count?.toNumber()?.intValue ?? 0
             guard requested > 0, requested <= 1024 else {
                 box.fail(

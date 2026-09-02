@@ -80,11 +80,21 @@ final class ExportFakeCatalog: PluginCatalogProviding {
 @MainActor
 final class RecordingExportSharePresenter: PluginExportSharePresenting {
     private(set) var shares: [[Any]] = []
+    private var completions: [() -> Void] = []
 
     func presentExportShare(
-        items: [Any], from presenter: UIViewController?, sourceView: UIView?
+        items: [Any], from presenter: UIViewController?, sourceView: UIView?,
+        completion: @escaping () -> Void
     ) {
         shares.append(items)
+        completions.append(completion)
+    }
+
+    /// Runs every share's completion, as dismissing the sheet does.
+    func finishShares() {
+        let pending = completions
+        completions = []
+        for completion in pending { completion() }
     }
 
     var sharedURLs: [URL] { shares.flatMap { $0.compactMap { $0 as? URL } } }

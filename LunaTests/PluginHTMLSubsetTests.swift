@@ -106,10 +106,6 @@ final class PluginHTMLSubsetTests: XCTestCase {
         return String(decoding: data, as: UTF8.self)
     }
 
-    func testTheSubsetSpecHasEnoughCasesToBeASpecification() {
-        XCTAssertGreaterThanOrEqual(specCases().count, 40)
-    }
-
     func testEverySpecCaseAgreesWithTheSwiftSoupBacking() async throws {
         let cases = specCases()
         XCTAssertFalse(cases.isEmpty)

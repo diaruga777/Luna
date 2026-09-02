@@ -75,9 +75,3 @@ public struct PluginJSFailure: Error, Equatable {
         return line
     }
 }
-
-/// Receives every plugin failure the runtime produces, including those a walk
-/// swallows to carry on to the next plugin.
-public protocol PluginExceptionReporting: AnyObject {
-    func pluginDidFail(_ failure: PluginJSFailure)
-}

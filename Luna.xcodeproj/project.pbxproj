@@ -376,6 +376,30 @@
 		LDCL00000000000000000004 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
 		LDLA0000000000000000003 /* LunaDownloaderLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = LDLA0000000000000000002 /* LunaDownloaderLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		LDLA0000000000000000004 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
+		AD97AD3B1F5D56C90651C615 /* LunaPluginKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B02B0EFEE96F53216CACCF7 /* LunaPluginKit */; };
+		7060FCD707AB3B13F6D23380 /* LunaPluginRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 62F85559E4D4D279028FBEAE /* LunaPluginRuntime */; };
+		9B265CA2EC1AA72BE7CF8FAB /* LunaPluginIngest in Frameworks */ = {isa = PBXBuildFile; productRef = A6A0CEFFF40ECCF9C4B0A848 /* LunaPluginIngest */; };
+		05FF149DC51874ADBB66E6E9 /* LunaPluginExport in Frameworks */ = {isa = PBXBuildFile; productRef = D01DF541475E6E2CC64D34D1 /* LunaPluginExport */; };
+		568F7735971BBB6832830A9E /* LunaPluginTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7DFF2715335837C4108FD623 /* LunaPluginTransport */; };
+		FCB123D909CFF636C867DCBD /* LunaPluginUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8165F7FCF94748876D379A97 /* LunaPluginUI */; };
+		48EB72A3CABCEB5307771256 /* LunaBundledPlugins in Frameworks */ = {isa = PBXBuildFile; productRef = 689779297CD94A4062869AE1 /* LunaBundledPlugins */; };
+		B12368C4791563358DB1C6C4 /* LunaPluginKit in Frameworks */ = {isa = PBXBuildFile; productRef = 198D75A4CF7391FD2CF8E121 /* LunaPluginKit */; };
+		A90309AED2E6ACA5AD215D87 /* LunaPluginRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0BD3A50988F95673CA38E8A5 /* LunaPluginRuntime */; };
+		45420D1E38BF0DCBA0E51BC5 /* LunaPluginIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 4E837A04FFAD5A9563261E1F /* LunaPluginIngest */; };
+		8B5B9FAD59E17679A3B37872 /* LunaBundledPlugins in Frameworks */ = {isa = PBXBuildFile; productRef = 46A68F8A0F4A48E0B1B6B45E /* LunaBundledPlugins */; };
+		073487342FD9DE9D533B4C2F /* LunaPluginKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8C711AD4F150B33953282B6D /* LunaPluginKit */; };
+		FEABA48C0650255E6FED0EB1 /* LunaPluginRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 41EBE598F2DE49A26EC61651 /* LunaPluginRuntime */; };
+		7178F0367CD3AF7CE5F98417 /* LunaPluginIngest in Frameworks */ = {isa = PBXBuildFile; productRef = B850B28B7331C065515B8362 /* LunaPluginIngest */; };
+		F14D94B72B4BB9811F74C9F2 /* LunaBundledPlugins in Frameworks */ = {isa = PBXBuildFile; productRef = 4F2FAFD0D5642FB0B3385AF7 /* LunaBundledPlugins */; };
+		A6C96654190FFA7A89ED8D2D /* LunaPluginKit in Frameworks */ = {isa = PBXBuildFile; productRef = AE6DEE84BA5F692B052FEE1E /* LunaPluginKit */; };
+		FCF9A8D23F04006F043EC729 /* LunaBundledPlugins in Frameworks */ = {isa = PBXBuildFile; productRef = 1ADC1076CAFD344FD60BBCA1 /* LunaBundledPlugins */; };
+		565D8AC90F12D2227F8B3496 /* LunaPluginKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2099FD47BF4282A52F332C83 /* LunaPluginKit */; };
+		738BEE97300246B7FF31AD92 /* LunaPluginRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = CB6FDD57192F6C73FF4D3980 /* LunaPluginRuntime */; };
+		C65DD19BAC9F9D4AD41E43DA /* LunaPluginIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 259F6CA00E702001002856A1 /* LunaPluginIngest */; };
+		1C1C47F120674F00692F536B /* LunaPluginExport in Frameworks */ = {isa = PBXBuildFile; productRef = 3031795C8BD51120BCD5F4F5 /* LunaPluginExport */; };
+		284DD1ED4ECC233ECC7E972B /* LunaPluginTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 39F9928113BC96ED579038A8 /* LunaPluginTransport */; };
+		B094ADE5DB3F273E9992F0F0 /* LunaPluginUI in Frameworks */ = {isa = PBXBuildFile; productRef = 348864BC28EC45B10B034A20 /* LunaPluginUI */; };
+		7D0B18AD0E12735EB9091859 /* LunaBundledPlugins in Frameworks */ = {isa = PBXBuildFile; productRef = 4BA12B26F9477BA4273B238A /* LunaBundledPlugins */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1087,6 +1111,13 @@
 				B0F4377FDC51E43B3D49AAB9 /* LunaArticleIngest in Frameworks */,
 				FC97FE4E8E8CC2C0B46CE853 /* LunaPriceIngest in Frameworks */,
 				EDD51507296CC139068309F4 /* LunaPriceCompare in Frameworks */,
+				AD97AD3B1F5D56C90651C615 /* LunaPluginKit in Frameworks */,
+				7060FCD707AB3B13F6D23380 /* LunaPluginRuntime in Frameworks */,
+				9B265CA2EC1AA72BE7CF8FAB /* LunaPluginIngest in Frameworks */,
+				05FF149DC51874ADBB66E6E9 /* LunaPluginExport in Frameworks */,
+				568F7735971BBB6832830A9E /* LunaPluginTransport in Frameworks */,
+				FCB123D909CFF636C867DCBD /* LunaPluginUI in Frameworks */,
+				48EB72A3CABCEB5307771256 /* LunaBundledPlugins in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1173,6 +1204,10 @@
 				20E79A18CCC4F88FA96C1900 /* LunaArticleIngest in Frameworks */,
 				C4FCB8969CD2B9915D9F4EBD /* LunaPriceIngest in Frameworks */,
 				39FFD42DEE16FE85B60C7421 /* LunaPriceCompare in Frameworks */,
+				073487342FD9DE9D533B4C2F /* LunaPluginKit in Frameworks */,
+				FEABA48C0650255E6FED0EB1 /* LunaPluginRuntime in Frameworks */,
+				7178F0367CD3AF7CE5F98417 /* LunaPluginIngest in Frameworks */,
+				F14D94B72B4BB9811F74C9F2 /* LunaBundledPlugins in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1230,6 +1265,10 @@
 				C52B4F5FC234914371C70778 /* LunaArticleIngest in Frameworks */,
 				EA01389BF19EFCF918B129C1 /* LunaPriceIngest in Frameworks */,
 				D7F8024B13DA7154C57FD46E /* LunaPriceCompare in Frameworks */,
+				B12368C4791563358DB1C6C4 /* LunaPluginKit in Frameworks */,
+				A90309AED2E6ACA5AD215D87 /* LunaPluginRuntime in Frameworks */,
+				45420D1E38BF0DCBA0E51BC5 /* LunaPluginIngest in Frameworks */,
+				8B5B9FAD59E17679A3B37872 /* LunaBundledPlugins in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1320,6 +1359,13 @@
 				40FC28B283DC74F6D4CD213E /* VaultTestKit in Frameworks */,
 				4B0000000000000000000001 /* LunaVaultMac in Frameworks */,
 				720B0DE39C61A32D913D22E9 /* LunaVaultUI in Frameworks */,
+				565D8AC90F12D2227F8B3496 /* LunaPluginKit in Frameworks */,
+				738BEE97300246B7FF31AD92 /* LunaPluginRuntime in Frameworks */,
+				C65DD19BAC9F9D4AD41E43DA /* LunaPluginIngest in Frameworks */,
+				1C1C47F120674F00692F536B /* LunaPluginExport in Frameworks */,
+				284DD1ED4ECC233ECC7E972B /* LunaPluginTransport in Frameworks */,
+				B094ADE5DB3F273E9992F0F0 /* LunaPluginUI in Frameworks */,
+				7D0B18AD0E12735EB9091859 /* LunaBundledPlugins in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1357,6 +1403,8 @@
 				7F7949931158EE43468C11D3 /* LunaMediaResolve in Frameworks */,
 				3303B8146FB8B4721024F29D /* LunaStorage in Frameworks */,
 				F765D4E8850BE72809FC5760 /* LunaPriceCompare in Frameworks */,
+				A6C96654190FFA7A89ED8D2D /* LunaPluginKit in Frameworks */,
+				FCF9A8D23F04006F043EC729 /* LunaBundledPlugins in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1701,6 +1749,8 @@
 				38C4D008FD98340A33203DA5 /* LunaMediaResolve */,
 				1994237BFADCA5EEADC9D18F /* LunaStorage */,
 				3A730A61461C658DA1DA02E5 /* LunaPriceCompare */,
+				AE6DEE84BA5F692B052FEE1E /* LunaPluginKit */,
+				1ADC1076CAFD344FD60BBCA1 /* LunaBundledPlugins */,
 			);
 			productName = LunaSafari;
 			productReference = 70F84ABD7EB5D22A3CBDCDAE /* LunaSafari.appex */;
@@ -1773,6 +1823,10 @@
 				F7D535CDCC8DBE577FBBA9EF /* LunaArticleIngest */,
 				E4274F6DB74D20DE3EA07C54 /* LunaPriceIngest */,
 				0A75F804069AADDAD77A35B3 /* LunaPriceCompare */,
+				198D75A4CF7391FD2CF8E121 /* LunaPluginKit */,
+				0BD3A50988F95673CA38E8A5 /* LunaPluginRuntime */,
+				4E837A04FFAD5A9563261E1F /* LunaPluginIngest */,
+				46A68F8A0F4A48E0B1B6B45E /* LunaBundledPlugins */,
 			);
 			productName = LunaShare;
 			productReference = 321A524CE357583A60D01100 /* LunaShare.appex */;
@@ -1924,6 +1978,10 @@
 				36AD3BFA3EDB933B5E1555BC /* LunaArticleIngest */,
 				292886352EFB923300D31884 /* LunaPriceIngest */,
 				2CB879EE971C7DBDDC25F478 /* LunaPriceCompare */,
+				8C711AD4F150B33953282B6D /* LunaPluginKit */,
+				41EBE598F2DE49A26EC61651 /* LunaPluginRuntime */,
+				B850B28B7331C065515B8362 /* LunaPluginIngest */,
+				4F2FAFD0D5642FB0B3385AF7 /* LunaBundledPlugins */,
 			);
 			productName = LunaAction;
 			productReference = 2F9497B9CCD94E28698A4E6B /* LunaAction.appex */;
@@ -2199,6 +2257,13 @@
 				4C1000000000000000000015 /* LunaVaultSearch */,
 				4C1000000000000000000016 /* LunaVaultSetup */,
 				AF2F0183AA25D456A5323A04 /* LunaVaultUI */,
+				2099FD47BF4282A52F332C83 /* LunaPluginKit */,
+				CB6FDD57192F6C73FF4D3980 /* LunaPluginRuntime */,
+				259F6CA00E702001002856A1 /* LunaPluginIngest */,
+				3031795C8BD51120BCD5F4F5 /* LunaPluginExport */,
+				39F9928113BC96ED579038A8 /* LunaPluginTransport */,
+				348864BC28EC45B10B034A20 /* LunaPluginUI */,
+				4BA12B26F9477BA4273B238A /* LunaBundledPlugins */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;
@@ -2412,6 +2477,13 @@
 				FD5D60A882E8BE72AFD9155D /* LunaArticleIngest */,
 				0A5E4DC54DD727092F10D7B7 /* LunaPriceIngest */,
 				2CE116DE1DC7FE19425ACEC3 /* LunaPriceCompare */,
+				8B02B0EFEE96F53216CACCF7 /* LunaPluginKit */,
+				62F85559E4D4D279028FBEAE /* LunaPluginRuntime */,
+				A6A0CEFFF40ECCF9C4B0A848 /* LunaPluginIngest */,
+				D01DF541475E6E2CC64D34D1 /* LunaPluginExport */,
+				7DFF2715335837C4108FD623 /* LunaPluginTransport */,
+				8165F7FCF94748876D379A97 /* LunaPluginUI */,
+				689779297CD94A4062869AE1 /* LunaBundledPlugins */,
 			);
 			productName = Luna;
 			productReference = A57870A0D223D2CB75BC7281 /* Luna.app */;
@@ -5733,6 +5805,126 @@
 		FD5D60A882E8BE72AFD9155D /* LunaArticleIngest */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LunaArticleIngest;
+		};
+		8B02B0EFEE96F53216CACCF7 /* LunaPluginKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginKit;
+		};
+		62F85559E4D4D279028FBEAE /* LunaPluginRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginRuntime;
+		};
+		A6A0CEFFF40ECCF9C4B0A848 /* LunaPluginIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginIngest;
+		};
+		D01DF541475E6E2CC64D34D1 /* LunaPluginExport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginExport;
+		};
+		7DFF2715335837C4108FD623 /* LunaPluginTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginTransport;
+		};
+		8165F7FCF94748876D379A97 /* LunaPluginUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginUI;
+		};
+		689779297CD94A4062869AE1 /* LunaBundledPlugins */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaBundledPlugins;
+		};
+		198D75A4CF7391FD2CF8E121 /* LunaPluginKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginKit;
+		};
+		0BD3A50988F95673CA38E8A5 /* LunaPluginRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginRuntime;
+		};
+		4E837A04FFAD5A9563261E1F /* LunaPluginIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginIngest;
+		};
+		46A68F8A0F4A48E0B1B6B45E /* LunaBundledPlugins */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaBundledPlugins;
+		};
+		8C711AD4F150B33953282B6D /* LunaPluginKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginKit;
+		};
+		41EBE598F2DE49A26EC61651 /* LunaPluginRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginRuntime;
+		};
+		B850B28B7331C065515B8362 /* LunaPluginIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginIngest;
+		};
+		4F2FAFD0D5642FB0B3385AF7 /* LunaBundledPlugins */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaBundledPlugins;
+		};
+		AE6DEE84BA5F692B052FEE1E /* LunaPluginKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginKit;
+		};
+		1ADC1076CAFD344FD60BBCA1 /* LunaBundledPlugins */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaBundledPlugins;
+		};
+		2099FD47BF4282A52F332C83 /* LunaPluginKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginKit;
+		};
+		CB6FDD57192F6C73FF4D3980 /* LunaPluginRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginRuntime;
+		};
+		259F6CA00E702001002856A1 /* LunaPluginIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginIngest;
+		};
+		3031795C8BD51120BCD5F4F5 /* LunaPluginExport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginExport;
+		};
+		39F9928113BC96ED579038A8 /* LunaPluginTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginTransport;
+		};
+		348864BC28EC45B10B034A20 /* LunaPluginUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaPluginUI;
+		};
+		4BA12B26F9477BA4273B238A /* LunaBundledPlugins */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LocalSwiftPackageReference" */;
+			productName = LunaBundledPlugins;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

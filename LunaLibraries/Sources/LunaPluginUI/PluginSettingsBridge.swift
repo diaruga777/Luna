@@ -61,7 +61,10 @@ public final class PluginSettingsBridge: PluginCapabilityInstalling {
                 box.fail("luna.settings.set needs a key", code: "bad-argument")
                 return promise
             }
-            guard schema.contains(where: { $0.key == key }) else {
+            // A reserved key (leading "_") is not in the schema by design:
+            // §11.1 keeps that namespace for Luna's own bookkeeping, and a
+            // destination plugin writes "_status" for its share row's dot.
+            guard key.hasPrefix("_") || schema.contains(where: { $0.key == key }) else {
                 box.fail(
                     "\(pluginID) declares no setting named \"\(key)\"", code: "bad-argument")
                 return promise

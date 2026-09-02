@@ -38,6 +38,35 @@ public protocol ArticleDestination {
     /// Destinations that report progress on a receiving device (Xteink's
     /// "book i of n") override this; everything else keeps the plain form.
     func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws
+    /// Delivers the SAVE. This is what the coordinator calls; the default
+    /// builds the EPUB the two Swift destinations take, so a destination that
+    /// accepts another format (a plugin destination declaring `url` or `json`)
+    /// overrides it and never sees EPUB bytes it would discard.
+    func deliver(item: SavedItem, context: ArticleSendContext) async throws
+}
+
+/// A destination throws an error conforming to this when the failure is
+/// TERMINAL: another attempt cannot change the answer, so the coordinator marks
+/// the send failed rather than scheduling backoff. Conforming is the signal; an
+/// error that is terminal only sometimes answers `isHardSendFailure` itself.
+public protocol SendHardFailureError: Error {
+    var isHardSendFailure: Bool { get }
+}
+
+public extension SendHardFailureError {
+    var isHardSendFailure: Bool { true }
+}
+
+/// Why a delivery could not be attempted at all. It is a HARD failure: an
+/// article with no readable content will not gain any on a retry.
+public enum ArticleDeliveryError: Error, CustomStringConvertible, SendHardFailureError {
+    case noArticleContent
+
+    public var description: String {
+        switch self {
+        case .noArticleContent: return "Couldn't build the EPUB attachment."
+        }
+    }
 }
 
 public extension ArticleDestination {
@@ -53,6 +82,74 @@ public extension ArticleDestination {
     func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws {
         try await send(epubData: epubData, fileName: fileName, title: title)
     }
+
+    /// An EPUB destination: fetch the article's missing images when this
+    /// destination's profile carries images, build the book, hand it over.
+    /// Reads the store the coordinator is reading, so a coordinator driving a
+    /// scratch store stays inside it.
+    func deliver(item: SavedItem, context: ArticleSendContext) async throws {
+        let store = context.store
+        if epubBuildProfile.includesImages {
+            await ArticleExportService(store: store).prepareImages(for: item)
+        }
+        let fresh = store.item(withID: item.id) ?? item
+        guard let content = store.content(for: fresh) else {
+            throw ArticleDeliveryError.noArticleContent
+        }
+        let title = fresh.title ?? fresh.urlString
+        let data = EpubBuilder().build(
+            content: content, sourceURLString: fresh.urlString,
+            imagesDirectory: store.articlesDirectory, profile: epubBuildProfile)
+        try await send(
+            epubData: data, fileName: ArticleSendCoordinator.epubFileName(forTitle: title),
+            title: title, context: context)
+    }
+}
+
+/// The destinations a higher tier installs at launch: one per export plugin
+/// that declares itself a destination (`claudedocs/plans/plugin-platform.md`
+/// §9.4).
+///
+/// It is a registry rather than an `init` argument because the plugin platform
+/// is built after `ArticleSendCoordinator.shared` may already exist, and
+/// because a plugin that REPLACES a Swift destination must retire it by id —
+/// the Kindle plugin keeps the `kindle` id, so every stored send state,
+/// per-source setting and sent date keeps applying to it.
+public enum ArticleDestinationRegistry {
+
+    private static let lock = NSLock()
+    private static var destinations: [any ArticleDestination] = []
+    private static var replacedIDs: Set<String> = []
+
+    /// Replaces what an earlier call installed. Idempotent, so a second
+    /// platform install leaves one set of destinations rather than two.
+    public static func install(
+        _ destinations: [any ArticleDestination], replacingBuiltInIDs ids: Set<String>
+    ) {
+        lock.lock()
+        self.destinations = destinations
+        replacedIDs = ids
+        lock.unlock()
+    }
+
+    public static var installed: [any ArticleDestination] {
+        lock.lock()
+        defer { lock.unlock() }
+        return destinations
+    }
+
+    /// Built-in destination ids a plugin now owns. The coordinator drops those
+    /// Swift destinations, so one id never has two delivery routes.
+    public static var replacedBuiltInIDs: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return replacedIDs
+    }
+
+    /// Empties the registry. Tests use it to leave the process as they found it.
+    public static func removeAll() {
+        install([], replacingBuiltInIDs: [])
+    }
 }
 
 /// The save identity and queue depth a delivery carries, for a destination
@@ -63,9 +160,14 @@ public extension ArticleDestination {
 public struct ArticleSendContext {
     public let itemID: UUID
     public let queuedRemaining: Int?
-    public init(itemID: UUID, queuedRemaining: Int?) {
+    /// The store this delivery reads. `deliver`'s default implementation
+    /// builds the EPUB from it, so a coordinator driving a scratch store never
+    /// reaches the shared one.
+    public let store: SavesStore
+    public init(itemID: UUID, queuedRemaining: Int?, store: SavesStore = .shared) {
         self.itemID = itemID
         self.queuedRemaining = queuedRemaining
+        self.store = store
     }
 }
 
@@ -182,7 +284,11 @@ public final class ArticleSendCoordinator {
 
     private let logger = Logger(subsystem: LunaLogging.subsystem, category: "send")
     private let store: SavesStore
-    private let destinations: [ArticleDestination]
+    private let builtInDestinations: [ArticleDestination]
+    /// True for the shipped coordinator, which serves whatever the plugin
+    /// platform installed as well as the two Swift destinations. A caller that
+    /// named its destinations gets exactly those.
+    private let readsDestinationRegistry: Bool
     private let retryPolicy: RetryPolicy
     private let now: () -> Date
 
@@ -208,9 +314,20 @@ public final class ArticleSendCoordinator {
         now: @escaping () -> Date = Date.init
     ) {
         self.store = store
-        self.destinations = destinations ?? [KindleDestination(), XteinkDestination()]
+        builtInDestinations = destinations ?? [KindleDestination(), XteinkDestination()]
+        readsDestinationRegistry = destinations == nil
         self.retryPolicy = retryPolicy
         self.now = now
+    }
+
+    /// Every destination this coordinator serves right now. Read per use: a
+    /// plugin destination arrives when the plugin platform is installed, which
+    /// can be after `shared` was first touched.
+    private var destinations: [ArticleDestination] {
+        guard readsDestinationRegistry else { return builtInDestinations }
+        let replaced = ArticleDestinationRegistry.replacedBuiltInIDs
+        return builtInDestinations.filter { !replaced.contains($0.id) }
+            + ArticleDestinationRegistry.installed
     }
 
     private func destination(id: String) -> ArticleDestination? {
@@ -329,10 +446,14 @@ public final class ArticleSendCoordinator {
 
     // MARK: - Delivery
 
-    /// Builds the EPUB (once) and delivers to one destination. Returns the
+    /// Gates one send and hands the save to the destination. Returns the
     /// transport error when the send itself failed, nil when it succeeded or
     /// was not attempted — the rendezvous sweep reads it to recognize a
     /// device-wide refusal.
+    ///
+    /// The payload is the DESTINATION's business: `deliver` builds the EPUB for
+    /// the two Swift destinations and produces its declared format for a plugin
+    /// one.
     @discardableResult
     private func sendBuildingEPUB(
         _ item: SavedItem, to destination: ArticleDestination, respectBackoff: Bool
@@ -348,20 +469,7 @@ public final class ArticleSendCoordinator {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
             return nil
         }
-        // Kindle/export EPUBs wait for their illustrations; Xteink's profile
-        // is text-only by contract, so it must not trigger image downloads just
-        // to discard those bytes moments later.
-        if destination.epubBuildProfile.includesImages {
-            await ArticleExportService(store: store).prepareImages(for: fresh)
-        }
-        guard let refreshed = store.item(withID: fresh.id),
-              let built = buildEPUB(for: refreshed, profile: destination.epubBuildProfile) else {
-            store.markSendTerminalFailure(
-                for: fresh.id, destination: destination.id,
-                errorMessage: "Couldn't build the EPUB attachment.")
-            return nil
-        }
-        return await deliver(itemID: fresh.id, built: built, to: destination)
+        return await deliver(item: fresh, to: destination)
     }
 
     private func shouldAttempt(
@@ -374,24 +482,11 @@ public final class ArticleSendCoordinator {
         return next <= now()
     }
 
-    private struct BuiltEPUB {
-        let data: Data
-        let fileName: String
-        let title: String
-    }
-
-    private func buildEPUB(for item: SavedItem, profile: EpubBuilder.Profile) -> BuiltEPUB? {
-        guard let content = store.content(for: item) else { return nil }
-        let title = item.title ?? item.urlString
-        let data = EpubBuilder().build(
-            content: content, sourceURLString: item.urlString,
-            imagesDirectory: store.articlesDirectory, profile: profile)
-        return BuiltEPUB(data: data, fileName: Self.epubFileName(forTitle: title), title: title)
-    }
-
     /// Returns the error the transport threw, nil on success or when this
     /// item's send is already in flight.
-    private func deliver(itemID: UUID, built: BuiltEPUB, to destination: ArticleDestination) async -> Error? {
+    private func deliver(item: SavedItem, to destination: ArticleDestination) async -> Error? {
+        let itemID = item.id
+        let title = item.title ?? item.urlString
         let key = "\(itemID.uuidString)|\(destination.id)"
         let alreadySending = lock.withLock {
             let sending = inFlight.contains(key)
@@ -407,17 +502,18 @@ public final class ArticleSendCoordinator {
             let queuedRemaining = store.items().filter {
                 $0.id != itemID && $0.sendState(for: destination.id) == .queued
             }.count
-            try await destination.send(
-                epubData: built.data, fileName: built.fileName, title: built.title,
-                context: ArticleSendContext(itemID: itemID, queuedRemaining: queuedRemaining))
+            try await destination.deliver(
+                item: item,
+                context: ArticleSendContext(
+                    itemID: itemID, queuedRemaining: queuedRemaining, store: store))
             store.setSendState(.sent, for: itemID, destination: destination.id)
-            logger.info("Sent to \(destination.displayName, privacy: .public): \(built.title, privacy: .public)")
+            logger.info("Sent to \(destination.displayName, privacy: .public): \(title, privacy: .public)")
         } catch {
-            recordFailure(error, itemID: itemID, built: built, destination: destination)
+            recordFailure(error, itemID: itemID, title: title, destination: destination)
             if error is SendDeferralError {
-                logger.info("Deferred send to \(destination.displayName, privacy: .public) (unreachable): \(built.title, privacy: .public)")
+                logger.info("Deferred send to \(destination.displayName, privacy: .public) (unreachable): \(title, privacy: .public)")
             } else {
-                logger.error("Send to \(destination.displayName, privacy: .public) failed for \(built.title, privacy: .public): \(String(describing: error), privacy: .public)")
+                logger.error("Send to \(destination.displayName, privacy: .public) failed for \(title, privacy: .public): \(String(describing: error), privacy: .public)")
             }
             return error
         }
@@ -425,7 +521,7 @@ public final class ArticleSendCoordinator {
     }
 
     private func recordFailure(
-        _ error: Error, itemID: UUID, built: BuiltEPUB, destination: ArticleDestination
+        _ error: Error, itemID: UUID, title: String, destination: ArticleDestination
     ) {
         // Deferral: the receiver is just not reachable right now.
         // `markSendAttemptStarted` already left the state `.queued`, so the
@@ -454,11 +550,14 @@ public final class ArticleSendCoordinator {
         store.scheduleSendRetry(
             for: itemID, destination: destination.id, failureCount: failureCount,
             nextAttemptDate: nextAttempt, errorMessage: message)
-        logger.info("Scheduled retry \(failureCount, privacy: .public) for \(destination.displayName, privacy: .public) in \(delay, privacy: .public)s: \(built.title, privacy: .public)")
+        logger.info("Scheduled retry \(failureCount, privacy: .public) for \(destination.displayName, privacy: .public) in \(delay, privacy: .public)s: \(title, privacy: .public)")
     }
 
     private static func isHardFailure(_ error: Error) -> Bool {
         if error is AccountEmailSender.NotConfiguredError { return true }
+        if let terminal = error as? (any SendHardFailureError), terminal.isHardSendFailure {
+            return true
+        }
         let text = String(describing: error).lowercased()
         return text.contains("auth")
             || text.contains("not signed in")

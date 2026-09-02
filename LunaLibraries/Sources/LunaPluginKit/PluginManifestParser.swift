@@ -312,12 +312,22 @@ public enum PluginManifestParser {
             if !kinds.contains(kind) { kinds.append(kind) }
         }
         guard let input = export["input"] as? String,
-              PluginExportInputFormat(rawValue: input) != nil
+              let format = PluginExportInputFormat(rawValue: input)
         else {
             throw PluginManifestError.invalidField(
                 field: "export.input", line: lines.line(of: "input"),
                 detail: "it must be one of "
                     + PluginExportInputFormat.allCases.map(\.rawValue).joined(separator: ", "))
+        }
+        let unsupported = PluginExportInputAvailability.unsupportedKinds(in: kinds, format: format)
+        guard unsupported.isEmpty else {
+            throw PluginManifestError.invalidField(
+                field: "export.input", line: lines.line(of: "input"),
+                detail: "Luna cannot build \"\(input)\" for a "
+                    + unsupported.map(\.rawValue).joined(separator: " or ")
+                    + " save — that kind takes "
+                    + PluginExportInputAvailability.formats(for: unsupported[0])
+                        .map(\.rawValue).sorted().joined(separator: ", "))
         }
         guard let title = export["title"] as? String, !title.isEmpty, title.count <= 40 else {
             throw PluginManifestError.invalidField(

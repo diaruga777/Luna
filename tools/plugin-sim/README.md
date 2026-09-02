@@ -3,10 +3,12 @@
 A Node harness for iterating on a Luna plugin outside Xcode
 (`claudedocs/plans/plugin-platform.md` §13.4). It implements the `luna.*`
 bridge (`bridge.mjs`) with `undici` for `luna.fetch`, `linkedom` for
-`luna.html`, in-memory maps for `luna.storage`/`luna.settings`, and no
-`luna.browser` at all (there is no page to run a challenge detector against
-outside a real WebKit process — a plugin sees the same `unavailable-here`
-rejection the Safari content-script world gives when it defers).
+`luna.html`, in-memory maps for `luna.storage`/`luna.settings`/`luna.files`
+(so a multipart `file` part and `as: "file"` behave the same as the app),
+`luna.downloads` fed from a fixture's own job list, and no `luna.browser` at
+all (there is no page to run a challenge detector against outside a real
+WebKit process — a plugin sees the same `unavailable-here` rejection the
+Safari content-script world gives when it defers).
 
 This is a convenience tool, not a build gate. `LunaTests` and the Xcode
 suites are the tests that matter; this exists so a plugin author (or an
@@ -62,11 +64,11 @@ editor checking:
 
 ## What is NOT here
 
-- `luna.browser`, `luna.secrets`, `luna.files`, `luna.ui`, `luna.mail`,
-  `luna.notifications`, `luna.bluetooth`, `luna.wifi`, `luna.exports`,
-  `luna.downloads` — app-only or WebKit-only capabilities with no Node
-  equivalent. `bridge.mjs` simply never installs them, matching how an
-  undeclared capability is absent everywhere else.
+- `luna.browser` — declared but always rejects `unavailable-here`; see above.
+- `luna.secrets`, `luna.ui`, `luna.mail`, `luna.notifications`,
+  `luna.bluetooth`, `luna.wifi`, `luna.exports` — app-only or WebKit-only
+  capabilities with no Node equivalent. `bridge.mjs` simply never installs
+  them, matching how an undeclared capability is absent everywhere else.
 - A `classify`/`ingest` timeout or three-strikes disable — this harness runs
   one call at a time and lets a hang hang, so you see the real error instead
   of a manufactured one.

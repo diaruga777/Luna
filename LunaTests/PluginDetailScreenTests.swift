@@ -104,6 +104,22 @@ final class PluginDetailScreenTests: XCTestCase {
         PluginSettingField(key: key, type: type, label: key, isRequired: isRequired, isSecret: isSecret)
     }
 
+    /// `commitValue`'s runtime notification hops through `Task { @MainActor }`
+    /// (`PluginDetailScreen.swift`), so the settled call can land anywhere
+    /// from well under a millisecond to several hundred under a busy main
+    /// thread. A fixed sleep is not a wait — poll the condition instead.
+    private func pollUntil(
+        timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line,
+        _ condition: () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTFail("condition did not become true within \(timeout)s", file: file, line: line)
+    }
+
     private func allRowTexts(_ screen: PluginDetailScreen) -> [String?] {
         var texts: [String?] = []
         for section in 0..<screen.numberOfSections(in: screen.tableView) {
@@ -181,9 +197,7 @@ final class PluginDetailScreenTests: XCTestCase {
         toggle.isOn = true
         toggle.sendActions(for: .valueChanged)
 
-        let pumped = expectation(description: "runtime notified")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { pumped.fulfill() }
-        wait(for: [pumped], timeout: 2)
+        pollUntil { invoker.invocations.count == 1 }
 
         XCTAssertEqual(store.setCalls.count, 1)
         XCTAssertEqual(store.setCalls.first?.key, "notifyOnDrop")
@@ -275,9 +289,7 @@ final class PluginDetailScreenTests: XCTestCase {
         toggle.isOn = false
         toggle.sendActions(for: .valueChanged)
 
-        let pumped = expectation(description: "runtime notified")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { pumped.fulfill() }
-        wait(for: [pumped], timeout: 2)
+        pollUntil { invoker.invocations.count == 1 }
 
         XCTAssertEqual(invoker.argumentJSON, ["{\"enabled\":false}"])
     }
@@ -303,10 +315,9 @@ final class PluginDetailScreenTests: XCTestCase {
             guard let button = cell.accessoryView as? UIButton else {
                 return XCTFail("expected a Pair/Unpair button")
             }
+            let before = invoker.invocations.count
             button.sendActions(for: .touchUpInside)
-            let pumped = expectation(description: "hook invoked")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { pumped.fulfill() }
-            wait(for: [pumped], timeout: 2)
+            pollUntil { invoker.invocations.count == before + 1 }
         }
 
         pressTheButton()

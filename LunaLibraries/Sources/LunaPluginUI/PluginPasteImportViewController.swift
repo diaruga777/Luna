@@ -64,7 +64,7 @@ public final class PluginPasteImportViewController: UIViewController {
 
             importButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             importButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+                equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16),
         ])
     }
 

@@ -286,8 +286,6 @@ private final class StagePluginImporter: PluginImporting {
     func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) throws {}
 }
 
-#endif
-
 /// A page that never loads anything: the stage answers one fixed probe result
 /// and renders a local fixture, so the modal can be looked at without a network
 /// or a real challenge.
@@ -332,3 +330,5 @@ private final class StagePluginBrowserPage: PluginBrowserPageDriving {
     </div></body></html>
     """
 }
+
+#endif

@@ -56,22 +56,8 @@ enum KindWiring {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
-        PluginPlatformComposition.install(
-            processKind: .app,
-            bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: {
-                PluginUIComposition.bridges(processKind: .app, scheduler: $0)
-                    + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
-                    + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
-            })
-        PluginUIComposition.installAppWitnesses()
+        installFullPluginComposition()
         PluginModelDrain.returnOpener = SystemPluginModelReturnOpener()
-        // The export tier reads the runtime the call above built, so it comes
-        // after it. It also retires the Swift destinations its plugins take
-        // over — `KindleDestination` is the Kindle plugin's now.
-        PluginExportComposition.install(
-            mediaFiles: PluginMediaFileLocator(),
-            recipientPicker: PluginMailRecipientPrompt())
         // A destination plugin's "Auto-send" row opens the app shell's
         // per-capture-source screen, which LunaPluginUI cannot see.
         PluginDestinationAutoSend.presenter = PluginAutoSendRoute()
@@ -98,6 +84,32 @@ enum KindWiring {
         // the one seam that needs an article-app capability (email) and a
         // product-app one (the graph) at once, so it belongs to neither leg.
         EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
+    }
+
+    /// The plugin platform's full composition for this app: the runtime plus
+    /// every bridge tier `Luna` links (UI, transport, export) and the two
+    /// app-only witnesses that ride on top of it. `install()` calls this once
+    /// at launch; `PluginPlatformBootTests.tearDown` calls it again after a
+    /// test installs a bare platform of its own, so the suites that run after
+    /// it find the shipped composition rather than one missing `luna.ui`,
+    /// `luna.browser`, `luna.settings` and every export/transport bridge.
+    @MainActor
+    static func installFullPluginComposition() {
+        PluginPlatformComposition.install(
+            processKind: .app,
+            bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
+            additionalBridges: {
+                PluginUIComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
+            })
+        PluginUIComposition.installAppWitnesses()
+        // The export tier reads the runtime the call above built, so it comes
+        // after it. It also retires the Swift destinations its plugins take
+        // over — `KindleDestination` is the Kindle plugin's now.
+        PluginExportComposition.install(
+            mediaFiles: PluginMediaFileLocator(),
+            recipientPicker: PluginMailRecipientPrompt())
     }
 
     /// The Kindle plugin's own settings screen, where its address lives.

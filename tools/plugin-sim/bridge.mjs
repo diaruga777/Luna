@@ -7,9 +7,16 @@
 // `spec.mjs`/`PluginHTMLParityTests`/`PluginHTMLSubsetTests` run the SAME
 // `html-subset.spec.js` against each of the three `luna.html` backings.
 //
-// Every capability a real plugin declares is available here except
-// `browser`: there is no page to run a challenge detector against outside a
-// real WebKit process, so `luna.browser.open` always rejects.
+// Implemented: `html` (linkedom), `crypto`, `storage`, `settings`, `files`
+// (an in-memory map — `fetch`'s multipart `file` parts and `as: "file"`
+// resolve through it same as the app), `fetch` and `downloads` (fed from
+// `config.downloads`, since there is no real download engine or saves
+// database here). `browser` is declared but always rejects
+// `unavailable-here` — there is no page to run a challenge detector against
+// outside a real WebKit process. Absent entirely, same as an undeclared
+// capability everywhere else: `secrets`, `page`, `ui`, `mail`,
+// `notifications`, `bluetooth`, `wifi`, `exports` (see
+// `claudedocs/plugins.md` §13.3 for the reasoning behind each).
 
 import { fetch as undiciFetch } from "undici";
 import { parseHTML } from "linkedom";

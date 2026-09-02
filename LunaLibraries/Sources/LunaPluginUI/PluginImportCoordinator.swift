@@ -74,12 +74,34 @@ public final class PluginImportCoordinator: NSObject {
                 let screen = PluginConsentViewController(preview: preview)
                 screen.delegate = self
                 presenter?.present(screen, animated: true)
+            } else if let replaces = preview.replacesVersion {
+                // No new capability, so the full consent screen would repeat
+                // what was already granted — but silently overwriting an
+                // installed plugin's entire script left no signal at all that
+                // anything happened.
+                confirmReplace(preview, replacing: replaces, origin: origin)
             } else {
                 install(preview, origin: origin)
             }
         } catch {
             report(error)
         }
+    }
+
+    private func confirmReplace(
+        _ preview: PluginImportPreview, replacing oldVersion: String, origin: PluginImportOrigin
+    ) {
+        let alert = UIAlertController(
+            title: L10n.string("Plugins_updateConfirmTitle", preview.summary.name),
+            message: L10n.string(
+                "Plugins_updateConfirmMessage", oldVersion, preview.summary.version),
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("Common_cancel"), style: .cancel))
+        alert.addAction(
+            UIAlertAction(title: L10n.string("Plugins_updateConfirmButton"), style: .default) {
+                [weak self] _ in self?.install(preview, origin: origin)
+            })
+        presenter?.present(alert, animated: true)
     }
 
     private func install(_ preview: PluginImportPreview, origin: PluginImportOrigin) {

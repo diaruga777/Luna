@@ -48,6 +48,12 @@ final class PluginLockedSaveRoutingTests: XCTestCase {
 
     private func makeHost() -> CardPresenterHost { CardCarouselHostViewController() }
 
+    /// Article's tap needs real chrome — `ArticleCardPresenter.itemWasTapped`
+    /// gates on `ArticleDeckChromeHosting`, which only `ArticleCardsViewController`
+    /// implements; a bare `CardCarouselHostViewController` would fail that
+    /// guard before ever reaching the plugin lock.
+    private func makeArticleHost() -> ArticleCardsViewController { ArticleCardsViewController() }
+
     // MARK: - The route
 
     func testOnlyAnOwnedLockGoesToThePluginsBrowserStep() {
@@ -82,6 +88,20 @@ final class PluginLockedSaveRoutingTests: XCTestCase {
         XCTAssertTrue(content is PluginLockedCardContentViewController)
     }
 
+    /// Article draws the SAME card type locked or not — a live reader — so its
+    /// face is a flag on that card rather than a swap to
+    /// `PluginLockedCardContentViewController`. `isLockedSave` is that flag.
+    func testAnArticleCardStillDrawsAsALockedReaderCard() {
+        let content = ArticleCardPresenter().cardContent(
+            for: lockedItem(pluginID: "app.luna.gate", seed: "article-locked"), host: makeHost())
+        guard let reader = content as? ReaderCardContentViewController else {
+            return XCTFail("expected a reader card even for a locked save")
+        }
+        XCTAssertTrue(
+            reader.isLockedSave,
+            "a plugin-locked article wears the same lock face as an archive-locked one")
+    }
+
     func testAnUnownedLockLeavesEachKindsCardAsItWas() {
         let item = lockedItem(pluginID: nil, seed: "archive-locked")
         XCTAssertNil(MediaCardPresenter().cardContent(for: item, host: makeHost()))
@@ -103,6 +123,15 @@ final class PluginLockedSaveRoutingTests: XCTestCase {
         let host = makeHost()
         let handled = ProductCardPresenter().itemWasTapped(
             lockedItem(pluginID: "app.luna.gate", seed: "product-tap"),
+            cardContent: nil, host: host)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(route.asked.count, 1)
+    }
+
+    func testAnArticleCardsTapRunsTheUnlockInsteadOfTheArchiveFlow() {
+        let host = makeArticleHost()
+        let handled = ArticleCardPresenter().itemWasTapped(
+            lockedItem(pluginID: "app.luna.gate", seed: "article-tap"),
             cardContent: nil, host: host)
         XCTAssertTrue(handled)
         XCTAssertEqual(route.asked.count, 1)

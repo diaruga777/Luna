@@ -1,45 +1,37 @@
 # Plugin platform hardening — the gap closure and review pass
 
-## Status (2026-09-03)
+## Status (2026-09-03) — COMPLETE
 
-Phase 1 LANDED on `main`: WP-A, WP-B, WP-C, WP-D and WP-F3 in full, each
-verified by its own test classes and then by the merged classes on the
-integration branch. Of WP-F1, two commits landed (one fetch request shaping
-shared by JSC and the Safari relay, `PluginFetchRequestShaping`; one
-`outcome(from:)` mapping and an adopter failure that keeps the Swift floor —
-R2#1, #3, #13, #15, #16, #20, #21, #23).
+Every work package landed on `main` and the full suite ran on the merged
+tree before the final merge:
 
-WP-E (kind-neutral auto-send for media/product destinations, §2 WP-E) LANDED
-on branch `wp-e-kind-neutral-send`: `ArticleDestination.accepts(_:)` gates
-every queue, send and retry; `PluginDestination` answers from its declared
-kinds; `articleBecameReady` became `saveBecameReady` behind one seam,
-`SaveReadiness.observer` (LunaModels rather than LunaSaves — LunaMediaDownload
-and LunaPriceUI link no LunaSaves, so a registry there could not be reached by
-the two kinds that had to report). A media save reports when its downloaded
-FILE lands (`SavedMediaStore.addDownloadedFile`), a product save when its
-tracker is written. `claudedocs/plugins.md` §8.3 documents the scope and §14's
-bullet is struck.
+- **Phase 1**: WP-A, WP-B, WP-C, WP-D, WP-F3, each verified by its own test
+  classes, then by the merged classes on the integration branch.
+- **Phase 2**: WP-E (kind-neutral auto-send — `ArticleDestination.accepts(_:)`
+  gates every queue, send and retry; one readiness seam,
+  `SaveReadiness.observer` in LunaModels, since LunaMediaDownload and
+  LunaPriceUI link no LunaSaves; a media save reports when its downloaded
+  FILE lands, a product save when its tracker is written; the double-save
+  press and `sendTestDocument` stay article-only, §8.3 of `plugins.md`), the
+  WP-F1 remainder (Safari-world parity: `LunaError(code, message, details)`
+  on every backing, the Safari walk continuing on a `null` ingest and
+  refusing a claim outside `produces`, settings defaults and `unavailable-here`
+  stubs, storage semantics, the `PageSnapshot`, `plugins.log`'s id check and
+  the cached enabled set, the catalog stamp, the `unavailable-here` Proxy in
+  Safari, the sim's settings schema, and `PluginBridgeParityTests` driving
+  one probe through both backings), and WP-F2 (iPad-safe `luna.ui`
+  presenters, a real `FileHandle` share with the `{path}` escape removed, a
+  reachable paste-import button, one browser-modal presentation, a
+  same-capability update that asks first, the boot test restoring the full
+  composition, behaviour tests for `luna.ui`/`luna.settings`, the docs'
+  error table and settings-schema section).
+- One follow-on fix from the F1 pass: a `luna.register` after the plugin
+  loaded throws `already-registered` on JSC as it does in Safari and the
+  harness (`PluginContext.isSealed`).
 
-NOT landed — the phase-2 agents were stopped by an API spend limit before
-they produced verified work:
-
-- **WP-F1** is now COMPLETE. The remainder landed on branch
-  `wp-f1b-safari-parity`: `LunaError(code, message, details)` in
-  `plugin_host.js` and `bridge.mjs` (R2#2 = R4#6), the Safari walk continuing
-  on a `null` ingest and refusing a claim outside `produces` (R2#10/#11),
-  Safari `settings.get` defaults with `set`/`all` refusing `unavailable-here`
-  (R2#8), storage semantics and `bad-argument` for a malformed message
-  (R2#9 Safari half, R2#19), the `PageSnapshot` (R2#14), `plugins.log`'s id
-  check and the process-cached enabled set (R2#17/#18), the catalog stamp
-  compared in `loadPluginCatalog` (R2#22 second bullet), the
-  `unavailable-here` Proxy in Safari (R4#10), the sim's settings schema
-  (R4#15 settings part), and the cross-backing suite
-  `PluginBridgeParityTests` (R2#25). R2#5 (`returnToSourceUntil`) was
-  already landed by the earlier `4af80740d`, tests included.
-- **WP-F2** (§5.7): not started.
-
-To resume: new worktrees off `main` per §0, one agent per remaining package,
-§3/§6 order (F1 before F2, since F2's docs describe F1's Safari facts).
+`claudedocs/plugins.md` §14 now lists only what was kept on purpose. The
+review reports stay in `claudedocs/plans/plugin-hardening-reviews/` as the
+record of what was checked.
 
 Status when written: PLAN (2026-09-02). Branch `plugin-hardening`, worktree
 `/Users/hsp/Desktop/Luna-plugin-hardening`, off `main` at `aff524cc6`.

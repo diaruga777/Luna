@@ -116,6 +116,7 @@ public final class PluginUIPresenter: PluginUIPresenting {
             sheet.addAction(UIAlertAction(title: PluginUIStrings.cancel, style: .cancel) { _ in
                 continuation.resume(returning: nil)
             })
+            Self.anchorPopover(sheet, to: presenter.view)
             presenter.present(sheet, animated: true)
         }
     }
@@ -146,6 +147,7 @@ public final class PluginUIPresenter: PluginUIPresenting {
             let controller = UIActivityViewController(
                 activityItems: activityItems, applicationActivities: nil)
             controller.completionWithItemsHandler = { _, _, _, _ in continuation.resume() }
+            Self.anchorPopover(controller, to: presenter.view)
             presenter.present(controller, animated: true)
         }
     }
@@ -153,6 +155,17 @@ public final class PluginUIPresenter: PluginUIPresenting {
     private static func foregroundWindow() -> UIWindow? { PluginTopPresenter.window() }
 
     private static func topViewController() -> UIViewController? { PluginTopPresenter.current() }
+
+    /// iPad presents an action sheet or activity view as a popover, which
+    /// crashes at present time with no anchor. A plugin call names no
+    /// on-screen control to anchor to, so both center on the presenting
+    /// view with no arrow, matching `PluginImportCoordinator.begin`.
+    private static func anchorPopover(_ controller: UIViewController, to view: UIView) {
+        guard let popover = controller.popoverPresentationController else { return }
+        popover.sourceView = view
+        popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+        popover.permittedArrowDirections = []
+    }
 }
 
 /// `PluginUIPresenter`'s own copy, kept out of `L10n` on purpose: "OK" and

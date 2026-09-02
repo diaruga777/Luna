@@ -82,8 +82,10 @@ public final class PluginUIBridge: PluginCapabilityInstalling {
         }
 
         let shareSheet: @convention(block) (JSValue?) -> JSValue? = { items in
-            bridge.answer(in: outerContext) { presenter in
-                await presenter.shareSheet(items: Self.shareItems(items))
+            let context = JSContext.current() ?? outerContext
+            let resolved = Self.shareItems(items, context: context)
+            return bridge.answer(in: outerContext) { presenter in
+                await presenter.shareSheet(items: resolved)
                 return NSNull()
             }
         }
@@ -120,8 +122,10 @@ public final class PluginUIBridge: PluginCapabilityInstalling {
     }
 
     /// The three item shapes §6.12 allows. A `FileHandle` is named by its id,
-    /// which the files bridge resolves to a path.
-    private static func shareItems(_ value: JSValue?) -> [PluginShareItem] {
+    /// resolved through the same scratch store `luna.files` reads — never a
+    /// bare path, which would let a plugin name any file in the app container.
+    /// An id the store no longer holds is dropped rather than shared.
+    private static func shareItems(_ value: JSValue?, context: JSContext) -> [PluginShareItem] {
         guard let raw = value?.toArray() else { return [] }
         return raw.compactMap { entry in
             if let text = entry as? String { return .text(text) }
@@ -130,10 +134,12 @@ public final class PluginUIBridge: PluginCapabilityInstalling {
                 return .url(url)
             }
             if let text = object["text"] as? String { return .text(text) }
-            if let path = object["path"] as? String {
-                return .fileURL(URL(fileURLWithPath: path))
-            }
-            return nil
+            guard let handle = JSValue(object: object, in: context),
+                  let descriptor = PluginFilesBridge.descriptor(from: handle),
+                  let store = PluginPlatformServices.scratch,
+                  let url = store.fileURL(for: descriptor)
+            else { return nil }
+            return .fileURL(url)
         }
     }
 }

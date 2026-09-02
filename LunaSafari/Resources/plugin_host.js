@@ -32,6 +32,27 @@ var LunaPluginHost = (function () {
     /// object from `attributes`, and `absoluteURL`/`baseURI` resolved against
     /// the URL the plugin asked to parse against — never the real document's
     /// own URL, which a detached `DOMParser` document does not carry anyway.
+    /// `textContent`, but skipping a `<script>`/`<style>` subtree — the DOM
+    /// property includes them (their body is, mechanically, a child text
+    /// node), while SwiftSoup's `Element.text()` reads only what a page
+    /// visibly shows. `luna.html` follows SwiftSoup's rule, so a plugin
+    /// reading a page's text never has to filter script bodies out itself.
+    function visibleTextContent(node) {
+        var text = "";
+        var children = node.childNodes || [];
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            if (child.nodeType === 1) {
+                var tag = (child.tagName || "").toUpperCase();
+                if (tag === "SCRIPT" || tag === "STYLE") { continue; }
+                text += visibleTextContent(child);
+            } else if (child.nodeType === 3 || child.nodeType === 4) {
+                text += child.textContent || "";
+            }
+        }
+        return text;
+    }
+
     function wrapNode(node, baseURI) {
         if (!node) { return null; }
         return {
@@ -43,7 +64,7 @@ var LunaPluginHost = (function () {
                 return Array.prototype.map.call(
                     node.querySelectorAll(css), function (n) { return wrapNode(n, baseURI); });
             },
-            get textContent() { return node.textContent || ""; },
+            get textContent() { return visibleTextContent(node); },
             get innerHTML() { return node.innerHTML || ""; },
             get outerHTML() { return node.outerHTML || ""; },
             get children() {
@@ -103,7 +124,7 @@ var LunaPluginHost = (function () {
     /// already follows, so there is only one text-extraction path to agree on.
     function htmlText(html) {
         var doc = new DOMParser().parseFromString(html || "", "text/html");
-        return (doc.body && doc.body.textContent) || "";
+        return doc.body ? visibleTextContent(doc.body) : "";
     }
 
     /// Parsed `<script type="application/ld+json">`/`"application/json">`

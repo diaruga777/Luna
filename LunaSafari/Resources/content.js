@@ -2600,7 +2600,11 @@
     // (see `presentPluginVideoOverlay`), since the app must be told to run
     // `plugins.queueModel`, not `queueResolvedDownload`.
     function defaultPerformResolvedDownload(sourceURL, context) {
-        if (typeof browser === "undefined") { return Promise.resolve(null); }
+        // No extension host (the bare WKWebView test harness): there is
+        // nothing to queue through, so go straight to the drain link, exactly
+        // as `requestResolvedMedia`'s own no-`browser` branch always resolved
+        // to an already-answered result instead of degrading.
+        if (typeof browser === "undefined") { return Promise.resolve(resolvedMediaTarget(context)); }
         return browser.runtime.sendMessage({ type: "queueResolvedDownload", url: sourceURL })
             .then(function (resp) { return (resp && resp.queued) ? resolvedMediaTarget(context) : null; })
             .catch(function () { return null; });

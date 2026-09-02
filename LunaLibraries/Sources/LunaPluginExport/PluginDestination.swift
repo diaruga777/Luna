@@ -108,13 +108,23 @@ public final class PluginDestination: ArticleDestination {
             pluginID: pluginID, saveID: item.id, auto: true,
             queuedRemaining: context.queuedRemaining)
         switch outcome {
-        case .handled, .presented:
+        case .handled:
             return
-        case .status(.sent, _, _):
+        case .presented:
+            // Nothing presents in the background, and this delivery is always
+            // a queued send. Counting an unshown share sheet as delivered
+            // would stamp the save `.sent` for a file that reached nobody.
+            throw PluginDestinationError.hard(
+                "\(displayName) answered a share result for an automatic send")
+        case .status(.sent, _, _, let remoteName):
+            if let remoteName, !remoteName.isEmpty {
+                context.store.recordRemoteDelivery(
+                    for: item.id, destination: id, remoteName: remoteName)
+            }
             return
-        case .status(.retry, let message, _):
+        case .status(.retry, let message, _, _):
             throw PluginDestinationError.retry(message)
-        case .status(.failed, let message, let hard):
+        case .status(.failed, let message, let hard, _):
             let text = message ?? "\(displayName) reported a failure"
             throw hard
                 ? PluginDestinationError.hard(text)

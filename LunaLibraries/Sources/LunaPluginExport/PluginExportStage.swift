@@ -26,8 +26,10 @@ public enum PluginExportOutcome: Equatable {
     case handled
     /// A file, text or URL result reached the share sheet.
     case presented
-    /// A destination's own bookkeeping answer.
-    case status(PluginExportResult.Status, message: String?, hard: Bool)
+    /// A destination's own bookkeeping answer. `remoteName` is the name the
+    /// receiving device filed the save under.
+    case status(
+        PluginExportResult.Status, message: String?, hard: Bool, remoteName: String? = nil)
     /// The run did not reach a result. `hard` means retrying cannot help.
     case failed(message: String, hard: Bool)
 }
@@ -142,8 +144,10 @@ public final class PluginExportStage {
         switch result {
         case .handled:
             return record(.handled, pluginID: pluginID)
-        case .status(let status, let message, let hard):
-            return record(.status(status, message: message, hard: hard), pluginID: pluginID)
+        case .status(let status, let message, let hard, let remoteName):
+            return record(
+                .status(status, message: message, hard: hard, remoteName: remoteName),
+                pluginID: pluginID)
         case .url(let text):
             guard let url = URL(string: text) else {
                 return record(
@@ -243,7 +247,7 @@ public final class PluginExportStage {
         switch outcome {
         case .handled: return "handled by the plugin"
         case .presented: return "shared"
-        case .status(let status, let message, let hard):
+        case .status(let status, let message, let hard, _):
             return "\(status.rawValue)\(hard ? " (hard)" : "")"
                 + (message.map { ": \($0)" } ?? "")
         case .failed(let message, let hard):

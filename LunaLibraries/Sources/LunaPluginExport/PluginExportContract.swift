@@ -210,11 +210,13 @@ public enum PluginExportResult: Decodable, Equatable {
     case text(String, name: String?, mime: String?)
     /// A URL to hand to the share sheet.
     case url(String)
-    /// A destination's outcome. `hard` makes a failure terminal.
-    case status(Status, message: String?, hard: Bool)
+    /// A destination's outcome. `hard` makes a failure terminal;
+    /// `remoteName` is the name the receiver filed the save under, which
+    /// Luna records so a later remote delete can target the same file.
+    case status(Status, message: String?, hard: Bool, remoteName: String? = nil)
 
     private enum CodingKeys: String, CodingKey {
-        case file, text, url, status, name, mime, message, hard
+        case file, text, url, status, name, mime, message, hard, remoteName
     }
 
     public init(from decoder: Decoder) throws {
@@ -242,7 +244,8 @@ public enum PluginExportResult: Decodable, Equatable {
             self = .status(
                 status,
                 message: try container.decodeIfPresent(String.self, forKey: .message),
-                hard: try container.decodeIfPresent(Bool.self, forKey: .hard) ?? false)
+                hard: try container.decodeIfPresent(Bool.self, forKey: .hard) ?? false,
+                remoteName: try container.decodeIfPresent(String.self, forKey: .remoteName))
             return
         }
         throw DecodingError.dataCorrupted(DecodingError.Context(

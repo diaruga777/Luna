@@ -5,6 +5,8 @@
 
 import CryptoKit
 import Foundation
+import LunaModels
+import LunaPluginExport
 import LunaPluginKit
 import LunaPluginRuntime
 import LunaPluginTransport
@@ -32,9 +34,11 @@ final class XteinkPluginTests: XCTestCase {
     private var exports: FakePluginExportsBridge!
     private var notifications: FakePluginNotificationsBridge!
     private var centers: PluginBluetoothCenterStore!
+    private var store: SavesStore!
     private var previousSettings: (any PluginSettingsStoring)?
 
     private let pluginID = "app.luna.xteink"
+    private let destinationID = ArticleDestinationID.xteink
     private let hostID = "luna-ios"
     private let secret = "8f14e45fceea167a5a36dedd4bea2543"
     private let device = PluginBluetoothDevice(
@@ -48,8 +52,10 @@ final class XteinkPluginTests: XCTestCase {
         maker = FakeXteinkTransportMaker(
             lockFileURL: runner.containerURL.appendingPathComponent("service.lock"))
         joiner = FakePluginWiFiJoiner()
+        store = SavesStore(containerURL: runner.containerURL)
         exports = FakePluginExportsBridge(
-            scheduler: runner.runtime, invoker: runner.runtime, pluginID: pluginID)
+            scheduler: runner.runtime, invoker: runner.runtime, pluginID: pluginID,
+            store: store)
         notifications = FakePluginNotificationsBridge(scheduler: runner.runtime)
         centers = PluginBluetoothCenterStore(
             makers: maker, pairedDevices: PluginPairedDeviceStore(store: runner.kv),
@@ -82,6 +88,7 @@ final class XteinkPluginTests: XCTestCase {
         // exhausts JavaScriptCore and it faults resolving a rope string.
         centers = nil
         exports = nil
+        store = nil
         notifications = nil
         joiner = nil
         maker = nil
@@ -127,6 +134,26 @@ final class XteinkPluginTests: XCTestCase {
     }
 
     private var chunkSize: Int { maker.transport.writeLength - 4 }
+
+    /// A save the reader already holds, as `recordRemoteDelivery` leaves it.
+    @discardableResult
+    private func deliveredSave(remoteName: String = "Book.epub") -> UUID {
+        let item = store.add(urlString: "https://example.com/\(UUID().uuidString)")
+        store.recordRemoteDelivery(
+            for: item.id, destination: destinationID, remoteName: remoteName)
+        return item.id
+    }
+
+    /// A delivered save finished in Luna, which is what puts its remote copy
+    /// on the delete queue.
+    @discardableResult
+    private func pendingRemoteDelete(named remoteName: String) -> UUID {
+        let id = deliveredSave(remoteName: remoteName)
+        store.markFinishedReading(id)
+        precondition(
+            store.item(withID: id)?.remoteDeleteStatus(for: destinationID) == .deletePending)
+        return id
+    }
 
     // MARK: - Authentication
 
@@ -302,17 +329,65 @@ final class XteinkPluginTests: XCTestCase {
 
     // MARK: - Reconciliation
 
-    /// The reader hands back the ids it finished reading. Luna clears those
-    /// sends so a finished book is never delivered again, and acks so the
-    /// reader stops re-reporting them.
-    func testTheReadersFinishedIDsAreMarkedSentAndAcked() throws {
-        let ids = ["3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-                   "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"]
+    /// The reader hands back the ids it finished reading. Luna marks each save
+    /// read and its delivery read-on-device, then acks so the reader stops
+    /// re-reporting them.
+    func testTheReadersFinishedIDsAreMarkedReadOnDeviceAndAcked() throws {
+        let delivered = (0..<2).map { _ in deliveredSave() }
+        let ids = delivered.map { $0.uuidString.lowercased() }
         maker.transport.readIDs = ids
         runRendezvous()
-        XCTAssertEqual(exports.sentIDs, ids)
+
+        XCTAssertEqual(exports.readOnDeviceIDs, ids)
         let ack = try XCTUnwrap(maker.transport.operation("read_ack"))
         XCTAssertEqual(ack["ids"] as? [String], ids)
+        for id in delivered {
+            let item = store.item(withID: id)
+            XCTAssertEqual(item?.readState, .read, "a book finished on the reader is read in Luna")
+            XCTAssertEqual(
+                item?.remoteDeleteStatus(for: destinationID), .readOnDevice,
+                "the reader filed it away itself, so no remote delete is queued")
+        }
+    }
+
+    /// The reader sends at most two ids per status and re-sends after each
+    /// `read_ack` until its queue is drained. One window must collect all of
+    /// them, or a reader with four finished books needs two windows here and
+    /// one in Luna Reader.
+    func testTheReconcileLoopDrainsMoreIDsThanOneStatusCarries() throws {
+        let delivered = (0..<4).map { _ in deliveredSave() }
+        maker.transport.readIDs = delivered.map { $0.uuidString.lowercased() }
+        runRendezvous()
+
+        XCTAssertEqual(Set(exports.readOnDeviceIDs).count, 4)
+        for id in delivered {
+            XCTAssertEqual(store.item(withID: id)?.readState, .read)
+        }
+    }
+
+    /// Cross-artifact parity: `luna.exports.markReadOnDevice` must leave a save
+    /// exactly where `XteinkBLECentral.handleReadIDs` leaves it. The two apps
+    /// share one store, so a book finished on one reader has to read the same
+    /// in both.
+    func testMarkReadOnDeviceMatchesTheSwiftReadReportPath() throws {
+        let throughThePlugin = deliveredSave()
+        maker.transport.readIDs = [throughThePlugin.uuidString.lowercased()]
+        runRendezvous()
+
+        // What `handleReadIDs` does, in its order, to a save in the same state.
+        let throughSwift = deliveredSave()
+        store.markRemoteDeliveryReadOnDevice(for: throughSwift, destination: destinationID)
+        store.markFinishedReading(throughSwift)
+
+        let plugin = try XCTUnwrap(store.item(withID: throughThePlugin))
+        let swift = try XCTUnwrap(store.item(withID: throughSwift))
+        XCTAssertEqual(plugin.readState, swift.readState)
+        XCTAssertEqual(plugin.readingProgress, swift.readingProgress)
+        XCTAssertEqual(
+            plugin.remoteDeleteStatus(for: destinationID),
+            swift.remoteDeleteStatus(for: destinationID))
+        XCTAssertNotNil(plugin.pendingArchiveAt)
+        XCTAssertNotNil(swift.pendingArchiveAt)
     }
 
     /// A read-report window exists purely to hand ids back. It has no send
@@ -320,11 +395,9 @@ final class XteinkPluginTests: XCTestCase {
     /// instead of idling to its cap.
     func testAReadReportWindowOnlyAnswersNoWork() throws {
         maker.transport.isReadReportWindow = true
-        maker.transport.readIDs = ["3f2504e0-4f89-11d3-9a0c-0305e82c3301"]
+        maker.transport.readIDs = [deliveredSave().uuidString.lowercased()]
         try queueSend(bytes: 4096)
-        runner.kv.putDocument(
-            PluginCollectionDocument(id: "old", json: "{\"remoteName\":\"Old.epub\"}"),
-            collection: "pendingDeletes", pluginID: pluginID)
+        pendingRemoteDelete(named: "Old.epub")
         runRendezvous()
         XCTAssertEqual(maker.transport.operationNames, ["hello", "read_ack", "no_work"])
         XCTAssertTrue(exports.results.isEmpty, "no book is delivered in a read-report window")
@@ -333,9 +406,7 @@ final class XteinkPluginTests: XCTestCase {
     /// A pending delete is not gated behind "is there also a send": the delete
     /// op is cheap and the reader is already awake for it.
     func testAPendingDeleteIsDrainedBeforeAnyDelivery() throws {
-        runner.kv.putDocument(
-            PluginCollectionDocument(id: "gone", json: "{\"remoteName\":\"Read.epub\"}"),
-            collection: "pendingDeletes", pluginID: pluginID)
+        let stale = pendingRemoteDelete(named: "Read.epub")
         try queueSend(bytes: 4096)
         runRendezvous()
         XCTAssertEqual(
@@ -343,21 +414,17 @@ final class XteinkPluginTests: XCTestCase {
             ["hello", "delete", "start_put", "commit", "no_work"],
             "one hello per window: `export` inherits the rendezvous's link")
         XCTAssertEqual(maker.transport.operation("delete")?["name"] as? String, "Read.epub")
-        XCTAssertNil(
-            runner.kv.document(id: "gone", collection: "pendingDeletes", pluginID: pluginID),
+        XCTAssertEqual(
+            store.item(withID: stale)?.remoteDeleteStatus(for: destinationID), .deleted,
             "a drained delete is not retried next window")
     }
 
-    /// A delivery records the exact basename that went on the wire, so a later
-    /// remote delete can target the same file.
-    func testADeliveryRecordsTheRemoteName() throws {
-        let saveID = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
-        try queueSend(bytes: 4096, saveID: saveID)
+    /// A delivery reports the exact basename it put on the wire. That name is
+    /// what the core records and what a later remote delete targets.
+    func testADeliveryReportsTheRemoteNameItPutOnTheWire() throws {
+        try queueSend(bytes: 4096)
         runRendezvous()
-        let recorded = runner.kv.document(
-            id: saveID, collection: "deliveries", pluginID: pluginID)
-        XCTAssertNotNil(recorded)
-        XCTAssertTrue(recorded?.json.contains("Article.epub") == true)
+        XCTAssertEqual(exports.sentRemoteNames, ["Article.epub"])
     }
 
     /// The rendezvous dot follows the link.

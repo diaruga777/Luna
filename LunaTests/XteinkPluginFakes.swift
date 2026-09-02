@@ -5,6 +5,7 @@
 
 import Foundation
 import JavaScriptCore
+import LunaPluginExport
 import LunaPluginKit
 import LunaPluginRuntime
 import LunaPluginTransport
@@ -210,10 +211,15 @@ final class FakeXteinkTransportMaker: PluginTransportMaking, @unchecked Sendable
     func makeLease() -> (any PluginBackgroundLeasing)? { lease }
 }
 
-/// `luna.exports` as agent 3A's `LunaPluginExport` will serve it (§6.16).
+/// `luna.exports` with a real send queue underneath its bookkeeping.
 ///
-/// It runs the real nesting a destination plugin produces: `deliverQueued`
-/// invokes the plugin's own `export` hook from inside its `onBluetooth` call.
+/// `deliverQueued`/`queued` are the fake half: they run the real nesting a
+/// destination plugin produces, invoking the plugin's own `export` hook from
+/// inside its `onBluetooth` call, over sends a test declares directly. The
+/// three BOOKKEEPING calls — `markSent`, `pendingDeletes`, `markRemoteDeleted`
+/// and `markReadOnDevice` — go through the shipped `CoordinatorPluginExportQueue`
+/// onto a scratch `SavesStore`, so what the plugin does to a save is what
+/// production would do to it.
 final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Sendable {
 
     /// One queued send, as `ExportInput` (§9.2).
@@ -242,21 +248,29 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
     private let scheduler: PluginCallbackScheduling
     private let invoker: any PluginHookInvoking
     private let pluginID: String
+    private let destinationID: String
+    private let queue: any PluginExportQueueDriving
     private let lock = NSLock()
     private(set) var markedSent: [String] = []
+    private(set) var markedReadOnDevice: [String] = []
+    private(set) var sentNames: [String] = []
     private(set) var exportResults: [String] = []
 
     init(
-        scheduler: PluginCallbackScheduling, invoker: any PluginHookInvoking, pluginID: String
+        scheduler: PluginCallbackScheduling, invoker: any PluginHookInvoking, pluginID: String,
+        store: SavesStore
     ) {
         self.scheduler = scheduler
         self.invoker = invoker
         self.pluginID = pluginID
+        destinationID = PluginDestinationLegacyIDs.destinationID(forPluginID: pluginID)
+        queue = CoordinatorPluginExportQueue(store: store)
     }
 
     struct ExportAnswer: Decodable {
         let status: String?
         let message: String?
+        let remoteName: String?
     }
 
     func install(into namespace: PluginCapabilityNamespace) {
@@ -278,7 +292,12 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
                     switch outcome {
                     case .success(let answer):
                         bridge.exportResults.append(answer?.status ?? "null")
-                        if answer?.status == "sent" { delivered += 1 }
+                        if answer?.status == "sent" {
+                            delivered += 1
+                            if let name = answer?.remoteName {
+                                bridge.sentNames.append(name)
+                            }
+                        }
                     case .failure(let failure):
                         bridge.exportResults.append("failure:\(failure)")
                     }
@@ -296,24 +315,62 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
             return promise
         }
 
-        let markSent: @convention(block) (String?) -> JSValue? = { saveID in
+        let markSent = bridge.saveIDBlock(outerContext) { id, text in
+            bridge.lock.lock()
+            bridge.markedSent.append(text)
+            bridge.lock.unlock()
+            bridge.queue.markSent(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let markReadOnDevice = bridge.saveIDBlock(outerContext) { id, text in
+            bridge.lock.lock()
+            bridge.markedReadOnDevice.append(text)
+            bridge.lock.unlock()
+            bridge.queue.markReadOnDevice(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let markRemoteDeleted = bridge.saveIDBlock(outerContext) { id, _ in
+            bridge.queue.markRemoteDeleted(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let pendingDeletes: @convention(block) () -> JSValue? = {
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
-            guard let saveID, !saveID.isEmpty else {
-                box.fail("markSent needs a save id", code: "bad-argument")
-                return promise
-            }
-            bridge.lock.lock()
-            bridge.markedSent.append(saveID)
-            bridge.lock.unlock()
-            box.fulfill(NSNull())
+            box.fulfill(
+                bridge.queue.pendingRemoteDeletes(forDestinationID: bridge.destinationID).map {
+                    [
+                        "saveId": $0.saveID.uuidString,
+                        "title": $0.title,
+                        "remoteName": $0.remoteName,
+                    ]
+                })
             return promise
         }
 
         exports.setObject(deliverQueued, forKeyedSubscript: "deliverQueued" as NSString)
         exports.setObject(queuedList, forKeyedSubscript: "queued" as NSString)
         exports.setObject(markSent, forKeyedSubscript: "markSent" as NSString)
+        exports.setObject(markReadOnDevice, forKeyedSubscript: "markReadOnDevice" as NSString)
+        exports.setObject(markRemoteDeleted, forKeyedSubscript: "markRemoteDeleted" as NSString)
+        exports.setObject(pendingDeletes, forKeyedSubscript: "pendingDeletes" as NSString)
         namespace.install(exports, as: capabilityName.rawValue)
+    }
+
+    private func saveIDBlock(
+        _ outerContext: JSContext, _ apply: @escaping (UUID, String) -> Void
+    ) -> @convention(block) (String?) -> JSValue? {
+        let scheduler = self.scheduler
+        return { saveID in
+            let context = JSContext.current() ?? outerContext
+            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            guard let saveID, let id = UUID(uuidString: saveID) else {
+                box.fail("this call needs a save id", code: "bad-argument")
+                return promise
+            }
+            apply(id, saveID)
+            box.fulfill(NSNull())
+            return promise
+        }
     }
 
     var sentIDs: [String] {
@@ -322,10 +379,23 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
         return markedSent
     }
 
+    var readOnDeviceIDs: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return markedReadOnDevice
+    }
+
     var results: [String] {
         lock.lock()
         defer { lock.unlock() }
         return exportResults
+    }
+
+    /// The `remoteName` each `sent` answer carried — what the core records.
+    var sentRemoteNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sentNames
     }
 }
 

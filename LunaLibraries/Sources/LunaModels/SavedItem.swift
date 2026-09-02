@@ -177,6 +177,11 @@ public struct SavedItem: Identifiable, Equatable {
     /// Where this item was captured from — drives per-source auto-send. Absent
     /// on legacy items (treated as `.manual`).
     public var captureSource: CaptureSource?
+    /// The plugin that produced this save, when one did. It routes refresh and
+    /// re-resolution back to the same plugin, names the owner in Settings, and
+    /// lets the deck say so when that plugin is off or deleted. Nil for every
+    /// Swift-ingested save.
+    public var pluginID: String?
 
     /// When this save is a price tracker (a product page with a price), this
     /// payload carries the watched store URLs, prices, and alert config. Absent
@@ -284,6 +289,7 @@ public struct SavedItem: Identifiable, Equatable {
         self.platform = nil
         self.platformItemID = nil
         self.captureSource = nil
+        self.pluginID = nil
         self.priceTracker = nil
     }
 
@@ -347,6 +353,7 @@ public struct SavedItem: Identifiable, Equatable {
         self.platform = platform
         self.platformItemID = platformItemID
         self.captureSource = captureSource
+        self.pluginID = nil
         self.priceTracker = priceTracker
     }
 

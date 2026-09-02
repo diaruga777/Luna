@@ -41,6 +41,12 @@ public struct MediaAsset: Codable, Equatable {
     /// Optional source-requested clip range. The remote asset is downloaded first,
     /// then trimmed locally before it becomes durable media.
     public let timeRange: MediaTimeRange?
+    /// Headers the download request must carry, from a plugin's `MediaAssetSpec`
+    /// (`PluginModelCaps.allowedHeaderNames` is the allowlist). Empty for every
+    /// Swift-resolved asset. `LiveMediaDownloadManager` applies these to the
+    /// task and persists them with the job, so a background resume after process
+    /// death still sends what the CDN demands.
+    public var requestHeaders: [String: String]
 
     public init(
         url: URL,
@@ -49,7 +55,8 @@ public struct MediaAsset: Codable, Equatable {
         dashManifestURL: URL? = nil,
         thumbnailURL: URL? = nil,
         estimatedByteCount: Int64? = nil,
-        timeRange: MediaTimeRange? = nil
+        timeRange: MediaTimeRange? = nil,
+        requestHeaders: [String: String] = [:]
     ) {
         self.url = url
         self.kind = kind
@@ -58,6 +65,28 @@ public struct MediaAsset: Codable, Equatable {
         self.thumbnailURL = thumbnailURL
         self.estimatedByteCount = estimatedByteCount
         self.timeRange = timeRange
+        self.requestHeaders = requestHeaders
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url, kind, audioURL, dashManifestURL, thumbnailURL
+        case estimatedByteCount, timeRange, requestHeaders
+    }
+
+    /// Hand-written so an asset written before `requestHeaders` existed still
+    /// decodes: the synthesized initializer would demand the key. Assets are
+    /// persisted as JSON in the App Group (`ResolvedMediaStores`), so older
+    /// files outlive this build.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = try c.decode(URL.self, forKey: .url)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        audioURL = try c.decodeIfPresent(URL.self, forKey: .audioURL)
+        dashManifestURL = try c.decodeIfPresent(URL.self, forKey: .dashManifestURL)
+        thumbnailURL = try c.decodeIfPresent(URL.self, forKey: .thumbnailURL)
+        estimatedByteCount = try c.decodeIfPresent(Int64.self, forKey: .estimatedByteCount)
+        timeRange = try c.decodeIfPresent(MediaTimeRange.self, forKey: .timeRange)
+        requestHeaders = try c.decodeIfPresent([String: String].self, forKey: .requestHeaders) ?? [:]
     }
 }
 

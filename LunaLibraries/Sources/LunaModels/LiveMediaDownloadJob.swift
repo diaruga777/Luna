@@ -109,6 +109,18 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
     /// database, so repair must not compare this row with another process's
     /// task list.
     public var backgroundSessionIdentifier: String?
+    /// The plugin that resolved this job's assets, when one did. It routes
+    /// re-resolution: the engine calls the SAME plugin's `ingest` hook with
+    /// `reason: "reresolve"` when an asset URL expires. Nil for every
+    /// Swift-resolved job.
+    public var pluginID: String?
+    /// The headers the asset's request must carry, as the JSON object a
+    /// plugin's `MediaAssetSpec.headers` held. Persisted so a background resume
+    /// after process death still sends them.
+    public var requestHeadersJSON: String?
+    /// When the resolved asset URLs go stale. Past this the engine re-resolves
+    /// before starting or resuming rather than downloading a 403.
+    public var expiresAt: Date?
 
     public var isTerminal: Bool { phase == .finished || phase == .failed }
 
@@ -126,7 +138,9 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         resolveAttempts: Int, mediaAttempts: Int,
         suspendDeadline: Date? = nil, ownership: LiveMediaDownloadOwnership? = nil,
         backgroundSessionIdentifier: String? = nil,
-        audioURLString: String? = nil, dashManifestURLString: String? = nil
+        audioURLString: String? = nil, dashManifestURLString: String? = nil,
+        pluginID: String? = nil, requestHeadersJSON: String? = nil,
+        expiresAt: Date? = nil
     ) {
         self.id = id
         self.sourceURLString = sourceURLString
@@ -153,6 +167,9 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         self.suspendDeadline = suspendDeadline
         self.ownership = ownership
         self.backgroundSessionIdentifier = backgroundSessionIdentifier
+        self.pluginID = pluginID
+        self.requestHeadersJSON = requestHeadersJSON
+        self.expiresAt = expiresAt
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -166,6 +183,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         case resolvedVideoID, youtubeVisitorData
         case errorMessage, errorKind, resolveAttempts, mediaAttempts, suspendDeadline, ownership
         case backgroundSessionIdentifier
+        case pluginID, requestHeadersJSON, expiresAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -206,6 +224,9 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         ownership = try c.decodeIfPresent(LiveMediaDownloadOwnership.self, forKey: .ownership)
         backgroundSessionIdentifier = try c.decodeIfPresent(
             String.self, forKey: .backgroundSessionIdentifier)
+        pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
+        requestHeadersJSON = try c.decodeIfPresent(String.self, forKey: .requestHeadersJSON)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -235,6 +256,9 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encodeIfPresent(suspendDeadline, forKey: .suspendDeadline)
         try c.encodeIfPresent(ownership, forKey: .ownership)
         try c.encodeIfPresent(backgroundSessionIdentifier, forKey: .backgroundSessionIdentifier)
+        try c.encodeIfPresent(pluginID, forKey: .pluginID)
+        try c.encodeIfPresent(requestHeadersJSON, forKey: .requestHeadersJSON)
+        try c.encodeIfPresent(expiresAt, forKey: .expiresAt)
     }
 
     /// Legacy on-disk `mediaKind` strings, from before the field was typed:

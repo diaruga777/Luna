@@ -732,6 +732,7 @@
 				"Stage/StageCatalog+Email.swift",
 				"Stage/StageCatalog+Product.swift",
 				"Stage/StageCatalog+Plugins.swift",
+				"Settings/PluginsSettingsCategory.swift",
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
 		};
@@ -775,6 +776,7 @@
 				"Stage/StageCatalog+Email.swift",
 				"Stage/StageCatalog+Media.swift",
 				"Stage/StageCatalog+Plugins.swift",
+				"Settings/PluginsSettingsCategory.swift",
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
 		};
@@ -839,6 +841,7 @@
 				"Stage/StageCatalog+Media.swift",
 				"Stage/StageCatalog+Product.swift",
 				"Stage/StageCatalog+Plugins.swift",
+				"Settings/PluginsSettingsCategory.swift",
 			);
 			target = AAE000000000000000000000 /* LunaReader */;
 		};

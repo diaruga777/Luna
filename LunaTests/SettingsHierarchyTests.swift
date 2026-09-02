@@ -104,7 +104,10 @@ final class SettingsHierarchyTests: XCTestCase {
         XCTAssertEqual(modeTitles, ["Off", "All Saved Articles"])
     }
 
-    func testTopLevelHidesDiagnosticsAndRequiresEmailForKindle() {
+    /// Central Luna sends to Kindle through the bundled plugin, so its Kindle
+    /// settings live under Plugins and the top level has no Kindle row of its
+    /// own; the Reader keeps the Swift row and its email prerequisite.
+    func testTopLevelHidesDiagnosticsAndKindleAndShowsPlugins() {
         let screen = SettingsViewController(emailStatus: StubEmailAccountStatus(isConnected: false))
         let nav = UINavigationController(rootViewController: screen)
         window = UITestSupport.host(nav)
@@ -113,16 +116,10 @@ final class SettingsHierarchyTests: XCTestCase {
             rowTitle(screen, row: $0, section: 0)
         }
         XCTAssertTrue(titles.contains("Email"))
-        XCTAssertTrue(titles.contains("Kindle"))
+        XCTAssertTrue(titles.contains("Plugins"))
+        XCTAssertFalse(titles.contains("Kindle"))
         XCTAssertFalse(titles.contains("Saves"))
         XCTAssertFalse(titles.contains("Diagnostics"))
-
-        let kindleRow = try! XCTUnwrap(titles.firstIndex(of: "Kindle"))
-        screen.tableView(
-            screen.tableView, didSelectRowAt: IndexPath(row: kindleRow, section: 0))
-        let alert = try! XCTUnwrap(screen.presentedViewController as? UIAlertController)
-        XCTAssertEqual(alert.title, "Set up email first")
-        XCTAssertEqual(alert.actions.map(\.title), ["Not Now", "OK"])
     }
 
     /// The Safari extension needs no particular OS or hardware, so its sections

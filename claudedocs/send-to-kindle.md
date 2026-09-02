@@ -43,6 +43,7 @@ unchanged. What differs in the central app:
 
 `ArticleDestination` (`LunaLibraries/Sources/LunaSend/ArticleSendCoordinator.swift`)
 abstracts a destination's `id`/`displayName`, `isConfigured`,
+`accepts(_ item:)` (which saves it delivers at all — an article by default),
 `sendMode(for: SavedItem)` (source-aware auto-send), `appIntentsSendMode`
 (the mode governing App-Intents/in-app saves, consulted for double-save-press
 detection), and `send(epubData:fileName:title:)`. The coordinator itself is
@@ -147,11 +148,15 @@ an `intentAction` (only the Action Button's Save App Intent does, via
 Either way, platform items (videos, posts, tracks — no article EPUB target)
 never trigger an ereader send; a double press on one is always `.ignore`.
 
-Separately from double-press gating, `ArticleSendCoordinator.articleBecameReady(_:)`
-(called by the ingestor once an item's content is ready) drives the *ordinary*
-auto-send: for each configured destination, it sends anything the item has
+Separately from double-press gating, `ArticleSendCoordinator.saveBecameReady(_:)`
+(called through `SaveReadiness.observer` once a save gains the content a
+destination delivers) drives the *ordinary* auto-send: for each configured
+destination that `accepts` the save, it sends anything the item has
 queued, plus — when that destination's `sendMode(for: item)` resolves to
 `.allSaves` — every new item regardless of a double press ever happening.
+Kindle and Xteink accept articles only, so what reaches them is unchanged; a
+media or product export PLUGIN declaring those kinds is auto-sent on the same
+terms (`claudedocs/plugins.md` §8.3).
 
 ## Coordinator
 
@@ -161,7 +166,7 @@ generation, delivery, and per-destination per-item state:
 
 - `send(_:toDestinationID:)` — explicit single-destination send (the
   long-press context menu).
-- `articleBecameReady(_:)` — see above.
+- `saveBecameReady(_:)` — see above.
 - `retryPendingSends()` — launch, foreground, pull-to-refresh, background
   entry, and the existing overnight mail/price background tasks reconcile
   ready items whose source mode is `.allSaves` into `.queued`, then sweep all

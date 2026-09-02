@@ -167,7 +167,7 @@ final class PluginRuntimeTests: XCTestCase {
             .ingest, pluginID: "app.luna.test", as: Model.self)
 
         XCTAssertEqual(
-            model?.title, "LunaError,bytes,env,fetch,html,log,parseURL,register")
+            model?.title, "LunaError,bytes,env,fetch,html,localize,log,parseURL,register")
     }
 
     func testACapabilityWithNoInstallerRejectsWithUnavailableHere() async throws {

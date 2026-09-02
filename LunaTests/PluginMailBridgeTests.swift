@@ -178,10 +178,6 @@ final class PluginMailBridgeTests: XCTestCase {
     }
 
     func testAnAttachmentComesOffDiskThroughItsHandle() async throws {
-        let descriptor = try scratch.writeFile(
-            Data("book-bytes".utf8), suggestedName: "Article.epub",
-            mime: "application/epub+zip", pluginID: Self.pluginID,
-            generation: "one")
         try install("""
             await luna.mail.send({
                 to: ["reader@example.com"],
@@ -189,6 +185,12 @@ final class PluginMailBridgeTests: XCTestCase {
                 attachments: [{ file: input.file, mime: "application/epub+zip" }] });
             return { status: "sent" };
             """)
+        // Loading a plugin clears the generations a killed process left behind,
+        // so the input file is written after the load, as the export stage does.
+        let descriptor = try scratch.writeFile(
+            Data("book-bytes".utf8), suggestedName: "Article.epub",
+            mime: "application/epub+zip", pluginID: Self.pluginID,
+            generation: "one")
 
         let result = await runner.invoke(
             .export, pluginID: Self.pluginID,

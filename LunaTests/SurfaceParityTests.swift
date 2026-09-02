@@ -247,6 +247,10 @@ final class SurfaceParityTests: XCTestCase {
         case .needsArchive: return .archiveReader
         case .failed: return .error
         case .unsupported: return .error
+        // A plugin lock is stored and shown as a locked card with no modal, the
+        // same silent "it is saved" every surface reports. No fixture link
+        // reaches it — the suite installs no plugin stage.
+        case .locked: return .savedDocument
         }
     }
 

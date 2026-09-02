@@ -1040,6 +1040,33 @@ public final class SavesStore {
         Self.clearFailureRecords(itemID)
     }
 
+    /// Parks a save whose owning plugin asked for a browser this process cannot
+    /// present. It lands in the same `.needsCaptcha` lock a paywalled article
+    /// gets — the deck and both extensions already draw that state — and carries
+    /// the owner, which is what the app reads to know whose browser request to
+    /// present when the card is tapped
+    /// (`claudedocs/plans/plugin-platform.md` §8).
+    public func markPluginLocked(_ itemID: UUID, pluginID: String, title: String?) {
+        updateItem(itemID) { item in
+            guard item.state != .ready else { return false }
+            item.state = .needsCaptcha
+            item.pluginID = pluginID
+            if let title, !title.isEmpty { item.title = title }
+            return true
+        }
+        Self.clearFailureRecords(itemID)
+    }
+
+    /// Stamps the plugin that produced this save. Refresh and re-resolution read
+    /// it back to reach the same plugin.
+    public func setPluginID(_ pluginID: String, for itemID: UUID) {
+        updateItem(itemID) { item in
+            guard item.pluginID != pluginID else { return false }
+            item.pluginID = pluginID
+            return true
+        }
+    }
+
     /// Everything a FAILED item accumulates outside the saves database: the
     /// reason/count sidecar and the diagnostic trace. They are dropped together,
     /// because an item that is no longer failed carrying last week's trace is
@@ -1287,6 +1314,21 @@ public final class SavesStore {
             try database.transaction { db in try body(db) }
         } catch {
             record(error, "file ownership write")
+        }
+    }
+
+    /// A transaction over one of the plugin sidecar tables
+    /// (`plugin_browser_requests`, `pending_plugin_models`). Like the
+    /// file-ownership transaction it posts NO change notification and leaves the
+    /// item cache alone: no deck reads these rows. It exists so the plugin
+    /// stores share this process's ONE connection rather than opening a second.
+    func pluginSidecar<T>(_ body: (SavesDatabase) throws -> T) -> T? {
+        guard let database = database() else { return nil }
+        do {
+            return try database.transaction { db in try body(db) }
+        } catch {
+            record(error, "plugin sidecar write")
+            return nil
         }
     }
 

@@ -307,7 +307,9 @@ final class RecentURLMatcher {
                     ?? result.url.lastPathComponent,
                 subtitle: type.uppercased(),
                 kind: .article, imageData: nil)
-        case .failed, .unsupported:
+        case .failed, .unsupported, .locked:
+            // A locked save has no title or image yet, so the util card has
+            // nothing to preview; the URL still pastes normally.
             return nil
         }
     }

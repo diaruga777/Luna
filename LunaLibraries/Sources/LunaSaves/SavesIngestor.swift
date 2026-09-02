@@ -271,7 +271,15 @@ public final class SavesIngestor {
             return decision
         }
 
-        let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL)
+        // A plugin-produced save carries its owner from here on. Stamped before
+        // the presenter runs, so the write the presenter makes already has it.
+        if let pluginID = result.pluginID {
+            store.setPluginID(pluginID, for: item.id)
+            item = store.item(withID: item.id) ?? item
+        }
+
+        let presenter = IngestorOutcomePresenter(
+            ingestor: self, url: resolvedURL, pluginID: result.pluginID)
         await presenter.present(result.outcome, for: item)
         return decision
     }
@@ -373,6 +381,17 @@ public final class SavesIngestor {
     /// Parks a paywalled article for the interactive archive reader.
     fileprivate func parkNeedsArchive(title: String, for item: SavedItem) async {
         store.markNeedsCaptcha(item.id, title: title)
+    }
+
+    /// Parks a save whose plugin needs a browser this process cannot present.
+    /// The row lands in the same `.needsCaptcha` lock the archive path uses, so
+    /// every deck and both extensions already draw it; the plugin id is what
+    /// the app reads to present that plugin's own browser request later.
+    fileprivate func parkPluginLocked(pluginID: String, for item: SavedItem) async {
+        store.markPluginLocked(item.id, pluginID: pluginID, title: item.title)
+        SaveDiagnostics.record(
+            "locked by plugin \(pluginID) — waiting for the app's browser step",
+            category: "plugin")
     }
 
     /// Marks a genuine failure, and files the reason in the sidecar so the
@@ -800,6 +819,15 @@ public final class SavesIngestor {
 public struct IngestorOutcomePresenter: OutcomePresenter {
     public let ingestor: SavesIngestor
     public let url: URL
+    /// The plugin that produced the outcome, stamped onto the save so a later
+    /// refresh or re-resolution reaches the same plugin. Nil for a Swift save.
+    public let pluginID: String?
+
+    public init(ingestor: SavesIngestor, url: URL, pluginID: String? = nil) {
+        self.ingestor = ingestor
+        self.url = url
+        self.pluginID = pluginID
+    }
 
     public func present(_ outcome: Outcome, for item: SavedItem) async {
         switch outcome {
@@ -825,6 +853,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
                 assertionFailure("unsupported outcome reached the presenter")
             }
             await ingestor.markUnsupportedFailed(owner: owner, for: item)
+        case let .locked(pluginID):
+            await ingestor.parkPluginLocked(pluginID: pluginID, for: item)
         }
     }
 }

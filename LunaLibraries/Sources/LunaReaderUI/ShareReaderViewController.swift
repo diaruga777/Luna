@@ -294,9 +294,11 @@ public final class ShareReaderViewController: UIViewController {
             // host routes those to SavedNonTextualViewController) — never extract it;
             // confirm the save and let the app render it.
             presentSavedConfirmation(productName: url.host ?? L10n.string("Common_saved"))
-        case .failed, .unsupported:
-            // .unsupported can't genuinely occur here (the driver gates and
-            // discards before presenting a reader), so treat it as a failure.
+        case .failed, .unsupported, .locked:
+            // Neither .unsupported nor .locked can genuinely occur here: the
+            // driver gates and discards before presenting a reader, and this
+            // Reader-side screen never runs a plugin stage. Treat both as a
+            // failure.
             presentFailure()
         }
     }

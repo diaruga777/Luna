@@ -1166,6 +1166,27 @@ memory note. Exit: `build-for-testing` green.
 | 1B ingest | Opus | `LunaPluginIngest`, `IngestPipeline.pluginStage`, `Outcome.locked`, `PluginPlatformComposition`, the three `KindWiring/ShareEntry/ActionEntry+Luna` edits, `KindCompositionRootTests`, adopters in the three kind modules | Classify walk, ingest, Model decoding + adoption, browser deferral storage, diagnostics, `PluginMediaResolver`, `MediaReresolving` seam, `saves.plugin_id` threading, `PluginPriceFetcher`. Codes against 1A's public API as written in §7.1–7.2. |
 | 1C UI | Sonnet | `LunaPluginUI` (settings screens, import, consent, settings-schema renderer, prompts), strings, stages | Settings → Plugins, Files + paste import, consent, per-plugin settings, `luna.ui` + `luna.settings` bridges. |
 
+**1B landed, with four placements the dependency graph forced.** The package
+edges run LunaPluginIngest → LunaIngest, and no further, so a witness the
+plugin side must install into a kind module reaches it through a registry at
+the BOTTOM of the stack instead: `PluginMediaSeams` (LunaModels) holds the
+resolver URL Rescue takes and the `MediaReresolving` witness
+`LiveMediaDownloadManager.reresolver` proxies; `PluginPriceSeams` (LunaModels)
+holds the refresh route, because `PriceFetching` takes a URL and cannot carry
+an owner. `PluginBrowserRequestStore` and `PendingPluginModelStore` are in
+LunaStorage, not LunaPluginKit: their rows live in `saves.sqlite` and one
+process opens one connection to that file. `ArticleModelAdopter` is in
+LunaReaderUI, not LunaArticleIngest, because a `document` Model needs
+`DocumentParser` and LunaArticleIngest does not link LunaDocuments.
+
+**Carried into Wave 2.** `MediaAsset` gained `quality`, `pluginID` and
+`expiresAt` so the resolver's answer reaches the job; `media_download_jobs`
+still keeps no quality and no creation time, so `MediaReresolveMatching` falls
+back to kind plus display order on a cold resume and staleness is read off the
+job's own files. `PluginMediaResolver.swiftFallbackEnabled` is true until the
+bundled media plugins ship. A media or product save in `.needsCaptcha` draws no
+locked overlay yet — 2B routes the three card presenters.
+
 Merge order 1A → 1B → 1C. Exit: an imported toy plugin claims a URL, returns
 a `media` Model, the download starts, the save renders on the existing media
 card, and the plugin appears in Settings; the three sibling apps build and

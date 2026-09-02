@@ -180,12 +180,6 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         radio.startScan(services: declaration.services)
     }
 
-    public func stop() {
-        lock.lock()
-        isStarted = false
-        lock.unlock()
-        existingRadio?.stopScan()
-    }
 
     // MARK: - Pairing
 

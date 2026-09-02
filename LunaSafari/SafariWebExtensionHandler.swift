@@ -6,7 +6,17 @@
 import LunaAppConfig
 import LunaMediaResolve
 import LunaModels
+// Only the central host's target links `LunaPluginKit` — the three
+// single-kind hosts run no plugin platform at all (`hostSupportsPlugins`
+// below is false for them anyway), and this file is the ONE shared source
+// built into all four Safari appexes. `canImport` is resolved per this
+// file's own compilation, so it correctly reports false for a target whose
+// dependency list never named the module — verified against a truly clean
+// `-derivedDataPath` for each of the four Safari targets, not an
+// incremental build that can see a module another target already built.
+#if canImport(LunaPluginKit)
 import LunaPluginKit
+#endif
 import LunaPriceCompare
 import LunaStorage
 import LunaURLClassification
@@ -179,6 +189,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             // a Task — see `comparableSellers(…)`.
             comparableSellers(message: message, context: context)
             return
+        #if canImport(LunaPluginKit)
         case "plugins.catalog":
             payload = Self.pluginCatalogPayload()
         case "plugins.source":
@@ -212,6 +223,17 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload = Self.pluginBrowserDeferred(message: message)
         case "plugins.queueModel":
             payload = Self.pluginQueueModel(message: message)
+        #else
+        case "plugins.catalog", "plugins.source", "plugins.fetch",
+             "plugins.storage.get", "plugins.storage.set", "plugins.storage.delete",
+             "plugins.storage.keys", "plugins.collection.put", "plugins.collection.get",
+             "plugins.collection.delete", "plugins.collection.find", "plugins.collection.count",
+             "plugins.log", "plugins.settings.get", "plugins.browserDeferred", "plugins.queueModel":
+            // This host runs no plugin platform (`hostSupportsPlugins` is
+            // false here regardless), and the module that answers these
+            // messages isn't even linked into this target.
+            payload = ["error": "unsupported"]
+        #endif
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SafariURLStore.record(urlString)
@@ -342,6 +364,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     // MARK: - Plugins (central host only, `claudedocs/plans/plugin-platform.md` §13.1)
+    //
+    // Only the central host's target links `LunaPluginKit` — see the comment
+    // by this file's imports.
+    #if canImport(LunaPluginKit)
 
     /// The largest plugin source `plugins.source` will hand over. Native
     /// messaging caps a message around 1.5 MB; a plugin over the limit is
@@ -647,6 +673,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         guard let data = json.data(using: .utf8) else { return nil }
         return try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
+
+    #endif
 
     /// Fallback name for the "Return to …" button when no app stamped one at its
     /// setup tap. `scripts/update_safari_extension_branding.sh` rewrites this

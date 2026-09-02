@@ -5,19 +5,30 @@
 
 import XCTest
 
-/// `SafariWebExtensionHandler` runs in its own appex target; LunaTests hosts
-/// on the central APP and cannot `@testable import` an extension, and no test
-/// in this suite fakes `NSExtensionContext` (it has no public initializer).
-/// The existing Safari-handler suites (`SafariVideoOverlayTests`,
-/// `SafariAnnoyanceSuppressionTests`, `SharedProductMatchingParityTests`, …)
-/// pin its SOURCE instead — the exempt "source-text pins against the unlinked
-/// LunaSafari/ hand-copies" category. This suite does the same for the plugin
-/// message types (`claudedocs/plans/plugin-platform.md` §13.1).
+/// `SafariWebExtensionHandler` and its plugin-message seam run in their own
+/// appex targets; LunaTests hosts on the central APP and cannot `@testable
+/// import` an extension, and no test in this suite fakes `NSExtensionContext`
+/// (it has no public initializer). The existing Safari-handler suites
+/// (`SafariVideoOverlayTests`, `SafariAnnoyanceSuppressionTests`,
+/// `SharedProductMatchingParityTests`, …) pin their SOURCE instead — the
+/// exempt "source-text pins against the unlinked LunaSafari/ hand-copies"
+/// category. This suite does the same for the plugin message types
+/// (`claudedocs/plans/plugin-platform.md` §13.1) and for the per-target-file
+/// split that answers them (`SafariPluginMessages+Luna.swift` /
+/// `SafariPluginMessages+None.swift`), the same mechanism
+/// `KindWiring+Luna.swift`/`KindWiring+Reader.swift` use — CLAUDE.md is
+/// explicit that `#if canImport` is never a reliable per-target gate here.
 @MainActor
 final class SafariPluginHandlerSourceTests: XCTestCase {
 
-    private var source: String {
+    private var handlerSource: String {
         SafariJSTestHarness.source("LunaSafari/SafariWebExtensionHandler.swift")
+    }
+    private var lunaVariantSource: String {
+        SafariJSTestHarness.source("LunaSafari/SafariPluginMessages+Luna.swift")
+    }
+    private var noneVariantSource: String {
+        SafariJSTestHarness.source("LunaSafari/SafariPluginMessages+None.swift")
     }
 
     private static let expectedMessageTypes = [
@@ -28,9 +39,20 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         "plugins.log", "plugins.settings.get", "plugins.browserDeferred", "plugins.queueModel",
     ]
 
-    func testEveryPluginMessageTypeFromThePlanIsHandled() {
-        let text = source
+    /// The shared handler dispatches every `plugins.*` string by prefix, to
+    /// one per-target seam — it never names an individual message type
+    /// itself, so the per-type list lives in the implementation instead.
+    func testTheSharedHandlerDispatchesEveryPluginMessageByPrefixToTheSeam() {
+        let text = handlerSource
         XCTAssertFalse(text.isEmpty, "SafariWebExtensionHandler.swift is missing from disk")
+        XCTAssertTrue(text.contains(#"type.hasPrefix("plugins.")"#))
+        XCTAssertTrue(text.contains("SafariPluginMessages.handler"))
+        XCTAssertTrue(text.contains("protocol SafariPluginMessaging"))
+    }
+
+    func testEveryPluginMessageTypeFromThePlanIsHandledByTheLunaVariant() {
+        let text = lunaVariantSource
+        XCTAssertFalse(text.isEmpty, "SafariPluginMessages+Luna.swift is missing from disk")
         for type in Self.expectedMessageTypes {
             XCTAssertTrue(text.contains("\"\(type)\""), "missing a case for \(type)")
         }
@@ -40,7 +62,7 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
     /// capability — `pluginDeclares` is the one gate every one of them shares,
     /// so the content script is never trusted to enforce its own grants.
     func testCapabilityGatedMessagesCheckPluginDeclares() {
-        let text = source
+        let text = lunaVariantSource
         for capability in ["storage", "fetch", "settings", "browser"] {
             XCTAssertTrue(
                 text.contains("capability: .\(capability)"),
@@ -48,47 +70,46 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         }
     }
 
-    /// Every plugin.* payload builder answers nothing unless the running host
-    /// is the central app — the single-kind hosts run no plugin platform.
-    func testEveryPluginPayloadBuilderChecksTheCentralHostGate() {
-        let text = source
-        XCTAssertTrue(
-            text.contains("private static var hostSupportsPlugins: Bool { isCentralLunaHost }"))
-        let builders = [
-            "pluginCatalogPayload", "pluginSourcePayload", "pluginFetch",
-            "pluginStorageGet", "pluginStorageSet", "pluginStorageDelete", "pluginStorageKeys",
-            "pluginCollectionPut", "pluginCollectionGet", "pluginCollectionDelete",
-            "pluginCollectionFind", "pluginCollectionCount",
-            "pluginLog", "pluginSettingsGet", "pluginBrowserDeferred", "pluginQueueModel",
-        ]
-        for name in builders {
-            guard let range = text.range(of: "func \(name)(") else {
-                XCTFail("missing \(name)")
-                continue
-            }
-            // The gate check is the guard's own first clause, close to the
-            // signature — a wide-but-bounded window avoids depending on exact
-            // formatting while still failing if the check moves out of the
-            // guard entirely.
-            let windowEnd = text.index(range.lowerBound, offsetBy: 400, limitedBy: text.endIndex)
-                ?? text.endIndex
-            let body = text[range.lowerBound..<windowEnd]
-            XCTAssertTrue(
-                body.contains("hostSupportsPlugins"),
-                "\(name) does not check hostSupportsPlugins near its signature")
-        }
-    }
-
     /// The message-size cap the content script relies on (§13.1: a plugin
     /// source over 1.5 MB is skipped in Safari and logged).
     func testTheSourceSizeCapMatchesThePlan() {
-        XCTAssertTrue(source.contains("1_500_000"))
+        XCTAssertTrue(lunaVariantSource.contains("1_500_000"))
     }
 
     /// No save exists yet in Safari (§8.2) — the browser-deferred reply must
     /// hand back a `save` route, never a `resolvedmedia`/`read` one meant for
     /// an existing item.
     func testBrowserDeferredAnswersASaveDeepLink() {
-        XCTAssertTrue(source.contains("://save?url="))
+        XCTAssertTrue(lunaVariantSource.contains("://save?url="))
+    }
+
+    /// The whole point of the split: the shared file (built into all four
+    /// Safari appexes) must never name the module only the central target
+    /// links, and must never gate on `canImport` (CLAUDE.md: not a reliable
+    /// per-target signal here) — only the per-target file split is.
+    func testTheSharedHandlerNamesNeitherLunaPluginKitNorCanImport() {
+        let text = handlerSource
+        XCTAssertFalse(text.contains("LunaPluginKit"), "the shared handler must not name LunaPluginKit")
+        XCTAssertFalse(text.contains("canImport"), "the shared handler must not gate on canImport")
+    }
+
+    /// `+Luna` is the one variant that actually imports the plugin platform;
+    /// `+None` stays a plain `nil` with no such dependency.
+    func testOnlyTheLunaVariantImportsThePluginPlatform() {
+        XCTAssertTrue(lunaVariantSource.contains("import LunaPluginKit"))
+        XCTAssertTrue(lunaVariantSource.contains("import LunaBundledPlugins"))
+        XCTAssertFalse(noneVariantSource.contains("LunaPluginKit"))
+        XCTAssertFalse(noneVariantSource.contains("LunaBundledPlugins"))
+        XCTAssertFalse(handlerSource.contains("canImport"))
+        XCTAssertFalse(lunaVariantSource.contains("canImport"))
+        XCTAssertFalse(noneVariantSource.contains("canImport"))
+    }
+
+    /// Both variants declare the exact same public seam, so swapping one for
+    /// the other (per target) is source-compatible.
+    func testBothVariantsDeclareTheSameHandlerProperty() {
+        XCTAssertTrue(lunaVariantSource.contains("static let handler: SafariPluginMessaging?"))
+        XCTAssertTrue(noneVariantSource.contains("static let handler: SafariPluginMessaging?"))
+        XCTAssertTrue(noneVariantSource.contains("= nil"))
     }
 }

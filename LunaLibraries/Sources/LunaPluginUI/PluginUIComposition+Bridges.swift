@@ -16,53 +16,23 @@ import UIKit
 /// install: a plugin's ingest can start under a card deck and finish under a
 /// settings screen.
 @MainActor
-public final class ModalPluginBrowserPresenter: NSObject, PluginBrowserPresenting,
-    PluginBrowserViewControllerDelegate
-{
-    private var continuation: CheckedContinuation<PluginBrowserResult?, Never>?
-    private weak var navigation: UINavigationController?
-    private let pageMaker: any PluginBrowserPageMaking
+public final class ModalPluginBrowserPresenter: PluginBrowserPresenting {
+    private let modal: PluginBrowserModalPresentation
 
     public init(pageMaker: (any PluginBrowserPageMaking)? = nil) {
-        self.pageMaker = pageMaker ?? WebKitPluginBrowserPageMaker()
-        super.init()
+        self.modal = PluginBrowserModalPresentation(pageMaker: pageMaker)
     }
 
     public func presentBrowserStep(
         _ request: PluginBrowserRequest, pluginID: String
     ) async -> PluginBrowserResult? {
-        guard continuation == nil, let presenter = PluginTopPresenter.current() else { return nil }
+        guard !modal.isPresented, let presenter = PluginTopPresenter.current() else { return nil }
         return await withCheckedContinuation {
             (continuation: CheckedContinuation<PluginBrowserResult?, Never>) in
-            self.continuation = continuation
-            let browser = PluginBrowserViewController(
-                request: request, title: L10n.string("PluginBrowser_defaultTitle"),
-                page: pageMaker.makePage(for: request))
-            browser.delegate = self
-            let navigation = UINavigationController(rootViewController: browser)
-            self.navigation = navigation
-            presenter.present(navigation, animated: true)
+            modal.present(request, from: presenter) { result in
+                continuation.resume(returning: result)
+            }
         }
-    }
-
-    public func pluginBrowser(
-        _ controller: PluginBrowserViewController, didFinishWith result: PluginBrowserResult?
-    ) {
-        navigation?.dismiss(animated: true)
-        navigation = nil
-        let continuation = self.continuation
-        self.continuation = nil
-        continuation?.resume(returning: result)
-    }
-
-    public func pluginBrowser(
-        _ controller: PluginBrowserViewController, openInSystemBrowser url: URL
-    ) {
-        navigation?.dismiss(animated: true) { UIApplication.shared.open(url) }
-        navigation = nil
-        let continuation = self.continuation
-        self.continuation = nil
-        continuation?.resume(returning: nil)
     }
 }
 

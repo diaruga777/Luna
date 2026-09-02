@@ -42,15 +42,13 @@ public enum PluginUnlockFlow {
 /// A class rather than the enum above, because a presentation lives until the
 /// user or the page ends it and something has to hold the delegate.
 @MainActor
-public final class PluginUnlockFlowRunner: NSObject, PluginBrowserViewControllerDelegate,
+public final class PluginUnlockFlowRunner: PluginBrowserViewControllerDelegate,
     PluginLockedSavePresenting
 {
 
     private let store: SavesStore
     private let requests: PluginBrowserRequestStore
-    private let pageMaker: any PluginBrowserPageMaking
-    private weak var navigation: UINavigationController?
-    private var presentedSaveID: UUID?
+    private let modal: PluginBrowserModalPresentation
 
     public init(
         store: SavesStore = .shared, requests: PluginBrowserRequestStore = .shared,
@@ -58,22 +56,21 @@ public final class PluginUnlockFlowRunner: NSObject, PluginBrowserViewController
     ) {
         self.store = store
         self.requests = requests
-        self.pageMaker = pageMaker ?? WebKitPluginBrowserPageMaker()
+        self.modal = PluginBrowserModalPresentation(pageMaker: pageMaker)
     }
 
     public func present(for item: SavedItem, from presenter: UIViewController) {
-        guard presentedSaveID == nil,
+        guard !modal.isPresented,
               let record = requests.pending(for: item.id),
               let request = PluginBrowserRequest(json: record.requestJSON)
         else { return }
-        let browser = PluginBrowserViewController(
-            request: request, title: L10n.string("PluginBrowser_defaultTitle"),
-            page: pageMaker.makePage(for: request))
-        browser.delegate = self
-        let navigation = UINavigationController(rootViewController: browser)
-        self.navigation = navigation
-        presentedSaveID = item.id
-        presenter.present(navigation, animated: true)
+        let saveID = item.id
+        modal.present(request, from: presenter) { [weak self] result in
+            guard let self, let result, let json = result.jsonText else { return }
+            self.requests.complete(saveID: saveID, resultJSON: json)
+            guard let resumer = PluginResumeSeams.resumer else { return }
+            Task { await resumer.resumePluginLockedSave(id: saveID) }
+        }
     }
 
     public func resumeCompleted() {
@@ -92,26 +89,18 @@ public final class PluginUnlockFlowRunner: NSObject, PluginBrowserViewController
 
     // MARK: - PluginBrowserViewControllerDelegate
 
+    /// Forwards to the shared modal, which is the real delegate of every
+    /// browser step this runner presents. Kept public so a test can drive a
+    /// step to completion without a live probe/capture round trip.
     public func pluginBrowser(
         _ controller: PluginBrowserViewController, didFinishWith result: PluginBrowserResult?
     ) {
-        let saveID = presentedSaveID
-        presentedSaveID = nil
-        navigation?.dismiss(animated: true)
-        navigation = nil
-        guard let saveID, let result, let json = result.jsonText else { return }
-        requests.complete(saveID: saveID, resultJSON: json)
-        guard let resumer = PluginResumeSeams.resumer else { return }
-        Task { await resumer.resumePluginLockedSave(id: saveID) }
+        modal.pluginBrowser(controller, didFinishWith: result)
     }
 
     public func pluginBrowser(
         _ controller: PluginBrowserViewController, openInSystemBrowser url: URL
     ) {
-        presentedSaveID = nil
-        navigation?.dismiss(animated: true) {
-            UIApplication.shared.open(url)
-        }
-        navigation = nil
+        modal.pluginBrowser(controller, openInSystemBrowser: url)
     }
 }

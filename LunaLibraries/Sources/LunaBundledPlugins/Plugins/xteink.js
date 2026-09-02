@@ -276,7 +276,7 @@ async function sendOverBLE(session, link, bytes, fileName, articleID, queuedRema
 /// station offer uploads directly; an access-point offer is joined for the
 /// transfer and dropped afterwards. iOS joins a network only in the
 /// foreground, which `luna.wifi.join` reports as code `background`.
-async function sendOverWiFi(session, link, base64, fileName, title) {
+async function sendOverWiFi(session, link, file, fileName, title) {
     await control(session, link, "wifi_request", { prefer_ap: true });
     if (!link.wifi || typeof link.wifi.ip !== "string") {
         throw new luna.LunaError("no-offer", "the reader offered no network");
@@ -299,7 +299,7 @@ async function sendOverWiFi(session, link, base64, fileName, title) {
         }
     }
     try {
-        await upload(offer.ip, fileName, base64);
+        await upload(offer.ip, fileName, file);
     } finally {
         if (joined) { await luna.wifi.forget(offer.ssid); }
     }
@@ -307,12 +307,15 @@ async function sendOverWiFi(session, link, base64, fileName, title) {
 
 /// CrossPoint's own upload endpoint. Luna treats a 2xx as authoritative; the
 /// firmware rejects a zero-byte file.
-async function upload(host, fileName, base64) {
+///
+/// The part carries the EPUB's handle, so the bytes go from Luna's own scratch
+/// file to the socket without a base64 round trip through JavaScript.
+async function upload(host, fileName, file) {
     const response = await luna.fetch({
         url: "http://" + host + UPLOAD_PATH,
         method: "POST",
         body: { multipart: [{ name: "file", filename: fileName,
-                              mime: "application/epub+zip", base64: base64 }] },
+                              mime: "application/epub+zip", file: file }] },
         timeout: 120,
     });
     if (!response.ok) {
@@ -393,13 +396,16 @@ luna.register({
                 await authenticate(session, state.link, state.nonce);
                 link = state.link;
             }
-            const base64 = await luna.files.read(input.file, "base64");
-            const bytes = luna.bytes.fromBase64(base64);
-            if (bytes.length <= BLE_MAX_BYTES) {
+            // Only the BLE leg needs the bytes in JavaScript. The Wi-Fi leg
+            // posts the handle itself, so a large EPUB never becomes a base64
+            // string.
+            if (input.file.size <= BLE_MAX_BYTES) {
+                const base64 = await luna.files.read(input.file, "base64");
+                const bytes = luna.bytes.fromBase64(base64);
                 await sendOverBLE(
                     session, link, bytes, fileName, input.saveId, input.queuedRemaining);
             } else {
-                await sendOverWiFi(session, link, base64, fileName, input.title);
+                await sendOverWiFi(session, link, input.file, fileName, input.title);
             }
             await recordDelivery(input.saveId, fileName);
             return { status: "sent" };

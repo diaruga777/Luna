@@ -58,9 +58,10 @@ Codes you will see, and where they come from:
 | `bridge-failed` | the default `PluginPromiseBox.fail` code | an unclassified native-side failure |
 | `cancelled` | `luna.ui.*`, `luna.mail.send` (no `to` given, user dismissed the picker), `luna.browser.open` (the modal was dismissed) | the person cancelled a prompt/picker/browser step |
 | `browser-deferred` | `luna.browser.open`, outside the app | not really an error to handle — let it propagate out of `ingest`; Luna locks the save and finishes later (see README §6) |
-| `not-found` | `luna.files.read`/`.size` | the scratch file behind that `FileHandle` is gone (its invocation already settled and was reaped) |
-| `too-large` | `luna.storage.collection(...).put` | the document is over the 256 KB per-row cap |
-| `write-failed` | `luna.files.write` | the scratch write failed |
+| `not-found` | `luna.files.read`, `luna.fetch` with a multipart `file` part | the scratch file behind that `FileHandle` is gone (its generation was reaped) |
+| `not-text` | `luna.files.read` without `"base64"` | the file is not UTF-8 text; read it with `"base64"` |
+| `too-large` | `luna.storage.collection(...).put`, `luna.files.write`, a multipart `file` part | the document is over the 256 KB per-row cap, or the file over 8 MB |
+| `write-failed` | `luna.files.write`, `luna.fetch` with `as: "file"` | the scratch write failed |
 | `send-failed` | `luna.mail.send` | the mail transport itself failed |
 | `fetch-failed` | `luna.fetch`, generic | the request failed for a reason with no more specific code |
 | `network-refused` | `luna.fetch` | `LiveNetworkPolicy` refused the request before it was sent |
@@ -131,8 +132,8 @@ interface FetchRequest {
   headers?: Record<string, string>;                          // Host/Content-Length are stripped
   userAgent?: "safari" | "googlebot" | "googlebot-mobile" | "bingbot" | "facebookbot" | string;
   body?: string | { base64: string } | { form: Record<string,string> } | { json: unknown }
-       | { multipart: MultipartPart[] };                     // MultipartPart has NO `file` field
-  cookies?: "shared" | "ephemeral" | "none" | "browser";      // default "shared"
+       | { multipart: MultipartPart[] };
+  cookies?: "shared" | "ephemeral" | "none";                  // default "shared"
   redirect?: "follow" | "manual" | "headThenGet";             // default "follow"
   maxBytes?: number;
   timeout?: number;                                           // seconds, default 20, IDLE-based
@@ -143,12 +144,23 @@ interface FetchResponse {
   headers: Record<string, string>; text?: string; base64?: string; file?: FileHandle;
   truncated: boolean; bytes: number;
 }
+interface MultipartPart {
+  name: string; filename?: string; mime?: string;
+  text?: string; base64?: string; file?: FileHandle;         // one of the three
+}
 ```
 
-`cookies: "browser"` needs `luna.browser` to have run first in this
-invocation — outside the app it rejects `unavailable-here` (there is no web
-view to read cookies from). Every request is logged to your plugin's
-diagnostics category and to the save's own trace.
+A multipart part may carry a `FileHandle` instead of bytes, so a downloaded
+or exported file uploads without a base64 round trip through your plugin.
+`filename` and `mime` default to the handle's own. It needs the `files`
+capability, so it works in the app and the share/action extensions and never
+in Safari; a handle whose generation is gone rejects `not-found` and one over
+8 MB rejects `too-large`, both before the request leaves.
+
+There is no cookie policy for the page's own session: read `cookieHeader` off
+a `luna.browser.open` result and set the header yourself. Any `cookies` value
+other than the three rejects `bad-argument`. Every request is logged to your
+plugin's diagnostics category and to the save's own trace.
 
 ## `luna.html` (capability `html`)
 
@@ -199,7 +211,7 @@ luna.page.html(): string;             // documentElement.outerHTML
 ## `luna.storage` (capability `storage`)
 
 ```ts
-luna.storage.get(key: string): Promise<unknown | undefined>;
+luna.storage.get(key: string): Promise<unknown | undefined>;   // undefined for a key that holds nothing
 luna.storage.set(key: string, value: unknown): Promise<void>;   // JSON, ≤ 256 KB
 luna.storage.delete(key: string): Promise<void>;
 luna.storage.keys(prefix?: string): Promise<string[]>;
@@ -238,10 +250,14 @@ luna.files.read(handle: FileHandle, as: "text" | "base64"): Promise<string>;
 luna.files.size(handle: FileHandle): Promise<number>;
 ```
 
-A `FileHandle` lives in a per-invocation scratch directory reaped when the
-hook that made it settles — unless an `export` hook returns it, in which
-case Luna retains it long enough for the share sheet to read it. Reading a
-handle after that window closes rejects `not-found`.
+A `FileHandle` lives in your plugin's scratch directory. One generation of
+that directory is open while ANY call of your plugin is in flight, so a file
+written inside a nested call survives until the outer one ends too; it is
+reaped when the last of them does. An `export` hook's file result is copied
+into the share's own directory before that happens, so the share sheet still
+reads it. Reading a handle after its generation is reaped rejects
+`not-found`, and `read` without `"base64"` on bytes that are not UTF-8
+rejects `not-text`.
 
 ## `luna.crypto` (capability `crypto`)
 
@@ -257,6 +273,7 @@ luna.crypto.randomBytes(count: number): Promise<string>;                        
 luna.browser.open(request: BrowserRequest): Promise<BrowserResult>;
 interface BrowserRequest {
   url: string;
+  saveId?: string;                              // only when several ingest calls are in flight
   userAgent?: "device-safari" | string;         // default: the device-matched Safari UA
   headers?: Record<string, string>;             // only Referer / Accept-Language
   cookies?: "persistent" | "ephemeral";         // default "persistent"
@@ -271,7 +288,10 @@ interface BrowserResult {
 ```
 
 See [`README.md` §6](./README.md#6-the-browser-step-and-why-a-hook-re-runs)
-for what actually happens per process. `result.html` is capped at 6 MB.
+for what actually happens per process. `result.html` is capped at 6 MB. A
+browser step belongs to a save: Luna uses the one your plugin is ingesting.
+Pass `saveId` when your plugin has several `ingest` calls in flight at once —
+without it that case rejects `bad-argument`.
 
 ## `luna.settings` (capability `settings`)
 
@@ -363,8 +383,8 @@ luna.wifi.isReachable(host: string, port: number, opts?: { timeout?: number }): 
 
 `join` rejects with code `background` when Luna is not in the foreground —
 iOS only applies a hotspot join then. Upload the actual bytes with
-`luna.fetch({ method: "POST", body: { multipart: [...] } })` — there is no
-separate transfer API.
+`luna.fetch({ method: "POST", body: { multipart: [{ name: "file", file }] } })`
+— there is no separate transfer API.
 
 ## `luna.exports` (capability `exports`, destination plugins, app only)
 

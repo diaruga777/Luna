@@ -70,6 +70,18 @@ final class SafariPluginHandlerSourceTests: XCTestCase {
         }
     }
 
+    /// The appex shapes a `luna.fetch` request through the SAME type the
+    /// JavaScriptCore bridge uses (`PluginFetchShapingParityTests` pins what
+    /// that type answers). Building a `PluginFetchRequest` by hand here is what
+    /// dropped `userAgent` and every structured body in Safari.
+    func testTheFetchMessageShapesItsRequestThroughTheSharedShaper() {
+        let text = lunaVariantSource
+        XCTAssertTrue(text.contains("PluginFetchRequestShaping.request("))
+        XCTAssertFalse(
+            text.contains("PluginFetchRequest("),
+            "the appex must not build a request of its own")
+    }
+
     /// The message-size cap the content script relies on (§13.1: a plugin
     /// source over 1.5 MB is skipped in Safari and logged).
     func testTheSourceSizeCapMatchesThePlan() {

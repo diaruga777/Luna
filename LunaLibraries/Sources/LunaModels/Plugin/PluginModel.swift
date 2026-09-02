@@ -106,7 +106,7 @@ public struct MediaAssetSpec: Decodable, Equatable, Sendable {
         audioURL = try c.optionalPluginURL(.audioURL, field: "assets[].audioURL")
         dashManifestURL = try c.optionalPluginURL(.dashManifestURL, field: "assets[].dashManifestURL")
         thumbnailURL = try c.optionalPluginURL(.thumbnailURL, field: "assets[].thumbnailURL")
-        estimatedBytes = try c.decodeIfPresent(Int64.self, forKey: .estimatedBytes)
+        estimatedBytes = try c.pluginByteCount(.estimatedBytes, field: "assets[].estimatedBytes")
         headers = try c.pluginHeaders(.headers)
         timeRange = try c.decodeIfPresent(TimeRange.self, forKey: .timeRange)
         quality = try c.optionalPluginString(
@@ -342,6 +342,9 @@ public enum PluginModelCaps {
     public static let html = 4 * 1024 * 1024
     public static let assetCount = 1...50
     public static let sellerCount = 20
+    /// The longest header VALUE a plugin may set. A signed cookie is long, so
+    /// this is the URL cap rather than a prose cap.
+    public static let headerValue = 4_096
     /// The only request headers a plugin may set. Compared case-insensitively.
     public static let allowedHeaderNames: Set<String> = [
         "user-agent", "referer", "cookie", "accept",
@@ -364,6 +367,10 @@ public enum PluginModelValidationError: Error, Equatable {
     case tooManySellers(Int)
     case htmlTooLarge(Int)
     case disallowedHeader(String)
+    /// A header value over `PluginModelCaps.headerValue`.
+    case headerValueTooLong(String)
+    /// A byte count a plugin wrote as a negative number.
+    case negativeByteCount(field: String)
     /// `price.amount` did not parse as a decimal.
     case invalidPrice(String)
 }
@@ -416,13 +423,27 @@ extension KeyedDecodingContainer {
         return url
     }
 
+    /// A byte count a plugin wrote. A negative one is no size at all, and the
+    /// download engine reads this as a progress denominator.
+    fileprivate func pluginByteCount(_ key: Key, field: String) throws -> Int64? {
+        guard let value = try decodeIfPresent(Int64.self, forKey: key) else { return nil }
+        guard value >= 0 else {
+            throw PluginModelValidationError.negativeByteCount(field: field)
+        }
+        return value
+    }
+
     fileprivate func pluginHeaders(_ key: Key) throws -> [String: String] {
         guard let headers = try decodeIfPresent([String: String].self, forKey: key) else {
             return [:]
         }
-        for name in headers.keys
-        where !PluginModelCaps.allowedHeaderNames.contains(name.lowercased()) {
-            throw PluginModelValidationError.disallowedHeader(name)
+        for (name, value) in headers {
+            guard PluginModelCaps.allowedHeaderNames.contains(name.lowercased()) else {
+                throw PluginModelValidationError.disallowedHeader(name)
+            }
+            guard value.count <= PluginModelCaps.headerValue else {
+                throw PluginModelValidationError.headerValueTooLong(name)
+            }
         }
         return headers
     }

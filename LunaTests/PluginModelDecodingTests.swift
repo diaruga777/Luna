@@ -162,6 +162,25 @@ final class PluginModelDecodingTests: XCTestCase {
             .disallowedHeader("Authorization"))
     }
 
+    func testHeaderValueOverItsCapIsRefused() {
+        let long = String(repeating: "c", count: PluginModelCaps.headerValue + 1)
+        XCTAssertEqual(
+            error("""
+                {"kind":"media","assets":[{"url":"https://cdn.example/v.mp4","type":"video",
+                 "headers":{"cookie":"\(long)"}}]}
+                """),
+            .headerValueTooLong("cookie"))
+    }
+
+    func testANegativeEstimatedByteCountIsRefused() {
+        XCTAssertEqual(
+            error("""
+                {"kind":"media","assets":[{"url":"https://cdn.example/v.mp4","type":"video",
+                 "estimatedBytes":-1}]}
+                """),
+            .negativeByteCount(field: "assets[].estimatedBytes"))
+    }
+
     /// The allowlist is compared case-insensitively, so a plugin's own casing
     /// never decides whether a header is allowed.
     func testAllowlistedHeaderPassesInAnyCasing() throws {

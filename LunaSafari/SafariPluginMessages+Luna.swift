@@ -173,43 +173,40 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
     // MARK: - Fetch
 
     /// `luna.fetch` over `PluginFetchService` (Foundation-only, so it runs in
-    /// this appex with no JavaScriptCore involved). Refused when the plugin
+    /// this appex with no JavaScriptCore involved). The request is shaped by
+    /// `PluginFetchRequestShaping`, the same type the JavaScriptCore bridge
+    /// calls, so a `userAgent` identity and a `form`/`json`/`multipart` body
+    /// mean here exactly what they mean in the app. Refused when the plugin
     /// never declared `fetch`, or asks for a file the appex has nowhere to
-    /// write (`files` is never available in Safari, §6).
+    /// write (`files` is never available in Safari, §5).
     private func pluginFetch(message: [String: Any]?, context: NSExtensionContext) {
-        guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .fetch),
-              let requestDict = message?["request"] as? [String: Any],
-              let urlString = requestDict["url"] as? String, let url = URL(string: urlString)
-        else {
+        guard let id = message?["id"] as? String else {
+            complete(context, with: ["error": "bad-argument", "message": "no plugin id"])
+            return
+        }
+        guard pluginDeclares(id: id, capability: .fetch) else {
             complete(context, with: ["error": "capability-not-declared"])
             return
         }
-        let responseForm = (requestDict["as"] as? String)
-            .flatMap(PluginFetchRequest.ResponseForm.init(rawValue:)) ?? .text
+        let request: PluginFetchRequest
+        switch PluginFetchRequestShaping.request(
+            from: (message?["request"] as? [String: Any]) ?? [:],
+            pluginID: id, scratchGeneration: id, files: nil)
+        {
+        case .failure(let error):
+            complete(context, with: ["error": error.code, "message": error.message])
+            return
+        case .success(let shaped):
+            request = shaped
+        }
+        let responseForm = request.responseForm
         guard responseForm != .file else {
-            complete(context, with: ["error": "unavailable-here"])
+            complete(context, with: [
+                "error": "unavailable-here",
+                "message": "as: \"file\" needs the \"files\" capability, which Safari has not",
+            ])
             return
         }
-        var body: Data?
-        if let bodyText = requestDict["body"] as? String {
-            body = Data(bodyText.utf8)
-        } else if let bodyDict = requestDict["body"] as? [String: Any],
-                  let base64 = bodyDict["base64"] as? String {
-            body = Data(base64Encoded: base64)
-        }
-        let request = PluginFetchRequest(
-            url: url,
-            method: (requestDict["method"] as? String) ?? "GET",
-            headers: (requestDict["headers"] as? [String: String]) ?? [:],
-            body: body,
-            cookies: (requestDict["cookies"] as? String)
-                .flatMap(PluginFetchRequest.CookiePolicy.init(rawValue:)) ?? .shared,
-            redirect: (requestDict["redirect"] as? String)
-                .flatMap(PluginFetchRequest.RedirectPolicy.init(rawValue:)) ?? .follow,
-            maxBytes: (requestDict["maxBytes"] as? Int) ?? WebFetchConstants.maxBytes,
-            timeout: (requestDict["timeout"] as? Double) ?? 20,
-            responseForm: responseForm,
-            invocationID: id)
         fetchService.fetch(request) { [weak self] result in
             guard let self else { return }
             switch result {

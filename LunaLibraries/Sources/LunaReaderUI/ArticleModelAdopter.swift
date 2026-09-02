@@ -7,6 +7,7 @@ import Foundation
 import LunaDocuments
 import LunaHTMLClassification
 import LunaModels
+import LunaURLClassification
 
 /// Turns a plugin's `article` Model into reader content
 /// (`claudedocs/plans/plugin-platform.md` §5.2).
@@ -21,11 +22,6 @@ import LunaModels
 /// Model needs `DocumentParser`, and LunaArticleIngest does not link
 /// LunaDocuments.
 public struct ArticleModelAdopter: ArticleModelAdopting {
-
-    /// Only these travel with a plugin's document fetch
-    /// (`PluginModelCaps.allowedHeaderNames`), so a Model cannot smuggle a
-    /// header the fetch layer would honour.
-    static let allowedHeaderNames = PluginModelCaps.allowedHeaderNames
 
     private let extractor: ArticleExtractor
     private let session: URLSession
@@ -64,18 +60,46 @@ public struct ArticleModelAdopter: ArticleModelAdopting {
 
     // MARK: - The optional document
 
-    private func documentContent(
-        _ spec: ArticleDocumentSpec, title: String, author: String?
-    ) async -> ArticleContent? {
-        var request = URLRequest(url: spec.url)
-        for (name, value) in spec.headers
-        where Self.allowedHeaderNames.contains(name.lowercased()) {
-            request.setValue(value, forHTTPHeaderField: name)
-        }
-        guard let (data, response) = try? await session.data(for: request) else { return nil }
+    /// The ceiling on the document a plugin points at, the same one
+    /// `PluginFetchService` holds every `luna.fetch` to. This fetch is the
+    /// adopter's own, so without it a `document.url` naming a multi-gigabyte
+    /// file would fill the container.
+    static let maxDocumentBytes = WebFetchConstants.maxBytes
+
+    /// The response body, or nil on a transport failure, a non-2xx status, or a
+    /// body over the ceiling. The transfer is read as a stream and abandoned the
+    /// moment it passes the ceiling, so an over-sized body is never held whole.
+    private func body(for request: URLRequest) async -> Data? {
+        guard let (stream, response) = try? await session.bytes(for: request) else { return nil }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             return nil
         }
+        let declared = response.expectedContentLength
+        guard declared <= Int64(Self.maxDocumentBytes) else { return nil }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(declared > 0 ? Int(declared) : 64 * 1024)
+        do {
+            for try await byte in stream {
+                bytes.append(byte)
+                if bytes.count > Self.maxDocumentBytes { return nil }
+            }
+        } catch {
+            return nil
+        }
+        return Data(bytes)
+    }
+
+    private func documentContent(
+        _ spec: ArticleDocumentSpec, title: String, author: String?
+    ) async -> ArticleContent? {
+        // The decoder already refused any header name outside
+        // `PluginModelCaps.allowedHeaderNames`, so the spec's set is the
+        // allowed set.
+        var request = URLRequest(url: spec.url)
+        for (name, value) in spec.headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        guard let data = await body(for: request) else { return nil }
 
         // `DocumentParser` reads a file, so the bytes land in a scratch file
         // named with the declared extension and are unlinked straight after.

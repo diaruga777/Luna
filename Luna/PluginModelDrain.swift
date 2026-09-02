@@ -27,16 +27,33 @@ import LunaSaves
 import LunaStorage
 import UIKit
 
+/// Reopens the page a completed drain returns to. `KindWiring+Luna` installs
+/// the witness; a process with none never leaves the app.
+protocol PluginModelReturnOpening {
+    func open(_ url: URL) async
+}
+
+/// The app's witness: an ordinary `open` of the page's https URL, because iOS
+/// has no "return to the previous app" API.
+struct SystemPluginModelReturnOpener: PluginModelReturnOpening {
+    func open(_ url: URL) async {
+        _ = await UIApplication.shared.open(url)
+    }
+}
+
 enum PluginModelDrain {
 
-    /// Where a completed drain sends the user back to. A test substitutes a
-    /// no-op so the suite never actually opens Safari.
-    static var opener: (URL) async -> Void = { url in _ = await UIApplication.shared.open(url) }
+    /// Where a completed drain sends the user back to.
+    static var returnOpener: (any PluginModelReturnOpening)?
 
     /// Takes every queued Model and adopts it. `returningToSource` mirrors the
     /// Safari hand-off's `ret=safari` flag: once every row is settled, the
-    /// first row's page is reopened in Safari — there is no "return to the
-    /// previous app" API, so this is an ordinary `open` of its https URL.
+    /// first row's page is reopened in Safari.
+    ///
+    /// The bounce also needs the row's own `returnToSourceUntil` to still be in
+    /// the future, the way `PendingResolvedMediaReturnPolicy` reads its marker:
+    /// a row lives an hour, and a manual launch tomorrow must not be thrown at
+    /// yesterday's page.
     ///
     /// `pendingStore`/`store`/`ingestor` are parameters so a test can exercise
     /// this against its own, the same reason `PendingResolvedMediaDownloads
@@ -46,7 +63,8 @@ enum PluginModelDrain {
         productInfoBuilder: @escaping (ProductModel, URL?) -> ProductInfo,
         pendingStore: PendingPluginModelStore = .shared,
         store: SavesStore = .shared,
-        ingestor: SavesIngestor = .shared
+        ingestor: SavesIngestor = .shared,
+        now: Date = Date()
     ) {
         let rows = pendingStore.takeAll()
         guard !rows.isEmpty else { return }
@@ -54,10 +72,12 @@ enum PluginModelDrain {
             for row in rows {
                 await adopt(row, productInfoBuilder: productInfoBuilder, store: store, ingestor: ingestor)
             }
-            guard returningToSource, let sourceURL = URL(string: rows[0].urlString),
+            guard returningToSource, let opener = returnOpener,
+                  (rows[0].returnToSourceUntil ?? .distantPast) > now,
+                  let sourceURL = URL(string: rows[0].urlString),
                   sourceURL.scheme?.hasPrefix("http") == true
             else { return }
-            await opener(sourceURL)
+            await opener.open(sourceURL)
         }
     }
 
@@ -96,7 +116,9 @@ enum PluginModelDrain {
             adopted = await adopter.adopt(product, url: url, pluginID: row.pluginID)
         }
 
-        guard let outcome = Self.outcome(from: adopted, productInfoBuilder: productInfoBuilder) else {
+        guard let outcome = PluginOutcomeMapping.outcome(
+            from: adopted, productInfo: productInfoBuilder)
+        else {
             await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
             return
         }
@@ -104,27 +126,6 @@ enum PluginModelDrain {
         _ = await ingestor.applyRescued(
             IngestResult(url: url, outcome: outcome, pluginID: row.pluginID),
             forItemID: reservation.item.id, interactive: false)
-    }
-
-    /// The same mapping `PluginIngestStage.adopt` makes in-process — kept as a
-    /// small standalone copy because that stage lives in the plugin-only tier
-    /// this universal file cannot import.
-    static func outcome(
-        from adopted: PluginAdoptedOutcome, productInfoBuilder: (ProductModel, URL?) -> ProductInfo
-    ) -> Outcome? {
-        switch adopted {
-        case .declined, .failed:
-            return nil
-        case let .media(assets, platform, itemID, _, _):
-            let hasTimeline = assets.contains { $0.kind == .video || $0.kind == .audio }
-            return hasTimeline
-                ? .video(platform ?? .web, itemID: itemID)
-                : .social(platform ?? .web, itemID: itemID)
-        case let .article(content, sourceHTML):
-            return .article(content, html: sourceHTML ?? "")
-        case let .product(productModel, imageURL):
-            return .product(productInfoBuilder(productModel, imageURL), html: "")
-        }
     }
 
     /// The Model could not be adopted (a decode failure, a declined outcome,

@@ -20,7 +20,7 @@ public final class PluginFilesBridge: PluginCapabilityInstalling {
     /// The largest file a plugin may write. It matches the fetch ceiling, so a
     /// response saved with `as: "file"` cannot be refused by the writer that
     /// just accepted it.
-    public static let maxFileBytes = 8 * 1024 * 1024
+    public static let maxFileBytes = PluginFileLimits.maxBytes
 
     private let scratch: PluginScratchStore
     private let scheduler: PluginCallbackScheduling

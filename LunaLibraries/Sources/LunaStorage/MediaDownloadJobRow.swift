@@ -24,7 +24,8 @@ enum MediaDownloadJobRow {
                received_byte_count, resume_data_file_name, time_range_start,
                time_range_end, resolved_video_id, youtube_visitor_data,
                error_message, error_kind, resolve_attempts, media_attempts,
-               suspend_deadline, ownership, background_session_identifier
+               suspend_deadline, ownership, background_session_identifier,
+               plugin_id, request_headers_json, expires_at
         FROM media_download_jobs
         """
 
@@ -36,8 +37,9 @@ enum MediaDownloadJobRow {
             received_byte_count, resume_data_file_name, time_range_start,
             time_range_end, resolved_video_id, youtube_visitor_data,
             error_message, error_kind, resolve_attempts, media_attempts,
-            suspend_deadline, ownership, background_session_identifier)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            suspend_deadline, ownership, background_session_identifier,
+            plugin_id, request_headers_json, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (id) DO UPDATE SET
             source_url_string = excluded.source_url_string,
             asset_url_string = excluded.asset_url_string,
@@ -63,7 +65,10 @@ enum MediaDownloadJobRow {
             media_attempts = excluded.media_attempts,
             suspend_deadline = excluded.suspend_deadline,
             ownership = excluded.ownership,
-            background_session_identifier = excluded.background_session_identifier
+            background_session_identifier = excluded.background_session_identifier,
+            plugin_id = excluded.plugin_id,
+            request_headers_json = excluded.request_headers_json,
+            expires_at = excluded.expires_at
         """
 
     static func bindUpsert(_ job: LiveMediaDownloadJob, to s: SavesStatement) throws {
@@ -93,6 +98,9 @@ enum MediaDownloadJobRow {
         try s.bind(24, date: job.suspendDeadline)
         try s.bind(25, job.ownership?.rawValue)
         try s.bind(26, job.backgroundSessionIdentifier)
+        try s.bind(27, job.pluginID)
+        try s.bind(28, job.requestHeadersJSON)
+        try s.bind(29, date: job.expiresAt)
     }
 
     static func job(from row: SavesStatement) -> LiveMediaDownloadJob? {
@@ -128,6 +136,9 @@ enum MediaDownloadJobRow {
             ownership: row.string(24).flatMap(LiveMediaDownloadOwnership.init(rawValue:)),
             backgroundSessionIdentifier: row.string(25),
             audioURLString: row.string(3),
-            dashManifestURLString: row.string(4))
+            dashManifestURLString: row.string(4),
+            pluginID: row.string(26),
+            requestHeadersJSON: row.string(27),
+            expiresAt: row.date(28))
     }
 }

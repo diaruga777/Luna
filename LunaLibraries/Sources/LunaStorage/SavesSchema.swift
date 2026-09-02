@@ -75,6 +75,15 @@ enum SavesSchema {
                     try database.execute("ALTER TABLE send_states ADD COLUMN remote_name TEXT")
                     try database.execute("ALTER TABLE send_states ADD COLUMN remote_status TEXT")
                 }
+                // Version 12 records which plugin owns a save, a tracker store
+                // and a download job, plus the headers and expiry a plugin's
+                // asset needs. CREATE TABLE above handles a fresh database; an
+                // existing one needs each additive column explicitly, one ALTER
+                // per column since SQLite allows only one per statement.
+                for (table, column, type) in pluginColumns
+                where try !hasColumn(column, in: table, of: database) {
+                    try database.execute("ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
+                }
                 try database.execute(indexes)
                 // A queue row created by an older build is already a permanent
                 // retirement. Preserve that fact before a reaper clears it.
@@ -151,6 +160,30 @@ enum SavesSchema {
             if let name = row.string(1) { columns.insert(name) }
         }
         return !columns.contains("background_session_identifier")
+    }
+
+    /// The columns version 12 adds to tables that already existed, as
+    /// (table, column, SQL type). Each also appears in `tables`, which is what a
+    /// fresh database gets.
+    private static let pluginColumns: [(String, String, String)] = [
+        ("saves", "plugin_id", "TEXT"),
+        ("tracker_stores", "plugin_id", "TEXT"),
+        ("media_download_jobs", "plugin_id", "TEXT"),
+        ("media_download_jobs", "request_headers_json", "TEXT"),
+        ("media_download_jobs", "expires_at", "REAL"),
+    ]
+
+    /// Whether `table` already has `column`. An absent table answers true, so a
+    /// migration never tries to alter something `tables` has yet to create.
+    private static func hasColumn(
+        _ column: String, in table: String, of database: SavesDatabase
+    ) throws -> Bool {
+        var columns: Set<String> = []
+        try database.query("PRAGMA table_info(\(table))") { row in
+            if let name = row.string(1) { columns.insert(name) }
+        }
+        guard !columns.isEmpty else { return true }
+        return columns.contains(column)
     }
 
     private static func sendStatesNeedRemoteDeleteBookkeeping(
@@ -234,7 +267,8 @@ enum SavesSchema {
             last_save_attempt_date     REAL,
             platform                   TEXT,
             platform_item_id           TEXT,
-            capture_source             TEXT
+            capture_source             TEXT,
+            plugin_id                  TEXT
         ) WITHOUT ROWID;
 
         -- The per-destination send dictionaries, normalised: one row per
@@ -330,6 +364,7 @@ enum SavesSchema {
             last_price     TEXT,
             currency       TEXT    NOT NULL,
             last_refreshed REAL,
+            plugin_id      TEXT,
             UNIQUE (save_id, url_string)
         );
 
@@ -490,7 +525,10 @@ enum SavesSchema {
             media_attempts           INTEGER NOT NULL,
             suspend_deadline         REAL,
             ownership                TEXT,
-            background_session_identifier TEXT
+            background_session_identifier TEXT,
+            plugin_id                TEXT,
+            request_headers_json     TEXT,
+            expires_at               REAL
         ) WITHOUT ROWID;
 
         -- Legacy schema-9 Spotlight bookkeeping. Keep this table for independently
@@ -525,6 +563,58 @@ enum SavesSchema {
         CREATE TABLE IF NOT EXISTS spotlight_surface_state (
             surface TEXT PRIMARY KEY NOT NULL,
             legacy_reconciled INTEGER NOT NULL DEFAULT 0
+        ) WITHOUT ROWID;
+
+        -- Plugin-scoped key/value storage (`luna.storage`). One row per
+        -- (plugin, key); the value is the JSON the plugin set. Plugin settings
+        -- live here too, under `settings.<key>`.
+        CREATE TABLE IF NOT EXISTS plugin_kv (
+            plugin_id  TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            json       TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY (plugin_id, key)
+        );
+
+        -- Plugin-scoped document collections (`luna.storage.collection`). `k1`
+        -- and `k2` are the only queryable fields: a plugin declares them per
+        -- document and finds by them, so the store never parses `json`.
+        CREATE TABLE IF NOT EXISTS plugin_collections (
+            plugin_id  TEXT NOT NULL,
+            collection TEXT NOT NULL,
+            id         TEXT NOT NULL,
+            k1         TEXT,
+            k2         TEXT,
+            json       TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY (plugin_id, collection, id)
+        );
+
+        -- A `luna.browser.open` call a process could not present. An extension
+        -- and the Safari world both defer: the save is locked, and the app
+        -- presents the modal later and writes `result_json` back.
+        -- `result_json` NULL means the save is still waiting.
+        CREATE TABLE IF NOT EXISTS plugin_browser_requests (
+            save_id      TEXT PRIMARY KEY NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+            plugin_id    TEXT NOT NULL,
+            request_json TEXT NOT NULL,
+            result_json  TEXT,
+            created_at   REAL NOT NULL,
+            completed_at REAL
+        ) WITHOUT ROWID;
+
+        -- A Model the Safari content script produced, waiting for the app to
+        -- adopt it. Safari cannot write a save or start a download, so it hands
+        -- the Model over here and deep-links the app, which drains this table.
+        -- `return_to_source_until` is how long the app may bounce back to
+        -- Safari after draining.
+        CREATE TABLE IF NOT EXISTS pending_plugin_models (
+            id                    TEXT PRIMARY KEY NOT NULL,
+            url                   TEXT NOT NULL,
+            model_json            TEXT NOT NULL,
+            plugin_id             TEXT NOT NULL,
+            created_at            REAL NOT NULL,
+            return_to_source_until REAL
         ) WITHOUT ROWID;
 
         -- Files whose last holder is gone, waiting to be unlinked. A file system
@@ -612,6 +702,13 @@ enum SavesSchema {
 
         -- The same, for releasing one preloaded page's images.
         CREATE INDEX IF NOT EXISTS file_holders_key ON file_holders(holder_key);
+
+        -- `luna.storage.collection`'s find/count: a plugin queries a collection
+        -- by one of its two declared index fields, so each gets its own.
+        CREATE INDEX IF NOT EXISTS plugin_collections_k1
+            ON plugin_collections(plugin_id, collection, k1);
+        CREATE INDEX IF NOT EXISTS plugin_collections_k2
+            ON plugin_collections(plugin_id, collection, k2);
         """
 
     /// The invariant no Swift caller can be trusted with: **a `files` row never

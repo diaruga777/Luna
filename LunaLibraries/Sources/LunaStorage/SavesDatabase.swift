@@ -43,7 +43,7 @@ final class SavesDatabase {
 
     /// Schema revision written to `PRAGMA user_version`. Bump it when the tables
     /// change and add the migration next to `SavesSchema.create`.
-    static let schemaVersion: Int32 = 11
+    static let schemaVersion: Int32 = 12
 
     /// The database file. Its `-wal` / `-shm` siblings live beside it — the
     /// standard cross-process arrangement, and the reason the App Group

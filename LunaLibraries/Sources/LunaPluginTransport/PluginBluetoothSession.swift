@@ -18,6 +18,11 @@ import Foundation
 /// rather than leaving a plugin's promise pending for the rest of the process.
 public final class PluginBluetoothSession: @unchecked Sendable {
 
+    /// How long a write-without-response waits for controller room. Without a
+    /// deadline the operation holds the session's queue until a disconnect
+    /// frees it, and every later call waits behind it.
+    public static var readyToWriteTimeout: TimeInterval = 5
+
     public let device: PluginBluetoothDevice
     /// `maximumWriteValueLength(for: .withoutResponse)`, read once at open.
     public let mtu: Int
@@ -35,11 +40,18 @@ public final class PluginBluetoothSession: @unchecked Sendable {
     private var nextOperationID: UInt64 = 0
     /// The failure handler of the operation currently in flight.
     private var inFlightFailure: ((PluginTransportError) -> Void)?
-    /// Notification values received since `subscribe`, oldest first.
+    /// Notification values received since `subscribe`, oldest first. Both
+    /// tables key through `PluginBluetoothUUID.key`, so the spelling the plugin
+    /// wrote and the one the peripheral published are one entry.
     private var buffers: [String: [String]] = [:]
-    private var notificationWaiters: [String: (String) -> Void] = [:]
+    /// The waiter each `next` registered, with the token that identifies it.
+    /// A timeout settles its OWN waiter only: a later `next` on the same
+    /// characteristic has replaced the entry and owns the value to come.
+    private var notificationWaiters: [String: (token: UInt64, deliver: (String) -> Void)] = [:]
+    private var nextWaiterToken: UInt64 = 0
     /// One writer waiting for controller room (`canWriteWithoutResponse`).
     private var readyToWriteWaiter: (() -> Void)?
+    private var readyToWriteToken: UInt64 = 0
 
     init(
         device: PluginBluetoothDevice, transport: any PluginBluetoothTransporting,
@@ -93,7 +105,7 @@ public final class PluginBluetoothSession: @unchecked Sendable {
             // Local backpressure only: the controller has room. Application
             // pacing against the device's own durable receipts is the
             // plugin's, through `next`.
-            whenReadyToWrite { [self] in
+            whenReadyToWrite(orFailing: { settle(.failure($0)) }) { [self] in
                 transport.write(
                     base64: base64, characteristicUUID: characteristicUUID,
                     deviceID: device.id, withResponse: false) { settle($0) }
@@ -106,8 +118,9 @@ public final class PluginBluetoothSession: @unchecked Sendable {
         completion: @escaping (Result<Void, PluginTransportError>) -> Void
     ) {
         enqueue(completion) { [self] settle in
+            let key = PluginBluetoothUUID.key(characteristicUUID)
             lock.lock()
-            if buffers[characteristicUUID] == nil { buffers[characteristicUUID] = [] }
+            if buffers[key] == nil { buffers[key] = [] }
             lock.unlock()
             transport.subscribe(characteristicUUID: characteristicUUID, deviceID: device.id) {
                 settle($0)
@@ -122,22 +135,27 @@ public final class PluginBluetoothSession: @unchecked Sendable {
         completion: @escaping (Result<String, PluginTransportError>) -> Void
     ) {
         enqueue(completion) { [self] settle in
+            let key = PluginBluetoothUUID.key(characteristicUUID)
             lock.lock()
-            if var buffered = buffers[characteristicUUID], !buffered.isEmpty {
+            if var buffered = buffers[key], !buffered.isEmpty {
                 let value = buffered.removeFirst()
-                buffers[characteristicUUID] = buffered
+                buffers[key] = buffered
                 lock.unlock()
                 settle(.success(value))
                 return
             }
-            notificationWaiters[characteristicUUID] = { value in settle(.success(value)) }
+            nextWaiterToken &+= 1
+            let token = nextWaiterToken
+            notificationWaiters[key] = (token, { value in settle(.success(value)) })
             lock.unlock()
             queue.asyncAfter(deadline: .now() + timeout) { [self] in
                 lock.lock()
-                let waiter = notificationWaiters[characteristicUUID]
-                notificationWaiters[characteristicUUID] = nil
+                guard notificationWaiters[key]?.token == token else {
+                    lock.unlock()
+                    return
+                }
+                notificationWaiters[key] = nil
                 lock.unlock()
-                guard waiter != nil else { return }
                 settle(.failure(.timedOut(
                     "no notification arrived on \(characteristicUUID) within \(Int(timeout))s")))
             }
@@ -153,15 +171,16 @@ public final class PluginBluetoothSession: @unchecked Sendable {
     // MARK: - Events from the center
 
     func deliver(notification base64: String, characteristicUUID: String) {
+        let key = PluginBluetoothUUID.key(characteristicUUID)
         lock.lock()
-        let waiter = notificationWaiters[characteristicUUID]
+        let waiter = notificationWaiters[key]
         if waiter != nil {
-            notificationWaiters[characteristicUUID] = nil
-        } else if buffers[characteristicUUID] != nil {
-            buffers[characteristicUUID]?.append(base64)
+            notificationWaiters[key] = nil
+        } else if buffers[key] != nil {
+            buffers[key]?.append(base64)
         }
         lock.unlock()
-        waiter?(base64)
+        waiter?.deliver(base64)
     }
 
     func deliverReadyToWrite() {
@@ -192,11 +211,31 @@ public final class PluginBluetoothSession: @unchecked Sendable {
 
     // MARK: - Serialization
 
-    private func whenReadyToWrite(_ work: @escaping () -> Void) {
+    /// Runs `work` once the controller has room, or fails the operation when
+    /// the room never comes. A parked write holds the whole session queue, so
+    /// it cannot wait without a deadline.
+    private func whenReadyToWrite(
+        orFailing fail: @escaping (PluginTransportError) -> Void,
+        _ work: @escaping () -> Void
+    ) {
         guard !transport.canWriteWithoutResponse(deviceID: device.id) else { return work() }
+        let timeout = Self.readyToWriteTimeout
         lock.lock()
+        readyToWriteToken &+= 1
+        let token = readyToWriteToken
         readyToWriteWaiter = work
         lock.unlock()
+        queue.asyncAfter(deadline: .now() + timeout) { [self] in
+            lock.lock()
+            guard readyToWriteToken == token, readyToWriteWaiter != nil else {
+                lock.unlock()
+                return
+            }
+            readyToWriteWaiter = nil
+            lock.unlock()
+            fail(.timedOut(
+                "the controller had no room to write within \(Int(timeout))s"))
+        }
     }
 
     /// Adds one operation to the queue. `body` receives the settle function it

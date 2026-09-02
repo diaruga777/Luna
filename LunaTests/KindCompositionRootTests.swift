@@ -181,8 +181,8 @@ final class KindCompositionRootTests: XCTestCase {
             """)
     }
 
-    /// A root installs the platform; it never reaches past `install()` into the
-    /// registries the platform owns. That is the same rule the kind packs hold,
+    /// A root installs the platform; it never ASSIGNS the registries the platform
+    /// owns (reading a witness to hand it to a screen is fine). That is the same rule the kind packs hold,
     /// for the same reason: a hand-written half-installation is invisible.
     func testNoCompositionRootWritesThePluginRegistriesDirectly() throws {
         var offenders: [String] = []
@@ -190,9 +190,7 @@ final class KindCompositionRootTests: XCTestCase {
             for line in source.split(separator: "\n") {
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
-                if text.contains("PluginPlatformServices.")
-                    || text.contains("IngestPipeline.pluginStage")
-                    || text.contains("PluginModelAdopters.") {
+                if text.range(of: #"(PluginPlatformServices\.\w+|IngestPipeline\.pluginStage|PluginModelAdopters\.\w+)\s*=[^=]"#, options: .regularExpression) != nil {
                     offenders.append("\(path): \(text)")
                 }
             }

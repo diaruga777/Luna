@@ -204,6 +204,20 @@ compile it.
 | `Stage/StageCatalog+Email.swift` | Luna, Reader | `KindWiring+Luna`, `+Reader` |
 | `Stage/StageCatalog+Media.swift` | Luna, Downloader | `KindWiring+Luna`, `+Downloader` |
 | `Stage/StageCatalog+Product.swift` | Luna, PriceTracker | `KindWiring+Luna`, `+PriceTracker` |
+| `Stage/StageCatalog+Plugins.swift` | Luna only | `KindWiring+Luna` |
+
+`Stage/StageCatalog+Plugins.swift` covers Settings → Plugins (empty, a
+three-plugin list, and one plugin's full settings schema), plugin import and
+consent, the paste-source sheet, the browser lock modal frozen mid-challenge,
+and a plugin-locked card — stage ids `plugins.settings.empty`,
+`plugins.settings.list`, `plugins.settings.detail`, `plugins.consent`,
+`plugins.import.paste`, `plugins.browser.lock`, `plugins.locked.card`. It is
+excluded from the three sibling app targets by a `project.pbxproj`
+membership exception, same mechanism as every other per-kind catalog above —
+its own header comment describes a `LunaApp.current` runtime gate that
+predates that exception and was never actually written into the file's body;
+the pbxproj exclusion is what actually keeps it out of Reader/Downloader/
+Price Tracker. See `claudedocs/plugins.md`.
 
 The per-kind files carry **membership exceptions** in `project.pbxproj` (they
 build app-shell card types, which are themselves per-target), so a single-kind

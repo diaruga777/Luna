@@ -684,6 +684,21 @@ download is saved to Photos or none are; there are no per-platform Photos toggle
 
 ## Core implementation
 
+**Central Luna does not call any of the resolvers below.** It resolves
+social/video media through the plugin platform instead —
+`PluginMediaResolver` (LunaPluginIngest) runs the classify+ingest walk over
+the bundled `reddit.js`/`instagram.js`/`tiktok.js`/`facebook.js`/`x.js`/
+`youtube.js`/`direct-media.js` plugins and installs itself as
+`PluginMediaSeams.resolver`/`.reresolver`; `MediaAssetResolution`
+(LunaMediaDownload) reads that seam and falls back to `SocialMediaResolver`
+only when it is nil. Everything in this section — `SocialMediaResolver`,
+`YouTubeMediaResolver`, and the reresolve path they drive — is still the
+ONLY implementation for the Downloader app and for the three sibling Safari
+appexes, which link no plugin module at all. Full detail, including the
+JS↔Swift fixture parity and the schema columns (`plugin_id`, `quality`,
+`expires_at`, `request_headers_json`) that make reresolution work for a
+plugin-owned job, is in `claudedocs/plugins.md`.
+
 - `MediaDownload.swift` defines `MediaAsset`, supported platforms, errors, and the
   resolver/downloader/Photo-library protocols.
 - `SocialMediaResolver.swift` dispatches to pure parsers for X, Instagram, TikTok, and

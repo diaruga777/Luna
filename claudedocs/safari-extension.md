@@ -62,6 +62,16 @@ never reaches it).
   endpoint — and if any other `LunaSafari/*.swift` file starts naming
   `MediaAsset` or a platform's JSON keys.
 
+**Only the central `LunaSafari` target additionally links `LunaPluginKit`
+and `LunaBundledPlugins`** (`claudedocs/plugins.md`, its §12 "Safari"): the
+other three Safari appexes do not, even though all four compile the same
+`SafariWebExtensionHandler`/`content.js` source — the split is a per-target
+FILE (`SafariPluginMessages+Luna.swift` vs `+None.swift`), not a compile-time
+guard. `content.js`'s pill decision runs a plugin walk FIRST, evaluating a
+matched plugin's `classify`/`ingest` in the page's own isolated world via
+`plugin_host.js`, and falls back to the Swift-parity heuristics below only
+when no plugin claims the page.
+
 **What genuinely has to be JavaScript**, and why:
 
 | In the page | Why it can't be Swift | What pins it |

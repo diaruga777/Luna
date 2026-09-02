@@ -96,6 +96,19 @@ rows or directories.
 - Every save-owned child table is `REFERENCES saves(id) ON DELETE CASCADE`, so
   deleting a save is the row delete. Passive snapshot rows are intentionally
   independent of saves, while their key rows cascade from the snapshot.
+- **Schema 12 and 13 add the plugin platform's own tables and columns**
+  (central Luna only writes them; the three sibling apps never read them but
+  must not fail on them, per the no-CHECK-constraint rule below).
+  `saves.plugin_id`, `tracker_stores.plugin_id` and
+  `media_download_jobs.plugin_id` name the owning plugin, NULL for a
+  Swift-ingested save; `media_download_jobs` also gained
+  `request_headers_json`, `expires_at` (schema 12) and `quality` (schema 13,
+  for matching a re-resolved asset back to its job). `plugin_kv` and
+  `plugin_collections` are `luna.storage`'s key/value and document tables,
+  scoped by `plugin_id`; `plugin_browser_requests` holds one row per save
+  waiting on a plugin's browser step (§8 of `claudedocs/plugins.md`); and
+  `pending_plugin_models` is the Safari → app hand-off queue for a Model the
+  content script already produced. Full detail: `claudedocs/plugins.md`.
 
 Three deliberate choices:
 

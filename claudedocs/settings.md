@@ -84,11 +84,21 @@ and finished by `SettingsViewController`.
 - Email groups the connected sharing account, mail import/senders, and subject
   filters. Its address field uses the same rounded envelope-card treatment as
   the util-card setup.
-- Kindle is a separate top-level page. Until email is configured, its row is
-  dimmed; tapping it shows "Set up email first" with Not Now and OK. OK opens
-  Email and focuses the address field. The Kindle page contains forwarding
-  settings, address, and test send.
+- **Kindle is a separate top-level page in Luna Reader only.** Until email is
+  configured, its row is dimmed; tapping it shows "Set up email first" with
+  Not Now and OK. OK opens Email and focuses the address field. The Kindle
+  page contains forwarding settings, address, and test send. **Central Luna
+  has no such page**: it sends to Kindle through a bundled plugin instead
+  (`kindle.js`), whose address/sender-note settings live under Settings →
+  Plugins → Kindle (`claudedocs/send-to-kindle.md`, `claudedocs/plugins.md`).
 - Contacts remains its own address-book page.
+- **Plugins is a top-level category in central Luna only**
+  (`SettingsCategory("Plugins", symbol: "puzzlepiece.extension")`, via
+  `PluginsSettingsCategory.make()` in `KindWiring+Luna.settingsCategories()`).
+  It lists bundled and imported plugins with an enable switch, capabilities,
+  a per-plugin settings screen, read-only "Show source," and Delete
+  (imported plugins only); an Add button imports from Files or a pasted
+  source. See `claudedocs/plugins.md`.
 
 Double Save Articles offers Nothing, Send to Kindle, and View immediately. It
 cannot send to a contact and never applies to non-article items.

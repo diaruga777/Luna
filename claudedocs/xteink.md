@@ -316,7 +316,17 @@ All in **LunaSend** (linked by the article-capable Reader app):
   `sendNow`/LAN-probe routing is deleted (enqueue-only, above).
 - `XteinkDestination: ArticleDestination` — participates in the coordinator's
   queue/retry/source-gating machinery, funnels sends through the CrossPoint
-  router's `send`, and records the delivered remote name.
+  router's `send`, and records the delivered remote name. **In central Luna
+  this Swift class is never instantiated for delivery**:
+  `PluginDestinationLegacyIDs.byPluginID` maps the `xteink.js` plugin id
+  (`app.luna.xteink`) onto the exact string `XteinkDestination.id` uses
+  (`"xteink"`), and `PluginExportComposition.installDestinations` registers
+  a `PluginDestination` under that id through
+  `ArticleDestinationRegistry.install(_:replacingBuiltInIDs:)` — so
+  `ArticleSendCoordinator.destinations` filters the Swift instance out and
+  every `send_states`/`SourceSendSettings`/sent-date row keeps applying to
+  the plugin's deliveries unchanged. This mapping landed in a follow-up
+  commit after the plugin platform's Wave 3B first merged without it.
 - `XteinkRendezvousTransferQueue` (actor, `.shared`) — serializes a coordinator
   sweep because one X3 GATT session accepts one operation/data stream at a time.
 - `XteinkReadStateReconciler` — dequeue-on-read.

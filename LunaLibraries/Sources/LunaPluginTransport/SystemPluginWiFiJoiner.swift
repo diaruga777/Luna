@@ -10,6 +10,16 @@ import NetworkExtension
 import UIKit
 #endif
 
+/// One hotspot configuration, applied and removed. The shipped witness is
+/// `NEHotspotConfigurationManager`; a test hands over its own, so the retry
+/// `SystemPluginWiFiJoiner` runs is assertable without a radio.
+public protocol PluginHotspotConfiguring: AnyObject {
+    func apply(
+        ssid: String, passphrase: String?, joinOnce: Bool,
+        completion: @escaping (Result<Void, PluginTransportError>) -> Void)
+    func remove(ssid: String)
+}
+
 /// The shipped `luna.wifi`: `NEHotspotConfiguration` to join a device's own
 /// access point, and an `NWConnection` probe to ask whether a host answers.
 ///
@@ -20,9 +30,18 @@ public final class SystemPluginWiFiJoiner: PluginWiFiJoining {
     /// Seconds to wait before a second apply. A device publishes its
     /// credentials over BLE, releases BLE, and only then brings the access
     /// point up, so a first apply can race the SSID's appearance.
-    static let reapplyPause: TimeInterval = 3
+    public static let defaultReapplyPause: TimeInterval = 3
 
-    public init() {}
+    private let configurator: any PluginHotspotConfiguring
+    private let reapplyPause: TimeInterval
+
+    public init(
+        configurator: (any PluginHotspotConfiguring)? = nil,
+        reapplyPause: TimeInterval = SystemPluginWiFiJoiner.defaultReapplyPause
+    ) {
+        self.configurator = configurator ?? SystemHotspotConfigurator()
+        self.reapplyPause = reapplyPause
+    }
 
     public var isForeground: Bool {
         #if os(iOS)
@@ -39,23 +58,18 @@ public final class SystemPluginWiFiJoiner: PluginWiFiJoining {
         ssid: String, passphrase: String?, joinOnce: Bool,
         completion: @escaping (Result<Void, PluginTransportError>) -> Void
     ) {
-        #if os(iOS)
-        apply(ssid: ssid, passphrase: passphrase, joinOnce: joinOnce) { [self] first in
+        configurator.apply(ssid: ssid, passphrase: passphrase, joinOnce: joinOnce) { [self] first in
             guard case .failure = first else { return completion(first) }
-            DispatchQueue.global().asyncAfter(deadline: .now() + Self.reapplyPause) { [self] in
-                apply(ssid: ssid, passphrase: passphrase, joinOnce: joinOnce, completion)
+            DispatchQueue.global().asyncAfter(deadline: .now() + reapplyPause) { [self] in
+                configurator.apply(
+                    ssid: ssid, passphrase: passphrase, joinOnce: joinOnce,
+                    completion: completion)
             }
         }
-        #else
-        completion(.failure(PluginTransportError(
-            code: "unavailable-here", message: "joining a network needs iOS")))
-        #endif
     }
 
     public func forget(ssid: String) {
-        #if os(iOS)
-        NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
-        #endif
+        configurator.remove(ssid: ssid)
     }
 
     public func isReachable(
@@ -84,11 +98,17 @@ public final class SystemPluginWiFiJoiner: PluginWiFiJoining {
         connection.start(queue: DispatchQueue.global())
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(false) }
     }
+}
 
-    #if os(iOS)
-    private func apply(
+#if os(iOS)
+
+/// `NEHotspotConfigurationManager`. An `alreadyAssociated` answer is the phone
+/// already being on that network, which is the outcome the caller wanted.
+final class SystemHotspotConfigurator: PluginHotspotConfiguring {
+
+    func apply(
         ssid: String, passphrase: String?, joinOnce: Bool,
-        _ completion: @escaping (Result<Void, PluginTransportError>) -> Void
+        completion: @escaping (Result<Void, PluginTransportError>) -> Void
     ) {
         let configuration: NEHotspotConfiguration
         if let passphrase, !passphrase.isEmpty {
@@ -106,5 +126,26 @@ public final class SystemPluginWiFiJoiner: PluginWiFiJoining {
                 code: "join-failed", message: "\(error)")))
         }
     }
-    #endif
+
+    func remove(ssid: String) {
+        NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
+    }
 }
+
+#else
+
+/// No hotspot configuration exists off iOS, so every join refuses.
+final class SystemHotspotConfigurator: PluginHotspotConfiguring {
+
+    func apply(
+        ssid: String, passphrase: String?, joinOnce: Bool,
+        completion: @escaping (Result<Void, PluginTransportError>) -> Void
+    ) {
+        completion(.failure(PluginTransportError(
+            code: "unavailable-here", message: "joining a network needs iOS")))
+    }
+
+    func remove(ssid: String) {}
+}
+
+#endif

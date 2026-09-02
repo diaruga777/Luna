@@ -116,6 +116,66 @@ final class PluginWifiBridgeTests: XCTestCase {
         XCTAssertTrue(joiner.joined.isEmpty)
     }
 
+    // MARK: - The shipped joiner
+
+    /// A device publishes its credentials over BLE, releases BLE, and only then
+    /// brings its access point up, so the first apply can race the SSID's
+    /// appearance. One re-apply after the pause is what makes the join land.
+    func testAFailedJoinIsAppliedAgainAfterThePause() {
+        let configurator = FakeHotspotConfigurator()
+        configurator.answers = [
+            .failure(PluginTransportError(code: "join-failed", message: "no such network")),
+            .success(()),
+        ]
+        let joiner = SystemPluginWiFiJoiner(configurator: configurator, reapplyPause: 0.05)
+        var failure: PluginTransportError?
+        let answered = expectation(description: "answered")
+        joiner.join(ssid: "X3-AP", passphrase: "secret", joinOnce: true) { result in
+            if case .failure(let error) = result { failure = error }
+            answered.fulfill()
+        }
+        wait(for: [answered], timeout: 3)
+        XCTAssertNil(failure, "the second apply answers the join")
+        XCTAssertEqual(configurator.applyCount, 2)
+        XCTAssertEqual(configurator.applied.last?.ssid, "X3-AP")
+        XCTAssertEqual(configurator.applied.last?.passphrase, "secret")
+    }
+
+    func testAJoinThatLandsFirstTimeIsNotAppliedTwice() {
+        let configurator = FakeHotspotConfigurator()
+        let joiner = SystemPluginWiFiJoiner(configurator: configurator, reapplyPause: 0.05)
+        let answered = expectation(description: "answered")
+        joiner.join(ssid: "X3-AP", passphrase: nil, joinOnce: true) { _ in answered.fulfill() }
+        wait(for: [answered], timeout: 3)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(configurator.applyCount, 1)
+    }
+
+    func testForgetRemovesTheNetworkThroughTheConfigurator() {
+        let configurator = FakeHotspotConfigurator()
+        SystemPluginWiFiJoiner(configurator: configurator).forget(ssid: "X3-AP")
+        XCTAssertEqual(configurator.removed, ["X3-AP"])
+    }
+
+    /// Two failures are the network really not being there; the plugin gets the
+    /// second failure rather than a promise that never settles.
+    func testAJoinThatFailsTwiceAnswersTheSecondFailure() {
+        let configurator = FakeHotspotConfigurator()
+        configurator.answers = [
+            .failure(PluginTransportError(code: "join-failed", message: "no such network")),
+        ]
+        let joiner = SystemPluginWiFiJoiner(configurator: configurator, reapplyPause: 0.05)
+        var code: String?
+        let answered = expectation(description: "answered")
+        joiner.join(ssid: "X3-AP", passphrase: nil, joinOnce: true) { result in
+            if case .failure(let error) = result { code = error.code }
+            answered.fulfill()
+        }
+        wait(for: [answered], timeout: 3)
+        XCTAssertEqual(code, "join-failed")
+        XCTAssertEqual(configurator.applyCount, 2)
+    }
+
     /// Outside the app the namespace is present but every call refuses, so a
     /// plugin's declared capability stays visible and its rejection carries a
     /// code it can branch on.
@@ -124,6 +184,40 @@ final class PluginWifiBridgeTests: XCTestCase {
         let refused = await call("join")
         XCTAssertEqual(refused?.exceptionCodePrefix, "unavailable-here")
         XCTAssertTrue(joiner.joined.isEmpty)
+    }
+}
+
+/// A hotspot stack a test drives. Each `apply` answers the oldest unused entry
+/// in `answers`; the last one repeats.
+final class FakeHotspotConfigurator: PluginHotspotConfiguring, @unchecked Sendable {
+
+    var answers: [Result<Void, PluginTransportError>] = [.success(())]
+
+    private let lock = NSLock()
+    private(set) var applied: [(ssid: String, passphrase: String?, joinOnce: Bool)] = []
+    private(set) var removed: [String] = []
+
+    func apply(
+        ssid: String, passphrase: String?, joinOnce: Bool,
+        completion: @escaping (Result<Void, PluginTransportError>) -> Void
+    ) {
+        lock.lock()
+        applied.append((ssid, passphrase, joinOnce))
+        let answer = answers.count > 1 ? answers.removeFirst() : (answers.first ?? .success(()))
+        lock.unlock()
+        completion(answer)
+    }
+
+    func remove(ssid: String) {
+        lock.lock()
+        removed.append(ssid)
+        lock.unlock()
+    }
+
+    var applyCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return applied.count
     }
 }
 

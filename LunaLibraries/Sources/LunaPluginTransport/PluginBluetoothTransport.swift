@@ -49,6 +49,40 @@ public struct PluginTransportError: Error, Equatable, Sendable {
     static func timedOut(_ message: String) -> PluginTransportError {
         PluginTransportError(code: "timed-out", message: message)
     }
+    /// A second `connect` for a device whose first connect is still waiting.
+    /// Replacing the waiter would leave the first promise pending for the rest
+    /// of the hook's budget.
+    static let alreadyConnecting = PluginTransportError(
+        code: "already-connecting",
+        message: "a connect to that device is already waiting for its link")
+}
+
+/// The one comparison spelling for a Bluetooth UUID.
+///
+/// CoreBluetooth prints a 128-bit UUID upper-case and a 16-bit one short, and
+/// a plugin writes whichever spelling it likes. Every table that matches a
+/// delivered UUID against a requested one keys through this, so `180f`, `180F`
+/// and `0000180F-0000-1000-8000-00805F9B34FB` are one key.
+enum PluginBluetoothUUID {
+
+    /// The Bluetooth base UUID's tail, which a 16- or 32-bit UUID expands into.
+    private static let baseSuffix = "-0000-1000-8000-00805F9B34FB"
+
+    static func key(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: CharacterSet(charactersIn: "{} \n\t"))
+        let hex = trimmed.replacingOccurrences(of: "-", with: "").uppercased()
+        guard hex.allSatisfy(\.isHexDigit) else { return trimmed.uppercased() }
+        switch hex.count {
+        case 4: return "0000" + hex + baseSuffix
+        case 8: return hex + baseSuffix
+        case 32:
+            let digits = Array(hex)
+            return String(digits[0..<8]) + "-" + String(digits[8..<12]) + "-"
+                + String(digits[12..<16]) + "-" + String(digits[16..<20]) + "-"
+                + String(digits[20..<32])
+        default: return trimmed.uppercased()
+        }
+    }
 }
 
 /// What the transport tells its owner. Weak, like every component-boundary

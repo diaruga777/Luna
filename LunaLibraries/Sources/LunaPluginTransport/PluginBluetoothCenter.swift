@@ -80,6 +80,11 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     private var isStarted = false
     /// A foreground `connect(deviceId)` waiting for its link.
     private var connectWaiters: [String: (Result<PluginBluetoothSession, PluginTransportError>) -> Void] = [:]
+    /// The tail of the event chain. Every `onBluetooth` invocation waits for
+    /// the previous one to settle (§9): a `disconnected` running in JavaScript
+    /// beside a `connected` sweep clobbers the module-level link a destination
+    /// plugin keeps for its nested `export`.
+    private var eventTail: Task<Void, Never>?
 
     public init(
         pluginID: String,
@@ -222,7 +227,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
                     }
                     pairedDevices.add(
                         device, pluginID: pluginID, settingKey: pairedDeviceSettingKey)
-                    dispatch(.paired(device), holdingLock: false)
+                    dispatch(.paired(device))
                     radio.connect(deviceID: device.id)
                     completion(.success(device))
                 }
@@ -236,7 +241,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
             deviceID: deviceID, pluginID: pluginID, settingKey: pairedDeviceSettingKey)
         existingRadio?.cancelConnection(deviceID: deviceID)
         closeSession(reason: .disconnected)
-        if let device { dispatch(.unpaired(device), holdingLock: false) }
+        if let device { dispatch(.unpaired(device)) }
         guard let pairing else { return completion() }
         pairing.removeAccessory(deviceID: deviceID) { completion() }
     }
@@ -252,6 +257,10 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         }
         let latch = OperationLatch()
         lock.lock()
+        guard connectWaiters[deviceID] == nil else {
+            lock.unlock()
+            return completion(.failure(.alreadyConnecting))
+        }
         connectWaiters[deviceID] = { result in
             guard latch.take() else { return }
             completion(result)
@@ -269,7 +278,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     // MARK: - PluginBluetoothTransportDelegate
 
     public func bluetoothTransportDidChangeState(_ state: PluginBluetoothState) {
-        dispatch(.stateChanged(state), holdingLock: false)
+        dispatch(.stateChanged(state))
         lock.lock()
         let started = isStarted
         lock.unlock()
@@ -295,7 +304,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
             waiter(.success(session))
             return
         }
-        dispatch(.connected(device, restored: restored), holdingLock: true)
+        dispatch(.connected(device, restored: restored), sweeping: session)
     }
 
     public func bluetoothTransportDidDisconnect(
@@ -307,7 +316,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         let started = isStarted
         lock.unlock()
         waiter?(.failure(.disconnected))
-        dispatch(.disconnected(device, error: error), holdingLock: false)
+        dispatch(.disconnected(device, error: error))
         if started { start() }
     }
 
@@ -323,38 +332,62 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
 
     // MARK: - Dispatch
 
-    private func closeSession(reason: PluginTransportError) {
+    /// Ends a session. `expected` scopes the close to the one session a sweep
+    /// owns: the link can drop and come back while the hook runs, and the
+    /// session the reconnect built belongs to the sweep that follows.
+    private func closeSession(
+        reason: PluginTransportError, matching expected: PluginBluetoothSession? = nil
+    ) {
         lock.lock()
         let live = session
-        session = nil
+        if expected == nil || live === expected { session = nil }
         lock.unlock()
-        live?.close(reason: reason)
+        (expected ?? live)?.close(reason: reason)
     }
 
-    /// Calls the plugin's `onBluetooth`.
+    /// Queues one `onBluetooth` invocation behind the events already running.
     ///
-    /// `holdingLock` is the `connected` case: the whole invocation — including
-    /// the `luna.exports.deliverQueued()` a destination plugin awaits inside it
-    /// — runs under the service lock, and a process that cannot take the lock
+    /// `sweeping` is the `connected` case: the whole invocation — including the
+    /// `luna.exports.deliverQueued()` a destination plugin awaits inside it —
+    /// runs under the service lock, and a process that cannot take the lock
     /// invokes nothing at all.
-    private func dispatch(_ event: PluginBluetoothEvent, holdingLock: Bool) {
+    private func dispatch(
+        _ event: PluginBluetoothEvent, sweeping session: PluginBluetoothSession? = nil
+    ) {
         guard let invoker else { return }
-        if holdingLock, !serviceLock.acquire() {
+        lock.lock()
+        let previous = eventTail
+        eventTail = Task { [self] in
+            await previous?.value
+            await run(event, sweeping: session, invoker: invoker)
+        }
+        lock.unlock()
+    }
+
+    /// One event's hook, start to settle.
+    ///
+    /// The service lock is taken when the event's turn comes and released when
+    /// the hook settles, and no two events of this center overlap — so a failed
+    /// acquire names another process rather than this center's own sweep.
+    private func run(
+        _ event: PluginBluetoothEvent, sweeping session: PluginBluetoothSession?,
+        invoker: any PluginHookInvoking
+    ) async {
+        if session != nil, !serviceLock.acquire() {
             PluginDiagnostics.shared.record(
                 "another Luna app owns this rendezvous; staying silent", pluginID: pluginID)
-            closeSession(reason: .unavailable("another process owns this link"))
+            closeSession(
+                reason: .unavailable("another process owns this link"), matching: session)
             return
         }
         let token = lease?.beginLease(name: "plugin.\(pluginID).bluetooth")
-        Task { [self] in
-            _ = await invoker.invoke(
-                .onBluetooth, pluginID: pluginID, argument: event,
-                timeout: Self.hookTimeout, decode: PluginBluetoothHookAnswer?.self)
-            if holdingLock {
-                closeSession(reason: .unavailable("the hook finished"))
-                serviceLock.release()
-            }
-            if let token { lease?.endLease(token) }
+        _ = await invoker.invoke(
+            .onBluetooth, pluginID: pluginID, argument: event,
+            timeout: Self.hookTimeout, decode: PluginBluetoothHookAnswer?.self)
+        if session != nil {
+            closeSession(reason: .unavailable("the hook finished"), matching: session)
+            serviceLock.release()
         }
+        if let token { lease?.endLease(token) }
     }
 }

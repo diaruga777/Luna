@@ -177,9 +177,12 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
         publish(["received": received, "ckpt": checkpointIntervalBytes])
     }
 
+    /// The reader publishes in its own lower-case spelling, where `xteink.js`
+    /// subscribes in upper case — so every Xteink test exercises the session's
+    /// UUID normalisation rather than a spelling that happens to match.
     private func publish(_ status: [String: Any]) {
         transportDelegate?.bluetoothTransport(
-            didReceive: Self.encode(status), characteristicUUID: Self.status,
+            didReceive: Self.encode(status), characteristicUUID: Self.status.lowercased(),
             deviceID: "reader")
     }
 

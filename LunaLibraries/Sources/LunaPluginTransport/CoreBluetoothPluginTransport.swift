@@ -163,12 +163,12 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     ) {
         queue.async { [self] in
             guard let peripheral = peripherals[deviceID],
-                  let characteristic = characteristics[deviceID]?[Self.key(characteristicUUID)]
+                  let characteristic = characteristics[deviceID]?[PluginBluetoothUUID.key(characteristicUUID)]
             else { return completion(.failure(.unavailable("no such characteristic"))) }
-            guard pendingReads[Self.key(characteristicUUID)] == nil else {
+            guard pendingReads[PluginBluetoothUUID.key(characteristicUUID)] == nil else {
                 return completion(.failure(.unavailable("a read on that characteristic is in flight")))
             }
-            pendingReads[Self.key(characteristicUUID)] = completion
+            pendingReads[PluginBluetoothUUID.key(characteristicUUID)] = completion
             peripheral.readValue(for: characteristic)
         }
     }
@@ -183,16 +183,16 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
                     code: "bad-argument", message: "the payload is not base64")))
             }
             guard let peripheral = peripherals[deviceID],
-                  let characteristic = characteristics[deviceID]?[Self.key(characteristicUUID)]
+                  let characteristic = characteristics[deviceID]?[PluginBluetoothUUID.key(characteristicUUID)]
             else { return completion(.failure(.unavailable("no such characteristic"))) }
             guard withResponse else {
                 peripheral.writeValue(data, for: characteristic, type: .withoutResponse)
                 return completion(.success(()))
             }
-            guard pendingWrites[Self.key(characteristicUUID)] == nil else {
+            guard pendingWrites[PluginBluetoothUUID.key(characteristicUUID)] == nil else {
                 return completion(.failure(.unavailable("a write on that characteristic is in flight")))
             }
-            pendingWrites[Self.key(characteristicUUID)] = completion
+            pendingWrites[PluginBluetoothUUID.key(characteristicUUID)] = completion
             peripheral.writeValue(data, for: characteristic, type: .withResponse)
         }
     }
@@ -203,10 +203,10 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     ) {
         queue.async { [self] in
             guard let peripheral = peripherals[deviceID],
-                  let characteristic = characteristics[deviceID]?[Self.key(characteristicUUID)]
+                  let characteristic = characteristics[deviceID]?[PluginBluetoothUUID.key(characteristicUUID)]
             else { return completion(.failure(.unavailable("no such characteristic"))) }
             guard !characteristic.isNotifying else { return completion(.success(())) }
-            pendingSubscribes[Self.key(characteristicUUID)] = completion
+            pendingSubscribes[PluginBluetoothUUID.key(characteristicUUID)] = completion
             peripheral.setNotifyValue(true, for: characteristic)
         }
     }
@@ -262,13 +262,6 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
               hex.allSatisfy({ $0.isHexDigit })
         else { return nil }
         return CBUUID(string: trimmed)
-    }
-
-    /// The comparison spelling for a characteristic UUID: CoreBluetooth prints
-    /// a 128-bit UUID upper-case and a 16-bit one short, so both sides of a
-    /// lookup go through this.
-    static func key(_ text: String) -> String {
-        uuid(from: text)?.uuidString.uppercased() ?? text.uppercased()
     }
 
     static func device(from peripheral: CBPeripheral) -> PluginBluetoothDevice {
@@ -380,14 +373,15 @@ extension CoreBluetoothPluginTransport: CBPeripheralDelegate {
         let deviceID = peripheral.identifier.uuidString
         var table = characteristics[deviceID] ?? [:]
         for characteristic in service.characteristics ?? [] {
-            table[Self.key(characteristic.uuid.uuidString)] = characteristic
+            table[PluginBluetoothUUID.key(characteristic.uuid.uuidString)] = characteristic
         }
         characteristics[deviceID] = table
         let requested = pendingDiscovers.keys.filter { Self.uuid(from: $0) == service.uuid }
         for key in requested {
             let waiters = pendingDiscovers.removeValue(forKey: key) ?? []
             let result: Result<[String], PluginTransportError> = error == nil
-                ? .success((service.characteristics ?? []).map(\.uuid.uuidString))
+                ? .success((service.characteristics ?? [])
+                    .map { PluginBluetoothUUID.key($0.uuid.uuidString) })
                 : .failure(.unavailable("\(error!)"))
             for completion in waiters { completion(result) }
         }
@@ -397,7 +391,7 @@ extension CoreBluetoothPluginTransport: CBPeripheralDelegate {
         _ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        let key = Self.key(characteristic.uuid.uuidString)
+        let key = PluginBluetoothUUID.key(characteristic.uuid.uuidString)
         guard let completion = pendingWrites.removeValue(forKey: key) else { return }
         completion(error == nil ? .success(()) : .failure(.unavailable("\(error!)")))
     }
@@ -406,7 +400,7 @@ extension CoreBluetoothPluginTransport: CBPeripheralDelegate {
         _ peripheral: CBPeripheral,
         didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?
     ) {
-        let key = Self.key(characteristic.uuid.uuidString)
+        let key = PluginBluetoothUUID.key(characteristic.uuid.uuidString)
         guard let completion = pendingSubscribes.removeValue(forKey: key) else { return }
         completion(error == nil ? .success(()) : .failure(.unavailable("\(error!)")))
     }
@@ -415,7 +409,7 @@ extension CoreBluetoothPluginTransport: CBPeripheralDelegate {
         _ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        let key = Self.key(characteristic.uuid.uuidString)
+        let key = PluginBluetoothUUID.key(characteristic.uuid.uuidString)
         let base64 = (characteristic.value ?? Data()).base64EncodedString()
         // One callback serves both a read and a notification. A pending read
         // owns this value; anything else is the peripheral publishing.
@@ -425,7 +419,7 @@ extension CoreBluetoothPluginTransport: CBPeripheralDelegate {
         }
         guard error == nil else { return }
         transportDelegate?.bluetoothTransport(
-            didReceive: base64, characteristicUUID: characteristic.uuid.uuidString,
+            didReceive: base64, characteristicUUID: key,
             deviceID: peripheral.identifier.uuidString)
     }
 

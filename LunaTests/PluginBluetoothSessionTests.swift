@@ -45,6 +45,7 @@ final class PluginBluetoothSessionTests: XCTestCase {
     }
 
     override func tearDown() {
+        PluginBluetoothSession.readyToWriteTimeout = 5
         PluginPlatformServices.settings = previousSettings
         try? FileManager.default.removeItem(at: containerURL)
         super.tearDown()
@@ -176,6 +177,60 @@ final class PluginBluetoothSessionTests: XCTestCase {
         XCTAssertEqual(code, "timed-out")
     }
 
+    /// A plugin writes whichever spelling of a UUID it likes and the peripheral
+    /// publishes its own. Both sides key through one normalisation, or a
+    /// notification silently reaches no waiter at all.
+    func testANotificationMatchesTheSpellingThePluginSubscribedWith() {
+        let session = openSession()
+        let subscribed = expectation(description: "subscribed")
+        session.subscribe(characteristicUUID: statusUUID.lowercased()) { _ in
+            subscribed.fulfill()
+        }
+        wait(for: [subscribed], timeout: 2)
+
+        var value: String?
+        let received = expectation(description: "received")
+        session.next(characteristicUUID: statusUUID.lowercased(), timeout: 2) { result in
+            value = try? result.get()
+            received.fulfill()
+        }
+        pump()
+        maker.transport.fireNotification(
+            "c3BlbGxpbmc=", characteristicUUID: statusUUID, deviceID: device.id)
+        wait(for: [received], timeout: 3)
+        XCTAssertEqual(value, "c3BlbGxpbmc=")
+    }
+
+    /// The timeout of a `next` that was already answered must not cancel the
+    /// waiter of the `next` that followed it — inside a 15 s control loop that
+    /// costs a whole wasted window.
+    func testAnAnsweredNextsTimeoutLeavesTheFollowingWaiterAlone() {
+        let session = openSession()
+        let subscribed = expectation(description: "subscribed")
+        session.subscribe(characteristicUUID: statusUUID) { _ in subscribed.fulfill() }
+        wait(for: [subscribed], timeout: 2)
+
+        let first = expectation(description: "first")
+        session.next(characteristicUUID: statusUUID, timeout: 0.2) { _ in first.fulfill() }
+        pump()
+        maker.transport.fireNotification(
+            "Zmlyc3Q=", characteristicUUID: statusUUID, deviceID: device.id)
+        wait(for: [first], timeout: 2)
+
+        var value: String?
+        let second = expectation(description: "second")
+        session.next(characteristicUUID: statusUUID, timeout: 5) { result in
+            value = try? result.get()
+            second.fulfill()
+        }
+        // Past the first call's deadline, so its timer has fired.
+        pump(0.5)
+        maker.transport.fireNotification(
+            "c2Vjb25k", characteristicUUID: statusUUID, deviceID: device.id)
+        wait(for: [second], timeout: 2)
+        XCTAssertEqual(value, "c2Vjb25k")
+    }
+
     // MARK: - Writes
 
     /// A write-without-response waits for controller room. Without that the
@@ -195,6 +250,34 @@ final class PluginBluetoothSessionTests: XCTestCase {
         pump()
         XCTAssertTrue(written)
         XCTAssertEqual(maker.transport.writes.first?.withResponse, false)
+    }
+
+    /// Controller room that never comes must fail the write rather than hold
+    /// the queue: every other operation is behind it, and only a disconnect
+    /// would ever free it.
+    func testAWriteWithNoControllerRoomTimesOutAndTheQueueMovesOn() {
+        PluginBluetoothSession.readyToWriteTimeout = 0.2
+        let session = openSession()
+        maker.transport.canWrite = false
+        var code: String?
+        let failed = expectation(description: "failed")
+        session.write(base64: "AAAA", characteristicUUID: statusUUID, withResponse: false) {
+            result in
+            if case .failure(let error) = result { code = error.code }
+            failed.fulfill()
+        }
+        wait(for: [failed], timeout: 3)
+        XCTAssertEqual(code, "timed-out")
+        XCTAssertTrue(maker.transport.writes.isEmpty)
+
+        var read: String?
+        let answered = expectation(description: "answered")
+        session.read(characteristicUUID: statusUUID) { result in
+            read = try? result.get()
+            answered.fulfill()
+        }
+        wait(for: [answered], timeout: 3)
+        XCTAssertEqual(read, "", "the next operation runs once the write gave up")
     }
 
     /// The device's own limit sizes a data frame, so the session reports it.

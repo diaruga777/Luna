@@ -66,7 +66,8 @@ Codes you will see, and where they come from:
 | `network-refused` | `luna.fetch` | `LiveNetworkPolicy` refused the request before it was sent |
 | `disconnected` | a `BluetoothSession` call, after the peripheral disconnects | every queued/in-flight call on that session rejects with this |
 | `bluetooth-unavailable` | `luna.bluetooth.*` | the radio is off, unauthorized, or the manager could not be built |
-| `timed-out` | `luna.bluetooth.connect`, a session's `next` | the operation's own timeout elapsed |
+| `timed-out` | `luna.bluetooth.connect`, a session's `next`, a session's `write` waiting for controller room | the operation's own timeout elapsed |
+| `already-connecting` | `luna.bluetooth.connect` | a connect to that device is already waiting for its link — the first call's promise still stands, so await that one |
 | `background` | `luna.wifi.join` | iOS only joins a network while Luna is in the foreground; catch this and prompt the person to open Luna instead of failing silently |
 | `already-registered` / `invalid-hooks` | Safari's `luna.register`, if called twice or with something other than an object | a bug in your plugin, not a runtime condition to handle |
 

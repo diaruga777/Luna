@@ -421,6 +421,8 @@ export interface Bluetooth {
   pair(): Promise<BluetoothDevice | null>;
   pairedDevices(): Promise<BluetoothDevice[]>;
   unpair(deviceId: string): Promise<void>;
+  // Rejects with `already-connecting` while an earlier connect to the same
+  // device is still waiting for its link; await that one instead.
   connect(deviceId: string, opts?: { timeout?: number }): Promise<BluetoothSession>;
   // Synchronous on purpose: the answer is "is a link live right now", and an
   // awaited call could not tell "no session" from "not yet". Live for the

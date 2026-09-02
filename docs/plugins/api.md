@@ -28,7 +28,7 @@ platform's internal design, see `claudedocs/plugins.md`.
 | `crypto` | yes | yes | yes (SubtleCrypto) |
 | `browser` | shows a modal | defers → save locks | defers → deep-links to the app |
 | `downloads` | yes | yes | no |
-| `settings` | get/set/all | get/all | get only, relayed |
+| `settings` | get/set/all | get/all | `get` only (relayed, defaults included) |
 | `ui` | yes | no | no |
 | `mail` | yes | no | no |
 | `notifications` | yes | no | no |

@@ -59,11 +59,28 @@ final class PluginDetailScreenTests: XCTestCase {
         func reloadAll() {}
     }
 
-    private func summary(id: String = "p", isBundled: Bool) -> PluginSummary {
+    private final class RecordingAutoSend: PluginDestinationAutoSendPresenting {
+        private(set) var opened: [(destinationID: String, displayName: String)] = []
+        func presentAutoSend(
+            destinationID: String, displayName: String, from presenter: UIViewController
+        ) {
+            opened.append((destinationID, displayName))
+        }
+    }
+
+    private func summary(
+        id: String = "p", isBundled: Bool, export: PluginExportSummary? = nil
+    ) -> PluginSummary {
         PluginSummary(
             id: id, name: "Price Watch", version: "1.0.0", priority: 0, matchesAnyHost: true,
-            hostPatterns: [], produces: [.product], hooks: [.classify], export: nil,
+            hostPatterns: [], produces: [.product], hooks: [.classify], export: export,
             isBundled: isBundled)
+    }
+
+    private func destinationExport() -> PluginExportSummary {
+        PluginExportSummary(
+            kinds: [.article], input: "epub", epubProfile: nil, epubImages: true,
+            title: "Send to Reader", symbol: nil, isDestination: true, requiresSettings: [])
     }
 
     private func field(
@@ -159,6 +176,67 @@ final class PluginDetailScreenTests: XCTestCase {
         XCTAssertEqual(store.valueJSON(pluginID: listing.summary.id, key: "notifyOnDrop"), "true")
         XCTAssertEqual(invoker.invocations.count, 1)
         XCTAssertEqual(invoker.invocations.first?.hook, .onSettingsChanged)
+    }
+
+    // MARK: - Auto-send
+
+    /// The row exists only where the app installed the screen it opens, and
+    /// only for a plugin that is actually a destination — nothing else has
+    /// per-source auto-send to configure.
+    func testTheAutoSendRowNeedsBothADestinationAndAWitness() {
+        let witness = RecordingAutoSend()
+        PluginDestinationAutoSend.presenter = witness
+        defer { PluginDestinationAutoSend.presenter = nil }
+
+        let plain = PluginListing(
+            summary: summary(isBundled: true), description: nil, status: .enabled,
+            capabilities: [], runsInBackground: false, settings: [])
+        let plainScreen = PluginDetailScreen(
+            listing: plain, catalog: FakeCatalog([plain]),
+            settingsStore: FakePluginSettingsStore(), invoker: nil)
+        _ = UITestSupport.host(plainScreen)
+        XCTAssertFalse(allRowTexts(plainScreen).contains(L10n.string("Plugins_autoSendRow")))
+
+        let destination = PluginListing(
+            summary: summary(isBundled: true, export: destinationExport()), description: nil,
+            status: .enabled, capabilities: [], runsInBackground: false, settings: [])
+        let screen = PluginDetailScreen(
+            listing: destination, catalog: FakeCatalog([destination]),
+            settingsStore: FakePluginSettingsStore(), invoker: nil)
+        _ = UITestSupport.host(screen)
+        XCTAssertTrue(allRowTexts(screen).contains(L10n.string("Plugins_autoSendRow")))
+
+        PluginDestinationAutoSend.presenter = nil
+        let unwitnessed = PluginDetailScreen(
+            listing: destination, catalog: FakeCatalog([destination]),
+            settingsStore: FakePluginSettingsStore(), invoker: nil)
+        _ = UITestSupport.host(unwitnessed)
+        XCTAssertFalse(
+            allRowTexts(unwitnessed).contains(L10n.string("Plugins_autoSendRow")),
+            "an app with no auto-send screen must not advertise one")
+    }
+
+    /// The row opens the screen under the DESTINATION id, not the plugin id —
+    /// every send state and per-source toggle is keyed by the former.
+    func testTheAutoSendRowOpensUnderTheDestinationID() {
+        let witness = RecordingAutoSend()
+        PluginDestinationAutoSend.presenter = witness
+        defer { PluginDestinationAutoSend.presenter = nil }
+
+        let listing = PluginListing(
+            summary: summary(id: "app.luna.xteink", isBundled: true, export: destinationExport()),
+            description: nil, status: .enabled, capabilities: [], runsInBackground: false,
+            settings: [])
+        let screen = PluginDetailScreen(
+            listing: listing, catalog: FakeCatalog([listing]),
+            settingsStore: FakePluginSettingsStore(), invoker: nil)
+        _ = UITestSupport.host(screen)
+
+        // Status is section 0; the settings section holding the row is 1.
+        screen.tableView(screen.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
+
+        XCTAssertEqual(witness.opened.map(\.destinationID), ["xteink"])
+        XCTAssertEqual(witness.opened.map(\.displayName), ["Send to Reader"])
     }
 
     func testEnablingAStoppedPluginCallsSetEnabled() {

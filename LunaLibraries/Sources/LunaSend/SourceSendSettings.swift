@@ -34,13 +34,18 @@ public enum SourceSendSettings {
 
     // MARK: Legacy / App-Intents mode (the destination's existing global mode)
 
-    /// The send mode governing App Intents (Shortcuts) and in-app saves — backed
-    /// by the destination's existing `sendMode` so nothing migrates.
+    /// The send mode governing App Intents (Shortcuts) and in-app saves. The
+    /// two destinations that predate plugins keep their own settings key so
+    /// nothing migrates; every other destination reads its own key here and
+    /// starts `.off` — a destination a user just installed auto-sends only
+    /// once they ask it to.
     public static func appIntentsMode(forDestination id: String) -> ArticleSendMode {
         switch id {
         case ArticleDestinationID.kindle: return KindleSendSettings.sendMode
         case ArticleDestinationID.xteink: return XteinkSendSettings.sendMode
-        default: return .off
+        default:
+            return defaults.string(forKey: key(id, "appIntentsMode"))
+                .flatMap(ArticleSendMode.init(rawValue:)) ?? .off
         }
     }
 
@@ -48,7 +53,7 @@ public enum SourceSendSettings {
         switch id {
         case ArticleDestinationID.kindle: KindleSendSettings.sendMode = mode
         case ArticleDestinationID.xteink: XteinkSendSettings.sendMode = mode
-        default: break
+        default: defaults.set(mode.rawValue, forKey: key(id, "appIntentsMode"))
         }
     }
 

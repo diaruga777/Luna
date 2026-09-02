@@ -9,6 +9,7 @@
 
 import LunaDesignSystem
 import LunaModels
+import LunaPluginExport
 import LunaPluginKit
 import UIKit
 
@@ -25,6 +26,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         case runsInBackground
         case capability(PluginCapabilityName)
         case field(PluginSettingField)
+        case autoSend
         case showSource
         case delete
     }
@@ -95,11 +97,18 @@ public final class PluginDetailScreen: NavHeaderTableController {
                     rows: listing.capabilities.map { .capability($0) }))
         }
 
-        if !listing.settings.isEmpty {
+        var settingsRows: [Row] = listing.settings.map { .field($0) }
+        // A destination decides which capture sources auto-send to it, the
+        // same question the two Swift destinations answer. The row appears
+        // only where an app installed the screen that answers it.
+        if isDestination, PluginDestinationAutoSend.presenter != nil {
+            settingsRows.append(.autoSend)
+        }
+        if !settingsRows.isEmpty {
             result.append(
                 RowSection(
                     header: L10n.string("Plugins_settingsSectionHeader"), footer: nil,
-                    rows: listing.settings.map { .field($0) }))
+                    rows: settingsRows))
         }
 
         result.append(RowSection(header: nil, footer: nil, rows: [.showSource]))
@@ -137,6 +146,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         case .runsInBackground: return textCell(L10n.string("Plugins_runsInBackgroundLine"))
         case .capability(let capability): return textCell("•  " + PluginCapabilityCopy.sentence(for: capability))
         case .field(let field): return fieldCell(field)
+        case .autoSend: return autoSendCell()
         case .showSource: return actionCell(L10n.string("Plugins_showSourceRow"), destructive: false)
         case .delete: return actionCell(L10n.string("Plugins_deleteRow"), destructive: true)
         }
@@ -162,6 +172,20 @@ public final class PluginDetailScreen: NavHeaderTableController {
         case .enabled, .stopped: return true
         case .disabled, .loadFailed: return false
         }
+    }
+
+    private var isDestination: Bool { listing.summary.export?.isDestination == true }
+
+    private var destinationID: String {
+        PluginDestinationLegacyIDs.destinationID(forPluginID: listing.summary.id)
+    }
+
+    private func autoSendCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
+        cell.textLabel?.text = L10n.string("Plugins_autoSendRow")
+        cell.detailTextLabel?.text = listing.summary.export?.title
+        cell.accessoryType = .disclosureIndicator
+        return cell
     }
 
     private func reenableCell() -> UITableViewCell {
@@ -309,6 +333,7 @@ public final class PluginDetailScreen: NavHeaderTableController {
         tableView.deselectRow(at: indexPath, animated: true)
         switch sections[indexPath.section].rows[indexPath.row] {
         case .reenable: reenable()
+        case .autoSend: presentAutoSend()
         case .showSource: showSource()
         case .delete: confirmDelete()
         case .field(let field):
@@ -327,6 +352,13 @@ public final class PluginDetailScreen: NavHeaderTableController {
             self?.commitValue(field, json: PluginSettingValueCoding.encodeString(id))
         }
         navigationController?.pushViewController(screen, animated: true)
+    }
+
+    private func presentAutoSend() {
+        PluginDestinationAutoSend.presenter?.presentAutoSend(
+            destinationID: destinationID,
+            displayName: listing.summary.export?.title ?? listing.summary.name,
+            from: self)
     }
 
     private func showSource() {

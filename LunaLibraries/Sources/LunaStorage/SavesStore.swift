@@ -854,6 +854,12 @@ public final class SavesStore {
     @discardableResult
     public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> SavedItem? {
         let result = mutateItem(itemID) { item -> SavedItem in
+            var tracker = tracker
+            // A tracker made from a plugin's Model carries its owner down to
+            // every store, which is what routes each store's refresh back
+            // through that plugin (`PluginPriceFetcher`). The save was stamped
+            // before this write (`IngestResult.pluginID`).
+            if let pluginID = item.pluginID { tracker.adoptPluginOwner(pluginID) }
             item.priceTracker = tracker
             item.title = tracker.productName
             item.state = .ready

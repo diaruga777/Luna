@@ -17,6 +17,8 @@
 //
 
 import LunaMediaDownload
+import LunaPluginIngest
+import LunaPluginKit
 import LunaPriceUI
 import LunaReaderUI
 import LunaShareSurface
@@ -28,6 +30,8 @@ final class ActionEntry: ShareViewController {
         ArticleKindComposition.install()
         MediaKindComposition.install()
         ProductKindComposition.install()
+        PluginPlatformComposition.install(
+            processKind: .action, swiftMediaResolver: SocialMediaResolver())
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

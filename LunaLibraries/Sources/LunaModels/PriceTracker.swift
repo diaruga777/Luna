@@ -38,21 +38,26 @@ public struct PriceTrackerStore: Codable, Equatable, Identifiable {
     public var lastRefreshed: Date?
     /// Per-day price history (lowest price each calendar day), oldest-first.
     public var priceHistory: [PriceDaySnapshot]
+    /// The plugin that owns this store's price, when a plugin produced the
+    /// tracker. `PriceRefresher` routes a store carrying one through
+    /// `PluginPriceFetcher` instead of the Swift price extraction.
+    public var pluginID: String?
 
     public var id: String { urlString }
     public var url: URL? { URL(string: urlString) }
 
     public init(urlString: String, lastPrice: Decimal?, currency: String, lastRefreshed: Date? = nil,
-         priceHistory: [PriceDaySnapshot] = []) {
+         priceHistory: [PriceDaySnapshot] = [], pluginID: String? = nil) {
         self.urlString = urlString
         self.lastPrice = lastPrice
         self.currency = currency
         self.lastRefreshed = lastRefreshed
         self.priceHistory = priceHistory
+        self.pluginID = pluginID
     }
 
     private enum CodingKeys: String, CodingKey {
-        case urlString, lastPrice, currency, lastRefreshed, priceHistory
+        case urlString, lastPrice, currency, lastRefreshed, priceHistory, pluginID
     }
 
     // Custom decode so items saved before `priceHistory` existed still load (the
@@ -64,6 +69,7 @@ public struct PriceTrackerStore: Codable, Equatable, Identifiable {
         currency = try c.decode(String.self, forKey: .currency)
         lastRefreshed = try c.decodeIfPresent(Date.self, forKey: .lastRefreshed)
         priceHistory = try c.decodeIfPresent([PriceDaySnapshot].self, forKey: .priceHistory) ?? []
+        pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
     }
 
     /// Records a successful price fetch into the day buckets: appends a new day or
@@ -407,6 +413,15 @@ public struct PriceTracker: Codable, Equatable {
     public mutating func markAlertViewed(at date: Date = Date()) {
         guard isAlerting else { return }
         alertAcknowledgedAt = date
+    }
+
+    /// Marks every unowned store as belonging to `pluginID`. A tracker a plugin
+    /// produced routes each store's refresh back through that plugin, so the
+    /// owner is recorded on the stores rather than only on the save.
+    public mutating func adoptPluginOwner(_ pluginID: String) {
+        for index in stores.indices where stores[index].pluginID == nil {
+            stores[index].pluginID = pluginID
+        }
     }
 
     /// Whether a URL is already one of this tracker's stores.

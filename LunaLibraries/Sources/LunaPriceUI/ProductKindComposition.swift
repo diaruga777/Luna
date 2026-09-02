@@ -35,6 +35,7 @@ public enum ProductKindComposition {
         IngestKindProcessors.product = ProductIngestProcessor(
             fallback: SnapshotProductInfoFallback())
         ShareKindPresenters.product = ExtensionProductPresenter()
+        PluginModelAdopters.product = ProductModelAdopter()
         SellerComparisonRunner.install()
     }
 }

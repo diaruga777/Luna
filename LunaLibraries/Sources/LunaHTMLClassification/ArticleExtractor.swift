@@ -25,6 +25,29 @@ public struct ArticleExtractor {
     /// The refined result is used only when it's substantial AND didn't eat
     /// most of what the basic pass found (junk classes sometimes match the
     /// main content container on real sites).
+    /// Converts a body fragment a PLUGIN already chose into reader content
+    /// (`claudedocs/plans/plugin-platform.md` §5.2).
+    ///
+    /// The plugin read the page and returned the article, so the arbitration
+    /// above has nothing to arbitrate: readability scoring would re-derive a
+    /// container inside a fragment that is already the container, and the
+    /// boilerplate passes would trim a fragment that carries none. This runs the
+    /// same block walk the refined layer ends with — links, images and the
+    /// page's own anchors survive — and nothing else.
+    ///
+    /// `title` and `author` come from the Model, so no `<head>` is needed.
+    public func convertTrusted(
+        fragmentHTML: String, baseURL: URL, title: String, author: String?
+    ) throws -> ArticleContent {
+        let document = try SwiftSoup.parseBodyFragment(fragmentHTML, baseURL.absoluteString)
+        let container = document.body() ?? document
+        let anchors = InPageAnchors.prepare(document: document, baseURL: baseURL)
+        var blocks = try extractBlocks(from: container, baseURL: baseURL, anchors: anchors)
+        blocks = InPageAnchors.resolvingAnchors(blocks)
+        guard !blocks.isEmpty else { throw ExtractError.noContent }
+        return ArticleContent(title: title, author: author, blocks: blocks)
+    }
+
     public func extract(html: String, baseURL: URL) throws -> ArticleContent {
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
         let title = extractTitle(from: document)

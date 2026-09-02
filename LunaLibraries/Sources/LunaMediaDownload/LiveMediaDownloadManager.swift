@@ -644,6 +644,53 @@ public final class LiveMediaDownloadManager: NSObject {
     /// and verify storage before creating the background transfer. Poster fetching
     /// runs independently so the card/Live Activity can become visual as soon as
     /// the resolver exposes a thumbnail.
+    /// Re-runs the owning plugin and rewrites the job with the asset that
+    /// matches the leg it was downloading (§7.6). Returns false when there is no
+    /// plugin, no witness, or nothing matched — the caller then fails or retries
+    /// as it would have.
+    ///
+    /// The persisted resume blob is discarded: it names a byte range on a URL
+    /// that no longer exists, and handing it to a new URL restarts the transfer
+    /// at the wrong offset.
+    @discardableResult
+    func reresolvePluginJob(_ persistedJob: LiveMediaDownloadJob) async -> Bool {
+        guard let pluginID = persistedJob.pluginID,
+              let reresolver = Self.reresolver,
+              let sourceURL = URL(string: persistedJob.sourceURLString)
+        else { return false }
+
+        let assets = await reresolver.reresolve(
+            sourceURL: sourceURL, pluginID: pluginID, saveID: persistedJob.id)
+        guard let assets, !assets.isEmpty,
+              let asset = MediaReresolveMatching.pick(
+                kind: persistedJob.mediaKind, quality: nil, from: assets)
+        else { return false }
+
+        store.removeResumeData(for: persistedJob)
+        guard let updated = store.mutate(id: persistedJob.id, { job in
+            job.assetURLString = asset.url.absoluteString
+            job.audioURLString = asset.audioURL?.absoluteString
+            job.dashManifestURLString = asset.dashManifestURL?.absoluteString
+            job.mediaKind = asset.kind
+            job.requestHeadersJSON = Self.headersJSON(asset.requestHeaders)
+            job.expiresAt = asset.expiresAt
+            job.resumeDataFileName = nil
+            job.progress = 0
+            job.receivedByteCount = nil
+            job.errorMessage = nil
+            job.phase = .downloading
+        }) else { return false }
+
+        await cancelTasks(jobID: updated.id)
+        startTask(
+            Self.mediaAssetRequest(
+                assetURL: asset.url, sourceURL: sourceURL,
+                pluginHeaders: asset.requestHeaders),
+            jobID: updated.id, role: .media, attempt: updated.mediaAttempts,
+            expectedByteCount: asset.estimatedByteCount ?? updated.expectedByteCount)
+        return true
+    }
+
     private func prepareAndStartMediaDownload(
         for persistedJob: LiveMediaDownloadJob, asset: MediaAsset
     ) async {
@@ -683,6 +730,9 @@ public final class LiveMediaDownloadManager: NSObject {
             job.fileExtension = MediaFileDownloader.fileExtension(for: asset, mimeType: nil)
             job.expectedByteCount = expected
             job.timeRange = asset.timeRange
+            job.pluginID = asset.pluginID
+            job.requestHeadersJSON = Self.headersJSON(asset.requestHeaders)
+            job.expiresAt = asset.expiresAt
             job.phase = .downloading
             job.errorMessage = nil
         }) else { return }
@@ -700,7 +750,9 @@ public final class LiveMediaDownloadManager: NSObject {
         }
 
         startTask(
-            Self.mediaAssetRequest(assetURL: asset.url, sourceURL: sourceURL),
+            Self.mediaAssetRequest(
+                assetURL: asset.url, sourceURL: sourceURL,
+                pluginHeaders: asset.requestHeaders),
             jobID: job.id, role: .media, attempt: job.mediaAttempts,
             expectedByteCount: expected)
     }
@@ -858,6 +910,9 @@ public final class LiveMediaDownloadManager: NSObject {
                 role: .resolve, attempt: job.resolveAttempts)
 
         case .downloading, .waiting:
+            // A plugin's asset URL dies before the job does. Re-resolve before
+            // spending a transfer on a URL that will answer 403.
+            if Self.pluginURLsAreStale(job), await reresolvePluginJob(job) { return }
             guard let assetURLString = job.assetURLString,
                   let assetURL = URL(string: assetURLString),
                   let sourceURL = URL(string: job.sourceURLString)
@@ -904,7 +959,9 @@ public final class LiveMediaDownloadManager: NSObject {
                         role: .redditAudio, attempt: job.mediaAttempts)
                 } else {
                     startTask(
-                        Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                        Self.mediaAssetRequest(
+                            assetURL: assetURL, sourceURL: sourceURL,
+                            pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)),
                         jobID: job.id, role: .redditVideo, attempt: job.mediaAttempts,
                         expectedByteCount: job.expectedByteCount)
                 }
@@ -916,7 +973,9 @@ public final class LiveMediaDownloadManager: NSObject {
                     attempt: job.mediaAttempts, expectedByteCount: job.expectedByteCount)
             } else {
                 startTask(
-                    Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                    Self.mediaAssetRequest(
+                        assetURL: assetURL, sourceURL: sourceURL,
+                        pluginHeaders: Self.headers(fromJSON: job.requestHeadersJSON)),
                     jobID: job.id, role: .media, attempt: job.mediaAttempts,
                     expectedByteCount: job.expectedByteCount)
             }
@@ -1151,7 +1210,15 @@ public final class LiveMediaDownloadManager: NSObject {
     /// `sourceURL` is always the already-recognized source post URL (every job is
     /// created behind `MediaDownloadablePlatform.supports`), so an anchored
     /// host-suffix match is exactly as reliable here as the old substring check.
-    private static func mediaAssetRequest(assetURL: URL, sourceURL: URL) -> URLRequest {
+    ///
+    /// `pluginHeaders` are applied LAST, so a plugin that declared its own
+    /// User-Agent or Referer overrides the defaults below — a CDN that hands a
+    /// plugin a URL usually demands exactly the headers the plugin used to get
+    /// it. Only `PluginModelCaps.allowedHeaderNames` reach here; the Model
+    /// decoder refuses the rest.
+    private static func mediaAssetRequest(
+        assetURL: URL, sourceURL: URL, pluginHeaders: [String: String] = [:]
+    ) -> URLRequest {
         var request = URLRequest(url: assetURL, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         if HostMatching.hostSuffixMatches(sourceURL.host?.lowercased() ?? "", "tiktok.com") {
@@ -1161,6 +1228,7 @@ public final class LiveMediaDownloadManager: NSObject {
         } else if PlatformRecognizer.recognize(sourceURL.absoluteString)?.platform == .reddit {
             request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
         }
+        for (name, value) in pluginHeaders { request.setValue(value, forHTTPHeaderField: name) }
         return request
     }
 
@@ -1423,6 +1491,10 @@ public final class LiveMediaDownloadManager: NSObject {
         if let http, !(200..<300).contains(http.statusCode) {
             if http.statusCode == 403, restartExpiredYouTubeMedia(job) { return }
             startTrackedBackgroundWork {
+                // A plugin-owned job answers a stale-URL status by asking its
+                // plugin for a fresh URL, once, before the retry ladder runs.
+                if Self.statusInvitesReresolve(http.statusCode),
+                   await self.reresolvePluginJob(job) { return }
                 await self.retryOrFail(
                     job: job, role: .media, response: response,
                     message: MediaDownloadError.downloadFailed.message)

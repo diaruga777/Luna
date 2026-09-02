@@ -36,7 +36,11 @@ enum MediaShellWiring {
         // installs the choice (`claudedocs/util-card.md`).
         MediaUtilCardStorageChoice.install()
         // URL Rescue's media leg: download engine-resolved assets directly.
-        URLRescueWiring.mediaResolver = SocialMediaResolver()
+        // Central Luna resolves media through its plugins; the Downloader (and
+        // central Luna until Wave 2 bundles the media plugins) keeps the Swift
+        // resolver. `PluginPlatformComposition.install()` runs before this, in
+        // the same composition root.
+        URLRescueWiring.mediaResolver = PluginMediaSeams.resolver ?? SocialMediaResolver()
         URLRescueWiring.mediaRescueStarter = ResolvedAssetRescueStarter()
         // The factory reset's media leg: a Live Activity outlives the process
         // that started it, so the wipe has to end them itself.

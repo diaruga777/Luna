@@ -13,10 +13,12 @@ that share one App Group, one on-disk store (`saves.sqlite`), and one codebase:
   reader (whose opt-in eye-tracking toggle pauses the silent speed read when your gaze
   leaves the focal word — ARKit face tracking, `claudedocs/eye-tracking.md`);
   background-playback read-aloud with autoplay-next and on-device trimming (see
-  `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account);
-  send-to-Xteink (EPUB delivered to a CrossPoint-firmware e-reader over a BLE
-  rendezvous, or over local Wi-Fi when reachable, `claudedocs/xteink.md`);
-  share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
+  `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account,
+  `claudedocs/send-to-kindle.md`) and send-to-Xteink (EPUB delivered to a CrossPoint-firmware
+  e-reader over a BLE rendezvous, or over local Wi-Fi when reachable, `claudedocs/xteink.md`)
+  as SWIFT `ArticleDestination`s — the central Luna app delivers to the same two destinations
+  through bundled PLUGINS instead (`kindle.js`/`xteink.js`, see "Plugins" below), never this
+  Swift code; share-sheet export of any unlocked article as EPUB / PDF / Markdown / plain text
   (`claudedocs/article-export.md`, shared with the central app); long-form X posts and
   self-threads read as articles (`claudedocs/x-posts.md`, shared with the central app —
   X serves no post text to an unauthenticated client, so that ONE kind's text comes from
@@ -379,7 +381,10 @@ ActivityKit/SwiftSoup that no appex can afford; `LunaMediaDownload` `@_exported 
 it, so nothing else changed. The App-Group key format and product-matching hand-copies
 that used to live in `LunaSafari/Shared*.swift` are gone — `LunaSafari/SharedProductMatching.swift`
 now just reduces a "Was $X on <date>" answer over the real `LunaPriceCompare.ProductPageMatching`
-the app links too. `AppConfig.appGroupID` reads the App Group id from the extension's own
+the app links too. **The central `LunaSafari` target ALONE also links `LunaPluginKit` and
+`LunaBundledPlugins`** on top of that shared floor — the other three Safari appexes do not,
+even though all four compile the same `SafariWebExtensionHandler`/`content.js` source. See
+"Plugins" below. `AppConfig.appGroupID` reads the App Group id from the extension's own
 Info.plist, the same `LunaAppGroupID` key every other target reads (`Bundle.main` always
 resolves to the calling process's own bundle). **Wiring is protocol contracts,
 never stored closures** (owner standard, 2026-08): a stored closure property or a
@@ -416,10 +421,16 @@ SavesUI / Intents / URLRescue / ShareSurface / SwiftSoup — plus its own kind g
 
 | App target | Kind group(s) linked on top of the universal set |
 | --- | --- |
-| `Luna` (central) | article + media + product (everything) |
+| `Luna` (central) | article + media + product (everything), plus the plugin tier: LunaPluginKit, LunaPluginRuntime, LunaPluginIngest, LunaPluginExport, LunaPluginTransport, LunaPluginUI, LunaBundledPlugins |
 | `LunaReader` | LunaArticleIngest, LunaReaderUI, LunaArchiveReader, LunaPaywallBypass, LunaAudioPlayback, LunaReaderEngine, LunaEpub, LunaDocuments, LunaSend |
 | `LunaDownloader` | LunaMediaDownload (re-exports LunaMediaResolve), LunaPlatforms |
 | `LunaPriceTracker` | LunaPriceIngest, LunaPriceUI, LunaPriceCompare |
+
+The plugin tier links only into `Luna`, plus `LunaShare`/`LunaAction` (the
+central app's own share/action extensions — `LunaPluginKit`/`Runtime`/`Ingest`
+only, no export/transport/UI) and the central `LunaSafari` (`LunaPluginKit`/
+`LunaBundledPlugins` only, no JS runtime — see "Plugins" below). The three
+sibling apps and every one of THEIR extensions link none of it.
 
 **`LunaPriceCompare` is the one kind module that also goes into the SAFARI
 appexes** (`claudedocs/price-comparison.md`): the alternative-seller fan-out —
@@ -455,6 +466,77 @@ fan-out that uses it as its Layer-2 leg; `BlueskyLink` moved to
 LunaURLClassification. Correctness never
 depended on the link graph — it comes from the `SurfaceSupport` ingest gate
 plus `LunaApp.includes` — but the graph now matches it.
+
+## Plugins (central Luna only)
+
+Central Luna alone runs a JavaScriptCore plugin platform that extends two
+ingest-pipeline steps — **ingest** (URL → Model) and **export** (save →
+delivered file) — plus one Bluetooth/Wi-Fi reader integration. Reader,
+Downloader and Price Tracker link none of it and run no plugin code. Full
+reference: `claudedocs/plugins.md`; the authoring side (for a plugin author,
+not for editing this codebase) is `docs/plugins/`.
+
+**Composition rule.** `PluginPlatformComposition.install()` (LunaPluginIngest)
+is the single root call for the runtime/ingest half of the platform, made
+`@MainActor` from EXACTLY three roots — `KindWiring+Luna.swift`,
+`ShareEntry+Luna.swift`, `ActionEntry+Luna.swift` — after their kind packs
+have installed the article/media/product adopters `PluginModelAdopters`
+needs. `PluginExportComposition.install()` and `PluginTransportComposition
+.install()` are called only from `KindWiring+Luna` — export and transport
+never run in the extensions. Bridge factories are handed IN rather than
+reached for (`additionalBridges:`), because `LunaPluginIngest` sits below
+`LunaPluginUI`/`Export`/`Transport`/`LunaBundledPlugins` in the link graph.
+`KindCompositionRootTests` fails the build if any other root writes
+`PluginPlatformServices`/`IngestPipeline.pluginStage` directly, or if the
+three required roots don't call `install`.
+
+**Per-target variant files.** The Safari native handler dispatches every
+`plugins.*` message through one seam, `SafariPluginMessaging`, and exactly
+one of `LunaSafari/SafariPluginMessages+Luna.swift` (real, `LunaPluginKit`-
+backed) or `+None.swift` (`handler = nil`) is a `project.pbxproj` membership
+exception per Safari target — central `LunaSafari` keeps `+Luna`, the other
+three keep `+None`. **Never gate this on `#if canImport(LunaPluginKit)`** —
+that check is not target-reliable here, the same warning `KindWiring+*`
+variants already carry. Three more files are membership-exception-excluded
+from the three sibling app targets so only central `Luna` compiles them:
+`Luna/Settings/PluginsSettingsCategory.swift`, `Luna/Stage/StageCatalog+Plugins.swift`
+(reads `LunaApp.current`-agnostic — its own header comment describing a
+runtime gate is stale now that the exception exists; trust the pbxproj), and
+`Luna/Settings/XteinkSettingsScreen.swift` (excluded from `Luna` itself —
+that Swift settings screen is dead code there now; the plugin owns Xteink
+settings in central Luna). `XteinkSyncProtocol` (LunaSend) stays linked by
+both apps — it is the wire protocol `xteink.js` and Luna Reader's Swift path
+both implement, pinned to agree by `XteinkPluginTests`.
+
+**Bundled plugins.** Nine ship in `LunaLibraries/Sources/LunaBundledPlugins/Plugins/`
+(seven media resolvers plus `kindle.js`/`xteink.js`, the two destinations
+that replace `KindleDestination`/`XteinkDestination` under their OLD ids via
+`PluginDestinationLegacyIDs`, so `send_states` bookkeeping carries over).
+That resource folder is named `Plugins`, **never `Resources`** — a directory
+literally called `Resources` at a bundle's root makes `codesign` read the
+bundle as a framework layout and refuse it.
+
+**`luna.html` has two backings, one specification.** SwiftSoup (JSC, in the
+app/extensions) and the Safari content script's `DOMParser`
+(`LunaSafari/Resources/plugin_host.js`) both implement the exact same small
+DOM subset, specified once as `LunaTests/Fixtures/Plugins/html-subset.spec.js`
+(60 cases) and run against BOTH backings plus a third, `linkedom`, in the
+node dev harness (`tools/plugin-sim/`). A disagreement is narrowed in the
+subset or fixed in a backing — never special-cased per backing.
+
+**Settings keys are bare, and `_` is reserved.** `luna.settings`/`luna.storage`
+values live in `plugin_kv` under the field's OWN key — never a `settings.`
+prefix — because both real writers (`luna.settings.set` and the Settings
+detail screen) write that way; `PluginKVStore.isConfigured` reads the same
+bare key to match. A manifest cannot declare a key starting with `_`, but
+`luna.settings.set` accepts one anyway: `_status` is how a destination
+plugin drives its own share-row dot.
+
+**`tools/plugin-sim/`** is a Node harness (no Xcode, no simulator) a plugin
+author or an implementation agent runs against real or fixture-recorded
+`luna.fetch` responses in under a second — `node tools/plugin-sim/run.mjs
+<plugin.js> <url> [--fixture dir]`. It is a convenience tool, never a build
+gate; `LunaTests` is the one suite that matters.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 

@@ -156,8 +156,9 @@ one physical BLE link, so BOTH processes can see the same window become
 ready. Two concurrent sweeps interleave duplicate control ops and data
 frames on the one GATT session and the reader kills the transfer
 (`resume_mismatch`/`sequence`). The whole sweep therefore runs under
-`XteinkRendezvousSweepLock` — an App-Group `flock`, kernel-released if the
-holder dies — and the losing process stays completely silent (it does not
+`BluetoothServiceLock` (LunaStorage, reached through
+`XteinkRendezvousSweepLock`) — an App-Group `flock` keyed by the service UUID,
+kernel-released if the holder dies — and the losing process stays completely silent (it does not
 even answer `no_work`; the owner concludes the window). For the same reason,
 `scanIfReady` asks `retrieveConnectedPeripherals(withServices:)` before
 scanning: a peripheral another process (or the system) already holds has
@@ -311,8 +312,10 @@ All in **LunaSend** (linked by the article-capable Reader app):
 - `XteinkRemoteDeleteRunner` — drains pending remote deletes.
 - `XteinkRendezvousSweepPolicy` — the one rendezvous-ready decision, shared
   by both `KindWiring`s.
-- `XteinkRendezvousSweepLock` — App-Group `flock` so only one Luna process
-  sweeps a given window.
+- `XteinkRendezvousSweepLock` — the CrossPoint service's
+  `BluetoothServiceLock` (LunaStorage), an App-Group `flock` keyed by service
+  UUID so only one Luna process sweeps a given window. Central Luna's Xteink
+  PLUGIN takes the same file through `luna.bluetooth`.
 - `XteinkSendSettings` — App-Group enable and per-source auto-send settings.
 - `XteinkTransferSizePolicy` — pure, transport-independent 200 KiB decision
   based on finalized Xteink EPUB bytes; consumed by the BLE/AP router.
@@ -392,8 +395,9 @@ recording, in-app-finish delete-pending, and the device-reported exemption.
 dequeue and delete-drain decisions directly; `XteinkRendezvousSweepPolicyTests`
 pin the read-report-only skip, the reconcile→drain→deliver→`no_work` order,
 that a denied sweep lock runs nothing, and that a failed `no_work` still
-releases the lock; `XteinkRendezvousSweepLockTests` pin the mutual exclusion
-(two instances, one file). `ArticleSendCoordinatorTests` pin that
+releases the lock; `BluetoothServiceLockTests` pin the mutual exclusion
+(two instances, one file) and that the Swift sweep and the plugin bridge derive
+one path for the CrossPoint service UUID. `ArticleSendCoordinatorTests` pin that
 `deliverQueuedSends` ignores backoff and drains everything; the transfer
 tests pin `exists`-as-delivered and missing-pairing-as-deferral.
 `XteinkTransferSizePolicyTests` cover the inclusive 200 KiB boundary.

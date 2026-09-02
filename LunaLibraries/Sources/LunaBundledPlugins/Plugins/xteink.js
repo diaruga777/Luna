@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "api": 1,
   "description": "Delivers saved articles to an Xteink X3 pocket e-reader over the CrossPoint rendezvous.",
-  "capabilities": ["bluetooth", "wifi", "fetch", "files", "crypto", "secrets", "storage", "settings", "notifications", "exports", "ui"],
+  "capabilities": ["bluetooth", "wifi", "fetch", "files", "crypto", "secrets", "settings", "notifications", "exports", "ui"],
   "background": true,
   "bluetooth": {
     "services": ["6F9F0A00-9B1D-4D1F-9F53-5B6B8B3D0F10"],
@@ -27,6 +27,7 @@
     "title": "Send to Xteink",
     "symbol": "books.vertical",
     "destination": true,
+    "dequeueOnRead": true,
     "requiresSettings": ["device"]
   }
 }
@@ -62,10 +63,14 @@ const IN_FLIGHT_MARGIN_BYTES = 1024;
 
 const CONTROL_ACK_TIMEOUT = 15;
 const CHECKPOINT_TIMEOUT = 10;
+/// How long the reader gets to hand back the next batch of finished ids.
+const READ_ACK_TIMEOUT = 3;
+/// The reader publishes at most this many finished ids per status.
+const READ_ID_BATCH = 2;
 const UPLOAD_PATH = "/upload?path=/Books";
-/// The reader's own pending remote deletes, filled on delivery and drained in
-/// the next normal window.
-const PENDING_DELETES = "pendingDeletes";
+const UPLOAD_PORT = 80;
+/// Mirrors `XteinkCrossPointTransferRouter.uploadRetryPause`.
+const UPLOAD_RETRY_PAUSE = 2;
 
 /// The window's authenticated link, while one is open.
 ///
@@ -114,8 +119,16 @@ function frame(sequence, payload) {
 /// CrossPoint's X3-side filename validator permits only this ASCII set. The
 /// display title is untouched; only the transport name is normalized, and
 /// deterministically, so a resume targets the same remote file.
+///
+/// `Array.from` iterates code POINTS, which is what `XteinkCrossPointTransfer
+/// .x3FileName` does with `unicodeScalars`. A regular expression over UTF-16
+/// units would turn one emoji into two dashes here and one in Luna Reader,
+/// and the two apps would name the same book differently on the same reader.
 function x3FileName(name) {
-    const normalized = String(name || "").replace(/[^A-Za-z0-9._-]/g, "-");
+    const permitted = /[A-Za-z0-9._-]/;
+    const normalized = Array.from(String(name || ""))
+        .map(function (character) { return permitted.test(character) ? character : "-"; })
+        .join("");
     return normalized.length > 0 ? normalized : "Luna.epub";
 }
 
@@ -299,9 +312,25 @@ async function sendOverWiFi(session, link, file, fileName, title) {
         }
     }
     try {
-        await upload(offer.ip, fileName, file);
+        await uploadOnce(joined, offer.ip, fileName, file);
     } finally {
         if (joined) { await luna.wifi.forget(offer.ssid); }
+    }
+}
+
+/// Uploads, and on a joined access point tries once more.
+///
+/// The reader binds its HTTP server moments after its AP accepts the phone,
+/// and one early connect can land in that gap — the same window
+/// `XteinkCrossPointTransferRouter.uploadRetryPause` covers. Waiting on the
+/// port is both the pause and the readiness check.
+async function uploadOnce(joined, host, fileName, file) {
+    try {
+        await upload(host, fileName, file);
+    } catch (error) {
+        if (!joined) { throw error; }
+        await luna.wifi.isReachable(host, UPLOAD_PORT, { timeout: UPLOAD_RETRY_PAUSE });
+        await upload(host, fileName, file);
     }
 }
 
@@ -327,41 +356,58 @@ async function upload(host, fileName, file) {
 
 /// Books the reader reports as finished.
 ///
-/// The reader marks a Luna-synced book read when the user reaches its end and
-/// re-reports any still-pending id at the start of every later window. Luna
-/// clears the send so the book is never delivered twice, then acks — a plain
-/// write, not a control operation, because the ack slot may be busy.
+/// The reader marks a Luna-synced book read when the user reaches its end. It
+/// hands back at most two ids per status and re-sends after each `read_ack`
+/// until its queue is drained, so this loops rather than answering once. Each
+/// id marks the save read in Luna and the delivery read on the device, which
+/// is what stops Luna from also asking the reader to delete a book it has
+/// already filed away. The ack is a plain write, not a control operation,
+/// because the ack slot may be busy.
 async function reconcile(session, link) {
-    if (link.readIDs.length === 0) { return; }
-    const ids = link.readIDs.slice();
-    link.readIDs = [];
-    for (const id of ids) {
-        try {
-            await luna.exports.markSent(id);
-        } catch (error) {
-            luna.log("read-state reconcile failed", { id: id });
+    while (link.readIDs.length > 0) {
+        const ids = link.readIDs.slice();
+        link.readIDs = [];
+        for (const id of ids) {
+            try {
+                await luna.exports.markReadOnDevice(id);
+            } catch (error) {
+                luna.log("read-state reconcile failed", { id: id });
+            }
+        }
+        await writeControl(session, "read_ack", { ids: ids });
+        // A short batch means the reader's queue is drained; only a full one
+        // is worth waiting on, so an ordinary window spends nothing here.
+        if (link.readIDs.length === 0 && ids.length >= READ_ID_BATCH) {
+            await collectMoreReadIDs(session, link);
         }
     }
-    await writeControl(session, "read_ack", { ids: ids });
 }
 
-/// Removes the books whose reading finished in Luna. The reader treats a
-/// missing file as its own success, so anything left pending just waits for
-/// the next window.
+/// Waits briefly for the ids the reader sends after an ack. A window with
+/// nothing more to report just times out here, which is the normal end of the
+/// loop rather than a failure.
+async function collectMoreReadIDs(session, link) {
+    try {
+        const status = parseStatus(await session.next(STATUS, { timeout: READ_ACK_TIMEOUT }));
+        if (status) { applyStatus(link, status); }
+    } catch (error) {
+        // No further status: the reader has handed back everything it had.
+    }
+}
+
+/// Removes the books whose reading finished in Luna. The core knows which
+/// deliveries are stale and under what name the reader filed them; the reader
+/// treats a missing file as its own success, so anything left pending just
+/// waits for the next window.
 async function drainPendingDeletes(session, link) {
-    const deletes = luna.storage.collection(PENDING_DELETES);
-    const rows = await deletes.find({}, { limit: 50 });
+    const rows = await luna.exports.pendingDeletes();
     for (const row of rows) {
-        const name = (row.doc || {}).remoteName;
-        if (!name) {
-            await deletes.delete(row.id);
-            continue;
-        }
+        if (!row || !row.remoteName) { continue; }
         try {
-            await control(session, link, "delete", { name: name });
-            await deletes.delete(row.id);
+            await control(session, link, "delete", { name: row.remoteName });
+            await luna.exports.markRemoteDeleted(row.saveId);
         } catch (error) {
-            if (isMissingFile(error)) { await deletes.delete(row.id); }
+            if (isMissingFile(error)) { await luna.exports.markRemoteDeleted(row.saveId); }
         }
     }
 }
@@ -407,8 +453,7 @@ luna.register({
             } else {
                 await sendOverWiFi(session, link, input.file, fileName, input.title);
             }
-            await recordDelivery(input.saveId, fileName);
-            return { status: "sent" };
+            return { status: "sent", remoteName: fileName };
         } catch (error) {
             return exportFailure(error, fileName);
         }
@@ -445,10 +490,12 @@ luna.register({
         }
     },
 
+    /// A `pairedDevice` row names the action it wants; a plain `action` row
+    /// only carries its key.
     async onAction(input) {
-        const key = input && input.key;
-        if (key === "pair") { return pairReader(); }
-        if (key === "unpair") { return unpairReader(); }
+        const action = (input && input.action) || (input && input.key);
+        if (action === "pair") { return pairReader(); }
+        if (action === "unpair") { return unpairReader(); }
     },
 
     async onSettingsChanged(changes) {
@@ -477,21 +524,13 @@ function exportFailure(error, fileName) {
     const code = (error && error.code) || "";
     const message = String((error && error.message) || "");
     if (message === "exists" || message.indexOf("exists") === 0) {
-        return { status: "sent" };
+        return { status: "sent", remoteName: fileName };
     }
     if (code === "pairing-required" || code === "disconnected" || code === "background") {
         return { status: "retry", message: message };
     }
     luna.log("send failed", { file: fileName, message: message });
     return { status: "failed", message: message };
-}
-
-/// Records the exact name that went on the wire, so a later in-app finish can
-/// target the same remote file for removal.
-async function recordDelivery(saveID, fileName) {
-    if (!saveID) { return; }
-    await luna.storage.collection("deliveries").put(
-        String(saveID), { remoteName: fileName, at: Date.now() });
 }
 
 /// First-use pairing. The system picker bonds the reader over BLE, and the

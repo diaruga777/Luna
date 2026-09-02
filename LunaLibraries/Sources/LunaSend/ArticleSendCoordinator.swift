@@ -38,6 +38,11 @@ public protocol ArticleDestination {
     /// Destinations that report progress on a receiving device (Xteink's
     /// "book i of n") override this; everything else keeps the plain form.
     func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws
+    /// True for a destination whose receiver files a delivered save away by
+    /// itself once it is read there. `ReadStateSendReconciler` drops a still
+    /// -queued send whose save was finished in Luna first, so the receiver
+    /// never gets a book its owner already considers done.
+    var dequeuesOnRead: Bool { get }
     /// True for a destination whose share row is drawn from somewhere else —
     /// a plugin destination's row carries its declaration's title, symbol and
     /// status dot, none of which a `DestinationDescriptor` holds.
@@ -89,6 +94,11 @@ public extension ArticleDestination {
 
     /// The two Swift destinations are drawn from their descriptor.
     var providesOwnShareRow: Bool { false }
+
+    /// A destination keeps its queue regardless of read state unless it says
+    /// otherwise: dropping a queued send is only right for a receiver that
+    /// tracks reading of its own.
+    var dequeuesOnRead: Bool { false }
 
     /// An EPUB destination: fetch the article's missing images when this
     /// destination's profile carries images, build the book, hand it over.
@@ -371,6 +381,12 @@ public final class ArticleSendCoordinator {
         destinations.filter { $0.isConfigured && $0.appIntentsSendMode == .doubleSave }.map(\.id)
     }
 
+    /// The destinations whose queue `ReadStateSendReconciler` prunes when a
+    /// save is finished before its send goes out.
+    public func dequeueOnReadDestinationIDs() -> [String] {
+        destinations.filter(\.dequeuesOnRead).map(\.id)
+    }
+
     /// Explicit send of one article to one destination (the long-press menu).
     /// No-op when that destination isn't configured.
     public func send(_ item: SavedItem, toDestinationID id: String) async {
@@ -407,7 +423,15 @@ public final class ArticleSendCoordinator {
     /// (Terminal `.failed` items are not `.queued` and stay untouched.)
     public func deliverQueuedSends(toDestinationID id: String) async {
         guard let destination = destination(id: id), destination.isConfigured else { return }
-        let queued = store.items().filter { $0.sendState(for: id) == .queued }
+        // A save finished before its window opened is dropped here rather
+        // than delivered, so a plugin driving its own sweep through
+        // `luna.exports.deliverQueued()` gets the same pre-pass the Swift
+        // rendezvous sweep has.
+        if destination.dequeuesOnRead {
+            ReadStateSendReconciler.dequeueSendsFinishedBeforeDelivery(
+                destinationIDs: [id], store: store)
+        }
+        let queued = store.items(sendState: .queued, forDestination: id)
         guard !queued.isEmpty else { return }
         SharedDiagnosticLog.record(
             "Rendezvous sweep: delivering \(queued.count) queued send(s)", category: "xteink")
@@ -416,13 +440,23 @@ public final class ArticleSendCoordinator {
             // The reader's low_memory refusal is a device condition, not a
             // per-book one: every remaining start_put this window would be
             // refused the same way. Leave the rest queued for the next window.
-            if case XteinkSyncError.protocolError("low_memory")? = error {
+            if Self.receiverIsOutOfCapacity(error) {
                 SharedDiagnosticLog.record(
                     "Reader refused start_put: low memory; leaving \(queued.count - index - 1) queued send(s) for the next window",
                     category: "xteink")
                 break
             }
         }
+    }
+
+    /// Whether a delivery failed because the RECEIVER has no room, which ends
+    /// the window rather than the book. The Swift transport reports it as a
+    /// protocol error; a destination plugin can only report it as a message,
+    /// so both spellings are read.
+    private static func receiverIsOutOfCapacity(_ error: Error?) -> Bool {
+        guard let error else { return false }
+        if case XteinkSyncError.protocolError("low_memory") = error { return true }
+        return String(describing: error).contains("low_memory")
     }
 
     /// Retries queued sends whose backoff has elapsed across all destinations.
@@ -507,9 +541,9 @@ public final class ArticleSendCoordinator {
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
         store.markSendAttemptStarted(for: itemID, destination: destination.id)
         do {
-            let queuedRemaining = store.items().filter {
-                $0.id != itemID && $0.sendState(for: destination.id) == .queued
-            }.count
+            let queuedRemaining = store
+                .items(sendState: .queued, forDestination: destination.id)
+                .count { $0.id != itemID }
             try await destination.deliver(
                 item: item,
                 context: ArticleSendContext(

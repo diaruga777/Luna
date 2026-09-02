@@ -13,8 +13,8 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
         func record(_ event: String) { lock.withLock { events.append(event) } }
     }
 
-    /// A read-report-only window never reconciles, drains, or sweeps — it
-    /// just answers `reportNoWork()`, then releases the sweep lock.
+    /// A read-report-only window never drains or sweeps — it just answers
+    /// `reportNoWork()`, then releases the sweep lock.
     func testReadReportOnlyWindowSkipsEverythingButNoWork() async throws {
         let recorder = Recorder()
         let released = expectation(description: "lock released")
@@ -22,7 +22,6 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
             isReadReportOnlyWindow: true,
             acquireSweepLock: { recorder.record("lock"); return true },
             releaseSweepLock: { recorder.record("unlock"); released.fulfill() },
-            reconcileReadState: { recorder.record("reconcile") },
             drainPendingDeletes: { recorder.record("drain") },
             deliverQueuedSends: { recorder.record("deliver") },
             reportNoWork: { recorder.record("noWork") })
@@ -30,9 +29,9 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["lock", "noWork", "unlock"])
     }
 
-    /// A normal window runs the whole pipeline in order — reconcile, drain
-    /// deletes, deliver queued sends — and ALWAYS concludes with `no_work` so
-    /// the reader closes its window instead of idling to its cap.
+    /// A normal window runs the whole pipeline in order — drain deletes, then
+    /// deliver queued sends — and ALWAYS concludes with `no_work` so the
+    /// reader closes its window instead of idling to its cap.
     func testNormalWindowRunsPipelineThenAlwaysReportsNoWork() async throws {
         let recorder = Recorder()
         let released = expectation(description: "lock released")
@@ -40,12 +39,11 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
             isReadReportOnlyWindow: false,
             acquireSweepLock: { recorder.record("lock"); return true },
             releaseSweepLock: { recorder.record("unlock"); released.fulfill() },
-            reconcileReadState: { recorder.record("reconcile") },
             drainPendingDeletes: { recorder.record("drain") },
             deliverQueuedSends: { recorder.record("deliver") },
             reportNoWork: { recorder.record("noWork") })
         await fulfillment(of: [released], timeout: 2)
-        XCTAssertEqual(recorder.events, ["lock", "reconcile", "drain", "deliver", "noWork", "unlock"])
+        XCTAssertEqual(recorder.events, ["lock", "drain", "deliver", "noWork", "unlock"])
     }
 
     /// Losing the sweep lock means another Luna process owns this rendezvous:
@@ -57,7 +55,6 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
             isReadReportOnlyWindow: false,
             acquireSweepLock: { false },
             releaseSweepLock: { recorder.record("unlock") },
-            reconcileReadState: { recorder.record("reconcile") },
             drainPendingDeletes: { recorder.record("drain") },
             deliverQueuedSends: { recorder.record("deliver") },
             reportNoWork: { recorder.record("noWork") })
@@ -74,7 +71,6 @@ final class XteinkRendezvousSweepPolicyTests: XCTestCase {
             isReadReportOnlyWindow: false,
             acquireSweepLock: { true },
             releaseSweepLock: { released.fulfill() },
-            reconcileReadState: {},
             drainPendingDeletes: {},
             deliverQueuedSends: {},
             reportNoWork: { throw LinkDropped() })

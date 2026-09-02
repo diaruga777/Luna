@@ -164,6 +164,39 @@ public final class SavesStore {
         }
     }
 
+    /// The saves whose send to `destination` is in `state`, in the list's own
+    /// order. A rendezvous window asks this once per delivered book, so it
+    /// reads the `send_states` index and hydrates only the matching saves
+    /// rather than decoding the whole table each time.
+    public func items(sendState: SavedItem.SendState, forDestination destination: String) -> [SavedItem] {
+        guard let database = database() else { return [] }
+        do {
+            return try database.perform { db in
+                try db.readTransaction {
+                    var ids: [UUID] = []
+                    try db.query(
+                        """
+                        SELECT s.id FROM saves s
+                        JOIN send_states t ON t.save_id = s.id
+                        WHERE t.destination = ? AND t.state = ?
+                        ORDER BY s.seq DESC, s.id ASC
+                        """,
+                        { statement in
+                            try statement.bind(1, destination)
+                            try statement.bind(2, sendState.rawValue)
+                        }
+                    ) { row in
+                        if let id = row.string(0).flatMap(UUID.init(uuidString:)) { ids.append(id) }
+                    }
+                    return try ids.compactMap { try SavesReader.item(id: $0, in: db)?.item }
+                }
+            }
+        } catch {
+            record(error, "read send states")
+            return []
+        }
+    }
+
     /// The existing item for a URL, if it's already in the list.
     public func item(forURLString urlString: String) -> SavedItem? {
         items().first { $0.urlString == urlString }

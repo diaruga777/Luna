@@ -24,6 +24,22 @@ public struct PluginQueuedSend: Equatable {
     }
 }
 
+/// One delivered save whose remote copy is now stale, as
+/// `luna.exports.pendingDeletes()` answers it. A row exists only once Luna
+/// knows the name the receiver filed the save under, which is the only thing
+/// a delete op can name.
+public struct PluginPendingRemoteDelete: Equatable {
+    public let saveID: UUID
+    public let title: String
+    public let remoteName: String
+
+    public init(saveID: UUID, title: String, remoteName: String) {
+        self.saveID = saveID
+        self.title = title
+        self.remoteName = remoteName
+    }
+}
+
 /// The send queue of one destination, as the bridge reads and drives it. The
 /// shipped conformer is the send coordinator plus the saves store; a test
 /// drives an in-memory queue.
@@ -35,6 +51,13 @@ public protocol PluginExportQueueDriving: AnyObject {
     /// Marks one save sent without delivering it — the reconciliation a
     /// receiving device's own report needs.
     func markSent(saveID: UUID, destinationID: String)
+    /// Delivered saves whose reading finished in Luna, so their remote copy
+    /// is stale and the receiver should drop it.
+    func pendingRemoteDeletes(forDestinationID id: String) -> [PluginPendingRemoteDelete]
+    /// The receiver confirmed the remote copy is gone.
+    func markRemoteDeleted(saveID: UUID, destinationID: String)
+    /// The receiver reported the save finished ON the device.
+    func markReadOnDevice(saveID: UUID, destinationID: String)
 }
 
 /// `luna.exports` (`claudedocs/plans/plugin-platform.md` §6.16): a destination
@@ -115,10 +138,68 @@ public final class PluginExportsBridge: PluginCapabilityInstalling {
             return promise
         }
 
+        let pendingDeletes: @convention(block) () -> JSValue? = {
+            let context = JSContext.current() ?? outerContext
+            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: bridge.scheduler)
+            guard bridge.processKind == .app else {
+                box.fail("luna.exports.pendingDeletes needs the app", code: "unavailable-here")
+                return promise
+            }
+            box.fulfill(
+                bridge.queue.pendingRemoteDeletes(forDestinationID: destinationID).map {
+                    [
+                        "saveId": $0.saveID.uuidString,
+                        "title": $0.title,
+                        "remoteName": $0.remoteName,
+                    ]
+                })
+            return promise
+        }
+
+        let markRemoteDeleted = bridge.saveIDBlock(
+            named: "markRemoteDeleted", outerContext: outerContext
+        ) { saveID in
+            bridge.queue.markRemoteDeleted(saveID: saveID, destinationID: destinationID)
+        }
+
+        let markReadOnDevice = bridge.saveIDBlock(
+            named: "markReadOnDevice", outerContext: outerContext
+        ) { saveID in
+            bridge.queue.markReadOnDevice(saveID: saveID, destinationID: destinationID)
+        }
+
         exports.setObject(deliverQueued, forKeyedSubscript: "deliverQueued" as NSString)
         exports.setObject(queued, forKeyedSubscript: "queued" as NSString)
         exports.setObject(markSent, forKeyedSubscript: "markSent" as NSString)
+        exports.setObject(pendingDeletes, forKeyedSubscript: "pendingDeletes" as NSString)
+        exports.setObject(markRemoteDeleted, forKeyedSubscript: "markRemoteDeleted" as NSString)
+        exports.setObject(markReadOnDevice, forKeyedSubscript: "markReadOnDevice" as NSString)
         namespace.install(exports, as: capabilityName.rawValue)
+    }
+
+    /// The three bookkeeping calls differ only in what they do with the id, so
+    /// the app gate, the id parse and the empty fulfilment are written once.
+    private func saveIDBlock(
+        named name: String, outerContext: JSContext,
+        _ apply: @escaping (UUID) -> Void
+    ) -> @convention(block) (String?) -> JSValue? {
+        let scheduler = self.scheduler
+        let processKind = self.processKind
+        return { saveID in
+            let context = JSContext.current() ?? outerContext
+            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            guard processKind == .app else {
+                box.fail("luna.exports.\(name) needs the app", code: "unavailable-here")
+                return promise
+            }
+            guard let saveID, let id = UUID(uuidString: saveID) else {
+                box.fail("luna.exports.\(name) needs a save id", code: "bad-argument")
+                return promise
+            }
+            apply(id)
+            box.fulfill(NSNull())
+            return promise
+        }
     }
 }
 
@@ -133,8 +214,7 @@ public final class CoordinatorPluginExportQueue: PluginExportQueueDriving {
     }
 
     public func queuedSends(forDestinationID id: String) -> [PluginQueuedSend] {
-        store.items()
-            .filter { $0.sendState(for: id) == .queued }
+        store.items(sendState: .queued, forDestination: id)
             .map {
                 PluginQueuedSend(
                     saveID: $0.id, title: $0.title ?? $0.urlString,
@@ -155,5 +235,31 @@ public final class CoordinatorPluginExportQueue: PluginExportQueueDriving {
 
     public func markSent(saveID: UUID, destinationID: String) {
         store.setSendState(.sent, for: saveID, destination: destinationID)
+    }
+
+    public func pendingRemoteDeletes(
+        forDestinationID id: String
+    ) -> [PluginPendingRemoteDelete] {
+        store.items().compactMap { item in
+            guard item.remoteDeleteStatus(for: id) == .deletePending,
+                  let remoteName = item.remoteName(for: id)
+            else { return nil }
+            return PluginPendingRemoteDelete(
+                saveID: item.id, title: item.title ?? item.urlString,
+                remoteName: remoteName)
+        }
+    }
+
+    public func markRemoteDeleted(saveID: UUID, destinationID: String) {
+        store.markRemoteDeliveryDeleted(for: saveID, destination: destinationID)
+    }
+
+    /// The order is the whole point, and it mirrors `XteinkBLECentral
+    /// .handleReadIDs`: moving the delivery to `.readOnDevice` FIRST is what
+    /// stops `markFinishedReading` from also queueing a remote delete for a
+    /// book the receiver already filed away itself.
+    public func markReadOnDevice(saveID: UUID, destinationID: String) {
+        store.markRemoteDeliveryReadOnDevice(for: saveID, destination: destinationID)
+        store.markFinishedReading(saveID)
     }
 }

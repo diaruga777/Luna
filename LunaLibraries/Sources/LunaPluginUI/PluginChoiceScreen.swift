@@ -10,16 +10,24 @@ import LunaModels
 import LunaPluginKit
 import UIKit
 
+/// Reports a picked option back to the screen that pushed the picker.
+@MainActor
+public protocol PluginChoiceScreenDelegate: AnyObject {
+    func choiceScreen(
+        _ screen: PluginChoiceScreen, didSelectOptionID id: String,
+        for field: PluginSettingField)
+}
+
 public final class PluginChoiceScreen: NavHeaderTableController {
+
+    public weak var delegate: (any PluginChoiceScreenDelegate)?
 
     private let field: PluginSettingField
     private var selectedID: String?
-    private let onSelect: (String) -> Void
 
-    public init(field: PluginSettingField, selectedID: String?, onSelect: @escaping (String) -> Void) {
+    public init(field: PluginSettingField, selectedID: String?) {
         self.field = field
         self.selectedID = selectedID
-        self.onSelect = onSelect
         super.init(style: .insetGrouped)
     }
 
@@ -51,7 +59,7 @@ public final class PluginChoiceScreen: NavHeaderTableController {
         tableView.deselectRow(at: indexPath, animated: true)
         let option = field.options[indexPath.row]
         selectedID = option.id
-        onSelect(option.id)
+        delegate?.choiceScreen(self, didSelectOptionID: option.id, for: field)
         tableView.reloadData()
     }
 }

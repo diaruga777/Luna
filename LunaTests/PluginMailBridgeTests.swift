@@ -35,6 +35,7 @@ final class PluginMailBridgeTests: XCTestCase {
         runner = nil
         sender = nil
         scratch = nil
+        PluginMailRecipients.picker = nil
         PluginExportMailAccount.readinessOverride = nil
         super.tearDown()
     }
@@ -117,6 +118,26 @@ final class PluginMailBridgeTests: XCTestCase {
 
         XCTAssertEqual(result?.message, "cancelled")
         XCTAssertTrue(sender.messages.isEmpty, "a cancelled pick sends nothing")
+    }
+
+    /// The composition installs `PluginMailRecipients.picker` AFTER the
+    /// platform install that builds this bridge, so a bridge that captured the
+    /// value at `init` holds nil forever and every recipient-less message is
+    /// refused. It must read the witness when the message needs it.
+    func testTheInstalledPickerIsReadWhenTheMessageNeedsIt() async throws {
+        try install(
+            """
+            await luna.mail.send({ subject: "Anything", text: "Body" });
+            return { status: "sent" };
+            """)
+        // Assigned after the bridge exists, exactly as `KindWiring+Luna` does.
+        PluginMailRecipients.picker = FixedRecipientPicker(["late@example.com"])
+
+        let result = await runner.invoke(
+            .export, pluginID: Self.pluginID, argument: Input(), as: StatusAnswer.self)
+
+        XCTAssertEqual(result?.status, "sent")
+        XCTAssertEqual(sender.messages.first?.recipients, ["late@example.com"])
     }
 
     func testAnOmittedRecipientListUsesWhatThePickerChose() async throws {
@@ -260,6 +281,40 @@ final class PluginMailBridgeTests: XCTestCase {
             "the HTML part escapes it")
     }
 
+    /// A message with both bodies keeps its plain-text alternative when a file
+    /// rides along: the same message loses nothing merely because it gained an
+    /// attachment.
+    func testAMessageWithBothBodiesAndAnAttachmentNestsAnAlternative() throws {
+        let mime = String(decoding: PluginMailMIME.build(
+            PluginMailMessage(
+                recipients: ["reader@example.com"], subject: "S", text: "Plain words",
+                html: "<p>Rich words</p>",
+                attachments: [PluginMailAttachment(
+                    name: "Book.epub", mime: "application/epub+zip",
+                    data: Data("bytes".utf8))]),
+            from: "me@example.com"), as: UTF8.self)
+
+        XCTAssertTrue(mime.contains("multipart/mixed"))
+        XCTAssertTrue(mime.contains("multipart/alternative"))
+        XCTAssertTrue(mime.contains(EmailMIMEBase64.of("Plain words")))
+        XCTAssertTrue(mime.contains(EmailMIMEBase64.of("<p>Rich words</p>")))
+    }
+
+    /// The plugin chooses the attachment name, so a quote in it must not end
+    /// the quoted parameter and let the rest of the name become headers.
+    func testAQuoteInAnAttachmentNameCannotEscapeItsParameter() throws {
+        let mime = String(decoding: PluginMailMIME.build(
+            PluginMailMessage(
+                recipients: ["reader@example.com"], subject: "S", text: "Body", html: nil,
+                attachments: [PluginMailAttachment(
+                    name: "a\"; x=\"b.epub", mime: "application/epub+zip",
+                    data: Data("bytes".utf8))]),
+            from: "me@example.com"), as: UTF8.self)
+
+        XCTAssertFalse(mime.contains("; x=\"b.epub\""), mime)
+        XCTAssertTrue(mime.contains("\\\""), "the quote is escaped rather than dropped")
+    }
+
     // MARK: - Notifications (§6.14)
 
     /// The bridge can only ASK whether Luna is authorized. Nothing in the
@@ -282,6 +337,30 @@ final class PluginMailBridgeTests: XCTestCase {
         XCTAssertEqual(result?.message, "false")
         XCTAssertTrue(center.posted.isEmpty)
         XCTAssertEqual(center.authorizationChecks, 1)
+    }
+
+    /// `clear()` with no identifier removes everything this plugin posted and
+    /// nothing else — the prefix is the whole containment.
+    func testClearWithoutAnIdentifierSweepsOnlyThisPluginsPrefix() async throws {
+        let center = RecordingNotificationCenter(authorized: true)
+        runner.capabilities.register(PluginNotificationsBridge(
+            processKind: .app, scheduler: runner.runtime, center: center))
+        try runner.load(Self.source(
+            """
+            await luna.notifications.clear();
+            await luna.notifications.clear("mine");
+            return { status: "sent" };
+            """,
+            capabilities: "[\"notifications\"]"))
+
+        _ = await runner.invoke(
+            .export, pluginID: Self.pluginID, argument: Input(), as: StatusAnswer.self)
+
+        let prefix = PluginNotificationsBridge.identifierPrefix(Self.pluginID)
+        XCTAssertEqual(center.clears.count, 2)
+        XCTAssertNil(center.clears.first?.identifier, "no identifier means the whole prefix")
+        XCTAssertEqual(center.clears.first?.prefix, prefix)
+        XCTAssertEqual(center.clears.last?.identifier, prefix + "mine")
     }
 
     /// An authorized post lands, under an identifier namespaced by plugin, so

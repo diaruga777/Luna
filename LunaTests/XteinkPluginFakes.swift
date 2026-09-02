@@ -5,6 +5,7 @@
 
 import Foundation
 import JavaScriptCore
+import LunaPluginExport
 import LunaPluginKit
 import LunaPluginRuntime
 import LunaPluginTransport
@@ -36,8 +37,11 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     var canWrite = true
     /// A read-report ping window: the reader opened it purely to hand ids back.
     var isReadReportWindow = false
-    /// Finished-reading ids the reader hands back after the hello ack.
+    /// Finished-reading ids the reader hands back. It publishes at most
+    /// `readIDBatch` per status and sends the next batch after each
+    /// `read_ack`, which is what the firmware does.
     var readIDs: [String] = []
+    let readIDBatch = 2
     /// A protocol error to answer `start_put` with, e.g. "exists".
     var startPutError: String?
     /// The network the reader offers for an oversized book.
@@ -48,6 +52,7 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     private(set) var assembled = Data()
     private(set) var maximumUnconfirmedBytes = 0
     private var lastConfirmed = 0
+    private var remainingReadIDs: [String]?
 
     var operationNames: [String] {
         lock.lock()
@@ -133,7 +138,11 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
         case "hello":
             var status: [String: Any] = ["op_ack": "hello", "ok": true, "nonce": nonce]
             if isReadReportWindow { status["win"] = "rr" }
-            if !readIDs.isEmpty { status["read_ids"] = Array(readIDs.prefix(2)) }
+            lock.lock()
+            let pending = remainingReadIDs ?? readIDs
+            remainingReadIDs = pending
+            lock.unlock()
+            if !pending.isEmpty { status["read_ids"] = Array(pending.prefix(readIDBatch)) }
             publish(status)
         case "start_put":
             if let startPutError {
@@ -154,7 +163,14 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
             if let wifiOffer { status["wifi"] = wifiOffer }
             publish(status)
         case "read_ack":
-            break
+            // A plain write, not a control operation: no op_ack. The reader
+            // drops the acked ids and offers the next batch.
+            let acked = Set((object["ids"] as? [String]) ?? [])
+            lock.lock()
+            remainingReadIDs = (remainingReadIDs ?? readIDs).filter { !acked.contains($0) }
+            let next = Array((remainingReadIDs ?? []).prefix(readIDBatch))
+            lock.unlock()
+            if !next.isEmpty { publish(["read_ids": next]) }
         default:
             publish(["op_ack": op, "ok": true])
         }
@@ -196,11 +212,42 @@ final class FakeXteinkReaderTransport: PluginBluetoothTransporting, @unchecked S
     }
 }
 
+/// The system accessory picker, recording rather than presenting. Answering
+/// nil is the "user dismissed it" path, which is enough to see whether the
+/// plugin asked for the picker at all.
+final class FakeXteinkAccessoryPairing: PluginAccessoryPairing, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var pickerRequests = 0
+    private(set) var removedAccessories: [String] = []
+
+    func showPicker(
+        serviceUUIDs: [String], displayName: String,
+        completion: @escaping (Result<PluginBluetoothDevice?, PluginTransportError>) -> Void
+    ) {
+        lock.lock(); pickerRequests += 1; lock.unlock()
+        completion(.success(nil))
+    }
+
+    func removeSetUpAccessories(completion: @escaping () -> Void) { completion() }
+
+    func removeAccessory(deviceID: String, completion: @escaping () -> Void) {
+        lock.lock(); removedAccessories.append(deviceID); lock.unlock()
+        completion()
+    }
+
+    var pickerWasShown: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return pickerRequests > 0
+    }
+}
+
 /// The transport witnesses for a fake reader.
 final class FakeXteinkTransportMaker: PluginTransportMaking, @unchecked Sendable {
 
     let transport = FakeXteinkReaderTransport()
     let lease = FakePluginBackgroundLease()
+    let pairing = FakeXteinkAccessoryPairing()
     private let serviceLock: BluetoothServiceLock
 
     init(lockFileURL: URL) {
@@ -208,15 +255,20 @@ final class FakeXteinkTransportMaker: PluginTransportMaking, @unchecked Sendable
     }
 
     func makeTransport(pluginID: String) -> any PluginBluetoothTransporting { transport }
-    func makePairing(pluginID: String) -> (any PluginAccessoryPairing)? { nil }
+    func makePairing(pluginID: String) -> (any PluginAccessoryPairing)? { pairing }
     func makeServiceLock(serviceUUID: String) -> BluetoothServiceLock { serviceLock }
     func makeLease() -> (any PluginBackgroundLeasing)? { lease }
 }
 
-/// `luna.exports` as agent 3A's `LunaPluginExport` will serve it (§6.16).
+/// `luna.exports` with a real send queue underneath its bookkeeping.
 ///
-/// It runs the real nesting a destination plugin produces: `deliverQueued`
-/// invokes the plugin's own `export` hook from inside its `onBluetooth` call.
+/// `deliverQueued`/`queued` are the fake half: they run the real nesting a
+/// destination plugin produces, invoking the plugin's own `export` hook from
+/// inside its `onBluetooth` call, over sends a test declares directly. The
+/// three BOOKKEEPING calls — `markSent`, `pendingDeletes`, `markRemoteDeleted`
+/// and `markReadOnDevice` — go through the shipped `CoordinatorPluginExportQueue`
+/// onto a scratch `SavesStore`, so what the plugin does to a save is what
+/// production would do to it.
 final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Sendable {
 
     /// One queued send, as `ExportInput` (§9.2).
@@ -245,21 +297,29 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
     private let scheduler: PluginCallbackScheduling
     private let invoker: any PluginHookInvoking
     private let pluginID: String
+    private let destinationID: String
+    private let queue: any PluginExportQueueDriving
     private let lock = NSLock()
     private(set) var markedSent: [String] = []
+    private(set) var markedReadOnDevice: [String] = []
+    private(set) var sentNames: [String] = []
     private(set) var exportResults: [String] = []
 
     init(
-        scheduler: PluginCallbackScheduling, invoker: any PluginHookInvoking, pluginID: String
+        scheduler: PluginCallbackScheduling, invoker: any PluginHookInvoking, pluginID: String,
+        store: SavesStore
     ) {
         self.scheduler = scheduler
         self.invoker = invoker
         self.pluginID = pluginID
+        destinationID = PluginDestinationLegacyIDs.destinationID(forPluginID: pluginID)
+        queue = CoordinatorPluginExportQueue(store: store)
     }
 
     struct ExportAnswer: Decodable {
         let status: String?
         let message: String?
+        let remoteName: String?
     }
 
     func install(into namespace: PluginCapabilityNamespace) {
@@ -281,7 +341,12 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
                     switch outcome {
                     case .success(let answer):
                         bridge.exportResults.append(answer?.status ?? "null")
-                        if answer?.status == "sent" { delivered += 1 }
+                        if answer?.status == "sent" {
+                            delivered += 1
+                            if let name = answer?.remoteName {
+                                bridge.sentNames.append(name)
+                            }
+                        }
                     case .failure(let failure):
                         bridge.exportResults.append("failure:\(failure)")
                     }
@@ -299,24 +364,62 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
             return promise
         }
 
-        let markSent: @convention(block) (String?) -> JSValue? = { saveID in
+        let markSent = bridge.saveIDBlock(outerContext) { id, text in
+            bridge.lock.lock()
+            bridge.markedSent.append(text)
+            bridge.lock.unlock()
+            bridge.queue.markSent(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let markReadOnDevice = bridge.saveIDBlock(outerContext) { id, text in
+            bridge.lock.lock()
+            bridge.markedReadOnDevice.append(text)
+            bridge.lock.unlock()
+            bridge.queue.markReadOnDevice(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let markRemoteDeleted = bridge.saveIDBlock(outerContext) { id, _ in
+            bridge.queue.markRemoteDeleted(saveID: id, destinationID: bridge.destinationID)
+        }
+
+        let pendingDeletes: @convention(block) () -> JSValue? = {
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
-            guard let saveID, !saveID.isEmpty else {
-                box.fail("markSent needs a save id", code: "bad-argument")
-                return promise
-            }
-            bridge.lock.lock()
-            bridge.markedSent.append(saveID)
-            bridge.lock.unlock()
-            box.fulfill(NSNull())
+            box.fulfill(
+                bridge.queue.pendingRemoteDeletes(forDestinationID: bridge.destinationID).map {
+                    [
+                        "saveId": $0.saveID.uuidString,
+                        "title": $0.title,
+                        "remoteName": $0.remoteName,
+                    ]
+                })
             return promise
         }
 
         exports.setObject(deliverQueued, forKeyedSubscript: "deliverQueued" as NSString)
         exports.setObject(queuedList, forKeyedSubscript: "queued" as NSString)
         exports.setObject(markSent, forKeyedSubscript: "markSent" as NSString)
+        exports.setObject(markReadOnDevice, forKeyedSubscript: "markReadOnDevice" as NSString)
+        exports.setObject(markRemoteDeleted, forKeyedSubscript: "markRemoteDeleted" as NSString)
+        exports.setObject(pendingDeletes, forKeyedSubscript: "pendingDeletes" as NSString)
         namespace.install(exports, as: capabilityName.rawValue)
+    }
+
+    private func saveIDBlock(
+        _ outerContext: JSContext, _ apply: @escaping (UUID, String) -> Void
+    ) -> @convention(block) (String?) -> JSValue? {
+        let scheduler = self.scheduler
+        return { saveID in
+            let context = JSContext.current() ?? outerContext
+            let (promise, box) = PluginPromiseBox.make(in: context, scheduler: scheduler)
+            guard let saveID, let id = UUID(uuidString: saveID) else {
+                box.fail("this call needs a save id", code: "bad-argument")
+                return promise
+            }
+            apply(id, saveID)
+            box.fulfill(NSNull())
+            return promise
+        }
     }
 
     var sentIDs: [String] {
@@ -325,10 +428,23 @@ final class FakePluginExportsBridge: PluginCapabilityInstalling, @unchecked Send
         return markedSent
     }
 
+    var readOnDeviceIDs: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return markedReadOnDevice
+    }
+
     var results: [String] {
         lock.lock()
         defer { lock.unlock() }
         return exportResults
+    }
+
+    /// The `remoteName` each `sent` answer carried — what the core records.
+    var sentRemoteNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sentNames
     }
 }
 

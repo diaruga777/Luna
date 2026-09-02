@@ -38,6 +38,9 @@ export interface ExportDeclaration {
   symbol?: string;
   destination?: boolean;
   requiresSettings?: string[];
+  // The receiver tracks reading of its own, so Luna drops a queued send whose
+  // save was finished in Luna before the send went out.
+  dequeueOnRead?: boolean;
 }
 
 export interface SettingOption { id: string; label: LocalizedText }
@@ -125,7 +128,14 @@ export type ExportResult =
   | { file: FileHandle; name?: string; mime?: string }
   | { text: string; name?: string; mime?: string }
   | { url: string }
-  | { status: "sent" | "failed" | "retry"; message?: string; hard?: boolean };
+  | {
+      status: "sent" | "failed" | "retry";
+      message?: string;
+      hard?: boolean;
+      // The name the receiving device filed the save under. Report it and
+      // Luna can name that exact file in a later delete.
+      remoteName?: string;
+    };
 
 export interface BluetoothDevice { id: string; name?: string; serviceUUIDs: string[] }
 
@@ -160,8 +170,9 @@ export interface PluginHooks {
   onBluetooth?(event: BluetoothEvent): Promise<void>;
   onSettingsChanged?(changes: Record<string, unknown>): Promise<void>;
   // Same one-argument rule: the settings screen and `PluginDetailScreen`
-  // both call this with `{ key }`, never a bare string.
-  onAction?(input: { key: string }): Promise<void>;
+  // both call this with an object, never a bare string. A `pairedDevice` row
+  // adds `action`, because one row offers Pair and Unpair under one key.
+  onAction?(input: { key: string; action?: "pair" | "unpair" }): Promise<void>;
 }
 
 // ------------------------------------------------------------------- Models
@@ -454,8 +465,16 @@ export interface Wifi {
 
 export interface Exports {
   deliverQueued(): Promise<{ delivered: number; remaining: number }>;
-  queued(): Promise<{ saveId: string; title: string; queuedAt: string }[]>;
+  // `queuedAt` is absent for a save with no date of its own.
+  queued(): Promise<{ saveId: string; title: string; queuedAt?: string }[]>;
   markSent(saveId: string): Promise<void>;
+  // Deliveries whose reading finished IN Luna: delete each on the device,
+  // then mark it. `remoteName` is what your `export` reported.
+  pendingDeletes(): Promise<{ saveId: string; title: string; remoteName: string }[]>;
+  markRemoteDeleted(saveId: string): Promise<void>;
+  // The DEVICE finished the save. Luna marks it read and files it away, and
+  // asks for no delete, since the device already handled it.
+  markReadOnDevice(saveId: string): Promise<void>;
 }
 
 // ---- luna.page (§6.4 — Safari only) ----

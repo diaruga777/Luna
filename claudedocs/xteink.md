@@ -191,13 +191,13 @@ The winning sweep is a single sequential task:
    reconciles, drains, or sweeps — the device opened it purely to hand back
    finished-reading ids (already drained by the status handler, below), and
    Luna just answers `reportNoWork()`.
-2. Otherwise: `XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery`
-   runs first (see "Read-driven queue and delete" below), then
-   `XteinkRemoteDeleteRunner.drainPendingDeletes` runs UNCONDITIONALLY — a
+2. Otherwise: `XteinkRemoteDeleteRunner.drainPendingDeletes` runs
+   UNCONDITIONALLY — a
    pending delete is not gated behind "is there also a send" — then
    `ArticleSendCoordinator.deliverQueuedSends(toDestinationID:)` delivers
-   every still-queued Xteink send one at a time and **ignores backoff
-   dates**: backoff exists to stop unattended sweeps from hammering an
+   every still-queued Xteink send one at a time. It reconciles read-driven
+   dequeues for that destination on the way in (see "Read-driven queue and
+   delete" below), and **ignores backoff dates**: backoff exists to stop unattended sweeps from hammering an
    unreachable receiver, and this sweep only runs while the reader holds a
    live window open. (A backoff-respecting sweep was the silent wedge: one
    transient failure scheduled a 15-minute backoff, after which every window
@@ -237,6 +237,14 @@ id pending for next time).
   `SavesStore.shared.markRemoteDeliveryReadOnDevice(for:destination:)` (the
   device-report exemption, below) and then `markFinishedReading(_:)`
   (monotonic — a duplicate report is harmless), then fires the `read_ack`.
+- **In central Luna, `xteink.js` does the same two writes** through
+  `luna.exports.markReadOnDevice(saveId)`, which is
+  `CoordinatorPluginExportQueue.markReadOnDevice` — the same store calls in
+  the same order. Its `reconcile` loops until the reader stops handing ids
+  back rather than answering one batch, since the reader sends at most two
+  per status. `PluginExportsBridgeTests` and `XteinkPluginTests` compare the
+  resulting `SavedItem` against the Swift path's; the two apps write one
+  store, so a book finished on one reader has to read the same in both.
 
 ## Read-driven queue and delete
 
@@ -245,13 +253,19 @@ Two behaviors key off the save's read state, both governed by one
 Xteink send was queued. A user who deliberately (re-)sends an already-read
 article is exempt from both — read state drives everything else.
 
-- **Dequeue-on-read** (`XteinkReadStateReconciler`): a save whose Xteink send
-  is still `.queued`, whose `readState` is `.read`, and whose immunity flag
-  is false gets its queue cleared (`SavesStore.clearSendState`) — sending it
-  would spend a BLE window on something the user has already moved past. Runs
-  on every `.savesChanged` (the reconciler self-installs its own observer via
-  `startObservingSaveChanges()`, called once from each `KindWiring
-  .appDidLaunch()`) and again immediately before every rendezvous sweep.
+- **Dequeue-on-read** (`ReadStateSendReconciler`): a save whose send is still
+  `.queued`, whose `readState` is `.read`, and whose immunity flag is false
+  gets its queue cleared (`SavesStore.clearSendState`) — sending it would
+  spend a BLE window on something the user has already moved past. It serves
+  every destination whose `ArticleDestination.dequeuesOnRead` is true, which
+  is what makes it work in central Luna: there the Xteink destination is the
+  PLUGIN, which declares `export.dequeueOnRead` in its manifest, not
+  `XteinkDestination`. Runs on every `.savesChanged` (the reconciler installs
+  its own observer via `startObservingSaveChanges()`, called once from
+  `ArticleShellWiring.appDidLaunch()`, which both article apps run) and again
+  inside `ArticleSendCoordinator.deliverQueuedSends(toDestinationID:)`, so a
+  plugin driving its own sweep through `luna.exports.deliverQueued()` gets the
+  same pre-pass.
 - **Remote delete-on-read** (`XteinkRemoteDeleteRunner`, `delete` — the
   existing control op, no new wire surface): on a successful delivery,
   `XteinkDestination` records the exact sanitized remote basename
@@ -267,6 +281,14 @@ article is exempt from both — read state drives everything else.
   and Luna additionally treats any "no such file"-shaped protocol error as
   done defensively. Anything else left pending just waits for the next
   window.
+- **The plugin path is the same bookkeeping, driven from JavaScript.**
+  `xteink.js` answers `{status:"sent", remoteName}` and `PluginDestination`
+  records it with `SavesStore.recordRemoteDelivery`, so a book central Luna
+  delivered can be deleted later — by either app. Its `drainPendingDeletes`
+  reads `luna.exports.pendingDeletes()` (the `.deletePending` deliveries with
+  a recorded name) and calls `luna.exports.markRemoteDeleted(saveId)` after a
+  successful `delete` op or a missing-file error, exactly as
+  `XteinkRemoteDeleteRunner` does.
 - **Storage**: `send_states` (`LunaStorage/SavesSchema.swift`) gained
   `queued_while_read INTEGER`, `remote_name TEXT`, `remote_status TEXT` —
   independently absent, no CHECK constraint (an unrecognised `remote_status`
@@ -329,7 +351,8 @@ All in **LunaSend** (linked by the article-capable Reader app):
   commit after the plugin platform's Wave 3B first merged without it.
 - `XteinkRendezvousTransferQueue` (actor, `.shared`) — serializes a coordinator
   sweep because one X3 GATT session accepts one operation/data stream at a time.
-- `XteinkReadStateReconciler` — dequeue-on-read.
+- `ReadStateSendReconciler` — dequeue-on-read, for every destination whose
+  `dequeuesOnRead` is true.
 - `XteinkRemoteDeleteRunner` — drains pending remote deletes.
 - `XteinkRendezvousSweepPolicy` — the one rendezvous-ready decision, shared
   by both `KindWiring`s.
@@ -349,6 +372,13 @@ coordinator leaves the item `.queued` with no failure count or backoff date;
 the next `.xteinkRendezvousReady` sweep retries it at full strength. Real
 protocol failures still use the ordinary soft-failure and terminal-failure
 path.
+
+The plugin path answers the same way: `xteink.js` returns `{status:"retry"}`
+with no live session and `PluginDestination` throws
+`PluginDestinationDeferral`, which conforms to `SendDeferralError`. The
+reader's own `low_memory` refusal ends the WINDOW rather than the book on both
+paths — `deliverQueuedSends` reads it from the Swift transport's protocol
+error and from a plugin's message alike.
 
 The decisive trigger is `.xteinkRendezvousReady`, posted only after the GATT
 service, notifications, and current nonce are ready. Existing launch,
@@ -412,9 +442,9 @@ parsing (0/1/2 ids, a malformed entry skipped), the `win` flag, and existing
 fields/`ok`-`error` precedence. `SavesStoreRemoteDeliveryTests` cover the
 immunity flag (stamped only on a fresh enqueue, not a retry), delivery
 recording, in-app-finish delete-pending, and the device-reported exemption.
-`XteinkReadStateReconcilerTests` and `XteinkRemoteDeleteRunnerTests` cover the
+`ReadStateSendReconcilerTests` and `XteinkRemoteDeleteRunnerTests` cover the
 dequeue and delete-drain decisions directly; `XteinkRendezvousSweepPolicyTests`
-pin the read-report-only skip, the reconcile→drain→deliver→`no_work` order,
+pin the read-report-only skip, the drain→deliver→`no_work` order,
 that a denied sweep lock runs nothing, and that a failed `no_work` still
 releases the lock; `BluetoothServiceLockTests` pin the mutual exclusion
 (two instances, one file) and that the Swift sweep and the plugin bridge derive

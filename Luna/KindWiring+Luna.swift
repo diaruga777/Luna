@@ -71,6 +71,15 @@ enum KindWiring {
         PluginExportComposition.install(
             mediaFiles: PluginMediaFileLocator(),
             recipientPicker: PluginMailRecipientPrompt())
+        // A destination plugin's "Auto-send" row opens the app shell's
+        // per-capture-source screen, which LunaPluginUI cannot see.
+        PluginDestinationAutoSend.presenter = PluginAutoSendRoute()
+        // The double save's Kindle setup step, replaced after
+        // `ArticleShellWiring.install`. Kindle is a PLUGIN here, and the Swift
+        // screen writes `KindleSendSettings.kindleAddress`, which reaches the
+        // plugin only at the next launch's migration — so an address typed
+        // there left the destination unconfigured for the rest of the session.
+        DoubleSaveSettingsSupport.kindleSetupLauncher = PluginKindleSetupRoute()
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See
@@ -88,6 +97,45 @@ enum KindWiring {
         // the one seam that needs an article-app capability (email) and a
         // product-app one (the graph) at once, so it belongs to neither leg.
         EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
+    }
+
+    /// The Kindle plugin's own settings screen, where its address lives.
+    /// With no listing the plugin is not loaded, so the Swift destination is
+    /// still the live one and its screen is the right answer.
+    private struct PluginKindleSetupRoute: KindleSetupPresenting {
+        @MainActor
+        func presentKindleSetup(from presenter: UIViewController) {
+            guard EmailAccountStore.shared.isConfigured else {
+                EmailAndKindleSettingsScreen.pushForAccountSetup(from: presenter)
+                return
+            }
+            guard let catalog = PluginPlatformServices.catalog,
+                  let listing = catalog.listing(pluginID: KindlePlugin.pluginID)
+            else {
+                presenter.navigationController?.pushViewController(
+                    KindleSettingsScreen(), animated: true)
+                return
+            }
+            presenter.navigationController?.pushViewController(
+                PluginDetailScreen(
+                    listing: listing, catalog: catalog,
+                    settingsStore: PluginPlatformServices.settings ?? NullPluginSettingsStore(),
+                    invoker: PluginPlatformServices.invoker),
+                animated: true)
+        }
+    }
+
+    /// The per-capture-source auto-send screen for a destination plugin.
+    private struct PluginAutoSendRoute: PluginDestinationAutoSendPresenting {
+        @MainActor
+        func presentAutoSend(
+            destinationID: String, displayName: String, from presenter: UIViewController
+        ) {
+            presenter.navigationController?.pushViewController(
+                AutoSendBySourceScreen(
+                    destinationID: destinationID, destinationName: displayName),
+                animated: true)
+        }
     }
 
     /// Where a media save's downloaded file is, for a plugin exporting one.

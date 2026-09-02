@@ -102,6 +102,10 @@ enum ArticleShellWiring {
         // An app that shows no article has nothing to index and no way to
         // open a result, so the index belongs to the article leg.
         ArticleSpotlightIndexWiring.install()
+        // A save finished before its send went out is dropped from every
+        // dequeue-on-read destination's queue. Both article apps owe this,
+        // and central Luna's dequeue-on-read destination is a plugin.
+        ReadStateSendReconciler.startObservingSaveChanges()
         retryPendingSends()
     }
 

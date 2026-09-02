@@ -245,16 +245,19 @@ the hello rather than re-authenticating). `BluetoothEvent` itself matches the
 plan exactly (`connected`/`disconnected`/`paired`/`unpaired`/`stateChanged`,
 `PluginBluetoothCenter.swift`).
 
-### 3.5 `onAction(input: {key: string}): Promise<void>` — an object, not a bare string
+### 3.5 `onAction(input: {key, action?}): Promise<void>` — an object, not a bare string
 
 `PluginDetailScreen` (`LunaLibraries/Sources/LunaPluginUI/PluginDetailScreen.swift`)
-calls `invoke(.onAction, pluginID:, argument: Argument(key: field.key))` — the
-argument is `{ "key": "…" }`, matching the one-JSON-argument rule, never a
-bare string.
+calls `invoke(.onAction, pluginID:, argument:)` with `{ "key": "…" }`, matching
+the one-JSON-argument rule, never a bare string. A `pairedDevice` row adds
+`"action": "pair" | "unpair"`: that one row offers both buttons under one key,
+so the key alone cannot say which was pressed.
 
 ### 3.6 `onSettingsChanged(changes: Record<string, unknown>): Promise<void>`
 
-Matches the plan. Budget for `onAction`/`onSettingsChanged`: 10 s wall.
+The argument is the map of CHANGED KEYS — `{ "<key>": <value> }` — which is
+what `xteink.js` reads as `changes.enabled`. Budget for
+`onAction`/`onSettingsChanged`: 10 s wall.
 
 ## 4. Models, as decoded
 
@@ -345,6 +348,16 @@ plan's `queued`/`deferredUntilWiFi` names (§15). `saveId` on a job is looked
 up from the job's own source URL, so it reads `null` once the save that made
 the download is gone. Not relayed in Safari: `plugin_host.js` has no native
 message for it.
+
+`luna.exports` is `deliverQueued()`, `queued()`, `markSent(saveId)`,
+`pendingDeletes()`, `markRemoteDeleted(saveId)` and `markReadOnDevice(saveId)`.
+The last three are the read-state surface a destination whose receiver tracks
+reading needs: `pendingDeletes` lists the deliveries whose save was finished in
+Luna and whose remote name Luna recorded, and `markReadOnDevice` makes the two
+store writes `XteinkBLECentral.handleReadIDs` makes, in that order
+(`markRemoteDeliveryReadOnDevice` then `markFinishedReading`) — the order is
+what stops a redundant remote delete for a book the receiver filed away
+itself.
 
 ### 5.1 `luna.fetch` — `PluginFetchService` (`LunaLibraries/Sources/LunaPluginKit/PluginFetchService.swift`)
 
@@ -620,7 +633,10 @@ off-main via `PluginExportInputProducer` (images prepared first, same as
 `ArticleExportService.writePreparingImages`), invokes the hook, and sinks the
 result: `null` shows nothing (the plugin handled everything itself, e.g.
 sent mail), `{file}`/`{text}`/`{url}` present the system share sheet,
-`{status}` is destination bookkeeping consumed by `PluginDestination`.
+`{status}` is destination bookkeeping consumed by `PluginDestination`. A
+`{status:"sent"}` may carry `remoteName`, the name the receiver filed the save
+under, which `PluginDestination` records through
+`SavesStore.recordRemoteDelivery`.
 
 ### 8.2 Input production (`PluginExportInputProducer`)
 
@@ -661,12 +677,24 @@ Reader's Swift destinations use — the `app.luna.xteink` mapping was added in
 a follow-up commit (`80387935c`, "the Xteink plugin delivers under the
 Swift destination's id") after Wave 3B first landed without it; see §12.
 
-`PluginDestination.deliver(item:context:)` runs the export stage and maps
-its outcome onto `PluginDestinationError` (`.retry`/`.soft`/`.hard`/
-`.unsupportedPayload`), which conforms to `SendHardFailureError` — the
-coordinator's retry/backoff, double-save gating and auto-send-by-source logic
-are otherwise completely unchanged; only the delivery step is a plugin call
-instead of an EPUB attach.
+`PluginDestination.deliver(item:context:)` runs the export stage and maps its
+outcome onto `PluginDestinationError` (`.soft`/`.hard`/`.unsupportedPayload`),
+which conforms to `SendHardFailureError`, or onto
+`PluginDestinationDeferral` for a `retry` — that one is a `SendDeferralError`,
+so an enqueue-only destination costs no failure count and no backoff, exactly
+as the Swift Xteink destination does. A share-shaped answer (`file`/`text`/
+`url`) to this call is a hard failure: `deliver` only ever runs a queued send,
+where nothing presents. The coordinator's retry/backoff, double-save gating
+and auto-send-by-source logic are otherwise unchanged; only the delivery step
+is a plugin call instead of an EPUB attach.
+
+A destination that declares `export.dequeueOnRead: true` joins
+`ReadStateSendReconciler`'s set: a save finished in Luna before its send went
+out is dropped from that destination's queue rather than delivered.
+`SourceSendSettings.appIntentsMode` reads `send.<id>.appIntentsMode` for any
+destination other than `kindle`/`xteink` (which keep their own keys), and
+`PluginDetailScreen`'s "Auto-send" row opens `AutoSendBySourceScreen` through
+`PluginDestinationAutoSendPresenting`, installed by `KindWiring+Luna`.
 
 `ArticleDestination` gained a default-implemented `deliver(item:context:)`
 that BUILDS the EPUB itself (reading `ArticleSendContext.savesStore`, added
@@ -697,9 +725,12 @@ Capabilities: `mail`, `settings`. `isConfigured` also requires
 seeds the plugin's setting from `KindleSendSettings.kindleAddress` once (and
 re-runs whenever the plugin's own value is still empty, which is what
 carries an address typed in Luna Reader — where the Swift `KindleSettingsScreen`
-still lives — across to central Luna). **Central Luna no longer has a
-top-level Kindle settings page or a `KindleSettingsScreen` push**; the
-address lives in Settings → Plugins → Kindle instead. Luna Reader is
+still lives — across to central Luna). **Central Luna has no top-level Kindle settings page**, and the
+double-save setup step pushes the PLUGIN's detail screen there
+(`KindWiring+Luna` replaces `ArticleShellWiring`'s presenter after installing
+it) — the Swift screen writes `KindleSendSettings.kindleAddress`, which the
+plugin reads only at the next launch's migration. The address lives in
+Settings → Plugins → Kindle. Luna Reader is
 unaffected. See `claudedocs/send-to-kindle.md`.
 
 ## 9. Bluetooth, Wi-Fi and `xteink.js`
@@ -735,9 +766,11 @@ reconnect's session to the sweep that follows it.
 `xteink.js` (`LunaLibraries/Sources/LunaBundledPlugins/Plugins/xteink.js`)
 is the full worked example: HMAC-SHA256 hello over the pairing secret
 (`luna.secrets`), the BLE-frame transfer paced to the reader's checkpoint
-stride, the Wi-Fi escalation for a book over 200 KiB, read-state
-reconciliation via `luna.exports.markSent`, and a `pendingDeletes` collection
-draining the reader's remote-delete queue. `XteinkPluginTests`
+stride, the Wi-Fi escalation for a book over 200 KiB (retried once across the
+reader's server-bind gap, as the Swift router does), read-state reconciliation
+via `luna.exports.markReadOnDevice` looped until the reader stops handing ids
+back, and `luna.exports.pendingDeletes()`/`markRemoteDeleted` draining the
+reader's remote-delete queue. `XteinkPluginTests`
 (`LunaTests/XteinkPluginTests.swift`) pins its wire behavior against the same
 protocol Luna Reader's Swift `XteinkSyncProtocol` implements — a fix to one
 side that is not mirrored to the other is a fix half the apps get. Full
@@ -759,8 +792,9 @@ closing the "not reached" gap the Wave 3B plan notes originally recorded.
 (`LunaLibraries/Sources/LunaPluginUI/PluginDetailScreen.swift`):
 `text`/`email`/`url`/`password`/`number` as inline editors, `toggle` as a
 switch row, `choice` as a picker, `pairedDevice` as a row with Pair/Unpair
-driving `onAction`, `action` as a plain button row calling `onAction({key})`,
-`info` as read-only text. Every write goes through `PluginSettingsStoring
+driving `onAction({key, action})`, `action` as a plain button row calling
+`onAction({key})`, `info` as read-only text. Every type renders its `help`
+under the label, and committing a `choice` or a `toggle` redraws the row. Every write goes through `PluginSettingsStoring
 .setValueJSON` — the SAME entry point `luna.settings.set` uses — under the
 BARE key (no `settings.` prefix anywhere in the store).
 
@@ -962,20 +996,6 @@ between the plan document and this one:
   `ArticleSendCoordinator` is article-shaped; a media or product export
   plugin gets a manual share row only, never queued/retried automatically.
   Recorded by the plan as a deliberate scope cut, not a bug.
-- **`SourceSendSettings.appIntentsMode` answers `.off` for any destination id
-  it does not recognize.** A NEW destination plugin (one that replaces no
-  Swift destination via `PluginDestinationLegacyIDs`) can never auto-send
-  from App Intents or an in-app save — only its manual share row works. A
-  per-id mode key is the fix, and it needs its own UI; not built.
-- **Dequeue-on-read and remote-delete-on-read have no plugin-visible
-  signal.** Both key off a save's `readState` natively
-  (`XteinkReadStateReconciler`, `SavesStore.markFinishedReading`), and
-  `luna.*` exposes neither read state nor a save-change event. `xteink.js`
-  drains its own `pendingDeletes` collection (filled by nothing yet) and
-  reconciles reader-reported ids through `luna.exports.markSent` — an
-  in-app "mark finished" is currently invisible to the plugin. A
-  `luna.saves`-shaped read hook, or a core-side witness that files a pending
-  delete on the owning plugin's behalf, is the missing piece.
 - **Per-hook capability restriction is not enforced client-side in Safari.**
   §3.1's "classify may call only `luna.fetch`/`luna.html`" is checked by
   native re-validating the declared capability set on every message, not by

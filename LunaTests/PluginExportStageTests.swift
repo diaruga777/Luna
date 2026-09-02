@@ -336,17 +336,56 @@ final class PluginExportStageTests: XCTestCase {
         XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .sent)
     }
 
-    func testARetryStatusKeepsTheSendQueuedWithBackoff() async {
+    /// A `retry` is a DEFERRAL, the same answer the Swift Xteink destination
+    /// gives when no rendezvous is open. It must cost nothing: a share-row tap
+    /// on an enqueue-only destination is the normal case, and five of them
+    /// would otherwise mark the send terminally failed.
+    func testARetryStatusDefersTheSendAtNoRetryCost() async {
         let item = readyArticle()
         let destination = destination(
             PluginExportFixtures.export(input: "url", isDestination: true))
         invoker.resultJSON = "{\"status\":\"retry\",\"message\":\"not awake\"}"
+        let coordinator = coordinator(destination)
+
+        for _ in 0..<6 {
+            await coordinator.send(item, toDestinationID: destination.id)
+        }
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: destination.id), .queued)
+        XCTAssertNil(fresh?.sendNextAttemptDates[destination.id], "a deferral schedules no backoff")
+        XCTAssertNil(fresh?.sendFailureCounts[destination.id], "a deferral counts no failure")
+        XCTAssertNil(fresh?.sendLastErrors[destination.id])
+    }
+
+    /// A `sent` answer's `remoteName` is the name the receiver filed the save
+    /// under. Recording it is what later lets Luna ask the receiver to delete
+    /// that exact file when the save is finished here.
+    func testASentStatusRecordsTheRemoteNameItReported() async {
+        let item = readyArticle()
+        let destination = destination(
+            PluginExportFixtures.export(input: "url", isDestination: true))
+        invoker.resultJSON = "{\"status\":\"sent\",\"remoteName\":\"An-Article.epub\"}"
 
         await coordinator(destination).send(item, toDestinationID: destination.id)
 
         let fresh = store.item(withID: item.id)
-        XCTAssertEqual(fresh?.sendState(for: destination.id), .queued)
-        XCTAssertNotNil(fresh?.sendNextAttemptDates[destination.id])
+        XCTAssertEqual(fresh?.remoteName(for: destination.id), "An-Article.epub")
+        XCTAssertEqual(fresh?.remoteDeleteStatus(for: destination.id), .delivered)
+    }
+
+    /// Nothing presents while a queued send is delivered in the background, so
+    /// a share-shaped answer reached nobody. Counting it delivered would leave
+    /// the save `.sent` and unrecoverable.
+    func testAShareShapedAnswerToAnAutomaticSendIsNotADelivery() async {
+        let item = readyArticle()
+        let destination = destination(
+            PluginExportFixtures.export(input: "url", isDestination: true))
+        invoker.resultJSON = "{\"url\":\"https://example.com/exported\"}"
+
+        await coordinator(destination).send(item, toDestinationID: destination.id)
+
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .failed)
     }
 
     func testAHardFailureIsTerminalAndASoftOneIsNot() async {

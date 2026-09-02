@@ -446,6 +446,27 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         [.banner, .list, .sound]
     }
 
+    /// The `userInfo` key a plugin notification's deep link travels under.
+    ///
+    /// It is a hand-copy of `SystemPluginNotificationCenter.deepLinkKey`: this
+    /// file compiles into all four apps and only the central one links the
+    /// plugin tier. `PluginNotificationDeepLinkTests` pins the two equal.
+    static let pluginDeepLinkUserInfoKey = "lunaPluginDeepLink"
+
+    /// A tapped plugin notification opens the link the plugin asked for, back
+    /// through the app's own URL handling — the same route a `luna:` link from
+    /// anywhere else takes.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let info = response.notification.request.content.userInfo
+        guard let link = info[Self.pluginDeepLinkUserInfoKey] as? String,
+              let url = URL(string: link)
+        else { return }
+        await UIApplication.shared.open(url)
+    }
+
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,

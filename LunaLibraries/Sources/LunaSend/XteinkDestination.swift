@@ -30,6 +30,10 @@ public final class XteinkDestination: ArticleDestination {
 
     public var isConfigured: Bool { XteinkSendSettings.isConfigured }
 
+    /// The X3 files a book away itself when its reader finishes it, so a save
+    /// finished in Luna first is dropped from the queue instead of delivered.
+    public var dequeuesOnRead: Bool { true }
+
     public func sendMode(for item: SavedItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
             forDestination: id, source: item.effectiveCaptureSource,

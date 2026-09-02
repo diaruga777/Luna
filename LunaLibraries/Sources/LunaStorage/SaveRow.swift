@@ -28,7 +28,7 @@ enum SaveRow {
         last_word_index, last_scroll_offset, last_original_scroll_offset, \
         last_spoken_word_index, word_count, reading_progress, sender_name, \
         incoming_sender_email, shared_by_username, last_save_attempt_date, \
-        platform, platform_item_id, capture_source
+        platform, platform_item_id, capture_source, plugin_id
         """
 
     /// One `saves` row as an item, with its send states and price tracker still
@@ -64,12 +64,13 @@ enum SaveRow {
         item.platform = row.string(25).flatMap(ContentPlatform.init(rawValue:))
         item.platformItemID = row.string(26)
         item.captureSource = row.string(27).flatMap(CaptureSource.init(rawValue:))
+        item.pluginID = row.string(28)
         return item
     }
 
     /// Inserts the save, or replaces every column of the row already under its id.
     static let upsertSQL = """
-        INSERT INTO saves (\(columns)) VALUES (\(Array(repeating: "?", count: 28).joined(separator: ", ")))
+        INSERT INTO saves (\(columns)) VALUES (\(Array(repeating: "?", count: 29).joined(separator: ", ")))
         ON CONFLICT(id) DO UPDATE SET
             seq = excluded.seq,
             url_string = excluded.url_string,
@@ -97,7 +98,8 @@ enum SaveRow {
             last_save_attempt_date = excluded.last_save_attempt_date,
             platform = excluded.platform,
             platform_item_id = excluded.platform_item_id,
-            capture_source = excluded.capture_source
+            capture_source = excluded.capture_source,
+            plugin_id = excluded.plugin_id
         """
 
     static func bind(_ item: SavedItem, seq: Int64, to row: SavesStatement) throws {
@@ -129,6 +131,7 @@ enum SaveRow {
         try row.bind(26, item.platform?.rawValue)
         try row.bind(27, item.platformItemID)
         try row.bind(28, item.captureSource?.rawValue)
+        try row.bind(29, item.pluginID)
     }
 
     // MARK: - send_states

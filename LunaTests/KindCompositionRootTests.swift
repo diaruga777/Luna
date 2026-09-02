@@ -164,9 +164,12 @@ final class KindCompositionRootTests: XCTestCase {
 
     func testOnlyTheCentralRootsInstallThePluginPlatform() throws {
         var installers: Set<String> = []
-        for (path, source) in try allRootSources()
-        where source.contains("PluginPlatformComposition.install(") {
-            installers.insert(path)
+        for (path, source) in try allRootSources() {
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                if text.contains("PluginPlatformComposition.install(") { installers.insert(path) }
+            }
         }
         XCTAssertEqual(
             installers, Self.pluginRoots,

@@ -278,8 +278,7 @@ public final class SavesIngestor {
             item = store.item(withID: item.id) ?? item
         }
 
-        let presenter = IngestorOutcomePresenter(
-            ingestor: self, url: resolvedURL, pluginID: result.pluginID)
+        let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL)
         await presenter.present(result.outcome, for: item)
         return decision
     }
@@ -819,14 +818,10 @@ public final class SavesIngestor {
 public struct IngestorOutcomePresenter: OutcomePresenter {
     public let ingestor: SavesIngestor
     public let url: URL
-    /// The plugin that produced the outcome, stamped onto the save so a later
-    /// refresh or re-resolution reaches the same plugin. Nil for a Swift save.
-    public let pluginID: String?
 
-    public init(ingestor: SavesIngestor, url: URL, pluginID: String? = nil) {
+    public init(ingestor: SavesIngestor, url: URL) {
         self.ingestor = ingestor
         self.url = url
-        self.pluginID = pluginID
     }
 
     public func present(_ outcome: Outcome, for item: SavedItem) async {

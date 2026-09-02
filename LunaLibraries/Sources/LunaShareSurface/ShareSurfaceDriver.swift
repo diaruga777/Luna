@@ -273,8 +273,9 @@ public final class ShareSurfaceDriver {
         }
     }
 
-    /// A plugin-locked save: mark the row and show the same locked treatment
-    /// the archive path shows, whose copy tells the user to open Luna.
+    /// A plugin-locked save: park the row in the same `.needsCaptcha` lock the
+    /// archive path parks in, and confirm the save. The extension shows no
+    /// modal — only the app can present a plugin's browser step.
     private func presentPluginLock(url: URL, pluginID: String) {
         guard let host else { return }
         guard let saved = store.item(forURLString: url.absoluteString) else {

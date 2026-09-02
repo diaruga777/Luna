@@ -237,6 +237,19 @@ final class PluginIngestStageTests: XCTestCase {
 
     // MARK: - The hook argument
 
+    /// A plugin names the item once, in `classify`; the Model need not repeat it.
+    func testTheClaimsItemIDReachesTheAdopterWhenTheModelOmitsIt() async {
+        let invoker = FakePluginInvoker()
+        invoker.loadedPlugins = [.fake(id: "a")]
+        invoker.classifyAnswers["a"] = .json(Self.mediaClaim)
+        invoker.ingestAnswers["a"] = .json(Self.mediaModel)
+        let capture = CapturingMediaAdopter()
+        PluginModelAdopters.media = capture
+
+        _ = await run(invoker)
+        XCTAssertEqual(capture.seen?.itemID, "abc")
+    }
+
     func testASaveCallsIngestWithTheSaveReason() async {
         let invoker = FakePluginInvoker()
         invoker.loadedPlugins = [.fake(id: "a")]

@@ -142,14 +142,15 @@ public final class PluginIngestStage: PluginIngestStaging {
                 "plugin \(plugin.id): ingest declined after reading the page", category: "plugin")
             return .continueWalk
         case let .success(.model(model)):
-            return await adopt(model, plugin: plugin, input: input)
+            return await adopt(model, claim: claim, plugin: plugin, input: input)
         }
     }
 
     // MARK: - adoption
 
     private func adopt(
-        _ raw: PluginModel, plugin: PluginSummary, input: IngestInput
+        _ raw: PluginModel, claim: PluginIngestClaim, plugin: PluginSummary,
+        input: IngestInput
     ) async -> IngestStep {
         guard plugin.produces.contains(raw.kind) else {
             SaveDiagnostics.record(
@@ -172,7 +173,15 @@ public final class PluginIngestStage: PluginIngestStaging {
         switch model {
         case let .media(media):
             guard let adopter = PluginModelAdopters.media else { return .continueWalk }
-            adopted = await adopter.adopt(media, url: input.url, pluginID: plugin.id)
+            // A plugin that named the item in `classify` need not repeat it in
+            // the Model: it is the same item, and the card reads the id.
+            let identified = media.itemID == nil && claim.itemID != nil
+                ? MediaModel(
+                    title: media.title, author: media.author,
+                    thumbnailURL: media.thumbnailURL, platform: media.platform,
+                    itemID: claim.itemID, assets: media.assets, expiresAt: media.expiresAt)
+                : media
+            adopted = await adopter.adopt(identified, url: input.url, pluginID: plugin.id)
         case let .article(article):
             guard let adopter = PluginModelAdopters.article else { return .continueWalk }
             adopted = await adopter.adopt(

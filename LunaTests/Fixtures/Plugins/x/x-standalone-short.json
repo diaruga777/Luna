@@ -1,0 +1,29 @@
+{
+ "status": {
+  "id": "2074973674332123157",
+  "text": "Rewriting Bun in Rust\n\nhttps://bun.com/blog/bun-in-rust",
+  "is_note_tweet": false,
+  "author": {
+   "screen_name": "jarredsumner",
+   "name": "Jarred Sumner",
+   "id": "2489440172"
+  }
+ },
+ "thread": [
+  {
+   "id": "2074973674332123157",
+   "text": "Rewriting Bun in Rust\n\nhttps://bun.com/blog/bun-in-rust",
+   "is_note_tweet": false,
+   "author": {
+    "screen_name": "jarredsumner",
+    "name": "Jarred Sumner",
+    "id": "2489440172"
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "jarredsumner",
+  "name": "Jarred Sumner",
+  "id": "2489440172"
+ }
+}

@@ -1,0 +1,5 @@
+{"streamingData":{"formats":[
+  {"mimeType":"video/mp4; codecs=\"avc1, mp4a\"","url":"https://video.example.com/360.mp4","audioQuality":"AUDIO_QUALITY_MEDIUM","height":360,"bitrate":800000,"contentLength":"12000000"},
+  {"mimeType":"video/mp4; codecs=\"avc1, mp4a\"","url":"https://video.example.com/720.mp4","audioQuality":"AUDIO_QUALITY_MEDIUM","height":720,"bitrate":2000000,"contentLength":"30000000"},
+  {"mimeType":"video/mp4; codecs=\"avc1\"","signatureCipher":"url=https%3A%2F%2Fvideo.example.com%2Fciphered.mp4","height":1080,"bitrate":5000000}
+]},"videoDetails":{"lengthSeconds":"120","thumbnail":{"thumbnails":[{"url":"https://img.example.com/small.jpg"},{"url":"https://img.example.com/large.jpg"}]}}}

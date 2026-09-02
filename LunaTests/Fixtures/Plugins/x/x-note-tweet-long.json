@@ -1,0 +1,59 @@
+{
+ "status": {
+  "id": "2081713721785631202",
+  "text": "I tried exactly this back in February using Claude Code. It worked pretty easily, though ~all of the important ideas had to come from me and CC itself couldn't figure them out.*\n\nI tried it again a week ago. Complete failure, despite Claude being much better and not needing as much guidance from me. Pangram seems to have been dramatically hardened in the last few months. The API kept returning scores > 0.99 for AI writing so there wasn't even a gradient for it to figure out what's working and what isn't.\n\n* Things it couldn't figure out on its own a few months ago, even after a bunch of iterations:\n1) Remove well-known tells like em-dashes (!)\n2) Do controlled experiments instead of stuffing a bunch of ideas at once\n3) Start from known-best text and surgically make edits. Much better than trying to rewrite the whole essay (or even paragraphs or sentences) because the that just produces text from the LLM distribution all over again.\n\nIn my more recent experiment, 1) and 2) were obvious to Fable but 3) still wasn't. Pretty surprising.\n\nAnyway, hats off to @pangram. I'll probably give it another shot at some point but I'm more-or-less ready to change my mind as an AI-detection skeptic.\n\nThis was the LLM summary from my first experiment BTW. Still gives me a chuckle.",
+  "is_note_tweet": true,
+  "author": {
+   "screen_name": "random_walker",
+   "name": "Arvind Narayanan",
+   "id": "10834752"
+  },
+  "media": {
+   "all": [
+    {
+     "type": "photo",
+     "url": "https://pbs.twimg.com/media/HOO4TLEXoAAWVaf.jpg?name=orig",
+     "width": 1440,
+     "height": 898
+    }
+   ]
+  }
+ },
+ "thread": [
+  {
+   "id": "2081713721785631202",
+   "text": "I tried exactly this back in February using Claude Code. It worked pretty easily, though ~all of the important ideas had to come from me and CC itself couldn't figure them out.*\n\nI tried it again a week ago. Complete failure, despite Claude being much better and not needing as much guidance from me. Pangram seems to have been dramatically hardened in the last few months. The API kept returning scores > 0.99 for AI writing so there wasn't even a gradient for it to figure out what's working and what isn't.\n\n* Things it couldn't figure out on its own a few months ago, even after a bunch of iterations:\n1) Remove well-known tells like em-dashes (!)\n2) Do controlled experiments instead of stuffing a bunch of ideas at once\n3) Start from known-best text and surgically make edits. Much better than trying to rewrite the whole essay (or even paragraphs or sentences) because the that just produces text from the LLM distribution all over again.\n\nIn my more recent experiment, 1) and 2) were obvious to Fable but 3) still wasn't. Pretty surprising.\n\nAnyway, hats off to @pangram. I'll probably give it another shot at some point but I'm more-or-less ready to change my mind as an AI-detection skeptic.\n\nThis was the LLM summary from my first experiment BTW. Still gives me a chuckle.",
+   "is_note_tweet": true,
+   "author": {
+    "screen_name": "random_walker",
+    "name": "Arvind Narayanan",
+    "id": "10834752"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "url": "https://pbs.twimg.com/media/HOO4TLEXoAAWVaf.jpg?name=orig",
+      "width": 1440,
+      "height": 898
+     }
+    ]
+   }
+  },
+  {
+   "id": "2081745982186778682",
+   "text": "I'm glad that Claude Code didn't refuse to carry out adversarial testing of Pangram. But @sayashk tried it with Codex, which did refuse. I suspect this doesn't reflect an actual policy difference between the two companies but rather idiosyncratic model behavior at the fuzzy boundary, especially when the model tries to infer the user's intent (this is part of the \"AI safety is not a model property\" problem we wrote about over two years ago https://www.normaltech.ai/p/ai-safety-is-not-a-model-property).",
+   "is_note_tweet": true,
+   "author": {
+    "screen_name": "random_walker",
+    "name": "Arvind Narayanan",
+    "id": "10834752"
+   }
+  }
+ ],
+ "author": {
+  "screen_name": "random_walker",
+  "name": "Arvind Narayanan",
+  "id": "10834752"
+ }
+}

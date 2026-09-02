@@ -1,0 +1,5 @@
+{"data":{"xdt_shortcode_media":{"__typename":"XDTGraphSidecar",
+ "edge_sidecar_to_children":{"edges":[
+  {"node":{"__typename":"XDTGraphImage","display_url":"https://cdn.example.com/one.jpg"}},
+  {"node":{"__typename":"XDTGraphVideo","video_url":"https://video.example.com/two.mp4",
+           "display_url":"https://cdn.example.com/two.jpg"}}]}}}}

@@ -55,6 +55,11 @@ final class PluginWifiBridgeTests: XCTestCase {
 
     override func tearDown() {
         runner?.cleanUp()
+        // XCTest keeps every test-case instance alive for the whole run, so a
+        // fixture left in a property outlives its test. The runner owns a
+        // JSVirtualMachine; a run's worth of them exhausts JavaScriptCore.
+        runner = nil
+        joiner = nil
         super.tearDown()
     }
 

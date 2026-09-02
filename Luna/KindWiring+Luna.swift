@@ -160,7 +160,7 @@ enum KindWiring {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
         MediaShellWiring.appDidLaunch()
-        PluginUnlockFlow.resumeCompleted()
+        Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ProductShellWiring.appDidLaunch()
         // The X3 advertises briefly after a power-button wake. Keep the central
         // eligible for state restoration; it does no network work until that
@@ -207,7 +207,7 @@ enum KindWiring {
 
     static func sceneDidForeground() {
         MediaShellWiring.sceneDidForeground()
-        PluginUnlockFlow.resumeCompleted()
+        Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ArticleShellWiring.sceneDidForeground()
         if XteinkSendSettings.isEnabled {
             XteinkBLECentral.shared.beginRendezvousScan()

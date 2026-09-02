@@ -26,7 +26,7 @@ public extension SavedItem {
     /// step only the app can show. The archive unlock parks a save in the same
     /// state and leaves `pluginID` nil, so the owner is what tells the two
     /// flows apart at every card and both extensions.
-    var isPluginLocked: Bool {
+    public var isPluginLocked: Bool {
         state == .needsCaptcha && pluginID != nil
     }
 }

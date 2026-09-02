@@ -1335,7 +1335,10 @@ final class ReaderCardContentViewController: CardContentViewController,
         // so the card's tap (unlock flow) and long-press (Archive / Delete) are
         // untouched — see `LockedCardOverlayView`.
         if reader == nil, isLockedSave {
-            let overlay = LockedCardOverlayView(caption: L10n.string("Reader_lockedCardCaption"))
+            let overlay = LockedCardOverlayView(
+                caption: L10n.string(
+                    item.isPluginLocked
+                        ? "PluginLocked_cardCaption" : "Reader_lockedCardCaption"))
             overlay.translatesAutoresizingMaskIntoConstraints = false
             // Below the title header, so the article's title still crowns the card.
             view.insertSubview(overlay, belowSubview: titleHeader)

@@ -145,6 +145,14 @@ final class ArticleCardPresenter: CardKindPresenting {
             guard host.presentingController.presentedViewController == nil,
                   item.state == .needsCaptcha, let url = item.url
             else { return true }
+            // Two locks wear the same face. A plugin's is finished by that
+            // plugin's own browser step; everything else is the archive unlock.
+            if PluginLockedSaves.presentUnlock(
+                for: item, from: host.presentingController)
+            {
+                store.markReadState(.opened, for: item.id)
+                return true
+            }
             chrome.presentUnlockFlow(for: item, articleURL: url)
             store.markReadState(.opened, for: item.id)
             return true
@@ -168,7 +176,9 @@ final class ArticleCardPresenter: CardKindPresenting {
         // deck behind the modal — and the deck left behind by a cancel — already
         // shows the article that was asked for.
         if item.state == .needsCaptcha, let url = item.url {
-            chrome.presentUnlockFlow(for: item, articleURL: url)
+            if !PluginLockedSaves.presentUnlock(for: item, from: host.presentingController) {
+                chrome.presentUnlockFlow(for: item, articleURL: url)
+            }
             store.markReadState(.opened, for: item.id)
             return true
         }

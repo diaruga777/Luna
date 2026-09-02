@@ -14,6 +14,7 @@
 import LunaDesignSystem
 import LunaModels
 import LunaPriceUI
+import LunaSavesUI
 import LunaStorage
 import UIKit
 
@@ -60,6 +61,10 @@ final class ProductCardPresenter: CardKindPresenting {
     func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
+        if item.isPluginLocked {
+            return PluginLockedCardContentViewController(
+                caption: L10n.string("PluginLocked_cardCaption"))
+        }
         guard item.priceTracker != nil else { return nil }
         return ProductCardContentViewController(itemID: item.id)
     }
@@ -172,7 +177,10 @@ final class ProductCardPresenter: CardKindPresenting {
     func itemWasTapped(
         _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
-    ) -> Bool { true }
+    ) -> Bool {
+        PluginLockedSaves.presentUnlock(for: item, from: host.presentingController)
+        return true
+    }
 
     @discardableResult
     func openExternally(_ item: SavedItem, host: CardPresenterHost) -> Bool {

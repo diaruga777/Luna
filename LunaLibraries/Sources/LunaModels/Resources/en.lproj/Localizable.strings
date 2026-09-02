@@ -1184,6 +1184,8 @@
 "PluginBrowser_failedMessage_Luna" = "This page didn't get there. Open it in Safari and try the save again.";
 "PluginBrowser_timedOutMessage_Luna" = "This is taking too long. Open the page in Safari and try the save again.";
 "PluginBrowser_workingStatus_Luna" = "Working on it…";
+"PluginLocked_cardCaption_Luna" = "Waiting on a page — tap to finish";
+"PluginLockedOpenLuna_Luna" = "Open Luna to finish";
 
 /* ===== Plugins — Settings → Plugins, import, consent, capability copy (LunaPluginUI) ===== */
 "Plugins_aboutSectionHeader_Luna" = "About";

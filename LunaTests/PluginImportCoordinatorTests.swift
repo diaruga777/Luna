@@ -90,6 +90,22 @@ final class PluginImportCoordinatorTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
+    /// Polls `condition` instead of pumping a fixed duration: dismissing the
+    /// paste sheet and presenting what comes next both hop through UIKit's own
+    /// completion handlers, so how long that takes depends on what else is on
+    /// the run loop, not a number this test can predict.
+    private func pollUntil(
+        timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line,
+        _ condition: () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTFail("condition did not become true within \(timeout)s", file: file, line: line)
+    }
+
     // MARK: - No consent required
 
     func testAnImportThatNeedsNoConsentInstallsDirectlyAndNotifiesTheObserver() {
@@ -100,12 +116,10 @@ final class PluginImportCoordinatorTests: XCTestCase {
         coordinator.observer = observer
         let paste = wireAndPresentPaste(coordinator)
 
-        let dismissed = expectation(description: "paste sheet dismissed")
         coordinator.pluginPasteImport(paste, didSubmit: "luna.register({});")
         // `pluginPasteImport` dismisses the paste sheet before installing, so
-        // wait for the presenter to go idle rather than polling a fixed time.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { dismissed.fulfill() }
-        wait(for: [dismissed], timeout: 2)
+        // wait for the install itself rather than pumping a fixed duration.
+        pollUntil { observer.finishedCount == 1 }
 
         XCTAssertEqual(importer.previewCalls, ["luna.register({});"])
         XCTAssertEqual(importer.installCalls.count, 1, "no consent required, so install runs straight away")
@@ -126,10 +140,8 @@ final class PluginImportCoordinatorTests: XCTestCase {
         coordinator.observer = observer
         let paste = wireAndPresentPaste(coordinator)
 
-        let consentShown = expectation(description: "consent screen appears")
         coordinator.pluginPasteImport(paste, didSubmit: "luna.register({});")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { consentShown.fulfill() }
-        wait(for: [consentShown], timeout: 2)
+        pollUntil { self.presenter.presentedViewController is PluginConsentViewController }
 
         XCTAssertEqual(
             importer.installCalls.count, 0, "install must wait for the consent screen's answer")
@@ -152,10 +164,8 @@ final class PluginImportCoordinatorTests: XCTestCase {
         coordinator.observer = observer
         let paste = wireAndPresentPaste(coordinator)
 
-        let consentShown = expectation(description: "consent screen appears")
         coordinator.pluginPasteImport(paste, didSubmit: "luna.register({});")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { consentShown.fulfill() }
-        wait(for: [consentShown], timeout: 2)
+        pollUntil { self.presenter.presentedViewController is PluginConsentViewController }
 
         guard let consent = presenter.presentedViewController as? PluginConsentViewController else {
             return XCTFail("expected the consent screen to be on screen")
@@ -177,10 +187,8 @@ final class PluginImportCoordinatorTests: XCTestCase {
         coordinator.observer = observer
         let paste = wireAndPresentPaste(coordinator)
 
-        let alertShown = expectation(description: "error alert appears")
         coordinator.pluginPasteImport(paste, didSubmit: "not valid js")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { alertShown.fulfill() }
-        wait(for: [alertShown], timeout: 2)
+        pollUntil { self.presenter.presentedViewController is UIAlertController }
 
         XCTAssertTrue(importer.installCalls.isEmpty)
         XCTAssertEqual(observer.finishedCount, 0)

@@ -80,11 +80,11 @@ let activeLink = null;
 const HEX = "0123456789abcdef";
 
 function hex(bytes) {
-    let out = "";
+    const parts = [];
     for (let i = 0; i < bytes.length; i += 1) {
-        out += HEX[(bytes[i] >> 4) & 0xf] + HEX[bytes[i] & 0xf];
+        parts.push(HEX[(bytes[i] >> 4) & 0xf] + HEX[bytes[i] & 0xf]);
     }
-    return out;
+    return parts.join("");
 }
 
 /// `luna.crypto` answers base64; the reader's protocol is lower-case hex.

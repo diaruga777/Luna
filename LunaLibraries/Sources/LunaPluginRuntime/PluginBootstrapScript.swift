@@ -62,19 +62,25 @@ enum PluginBootstrapScript {
             return new Uint8Array(out);
         }
 
+        // The long strings here are joined from an array rather than grown with
+        // `+=`. Each `+=` adds one fibre to a JavaScriptCore rope, so an
+        // EPUB-sized payload built that way leaves a rope hundreds of thousands
+        // deep, and every later read of it walks the whole chain. `join`
+        // flattens once.
         function toBase64(bytes) {
             const data = toBytes(bytes);
-            let out = "";
+            const parts = [];
             for (let i = 0; i < data.length; i += 3) {
                 const b0 = data[i];
                 const b1 = i + 1 < data.length ? data[i + 1] : 0;
                 const b2 = i + 2 < data.length ? data[i + 2] : 0;
-                out += BASE64.charAt(b0 >> 2);
-                out += BASE64.charAt(((b0 & 3) << 4) | (b1 >> 4));
-                out += i + 1 < data.length ? BASE64.charAt(((b1 & 15) << 2) | (b2 >> 6)) : "=";
-                out += i + 2 < data.length ? BASE64.charAt(b2 & 63) : "=";
+                parts.push(
+                    BASE64.charAt(b0 >> 2)
+                    + BASE64.charAt(((b0 & 3) << 4) | (b1 >> 4))
+                    + (i + 1 < data.length ? BASE64.charAt(((b1 & 15) << 2) | (b2 >> 6)) : "=")
+                    + (i + 2 < data.length ? BASE64.charAt(b2 & 63) : "="));
             }
-            return out;
+            return parts.join("");
         }
 
         function utf8Encode(text) {
@@ -106,7 +112,7 @@ enum PluginBootstrapScript {
 
         function utf8Decode(bytes) {
             const data = toBytes(bytes);
-            let out = "";
+            const parts = [];
             let i = 0;
             while (i < data.length) {
                 const byte = data[i++];
@@ -123,12 +129,12 @@ enum PluginBootstrapScript {
                 }
                 if (code > 0xffff) {
                     code -= 0x10000;
-                    out += String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 1023));
+                    parts.push(String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 1023)));
                 } else {
-                    out += String.fromCharCode(code);
+                    parts.push(String.fromCharCode(code));
                 }
             }
-            return out;
+            return parts.join("");
         }
 
         globalThis.luna = {

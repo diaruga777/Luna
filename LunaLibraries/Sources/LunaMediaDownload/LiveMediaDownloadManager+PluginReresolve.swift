@@ -10,10 +10,11 @@ import LunaStorage
 /// Matches a re-resolved asset back to the leg a job was downloading
 /// (`claudedocs/plans/plugin-platform.md` §7.6).
 ///
-/// The pair is `(kind, quality)`. A job persists neither quality nor a creation
-/// time — `media_download_jobs` has columns for the plugin, its headers and the
-/// expiry only — so a cold resume matches on kind alone and takes the first
-/// asset in the plugin's display order, which is the same asset the save chose.
+/// The pair is `(kind, quality)`: `media_download_jobs` keeps the quality label
+/// the resolver gave the leg, so a resumed 1080p transfer comes back as the
+/// 1080p leg. A job whose resolver named no quality matches on kind alone and
+/// takes the first asset in the plugin's display order, which is the same asset
+/// the save chose.
 public enum MediaReresolveMatching {
     public static func pick(
         kind: MediaAsset.Kind?, quality: String?, from assets: [MediaAsset]

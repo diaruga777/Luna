@@ -77,9 +77,11 @@ enum SavesSchema {
                 }
                 // Version 12 records which plugin owns a save, a tracker store
                 // and a download job, plus the headers and expiry a plugin's
-                // asset needs. CREATE TABLE above handles a fresh database; an
-                // existing one needs each additive column explicitly, one ALTER
-                // per column since SQLite allows only one per statement.
+                // asset needs; version 13 adds the leg's quality label, which
+                // is what matches a re-resolved asset back to the job that was
+                // downloading it. CREATE TABLE above handles a fresh database;
+                // an existing one needs each additive column explicitly, one
+                // ALTER per column since SQLite allows only one per statement.
                 for (table, column, type) in pluginColumns
                 where try !hasColumn(column, in: table, of: database) {
                     try database.execute("ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
@@ -162,7 +164,7 @@ enum SavesSchema {
         return !columns.contains("background_session_identifier")
     }
 
-    /// The columns version 12 adds to tables that already existed, as
+    /// The columns versions 12 and 13 add to tables that already existed, as
     /// (table, column, SQL type). Each also appears in `tables`, which is what a
     /// fresh database gets.
     private static let pluginColumns: [(String, String, String)] = [
@@ -171,6 +173,7 @@ enum SavesSchema {
         ("media_download_jobs", "plugin_id", "TEXT"),
         ("media_download_jobs", "request_headers_json", "TEXT"),
         ("media_download_jobs", "expires_at", "REAL"),
+        ("media_download_jobs", "quality", "TEXT"),
     ]
 
     /// Whether `table` already has `column`. An absent table answers true, so a
@@ -528,7 +531,8 @@ enum SavesSchema {
             background_session_identifier TEXT,
             plugin_id                TEXT,
             request_headers_json     TEXT,
-            expires_at               REAL
+            expires_at               REAL,
+            quality                  TEXT
         ) WITHOUT ROWID;
 
         -- Legacy schema-9 Spotlight bookkeeping. Keep this table for independently

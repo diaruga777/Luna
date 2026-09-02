@@ -1,0 +1,8 @@
+{"streamingData":{"formats":[{
+  "itag":18,
+  "mimeType":"video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"",
+  "url":"https://video.example.com/youtube.mp4?expire=4102444800",
+  "audioQuality":"AUDIO_QUALITY_LOW",
+  "height":640,
+  "contentLength":"123456"
+}]}}

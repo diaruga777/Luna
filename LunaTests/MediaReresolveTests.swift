@@ -136,24 +136,4 @@ final class MediaReresolveTests: XCTestCase {
             "a job's re-resolution goes back to its own plugin, never to another")
         XCTAssertEqual(invoker.ingestReasons, ["reresolve"])
     }
-
-    func testTheResolverFallsBackToSwiftWhileNoPluginClaimsTheURL() async {
-        let invoker = FakePluginInvoker()
-        let swift = StubSwiftResolver(assets: [asset("swift.mp4", kind: .video)])
-        let resolver = PluginMediaResolver(
-            invoker: invoker, processKind: .app, fallback: swift)
-
-        let assets = await resolver.resolveAssets(for: URL(string: "https://example.com/p")!)
-        XCTAssertEqual(assets.first?.url.lastPathComponent, "swift.mp4")
-
-        PluginMediaResolver.swiftFallbackEnabled = false
-        defer { PluginMediaResolver.swiftFallbackEnabled = true }
-        let none = await resolver.resolveAssets(for: URL(string: "https://example.com/p")!)
-        XCTAssertTrue(none.isEmpty, "Wave 2 turns the fallback off and the walk stands alone")
-    }
-}
-
-private struct StubSwiftResolver: SocialMediaResolving {
-    let assets: [MediaAsset]
-    func resolveAssets(for url: URL) async -> [MediaAsset] { assets }
 }

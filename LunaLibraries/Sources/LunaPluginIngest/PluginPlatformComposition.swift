@@ -7,6 +7,7 @@ import Foundation
 import LunaIngest
 import LunaModels
 import LunaPluginKit
+import LunaPluginRuntime
 import LunaStorage
 
 /// THE single root call of the plugin platform
@@ -18,29 +19,76 @@ import LunaStorage
 /// `KindCompositionRootTests` pins both halves: those three roots call this, and
 /// nothing else writes `PluginPlatformServices` or `IngestPipeline.pluginStage`.
 ///
-/// It is a no-op until the runtime installs `PluginPlatformServices.invoker`, so
-/// a process that loads no plugins carries the call harmlessly.
+/// It builds the whole platform for this process: the store, the bundled
+/// catalog, the capability registry with the runtime's own bridges plus whatever
+/// a higher tier hands over, the runtime itself, the Settings catalog, the
+/// importer and the settings store. Every `PluginPlatformServices` witness is
+/// set before the stage and the media/price seams are wired, so the stage a
+/// caller finds installed is one a loaded runtime can serve.
 public enum PluginPlatformComposition {
 
-    /// Installs the ingest stage and the media seams for `processKind`.
-    /// Idempotent: calling it twice replaces the same witnesses.
-    public static func install(
-        processKind: PluginProcessKind, swiftMediaResolver: (any SocialMediaResolving)? = nil
-    ) {
-        guard let invoker = PluginPlatformServices.invoker else {
-            IngestPipeline.pluginStage = nil
-            return
-        }
-        IngestPipeline.pluginStage = PluginIngestStage(
-            invoker: invoker, processKind: processKind)
+    /// The runtime this process is holding. It is kept so a second `install`
+    /// replaces one platform with another rather than leaving two runtimes
+    /// sharing the store.
+    private static var runtime: PluginRuntime?
 
-        let resolver = PluginMediaResolver(
-            invoker: invoker, processKind: processKind, fallback: swiftMediaResolver)
+    /// Builds the platform and installs the ingest stage and the media and price
+    /// seams for `processKind`.
+    ///
+    /// `bundledPluginsBundle` is the `LunaBundledPlugins` resource bundle — it is
+    /// injected because LunaPluginIngest sits below that target in the link
+    /// graph. `additionalBridges` are the capability bridges higher tiers own
+    /// (browser, ui, settings); the runtime's own six are registered here.
+    ///
+    /// Idempotent: calling it twice replaces the same witnesses.
+    @discardableResult
+    public static func install(
+        processKind: PluginProcessKind,
+        bundledPluginsBundle: Bundle?,
+        additionalBridges: [any PluginCapabilityInstalling] = [],
+        store: PluginStore = .shared,
+        keyValueStore: PluginKVStore = .shared
+    ) -> [PluginLoadReport] {
+        let bundled = BundledPluginCatalog(bundle: bundledPluginsBundle, store: store)
+        let capabilities = PluginCapabilityRegistry()
+        let runtime = PluginRuntime(
+            store: store, bundled: bundled, capabilities: capabilities,
+            processContext: PluginProcessContext(kind: processKind))
+        Self.runtime = runtime
+
+        let fetcher = PluginFetchService()
+        fetcher.idle = runtime
+        // One scratch store serves every plugin: the invocation id, which the
+        // runtime rotates per hook call, is what separates two hooks' files.
+        let scratch = PluginScratchStore(
+            pluginID: "shared", rootURL: store.scratchRootURL)
+        fetcher.fileWriter = scratch
+        capabilities.register(PluginFetchBridge(fetcher: fetcher, scheduler: runtime))
+        capabilities.register(PluginHTMLBridge())
+        capabilities.register(PluginStorageBridge(store: keyValueStore, scheduler: runtime))
+        capabilities.register(PluginSecretsBridge(
+            scheduler: runtime, processKind: processKind))
+        capabilities.register(PluginFilesBridge(scratch: scratch, scheduler: runtime))
+        capabilities.register(PluginCryptoBridge(scheduler: runtime))
+        for bridge in additionalBridges { capabilities.register(bridge) }
+
+        PluginPlatformServices.invoker = runtime
+        PluginPlatformServices.catalog = PluginCatalog(
+            store: store, bundled: bundled, runtime: runtime, kv: keyValueStore)
+        PluginPlatformServices.importer = PluginImporter(
+            store: store, bundled: bundled, runtime: runtime)
+        PluginPlatformServices.settings = keyValueStore
+
+        let reports = runtime.loadAll()
+
+        IngestPipeline.pluginStage = PluginIngestStage(
+            invoker: runtime, processKind: processKind)
+        let resolver = PluginMediaResolver(invoker: runtime, processKind: processKind)
         PluginMediaSeams.resolver = resolver
         PluginMediaSeams.reresolver = resolver
-
         PluginPriceSeams.fetcher = PluginPriceFetcher(
-            invoker: invoker, processKind: processKind)
+            invoker: runtime, processKind: processKind)
         PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()
+        return reports
     }
 }

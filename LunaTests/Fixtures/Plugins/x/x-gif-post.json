@@ -1,0 +1,13 @@
+{
+ "status": {
+  "id": "2082319924987351577",
+  "text": "look at this",
+  "author": { "screen_name": "someone", "name": "Someone", "id": "12345" },
+  "media": {
+   "all": [
+    { "type": "gif", "url": "https://video.twimg.com/tweet_video/loop.mp4", "thumbnail_url": "https://pbs.twimg.com/tweet_video_thumb/loop.jpg" }
+   ]
+  }
+ },
+ "author": { "screen_name": "someone", "name": "Someone", "id": "12345" }
+}

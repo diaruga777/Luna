@@ -1,0 +1,5 @@
+[{"data":{"children":[{"data":{"is_video":true,"media":{"reddit_video":{
+    "fallback_url":"https://v.redd.it/abc123def456/DASH_1080.mp4?source=fallback",
+    "has_audio":true,
+    "dash_url":"https://v.redd.it/abc123def456/DASHPlaylist.mpd?a=1"
+}}}}]}},{"data":{"children":[]}}]

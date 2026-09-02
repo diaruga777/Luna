@@ -1,0 +1,28 @@
+{
+ "status": {
+  "id": "2082319924987351599",
+  "text": "A short caption.",
+  "is_note_tweet": false,
+  "author": { "screen_name": "someone", "name": "Someone", "id": "12345" },
+  "media": {
+   "all": [
+    { "type": "photo", "url": "https://pbs.twimg.com/media/one.jpg?name=orig", "width": 1200, "height": 900 },
+    { "type": "photo", "url": "https://pbs.twimg.com/media/two.jpg?name=orig", "width": 1200, "height": 900 }
+   ]
+  }
+ },
+ "thread": [
+  {
+   "id": "2082319924987351599",
+   "text": "A short caption.",
+   "author": { "screen_name": "someone", "name": "Someone", "id": "12345" },
+   "media": {
+    "all": [
+     { "type": "photo", "url": "https://pbs.twimg.com/media/one.jpg?name=orig", "width": 1200, "height": 900 },
+     { "type": "photo", "url": "https://pbs.twimg.com/media/two.jpg?name=orig", "width": 1200, "height": 900 }
+    ]
+   }
+  }
+ ],
+ "author": { "screen_name": "someone", "name": "Someone", "id": "12345" }
+}

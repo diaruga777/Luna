@@ -16,6 +16,7 @@
 //  others; `KindCompositionRootTests` fails the build if this file does that.
 //
 
+import LunaBundledPlugins
 import LunaMediaDownload
 import LunaPluginIngest
 import LunaPluginKit
@@ -31,7 +32,9 @@ final class ActionEntry: ShareViewController {
         MediaKindComposition.install()
         ProductKindComposition.install()
         PluginPlatformComposition.install(
-            processKind: .action, swiftMediaResolver: SocialMediaResolver())
+            processKind: .action,
+            bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
+            additionalBridges: [])
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

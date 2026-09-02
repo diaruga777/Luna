@@ -19,35 +19,21 @@ import LunaPluginKit
 /// same walk under a different reason.
 public final class PluginMediaResolver: SocialMediaResolving, MediaReresolving {
 
-    /// **Wave 1 only.** No media plugin is bundled yet, so a URL no plugin
-    /// claims falls back to the Swift `SocialMediaResolver` and the Downloader's
-    /// behaviour is reproduced exactly. Wave 2 ships the bundled media plugins
-    /// and sets this false; the fallback then disappears from central Luna.
-    public static var swiftFallbackEnabled = true
-
     private let invoker: any PluginHookInvoking
     private let processKind: PluginProcessKind
-    private let fallback: (any SocialMediaResolving)?
 
-    /// `fallback` is the Swift resolver, used only while
-    /// `swiftFallbackEnabled` stands.
-    public init(
-        invoker: any PluginHookInvoking, processKind: PluginProcessKind,
-        fallback: (any SocialMediaResolving)? = nil
-    ) {
+    public init(invoker: any PluginHookInvoking, processKind: PluginProcessKind) {
         self.invoker = invoker
         self.processKind = processKind
-        self.fallback = fallback
     }
 
     // MARK: - SocialMediaResolving
 
+    /// The plugins resolve every platform central Luna downloads from, so a URL
+    /// none of them claims has no assets. The Swift resolvers stay in
+    /// LunaMediaResolve for the Downloader app and the sibling Safari appexes.
     public func resolveAssets(for url: URL) async -> [MediaAsset] {
-        if let assets = await walk(url: url, reason: .save, saveID: nil), !assets.isEmpty {
-            return assets
-        }
-        guard Self.swiftFallbackEnabled, let fallback else { return [] }
-        return await fallback.resolveAssets(for: url)
+        await walk(url: url, reason: .save, saveID: nil) ?? []
     }
 
     // MARK: - MediaReresolving

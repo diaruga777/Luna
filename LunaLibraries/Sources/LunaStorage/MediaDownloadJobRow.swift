@@ -25,7 +25,7 @@ enum MediaDownloadJobRow {
                time_range_end, resolved_video_id, youtube_visitor_data,
                error_message, error_kind, resolve_attempts, media_attempts,
                suspend_deadline, ownership, background_session_identifier,
-               plugin_id, request_headers_json, expires_at
+               plugin_id, request_headers_json, expires_at, quality
         FROM media_download_jobs
         """
 
@@ -38,8 +38,8 @@ enum MediaDownloadJobRow {
             time_range_end, resolved_video_id, youtube_visitor_data,
             error_message, error_kind, resolve_attempts, media_attempts,
             suspend_deadline, ownership, background_session_identifier,
-            plugin_id, request_headers_json, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            plugin_id, request_headers_json, expires_at, quality)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (id) DO UPDATE SET
             source_url_string = excluded.source_url_string,
             asset_url_string = excluded.asset_url_string,
@@ -68,7 +68,8 @@ enum MediaDownloadJobRow {
             background_session_identifier = excluded.background_session_identifier,
             plugin_id = excluded.plugin_id,
             request_headers_json = excluded.request_headers_json,
-            expires_at = excluded.expires_at
+            expires_at = excluded.expires_at,
+            quality = excluded.quality
         """
 
     static func bindUpsert(_ job: LiveMediaDownloadJob, to s: SavesStatement) throws {
@@ -101,6 +102,7 @@ enum MediaDownloadJobRow {
         try s.bind(27, job.pluginID)
         try s.bind(28, job.requestHeadersJSON)
         try s.bind(29, date: job.expiresAt)
+        try s.bind(30, job.quality)
     }
 
     static func job(from row: SavesStatement) -> LiveMediaDownloadJob? {
@@ -139,6 +141,7 @@ enum MediaDownloadJobRow {
             dashManifestURLString: row.string(4),
             pluginID: row.string(26),
             requestHeadersJSON: row.string(27),
-            expiresAt: row.date(28))
+            expiresAt: row.date(28),
+            quality: row.string(29))
     }
 }

@@ -3,8 +3,8 @@ import LunaStorage
 import SQLite3
 import XCTest
 
-/// The schema-12 plugin columns and tables, and the migration onto an existing
-/// file. It asks SQLite directly, because the point is what is IN the database
+/// The plugin columns and tables schemas 12 and 13 add, and the migration onto
+/// an existing file. It asks SQLite directly, because the point is what is IN the database
 /// rather than what a Swift mapper believes.
 final class SavesSchemaPluginColumnsTests: XCTestCase {
 
@@ -83,7 +83,8 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
             XCTAssertTrue(columns(of: "saves", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "tracker_stores", in: db).contains("plugin_id"))
             let jobs = columns(of: "media_download_jobs", in: db)
-            XCTAssertTrue(jobs.isSuperset(of: ["plugin_id", "request_headers_json", "expires_at"]))
+            XCTAssertTrue(jobs.isSuperset(
+                of: ["plugin_id", "request_headers_json", "expires_at", "quality"]))
 
             let names = objectNames(in: db)
             XCTAssertTrue(names.isSuperset(of: [
@@ -142,7 +143,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertEqual(reread.first?.pluginID, "app.luna.instagram")
     }
 
-    func testADownloadJobKeepsItsPluginHeadersAndExpiry() throws {
+    func testADownloadJobKeepsItsPluginHeadersExpiryAndQuality() throws {
         let store = SavesStore(containerURL: container)
         let expiry = Date(timeIntervalSince1970: 1_700_000_000)
         let inserted = store.insertMediaDownloadJob(
@@ -154,7 +155,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
                 phase: .downloading, progress: 0, resolveAttempts: 0, mediaAttempts: 0,
                 pluginID: "app.luna.instagram",
                 requestHeadersJSON: #"{"Referer":"https://example.com"}"#,
-                expiresAt: expiry)
+                expiresAt: expiry, quality: "1080p")
         }
         XCTAssertNotNil(inserted)
 
@@ -163,6 +164,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertEqual(reread.pluginID, "app.luna.instagram")
         XCTAssertEqual(reread.requestHeadersJSON, #"{"Referer":"https://example.com"}"#)
         XCTAssertEqual(reread.expiresAt, expiry)
+        XCTAssertEqual(reread.quality, "1080p")
     }
 
     // MARK: - Migration
@@ -170,7 +172,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
     /// A database written by a schema-11 build: the plugin columns and tables
     /// removed and the stamp put back. Reopening must migrate it in place and
     /// leave every existing row where it was.
-    func testASchema11DatabaseMigratesAndKeepsItsRows() throws {
+    func testASchema11DatabaseMigratesToTheCurrentSchemaAndKeepsItsRows() throws {
         var store: SavesStore? = SavesStore(containerURL: container)
         let kept = store!.add(urlString: "https://example.com/kept")
         store = nil
@@ -181,6 +183,7 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
             execute("ALTER TABLE media_download_jobs DROP COLUMN plugin_id", in: db)
             execute("ALTER TABLE media_download_jobs DROP COLUMN request_headers_json", in: db)
             execute("ALTER TABLE media_download_jobs DROP COLUMN expires_at", in: db)
+            execute("ALTER TABLE media_download_jobs DROP COLUMN quality", in: db)
             execute("DROP TABLE plugin_kv", in: db)
             execute("DROP TABLE plugin_collections", in: db)
             execute("DROP TABLE plugin_browser_requests", in: db)
@@ -197,11 +200,11 @@ final class SavesSchemaPluginColumnsTests: XCTestCase {
         XCTAssertNil(migrated.items().first?.pluginID)
 
         try withDatabase { db in
-            XCTAssertEqual(userVersion(in: db), 12)
+            XCTAssertEqual(userVersion(in: db), 13)
             XCTAssertTrue(columns(of: "saves", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "tracker_stores", in: db).contains("plugin_id"))
             XCTAssertTrue(columns(of: "media_download_jobs", in: db)
-                .isSuperset(of: ["plugin_id", "request_headers_json", "expires_at"]))
+                .isSuperset(of: ["plugin_id", "request_headers_json", "expires_at", "quality"]))
             XCTAssertTrue(objectNames(in: db).isSuperset(of: [
                 "plugin_kv", "plugin_collections",
                 "plugin_browser_requests", "pending_plugin_models",

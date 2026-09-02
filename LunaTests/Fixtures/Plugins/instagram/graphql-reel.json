@@ -1,0 +1,3 @@
+{"data":{"xdt_shortcode_media":{"__typename":"XDTGraphVideo","is_video":true,
+ "video_url":"https://video.example.com/reel.mp4",
+ "display_url":"https://cdn.example.com/cover-frame.jpg"}},"status":"ok"}

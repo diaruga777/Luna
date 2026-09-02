@@ -42,10 +42,11 @@ public enum PluginPlatformComposition {
     ///
     /// Idempotent: calling it twice replaces the same witnesses.
     @discardableResult
+    @MainActor
     public static func install(
         processKind: PluginProcessKind,
         bundledPluginsBundle: Bundle?,
-        additionalBridges: [any PluginCapabilityInstalling] = [],
+        additionalBridges: (PluginCallbackScheduling) -> [any PluginCapabilityInstalling] = { _ in [] },
         store: PluginStore = .shared,
         keyValueStore: PluginKVStore = .shared
     ) -> [PluginLoadReport] {
@@ -70,7 +71,7 @@ public enum PluginPlatformComposition {
             scheduler: runtime, processKind: processKind))
         capabilities.register(PluginFilesBridge(scratch: scratch, scheduler: runtime))
         capabilities.register(PluginCryptoBridge(scheduler: runtime))
-        for bridge in additionalBridges { capabilities.register(bridge) }
+        for bridge in additionalBridges(runtime) { capabilities.register(bridge) }
 
         PluginPlatformServices.invoker = runtime
         PluginPlatformServices.catalog = PluginCatalog(

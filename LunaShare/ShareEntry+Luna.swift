@@ -19,6 +19,7 @@
 import LunaBundledPlugins
 import LunaMediaDownload
 import LunaPluginIngest
+import LunaPluginUI
 import LunaPluginKit
 import LunaPriceUI
 import LunaReaderUI
@@ -34,7 +35,7 @@ final class ShareEntry: ShareViewController {
         PluginPlatformComposition.install(
             processKind: .share,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: [])
+            additionalBridges: { PluginUIComposition.bridges(processKind: .share, scheduler: $0) })
         super.init(nibName: nibName, bundle: bundle)
     }
     required init?(coder: NSCoder) { fatalError("not used") }

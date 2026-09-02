@@ -1238,6 +1238,35 @@ rather than correctness. `KindCompositionRootTests
 1B+1C base: `Luna/Settings/PluginsSettingsCategory.swift` READS
 `PluginPlatformServices`, and the check greps for the name rather than for a
 write.
+**Wave 2B landed.** §8 runs end to end. `luna.browser.open` answers three
+ways: a share or action extension stores the request and rejects with
+`browser-deferred`, the app presents `PluginBrowserViewController`, and a save
+already holding the answer to that same page resolves from the store without
+showing anything. The archive unlock's cover, probe tick and device Safari UA
+are now `ChallengeCoverView`, `DOMProbePoller` (+ `DOMProbeEvaluating`) and
+`DeviceSafariUserAgent` in LunaArchiveReader; the archive reader's own stage
+machine is untouched. `luna.settings` and `luna.ui` shipped alongside, and
+`PluginUIComposition.bridges(processKind:scheduler:)` is the one list.
+
+Three placements to know. The save id reaches the bridge through
+`PluginIngestScope`, a lock-guarded scope the stage publishes for the length
+of one `ingest` call — plugin JS runs on the runtime's serial queue, where the
+walk's task-locals do not reach — and the id itself is the diagnostics
+recorder's `itemID`, which IS the save row's id in both the app and the share
+surface. The stage reads `PluginBrowserDeferring.hasCompletedResult` to decide
+between `reason: "save"` and `"resume"`. `PluginResumeSeams` (LunaModels)
+holds `SavesIngestor` as `PluginLockedSaveResuming`, and `PluginLockedSaves`
+(LunaSavesUI) holds the unlock route, so the three card presenters — which
+compile into the sibling apps too — route a locked tap without naming a
+plugin type.
+
+Two hookups the orchestrator wires at merge: `PluginPlatformComposition
+.install(additionalBridges:)` takes `PluginUIComposition.bridges(processKind:
+scheduler:)` in all three roots, and `PluginUIComposition
+.installAppWitnesses()` plus `PluginUnlockFlow.resumeCompleted()` go in
+`KindWiring+Luna`'s `install()` and `sceneDidForeground`. The share and action
+extension targets must also LINK LunaPluginUI, or their browser capability
+falls back to the `unavailable-here` stand-in and no save ever locks.
 
 Exit: media-download parity checklist (from `claudedocs/media-download.md`)
 green on the simulator via `-LunaStage` + a device check for Safari; the

@@ -14,6 +14,7 @@ import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
 import LunaPluginIngest
+import LunaPluginUI
 import LunaPluginKit
 import LunaModels
 import LunaPriceUI
@@ -57,7 +58,8 @@ enum KindWiring {
         PluginPlatformComposition.install(
             processKind: .app,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: [])
+            additionalBridges: { PluginUIComposition.bridges(processKind: .app, scheduler: $0) })
+        PluginUIComposition.installAppWitnesses()
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See
@@ -158,6 +160,7 @@ enum KindWiring {
         legacyOnboardingDemoSave.sweepLegacyDemoSave()
         ArticleShellWiring.appDidLaunch()
         MediaShellWiring.appDidLaunch()
+        PluginUnlockFlow.resumeCompleted()
         ProductShellWiring.appDidLaunch()
         // The X3 advertises briefly after a power-button wake. Keep the central
         // eligible for state restoration; it does no network work until that
@@ -204,6 +207,7 @@ enum KindWiring {
 
     static func sceneDidForeground() {
         MediaShellWiring.sceneDidForeground()
+        PluginUnlockFlow.resumeCompleted()
         ArticleShellWiring.sceneDidForeground()
         if XteinkSendSettings.isEnabled {
             XteinkBLECentral.shared.beginRendezvousScan()

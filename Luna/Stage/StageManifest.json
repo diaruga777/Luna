@@ -258,6 +258,14 @@
       "apps": ["luna", "reader", "downloader", "pricetracker"]
     },
     {
+      "id": "plugins.browser.lock",
+      "screen": "Plugin browser step",
+      "variant": "frozen mid-challenge",
+      "summary": "The browser step with its cover lifted: the page is asking the user something, which is the one state a plugin's page is on screen.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
       "id": "plugins.consent",
       "screen": "Plugin consent",
       "variant": "first install",
@@ -270,6 +278,14 @@
       "screen": "Paste source",
       "variant": "empty",
       "summary": "The 'Paste source' leg of the Add button: a bare text view and Import.",
+      "kind": "plugin",
+      "apps": ["luna"]
+    },
+    {
+      "id": "plugins.locked.card",
+      "screen": "Locked card",
+      "variant": "plugin lock",
+      "summary": "The card face of a save a plugin parked while it waits for a browser step — the same lock every kind wears.",
       "kind": "plugin",
       "apps": ["luna"]
     },

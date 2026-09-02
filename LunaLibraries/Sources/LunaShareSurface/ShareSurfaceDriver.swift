@@ -274,16 +274,21 @@ public final class ShareSurfaceDriver {
     }
 
     /// A plugin-locked save: park the row in the same `.needsCaptcha` lock the
-    /// archive path parks in, and confirm the save. The extension shows no
-    /// modal — only the app can present a plugin's browser step.
+    /// archive path parks in, then say so. Only the app can present a plugin's
+    /// browser step, so the action extension shows the lock and the line that
+    /// names where the rest happens; the zero-UI share extension confirms the
+    /// save it did make and leaves.
     private func presentPluginLock(url: URL, pluginID: String) {
         guard let host else { return }
-        guard let saved = store.item(forURLString: url.absoluteString) else {
+        if let saved = store.item(forURLString: url.absoluteString) {
+            store.markPluginLocked(saved.id, pluginID: pluginID, title: saved.title)
+        }
+        guard host.readerMode != nil else {
             host.confirmSavedThenComplete()
             return
         }
-        store.markPluginLocked(saved.id, pluginID: pluginID, title: saved.title)
-        host.confirmSavedThenComplete()
+        host.presentModally(
+            PluginLockedSaveViewController(delegate: PluginLockedCardLegs(host: host)))
     }
 
     /// The action-extension failure card: shows the page, writes a
@@ -476,5 +481,17 @@ private final class RescueFailureCardLegs: RescueFailureCardDelegate {
 
     func rescueFailureCardDidFinish(_ card: RescueFailureViewController) {
         host?.completeSilently()
+    }
+}
+
+/// The lock card's one leg: the user is done reading it, so the extension is.
+@MainActor
+private final class PluginLockedCardLegs: PluginLockedSaveViewController.Delegate {
+    private weak var host: ExtensionHost?
+
+    nonisolated init(host: ExtensionHost) { self.host = host }
+
+    func pluginLockedSaveCardDidFinish(_ card: PluginLockedSaveViewController) {
+        host?.confirmSavedThenComplete()
     }
 }

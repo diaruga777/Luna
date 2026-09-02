@@ -20,6 +20,14 @@ public protocol PluginBrowserDeferring: AnyObject {
     /// The result of a completed browser step, once. Nil while the save is
     /// still locked.
     func takeResult(saveID: UUID) -> String?
+    /// Whether a completed result is waiting to be taken. Reading it does not
+    /// consume it, so the walk can call the hook with `reason: "resume"` and the
+    /// bridge can still answer the plugin's own `luna.browser.open` with it.
+    func hasCompletedResult(saveID: UUID) -> Bool
+}
+
+public extension PluginBrowserDeferring {
+    func hasCompletedResult(saveID: UUID) -> Bool { false }
 }
 
 /// The App-Group-backed witness. It is what every in-process bridge uses; only
@@ -38,6 +46,10 @@ public final class StoredPluginBrowserDeferral: PluginBrowserDeferring {
 
     public func takeResult(saveID: UUID) -> String? {
         store.takeResult(saveID: saveID)
+    }
+
+    public func hasCompletedResult(saveID: UUID) -> Bool {
+        store.record(for: saveID)?.resultJSON != nil
     }
 }
 

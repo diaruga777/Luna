@@ -114,6 +114,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // `ProductPriceRescue.resolver`.
         SavesIngestor.unsupportedSavePresenter = UnsupportedSaveCardPresenter()
 
+        // A plugin-locked save is finished by re-running the pipeline for the
+        // same id, and the flow that presents the browser step sits above
+        // LunaSaves. An app with no plugin platform installs this too and
+        // never has a locked save to resume.
+        PluginResumeSeams.resumer = SavesIngestor.shared
+
         // Save of the Week (claudedocs/save-of-the-week.md): LunaWeekly can't see
         // the ingest pipeline, so the shell hands it the one metadata read the
         // row needs.

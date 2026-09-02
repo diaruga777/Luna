@@ -61,16 +61,14 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// what keeps the automated flow running while it's visually concealed. When the
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
     /// stays up and shows the message + an Open-in-Safari escape — not a popup.
-    private let loadingOverlay = UIView()
-    /// Five deliberate taps reveal the archive page for troubleshooting without
-    /// exposing a user-facing experimental setting. Once revealed, disabling the
-    /// overlay's interaction lets scroll gestures reach the web view below.
-    private let overlaySpinner = HorizonSpinnerView(side: 36)
-    private let overlayLabel = EclipseBloomStatusLabel()
-    private var articleLoadingStatus: ArticleLoadingStatusCycler?
+    private let loadingOverlay = ChallengeCoverView(
+        actionTitle: L10n.string("Common_openInSafari"), actionSymbol: "safari")
+    private var overlaySpinner: HorizonSpinnerView { loadingOverlay.spinner }
+    private var overlayLabel: EclipseBloomStatusLabel { loadingOverlay.label }
     /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /
     /// guidance message. Hidden in extensions (no `UIApplication`).
-    private let overlaySafariButton = UIButton(type: .system)
+    private var overlaySafariButton: UIButton { loadingOverlay.actionButton }
+    private var articleLoadingStatus: ArticleLoadingStatusCycler?
     private var didExtract = false
     /// Set synchronously the moment we decide to extract, so the several
     /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
@@ -140,7 +138,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// because clearing the CAPTCHA is often an in-page transition that fires no
     /// navigation-finished callback — so we'd otherwise never notice the homepage
     /// became ready.
-    private var pollTimer: Timer?
+    private let poller = DOMProbePoller()
     /// The specific newest-snapshot URL resolved via the Memento TimeMap (a clean
     /// read endpoint), used in preference to the loop-prone `…/newest/<url>`
     /// redirect once the homepage warm-up clears the gate. Nil → fall back to
@@ -236,7 +234,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // hardcoded/stale UA (e.g. claiming iOS 26 on an iOS 27 device) is a UA/OS
         // mismatch that Cloudflare's bot check flags → endless re-challenge, where
         // real Safari (consistent UA) passes.
-        self.webView.customUserAgent = Self.deviceSafariUserAgent
+        self.webView.customUserAgent = DeviceSafariUserAgent.current
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -259,16 +257,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         })();
         """
         return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-    }
-
-    /// A mobile-Safari User-Agent built from the running iOS version so it never
-    /// mismatches the device (which would trip archive.today's Cloudflare check).
-    private static var deviceSafariUserAgent: String {
-        let version = UIDevice.current.systemVersion                       // e.g. "27.0"
-        let osToken = version.replacingOccurrences(of: ".", with: "_")     // "27_0"
-        let major = version.split(separator: ".").first.map(String.init) ?? version
-        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osToken) like Mac OS X) "
-            + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(major).0 Mobile/15E148 Safari/604.1"
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -384,62 +372,29 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// Stage-checks the page on a timer (in addition to `didFinish`) so we still
     /// react when the CAPTCHA clears via an in-page transition.
     private func startPolling() {
-        pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
-            self?.checkStage()
-        }
+        poller.delegate = self
+        poller.start()
     }
 
-    deinit { pollTimer?.invalidate() }
+    deinit { poller.stop() }
 
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         // Stop polling the web view once we're off-screen — otherwise the timer
         // keeps firing checkStage() (and could load/submit) on a dismissed flow.
-        pollTimer?.invalidate()
-        pollTimer = nil
+        poller.stop()
     }
 
     /// Builds the opaque cover (themed background + spinner + label) over the web
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
     private func setUpLoadingOverlay() {
-        // The cover COVERS. Its background is a hair off opaque only so the loading
-        // controls composite crisply over it; there is no translucent state and no
-        // way to ask for one — the page underneath is either hidden or, when a CAPTCHA
-        // needs solving, revealed outright by `isHidden`.
-        loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
-        loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
-
         // Tint deliberately left at `HorizonSpinnerView`'s own horizon palette. It used
         // to be forced to `GlassStyle.readingAccent` — the user's reader highlight,
         // usually a bright blue — which made the spinner appear to change colour at the
         // handover from the extension's wait, since that one uses the default.
-        overlaySpinner.startAnimating()
-
-        var safariConfig = UIButton.Configuration.borderedProminent()
-        safariConfig.title = L10n.string("Common_openInSafari")
-        safariConfig.image = UIImage(systemName: "safari")
-        safariConfig.imagePadding = 6
-        safariConfig.cornerStyle = .large
-        overlaySafariButton.configuration = safariConfig
-        overlaySafariButton.isHidden = true   // only shown with a terminal message
         overlaySafariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
-
-        view.addSubview(loadingOverlay)
-        NSLayoutConstraint.activate([
-            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
-            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
-        // The SPINNER is centred and the copy hangs below it — the shared
-        // `LoadingStatusLayout`, identical to the extension's wait screen. The old
-        // centred STACK put the spinner ~28pt higher than the wait it was continuing,
-        // so the spinner appeared to jump upwards at the handover.
-        LoadingStatusLayout.install(
-            spinner: overlaySpinner, label: overlayLabel,
-            action: overlaySafariButton, in: loadingOverlay)
+        loadingOverlay.cover(view)
         articleLoadingStatus = ArticleLoadingStatusCycler(
             label: overlayLabel, initialText: L10n.string("Reader_archiveUnlock_unlockingStatus"))
         articleLoadingStatus?.start()
@@ -1057,7 +1012,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     }
                     self.didExtract = true
                     self.didReportOutcome = true
-                    self.pollTimer?.invalidate()
+                    self.poller.stop()
                     // There IS something to affirm now: the article is saved.
                     self.setExitButton(symbol: "checkmark")
                     // Only for a controller that is STAYING. A delegate means the
@@ -1129,8 +1084,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private func giveUp(_ reason: String) {
         guard mode == .unattended, !didReportOutcome else { return }
         didReportOutcome = true
-        pollTimer?.invalidate()
-        pollTimer = nil
+        poller.stop()
         webView.stopLoading()
         progress.stopAnimating()
         SharedDiagnosticLog.record(
@@ -1180,8 +1134,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             return
         }
         didShowTerminalMessage = true
-        pollTimer?.invalidate()
-        pollTimer = nil
+        poller.stop()
         progress.stopAnimating()
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
@@ -1191,5 +1144,13 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         overlayLabel.textColor = LunaColors.primaryText
         overlaySafariButton.isHidden = !offersSystemBrowserEscape
         loadingOverlay.backgroundColor = LunaColors.background.withAlphaComponent(0.99)
+    }
+}
+
+/// The poll tick. Both stage machines run off it: the direct-bypass pre-stage
+/// while one is in flight, the archive stage otherwise.
+extension ArchiveWebReaderViewController: DOMProbePollerDelegate {
+    public func probePollerDidTick(_ poller: DOMProbePoller) {
+        checkStage()
     }
 }

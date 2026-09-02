@@ -80,6 +80,32 @@ public enum LunaDeepLink {
             .queryItems?.first(where: { $0.name == "url" })?.value
     }
 
+    /// `<scheme>://save?url=…` — Safari's "Finish in Luna"
+    /// (`claudedocs/plans/plugin-platform.md` §8.2).
+    ///
+    /// Safari has no save row to lock: a plugin that asked for a browser there
+    /// has nothing stored. So the app ingests the page from scratch, in the
+    /// foreground, with the user present — which is exactly the state the
+    /// browser step needs.
+    public static func saveLink(scheme: String = ownScheme, urlString: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "save"
+        components.queryItems = [URLQueryItem(name: "url", value: urlString)]
+        return components.url
+    }
+
+    /// The wrapped page from a `<any Luna scheme>://save?url=…` link, or nil
+    /// when `url` is not one.
+    public static func saveURL(from url: URL) -> String? {
+        guard let scheme = url.scheme, allSchemes.contains(scheme), url.host == "save"
+        else { return nil }
+        let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "url" })?.value
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+
     /// `<scheme>://rescue` — the extension→app URL-rescue hand-off. No query
     /// payload: the URL + hint + one-shot consent travel in
     /// `PendingRescueRequestStore` (App Group), and a bare route works even when

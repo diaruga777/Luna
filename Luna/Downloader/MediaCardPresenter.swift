@@ -176,6 +176,13 @@ final class MediaCardPresenter: CardKindPresenting {
     func cardContent(for item: SavedItem, host: CardPresenterHost)
         -> CardContentViewController?
     {
+        // A plugin parked this save waiting for a browser step, so there is no
+        // download behind it yet. It wears the same lock every other kind's
+        // locked card wears, and its tap runs the plugin's own unlock.
+        if item.isPluginLocked {
+            return PluginLockedCardContentViewController(
+                caption: L10n.string("PluginLocked_cardCaption"))
+        }
         if MediaDownloadablePlatform.isPlaybackOnlyYouTube(item.urlString),
            let url = item.url {
             return YouTubePlaybackCardContentViewController(sourceURL: url)
@@ -379,6 +386,9 @@ final class MediaCardPresenter: CardKindPresenting {
         _ item: SavedItem, cardContent: CardContentViewController?,
         host: CardPresenterHost
     ) -> Bool {
+        if PluginLockedSaves.presentUnlock(for: item, from: host.presentingController) {
+            return true
+        }
         guard media(for: item) == nil else { return true }
         return openExternally(item, host: host)
     }

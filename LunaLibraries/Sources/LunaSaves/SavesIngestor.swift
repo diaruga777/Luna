@@ -67,7 +67,7 @@ public struct CurrentProcessIngestGate: IngestSurfaceGating {
 
 /// Downloads and extracts content for saved items: the immediate step
 /// after a link is saved, plus a retry pass for anything still pending.
-public final class SavesIngestor {
+public final class SavesIngestor: PluginLockedSaveResuming {
     public static let shared = SavesIngestor()
 
     private let store: SavesStore
@@ -281,6 +281,20 @@ public final class SavesIngestor {
         let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL)
         await presenter.present(result.outcome, for: item)
         return decision
+    }
+
+    /// Re-runs the pipeline for a save a plugin locked, keeping its id
+    /// (`claudedocs/plans/plugin-platform.md` §8.3).
+    ///
+    /// It is a plain re-ingest of the same row, so the walk reaches the same
+    /// plugin, its `luna.browser.open` is answered from the stored result
+    /// instead of a modal, and the Model it finally returns replaces the locked
+    /// placeholder rather than adding a second save.
+    public func resumePluginLockedSave(id: UUID) async {
+        guard let item = store.item(withID: id), item.isPluginLocked else { return }
+        SharedDiagnosticLog.record(
+            "plugin: resuming locked save \(id.uuidString.prefix(8))", category: "plugin")
+        await ingest(item)
     }
 
     /// Persists a rescued `IngestResult` for an existing item through the shared

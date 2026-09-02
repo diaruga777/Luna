@@ -118,12 +118,23 @@ public final class PluginIngestStage: PluginIngestStaging {
         page: PluginPageSnapshot?
     ) async -> IngestStep {
         guard plugin.hooks.contains(.ingest) else { return .continueWalk }
+        // The save's own id, which the trace is already correlated by. The
+        // browser bridge writes its deferred request against it, and reads back
+        // the result the app's modal wrote (§8.1).
+        let saveID = SaveDiagnostics.recorder?.itemID
+        // A save holding a completed browser result is being resumed, whether
+        // the app asked for that or a launch sweep did.
+        let reason: PluginIngestReason =
+            saveID.map { PluginBrowserDeferral.witness?.hasCompletedResult(saveID: $0) ?? false }
+                ?? false ? .resume : .save
         let argument = PluginIngestHookInput(
             url: input.url.absoluteString, claim: claim, page: page,
-            reason: .save, context: processKind)
-        let result = await invoker.invoke(
-            .ingest, pluginID: plugin.id, argument: argument,
-            timeout: Self.ingestTimeout, decode: PluginIngestAnswer.self)
+            reason: reason, context: processKind, saveID: saveID?.uuidString)
+        let result = await PluginIngestScope.run(saveID: saveID, reason: reason) {
+            await invoker.invoke(
+                .ingest, pluginID: plugin.id, argument: argument,
+                timeout: Self.ingestTimeout, decode: PluginIngestAnswer.self)
+        }
 
         switch result {
         case .failure(.browserDeferred):

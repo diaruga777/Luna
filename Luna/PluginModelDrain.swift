@@ -29,36 +29,48 @@ import UIKit
 
 enum PluginModelDrain {
 
+    /// Where a completed drain sends the user back to. A test substitutes a
+    /// no-op so the suite never actually opens Safari.
+    static var opener: (URL) async -> Void = { url in _ = await UIApplication.shared.open(url) }
+
     /// Takes every queued Model and adopts it. `returningToSource` mirrors the
     /// Safari hand-off's `ret=safari` flag: once every row is settled, the
     /// first row's page is reopened in Safari — there is no "return to the
     /// previous app" API, so this is an ordinary `open` of its https URL.
+    ///
+    /// `pendingStore`/`store`/`ingestor` are parameters so a test can exercise
+    /// this against its own, the same reason `PendingResolvedMediaDownloads
+    /// .persistSave` takes them.
     static func run(
         returningToSource: Bool,
-        productInfoBuilder: @escaping (ProductModel, URL?) -> ProductInfo
+        productInfoBuilder: @escaping (ProductModel, URL?) -> ProductInfo,
+        pendingStore: PendingPluginModelStore = .shared,
+        store: SavesStore = .shared,
+        ingestor: SavesIngestor = .shared
     ) {
-        let rows = PendingPluginModelStore.shared.takeAll()
+        let rows = pendingStore.takeAll()
         guard !rows.isEmpty else { return }
         Task { @MainActor in
             for row in rows {
-                await adopt(row, productInfoBuilder: productInfoBuilder)
+                await adopt(row, productInfoBuilder: productInfoBuilder, store: store, ingestor: ingestor)
             }
             guard returningToSource, let sourceURL = URL(string: rows[0].urlString),
                   sourceURL.scheme?.hasPrefix("http") == true
             else { return }
-            _ = await UIApplication.shared.open(sourceURL)
+            await opener(sourceURL)
         }
     }
 
     @MainActor
-    private static func adopt(
-        _ row: PendingPluginModel, productInfoBuilder: (ProductModel, URL?) -> ProductInfo
+    static func adopt(
+        _ row: PendingPluginModel, productInfoBuilder: (ProductModel, URL?) -> ProductInfo,
+        store: SavesStore, ingestor: SavesIngestor
     ) async {
         guard let url = URL(string: row.urlString) else { return }
         guard let data = row.modelJSON.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(PluginModel.self, from: data)
         else {
-            await fallBackToNormalIngest(urlString: row.urlString)
+            await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
             return
         }
         let model = decoded.resolvingRelativeURLs(against: url)
@@ -66,30 +78,30 @@ enum PluginModelDrain {
         switch model {
         case let .media(media):
             guard let adopter = PluginModelAdopters.media else {
-                await fallBackToNormalIngest(urlString: row.urlString)
+                await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
                 return
             }
             adopted = await adopter.adopt(media, url: url, pluginID: row.pluginID)
         case let .article(article):
             guard let adopter = PluginModelAdopters.article else {
-                await fallBackToNormalIngest(urlString: row.urlString)
+                await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
                 return
             }
             adopted = await adopter.adopt(article, url: url, page: .none, pluginID: row.pluginID)
         case let .product(product):
             guard let adopter = PluginModelAdopters.product else {
-                await fallBackToNormalIngest(urlString: row.urlString)
+                await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
                 return
             }
             adopted = await adopter.adopt(product, url: url, pluginID: row.pluginID)
         }
 
         guard let outcome = Self.outcome(from: adopted, productInfoBuilder: productInfoBuilder) else {
-            await fallBackToNormalIngest(urlString: row.urlString)
+            await fallBackToNormalIngest(urlString: row.urlString, store: store, ingestor: ingestor)
             return
         }
-        let reservation = SavesStore.shared.reserveSaveAttempt(urlString: row.urlString, at: Date())
-        _ = await SavesIngestor.shared.applyRescued(
+        let reservation = store.reserveSaveAttempt(urlString: row.urlString, at: Date())
+        _ = await ingestor.applyRescued(
             IngestResult(url: url, outcome: outcome, pluginID: row.pluginID),
             forItemID: reservation.item.id, interactive: false)
     }
@@ -97,7 +109,7 @@ enum PluginModelDrain {
     /// The same mapping `PluginIngestStage.adopt` makes in-process — kept as a
     /// small standalone copy because that stage lives in the plugin-only tier
     /// this universal file cannot import.
-    private static func outcome(
+    static func outcome(
         from adopted: PluginAdoptedOutcome, productInfoBuilder: (ProductModel, URL?) -> ProductInfo
     ) -> Outcome? {
         switch adopted {
@@ -120,9 +132,11 @@ enum PluginModelDrain {
     /// rather than losing it — the Swift classifier is the same floor the
     /// ingest walk itself falls back to (§7.4).
     @MainActor
-    private static func fallBackToNormalIngest(urlString: String) async {
+    private static func fallBackToNormalIngest(
+        urlString: String, store: SavesStore, ingestor: SavesIngestor
+    ) async {
         guard let url = URL(string: urlString) else { return }
-        let reservation = SavesStore.shared.reserveSaveAttempt(urlString: url.absoluteString, at: Date())
-        _ = await SavesIngestor.shared.ingest(reservation.item, allowsInteractivePrompt: false)
+        let reservation = store.reserveSaveAttempt(urlString: url.absoluteString, at: Date())
+        _ = await ingestor.ingest(reservation.item, allowsInteractivePrompt: false)
     }
 }

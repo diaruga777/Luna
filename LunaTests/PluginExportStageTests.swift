@@ -77,6 +77,15 @@ final class PluginExportStageTests: XCTestCase {
             for: item)
     }
 
+    /// A ready MEDIA save: a recognized platform item, which is the shape
+    /// `SavedItem.exportKind` reads.
+    private func readyMedia() -> SavedItem {
+        let item = store.add(urlString: "https://www.youtube.com/watch?v=abc")
+        return store.savePlatformMetadata(
+            platform: .youtube, platformItemID: "abc", title: "A Video",
+            thumbnailFileName: nil, for: item.id) ?? item
+    }
+
     private func stage(_ export: PluginExportSummary) -> PluginExportStage {
         invoker.plugins = [PluginExportFixtures.summary(id: Self.pluginID, export: export)]
         catalog.listingsByID[Self.pluginID] = PluginExportFixtures.listing(
@@ -296,12 +305,14 @@ final class PluginExportStageTests: XCTestCase {
     // MARK: - Destinations (§9.4)
 
     private func destination(
-        _ export: PluginExportSummary, id: String = PluginExportStageTests.pluginID
+        _ export: PluginExportSummary, id: String = PluginExportStageTests.pluginID,
+        mediaFiles: (any PluginExportMediaFileLocating)? = nil
     ) -> PluginDestination {
         invoker.plugins = [PluginExportFixtures.summary(id: id, export: export)]
         catalog.listingsByID[id] = PluginExportFixtures.listing(invoker.plugins[0])
         let stage = PluginExportStage(
-            invoker: invoker, producer: PluginExportInputProducer(store: store),
+            invoker: invoker,
+            producer: PluginExportInputProducer(store: store, mediaFiles: mediaFiles),
             scratch: scratch, presenter: presenter)
         return PluginDestination(pluginID: id, export: export, stage: stage)
     }
@@ -432,4 +443,53 @@ final class PluginExportStageTests: XCTestCase {
         XCTAssertTrue(coordinator.configuredDestinations().isEmpty)
         XCTAssertTrue(coordinator.isConfigured(destinationID: destination.id))
     }
+
+    /// A destination declaring `media` delivers a media save: the coordinator
+    /// hands it over (an article destination's guard would have refused it) and
+    /// the hook is handed the downloaded FILE, which is a media export's only
+    /// input.
+    func testAMediaDestinationDeliversTheDownloadedFile() async throws {
+        let item = readyMedia()
+        let downloaded = containerURL.appendingPathComponent("A Video.mp4")
+        try Data("movie-bytes".utf8).write(to: downloaded)
+        let destination = destination(
+            PluginExportFixtures.export(
+                kinds: [.media], input: "file", isDestination: true),
+            mediaFiles: FixedMediaFileLocator(url: downloaded))
+        invoker.resultJSON = "{\"status\":\"sent\"}"
+
+        XCTAssertTrue(destination.accepts(item))
+        await coordinator(destination).send(item, toDestinationID: destination.id)
+
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: destination.id), .sent)
+        let argument = try XCTUnwrap(invoker.argumentJSON.first)
+        XCTAssertTrue(argument.contains("\"format\":\"file\""), argument)
+        XCTAssertTrue(argument.contains("\"kind\":\"media\""), argument)
+        XCTAssertTrue(argument.contains("\"name\":\"A Video.mp4\""), argument)
+        XCTAssertTrue(
+            argument.contains("\"size\":\(Data("movie-bytes".utf8).count)"), argument)
+    }
+
+    /// The kinds a destination declared are the kinds it is offered. An article
+    /// destination beside the media one never sees the download.
+    func testADestinationRefusesASaveOfAKindItDidNotDeclare() {
+        let media = destination(
+            PluginExportFixtures.export(
+                kinds: [.media], input: "file", isDestination: true))
+        let article = destination(
+            PluginExportFixtures.export(input: "url", isDestination: true),
+            id: "test.luna.article")
+
+        XCTAssertTrue(media.accepts(readyMedia()))
+        XCTAssertFalse(media.accepts(readyArticle()))
+        XCTAssertFalse(article.accepts(readyMedia()))
+        XCTAssertTrue(article.accepts(readyArticle()))
+    }
+}
+
+/// Where a media save's downloaded file is, for a test that has put one there.
+private final class FixedMediaFileLocator: PluginExportMediaFileLocating {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func mediaFileURL(forSaveID saveID: UUID) -> URL? { url }
 }

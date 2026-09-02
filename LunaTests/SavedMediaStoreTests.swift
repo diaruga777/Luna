@@ -9,6 +9,9 @@ final class SavedMediaStoreTests: XCTestCase {
     private var root: URL!
     private var store: SavedMediaStore!
     private var saves: SavesStore!
+    /// The app's own readiness observer, installed at test-host launch. Every
+    /// test in this class drives the seam itself, so it is parked and restored.
+    private var previousReadiness: (any SaveReadinessObserving)?
 
     override func setUpWithError() throws {
         // The interpolation here was missing its backslash, so every test in this class
@@ -24,9 +27,13 @@ final class SavedMediaStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         store = SavedMediaStore(containerURL: root)
         saves = SavesStore(containerURL: root)
+        previousReadiness = SaveReadiness.observer
+        SaveReadiness.observer = nil
     }
 
     override func tearDownWithError() throws {
+        SaveReadiness.observer = previousReadiness
+        previousReadiness = nil
         try? FileManager.default.removeItem(at: root)
         store = nil
         saves = nil
@@ -631,6 +638,46 @@ final class SavedMediaStoreTests: XCTestCase {
             atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
     }
 
+    // MARK: - Readiness
+
+    /// The moment a media export destination can act on: the FILE exists. A
+    /// media save's `saves` row is already `.ready` from its post metadata, so
+    /// the row cannot be the signal.
+    func testALandedDownloadReportsItsOwningSaveAsReady() async throws {
+        let urlString = "https://x.com/example/status/9"
+        let id = makeSave(urlString)
+        let recorder = RecordingSaveReadiness()
+        SaveReadiness.observer = recorder
+
+        let source = root.appendingPathComponent("ready.mp4")
+        try Data("video".utf8).write(to: source)
+        _ = try await store.addDownloadedFile(
+            source, kind: .video, sourceURLString: urlString, title: "Ready")
+
+        XCTAssertEqual(recorder.reportedIDs, [id])
+    }
+
+    /// The Downloader and the Price Tracker link no send tier, so nothing
+    /// installs a readiness observer there. The same landed download must still
+    /// commit its row and its file.
+    func testALandedDownloadCommitsWithNoReadinessObserverInstalled() async throws {
+        XCTAssertNil(SaveReadiness.observer)
+        let urlString = "https://x.com/example/status/10"
+        let id = makeSave(urlString)
+
+        let source = root.appendingPathComponent("no-observer.mp4")
+        try Data("video".utf8).write(to: source)
+        let saved = try await store.addDownloadedFile(
+            source, kind: .video, sourceURLString: urlString, title: "No observer")
+
+        XCTAssertEqual(saved.id, id)
+        guard case .localFile(let fileName) = saved.storageState else {
+            return XCTFail("Expected local backing")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.mediaDirectory.appendingPathComponent(fileName).path))
+    }
+
     private func makeJPEG() -> Data {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40))
         return renderer.jpegData(withCompressionQuality: 0.9) { context in
@@ -679,4 +726,11 @@ private final class StubBackingProbe: PhotosBackingProbing {
         queryCount += 1
         return verdict
     }
+}
+
+/// Records the saves reported ready, so a test reads the report instead of the
+/// send it would have started.
+private final class RecordingSaveReadiness: SaveReadinessObserving {
+    private(set) var reportedIDs: [UUID] = []
+    func saveBecameReady(_ item: SavedItem) { reportedIDs.append(item.id) }
 }

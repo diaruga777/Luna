@@ -432,6 +432,113 @@ final class PluginRuntimeTests: XCTestCase {
         XCTAssertNil(runner.runtime.disabled["app.luna.test"])
     }
 
+    /// A call that never reached the front of the shared queue executed
+    /// nothing, so abandoning it must not charge the plugin a strike or report
+    /// the runtime wedged. One slow plugin used to stop every healthy one.
+    func testACallThatNeverStartsCostsItsPluginNothing() async throws {
+        let blocker = """
+        luna.register({
+            classify() {
+                const until = Date.now() + 1500;
+                while (Date.now() < until) { /* holds the shared queue */ }
+                return false;
+            },
+            async ingest() { return null; }
+        });
+        """
+        let waiter = """
+        luna.register({
+            classify() { return { kind: "media" }; },
+            async ingest() { return null; }
+        });
+        """
+        try runner.load(
+            plugin(id: "app.luna.blocker", body: blocker),
+            plugin(id: "app.luna.waiter", body: waiter))
+        let input = ClassifyInput(url: "https://example.com/v/a", context: "app")
+
+        async let slow = runner.runtime.invoke(
+            .classify, pluginID: "app.luna.blocker", argument: input, timeout: 5,
+            decode: ClassifyClaim?.self)
+        var failures: [PluginInvocationFailure?] = []
+        for _ in 0..<PluginRuntime.timeoutsBeforeDisable {
+            let outcome = await runner.runtime.invoke(
+                .classify, pluginID: "app.luna.waiter", argument: input, timeout: 0.05,
+                decode: ClassifyClaim?.self)
+            if case .failure(let failure) = outcome { failures.append(failure) }
+        }
+        _ = await slow
+
+        XCTAssertEqual(failures, Array(repeating: .timedOut, count: failures.count))
+        XCTAssertFalse(failures.isEmpty, "the waiter's calls queued behind the blocker")
+        XCTAssertNil(
+            runner.runtime.disabled["app.luna.waiter"],
+            "a call that never ran collects no strike")
+        XCTAssertFalse(
+            runner.runtime.isWedged, "a cancelled queue item holds nothing")
+    }
+
+    /// Two calls of ONE plugin overlap, and a bridge callback cannot tell which
+    /// hook's continuation it belongs to, so a touch reaches both. The quiet
+    /// call's one slow fetch outlasts its own idle budget and survives on the
+    /// busy call's activity.
+    func testTwoOverlappingCallsOfOnePluginKeepEachOtherAlive() async throws {
+        runner.fetcher.delays = [
+            "https://example.com/slow": 0.7, "https://example.com/fast": 0.03,
+        ]
+        runner.fetcher.respond(to: "https://example.com/slow", body: "ok")
+        runner.fetcher.respond(to: "https://example.com/fast", body: "ok")
+        let body = """
+        luna.register({
+            classify() { return { kind: "media" }; },
+            async ingest({ url }) {
+                if (url.indexOf("/quiet") >= 0) {
+                    await luna.fetch("https://example.com/slow");
+                    return null;
+                }
+                for (let i = 0; i < 40; i += 1) {
+                    await luna.fetch("https://example.com/fast");
+                }
+                return null;
+            }
+        });
+        """
+        try runner.load(plugin(
+            id: "app.luna.pair", capabilities: ["fetch"], body: body))
+
+        async let busy = runner.runtime.invoke(
+            .ingest, pluginID: "app.luna.pair",
+            argument: OverlapInput(url: "https://example.com/busy"), timeout: 5,
+            decode: PluginJSONValue?.self)
+        async let quiet = runner.runtime.invoke(
+            .ingest, pluginID: "app.luna.pair",
+            argument: OverlapInput(url: "https://example.com/quiet"), timeout: 0.35,
+            decode: PluginJSONValue?.self)
+        let outcomes = await [busy, quiet]
+
+        for outcome in outcomes {
+            if case .failure(let failure) = outcome {
+                XCTFail("both calls settle: \(failure)")
+            }
+        }
+    }
+
+    private struct OverlapInput: Encodable { let url: String }
+
+    /// The scratch root a killed process left is cleared before the reloaded
+    /// context can serve a handle out of it.
+    func testALoadReapsWhatAnEarlierProcessLeftBehind() throws {
+        try runner.load(plugin(id: "app.luna.test", body: claimingBody))
+        let leftover = try runner.scratch.writeFile(
+            Data("stale".utf8), suggestedName: "old.txt", mime: nil,
+            pluginID: "app.luna.test", generation: "from-a-killed-process")
+        XCTAssertNotNil(runner.scratch.fileURL(for: leftover))
+
+        runner.runtime.reloadAll()
+
+        XCTAssertNil(runner.scratch.fileURL(for: leftover))
+    }
+
     func testAPluginThatBlocksItsQueueWedgesTheRuntime() async throws {
         let body = """
         luna.register({

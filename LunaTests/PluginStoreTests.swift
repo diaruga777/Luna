@@ -77,6 +77,23 @@ final class PluginStoreTests: XCTestCase {
         XCTAssertEqual(store.plugin(id: "app.luna.test")?.manifest.version.description, "2.1.3")
     }
 
+    /// The stale versions used to be removed BEFORE the new one landed, so a
+    /// move that failed left the plugin with no version installed at all.
+    func testAFailedInstallLeavesTheVersionThatWasAlreadyThere() throws {
+        try install(source(version: "1.0.0"))
+        let fileManager = FailingMoveFileManager()
+        let brittle = PluginStore(rootURL: containerURL, fileManager: fileManager)
+        let manifest = try XCTUnwrap(
+            try? PluginManifestParser.parse(source: source(version: "2.0.0")).get())
+
+        XCTAssertThrowsError(
+            try brittle.install(
+                source: source(version: "2.0.0"), manifest: manifest, origin: .paste))
+
+        XCTAssertEqual(store.versions(of: "app.luna.test").map(\.description), ["1.0.0"])
+        XCTAssertEqual(store.plugin(id: "app.luna.test")?.manifest.version.description, "1.0.0")
+    }
+
     func testInstallingALowerVersionOverAnInstalledOneStillReplacesIt() throws {
         try install(source(version: "2.0.0"))
         try install(source(version: "1.0.0"))
@@ -275,5 +292,13 @@ final class PluginStoreTests: XCTestCase {
             XCTAssertEqual(error as? PluginManifestError, .noHeader)
             XCTAssertFalse((error as? PluginManifestError)?.message.isEmpty ?? true)
         }
+    }
+}
+
+/// Refuses the one move `PluginStore.install` makes, so the failure path can be
+/// asserted without a full disk.
+private final class FailingMoveFileManager: FileManager, @unchecked Sendable {
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

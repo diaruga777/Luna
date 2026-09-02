@@ -184,6 +184,8 @@ final class StubPluginFetcher: PluginURLFetching, @unchecked Sendable {
         .failure(PluginFetchError("no stub response"))
     /// Held before answering, so a test can watch a hook wait.
     var delay: TimeInterval = 0
+    /// URL string → the delay that one request waits, overriding `delay`.
+    var delays: [String: TimeInterval] = [:]
 
     private let lock = NSLock()
     private var recorded: [PluginFetchRequest] = []
@@ -213,7 +215,7 @@ final class StubPluginFetcher: PluginURLFetching, @unchecked Sendable {
         lock.lock()
         recorded.append(request)
         let answer = responses[request.url.absoluteString].map { Result.success($0) } ?? fallback
-        let delay = self.delay
+        let delay = delays[request.url.absoluteString] ?? self.delay
         lock.unlock()
         // Off the calling thread, the way a real transfer answers.
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { completion(answer) }

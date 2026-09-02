@@ -307,6 +307,39 @@ final class PluginFetchTests: XCTestCase {
         XCTAssertEqual(response?.body.count, 100)
     }
 
+
+    // MARK: - Two sessions at once
+
+    /// Two policies mean two `URLSession`s, and a task identifier is unique
+    /// only within one of them. Keyed by the identifier alone, the second
+    /// transfer erased the first: the first request never completed and its
+    /// bytes were appended to the second's body.
+    func testTwoConcurrentRequestsOnDifferentCookieJarsEachGetTheirOwnBody() {
+        let service = PluginFetchService(protocolClasses: [PluginStubURLProtocol.self])
+        PluginStubURLProtocol.respond(to: "https://example.com/a", status: 200, body: "alpha")
+        PluginStubURLProtocol.respond(to: "https://example.com/b", status: 200, body: "beta")
+        let both = expectation(description: "both requests complete")
+        both.expectedFulfillmentCount = 2
+        var bodies: [String: String] = [:]
+        let lock = NSLock()
+
+        for (path, policy) in [("a", PluginFetchRequest.CookiePolicy.shared),
+                               ("b", PluginFetchRequest.CookiePolicy.none)] {
+            service.fetch(PluginFetchRequest(
+                url: URL(string: "https://example.com/\(path)")!, cookies: policy)
+            ) { outcome in
+                if case .success(let response) = outcome {
+                    lock.lock()
+                    bodies[path] = String(decoding: response.body, as: UTF8.self)
+                    lock.unlock()
+                }
+                both.fulfill()
+            }
+        }
+        wait(for: [both], timeout: 10)
+
+        XCTAssertEqual(bodies, ["a": "alpha", "b": "beta"])
+    }
 }
 
 /// Answers `PluginFetchService`'s requests from a table and records what it was

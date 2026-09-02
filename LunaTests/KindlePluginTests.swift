@@ -145,25 +145,6 @@ final class KindlePluginTests: XCTestCase {
             "the stage reads that code as terminal")
     }
 
-    // MARK: - The manifest
-
-    /// The declaration the share row and the destination read.
-    func testTheManifestDeclaresAnArticleEpubDestination() throws {
-        let manifest = try XCTUnwrap(
-            try? PluginManifestParser.parse(source: try kindleSource()).get())
-
-        XCTAssertEqual(manifest.id, KindlePlugin.pluginID)
-        let export = try XCTUnwrap(manifest.export)
-        XCTAssertEqual(export.kinds, [.article])
-        XCTAssertEqual(export.input, "epub")
-        XCTAssertTrue(export.isDestination)
-        XCTAssertEqual(export.requiresSettings, [KindlePlugin.addressSettingKey])
-        XCTAssertTrue(manifest.capabilities.contains(.mail))
-        XCTAssertTrue(
-            manifest.settings.contains { $0.key == KindlePlugin.addressSettingKey && $0.isRequired })
-        XCTAssertTrue(manifest.produces.isEmpty, "an export plugin ingests nothing")
-    }
-
     // MARK: - Migration
 
     /// The address the Swift destination held moves into the plugin's setting

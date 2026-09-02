@@ -54,9 +54,10 @@ public enum PluginExportComposition {
         processKind: PluginProcessKind, scheduler: PluginCallbackScheduling
     ) -> [any PluginCapabilityInstalling] {
         [
-            PluginMailBridge(
-                processKind: processKind, scheduler: scheduler,
-                recipientPicker: PluginMailRecipients.picker),
+            // No picker argument: the bridge reads `PluginMailRecipients
+            // .picker` per call, and `install` (which assigns it) runs after
+            // the platform install that builds these bridges.
+            PluginMailBridge(processKind: processKind, scheduler: scheduler),
             PluginNotificationsBridge(processKind: processKind, scheduler: scheduler),
             PluginExportsBridge(processKind: processKind, scheduler: scheduler),
         ]

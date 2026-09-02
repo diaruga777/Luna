@@ -110,6 +110,14 @@ public final class PluginMailBridge: PluginCapabilityInstalling {
         scratch ?? PluginPlatformServices.scratch
     }
 
+    /// Read per call, like `activeScratch`. `PluginExportComposition.install`
+    /// assigns the picker AFTER the platform install that builds this bridge,
+    /// so an `init`-captured value is permanently nil and every message that
+    /// names no recipient is refused.
+    private var activePicker: (any PluginMailRecipientPicking)? {
+        recipientPicker ?? PluginMailRecipients.picker
+    }
+
     public func install(into namespace: PluginCapabilityNamespace) {
         let outerContext = namespace.context
         let bridge = self
@@ -143,7 +151,7 @@ public final class PluginMailBridge: PluginCapabilityInstalling {
             Task {
                 let resolved: [String]
                 if recipients.isEmpty {
-                    guard let picker = bridge.recipientPicker else {
+                    guard let picker = bridge.activePicker else {
                         box.fail(
                             "luna.mail.send has no recipient picker here",
                             code: "unavailable-here")

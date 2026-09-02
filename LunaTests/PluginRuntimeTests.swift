@@ -150,6 +150,29 @@ final class PluginRuntimeTests: XCTestCase {
 
     // MARK: - Grants
 
+    func testRegisteringAgainFromAHookThrowsAlreadyRegistered() async throws {
+        let body = """
+        luna.register({
+            classify() { return false; },
+            async ingest() {
+                let outcome = "no throw";
+                try { luna.register({ ingest() { return null; } }); }
+                catch (error) { outcome = error.name + "|" + error.code; }
+                return { kind: "media", title: outcome,
+                         assets: [{ url: "https://example.com/a.mp4", type: "video" }] };
+            }
+        });
+        """
+        try runner.load(plugin(body: body))
+
+        struct Model: Decodable { let title: String }
+        let first = await runner.invoke(.ingest, pluginID: "app.luna.test", as: Model.self)
+        XCTAssertEqual(first?.title, "LunaError|already-registered")
+        // The hook table is unchanged: the original ingest still answers.
+        let second = await runner.invoke(.ingest, pluginID: "app.luna.test", as: Model.self)
+        XCTAssertEqual(second?.title, "LunaError|already-registered")
+    }
+
     func testOnlyDeclaredNamespacesReachThePlugin() async throws {
         let body = """
         luna.register({

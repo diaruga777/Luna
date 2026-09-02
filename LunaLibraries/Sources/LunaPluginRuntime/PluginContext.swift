@@ -27,6 +27,10 @@ final class PluginContext {
     private let context: JSContext
     private var hooks: JSValue?
     private var registerCount = 0
+    /// True once `seal()` ran. A `luna.register` after that is a hook trying to
+    /// swap the hook table, and throws the same `already-registered` the Safari
+    /// world and the node harness throw.
+    private var isSealed = false
     /// The last exception the handler saw. Read and cleared around each call.
     private var pendingException: (message: String, stack: String?)?
 
@@ -109,6 +113,7 @@ final class PluginContext {
     func seal() {
         context.evaluateScript("Object.freeze(luna); Object.freeze(luna.bytes);")
         pendingException = nil
+        isSealed = true
     }
 
     /// The namespaces a plugin can actually SEE on its `luna` object, read back
@@ -153,6 +158,12 @@ final class PluginContext {
     }
 
     private func capture(hooks value: JSValue?) {
+        if isSealed {
+            context.exception = PluginPromiseBox.makeLunaError(
+                code: "already-registered",
+                message: "luna.register was called more than once", in: context)
+            return
+        }
         registerCount += 1
         guard let value, value.isObject else { return }
         hooks = value

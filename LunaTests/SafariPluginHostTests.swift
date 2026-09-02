@@ -90,10 +90,9 @@ final class SafariPluginHostTests: XCTestCase {
     /// the code is what made a plugin branching on `error.code` behave
     /// differently in Safari than in the app.
     ///
-    /// `api.md` attributes `already-registered`/`invalid-hooks` to Safari
-    /// alone for a reason: the JavaScriptCore side counts `register` calls
-    /// while a plugin LOADS (`PluginContext.registerCount`) and a later call
-    /// from inside a hook is not an error there.
+    /// The JavaScriptCore side throws the same code once its context is
+    /// sealed (`PluginRuntimeTests.testRegisteringAgainFromAHookThrowsAlreadyRegistered`);
+    /// while a plugin LOADS it counts the calls instead and fails the load.
     func testRegisteringTwiceThrowsALunaErrorCodedAlreadyRegistered() {
         loadPlugin(capabilities: [], source: """
             /* luna-plugin

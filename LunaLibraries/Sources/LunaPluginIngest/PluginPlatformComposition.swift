@@ -7,6 +7,7 @@ import Foundation
 import LunaIngest
 import LunaModels
 import LunaPluginKit
+import LunaStorage
 
 /// THE single root call of the plugin platform
 /// (`claudedocs/plans/plugin-platform.md` §2.3).
@@ -40,5 +41,6 @@ public enum PluginPlatformComposition {
 
         PluginPriceSeams.fetcher = PluginPriceFetcher(
             invoker: invoker, processKind: processKind)
+        PluginBrowserDeferral.witness = StoredPluginBrowserDeferral()
     }
 }

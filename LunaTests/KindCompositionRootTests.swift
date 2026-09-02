@@ -151,6 +151,59 @@ final class KindCompositionRootTests: XCTestCase {
         }
     }
 
+    // MARK: - The plugin platform
+
+    /// The plugin platform has one root call, and only the CENTRAL app's three
+    /// roots make it (`claudedocs/plans/plugin-platform.md` §2.3). The three
+    /// sibling apps are untouched by the pivot: no plugin stage, no plugin JS.
+    private static let pluginRoots: Set<String> = [
+        "Luna/KindWiring+Luna.swift",
+        "LunaShare/ShareEntry+Luna.swift",
+        "LunaAction/ActionEntry+Luna.swift",
+    ]
+
+    func testOnlyTheCentralRootsInstallThePluginPlatform() throws {
+        var installers: Set<String> = []
+        for (path, source) in try allRootSources()
+        where source.contains("PluginPlatformComposition.install(") {
+            installers.insert(path)
+        }
+        XCTAssertEqual(
+            installers, Self.pluginRoots,
+            """
+            The plugin platform is installed by exactly the central app's three \
+            composition roots. A sibling app that installs it would run plugin JS \
+            it was never meant to; a central root that skips it silently loses \
+            every plugin on that surface.
+            """)
+    }
+
+    /// A root installs the platform; it never reaches past `install()` into the
+    /// registries the platform owns. That is the same rule the kind packs hold,
+    /// for the same reason: a hand-written half-installation is invisible.
+    func testNoCompositionRootWritesThePluginRegistriesDirectly() throws {
+        var offenders: [String] = []
+        for (path, source) in try allRootSources() {
+            for line in source.split(separator: "\n") {
+                let text = line.trimmingCharacters(in: .whitespaces)
+                guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                if text.contains("PluginPlatformServices.")
+                    || text.contains("IngestPipeline.pluginStage")
+                    || text.contains("PluginModelAdopters.") {
+                    offenders.append("\(path): \(text)")
+                }
+            }
+        }
+        XCTAssertTrue(
+            offenders.isEmpty,
+            """
+            A composition root wrote a plugin registry itself. The runtime fills \
+            `PluginPlatformServices`, `PluginPlatformComposition.install()` fills \
+            the stage, and each kind pack fills its own adopter:
+            \(offenders.joined(separator: "\n"))
+            """)
+    }
+
     // MARK: - The CARD half of a kind
 
     /// The card presenters, and the app roots allowed to install them. A card's

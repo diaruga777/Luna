@@ -214,8 +214,7 @@ public final class CoordinatorPluginExportQueue: PluginExportQueueDriving {
     }
 
     public func queuedSends(forDestinationID id: String) -> [PluginQueuedSend] {
-        store.items()
-            .filter { $0.sendState(for: id) == .queued }
+        store.items(sendState: .queued, forDestination: id)
             .map {
                 PluginQueuedSend(
                     saveID: $0.id, title: $0.title ?? $0.urlString,

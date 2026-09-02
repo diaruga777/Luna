@@ -431,7 +431,7 @@ public final class ArticleSendCoordinator {
             ReadStateSendReconciler.dequeueSendsFinishedBeforeDelivery(
                 destinationIDs: [id], store: store)
         }
-        let queued = store.items().filter { $0.sendState(for: id) == .queued }
+        let queued = store.items(sendState: .queued, forDestination: id)
         guard !queued.isEmpty else { return }
         SharedDiagnosticLog.record(
             "Rendezvous sweep: delivering \(queued.count) queued send(s)", category: "xteink")
@@ -440,13 +440,23 @@ public final class ArticleSendCoordinator {
             // The reader's low_memory refusal is a device condition, not a
             // per-book one: every remaining start_put this window would be
             // refused the same way. Leave the rest queued for the next window.
-            if case XteinkSyncError.protocolError("low_memory")? = error {
+            if Self.receiverIsOutOfCapacity(error) {
                 SharedDiagnosticLog.record(
                     "Reader refused start_put: low memory; leaving \(queued.count - index - 1) queued send(s) for the next window",
                     category: "xteink")
                 break
             }
         }
+    }
+
+    /// Whether a delivery failed because the RECEIVER has no room, which ends
+    /// the window rather than the book. The Swift transport reports it as a
+    /// protocol error; a destination plugin can only report it as a message,
+    /// so both spellings are read.
+    private static func receiverIsOutOfCapacity(_ error: Error?) -> Bool {
+        guard let error else { return false }
+        if case XteinkSyncError.protocolError("low_memory") = error { return true }
+        return String(describing: error).contains("low_memory")
     }
 
     /// Retries queued sends whose backoff has elapsed across all destinations.
@@ -531,9 +541,9 @@ public final class ArticleSendCoordinator {
         // Queued first: if the process dies mid-send, launch/background sweeps retry.
         store.markSendAttemptStarted(for: itemID, destination: destination.id)
         do {
-            let queuedRemaining = store.items().filter {
-                $0.id != itemID && $0.sendState(for: destination.id) == .queued
-            }.count
+            let queuedRemaining = store
+                .items(sendState: .queued, forDestination: destination.id)
+                .count { $0.id != itemID }
             try await destination.deliver(
                 item: item,
                 context: ArticleSendContext(

@@ -9,11 +9,21 @@ import LunaModels
 import LunaPluginKit
 import LunaSend
 
+/// A destination plugin answered `retry`: its receiver is not reachable right
+/// now, which for a device that only listens while awake is the normal state.
+/// The coordinator keeps the send queued at no retry cost, exactly as
+/// `XteinkRendezvousUnavailableError` does for the Swift destination — without
+/// this the enqueue-only share-row tap would spend a soft failure per press
+/// and die terminally on the fifth.
+public struct PluginDestinationDeferral: Error, SendDeferralError, CustomStringConvertible {
+    public let message: String?
+    public init(message: String?) { self.message = message }
+    public var description: String { message ?? "the plugin asked to retry" }
+}
+
 /// A delivery that failed. `hard` failures are terminal — the coordinator
 /// stops retrying and the save shows the message.
 public enum PluginDestinationError: Error, CustomStringConvertible {
-    /// The plugin asked for another attempt.
-    case retry(String?)
     /// The plugin reported a failure this attempt only.
     case soft(String)
     /// The plugin reported a failure that will not change.
@@ -24,7 +34,6 @@ public enum PluginDestinationError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .retry(let message): return message ?? "the plugin asked to retry"
         case .soft(let message), .hard(let message): return message
         case .unsupportedPayload:
             return "this destination delivers a save, not loose EPUB bytes"
@@ -38,7 +47,7 @@ extension PluginDestinationError: SendHardFailureError {
     public var isHardSendFailure: Bool {
         switch self {
         case .hard, .unsupportedPayload: return true
-        case .retry, .soft: return false
+        case .soft: return false
         }
     }
 }
@@ -123,7 +132,7 @@ public final class PluginDestination: ArticleDestination {
             }
             return
         case .status(.retry, let message, _, _):
-            throw PluginDestinationError.retry(message)
+            throw PluginDestinationDeferral(message: message)
         case .status(.failed, let message, let hard, _):
             let text = message ?? "\(displayName) reported a failure"
             throw hard

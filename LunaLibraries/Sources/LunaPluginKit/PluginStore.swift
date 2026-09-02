@@ -78,7 +78,7 @@ public struct InstalledPlugin: Equatable, Sendable {
 /// <AppGroup>/Plugins/user/<id>/<version>/plugin.js
 /// <AppGroup>/Plugins/user/<id>/state.json
 /// <AppGroup>/Plugins/state/<bundledId>.json
-/// <AppGroup>/Plugins/scratch/<id>/<invocation>/
+/// <AppGroup>/Plugins/scratch/<id>/<generation>/
 /// ```
 ///
 /// The container is resolved on every call rather than kept, because

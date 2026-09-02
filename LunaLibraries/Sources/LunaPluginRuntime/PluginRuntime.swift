@@ -225,11 +225,12 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                 message: "an earlier abandoned plugin call still holds the execution queue"))
         }
         // Whatever a killed process left under this plugin's scratch root is
-        // reaped before its new context can serve a handle out of it.
-        lock.lock()
-        let isBusy = !(inFlight[installed.id] ?? []).isEmpty
-        lock.unlock()
-        if !isBusy { scratch?.reapAll(pluginID: installed.id) }
+        // reaped before its new context can serve a handle out of it. A
+        // generation something still holds — a call in flight, or an export
+        // between its hook and its share — is left alone.
+        if scratch?.hasOpenScratchGeneration(pluginID: installed.id) != true {
+            scratch?.reapAll(pluginID: installed.id)
+        }
         let context = executionQueue.sync {
             PluginContext(
                 manifest: installed.manifest, virtualMachine: virtualMachine,

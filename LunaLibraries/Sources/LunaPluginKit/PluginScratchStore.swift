@@ -50,6 +50,8 @@ public protocol PluginScratchGenerating: AnyObject {
     func closeScratchGeneration(pluginID: String)
     /// The generation a bridge writes into now.
     func currentScratchGeneration(pluginID: String) -> String
+    /// True while something holds a generation open for this plugin.
+    func hasOpenScratchGeneration(pluginID: String) -> Bool
     /// Drops every directory this plugin ever kept. A load calls it, so a
     /// killed process's leftovers go before the new context serves a handle.
     func reapAll(pluginID: String)
@@ -119,8 +121,7 @@ public final class PluginScratchStore:
         return generations[pluginID]?.id ?? Self.idleGeneration
     }
 
-    /// True while something holds a generation open for this plugin.
-    public func hasOpenGeneration(pluginID: String) -> Bool {
+    public func hasOpenScratchGeneration(pluginID: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         return generations[pluginID] != nil

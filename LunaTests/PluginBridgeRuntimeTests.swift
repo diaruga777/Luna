@@ -286,7 +286,8 @@ final class PluginBridgeRuntimeTests: XCTestCase {
 
         let request = try XCTUnwrap(runner.fetcher.requests.first)
         let body = String(decoding: try XCTUnwrap(request.body), as: UTF8.self)
-        XCTAssertFalse(body.contains("X-Injected: yes"), body)
+        XCTAssertFalse(
+            body.contains("\r\nX-Injected: yes"), "the text stays inside the name: \(body)")
         XCTAssertTrue(body.contains("name=\"a%22%0D%0AX-Injected: yes\""), body)
     }
 

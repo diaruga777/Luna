@@ -26,6 +26,9 @@ public final class SystemPluginWiFiJoiner: PluginWiFiJoining {
 
     public var isForeground: Bool {
         #if os(iOS)
+        guard !Thread.isMainThread else {
+            return UIApplication.shared.applicationState == .active
+        }
         return DispatchQueue.main.sync { UIApplication.shared.applicationState == .active }
         #else
         return true

@@ -61,7 +61,10 @@ public final class PluginSettingsBridge: PluginCapabilityInstalling {
                 box.fail("luna.settings.set needs a key", code: "bad-argument")
                 return promise
             }
-            guard schema.contains(where: { $0.key == key }) else {
+            // A manifest cannot declare a key starting with `_`; those are
+            // Luna's own, and `_status` is the one a destination plugin writes
+            // to drive its share row's dot (§9.3).
+            guard key.hasPrefix("_") || schema.contains(where: { $0.key == key }) else {
                 box.fail(
                     "\(pluginID) declares no setting named \"\(key)\"", code: "bad-argument")
                 return promise
@@ -104,6 +107,9 @@ public final class PluginSettingsBridge: PluginCapabilityInstalling {
     private func value(
         pluginID: String, key: String, schema: [PluginSettingField]
     ) -> String? {
+        if key.hasPrefix("_") {
+            return PluginPlatformServices.settings?.valueJSON(pluginID: pluginID, key: key)
+        }
         guard let field = schema.first(where: { $0.key == key }) else { return nil }
         let stored = PluginPlatformServices.settings?.valueJSON(pluginID: pluginID, key: key)
         // A set secret reads back as an empty string: the plugin needs to know

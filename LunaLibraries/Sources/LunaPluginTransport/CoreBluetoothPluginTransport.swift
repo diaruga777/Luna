@@ -42,7 +42,21 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
         restorationIdentifier = "plugin.\(pluginID)"
         queue = DispatchQueue(label: "com.hsanabria.luna.pluginBluetooth.\(pluginID)")
         super.init()
+        queue.setSpecific(key: Self.queueKey, value: true)
         queue.async { [self] in manager = makeManager() }
+    }
+
+    private static let queueKey = DispatchSpecificKey<Bool>()
+
+    /// Runs `work` on the manager's queue, or straight away when already on it.
+    ///
+    /// A CoreBluetooth delegate callback arrives ON that queue and the center
+    /// reads the transport from it — a session is built inside `didConnect`,
+    /// and the state is read inside `didUpdateState`. A plain `queue.sync`
+    /// there deadlocks against itself.
+    private func onQueue<T>(_ work: () -> T) -> T {
+        guard DispatchQueue.getSpecific(key: Self.queueKey) == nil else { return work() }
+        return queue.sync(execute: work)
     }
 
     private func makeManager() -> CBCentralManager {
@@ -55,7 +69,7 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     }
 
     public var state: PluginBluetoothState {
-        queue.sync {
+        onQueue {
             switch manager?.state {
             case .poweredOn: return .poweredOn
             case .poweredOff: return .poweredOff
@@ -118,7 +132,7 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     }
 
     public func knownDevices(ids: [String]) -> [PluginBluetoothDevice] {
-        queue.sync {
+        onQueue {
             let identifiers = ids.compactMap(UUID.init(uuidString:))
             guard !identifiers.isEmpty, let manager else { return [] }
             return manager.retrievePeripherals(withIdentifiers: identifiers).map(Self.device(from:))
@@ -198,13 +212,13 @@ public final class CoreBluetoothPluginTransport: NSObject, PluginBluetoothTransp
     }
 
     public func maximumWriteLength(deviceID: String) -> Int {
-        queue.sync {
+        onQueue {
             peripherals[deviceID]?.maximumWriteValueLength(for: .withoutResponse) ?? 20
         }
     }
 
     public func canWriteWithoutResponse(deviceID: String) -> Bool {
-        queue.sync { peripherals[deviceID]?.canSendWriteWithoutResponse ?? false }
+        onQueue { peripherals[deviceID]?.canSendWriteWithoutResponse ?? false }
     }
 
     // MARK: - The accessory picker

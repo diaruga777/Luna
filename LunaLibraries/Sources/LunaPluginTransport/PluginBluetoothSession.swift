@@ -27,7 +27,10 @@ public final class PluginBluetoothSession: @unchecked Sendable {
     private let lock = NSLock()
 
     private var pending: [(id: UInt64, start: () -> Void, fail: (PluginTransportError) -> Void)] = []
-    private var isRunning = false
+    /// True from the moment an operation starts until it settles. `start`
+    /// returning is not the end of an operation: the transport answers from a
+    /// delegate callback later.
+    private var isBusy = false
     private var isClosed = false
     private var nextOperationID: UInt64 = 0
     /// The failure handler of the operation currently in flight.
@@ -218,6 +221,7 @@ public final class PluginBluetoothSession: @unchecked Sendable {
             guard let self else { return completion(result) }
             self.lock.lock()
             self.inFlightFailure = nil
+            self.isBusy = false
             self.lock.unlock()
             completion(result)
             self.pump()
@@ -245,16 +249,11 @@ public final class PluginBluetoothSession: @unchecked Sendable {
     private func pump() {
         queue.async { [self] in
             lock.lock()
-            guard !isClosed, !isRunning, !pending.isEmpty else { lock.unlock(); return }
-            isRunning = true
+            guard !isClosed, !isBusy, !pending.isEmpty else { lock.unlock(); return }
+            isBusy = true
             let entry = pending.removeFirst()
             lock.unlock()
             entry.start()
-            lock.lock()
-            isRunning = false
-            let more = !pending.isEmpty && inFlightFailure == nil
-            lock.unlock()
-            if more { pump() }
         }
     }
 }

@@ -55,7 +55,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     public let pluginID: String
 
     private let declaration: PluginBluetoothDeclaration
-    private let transport: any PluginBluetoothTransporting
+    private let makers: any PluginTransportMaking
     private let pairing: (any PluginAccessoryPairing)?
     private let serviceLock: BluetoothServiceLock
     private let lease: (any PluginBackgroundLeasing)?
@@ -70,6 +70,12 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
 
     private let queue = DispatchQueue(label: "com.hsanabria.luna.pluginBluetooth")
     private let lock = NSLock()
+    /// Built on the first call that needs the radio, never at load.
+    /// Instantiating a `CBCentralManager` is what raises the system Bluetooth
+    /// prompt, and a plugin nobody set up must not raise one. State
+    /// restoration still works: `startAll()` runs during launch, so a plugin
+    /// that IS set up has its manager before iOS would restore it (TN3115).
+    private var transport: (any PluginBluetoothTransporting)?
     private var session: PluginBluetoothSession?
     private var isStarted = false
     /// A foreground `connect(deviceId)` waiting for its link.
@@ -78,10 +84,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     public init(
         pluginID: String,
         declaration: PluginBluetoothDeclaration,
-        transport: any PluginBluetoothTransporting,
-        pairing: (any PluginAccessoryPairing)?,
-        serviceLock: BluetoothServiceLock,
-        lease: (any PluginBackgroundLeasing)?,
+        makers: any PluginTransportMaking,
         pairedDevices: PluginPairedDeviceStore = PluginPairedDeviceStore(),
         pairedDeviceSettingKey: String? = nil,
         settingFields: [PluginSettingField] = [],
@@ -89,15 +92,40 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     ) {
         self.pluginID = pluginID
         self.declaration = declaration
-        self.transport = transport
-        self.pairing = pairing
-        self.serviceLock = serviceLock
-        self.lease = lease
+        self.makers = makers
+        pairing = declaration.pairing == .accessorySetupKit
+            ? makers.makePairing(pluginID: pluginID) : nil
+        // The first declared service is the one the lock arbitrates: a plugin
+        // talks to one device over one link, whatever else it advertises.
+        serviceLock = makers.makeServiceLock(
+            serviceUUID: declaration.services.first ?? pluginID)
+        lease = makers.makeLease()
         self.pairedDevices = pairedDevices
         self.pairedDeviceSettingKey = pairedDeviceSettingKey
         self.settingFields = settingFields
         injectedInvoker = invoker
+    }
+
+    /// The radio, built on first use and kept.
+    private func radio() -> any PluginBluetoothTransporting {
+        lock.lock()
+        if let transport {
+            lock.unlock()
+            return transport
+        }
+        let transport = makers.makeTransport(pluginID: pluginID)
+        self.transport = transport
+        lock.unlock()
         transport.transportDelegate = self
+        return transport
+    }
+
+    /// The radio only if one was already built, so reading state raises no
+    /// permission prompt of its own.
+    private var existingRadio: (any PluginBluetoothTransporting)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return transport
     }
 
     private var invoker: (any PluginHookInvoking)? {
@@ -112,7 +140,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         return session
     }
 
-    public var state: PluginBluetoothState { transport.state }
+    public var state: PluginBluetoothState { existingRadio?.state ?? .unknown }
 
     // MARK: - Lifecycle
 
@@ -125,8 +153,10 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     /// plugin nobody set up must never open one.
     public var isPermittedToStart: Bool {
         guard let settings = PluginPlatformServices.settings else { return false }
-        guard settings.isConfigured(pluginID: pluginID, fields: settingFields) else {
-            return false
+        for field in settingFields where field.isRequired {
+            guard let json = settings.valueJSON(pluginID: pluginID, key: field.key),
+                  json != "null", json != "\"\"", json != "false"
+            else { return false }
         }
         guard settingFields.contains(where: { $0.key == "enabled" && $0.type == .toggle })
         else { return true }
@@ -140,27 +170,28 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         lock.lock()
         isStarted = true
         lock.unlock()
-        guard transport.state == .poweredOn else { return }
+        let radio = radio()
+        guard radio.state == .poweredOn else { return }
         if declaration.standingConnect {
             for device in pairedDevices.devices(pluginID: pluginID) {
-                transport.connect(deviceID: device.id)
+                radio.connect(deviceID: device.id)
             }
         }
-        transport.startScan(services: declaration.services)
+        radio.startScan(services: declaration.services)
     }
 
     public func stop() {
         lock.lock()
         isStarted = false
         lock.unlock()
-        transport.stopScan()
+        existingRadio?.stopScan()
     }
 
     // MARK: - Pairing
 
     public func knownDevices() -> [PluginBluetoothDevice] {
         let stored = pairedDevices.devices(pluginID: pluginID)
-        let resolved = transport.knownDevices(ids: stored.map(\.id))
+        let resolved = existingRadio?.knownDevices(ids: stored.map(\.id)) ?? []
         // The system's own name wins when it has one; the stored row is what
         // survives a reinstall of the plugin's context.
         return stored.map { device in
@@ -185,19 +216,20 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         guard let pairing else {
             return completion(.failure(.unavailable("this plugin declares no pairing step")))
         }
+        let radio = radio()
         pairing.removeSetUpAccessories { [self] in
-            transport.releaseForAccessoryPicker { [self] in
+            radio.releaseForAccessoryPicker { [self] in
                 pairing.showPicker(
                     serviceUUIDs: declaration.services, displayName: displayName
                 ) { [self] result in
-                    transport.rebuildAfterAccessoryPicker()
+                    radio.rebuildAfterAccessoryPicker()
                     guard case .success(let device) = result, let device else {
                         return completion(result)
                     }
                     pairedDevices.add(
                         device, pluginID: pluginID, settingKey: pairedDeviceSettingKey)
-                    dispatch(.paired(device), session: nil, holdingLock: false)
-                    transport.connect(deviceID: device.id)
+                    dispatch(.paired(device), holdingLock: false)
+                    radio.connect(deviceID: device.id)
                     completion(.success(device))
                 }
             }
@@ -208,9 +240,9 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         let device = pairedDevices.devices(pluginID: pluginID).first { $0.id == deviceID }
         pairedDevices.remove(
             deviceID: deviceID, pluginID: pluginID, settingKey: pairedDeviceSettingKey)
-        transport.cancelConnection(deviceID: deviceID)
+        existingRadio?.cancelConnection(deviceID: deviceID)
         closeSession(reason: .disconnected)
-        if let device { dispatch(.unpaired(device), session: nil, holdingLock: false) }
+        if let device { dispatch(.unpaired(device), holdingLock: false) }
         guard let pairing else { return completion() }
         pairing.removeAccessory(deviceID: deviceID) { completion() }
     }
@@ -231,7 +263,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
             completion(result)
         }
         lock.unlock()
-        transport.connect(deviceID: deviceID)
+        radio().connect(deviceID: deviceID)
         queue.asyncAfter(deadline: .now() + timeout) { [self] in
             lock.lock()
             let waiter = connectWaiters.removeValue(forKey: deviceID)
@@ -243,7 +275,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     // MARK: - PluginBluetoothTransportDelegate
 
     public func bluetoothTransportDidChangeState(_ state: PluginBluetoothState) {
-        dispatch(.stateChanged(state), session: nil, holdingLock: false)
+        dispatch(.stateChanged(state), holdingLock: false)
         lock.lock()
         let started = isStarted
         lock.unlock()
@@ -253,9 +285,10 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     public func bluetoothTransportDidConnect(
         _ device: PluginBluetoothDevice, restored: Bool
     ) {
-        transport.stopScan()
+        let radio = radio()
+        radio.stopScan()
         let session = PluginBluetoothSession(
-            device: device, transport: transport, queue: queue)
+            device: device, transport: radio, queue: queue)
         lock.lock()
         self.session = session
         let waiter = connectWaiters.removeValue(forKey: device.id)
@@ -268,8 +301,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
             waiter(.success(session))
             return
         }
-        dispatch(
-            .connected(device, restored: restored), session: session, holdingLock: true)
+        dispatch(.connected(device, restored: restored), holdingLock: true)
     }
 
     public func bluetoothTransportDidDisconnect(
@@ -281,7 +313,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
         let started = isStarted
         lock.unlock()
         waiter?(.failure(.disconnected))
-        dispatch(.disconnected(device, error: error), session: nil, holdingLock: false)
+        dispatch(.disconnected(device, error: error), holdingLock: false)
         if started { start() }
     }
 
@@ -311,9 +343,7 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
     /// the `luna.exports.deliverQueued()` a destination plugin awaits inside it
     /// — runs under the service lock, and a process that cannot take the lock
     /// invokes nothing at all.
-    private func dispatch(
-        _ event: PluginBluetoothEvent, session: PluginBluetoothSession?, holdingLock: Bool
-    ) {
+    private func dispatch(_ event: PluginBluetoothEvent, holdingLock: Bool) {
         guard let invoker else { return }
         if holdingLock, !serviceLock.acquire() {
             PluginDiagnostics.shared.record(
@@ -331,7 +361,6 @@ public final class PluginBluetoothCenter: PluginBluetoothTransportDelegate {
                 serviceLock.release()
             }
             if let token { lease?.endLease(token) }
-            _ = session
         }
     }
 }

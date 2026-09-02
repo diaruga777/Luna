@@ -55,15 +55,7 @@ public final class PluginBluetoothCenterStore: @unchecked Sendable {
         let center = PluginBluetoothCenter(
             pluginID: pluginID,
             declaration: declaration,
-            transport: makers.makeTransport(pluginID: pluginID),
-            pairing: declaration.pairing == .accessorySetupKit
-                ? makers.makePairing(pluginID: pluginID) : nil,
-            // The first declared service is the one the lock arbitrates: a
-            // plugin talks to one device over one link, whatever else that
-            // device advertises.
-            serviceLock: makers.makeServiceLock(
-                serviceUUID: declaration.services.first ?? pluginID),
-            lease: makers.makeLease(),
+            makers: makers,
             pairedDevices: pairedDevices,
             pairedDeviceSettingKey: pairedDeviceSettingKey,
             settingFields: settingFields,

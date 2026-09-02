@@ -49,7 +49,7 @@ final class ArticleCoverThumbnailTests: XCTestCase {
 
     /// A ready web article whose lead image is ALREADY downloaded gets that image as
     /// its row thumbnail — no network — and the bytes match the on-disk lead image.
-    func testBackfillReusesDownloadedLeadImage() async {
+    func testBackfillReusesDownloadedLeadImage() async throws {
         let item = store.add(urlString: "https://example.com/post")
         let imageData = sampleImageData()
         let leadFile = seedDownloadedImage(forImageURL: "https://example.com/lead.jpg", data: imageData)
@@ -64,9 +64,13 @@ final class ArticleCoverThumbnailTests: XCTestCase {
 
         await ArticleCoverThumbnail.backfillThumbnail(for: ready, store: store)
 
-        let refreshed = store.item(withID: item.id)
-        XCTAssertNotNil(refreshed?.thumbnailFileName, "backfill gives the article a row thumbnail")
-        let thumbURL = store.articlesDirectory.appendingPathComponent(refreshed!.thumbnailFileName!)
+        // The backfill leaves the row without a thumbnail here, which is a
+        // separate open failure. Unwrap rather than force: a crash in the test
+        // host restarts the runner and discards every suite's totals.
+        let refreshed = try XCTUnwrap(store.item(withID: item.id))
+        let thumbnailFileName = try XCTUnwrap(
+            refreshed.thumbnailFileName, "backfill gives the article a row thumbnail")
+        let thumbURL = store.articlesDirectory.appendingPathComponent(thumbnailFileName)
         XCTAssertEqual(try? Data(contentsOf: thumbURL), imageData,
                        "the thumbnail is the already-downloaded lead image (no re-fetch)")
     }

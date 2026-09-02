@@ -103,6 +103,13 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     public var exceptionReporter: PluginExceptionReporting?
 
     private static let sharedVirtualMachine = JSVirtualMachine()!
+    /// Every runtime on the process-wide virtual machine runs its JavaScript on
+    /// THIS queue. The queue is what serializes entry into a virtual machine,
+    /// so one queue per runtime would let two runtimes enter one machine from
+    /// two threads. Two runtimes do coexist: a second `install` replaces the
+    /// runtime while the seams the first wired still hold it.
+    private static let sharedExecutionQueue = PluginExecutionQueue(
+        label: "com.hsanabria.luna.pluginRuntime")
 
     private let store: PluginStore
     private let bundled: BundledPluginCatalog
@@ -136,10 +143,14 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         self.processContext = processContext
         self.diagnostics = diagnostics
         switch scope {
-        case .processWide: virtualMachine = PluginRuntime.sharedVirtualMachine
-        case .isolated: virtualMachine = JSVirtualMachine()!
+        case .processWide:
+            virtualMachine = PluginRuntime.sharedVirtualMachine
+            executionQueue = PluginRuntime.sharedExecutionQueue
+        case .isolated:
+            virtualMachine = JSVirtualMachine()!
+            executionQueue = PluginExecutionQueue(
+                label: "com.hsanabria.luna.pluginRuntime.isolated")
         }
-        executionQueue = PluginExecutionQueue(label: "com.hsanabria.luna.pluginRuntime")
     }
 
     // MARK: - Loading

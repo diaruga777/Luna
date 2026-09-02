@@ -75,6 +75,18 @@ final class XteinkPluginTests: XCTestCase {
         PluginSecretsStore.shared.removeSecret(pluginID: pluginID, key: "pairingSecret")
         PluginPlatformServices.settings = previousSettings
         runner?.cleanUp()
+        // XCTest keeps every test-case instance alive for the whole run, so a
+        // fixture left in a property outlives its test. The runner owns a
+        // JSVirtualMachine and a SQLite connection, and the center store owns a
+        // transport and a service lock; a run's worth of live virtual machines
+        // exhausts JavaScriptCore and it faults resolving a rope string.
+        centers = nil
+        exports = nil
+        notifications = nil
+        joiner = nil
+        maker = nil
+        runner = nil
+        previousSettings = nil
         super.tearDown()
     }
 
@@ -405,6 +417,11 @@ final class XteinkPluginMigrationTests: XCTestCase {
         PluginSecretsStore.shared.removeSecret(pluginID: pluginID, key: "pairingSecret")
         XteinkSendSettings.pairedPeripheralID = nil
         try? FileManager.default.removeItem(at: containerURL)
+        // The key/value store holds this process's connection to a database
+        // that has just been unlinked. Releasing it closes the descriptors.
+        kv = nil
+        containerURL = nil
+        previousSettings = nil
         super.tearDown()
     }
 

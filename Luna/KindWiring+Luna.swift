@@ -9,6 +9,7 @@
 //  lifecycle API below mirror this app's own link set.
 //
 
+import LunaBundledPlugins
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
@@ -54,7 +55,10 @@ enum KindWiring {
         MediaKindComposition.install()
         ProductKindComposition.install()
         PluginPlatformComposition.install(
-            processKind: .app, swiftMediaResolver: SocialMediaResolver())
+            processKind: .app,
+            bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
+            additionalBridges: [],
+            swiftMediaResolver: SocialMediaResolver())
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See

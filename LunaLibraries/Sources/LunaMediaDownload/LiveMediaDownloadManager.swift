@@ -646,21 +646,31 @@ public final class LiveMediaDownloadManager: NSObject {
     /// the resolver exposes a thumbnail.
     /// Re-runs the owning plugin and rewrites the job with the asset that
     /// matches the leg it was downloading (§7.6). Returns false when there is no
-    /// plugin, no witness, or nothing matched — the caller then fails or retries
-    /// as it would have.
+    /// plugin, no witness, nothing matched, or the job already spent its
+    /// re-resolve budget — the caller then fails or retries as it would have.
+    ///
+    /// `mediaAttempts` is the same counter `retryOrFail` bumps for a transient
+    /// download failure, so a plugin that keeps answering with a dead URL
+    /// cannot loop past `maxTransientAttempts`: past that it falls into the
+    /// retry ladder, which then fails the job.
     ///
     /// The persisted resume blob is discarded: it names a byte range on a URL
     /// that no longer exists, and handing it to a new URL restarts the transfer
     /// at the wrong offset.
     @discardableResult
     func reresolvePluginJob(_ persistedJob: LiveMediaDownloadJob) async -> Bool {
-        guard let pluginID = persistedJob.pluginID,
+        guard persistedJob.mediaAttempts + 1 < Self.maxTransientAttempts,
+              let pluginID = persistedJob.pluginID,
               let reresolver = Self.reresolver,
               let sourceURL = URL(string: persistedJob.sourceURLString)
         else { return false }
 
+        // The job has no field of its own for the save that owns it — its source
+        // URL is the only link back to one, and the save can be gone by now.
+        let saveID = SavesStore.shared.item(forURLString: persistedJob.sourceURLString)?
+            .id.uuidString
         let assets = await reresolver.reresolve(
-            sourceURL: sourceURL, pluginID: pluginID, saveID: persistedJob.id)
+            sourceURL: sourceURL, pluginID: pluginID, saveID: saveID)
         guard let assets, !assets.isEmpty,
               let asset = MediaReresolveMatching.pick(
                 kind: persistedJob.mediaKind, quality: persistedJob.quality, from: assets)
@@ -680,6 +690,7 @@ public final class LiveMediaDownloadManager: NSObject {
             job.receivedByteCount = nil
             job.errorMessage = nil
             job.phase = .downloading
+            job.mediaAttempts += 1
         }) else { return false }
 
         await cancelTasks(jobID: updated.id)

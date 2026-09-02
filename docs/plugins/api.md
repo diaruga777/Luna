@@ -27,7 +27,7 @@ platform's internal design, see `claudedocs/plugins.md`.
 | `files` | yes | yes | no |
 | `crypto` | yes | yes | yes (SubtleCrypto) |
 | `browser` | shows a modal | defers → save locks | defers → deep-links to the app |
-| `downloads` | **no bridge exists** | **no bridge exists** | no |
+| `downloads` | yes | yes | no |
 | `settings` | get/set/all | get/all | get only, relayed |
 | `ui` | yes | no | no |
 | `mail` | yes | no | no |
@@ -272,6 +272,33 @@ interface BrowserResult {
 
 See [`README.md` §6](./README.md#6-the-browser-step-and-why-a-hook-re-runs)
 for what actually happens per process. `result.html` is capped at 6 MB.
+
+## `luna.downloads` (capability `downloads`)
+
+```ts
+luna.downloads.jobs(): Promise<DownloadJob[]>;
+luna.downloads.job(saveId: string): Promise<DownloadJob | null>;
+interface DownloadJob {
+  saveId: string | null;      // null once the save that started this download is gone
+  sourceUrl: string;
+  title: string;
+  phase: "resolving" | "downloading" | "waiting" | "suspended" | "saving" | "finished" | "failed";
+  progress: number;
+  receivedBytes: number | null;
+  expectedBytes: number | null;
+  failure: string | null;
+  pluginId: string | null;
+  quality: string | null;
+}
+```
+
+Read-only: a job's own destination plugin resolves it through the `ingest`
+hook's `reason: "reresolve"` (§6.9 of `claudedocs/plugins.md`), never through
+this bridge. `job(saveId)` rejects `bad-argument` for a `saveId` that isn't a
+UUID and answers `null` for a save with no active or recent job. `phase` is
+the download engine's own state names, not a translated status. App, share
+and action alike — the bridge reads the shared saves database directly, not
+the download manager. Absent in Safari.
 
 ## `luna.settings` (capability `settings`)
 

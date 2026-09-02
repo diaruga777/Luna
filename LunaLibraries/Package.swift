@@ -246,7 +246,10 @@ let package = Package(
         // rather than declared as a package dependency.
         .target(
             name: "LunaPluginRuntime",
-            dependencies: ["LunaPluginKit", .product(name: "SwiftSoup", package: "SwiftSoup")],
+            dependencies: [
+                "LunaPluginKit", "LunaStorage",
+                .product(name: "SwiftSoup", package: "SwiftSoup"),
+            ],
             linkerSettings: [.linkedFramework("JavaScriptCore")]),
         // The classify + ingest walk that runs BEFORE the Swift classifier, the
         // Model decoding and adoption, and the browser deferral.

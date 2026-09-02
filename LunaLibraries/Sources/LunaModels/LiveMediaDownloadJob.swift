@@ -266,6 +266,7 @@ public struct LiveMediaDownloadJob: Codable, Equatable {
         try c.encodeIfPresent(pluginID, forKey: .pluginID)
         try c.encodeIfPresent(requestHeadersJSON, forKey: .requestHeadersJSON)
         try c.encodeIfPresent(expiresAt, forKey: .expiresAt)
+        try c.encodeIfPresent(quality, forKey: .quality)
     }
 
     /// Legacy on-disk `mediaKind` strings, from before the field was typed:

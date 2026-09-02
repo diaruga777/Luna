@@ -71,6 +71,7 @@ public enum PluginPlatformComposition {
             scheduler: runtime, processKind: processKind))
         capabilities.register(PluginFilesBridge(scratch: scratch, scheduler: runtime))
         capabilities.register(PluginCryptoBridge(scheduler: runtime))
+        capabilities.register(PluginDownloadsBridge(scheduler: runtime))
         for bridge in additionalBridges(runtime) { capabilities.register(bridge) }
 
         PluginPlatformServices.invoker = runtime

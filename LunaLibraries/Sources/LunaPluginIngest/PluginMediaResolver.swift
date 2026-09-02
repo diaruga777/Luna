@@ -39,7 +39,7 @@ public final class PluginMediaResolver: SocialMediaResolving, MediaReresolving {
     // MARK: - MediaReresolving
 
     public func reresolve(
-        sourceURL: URL, pluginID: String, saveID: String
+        sourceURL: URL, pluginID: String, saveID: String?
     ) async -> [MediaAsset]? {
         await walk(url: sourceURL, reason: .reresolve, saveID: saveID, onlyPluginID: pluginID)
     }

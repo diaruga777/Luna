@@ -124,7 +124,7 @@ public final class PluginExportStage {
         case .failure(let failure):
             return record(
                 .failed(
-                    message: Self.message(for: failure), hard: Self.isHard(failure)),
+                    message: Self.message(for: failure), hard: Self.isTerminal(failure)),
                 pluginID: pluginID)
         case .success(let result):
             return await sink(
@@ -205,7 +205,7 @@ public final class PluginExportStage {
     /// A hook that threw is terminal only when it said so. The runtime drops a
     /// `LunaError`'s `details`, so the signal a plugin has is the error CODE:
     /// `throw new luna.LunaError("hard", "…")`.
-    static func isHard(_ failure: PluginInvocationFailure) -> Bool {
+    nonisolated public static func isTerminal(_ failure: PluginInvocationFailure) -> Bool {
         switch failure {
         case .notLoaded, .missingHook, .malformedResult, .browserDeferred:
             return true
@@ -216,7 +216,7 @@ public final class PluginExportStage {
         }
     }
 
-    static func message(for failure: PluginInvocationFailure) -> String {
+    nonisolated static func message(for failure: PluginInvocationFailure) -> String {
         switch failure {
         case .notLoaded: return "the plugin is not loaded"
         case .missingHook: return "the plugin registered no export hook"

@@ -69,11 +69,14 @@ public final class PluginExportRowProvider: PluginExportRowProviding {
         export.isDestination ? "book.closed" : "square.and.arrow.up"
     }
 
-    /// Only a destination draws a dot: a share row has no connection to report.
+    /// A dot appears only where a destination plugin reports its own
+    /// liveness. A plugin that never writes `_status` has no connection to
+    /// report, and its row draws no dot — the Kindle row's answer.
     static func isLive(pluginID: String, export: PluginExportSummary) -> Bool? {
-        guard export.isDestination else { return nil }
-        let json = PluginPlatformServices.settings?
-            .valueJSON(pluginID: pluginID, key: PluginReservedSettingKeys.status)
+        guard export.isDestination,
+              let json = PluginPlatformServices.settings?
+                .valueJSON(pluginID: pluginID, key: PluginReservedSettingKeys.status)
+        else { return nil }
         return json == "\"\(PluginReservedSettingKeys.liveValue)\""
     }
 }

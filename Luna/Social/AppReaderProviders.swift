@@ -137,6 +137,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 }
             }
         }
+            + ReaderShareSheet.pluginRows(forSaveID: item.id, kind: .article)
     }
 
     /// A no-url text article (email/document) can only leave as a file, so skip

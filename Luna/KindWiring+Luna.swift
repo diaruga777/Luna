@@ -13,6 +13,7 @@ import LunaBundledPlugins
 import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
+import LunaPluginExport
 import LunaPluginIngest
 import LunaPluginUI
 import LunaPluginKit
@@ -58,8 +59,17 @@ enum KindWiring {
         PluginPlatformComposition.install(
             processKind: .app,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: { PluginUIComposition.bridges(processKind: .app, scheduler: $0) })
+            additionalBridges: {
+                PluginUIComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginExportComposition.bridges(processKind: .app, scheduler: $0)
+            })
         PluginUIComposition.installAppWitnesses()
+        // The export tier reads the runtime the call above built, so it comes
+        // after it. It also retires the Swift destinations its plugins take
+        // over — `KindleDestination` is the Kindle plugin's now.
+        PluginExportComposition.install(
+            mediaFiles: PluginMediaFileLocator(),
+            recipientPicker: PluginMailRecipientPrompt())
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
         // and each single-kind deck can't disagree about the same save. See
@@ -77,6 +87,54 @@ enum KindWiring {
         // the one seam that needs an article-app capability (email) and a
         // product-app one (the graph) at once, so it belongs to neither leg.
         EmailShareCenter.priceGraphSnapshot = TrackerEmailGraphRenderer()
+    }
+
+    /// Where a media save's downloaded file is, for a plugin exporting one.
+    /// This app is the only place that sees both the export tier and the media
+    /// module.
+    private final class PluginMediaFileLocator: PluginExportMediaFileLocating {
+        func mediaFileURL(forSaveID saveID: UUID) -> URL? {
+            SavedMediaStore.shared.item(withID: saveID)?.fileURL
+        }
+    }
+
+    /// `luna.mail`'s recipient picker, for a plugin message that named none.
+    ///
+    /// The picker reports only a SEND. A cancel just dismisses it, so the
+    /// dismissal is what reports the cancel — otherwise the plugin's promise
+    /// would never settle.
+    private final class PluginMailRecipientPrompt: PluginMailRecipientPicking {
+        @MainActor
+        func pickMailRecipients(subject: String) async -> [String]? {
+            guard let presenter = PluginExportTopPresenter.current() else { return nil }
+            let answered = OneAnswer()
+            return await withCheckedContinuation { continuation in
+                let picker = RecipientPickerViewController { emails in
+                    guard answered.claim() else { return }
+                    continuation.resume(returning: emails.isEmpty ? nil : emails)
+                }
+                let navigation = UINavigationController(rootViewController: picker)
+                presenter.present(navigation, animated: true)
+                Task { @MainActor in
+                    while navigation.presentingViewController != nil {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                    }
+                    guard answered.claim() else { return }
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    /// Lets exactly one of two racing paths resume a continuation.
+    @MainActor
+    private final class OneAnswer {
+        private var taken = false
+        func claim() -> Bool {
+            guard !taken else { return false }
+            taken = true
+            return true
+        }
     }
 
     /// The tracker email's hero image, drawn by the product module's snapshot
@@ -126,17 +184,6 @@ enum KindWiring {
                         ? nil : L10n.string("Common_signInRequired")
                 }
             ) { EmailAndKindleSettingsScreen() },
-            SettingsCategory(
-                title: L10n.string("Common_kindle"), symbol: "book.closed",
-                requiresEmail: true,
-                makePrerequisite: {
-                    let email = EmailAndKindleSettingsScreen()
-                    email.focusesAddressField = true
-                    return email
-                }
-            ) {
-                KindleSettingsScreen()
-            },
             SettingsCategory(
                 title: L10n.string("Common_xteink"), symbol: "books.vertical",
                 detail: {

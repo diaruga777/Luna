@@ -89,7 +89,7 @@ public enum PluginExportComposition {
     /// It also runs when the plugin's own setting is empty, which is what
     /// carries an address typed in Luna Reader — where the Swift destination
     /// still lives — across to the plugin the central app now sends through.
-    static func migrateKindleAddress(
+    public static func migrateKindleAddress(
         settings: (any PluginSettingsStoring)? = nil,
         legacyAddress: String? = nil
     ) {

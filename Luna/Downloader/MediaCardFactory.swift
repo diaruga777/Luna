@@ -271,6 +271,9 @@ enum MediaItemActions {
                 systemImage: shareFileSymbol(for: item.kind),
                 action: shareFile))
         }
+        // A media save's id is its save row's id, so an export plugin that
+        // handles `media` offers its rows here too (§9.3).
+        rows += ReaderShareSheet.pluginRows(forSaveID: item.id, kind: .media)
         return rows
     }
 

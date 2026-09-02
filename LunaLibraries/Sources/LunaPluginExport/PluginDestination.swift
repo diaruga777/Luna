@@ -82,6 +82,10 @@ public final class PluginDestination: ArticleDestination {
         SourceSendSettings.appIntentsMode(forDestination: id)
     }
 
+    /// The share row comes from the plugin's own declaration, through
+    /// `PluginExportSeams.rows`.
+    public var providesOwnShareRow: Bool { true }
+
     public var epubBuildProfile: EpubBuilder.Profile {
         PluginExportInputProducer.epubProfile(export)
     }

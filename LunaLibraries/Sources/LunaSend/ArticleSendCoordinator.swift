@@ -38,6 +38,10 @@ public protocol ArticleDestination {
     /// Destinations that report progress on a receiving device (Xteink's
     /// "book i of n") override this; everything else keeps the plain form.
     func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws
+    /// True for a destination whose share row is drawn from somewhere else —
+    /// a plugin destination's row carries its declaration's title, symbol and
+    /// status dot, none of which a `DestinationDescriptor` holds.
+    var providesOwnShareRow: Bool { get }
     /// Delivers the SAVE. This is what the coordinator calls; the default
     /// builds the EPUB the two Swift destinations take, so a destination that
     /// accepts another format (a plugin destination declaring `url` or `json`)
@@ -82,6 +86,9 @@ public extension ArticleDestination {
     func send(epubData: Data, fileName: String, title: String, context: ArticleSendContext) async throws {
         try await send(epubData: epubData, fileName: fileName, title: title)
     }
+
+    /// The two Swift destinations are drawn from their descriptor.
+    var providesOwnShareRow: Bool { false }
 
     /// An EPUB destination: fetch the article's missing images when this
     /// destination's profile carries images, build the book, hand it over.
@@ -349,10 +356,11 @@ public final class ArticleSendCoordinator {
         public let displayName: String
     }
 
-    /// The configured destinations, for the share menu's per-destination
-    /// "Send to …" rows.
+    /// The configured destinations the share menu draws its own rows for. A
+    /// destination that provides its own row is left out here, so the menu
+    /// cannot offer the same destination twice.
     public func configuredDestinations() -> [DestinationDescriptor] {
-        destinations.filter(\.isConfigured).map {
+        destinations.filter { $0.isConfigured && !$0.providesOwnShareRow }.map {
             DestinationDescriptor(id: $0.id, displayName: $0.displayName)
         }
     }

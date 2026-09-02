@@ -5,8 +5,11 @@ Each `*.js` file here is one plugin Luna ships with, in the shape
 comment holding the manifest JSON, then a body that calls `luna.register`.
 
 `BundledPluginCatalog` (LunaPluginKit) enumerates this directory through
-`LunaBundledPluginsBundle.bundle`. The seven media plugins are here; Wave 3
-adds the Kindle and Xteink export plugins.
+`LunaBundledPluginsBundle.bundle`. The seven media plugins are here, and
+`kindle.js` is the first EXPORT plugin: it declares no `produces` and no
+`match`, registers only `export`, and takes over the `kindle` destination in
+central Luna (`PluginDestinationLegacyIDs`), which is why every article Luna
+already sent stays recorded as sent. Luna Reader keeps the Swift destination.
 
 Each media plugin is a port of its Swift twin in `LunaMediaResolve`, which the
 Downloader app still runs. `LunaTests/<Platform>PluginTests` runs BOTH engines

@@ -23,7 +23,6 @@ enum PluginStageCatalog {
 
     @MainActor
     static func install() {
-        guard LunaApp.current == .luna else { return }
         StageRegistry.register(settingsStages + flowStages)
     }
 

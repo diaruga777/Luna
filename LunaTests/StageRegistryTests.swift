@@ -150,6 +150,7 @@ final class StageRegistryTests: XCTestCase {
             ("Email", ["LunaDownloader", "LunaPriceTracker"]),
             ("Media", ["LunaReader", "LunaPriceTracker"]),
             ("Product", ["LunaReader", "LunaDownloader"]),
+            ("Plugins", ["LunaReader", "LunaDownloader", "LunaPriceTracker"]),
         ]
         for (catalog, foreignTargets) in expected {
             for target in foreignTargets {

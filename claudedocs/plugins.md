@@ -125,18 +125,28 @@ optional chaining, classes, `Promise`, typed arrays, `TextEncoder`), no
 | Key | Type | Required | Rule the parser actually enforces |
 | --- | --- | --- | --- |
 | `id` | string | yes | `[a-z0-9.-]`, ≤ 100 chars, no leading/trailing `.`, no `..` (it is a directory name under the App Group) |
-| `name` | string | yes | ≤ 40 chars |
+| `name` | string \| `LocalizedText` | yes | ≤ 40 chars (every table variant) |
 | `version` | string | yes | `M.m.p` (`PluginVersion`) |
 | `api` | integer | yes | ≥ 1 and ≤ `PluginAPIVersion.current` (1); higher refuses import |
-| `description` | string | no | ≤ 200 chars |
+| `description` | string \| `LocalizedText` | no | ≤ 200 chars (every table variant) |
 | `produces` | `("article"\|"media"\|"product")[]` | only if ingest | non-empty; unknown values refuse |
-| `match` | `{hosts?: string[], any?: boolean}` | only if ingest | `hosts` lowercased, deduped, no `/`; `any:true` without hosts is fine, but empty `hosts` with no `any` refuses |
+| `match` | `{hosts?: string[], any?: boolean}` | only if ingest | `hosts` lowercased, deduped, no `/`, no `*` except a leading `*.` (a bare `"*"` or `"a.*.com"` refuses import — use `any: true` instead); `any:true` without hosts is fine, but empty `hosts` with no `any` refuses |
 | `priority` | integer | no | default 0; any whole number, including negative |
 | `capabilities` | string[] | no | must be `PluginCapabilityName` raw values; unknown name refuses import |
-| `export` | object | no | `kinds` (non-empty, valid), `input` (valid `ExportInputFormat`, and the kind/format pair must be one `PluginExportInputAvailability` actually supports — an unsupported pair refuses at import, not at run time), `title` (1–40 chars), `inputOptions.epub.{profile,images}`, `requiresSettings` (list of keys), `destination` (bool), `symbol` (optional) |
-| `settings` | `SettingField[]` | no | keys are `[A-Za-z0-9_]`, **cannot start with `_`** (reserved), no duplicate keys within one manifest; `choice` needs a non-empty `options` list with `id`+`label` on every entry |
+| `export` | object | no | `kinds` (non-empty, valid), `input` (valid `ExportInputFormat`, and the kind/format pair must be one `PluginExportInputAvailability` actually supports — an unsupported pair refuses at import, not at run time), `title` (`LocalizedText`, 1–40 chars per variant), `inputOptions.epub.{profile,images}`, `requiresSettings` (list of keys, each of which must be a key some `settings[]` entry declares), `destination` (bool), `symbol` (optional) |
+| `settings` | `SettingField[]` | no | keys are ASCII `[A-Za-z0-9_]`, **cannot start with `_`** (reserved), no duplicate keys within one manifest; `label`/`help`/`placeholder`/`options[].label` are `LocalizedText`; `choice` needs a non-empty `options` list with `id`+`label` on every entry; `required`/`secret` must be a real boolean, not `0`/`1`; `default` must be a value `JSONSerialization` can encode |
 | `bluetooth` | object | no | requires the `bluetooth` capability to be declared too, or the manifest refuses; `services` non-empty; `pairing` is `"accessorySetupKit"` or `"none"` |
 | `background` | boolean | no | default false; shown on consent |
+
+`LocalizedText` (`PluginManifestParser.swift`, `PluginLocalizedText.swift`) is
+a plain string, or a `{ "<BCP-47 tag>": "<text>" }` table that MUST include
+`"en"` — a table missing it fails import naming the field. The parser
+resolves a table to one `String` at IMPORT time, against the device's own
+preferred languages (`Locale.preferredLanguages` by default; exact tag, then
+that tag's language — `"pt-BR"` falls back to `"pt"` — then `"en"`), so
+`PluginManifest`/`PluginSettingField`/`PluginExportSummary` carry a plain
+`String` and no downstream code reads a table. `luna.localize` (§5) applies
+the identical rule to a table a plugin builds itself at runtime.
 
 `PluginManifest.requiredHooks` (`LunaLibraries/Sources/LunaPluginKit/PluginManifest.swift`)
 computes what `register` must provide: `produces` non-empty needs both
@@ -287,17 +297,23 @@ Every save produced from a plugin Model carries `saves.plugin_id`
 ## 5. `luna.*` — every namespace, verified against the bridges
 
 Always present, no capability needed: `luna.register`, `luna.parseURL`,
-`luna.log`, `luna.bytes`, `luna.env`, `luna.LunaError`
-(`LunaLibraries/Sources/LunaPluginRuntime/PluginContext.swift`). Every other
-namespace is installed ONLY when its capability is both declared and served
+`luna.log`, `luna.bytes`, `luna.env`, `luna.LunaError`, `luna.localize`
+(`LunaLibraries/Sources/LunaPluginRuntime/PluginContext.swift`,
+`PluginBootstrapScript.swift`). Every other namespace is installed ONLY
+when its capability is both declared and served
 by an installer in this process — an undeclared one is `undefined`
 (`Object.keys(luna)` matches exactly what was granted), never a stub
 (`PluginRuntime.load`'s grant/stray check enforces this at load time, not
-just at call time).
+just at call time). `env.languages` is `Locale.preferredLanguages`
+(`navigator.languages` in Safari, `config.languages` in `bridge.mjs`), most-
+preferred first; `env.locale` is always `env.languages[0]`. `luna.localize`
+resolves a `{ "<tag>": "…" }` table a plugin builds at runtime against that
+same list, the identical rule the manifest parser applies to `name`/
+`settings[].label`/… at import time (§2.2).
 
 | Capability | Namespace | app | share/action | Safari world | Bridge file |
 | --- | --- | --- | --- | --- | --- |
-| — | `register`,`parseURL`,`log`,`bytes`,`env`,`LunaError` | yes | yes | yes | `PluginContext.swift` / `plugin_host.js` |
+| — | `register`,`parseURL`,`log`,`bytes`,`env`,`LunaError`,`localize` | yes | yes | yes | `PluginContext.swift` / `plugin_host.js` |
 | `fetch` | `luna.fetch` | yes | yes | relayed (`plugins.fetch`) | `PluginFetchBridge.swift` |
 | `html` | `luna.html` | SwiftSoup | SwiftSoup | DOMParser | `PluginHTMLBridge.swift` / `plugin_host.js` |
 | `page` | `luna.page` | — | — | live DOM | `plugin_host.js` only |
@@ -903,12 +919,6 @@ between the plan document and this one:
   in-app "mark finished" is currently invisible to the plugin. A
   `luna.saves`-shaped read hook, or a core-side witness that files a pending
   delete on the owning plugin's behalf, is the missing piece.
-- **Plugin copy is not localized.** A manifest's `settings[].label`/`help`
-  and any user-facing text a plugin writes itself (e.g. `xteink.js`'s
-  notification body) live in the plugin file, not in
-  `Localizable.strings` — `L10n` has no path into a plugin's own source.
-  This is a design choice, not an oversight, but it means a translated Luna
-  build ships plugins whose own copy stays English.
 - **Per-hook capability restriction is not enforced client-side in Safari.**
   §3.1's "classify may call only `luna.fetch`/`luna.html`" is checked by
   native re-validating the declared capability set on every message, not by

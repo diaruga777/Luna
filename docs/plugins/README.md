@@ -66,6 +66,22 @@ The most important header fields:
 The body must call `luna.register({ ... })` **exactly once**, at the top
 level of the file. `register` is the only thing on `luna` before that call.
 
+A user-visible field — `name`, `description`, `export.title`, and a
+`settings[]` field's `label`/`help`/`placeholder`/`options[].label` — may be
+a table instead of a plain string, keyed by BCP-47 language tag, which MUST
+include `"en"`:
+
+```json
+"label": { "en": "Kindle address", "es": "Dirección de Kindle" }
+```
+
+Luna resolves this to one string when it imports the plugin, matching the
+device's own preferred languages (an exact tag, then that tag's language —
+`"pt-BR"` falls back to `"pt"` — then `"en"`). Your own code can apply the
+same rule to a table it builds at runtime with `luna.localize(table)`.
+
+
+
 ## 2. Writing an ingest plugin, step by step
 
 We'll build the bundled Reddit plugin

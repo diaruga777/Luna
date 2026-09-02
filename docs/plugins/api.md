@@ -18,7 +18,7 @@ platform's internal design, see `claudedocs/plugins.md`.
 
 | Capability | app | share / action | Safari |
 | --- | --- | --- | --- |
-| (none — `register`/`parseURL`/`log`/`bytes`/`env`/`LunaError`) | yes | yes | yes |
+| (none — `register`/`parseURL`/`log`/`bytes`/`env`/`LunaError`/`localize`) | yes | yes | yes |
 | `fetch` | yes | yes | relayed |
 | `html` | yes (SwiftSoup) | yes (SwiftSoup) | yes (DOMParser) |
 | `page` | no | no | yes |
@@ -112,14 +112,25 @@ luna.bytes: {
   utf8Encode(s: string): Uint8Array;
   utf8Decode(b: Uint8Array): string;
 };
-luna.env: { context: "app"|"share"|"action"|"safari"; api: 1; pluginId: string; version: string; locale: string };
+luna.env: { context: "app"|"share"|"action"|"safari"; api: 1; pluginId: string; version: string; locale: string; languages: string[] };
 class luna.LunaError extends Error { code: string; message: string }
+luna.localize(table: string | Record<string, string>): string;
 ```
 
 `luna.log` writes to Luna's own diagnostics under a category named
 `plugin.<your-id>` — visible from Settings → Diagnostics (five taps in blank
 space on the top-level Settings screen), which is the primary way to debug a
 plugin running inside the real app.
+
+`env.languages` is the device's preferred language list, most-preferred
+first, as BCP-47 tags (`env.locale` is always `env.languages[0]`).
+`luna.localize` resolves a table you build at runtime — `{ en: "…", es:
+"…" }` — against that same list: an exact tag, then that tag's language
+(`pt-BR` → `pt`), then `en`. A manifest's own user-visible fields
+(`name`, `description`, `export.title`, a `settings[]` field's `label`/
+`help`/`placeholder`, an `options[].label`) accept the identical table
+shape and are resolved the same way, once, at import time — see
+[`README.md` §1](./README.md#1-the-file).
 
 ## `luna.fetch` (capability `fetch`)
 

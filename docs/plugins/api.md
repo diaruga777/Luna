@@ -74,7 +74,7 @@ Codes you will see, and where they come from:
 | `already-connecting` | `luna.bluetooth.connect` | a connect to that device is already waiting for its link — the first call's promise still stands, so await that one |
 | `background` | `luna.wifi.join` | iOS only joins a network while Luna is in the foreground; catch this and prompt the person to open Luna instead of failing silently |
 | `join-failed` | `luna.wifi.join` | the hotspot configuration itself failed to apply |
-| `already-registered` / `invalid-hooks` | Safari's `luna.register`, if called twice or with something other than an object | a bug in your plugin, not a runtime condition to handle |
+| `already-registered` / `invalid-hooks` | `luna.register` called again after the plugin loaded (every backing), or with something other than an object (Safari and the harness throw; the app fails the load) | a bug in your plugin, not a runtime condition to handle |
 
 `throw new luna.LunaError(code, message)` from your own plugin code to
 produce a specific code your `ingest`/`export`/etc. caller can read back

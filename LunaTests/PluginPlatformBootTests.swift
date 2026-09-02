@@ -13,6 +13,8 @@ import LunaPluginKit
 import LunaPluginRuntime
 import XCTest
 
+@testable import Luna
+
 /// `PluginPlatformComposition.install()` builds the whole platform for one
 /// process (`claudedocs/plans/plugin-platform.md` §2.3).
 ///
@@ -70,9 +72,11 @@ final class PluginPlatformBootTests: XCTestCase {
 
     override func tearDown() {
         // The host app installed the shipped platform at launch; every later
-        // suite reads it. Put it back before the scratch container goes away.
-        PluginPlatformComposition.install(
-            processKind: .app, bundledPluginsBundle: LunaBundledPluginsBundle.bundle)
+        // suite reads it. Put back the FULL composition — not just the bare
+        // runtime — so a later suite finds luna.ui, luna.browser,
+        // luna.settings and every export/transport bridge, not the
+        // unavailable-here stand-ins a partial install would leave behind.
+        KindWiring.installFullPluginComposition()
         try? FileManager.default.removeItem(at: containerURL)
         containerURL = nil
         store = nil

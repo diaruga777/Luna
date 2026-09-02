@@ -181,6 +181,38 @@ final class KindCompositionRootTests: XCTestCase {
             """)
     }
 
+    /// Export, transport and the `luna.ui` app witnesses are the APP's own —
+    /// `claudedocs/plugins.md` §2.3 says they "never run in the extensions".
+    /// `PluginPlatformComposition.install()` builds the runtime every one of
+    /// the three plugin roots needs, but only `Luna/KindWiring+Luna.swift`
+    /// may follow it with these three calls: `ShareEntry+Luna` and
+    /// `ActionEntry+Luna` install the runtime and stop there.
+    func testOnlyTheAppRootInstallsExportTransportAndUIWitnesses() throws {
+        let calls = [
+            "PluginExportComposition.install(",
+            "PluginTransportComposition.install(",
+            "PluginUIComposition.installAppWitnesses(",
+        ]
+        for call in calls {
+            var installers: Set<String> = []
+            for (path, source) in try allRootSources() {
+                for line in source.split(separator: "\n") {
+                    let text = line.trimmingCharacters(in: .whitespaces)
+                    guard !text.hasPrefix("//"), !text.hasPrefix("///") else { continue }
+                    if text.contains(call) { installers.insert(path) }
+                }
+            }
+            XCTAssertEqual(
+                installers, ["Luna/KindWiring+Luna.swift"],
+                """
+                \(call) is the app's own composition — a share or action \
+                extension that called it would run export, transport or \
+                luna.ui work no extension is meant to:
+                \(installers.sorted())
+                """)
+        }
+    }
+
     /// A root installs the platform; it never ASSIGNS the registries the platform
     /// owns (reading a witness to hand it to a screen is fine). That is the same rule the kind packs hold,
     /// for the same reason: a hand-written half-installation is invisible.

@@ -24,18 +24,6 @@ public final class PluginImporter: PluginImporting {
         self.runtime = runtime
     }
 
-    /// Reads a file the user picked in Files, then previews it. A file that is
-    /// not UTF-8 text is refused by name, because that is what the picker's
-    /// user can see about it.
-    public func preview(fileAt url: URL) throws -> PluginImportPreview {
-        let needsScope = url.startAccessingSecurityScopedResource()
-        defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            throw PluginManifestError.notText(name: url.lastPathComponent)
-        }
-        return try preview(sourceText: text)
-    }
-
     public func preview(sourceText: String) throws -> PluginImportPreview {
         let manifest: PluginManifest
         switch PluginManifestParser.parse(source: sourceText) {

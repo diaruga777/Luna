@@ -1235,7 +1235,7 @@
 "Plugins_statusStopped_Luna" = "Stopped — %@";
 "Plugins_unpairButton_Luna" = "Unpair";
 "PluginCapability_bluetooth_Luna" = "Connect to Bluetooth accessories.";
-"PluginCapability_browser_Luna" = "Open a web page for you to sign in or solve a challenge.";
+"PluginCapability_browser_Luna" = "Open a web page for you to sign in or solve a challenge, and give it the page and the cookies you signed in with.";
 "PluginCapability_crypto_Luna" = "Perform basic encryption and hashing.";
 "PluginCapability_downloads_Luna" = "See the status of your downloads.";
 "PluginCapability_exports_Luna" = "Deliver your queued sends.";
@@ -1249,4 +1249,4 @@
 "PluginCapability_settings_Luna" = "Read and change its own settings.";
 "PluginCapability_storage_Luna" = "Save its own settings and data.";
 "PluginCapability_ui_Luna" = "Show prompts, menus and the share sheet.";
-"PluginCapability_wifi_Luna" = "Check your Wi-Fi connection.";
+"PluginCapability_wifi_Luna" = "Join a Wi-Fi network it names.";

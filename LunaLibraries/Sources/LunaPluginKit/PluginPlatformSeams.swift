@@ -102,12 +102,17 @@ public struct PluginExportSummary: Equatable, Codable, Sendable {
     public let symbol: String?
     public let isDestination: Bool
     public let requiresSettings: [String]
+    /// The destination's receiver files a delivered save away once it is read
+    /// there, so Luna drops a still-queued send whose save was finished in
+    /// Luna first (`ReadStateSendReconciler`).
+    public let dequeueOnRead: Bool
 
     public init(kinds: [PluginModelKind], input: String, epubProfile: String?, epubImages: Bool,
-                title: String, symbol: String?, isDestination: Bool, requiresSettings: [String]) {
+                title: String, symbol: String?, isDestination: Bool, requiresSettings: [String],
+                dequeueOnRead: Bool = false) {
         self.kinds = kinds; self.input = input; self.epubProfile = epubProfile; self.epubImages = epubImages
         self.title = title; self.symbol = symbol; self.isDestination = isDestination
-        self.requiresSettings = requiresSettings
+        self.requiresSettings = requiresSettings; self.dequeueOnRead = dequeueOnRead
     }
 }
 

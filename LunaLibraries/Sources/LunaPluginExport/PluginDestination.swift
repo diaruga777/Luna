@@ -82,6 +82,10 @@ public final class PluginDestination: ArticleDestination {
         SourceSendSettings.appIntentsMode(forDestination: id)
     }
 
+    /// Declared by the plugin: its receiver tracks reading of its own, so a
+    /// save finished in Luna before delivery is dropped from the queue.
+    public var dequeuesOnRead: Bool { export.dequeueOnRead }
+
     /// The share row comes from the plugin's own declaration, through
     /// `PluginExportSeams.rows`.
     public var providesOwnShareRow: Bool { true }

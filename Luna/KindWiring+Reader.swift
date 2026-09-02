@@ -112,7 +112,6 @@ enum KindWiring {
         // eligible for state restoration; it does no network work until that
         // rendezvous actually appears.
         XteinkBLECentral.shared.beginRendezvousScan()
-        XteinkReadStateReconciler.startObservingSaveChanges()
         if xteinkRendezvousObserver == nil {
             xteinkRendezvousObserver = NotificationCenter.default.addObserver(
                 forName: .xteinkRendezvousReady, object: nil, queue: .main
@@ -123,7 +122,6 @@ enum KindWiring {
                     isReadReportOnlyWindow: XteinkBLECentral.shared.isReadReportOnlyWindow,
                     acquireSweepLock: { XteinkRendezvousSweepLock.shared.acquire() },
                     releaseSweepLock: { XteinkRendezvousSweepLock.shared.release() },
-                    reconcileReadState: { XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery() },
                     drainPendingDeletes: { await XteinkRemoteDeleteRunner.drainPendingDeletes() },
                     deliverQueuedSends: {
                         await ArticleSendCoordinator.shared.deliverQueuedSends(

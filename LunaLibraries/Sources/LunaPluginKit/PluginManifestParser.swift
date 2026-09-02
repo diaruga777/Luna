@@ -360,10 +360,11 @@ public enum PluginManifestParser {
             requires = list
         }
         let destination = (export["destination"] as? NSNumber).map(\.boolValue) ?? false
+        let dequeueOnRead = (export["dequeueOnRead"] as? NSNumber).map(\.boolValue) ?? false
         return PluginExportSummary(
             kinds: kinds, input: input, epubProfile: epubProfile, epubImages: epubImages,
             title: title, symbol: export["symbol"] as? String, isDestination: destination,
-            requiresSettings: requires)
+            requiresSettings: requires, dequeueOnRead: dequeueOnRead)
     }
 
     private static func settings(

@@ -27,6 +27,7 @@
     "title": "Send to Xteink",
     "symbol": "books.vertical",
     "destination": true,
+    "dequeueOnRead": true,
     "requiresSettings": ["device"]
   }
 }

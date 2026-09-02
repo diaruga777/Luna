@@ -9,10 +9,11 @@ import LunaStorage
 /// The one decision every `.xteinkRendezvousReady` observer makes, shared so
 /// the central Luna app and Reader don't carry two copies of it.
 ///
-/// The sweep is a single sequential task: reconcile read-driven dequeues,
-/// drain pending remote deletes, deliver every queued send one at a time,
-/// then ALWAYS report `no_work` so the reader can close its window instead of
-/// waiting out its idle cap. A read-report-only window exists purely to hand
+/// The sweep is a single sequential task: drain pending remote deletes, then
+/// deliver every queued send one at a time — the coordinator reconciles that
+/// destination's read-driven dequeues on the way in — then ALWAYS report
+/// `no_work` so the reader can close its window instead of waiting out its
+/// idle cap. A read-report-only window exists purely to hand
 /// back finished-reading ids (already drained by the status handler) and just
 /// answers `no_work`. The whole sweep runs under `acquireSweepLock` so only
 /// one Luna process talks to a given window (see `XteinkRendezvousSweepLock`);
@@ -22,7 +23,6 @@ public enum XteinkRendezvousSweepPolicy {
         isReadReportOnlyWindow: Bool,
         acquireSweepLock: () -> Bool,
         releaseSweepLock: @escaping @Sendable () -> Void,
-        reconcileReadState: @escaping @Sendable () -> Void,
         drainPendingDeletes: @escaping @Sendable () async -> Void,
         deliverQueuedSends: @escaping @Sendable () async -> Void,
         reportNoWork: @escaping @Sendable () async throws -> Void
@@ -38,7 +38,6 @@ public enum XteinkRendezvousSweepPolicy {
                 try? await reportNoWork()
                 return
             }
-            reconcileReadState()
             await drainPendingDeletes()
             await deliverQueuedSends()
             // Concluding the window is unconditional: after everything this

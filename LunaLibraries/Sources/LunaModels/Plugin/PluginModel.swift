@@ -335,6 +335,10 @@ public enum PluginModelCaps {
     public static let title = 300
     public static let shortString = 200
     public static let excerpt = 1_000
+    /// A URL a plugin may write. Signed CDN links are long — a YouTube
+    /// progressive stream carries its whole signature in the query — so this is
+    /// far above the prose caps above.
+    public static let url = 4_096
     public static let html = 4 * 1024 * 1024
     public static let assetCount = 1...50
     public static let sellerCount = 20
@@ -402,7 +406,7 @@ extension KeyedDecodingContainer {
     }
 
     private static func pluginURL(_ raw: String, field: String) throws -> URL {
-        guard raw.count <= PluginModelCaps.excerpt, let url = URL(string: raw) else {
+        guard raw.count <= PluginModelCaps.url, let url = URL(string: raw) else {
             throw PluginModelValidationError.invalidURL(field: field, value: raw)
         }
         if let scheme = url.scheme,

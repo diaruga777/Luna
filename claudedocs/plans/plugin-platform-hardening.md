@@ -26,10 +26,20 @@ they produced verified work:
   `wp-f1-safari-parity`) holds UNVERIFIED, uncommitted edits to
   `content.js`, `plugin_host.js` and `SafariPluginMessages+Luna.swift` toward
   these items — read them as a starting point, not as done work.
-- **WP-F2** (§5.7): not started.
+- **WP-F2** (§5.7): LANDED, verified by its own test classes (worktree
+  `/Users/hsp/Desktop/Luna-wp-f2`, branch `wp-f2-ui-docs`, off `main` at
+  `f30f4b356`) — not yet merged. All of R4#2, #3, #5, #8, #9, #11, #13, #14,
+  #16, #17, #18, #19, #20, #21, #22, #23, #25. It ran independently of
+  WP-F1 rather than after it (WP-F1 was stopped before merging), touching
+  none of WP-F1's files; the docs it wrote describe today's JSC/app facts
+  and the Safari facts WP-F1 already left in `claudedocs/plugins.md` —
+  whoever lands WP-F1 next should re-check `docs/plugins/README.md`'s and
+  `api.md`'s Safari-specific claims once its Safari-world fixes merge, since
+  this wave only touched the error table's non-Safari rows and one
+  Safari-derived row (`capability-not-declared`) already true on `main`.
 
-To resume: new worktrees off `main` per §0, one agent per remaining package,
-§3/§6 order (F1 before F2, since F2's docs describe F1's Safari facts).
+To resume: new worktrees off `main` per §0, one agent per remaining package
+(WP-E, the rest of WP-F1).
 
 Status when written: PLAN (2026-09-02). Branch `plugin-hardening`, worktree
 `/Users/hsp/Desktop/Luna-plugin-hardening`, off `main` at `aff524cc6`.

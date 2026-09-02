@@ -1204,6 +1204,42 @@ Exit: media-download parity checklist (from `claudedocs/media-download.md`)
 green on the simulator via `-LunaStage` + a device check for Safari; the
 Downloader app still uses Swift resolvers and passes its suite.
 
+**2C landed.** `SafariWebExtensionHandler` gains the `plugins.*` message family
+(catalog/source/fetch/storage/collection/log/settings.get/browserDeferred/
+queueModel), gated to `hostSupportsPlugins` (central only) and, at compile
+time, to `#if canImport(LunaPluginKit)` — **only the central `LunaSafari`
+target actually links `LunaPluginKit` in the pbxproj; the other three Safari
+appexes do not**, even though they compile this one shared source file. A
+warm/incremental `-derivedDataPath` build hides this (it resolves whichever
+target already built `LunaPluginKit.swiftmodule` first in that derivedData);
+a clean build of `LunaReader`/`LunaDownloader`/`LunaPriceTracker`/
+`AllLunaApps` failed outright before the `canImport` guard was added.
+`plugin_host.js` is the content-script bridge (register/parseURL/log/bytes/
+env/html/page/fetch/storage/settings/crypto/browser), evaluated with a
+plugin's own source via `new Function` in the isolated world; `content.js`'s
+`startPillDecision` runs the plugin walk first and only falls back to the
+Swift-parity heuristics when no plugin claims the page, driving the existing
+video overlay (media) or a save pill (article/product) via the same
+`plugins.queueModel` → `PendingPluginModelStore` → `<scheme>://pluginmodel`
+hand-off Safari already uses for `resolvedmedia`. `PluginModelDrain` (`Luna/`,
+universal — no membership exception needed) adopts a queued Model through
+`PluginModelAdopters` and reaches `SavesIngestor.applyRescued`, the same path
+a same-process save takes. `tools/plugin-sim` (node harness: undici + linkedom
++ in-memory storage, no `luna.browser`) and `PluginHTMLParityTests`
+(DOMParser backing) both agree with the SwiftSoup backing on all 60
+`html-subset.spec.js` cases; two cases were narrowed (an unquoted `:` /
+leading-`.` attribute value is outside what a real CSS selector engine
+accepts, so SwiftSoup's leniency there was never in the safe subset) and
+`luna.html`'s `textContent`/`text` were changed to skip a `<script>`/`<style>`
+subtree, matching `SwiftSoup.Element.text()` rather than the DOM's own
+`textContent`. 62/62 relevant tests green on a fresh iOS 26.2 simulator
+against a clean `-derivedDataPath`. Not done: per-hook capability restriction
+(§4.1's "classify may call only `luna.fetch`/`luna.html`, nothing else" is not
+enforced client-side, only by native re-checking the declared capability set);
+native handler behavior has no executable unit test (`NSExtensionContext` has
+no fake anywhere in this codebase, so `SafariPluginHandlerSourceTests` is a
+source-text pin, matching the existing suites for this file).
+
 ### Wave 3 — export, transport, docs (three agents)
 
 | Agent | Model | Owns | Deliverable |

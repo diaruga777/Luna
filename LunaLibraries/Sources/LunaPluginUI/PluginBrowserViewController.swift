@@ -47,9 +47,12 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     private let clock: () -> Date
     private var deadline: Date?
     private var isProbing = false
-    /// Set once the step is over — captured, refused, cancelled or out of time.
-    /// It stops the cover being driven by a probe still in flight.
+    /// Set once nothing may drive the page again — captured, refused, out of
+    /// time, or over. It stops the cover being moved by a probe still in flight.
     private var didStop = false
+    /// Set once the delegate has been told what the step produced. A dead end
+    /// stops the page without answering, so the two are not the same flag.
+    private var didAnswer = false
 
     /// - Parameters:
     ///   - page: the live page, from a `PluginBrowserPageMaking`.
@@ -111,6 +114,12 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         poller.stop()
+        // Going away without an answer is a cancel — the sheet pulled down, or
+        // a dead end whose message the person read and left. Either way the
+        // plugin is still waiting, and without this it would sit out its whole
+        // idle budget before the runtime abandoned it.
+        guard !didAnswer else { return }
+        finish(with: nil)
     }
 
     // MARK: - The stage machine
@@ -172,6 +181,8 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     }
 
     private func finish(with result: PluginBrowserResult?) {
+        guard !didAnswer else { return }
+        didAnswer = true
         didStop = true
         poller.stop()
         page.stopLoading()

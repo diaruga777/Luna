@@ -162,6 +162,27 @@ final class PluginBrowserViewControllerTests: XCTestCase {
         XCTAssertEqual(cover(of: controller)?.actionButton.isHidden, false)
     }
 
+    func testASheetThePersonPulledDownIsACancelRatherThanASilentWait() {
+        let controller = makeController()
+        controller.viewDidDisappear(false)
+
+        XCTAssertEqual(legs.finishes.count, 1)
+        XCTAssertNil(legs.finishes.first ?? nil, "a pulled-down sheet answered nothing")
+    }
+
+    func testAnEndingLunaAlreadyAnsweredIsNotCancelledAgainOnTheWayOut() {
+        let controller = makeController()
+        page.result = PluginBrowserResult(
+            url: "https://gate.test/done", html: "<html>ok</html>", title: "Done",
+            cookieHeader: "", cookies: [])
+        page.stages = ["done"]
+        tick(controller)
+        controller.viewDidDisappear(false)
+
+        XCTAssertEqual(legs.finishes.count, 1)
+        XCTAssertEqual(legs.finishes.first??.html, "<html>ok</html>")
+    }
+
     func testTheSafariEscapeHandsOverThePageTheUserIsActuallyOn() {
         let controller = makeController()
         page.currentURL = URL(string: "https://gate.test/challenge-frame")

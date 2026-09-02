@@ -137,6 +137,31 @@ enum PluginBootstrapScript {
             return parts.join("");
         }
 
+        // Resolves a `name`/`label`-shaped value the identical way the
+        // manifest parser resolves a plugin's own copy tables (§2.2): a
+        // string passes through; a table tries an exact language tag, then
+        // that tag's language (`pt-BR` -> `pt`), then `en`. `plugin_host.js`
+        // and `bridge.mjs` carry the same rule so a plugin sees one answer
+        // wherever it runs.
+        function localize(table) {
+            if (typeof table === "string") { return table; }
+            if (!table || typeof table !== "object") { return undefined; }
+            var languages = (globalThis.luna && globalThis.luna.env
+                && globalThis.luna.env.languages) || [];
+            for (var i = 0; i < languages.length; i++) {
+                if (Object.prototype.hasOwnProperty.call(table, languages[i])) {
+                    return table[languages[i]];
+                }
+            }
+            for (var i = 0; i < languages.length; i++) {
+                var prefix = String(languages[i]).split("-")[0];
+                if (Object.prototype.hasOwnProperty.call(table, prefix)) {
+                    return table[prefix];
+                }
+            }
+            return table.en;
+        }
+
         globalThis.luna = {
             LunaError: LunaError,
             bytes: {
@@ -144,7 +169,8 @@ enum PluginBootstrapScript {
                 toBase64: toBase64,
                 utf8Encode: utf8Encode,
                 utf8Decode: utf8Decode
-            }
+            },
+            localize: localize
         };
     })();
     """#

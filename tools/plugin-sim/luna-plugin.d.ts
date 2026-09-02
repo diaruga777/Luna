@@ -11,6 +11,13 @@
 
 export type PluginModelKind = "article" | "media" | "product";
 
+/// A user-visible manifest field's value (§2.2 of `claudedocs/plugins.md`):
+/// a plain string, or a table keyed by BCP-47 language tag that MUST
+/// include `"en"`. Luna resolves this to one `string` at import time —
+/// `luna.localize` applies the identical rule to a table your own code
+/// builds at runtime.
+export type LocalizedText = string | Record<string, string>;
+
 export type PluginCapabilityName =
   | "fetch" | "html" | "page" | "storage" | "secrets" | "files" | "crypto"
   | "browser" | "downloads" | "settings" | "ui" | "mail" | "notifications"
@@ -27,21 +34,21 @@ export interface ExportDeclaration {
   kinds: PluginModelKind[];
   input: ExportInputFormat;
   inputOptions?: ExportInputOptions;
-  title: string;
+  title: LocalizedText;
   symbol?: string;
   destination?: boolean;
   requiresSettings?: string[];
 }
 
-export interface SettingOption { id: string; label: string }
+export interface SettingOption { id: string; label: LocalizedText }
 
 export interface SettingField {
   key: string;
   type: "text" | "email" | "url" | "password" | "number" | "toggle" | "choice"
     | "pairedDevice" | "action" | "info";
-  label: string;
-  help?: string;
-  placeholder?: string;
+  label: LocalizedText;
+  help?: LocalizedText;
+  placeholder?: LocalizedText;
   options?: SettingOption[];
   default?: unknown;
   required?: boolean;
@@ -57,10 +64,10 @@ export interface BluetoothDeclaration {
 
 export interface PluginManifest {
   id: string;
-  name: string;
+  name: LocalizedText;
   version: string;
   api: 1;
-  description?: string;
+  description?: LocalizedText;
   produces?: PluginModelKind[];
   match?: { hosts?: string[]; any?: boolean };
   priority?: number;
@@ -449,7 +456,11 @@ export interface Env {
   api: 1;
   pluginId: string;
   version: string;
+  /// The BCP-47 tag of the first entry in `languages`.
   locale: string;
+  /// Preferred language tags, most-preferred first — what `luna.localize`
+  /// and the manifest parser resolve a copy table against.
+  languages: string[];
 }
 
 export interface Bytes {
@@ -469,6 +480,10 @@ export interface Luna {
   bytes: Bytes;
   env: Env;
   LunaError: typeof LunaErrorType;
+  /// Resolves a `LocalizedText` value against `env.languages`, the same
+  /// rule the manifest parser applies to `name`/`label`/… (§2.2). A plain
+  /// string passes through unchanged.
+  localize(table: LocalizedText): string;
 
   fetch?(request: string | FetchRequest): Promise<FetchResponse>;
   html?: LunaHTML;

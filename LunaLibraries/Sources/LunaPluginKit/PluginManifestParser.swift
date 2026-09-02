@@ -31,7 +31,14 @@ public enum PluginManifestParser {
     // MARK: - Entry point
 
     /// Parses the leading `/* luna-plugin … */` header of a plugin file.
-    public static func parse(source: String) -> Result<PluginManifest, PluginManifestError> {
+    ///
+    /// `languages` resolves every localized copy field (§2.2) to the `String`
+    /// the rest of the platform reads — the preferred list a user's device
+    /// reports, most-preferred first. Resolution happens HERE, once, so a
+    /// `PluginManifest` never carries a table past this call.
+    public static func parse(
+        source: String, languages: [String] = Locale.preferredLanguages
+    ) -> Result<PluginManifest, PluginManifestError> {
         guard source.utf8.count <= maxSourceKB * 1024 else {
             return .failure(.sourceTooLarge(limitKB: maxSourceKB))
         }
@@ -54,7 +61,7 @@ public enum PluginManifestParser {
                 line: header.jsonStartLine, detail: error.localizedDescription))
         }
         do {
-            return .success(try manifest(from: object, lines: header))
+            return .success(try manifest(from: object, lines: header, languages: languages))
         } catch let error as PluginManifestError {
             return .failure(error)
         } catch {
@@ -121,21 +128,35 @@ public enum PluginManifestParser {
     // MARK: - Fields
 
     private static func manifest(
-        from object: [String: Any], lines: Header
+        from object: [String: Any], lines: Header, languages: [String]
     ) throws -> PluginManifest {
         let api = try apiVersion(object, lines)
         let id = try pluginID(object, lines)
-        let name = try boundedString(
-            object, "name", limit: nameMaxLength, lines: lines, required: true)!
+        let name = try localizedBoundedString(
+            object, "name", limit: nameMaxLength, lines: lines, required: true,
+            languages: languages)!
         let version = try self.version(object, lines)
-        let description = try boundedString(
-            object, "description", limit: descriptionMaxLength, lines: lines, required: false)
+        let description = try localizedBoundedString(
+            object, "description", limit: descriptionMaxLength, lines: lines, required: false,
+            languages: languages)
         let produces = try self.produces(object, lines)
         let match = try self.match(object, lines, isIngest: !produces.isEmpty)
         let priority = try self.priority(object, lines)
         let capabilities = try self.capabilities(object, lines)
-        let export = try self.export(object, lines)
-        let settings = try self.settings(object, lines)
+        let export = try self.export(object, lines, languages: languages)
+        let settings = try self.settings(object, lines, languages: languages)
+        // `export.requiresSettings` must name a settings key this same
+        // manifest declares (R1#21) — checked here, after both are parsed,
+        // rather than inside `export(...)`, so it needs no settings knowledge
+        // of its own.
+        if let export {
+            let declaredKeys = Set(settings.map(\.key))
+            for key in export.requiresSettings where !declaredKeys.contains(key) {
+                throw PluginManifestError.invalidField(
+                    field: "export.requiresSettings", line: lines.line(of: "requiresSettings"),
+                    detail: "\"\(key)\" is not a key any \"settings\" entry declares")
+            }
+        }
         let bluetooth = try self.bluetooth(object, lines, capabilities: capabilities)
         let background = try flag(object, "background", lines) ?? false
         return PluginManifest(
@@ -245,6 +266,17 @@ public enum PluginManifestParser {
                         detail: "\"\(host)\" is not a host — write \"example.com\" "
                             + "or \"*.example.com\"")
                 }
+                // A "*" may lead a pattern as "*." and nowhere else — anything
+                // wider (a bare "*", "a.*.com", "*.*.com") parses but never
+                // matches a real host (`PluginSummary.matches`), so it is
+                // refused here rather than silently never firing.
+                let isLeadingWildcard = lowered.hasPrefix("*.") && !lowered.dropFirst(2).contains("*")
+                guard !lowered.contains("*") || isLeadingWildcard else {
+                    throw PluginManifestError.invalidField(
+                        field: "match.hosts", line: lines.line(of: "hosts"),
+                        detail: "\"\(host)\" is not a host pattern — a \"*\" may only lead "
+                            + "it as \"*.\"; use \"any\": true to match every host")
+                }
                 if !hosts.contains(lowered) { hosts.append(lowered) }
             }
         }
@@ -289,7 +321,7 @@ public enum PluginManifestParser {
     }
 
     private static func export(
-        _ object: [String: Any], _ lines: Header
+        _ object: [String: Any], _ lines: Header, languages: [String]
     ) throws -> PluginExportSummary? {
         guard let raw = object["export"] else { return nil }
         guard let export = raw as? [String: Any] else {
@@ -329,11 +361,14 @@ public enum PluginManifestParser {
                     + PluginExportInputAvailability.formats(for: unsupported[0])
                         .map(\.rawValue).sorted().joined(separator: ", "))
         }
-        guard let title = export["title"] as? String, !title.isEmpty, title.count <= 40 else {
+        guard let rawTitle = export["title"] else {
             throw PluginManifestError.invalidField(
                 field: "export.title", line: lines.line(of: "title"),
                 detail: "it must be a share-row label of at most 40 characters")
         }
+        let title = try localizedField(
+            rawTitle, field: "export.title", lines: lines, limit: 40, nonEmpty: true,
+            languages: languages)
         var epubProfile: String?
         var epubImages = true
         if let options = export["inputOptions"] as? [String: Any],
@@ -367,7 +402,7 @@ public enum PluginManifestParser {
     }
 
     private static func settings(
-        _ object: [String: Any], _ lines: Header
+        _ object: [String: Any], _ lines: Header, languages: [String]
     ) throws -> [PluginSettingField] {
         guard let raw = object["settings"] else { return [] }
         guard let list = raw as? [[String: Any]] else {
@@ -379,11 +414,11 @@ public enum PluginManifestParser {
         var fields: [PluginSettingField] = []
         for entry in list {
             guard let key = entry["key"] as? String, !key.isEmpty,
-                  key.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" })
+                  key.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") })
             else {
                 throw PluginManifestError.invalidField(
                     field: "settings.key", line: lines.line(of: "key"),
-                    detail: "a key uses letters, digits and '_' only")
+                    detail: "a key uses ASCII letters, digits and '_' only")
             }
             guard !key.hasPrefix("_") else {
                 throw PluginManifestError.invalidField(
@@ -404,10 +439,23 @@ public enum PluginManifestParser {
                         + PluginSettingFieldType.allCases.map(\.rawValue)
                             .joined(separator: ", "))
             }
-            guard let label = entry["label"] as? String, !label.isEmpty else {
+            guard let rawLabel = entry["label"] else {
                 throw PluginManifestError.invalidField(
                     field: "settings.label", line: lines.line(of: "label"),
                     detail: "every field needs a label")
+            }
+            let label = try localizedField(
+                rawLabel, field: "settings.label", lines: lines, limit: nil, nonEmpty: true,
+                languages: languages)
+            let help = try entry["help"].map {
+                try localizedField(
+                    $0, field: "settings.help", lines: lines, limit: nil, nonEmpty: false,
+                    languages: languages)
+            }
+            let placeholder = try entry["placeholder"].map {
+                try localizedField(
+                    $0, field: "settings.placeholder", lines: lines, limit: nil, nonEmpty: false,
+                    languages: languages)
             }
             var options: [PluginSettingOption] = []
             if type == .choice {
@@ -419,27 +467,35 @@ public enum PluginManifestParser {
                 }
                 for option in rawOptions {
                     guard let id = option["id"] as? String, !id.isEmpty,
-                          let optionLabel = option["label"] as? String, !optionLabel.isEmpty
+                          let rawOptionLabel = option["label"]
                     else {
                         throw PluginManifestError.invalidField(
                             field: "settings.options", line: lines.line(of: "options"),
                             detail: "every option needs an \"id\" and a \"label\"")
                     }
+                    let optionLabel = try localizedField(
+                        rawOptionLabel, field: "settings.options", lines: lines, limit: nil,
+                        nonEmpty: true, languages: languages)
                     options.append(PluginSettingOption(id: id, label: optionLabel))
                 }
             }
             var defaultJSON: String?
-            if let value = entry["default"],
-               let data = try? JSONSerialization.data(
-                withJSONObject: value, options: [.fragmentsAllowed]) {
+            if let value = entry["default"] {
+                guard let data = try? JSONSerialization.data(
+                    withJSONObject: value, options: [.fragmentsAllowed])
+                else {
+                    throw PluginManifestError.invalidField(
+                        field: "settings.default", line: lines.line(of: "default"),
+                        detail: "it must be a JSON value Luna can encode")
+                }
                 defaultJSON = String(decoding: data, as: UTF8.self)
             }
             fields.append(PluginSettingField(
-                key: key, type: type, label: label, help: entry["help"] as? String,
-                placeholder: entry["placeholder"] as? String, options: options,
+                key: key, type: type, label: label, help: help,
+                placeholder: placeholder, options: options,
                 defaultJSON: defaultJSON,
-                isRequired: (entry["required"] as? NSNumber)?.boolValue ?? false,
-                isSecret: (entry["secret"] as? NSNumber)?.boolValue ?? false))
+                isRequired: try flag(entry, "settings.required", lines, key: "required") ?? false,
+                isSecret: try flag(entry, "settings.secret", lines, key: "secret") ?? false))
         }
         return fields
     }
@@ -498,15 +554,87 @@ public enum PluginManifestParser {
         return text
     }
 
+    /// Reads a boolean field, rejecting anything an `NSNumber` cast would
+    /// otherwise let through unchecked — `1`, `"true"`, and so on (R1#18).
+    /// `key` is the object's own key when it differs from `field`, the name
+    /// the error names (a nested field like `"settings.required"` is looked
+    /// up as `"required"` but reported by its dotted, human path).
     private static func flag(
-        _ object: [String: Any], _ field: String, _ lines: Header
+        _ object: [String: Any], _ field: String, _ lines: Header, key: String? = nil
     ) throws -> Bool? {
-        guard let value = object[field] else { return nil }
+        let lookupKey = key ?? field
+        guard let value = object[lookupKey] else { return nil }
         guard let number = value as? NSNumber, isBoolean(number) else {
             throw PluginManifestError.invalidField(
-                field: field, line: lines.line(of: field), detail: "it must be true or false")
+                field: field, line: lines.line(of: lookupKey), detail: "it must be true or false")
         }
         return number.boolValue
+    }
+
+    /// Reads a user-visible field that may be a plain string or a localized
+    /// table (§2.2): `{ "<language tag>": "<text>" }`, which must include
+    /// `"en"`. Resolves at parse time against `languages`, so every caller
+    /// keeps reading a plain `String`. `limit` is `nil` for a field with no
+    /// length cap; `nonEmpty` rejects a blank variant.
+    private static func localizedField(
+        _ value: Any, field: String, lines: Header, limit: Int?, nonEmpty: Bool,
+        languages: [String]
+    ) throws -> String {
+        let table: [String: String]
+        if let text = value as? String {
+            table = ["en": text]
+        } else if let raw = value as? [String: Any] {
+            var built: [String: String] = [:]
+            for (tag, entry) in raw {
+                guard let text = entry as? String else {
+                    throw PluginManifestError.invalidField(
+                        field: field, line: lines.line(of: field),
+                        detail: "every value in a localized table must be a string")
+                }
+                built[tag] = text
+            }
+            table = built
+        } else {
+            throw PluginManifestError.invalidField(
+                field: field, line: lines.line(of: field),
+                detail: "it must be a string or a { \"<language tag>\": \"…\" } table")
+        }
+        guard table["en"] != nil else {
+            throw PluginManifestError.invalidField(
+                field: field, line: lines.line(of: field),
+                detail: "a localized table must include \"en\"")
+        }
+        for text in table.values {
+            if nonEmpty {
+                guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
+                    throw PluginManifestError.invalidField(
+                        field: field, line: lines.line(of: field),
+                        detail: "it must be a non-empty string")
+                }
+            }
+            if let limit {
+                guard text.count <= limit else {
+                    throw PluginManifestError.invalidField(
+                        field: field, line: lines.line(of: field),
+                        detail: "it may be at most \(limit) characters")
+                }
+            }
+        }
+        return PluginLocalizedText.resolve(table, preferring: languages)
+    }
+
+    /// `localizedField`, plus the missing-vs-required check `boundedString`
+    /// does for a plain string.
+    private static func localizedBoundedString(
+        _ object: [String: Any], _ field: String, limit: Int, lines: Header, required: Bool,
+        languages: [String]
+    ) throws -> String? {
+        guard let value = object[field] else {
+            guard required else { return nil }
+            throw PluginManifestError.missingField(field: field, line: lines.jsonStartLine)
+        }
+        return try localizedField(
+            value, field: field, lines: lines, limit: limit, nonEmpty: true, languages: languages)
     }
 
     /// `JSONSerialization` reads `true` as an `NSNumber`; this is how a boolean

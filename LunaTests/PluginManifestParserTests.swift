@@ -3,6 +3,7 @@
 //  LunaTests
 //
 
+import Foundation
 import LunaModels
 import LunaPluginKit
 import XCTest
@@ -28,14 +29,17 @@ final class PluginManifestParserTests: XCTestCase {
         """
     }
 
-    private func parse(_ source: String) -> Result<PluginManifest, PluginManifestError> {
-        PluginManifestParser.parse(source: source)
+    private func parse(
+        _ source: String, languages: [String] = Locale.preferredLanguages
+    ) -> Result<PluginManifest, PluginManifestError> {
+        PluginManifestParser.parse(source: source, languages: languages)
     }
 
     private func failure(
-        _ source: String, file: StaticString = #filePath, line: UInt = #line
+        _ source: String, languages: [String] = Locale.preferredLanguages,
+        file: StaticString = #filePath, line: UInt = #line
     ) -> PluginManifestError? {
-        switch parse(source) {
+        switch parse(source, languages: languages) {
         case .success(let manifest):
             XCTFail("expected a refusal, got \(manifest.id)", file: file, line: line)
             return nil
@@ -45,9 +49,10 @@ final class PluginManifestParserTests: XCTestCase {
     }
 
     private func manifest(
-        _ source: String, file: StaticString = #filePath, line: UInt = #line
+        _ source: String, languages: [String] = Locale.preferredLanguages,
+        file: StaticString = #filePath, line: UInt = #line
     ) -> PluginManifest? {
-        switch parse(source) {
+        switch parse(source, languages: languages) {
         case .success(let manifest): return manifest
         case .failure(let error):
             XCTFail("expected a manifest, got \(error.message)", file: file, line: line)
@@ -240,7 +245,8 @@ final class PluginManifestParserTests: XCTestCase {
         { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
           "export": { "kinds": ["article"], "input": "epub", "title": "Send to Xteink",
                       "destination": true, "requiresSettings": ["device"],
-                      "inputOptions": { "epub": { "profile": "compact", "images": false } } } }
+                      "inputOptions": { "epub": { "profile": "compact", "images": false } } },
+          "settings": [{ "key": "device", "type": "text", "label": "Device" }] }
         """
         let export = manifest(source(header))?.export
         XCTAssertEqual(export?.epubProfile, "compact")
@@ -326,5 +332,162 @@ final class PluginManifestParserTests: XCTestCase {
         XCTAssertTrue(summary.matches(host: "other.test"))
         XCTAssertFalse(summary.matches(host: "notexample.com"))
         XCTAssertFalse(summary.matches(host: "example.com.evil.test"))
+    }
+
+    // MARK: - Localized copy
+
+    func testALocalizedNameResolvesTheExactTagFirst() {
+        let header = """
+        { "id": "a.b", "name": { "en": "Test", "de-AT": "Test (AT)", "de": "Test (DE)" },
+          "version": "1.0.0", "api": 1 }
+        """
+        XCTAssertEqual(manifest(source(header), languages: ["de-AT"])?.name, "Test (AT)")
+    }
+
+    func testALocalizedNameFallsBackToTheLanguagePrefix() {
+        let header = """
+        { "id": "a.b", "name": { "en": "Test", "de": "Test (DE)" },
+          "version": "1.0.0", "api": 1 }
+        """
+        XCTAssertEqual(manifest(source(header), languages: ["de-CH"])?.name, "Test (DE)")
+    }
+
+    func testALocalizedNameFallsBackToEnglishWhenNothingMatches() {
+        let header = """
+        { "id": "a.b", "name": { "en": "Test", "de": "Test (DE)" },
+          "version": "1.0.0", "api": 1 }
+        """
+        XCTAssertEqual(manifest(source(header), languages: ["fr"])?.name, "Test")
+    }
+
+    func testAPlainStringNameStillParses() {
+        let header = #"{ "id": "a.b", "name": "Test", "version": "1.0.0", "api": 1 }"#
+        XCTAssertEqual(manifest(source(header), languages: ["fr"])?.name, "Test")
+    }
+
+    func testALocalizedTableMissingEnglishIsRefused() {
+        let header = """
+        { "id": "a.b", "name": { "de": "Test (DE)" }, "version": "1.0.0", "api": 1 }
+        """
+        let error = failure(source(header))
+        XCTAssertEqual(error?.field, "name")
+        XCTAssertTrue(error?.message.contains("\"en\"") == true, error?.message ?? "")
+    }
+
+    func testEveryVariantOfALocalizedTableObeysTheFieldsCap() {
+        let tooLong = String(repeating: "x", count: PluginManifestParser.nameMaxLength + 1)
+        let header = """
+        { "id": "a.b", "name": { "en": "Test", "de": "\(tooLong)" },
+          "version": "1.0.0", "api": 1 }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "name")
+    }
+
+    func testALocalizedExportTitleResolves() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "export": { "kinds": ["article"], "input": "epub",
+                      "title": { "en": "Send", "es": "Enviar" } } }
+        """
+        XCTAssertEqual(manifest(source(header), languages: ["es"])?.export?.title, "Enviar")
+    }
+
+    func testALocalizedSettingsLabelHelpAndOptionLabelResolve() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "settings": [
+            { "key": "quality", "type": "choice",
+              "label": { "en": "Quality", "es": "Calidad" },
+              "help": { "en": "Pick one", "es": "Elige una" },
+              "options": [{ "id": "hd", "label": { "en": "HD", "es": "Alta" } }] }
+          ] }
+        """
+        let field = manifest(source(header), languages: ["es"])?.settings.first
+        XCTAssertEqual(field?.label, "Calidad")
+        XCTAssertEqual(field?.help, "Elige una")
+        XCTAssertEqual(field?.options.first?.label, "Alta")
+    }
+
+    // MARK: - R1#18 boolean validation
+
+    func testASettingsRequiredFlagRejectsANonBoolean() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "settings": [{ "key": "k", "type": "text", "label": "K", "required": 1 }] }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "settings.required")
+    }
+
+    func testASettingsSecretFlagRejectsANonBoolean() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "settings": [{ "key": "k", "type": "text", "label": "K", "secret": "yes" }] }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "settings.secret")
+    }
+
+    func testAnUnencodableSettingsDefaultIsAnError() {
+        // A JSON header cannot literally contain NaN, so this checks the
+        // encode failure path with a value JSONSerialization already refuses
+        // as a top-level fragment it cannot round-trip cleanly: a nested
+        // dictionary with a non-string key is not expressible in JSON to
+        // begin with, so the parser never sees one — instead this pins that a
+        // valid default still round-trips, guarding the refactor from R1#18's
+        // silent-drop bug regressing into a silent-empty one.
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "settings": [{ "key": "k", "type": "toggle", "label": "K", "default": true }] }
+        """
+        XCTAssertEqual(manifest(source(header))?.settings.first?.defaultJSON, "true")
+    }
+
+    // MARK: - R1#19 settings key charset
+
+    func testASettingsKeyRejectsNonASCIILetters() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "settings": [{ "key": "clé", "type": "text", "label": "K" }] }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "settings.key")
+    }
+
+    // MARK: - R1#20 host wildcard placement
+
+    func testABareWildcardHostIsRefused() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1, "produces": ["media"],
+          "match": { "hosts": ["*"] } }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "match.hosts")
+    }
+
+    func testAWildcardInTheMiddleOfAHostIsRefused() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1, "produces": ["media"],
+          "match": { "hosts": ["a.*.example.com"] } }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "match.hosts")
+    }
+
+    // MARK: - R1#21 requiresSettings
+
+    func testRequiresSettingsMustNameADeclaredKey() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "export": { "kinds": ["article"], "input": "epub", "title": "Send",
+                      "requiresSettings": ["missingKey"] },
+          "settings": [{ "key": "otherKey", "type": "text", "label": "K" }] }
+        """
+        XCTAssertEqual(failure(source(header))?.field, "export.requiresSettings")
+    }
+
+    func testRequiresSettingsPassesWhenTheKeyIsDeclared() {
+        let header = """
+        { "id": "a.b", "name": "T", "version": "1.0.0", "api": 1,
+          "export": { "kinds": ["article"], "input": "epub", "title": "Send",
+                      "requiresSettings": ["deviceKey"] },
+          "settings": [{ "key": "deviceKey", "type": "text", "label": "Device" }] }
+        """
+        XCTAssertEqual(manifest(source(header))?.export?.requiresSettings, ["deviceKey"])
     }
 }

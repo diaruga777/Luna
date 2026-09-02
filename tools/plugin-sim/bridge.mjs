@@ -152,6 +152,27 @@ async function cryptoRandomBytes(count) {
   return bytesToBase64(crypto.randomBytes(Math.max(0, count | 0)));
 }
 
+// --------------------------------------------------------- localization
+
+/// Resolves a `name`/`label`-shaped value the identical way the manifest
+/// parser resolves a plugin's own copy tables (§2.2): a string passes
+/// through; a table tries an exact language tag, then that tag's language
+/// (`pt-BR` -> `pt`), then `en`. `PluginBootstrapScript.swift` and
+/// `plugin_host.js` carry the same rule.
+export function resolveLocalized(table, languages) {
+  if (typeof table === "string") return table;
+  if (!table || typeof table !== "object") return undefined;
+  const langs = languages || [];
+  for (const lang of langs) {
+    if (Object.prototype.hasOwnProperty.call(table, lang)) return table[lang];
+  }
+  for (const lang of langs) {
+    const prefix = String(lang).split("-")[0];
+    if (Object.prototype.hasOwnProperty.call(table, prefix)) return table[prefix];
+  }
+  return table.en;
+}
+
 // ------------------------------------------------------------ luna.storage
 
 export function makeStorage() {
@@ -232,9 +253,10 @@ function fetchFactory(fetchImpl) {
 
 // ----------------------------------------------------------------- bridge
 
-/// `config`: `{ pluginId, version, locale, capabilities: string[], fetchImpl?,
-/// storage?, settings? }`. `fetchImpl` lets `run.mjs --fixture` answer
-/// `luna.fetch` from recorded files instead of the network.
+/// `config`: `{ pluginId, version, locale, languages?: string[], capabilities:
+/// string[], fetchImpl?, storage?, settings? }`. `languages` defaults to
+/// `[locale || "en"]` when omitted. `fetchImpl` lets `run.mjs --fixture`
+/// answer `luna.fetch` from recorded files instead of the network.
 export function createBridge(config = {}) {
   const capabilities = new Set(config.capabilities || []);
   let registeredHooks = null;
@@ -273,10 +295,14 @@ export function createBridge(config = {}) {
   };
 
   luna.bytes = { fromBase64: base64ToBytes, toBase64: bytesToBase64, utf8Encode, utf8Decode };
+  const languages = config.languages && config.languages.length
+    ? config.languages
+    : [config.locale || "en"];
   luna.env = {
     context: config.context || "app", api: 1, pluginId: config.pluginId || "app.luna.dev",
-    version: config.version || "0.0.0", locale: config.locale || "en",
+    version: config.version || "0.0.0", locale: languages[0] || "en", languages,
   };
+  luna.localize = (table) => resolveLocalized(table, luna.env.languages);
   luna.LunaError = LunaError;
 
   if (capabilities.has("html")) luna.html = html;

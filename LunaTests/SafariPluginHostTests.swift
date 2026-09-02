@@ -145,4 +145,55 @@ final class SafariPluginHostTests: XCTestCase {
         _ = js.evaluate("void 0") // let the microtask settle
         XCTAssertEqual(js.string("window.__lunaBrowserOutcome"), "browser-deferred")
     }
+
+    // MARK: - localization (parity with PluginLocalizedText.resolve)
+
+    /// `LunaPluginHost.resolveLocalized` and `PluginLocalizedText.resolve`
+    /// (`PluginLocalizedTextTests`) apply the same rule to the same table and
+    /// preferred-language list — an exact tag, then that tag's language, then
+    /// `"en"`. This pins the JS side to that same answer.
+    func testResolveLocalizedMatchesTheSwiftRule() {
+        let table = "{ en: 'Hello', 'de-AT': 'Servus', de: 'Hallo' }"
+
+        XCTAssertEqual(
+            js.string("LunaPluginHost.resolveLocalized(\(table), ['de-AT'])"), "Servus",
+            "an exact tag wins")
+        XCTAssertEqual(
+            js.string("LunaPluginHost.resolveLocalized(\(table), ['de-CH'])"), "Hallo",
+            "an unmatched tag falls back to its language prefix")
+        XCTAssertEqual(
+            js.string("LunaPluginHost.resolveLocalized(\(table), ['fr'])"), "Hello",
+            "no match at all falls back to \"en\"")
+        XCTAssertEqual(
+            js.string("LunaPluginHost.resolveLocalized('Hello', ['fr'])"), "Hello",
+            "a plain string passes through")
+    }
+
+    func testEnvLanguagesIsANonEmptyArrayAndLocaleIsItsFirstEntry() {
+        loadPlugin(capabilities: [], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1 }
+            */
+            luna.register({});
+            """)
+        let ok = js.evaluate("""
+            Array.isArray(window.__lunaTestLuna.env.languages)
+                && window.__lunaTestLuna.env.languages.length > 0
+                && window.__lunaTestLuna.env.locale === window.__lunaTestLuna.env.languages[0]
+            """) as? Bool
+        XCTAssertEqual(ok, true)
+    }
+
+    func testLunaLocalizeResolvesAgainstEnvLanguages() {
+        loadPlugin(capabilities: [], source: """
+            /* luna-plugin
+            { "id": "app.luna.test", "name": "Test", "version": "1.0.0", "api": 1 }
+            */
+            luna.register({});
+            """)
+        let resolved = js.string("window.__lunaTestLuna.localize({ en: 'Hello' })")
+        XCTAssertEqual(resolved, "Hello")
+        let passthrough = js.string("window.__lunaTestLuna.localize('Hello')")
+        XCTAssertEqual(passthrough, "Hello")
+    }
 }

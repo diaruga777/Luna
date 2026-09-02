@@ -14,6 +14,7 @@ import LunaIngest
 import LunaMailAccount
 import LunaMediaDownload
 import LunaPluginIngest
+import LunaPluginTransport
 import LunaPluginUI
 import LunaPluginKit
 import LunaModels
@@ -26,7 +27,6 @@ import LunaStorage
 import UIKit
 
 enum KindWiring {
-    private static var xteinkRendezvousObserver: NSObjectProtocol?
     /// Migration only — onboarding stores nothing (see
     /// `OnboardingLegacyDemoSweeping`).
     private static let legacyOnboardingDemoSave: any OnboardingLegacyDemoSweeping =
@@ -58,7 +58,10 @@ enum KindWiring {
         PluginPlatformComposition.install(
             processKind: .app,
             bundledPluginsBundle: LunaBundledPluginsBundle.bundle,
-            additionalBridges: { PluginUIComposition.bridges(processKind: .app, scheduler: $0) })
+            additionalBridges: {
+                PluginUIComposition.bridges(processKind: .app, scheduler: $0)
+                    + PluginTransportComposition.bridges(processKind: .app, scheduler: $0)
+            })
         PluginUIComposition.installAppWitnesses()
         // The card half of each kind follows the same rule: one definition
         // per kind, installed by every app that shows it, so the central deck
@@ -137,12 +140,6 @@ enum KindWiring {
             ) {
                 KindleSettingsScreen()
             },
-            SettingsCategory(
-                title: L10n.string("Common_xteink"), symbol: "books.vertical",
-                detail: {
-                    XteinkSendSettings.isEnabled ? nil : L10n.string("Common_off")
-                }
-            ) { XteinkSettingsScreen() },
             SettingsCategory(title: L10n.string("Common_downloads"), symbol: "play.fill") {
                 DownloadsSettingsScreen()
             },
@@ -162,41 +159,13 @@ enum KindWiring {
         MediaShellWiring.appDidLaunch()
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ProductShellWiring.appDidLaunch()
-        // The X3 advertises briefly after a power-button wake. Keep the central
-        // eligible for state restoration; it does no network work until that
-        // rendezvous actually appears. Gated on the enable switch here (unlike
-        // the article-only Reader app) so the all-kinds app doesn't open a
-        // Bluetooth scan — and its permission prompt — for users who never
-        // touched Xteink settings.
-        if XteinkSendSettings.isEnabled {
-            XteinkBLECentral.shared.beginRendezvousScan()
-        }
-        XteinkReadStateReconciler.startObservingSaveChanges()
-        if xteinkRendezvousObserver == nil {
-            xteinkRendezvousObserver = NotificationCenter.default.addObserver(
-                forName: .xteinkRendezvousReady, object: nil, queue: .main
-            ) { _ in
-                // A restored central can become ready long after launch's first
-                // sweep. This is the actual transfer trigger for a wake window.
-                XteinkRendezvousSweepPolicy.rendezvousBecameReady(
-                    isReadReportOnlyWindow: XteinkBLECentral.shared.isReadReportOnlyWindow,
-                    acquireSweepLock: { XteinkRendezvousSweepLock.shared.acquire() },
-                    releaseSweepLock: { XteinkRendezvousSweepLock.shared.release() },
-                    reconcileReadState: { XteinkReadStateReconciler.dequeueSendsFinishedBeforeDelivery() },
-                    drainPendingDeletes: { await XteinkRemoteDeleteRunner.drainPendingDeletes() },
-                    deliverQueuedSends: {
-                        await ArticleSendCoordinator.shared.deliverQueuedSends(
-                            toDestinationID: ArticleDestinationID.xteink)
-                    },
-                    reportNoWork: {
-                        // Behind the transfer queue so a straggler send (an
-                        // auto-send landing mid-window) finishes first.
-                        try await XteinkRendezvousTransferQueue.shared.run {
-                            try await XteinkBLECentral.shared.reportNoWork()
-                        }
-                    })
-            }
-        }
+        // Xteink is a bundled PLUGIN in this app: `xteink.js` owns the
+        // rendezvous sweep, the transfer and the settings screen, and its
+        // `luna.bluetooth` center opens the standing connect a short wake
+        // window needs. Luna Reader keeps the Swift path (`KindWiring+Reader`)
+        // and the two exclude each other through the service lock.
+        PluginTransportComposition.install()
+        PluginTransportComposition.appDidLaunch()
     }
 
     static func appDidEnterBackground() {
@@ -209,9 +178,7 @@ enum KindWiring {
         MediaShellWiring.sceneDidForeground()
         Task { @MainActor in PluginUnlockFlow.resumeCompleted() }
         ArticleShellWiring.sceneDidForeground()
-        if XteinkSendSettings.isEnabled {
-            XteinkBLECentral.shared.beginRendezvousScan()
-        }
+        PluginTransportComposition.sceneDidForeground()
     }
 
     static func savesDidChange() {
@@ -221,8 +188,8 @@ enum KindWiring {
     static func wifiBecameAvailable() {
         MediaShellWiring.resumePendingWiFiDownloads()
         ArticleShellWiring.resumeIncompletePreloads()
-        // The Xteink receives over local Wi-Fi, so joining a network is a
-        // delivery opportunity for queued ereader sends.
+        // An ereader receives over local Wi-Fi, so joining a network is a
+        // delivery opportunity for queued sends.
         ArticleShellWiring.retryPendingSends()
     }
 

@@ -233,8 +233,9 @@ function fetchFactory(fetchImpl) {
 // ----------------------------------------------------------------- bridge
 
 /// `config`: `{ pluginId, version, locale, capabilities: string[], fetchImpl?,
-/// storage?, settings? }`. `fetchImpl` lets `run.mjs --fixture` answer
-/// `luna.fetch` from recorded files instead of the network.
+/// storage?, settings?, downloads? }`. `fetchImpl` lets `run.mjs --fixture`
+/// answer `luna.fetch` from recorded files instead of the network; `downloads`
+/// is the fixed `DownloadJob[]` `luna.downloads` reads.
 export function createBridge(config = {}) {
   const capabilities = new Set(config.capabilities || []);
   let registeredHooks = null;
@@ -300,6 +301,24 @@ export function createBridge(config = {}) {
 
   if (capabilities.has("fetch")) {
     luna.fetch = fetchFactory(config.fetchImpl || undiciFetch);
+  }
+
+  // In-memory, fed from `config.downloads` (a `DownloadJob[]`) — the harness
+  // has no real download engine or saves database to read, so a fixture
+  // supplies whatever jobs `classify`/`ingest` should see.
+  if (capabilities.has("downloads")) {
+    const jobs = config.downloads || [];
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    luna.downloads = {
+      jobs: async () => jobs,
+      job: async (saveId) => {
+        if (typeof saveId !== "string" || !uuidPattern.test(saveId)) {
+          throw new LunaError("luna.downloads.job needs a save id", "bad-argument");
+        }
+        const matches = jobs.filter((job) => job.saveId === saveId);
+        return matches.length ? matches[matches.length - 1] : null;
+      },
+    };
   }
 
   // Never available: there is no page to run a challenge detector against

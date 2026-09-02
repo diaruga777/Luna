@@ -358,19 +358,21 @@ export interface Crypto {
 }
 
 // ---- luna.downloads (§6.9 — app/share/action only, read only) ----
-// No bridge installs this capability anywhere yet: a plugin declaring
-// `downloads` sees the `unavailable-here` stand-in for every call. Typed
-// here for forward compatibility with the design; do not assume it works.
+// Read-only view of the download engine's own live media download jobs.
+// `phase` is `LiveMediaDownloadJob.Phase`'s own raw values, not the design's
+// original `queued`/`deferredUntilWiFi` names — those never named a real
+// engine state. Absent in Safari; a non-UUID `saveId` rejects `bad-argument`.
 
 export interface DownloadJob {
-  saveId: string; sourceURL: string; title?: string;
-  phase: "queued" | "resolving" | "downloading" | "finished" | "failed" | "deferredUntilWiFi";
-  progress: number; receivedBytes: number; expectedBytes?: number; failure?: string;
+  saveId: string | null; sourceUrl: string; title: string;
+  phase: "resolving" | "downloading" | "waiting" | "suspended" | "saving" | "finished" | "failed";
+  progress: number; receivedBytes: number | null; expectedBytes: number | null;
+  failure: string | null; pluginId: string | null; quality: string | null;
 }
 
 export interface Downloads {
   jobs(): Promise<DownloadJob[]>;
-  job(saveId: string): Promise<DownloadJob | undefined>;
+  job(saveId: string): Promise<DownloadJob | null>;
 }
 
 // ---- luna.ui (§6.12 — app only) ----

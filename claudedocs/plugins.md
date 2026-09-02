@@ -306,7 +306,7 @@ just at call time).
 | `files` | `luna.files` | yes | yes | — | `PluginFilesBridge.swift` |
 | `crypto` | `luna.crypto` | CryptoKit | CryptoKit | SubtleCrypto | `PluginCryptoBridge.swift` / `plugin_host.js` |
 | `browser` | `luna.browser` | presents the modal | stores + rejects `browser-deferred` | rejects `browser-deferred` immediately | `PluginBrowserBridge.swift` (LunaPluginUI) / `plugin_host.js` |
-| `downloads` | `luna.downloads` | not yet wired | not yet wired | — | declared in the plan, no bridge ships (§9 gaps) |
+| `downloads` | `luna.downloads` | yes | yes | — (no relay) | `PluginDownloadsBridge.swift` |
 | `settings` | `luna.settings` | get/set/all | get/all (`set` rejects `unavailable-here`) | get only, relayed | `PluginSettingsBridge.swift` |
 | `ui` | `luna.ui` | yes | — (`unavailable-here`) | — | `PluginUIBridge.swift` |
 | `mail` | `luna.mail` | yes | — | — | `PluginMailBridge.swift` |
@@ -315,12 +315,20 @@ just at call time).
 | `wifi` | `luna.wifi` | yes | — | — | `PluginWiFiBridge.swift` |
 | `exports` | `luna.exports` | yes | — | — | `PluginExportsBridge.swift` |
 
-`luna.downloads` is declared in the plan (§6.9) and in `PluginCapabilityName`,
-but **no bridge installs it anywhere** as of this HEAD — a plugin that
-declares it gets the honest `unavailable-here` stand-in
-(`PluginUnavailableNamespace`, installed automatically for any declared
-capability with no registered installer), never a crash, but the read-only
-job-status API the plan describes does not exist yet.
+`luna.downloads` (`PluginDownloadsBridge.swift`) is a read-only view of the
+engine's own live media download jobs, straight off `SavesStore`
+(`LunaStorage`) rather than `LiveMediaDownloadManager` — it needs nothing the
+share/action extensions lack, so it installs the same way in app, share and
+action. `luna.downloads.jobs(): Promise<DownloadJob[]>` lists every job;
+`luna.downloads.job(saveId): Promise<DownloadJob|null>` resolves the save's
+URL and answers the newest job for it, or `null` when there is none — a
+non-UUID `saveId` rejects `bad-argument`. `DownloadJob.phase` is
+`LiveMediaDownloadJob.Phase`'s own raw values verbatim
+(`resolving|downloading|waiting|suspended|saving|finished|failed`) — not the
+plan's `queued`/`deferredUntilWiFi` names (§15). `saveId` on a job is looked
+up from the job's own source URL, so it reads `null` once the save that made
+the download is gone. Not relayed in Safari: `plugin_host.js` has no native
+message for it.
 
 ### 5.1 `luna.fetch` — `PluginFetchService` (`LunaLibraries/Sources/LunaPluginKit/PluginFetchService.swift`)
 
@@ -858,9 +866,10 @@ composition root.
 
 `node tools/plugin-sim/run.mjs <plugin.js> <url> [--fixture dir] [--hook classify|ingest]`
 prints `classify` and `ingest` output against a Node reimplementation of the
-bridge (`undici` fetch, `linkedom` for `luna.html`, in-memory storage, no
+bridge (`undici` fetch, `linkedom` for `luna.html`, in-memory storage,
+`luna.downloads` fed from `config.downloads`, no
 `luna.browser`/`secrets`/`files`/`ui`/`mail`/`notifications`/`bluetooth`/
-`wifi`/`exports`/`downloads` — every app-only or WebKit-only capability is
+`wifi`/`exports` — every app-only or WebKit-only capability is
 simply absent, matching how an undeclared capability behaves everywhere
 else). It is a convenience tool, never a build gate — no timeout, no
 three-strikes disable, a hang just hangs. `node tools/plugin-sim/spec.mjs`
@@ -883,11 +892,6 @@ body; treat the pbxproj as authoritative). Stage ids: `plugins.settings.empty`,
 Collected from every implementation wave's landed notes, so nothing is lost
 between the plan document and this one:
 
-- **`luna.downloads` has no bridge.** The capability name exists
-  (`PluginCapabilityName.downloads`) and a plugin may declare it, but no
-  `PluginCapabilityInstalling` serves it anywhere — a plugin sees the
-  `unavailable-here` stand-in for every call. The read-only `DownloadJob`
-  status API in the plan (§6.9) is unimplemented.
 - **`luna.fetch`'s `multipart` body cannot carry a `FileHandle`.**
   `PluginFetchRequestDecoder.encodeMultipart` only reads a part's `text` or
   `base64`. A plugin uploading a downloaded/exported file over multipart must
@@ -969,8 +973,12 @@ explicitly.
    point.
 6. **`multipart` request bodies cannot carry a `FileHandle`** despite the
    plan's TypeScript showing `file?: FileHandle` on `MultipartPart` (§14).
-7. **`luna.downloads` has no server anywhere** despite being a plan
-   capability with a full TypeScript surface (§14).
+7. **`luna.downloads`'s `DownloadJob.phase` is the engine's own
+   `LiveMediaDownloadJob.Phase` raw values, not the plan's
+   `queued`/`deferredUntilWiFi` names** — the plan's phase set was never a
+   real state the download engine has; mapping onto engine phases the plugin
+   walk can actually observe is more honest than inventing a translation
+   table for states that don't exist.
 8. **`match.any` plugins run after every host-matched plugin's `ingest`, not
    merely after `classify`.** This matches the plan's intent (§3.2's ordering
    rule) but is worth stating precisely: the ANY-host plugin's own `classify`

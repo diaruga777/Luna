@@ -141,6 +141,23 @@ final class PluginBridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(json, "\"share\"")
     }
 
+    func testEnvLocaleIsTheFirstPreferredLanguage() async {
+        let json = await answer("""
+            return { value: luna.env.locale === luna.env.languages[0]
+                && Array.isArray(luna.env.languages) && luna.env.languages.length > 0 };
+        """)
+        XCTAssertEqual(json, "true")
+    }
+
+    func testLocalizeResolvesATableAndPassesThroughAString() async {
+        let json = await answer("""
+            const resolved = luna.localize({ en: "Hello" });
+            const passthrough = luna.localize("Hello");
+            return { value: [resolved, passthrough, resolved === passthrough] };
+        """)
+        XCTAssertEqual(json, "[\"Hello\",\"Hello\",true]")
+    }
+
     func testLunaErrorIsARealErrorWithACode() async {
         let json = await answer("""
             const error = new luna.LunaError("nope", "not today");

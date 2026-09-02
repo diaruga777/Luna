@@ -221,6 +221,27 @@ var LunaPluginHost = (function () {
         };
     }
 
+    // --------------------------------------------------------- localization
+
+    /// Resolves a `name`/`label`-shaped value the identical way the manifest
+    /// parser resolves a plugin's own copy tables (§2.2): a string passes
+    /// through; a table tries an exact language tag, then that tag's
+    /// language (`pt-BR` -> `pt`), then `en`. `PluginBootstrapScript.swift`
+    /// and `bridge.mjs` carry the same rule.
+    function resolveLocalized(table, languages) {
+        if (typeof table === "string") { return table; }
+        if (!table || typeof table !== "object") { return undefined; }
+        var langs = languages || [];
+        for (var i = 0; i < langs.length; i++) {
+            if (Object.prototype.hasOwnProperty.call(table, langs[i])) { return table[langs[i]]; }
+        }
+        for (var i = 0; i < langs.length; i++) {
+            var prefix = String(langs[i]).split("-")[0];
+            if (Object.prototype.hasOwnProperty.call(table, prefix)) { return table[prefix]; }
+        }
+        return table.en;
+    }
+
     // ------------------------------------------------------------- the bridge
 
     /// Builds one plugin's `luna` object. `config.capabilities` are the
@@ -265,10 +286,22 @@ var LunaPluginHost = (function () {
             utf8Encode: utf8Encode, utf8Decode: utf8Decode,
         };
 
+        // `navigator.languages` (the page's own preferred-language list) is
+        // reachable here because `plugin_host.js` and the plugin body run
+        // concatenated in ONE `new Function` body inside the content-script
+        // world, which shares the page's globals (§13.1).
+        var languages = (typeof navigator !== "undefined" && navigator.languages
+            && navigator.languages.length)
+            ? navigator.languages.slice()
+            : [config.locale || "en"];
+
         luna.env = {
             context: "safari", api: 1, pluginId: config.pluginId,
-            version: config.version || "0.0.0", locale: config.locale || "en",
+            version: config.version || "0.0.0",
+            locale: languages[0] || "en", languages: languages,
         };
+
+        luna.localize = function (table) { return resolveLocalized(table, luna.env.languages); };
 
         luna.LunaError = LunaError;
 
@@ -394,5 +427,6 @@ var LunaPluginHost = (function () {
         html: { parse: parseHTML, text: htmlText, jsonScripts: jsonScripts },
         LunaError: LunaError,
         createBridge: createBridge,
+        resolveLocalized: resolveLocalized,
     };
 })();

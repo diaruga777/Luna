@@ -34,7 +34,7 @@ final class PluginContext {
 
     /// Names always on `luna`, whatever a manifest asked for (§6.1).
     static let ungatedNames: Set<String> = [
-        "register", "parseURL", "log", "bytes", "env", "LunaError",
+        "register", "parseURL", "log", "bytes", "env", "LunaError", "localize",
     ]
 
     init(
@@ -58,13 +58,18 @@ final class PluginContext {
 
         Self.installParseURL(on: luna, in: context)
         Self.installLog(on: luna, log: log)
+        // BCP-47 tags, most-preferred first — the same shape `luna.localize`
+        // and the manifest parser resolve a copy table against, so `locale`
+        // and `languages[0]` always agree (§2.2, R4 "also noticed").
+        let languages = Locale.preferredLanguages
         luna.setObject(
             [
                 "context": processKind.rawValue,
                 "api": PluginAPIVersion.current,
                 "pluginId": manifest.id,
                 "version": manifest.version.description,
-                "locale": Locale.current.identifier,
+                "locale": languages.first ?? "en",
+                "languages": languages,
             ] as [String: Any],
             forKeyedSubscript: "env" as NSString)
 

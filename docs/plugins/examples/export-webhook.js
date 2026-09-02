@@ -17,7 +17,7 @@
     {
       "key": "webhookUrl",
       "type": "url",
-      "label": "Webhook URL",
+      "label": { "en": "Webhook URL", "es": "URL del webhook" },
       "placeholder": "https://example.com/hook",
       "help": "Luna POSTs the article's Markdown here as the request body.",
       "required": true

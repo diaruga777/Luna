@@ -52,19 +52,18 @@ public final class PluginBrowserViewController: UIViewController, DOMProbePoller
     private var didStop = false
 
     /// - Parameters:
-    ///   - page: the live page. The default builds a `WKWebView` for `request`.
+    ///   - page: the live page, from a `PluginBrowserPageMaking`.
     ///   - poller: the tick. A test drives `tickNow()` and never starts it.
     ///   - clock: reads the current time, for the timeout.
     public init(
         request: PluginBrowserRequest,
         title: String,
-        page: (any PluginBrowserPageDriving)? = nil,
+        page: any PluginBrowserPageDriving,
         poller: DOMProbePoller = DOMProbePoller(),
         clock: @escaping () -> Date = Date.init
     ) {
         self.request = request
-        self.page = page ?? WebKitPluginBrowserPage(
-            cookies: request.cookies, userAgent: request.userAgent)
+        self.page = page
         self.poller = poller
         self.clock = clock
         cover = ChallengeCoverView(

@@ -48,14 +48,17 @@ public final class PluginUnlockFlowRunner: NSObject, PluginBrowserViewController
 
     private let store: SavesStore
     private let requests: PluginBrowserRequestStore
+    private let pageMaker: any PluginBrowserPageMaking
     private weak var navigation: UINavigationController?
     private var presentedSaveID: UUID?
 
     public init(
-        store: SavesStore = .shared, requests: PluginBrowserRequestStore = .shared
+        store: SavesStore = .shared, requests: PluginBrowserRequestStore = .shared,
+        pageMaker: (any PluginBrowserPageMaking)? = nil
     ) {
         self.store = store
         self.requests = requests
+        self.pageMaker = pageMaker ?? WebKitPluginBrowserPageMaker()
     }
 
     public func present(for item: SavedItem, from presenter: UIViewController) {
@@ -64,7 +67,8 @@ public final class PluginUnlockFlowRunner: NSObject, PluginBrowserViewController
               let request = PluginBrowserRequest(json: record.requestJSON)
         else { return }
         let browser = PluginBrowserViewController(
-            request: request, title: L10n.string("PluginBrowser_defaultTitle"))
+            request: request, title: L10n.string("PluginBrowser_defaultTitle"),
+            page: pageMaker.makePage(for: request))
         browser.delegate = self
         let navigation = UINavigationController(rootViewController: browser)
         self.navigation = navigation

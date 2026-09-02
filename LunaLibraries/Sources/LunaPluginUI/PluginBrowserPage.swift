@@ -26,6 +26,26 @@ public protocol PluginBrowserPageDriving: AnyObject {
     func stopLoading()
 }
 
+/// Builds the live page one browser step drives.
+///
+/// The flow that presents a step does not build its own web view: the page is
+/// where the network is, and a test of the flow has no business starting a
+/// WebContent process.
+@MainActor
+public protocol PluginBrowserPageMaking: AnyObject {
+    func makePage(for request: PluginBrowserRequest) -> any PluginBrowserPageDriving
+}
+
+/// The shipped maker.
+@MainActor
+public final class WebKitPluginBrowserPageMaker: PluginBrowserPageMaking {
+    public init() {}
+
+    public func makePage(for request: PluginBrowserRequest) -> any PluginBrowserPageDriving {
+        WebKitPluginBrowserPage(cookies: request.cookies, userAgent: request.userAgent)
+    }
+}
+
 /// The WebKit answer: one always-live web view under the modal's cover.
 ///
 /// It presents the device-matched Safari User-Agent for the same reason the

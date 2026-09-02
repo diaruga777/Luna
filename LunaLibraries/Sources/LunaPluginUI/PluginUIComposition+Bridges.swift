@@ -21,8 +21,12 @@ public final class ModalPluginBrowserPresenter: NSObject, PluginBrowserPresentin
 {
     private var continuation: CheckedContinuation<PluginBrowserResult?, Never>?
     private weak var navigation: UINavigationController?
+    private let pageMaker: any PluginBrowserPageMaking
 
-    public override init() { super.init() }
+    public init(pageMaker: (any PluginBrowserPageMaking)? = nil) {
+        self.pageMaker = pageMaker ?? WebKitPluginBrowserPageMaker()
+        super.init()
+    }
 
     public func presentBrowserStep(
         _ request: PluginBrowserRequest, pluginID: String
@@ -32,7 +36,8 @@ public final class ModalPluginBrowserPresenter: NSObject, PluginBrowserPresentin
             (continuation: CheckedContinuation<PluginBrowserResult?, Never>) in
             self.continuation = continuation
             let browser = PluginBrowserViewController(
-                request: request, title: L10n.string("PluginBrowser_defaultTitle"))
+                request: request, title: L10n.string("PluginBrowser_defaultTitle"),
+                page: pageMaker.makePage(for: request))
             browser.delegate = self
             let navigation = UINavigationController(rootViewController: browser)
             self.navigation = navigation

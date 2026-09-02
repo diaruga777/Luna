@@ -17,13 +17,15 @@
 import LunaModels
 import LunaPluginKit
 import LunaPluginUI
+import LunaSavesUI
 import UIKit
+import WebKit
 
 enum PluginStageCatalog {
 
     @MainActor
     static func install() {
-        StageRegistry.register(settingsStages + flowStages)
+        StageRegistry.register(settingsStages + flowStages + lockStages)
     }
 
     // MARK: - Settings → Plugins
@@ -69,6 +71,40 @@ enum PluginStageCatalog {
                             catalog: StagePluginCatalog(listings: [listing]),
                             settingsStore: StagePluginSettingsStore(seeded: listing.summary.id),
                             invoker: nil))
+                }),
+        ]
+    }
+
+    // MARK: - The browser lock (§8)
+
+    @MainActor
+    private static var lockStages: [StageDescriptor] {
+        [
+            StageDescriptor(
+                id: "plugins.browser.lock", screen: "Plugin browser step",
+                variant: "frozen mid-challenge",
+                summary: "The browser step with its cover lifted: the page is asking the user "
+                    + "something, which is the one state a plugin's page is on screen.",
+                kind: .plugin,
+                make: {
+                    let request = PluginBrowserRequest(
+                        url: URL(string: "https://example.com/gate")!,
+                        detect: "'challenge'",
+                        title: "Example needs a moment")
+                    return UINavigationController(
+                        rootViewController: PluginBrowserViewController(
+                            request: request,
+                            title: "Finishing the Save",
+                            page: StagePluginBrowserPage(stage: "challenge")))
+                }),
+            StageDescriptor(
+                id: "plugins.locked.card", screen: "Locked card", variant: "plugin lock",
+                summary: "The card face of a save a plugin parked while it waits for a browser "
+                    + "step — the same lock every kind wears.",
+                kind: .plugin,
+                make: {
+                    PluginLockedCardContentViewController(
+                        caption: L10n.string("PluginLocked_cardCaption"))
                 }),
         ]
     }
@@ -256,3 +292,48 @@ private final class StagePluginImporter: PluginImporting {
 }
 
 #endif
+
+/// A page that never loads anything: the stage answers one fixed probe result
+/// and renders a local fixture, so the modal can be looked at without a network
+/// or a real challenge.
+@MainActor
+private final class StagePluginBrowserPage: PluginBrowserPageDriving {
+
+    private let stage: String
+    private let webView = WKWebView()
+
+    init(stage: String) { self.stage = stage }
+
+    var pageView: UIView { webView }
+
+    var currentURL: URL? { URL(string: "https://example.com/gate") }
+
+    func load(_ request: PluginBrowserRequest) {
+        webView.loadHTMLString(Self.fixtureHTML, baseURL: nil)
+    }
+
+    func probe(_ source: String, completion: @escaping (String?) -> Void) {
+        completion(stage)
+    }
+
+    func capture(completion: @escaping (PluginBrowserResult?) -> Void) {
+        completion(nil)
+    }
+
+    func stopLoading() {}
+
+    private static let fixtureHTML = """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width,     initial-scale=1"><style>
+    body { font: -apple-system-body; margin: 0; padding: 48px 24px;
+           background: #f4f4f5; color: #111; text-align: center; }
+    .box { max-width: 320px; margin: 0 auto; padding: 24px; border-radius: 12px;
+           background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+    .row { display: flex; align-items: center; gap: 12px; margin-top: 20px;
+           text-align: left; }
+    .check { width: 24px; height: 24px; border: 2px solid #888; border-radius: 4px; }
+    </style></head><body><div class="box">
+    <h2>Confirm you are human</h2>
+    <div class="row"><div class="check"></div><div>I am not a robot</div></div>
+    </div></body></html>
+    """
+}

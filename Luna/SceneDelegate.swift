@@ -138,6 +138,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             openMediaDeepLink(url)
             return
         }
+        if let saveURL = LunaDeepLink.saveURL(from: url) {
+            // Safari's "Finish in Luna". The save runs here, in the foreground,
+            // so a plugin that needs a browser step gets one straight away
+            // instead of parking a lock the user then has to tap.
+            openReader(articleURL: saveURL)
+            return
+        }
         if let articleURL = LunaDeepLink.articleURL(from: url) {
             // Only Downloader media pill taps carry `&ret=safari`: their Live
             // Activity continues to show the download after the app returns to

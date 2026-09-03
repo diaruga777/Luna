@@ -24,6 +24,10 @@ public struct HeadingEntry: Equatable, Sendable {
 /// Every stored range is relative to its own line start. A line therefore
 /// keeps its scan when text before it changes length, and an edit costs the
 /// lines it touches plus one offset shift.
+///
+/// Not thread-safe: reading a line can trigger `flushPending`, which mutates
+/// the model. Confine one instance to the thread (in practice the main
+/// thread) that reads and edits it.
 public final class MarkdownDocumentModel {
     private let backing: NSMutableString?
     private var sharedText: NSString
@@ -102,7 +106,26 @@ public final class MarkdownDocumentModel {
 
     /// Brings the line table back in step after the text changed. `edit` is
     /// the range that was replaced, in the text as it was before the change.
+    ///
+    /// The caller owns `sharedText` and may describe an edit that no longer
+    /// matches it (a coalesced or dropped notification). Applying such a
+    /// descriptor to `LineTable` can read past the text, so the predicted
+    /// length is checked first; a mismatch rebuilds the table from the real
+    /// text instead of trusting the stale delta.
     public func apply(edit: NSRange, replacementLength: Int) {
+        let predictedLength = table.length + (replacementLength - edit.length)
+        guard NSMaxRange(edit) <= table.length, predictedLength == sharedText.length else {
+            // Loud in a debug app; stands down under XCTest so a test can
+            // drive the recovery this guards without crashing the runner.
+            if !MarkdownDocumentModel.isRunningUnderXCTest {
+                assertionFailure("MarkdownDocumentModel.apply(edit:replacementLength:) does not match its text")
+            }
+            table = LineTable(text: sharedText)
+            lines = Array(repeating: nil, count: table.lineCount)
+            pendingLines = 0..<table.lineCount
+            pendingBoundaryState = .some(nil)
+            return
+        }
         let splice = table.apply(edit: edit, replacementLength: replacementLength, text: sharedText)
         let lastRemoved = splice.removed.upperBound - 1
         let boundary = lastRemoved < lines.count ? lines[lastRemoved] : nil
@@ -171,25 +194,38 @@ public final class MarkdownDocumentModel {
 
     public func lineIndex(at offset: Int) -> Int { table.lineIndex(at: offset) }
 
-    /// The whole line, its terminator included.
-    public func lineRange(at index: Int) -> NSRange { table.lineRange(at: index) }
+    /// The whole line, its terminator included. An out-of-range index clamps
+    /// to the nearest real line.
+    public func lineRange(at index: Int) -> NSRange { table.lineRange(at: clampedLine(index)) }
 
-    /// The scan of one line, with absolute ranges.
+    /// The scan of one line, with absolute ranges. An out-of-range index
+    /// clamps to the nearest real line.
     public func lineScan(at index: Int) -> LineScan {
         flushPending()
+        let index = clampedLine(index)
         let scan = lines[index] ?? MarkdownScanner.scanLineRelative(in: sharedText, lineRange: table.lineRange(at: index), state: .initial)
         return scan.offsetting(by: table.lineRange(at: index).location)
     }
+
+    /// The kind of the line at `index`, without the allocation a full
+    /// `lineScan` pays for shifting inline ranges. `BlockKind` carries no
+    /// ranges of its own, so it needs no offsetting.
+    public func blockKind(at index: Int) -> BlockKind {
+        flushPending()
+        let index = clampedLine(index)
+        return (lines[index] ?? MarkdownScanner.scanLineRelative(in: sharedText, lineRange: table.lineRange(at: index), state: .initial)).block.kind
+    }
+
+    /// The whole line at `index`, terminator included. Same as `lineRange(at:)`,
+    /// named to pair with `blockKind(at:)` at call sites that read both.
+    public func blockLineRange(at index: Int) -> NSRange { lineRange(at: index) }
 
     public func block(at offset: Int) -> BlockToken {
         lineScan(at: table.lineIndex(at: offset)).block
     }
 
     public func blocks(in range: NSRange) -> [BlockToken] {
-        flushPending()
-        let first = table.lineIndex(at: range.location)
-        let last = table.lineIndex(at: range.location + max(0, range.length - (range.length > 0 ? 1 : 0)))
-        return (first...max(first, last)).map { lineScan(at: $0).block }
+        blocksAndInlines(in: range).map { $0.block }
     }
 
     public func inlines(in range: NSRange) -> [InlineToken] {
@@ -198,10 +234,7 @@ public final class MarkdownDocumentModel {
 
     /// The scans of every line the range touches.
     public func blocksAndInlines(in range: NSRange) -> [LineScan] {
-        flushPending()
-        let first = table.lineIndex(at: range.location)
-        let last = table.lineIndex(at: range.location + max(0, range.length - (range.length > 0 ? 1 : 0)))
-        return (first...max(first, last)).map { lineScan(at: $0) }
+        lineIndices(touching: range).map { lineScan(at: $0) }
     }
 
     /// Every line, in order, with absolute ranges. Export walks this.
@@ -214,8 +247,8 @@ public final class MarkdownDocumentModel {
         flushPending()
         var out: [HeadingEntry] = []
         for index in 0..<table.lineCount {
+            guard case .heading(let level) = blockKind(at: index) else { continue }
             let scan = lineScan(at: index)
-            guard case .heading(let level) = scan.block.kind else { continue }
             out.append(HeadingEntry(
                 level: level,
                 text: InlineMarkup.plainText(of: scan.block.contentRange, in: sharedText, inlines: scan.inlines),
@@ -228,8 +261,8 @@ public final class MarkdownDocumentModel {
     public func firstHeadingText() -> String? {
         flushPending()
         for index in 0..<table.lineCount {
+            guard case .heading = blockKind(at: index) else { continue }
             let scan = lineScan(at: index)
-            guard case .heading = scan.block.kind else { continue }
             let text = InlineMarkup.plainText(of: scan.block.contentRange, in: sharedText, inlines: scan.inlines)
             if !text.isEmpty { return text }
         }
@@ -241,15 +274,36 @@ public final class MarkdownDocumentModel {
     public func paragraphRange(containing offset: Int) -> NSRange {
         flushPending()
         let index = table.lineIndex(at: offset)
-        guard case .paragraph = lineScan(at: index).block.kind else {
+        guard case .paragraph = blockKind(at: index) else {
             return table.lineRange(at: index)
         }
         var first = index
-        while first > 0, case .paragraph = lineScan(at: first - 1).block.kind { first -= 1 }
+        while first > 0, case .paragraph = blockKind(at: first - 1) { first -= 1 }
         var last = index
-        while last + 1 < table.lineCount, case .paragraph = lineScan(at: last + 1).block.kind { last += 1 }
+        while last + 1 < table.lineCount, case .paragraph = blockKind(at: last + 1) { last += 1 }
         let start = table.lineRange(at: first)
         let end = table.lineRange(at: last)
         return NSRange(location: start.location, length: end.location + end.length - start.location)
+    }
+
+    /// Clamps a line index into the valid range, so a stale or hand-computed
+    /// index never traps `LineTable`.
+    private func clampedLine(_ index: Int) -> Int {
+        min(max(0, index), max(0, table.lineCount - 1))
+    }
+
+    /// The line indices a range touches, at least one even for a zero-length
+    /// range: the line that holds it.
+    private func lineIndices(touching range: NSRange) -> ClosedRange<Int> {
+        flushPending()
+        let first = table.lineIndex(at: range.location)
+        let last = table.lineIndex(at: range.location + max(0, range.length - (range.length > 0 ? 1 : 0)))
+        return first...max(first, last)
+    }
+
+    private static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
     }
 }

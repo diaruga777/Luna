@@ -449,8 +449,13 @@ with 25 failures, none in a Writer suite — 13 `XteinkPluginTests`
 (`generationClosed`) introduced by another session's plugin commits merged
 to `main` during this work (`133387aef` and siblings), plus the five known
 pre-existing failures. After E2 the read-along, container, session,
-composer and paste suites ran 105/0. The final full-suite line is recorded
-below once it completes. The repo's default test derived data
+composer and paste suites ran 105/0. Final `scripts/run_tests.sh --fresh` on
+the finished tree (fresh derived data, nothing else building): 3403 tests,
+8 skipped, 7 failures, none in a Writer suite — the five known pre-existing
+failures (cover thumbnail, product pill, scroll immersion, util card, weekly
+save) plus `ShareSurfaceDriverTests`, the load-dependent one the plugin
+hardening notes already list. The Xteink failures seen after wave 1 did not
+recur. The repo's default test derived data
 (`.build-dd-tests`) was stale for this tree; pass `LUNA_TEST_DD` to a fresh
 path.
 

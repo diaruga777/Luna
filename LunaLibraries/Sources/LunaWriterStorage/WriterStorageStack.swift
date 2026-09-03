@@ -28,11 +28,19 @@ public final class WriterStorageStack {
     ) throws {
         self.libraryRoot = libraryRoot
         self.database = try WriterDatabase(fileURL: databaseURL)
-        self.library = try SQLiteWriterLibrary(database: database)
         self.documentIndex = SQLiteDocumentIndex(database: database, embedding: embedding)
         self.noteIndex = SQLiteNoteIndex(database: database, embedding: embedding)
+        // The library takes both indexes as collaborators, so its own writes
+        // (update, setKeywords, note insert/update) keep search current
+        // without every call site having to remember to re-index.
+        self.library = try SQLiteWriterLibrary(
+            database: database, documentIndex: documentIndex, noteIndex: noteIndex)
         self.textStore = FileDocumentTextStore(
             rootDirectory: libraryRoot, library: library, documentIndex: documentIndex)
+        // Weak back-reference: the library reads a body through the text
+        // store only when a metadata-only write needs to refresh the
+        // (contentless, so body-less) search index.
+        library.textStore = textStore
         self.watcher = LibraryFolderWatcher(rootDirectory: libraryRoot)
         self.reconciler = ExternalChangeReconciler(
             library: library, textStore: textStore, snapshots: library, marks: library,
@@ -40,8 +48,7 @@ public final class WriterStorageStack {
         self.router = NoteRouter(library: library, documentIndex: documentIndex)
         self.settings = WriterSettings(defaults: defaults)
         self.intents = WriterIntentServices(
-            library: library, notes: library, noteIndex: noteIndex,
-            textStore: textStore, router: router)
+            library: library, notes: library, textStore: textStore, router: router)
         watcher.handler = reconciler
     }
 

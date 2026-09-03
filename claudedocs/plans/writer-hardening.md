@@ -385,7 +385,21 @@ app, see `claudedocs/writer.md`).
 
 ## 7. Evidence
 
-Screenshots of the Writer on the iPad Pro 13" and iPad mini simulators, both
-orientations, before the changes, are recorded under
-`writer-hardening/screenshots-before/` once the simulator build completes
-(this section is appended by the lead).
+`writer-hardening/screenshots-before/` holds the Writer at commit `002d03f9a`
+on the iOS 26.2 simulators, portrait, fresh install:
+
+- `ipad13-portrait-library.png` (iPad Pro 13", 1032 pt): three columns.
+  Sidebar ≈ 280 pt, sheets ≈ 280 pt, editor column ≈ 470 pt — narrower than
+  an iPhone for the writing surface.
+- `ipadmini-portrait-library.png` (iPad mini, 744 pt): the forced
+  `.twoBesideSecondary` cannot fit, so UIKit overlays the sidebar ON TOP of
+  the sheets column. The accessibility tree shows the sheets list at
+  x 0–280 underneath the sidebar at x 10–290; the user sees no sheets until
+  they dismiss the sidebar. This is organiser #7.
+- Both shots show the sheet cell's relative date as "in 0s" for a just-saved
+  sheet (`RelativeDateTimeFormatter` abbreviated style); WP-B1 floors it.
+
+Landscape and the open-editor state were not captured: the simulators run
+headless and blitz taps do not register on a window-less simulator (see the
+`headless-sim-taps-and-foreign-installs` note). WP-B1 captures the after
+state on the same two devices.

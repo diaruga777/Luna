@@ -255,11 +255,16 @@ public final class EditorViewController: UIViewController {
     // MARK: - Navigation
 
     /// Selects the anchored text and brings it on screen.
+    ///
+    /// Setting `selectedRange` already drives `textViewDidChangeSelection`,
+    /// which itself asks Focus to scroll when typewriter mode is on — an
+    /// explicit `scrollRangeToVisible` on top of that would be a second,
+    /// competing scroll for the one navigation.
     public func focus(on anchor: TextAnchor) {
         guard let range = TextAnchorResolver.resolve(anchor, in: session.storage.nsText) else { return }
         textView.selectedRange = range
+        guard !focus.typewriterScrolling else { return }
         textView.scrollRangeToVisible(range)
-        focus.selectionChanged(to: range, in: session.storage.nsText)
     }
 
     // MARK: - Settings
@@ -273,6 +278,11 @@ public final class EditorViewController: UIViewController {
             metrics: metrics, font: ReaderFont(rawValue: settings.fontIdentifier ?? "") ?? .system)
         focus.mode = settings.focusMode
         focus.typewriterScrolling = settings.typewriterScrolling
+        if !settings.typewriterScrolling {
+            // The extra bottom room typewriter mode holds open so the last
+            // line can reach its position is never taken back on its own.
+            textView.contentInset.bottom = 0
+        }
         syntaxLayer.isEnabled = settings.syntaxColouring
         authorshipLayer.isEnabled = settings.showAuthorship
         accessoryBar.setFocusActive(focus.mode != .off)
@@ -298,15 +308,19 @@ public final class EditorViewController: UIViewController {
     // MARK: - Typewriter
 
     fileprivate func scrollCaretToTypewriterLine() {
+        // A programmatic scroll fighting the user's own finger reads as the
+        // page fighting back; wait for the gesture to settle.
+        guard !textView.isDragging, !textView.isDecelerating else { return }
         guard let selected = textView.selectedTextRange else { return }
         let caret = textView.caretRect(for: selected.end)
-        let visible = textView.bounds.height - textView.adjustedContentInset.top
-        let bottom = TypewriterScroller.bottomInset(visibleHeight: visible)
+        let overlap = keyboard.keyboardOverlap(in: textView)
+        let visibleHeight = textView.bounds.height - overlap
+        let bottom = TypewriterScroller.bottomInset(visibleHeight: visibleHeight - textView.adjustedContentInset.top)
         if abs(textView.contentInset.bottom - bottom) > 1 {
             textView.contentInset.bottom = bottom
         }
         let offset = TypewriterScroller.verticalOffset(
-            caret: caret, visibleHeight: textView.bounds.height,
+            caret: caret, visibleHeight: visibleHeight,
             topInset: textView.adjustedContentInset.top,
             contentHeight: textView.contentSize.height, bottomInset: bottom)
         guard abs(textView.contentOffset.y - offset) > 1 else { return }
@@ -329,9 +343,7 @@ public final class EditorViewController: UIViewController {
 
     private func placeOverlay() {
         let caret = view.convert(mention.markerRect(), from: textView)
-        let keyboardTop = keyboard.isVisible
-            ? view.convert(keyboard.frame, from: nil).minY
-            : 0
+        let keyboardTop = view.bounds.maxY - keyboard.keyboardOverlap(in: view)
         overlay.place(anchoredTo: caret, in: view, keyboardTop: keyboardTop)
     }
 
@@ -445,7 +457,7 @@ extension EditorViewController: UITextViewDelegate {
     }
 
     public func textViewDidBeginEditing(_ textView: UITextView) {
-        focus.isKeyboardVisible = true
+        focus.isComposing = true
     }
 
     public func textViewDidEndEditing(_ textView: UITextView) {
@@ -642,7 +654,8 @@ extension EditorViewController: RelatedNoteStripViewDelegate {
 extension EditorViewController: KeyboardFrameObserving {
 
     public func keyboardFrameDidChange(_ frame: CGRect) {
-        focus.isKeyboardVisible = keyboard.isVisible
+        // isComposing tracks first-responder state, not the keyboard: a
+        // hardware keyboard means this never fires with anything to say.
         guard !overlay.isHidden else { return }
         placeOverlay()
     }

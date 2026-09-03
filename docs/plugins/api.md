@@ -225,7 +225,8 @@ to special-case.
 luna.page.document(): HTMLDocument;   // the LIVE page, wrapped in the §html subset
 luna.page.url(): string;
 luna.page.title(): string;
-luna.page.html(): string;             // documentElement.outerHTML
+luna.page.html(): string;             // first 200,000 chars of documentElement.outerHTML
+luna.page.truncated(): boolean;       // true when html() omitted the document tail
 ```
 
 ## `luna.storage` (capability `storage`)

@@ -88,6 +88,8 @@ export interface PageSnapshot {
   html?: string;
   title?: string;
   source: "safari" | "fetch" | "browser";
+  /** True when Luna bounded the supplied HTML to 200,000 characters. */
+  truncated?: boolean;
 }
 
 export interface ClassifyInput {
@@ -485,7 +487,10 @@ export interface Page {
   document(): HTMLDocument;
   url(): string;
   title(): string;
+  /** At most 200,000 characters. */
   html(): string;
+  /** Whether html() omitted the tail of the live document. */
+  truncated(): boolean;
 }
 
 // ---- the frozen `luna` object every plugin body sees ----

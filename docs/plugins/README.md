@@ -316,9 +316,9 @@ Settings → Plugins → *your plugin*, one field per entry:
 
 Each entry is `{ key, type, label, help?, placeholder?, options?, default?,
 required?, secret? }`. `key` is ASCII letters, digits and `_` only, and may
-never start with `_` — that prefix is reserved for keys Luna itself writes
-(`_status`, the dot a destination plugin's own share row shows). `type` is
-one of:
+never start with `_` — that prefix is reserved for keys Luna itself writes.
+`_status` is the special key whose value drives the dot a destination plugin's
+own share row shows. `type` is one of:
 
 | `type` | What the detail screen renders |
 | --- | --- |
@@ -520,11 +520,12 @@ full host+path with `/`/`?`/`&`/`=` turned into `_`), then iterate offline.
 Drop `--fixture` to hit the real network instead. Add `--hook classify` or
 `--hook ingest` to run just one hook.
 
-`run.mjs` only exercises `classify` and `ingest` — it never calls `export`,
-`onBluetooth`, `onAction`, or `onSettingsChanged`. To check an export
-plugin's logic before importing it into Luna, write a short standalone
-script against `tools/plugin-sim/bridge.mjs`'s `createBridge`, the way
-`export-webhook.js` was verified for this guide:
+`run.mjs`'s normal convenience form exercises `classify` and `ingest`; the
+`test` form also accepts `--hook export` and returns a JSON pass/fail report.
+It does not call `onBluetooth`, `onAction`, or `onSettingsChanged`. To check
+an export plugin with custom input before importing it into Luna, write a short
+standalone script against `tools/plugin-sim/bridge.mjs`'s `createBridge`, the
+way `export-webhook.js` was verified for this guide:
 
 ```js
 import { createBridge } from "./tools/plugin-sim/bridge.mjs";

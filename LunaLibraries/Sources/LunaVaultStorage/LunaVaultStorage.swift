@@ -402,7 +402,7 @@ public final class VaultRepository: @unchecked Sendable {
         let capacity=Int64(values?.volumeAvailableCapacityForImportantUsage ?? 20_000_000_000)
         cacheQuotaBytes=configuration.cacheQuota(availableCapacity:capacity); stagingAllowanceBytes=min(max(cacheQuotaBytes/10,256_000_000),2_000_000_000)
         supportsCacheEviction = configuration.policy.location == .iCloud && !configuration.policy.keepLocalCopy
-        var opened:OpaquePointer?;let flags=SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX|0x0040_0000
+        var opened:OpaquePointer?;let flags=SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX|0x0030_0000
         guard sqlite3_open_v2(databaseURL.path,&opened,flags,nil)==SQLITE_OK,let opened else{throw VaultStorageError.sqlite("open")};db=opened
         do { try queue.sync { sqlite3_busy_timeout(opened,5000);try retryingBusy{try execute("PRAGMA journal_mode=WAL")};try execute("PRAGMA synchronous=FULL");try execute("PRAGMA foreign_keys=ON");try retryingBusy{try migrate()} } } catch { sqlite3_close_v2(opened);db=nil;throw error }
         try protect(testContainerURL);try protect(contentDirectory);try protectDatabaseFiles();try queue.sync{try repairFileLayout();try drainPendingCleanup();try run("DELETE FROM preview_leases WHERE expires_at<=?", [.double(Date().timeIntervalSinceReferenceDate)])}

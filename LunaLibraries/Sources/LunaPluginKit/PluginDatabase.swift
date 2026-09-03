@@ -93,7 +93,7 @@ final class PluginDatabase {
     /// `SQLITE_OPEN_FILEPROTECTION_COMPLETEUNTILFIRSTUSERAUTHENTICATION`, spelled
     /// out because the macro is not imported into Swift. It is what lets the
     /// extensions write while the device is locked.
-    private static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0040_0000
+    static let openFileProtectionCompleteUntilFirstUserAuthentication: Int32 = 0x0030_0000
 
     // MARK: - Running statements
 

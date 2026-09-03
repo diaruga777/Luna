@@ -51,7 +51,8 @@ public final class SnapshotsViewController: UITableViewController {
     @objc private func doneTapped() { dismiss(animated: true) }
 
     public func reload() {
-        snapshots = ((try? snapshotStore.snapshots(for: document.id)) ?? []).sorted { $0.createdAt > $1.createdAt }
+        // `snapshots(for:)` already queries newest first.
+        snapshots = (try? snapshotStore.snapshots(for: document.id)) ?? []
         tableView.reloadData()
     }
 

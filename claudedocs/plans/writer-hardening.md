@@ -410,43 +410,56 @@ state on the same two devices.
 
 ## 8. Status (2026-09-04)
 
-Landed on `main`, each as a merge of its work-package branch, in this order:
-WP-A1, WP-A2, WP-D, WP-B1, WP-E1, WP-B2, WP-C, WP-G part 1 (strings_sync now
-scans `LunaWriter/`, ternaries and intent summaries), WP-F part 1 (`LunaGaze`
-compiles without ARKit behind platform `#if canImport`, `SentenceLayout`/
-`WordLayout`/`AuthorshipSpanList` live in `LunaWriterModels`, the editor no
-longer imports `LunaGaze`, `AccessoryBarPolicy`/`KeyboardMetricsProviding`
-seams). Of the ten headline defects in §1, 1, 2, 6, 7, 8, 9 and 10 are fixed;
-3, 4 and 5 are WP-E2's and remain open.
+Everything in §4 has landed on `main`, each package as a merge of its branch:
+WP-A1, WP-A2, WP-D, WP-B1, WP-E1, WP-B2, WP-C, WP-G part 1, WP-F part 1
+(agents), then WP-E2 and WP-F part 2 (the lead, after the agents were cut
+off by the API spend limit). All ten headline defects in §1 are fixed.
 
-Verification: `scripts/run_tests.sh --fresh` after wave 1 ran 3376 tests with
-25 failures, none in a Writer suite. Thirteen are `XteinkPluginTests`
-(`generationClosed`), introduced by another session's plugin commits merged
-to `main` during this work (`133387aef` and siblings), and the rest are the
-five known pre-existing failures. After WP-F part 1 the suites it touches
-(gaze, RSVP eye tracking, editor geometry/focus/keyboard, read-along
-coordinator, document session) ran 180/0. The repo's default test derived
-data (`.build-dd-tests`) was stale for this tree; pass `LUNA_TEST_DD` to a
-fresh path.
+WP-E2 as landed: marks go through `ReadAlongTextHosting` into the open
+`DocumentSession` (the read-along `AnnotationLayer` is deleted; the editor's
+layer draws every mark); the coordinator holds its host weakly and the
+chrome tears a session down from `EditorContainerViewController` on close;
+the chrome adopts `EditorLayoutObserving` (relayout, text change, user
+scroll) and `EditorMenuAugmenting` (the "Annotate" submenu); a tap on a mark
+opens the popover, which stays a popover on compact; the HUD floats at the
+editor's top-trailing corner; ticks are gated on tracking; the band mirror
+follows every scroll; orientation and display size come from the window
+scene (calibration reloaded per orientation, gate sized to the oriented
+screen, viewport origin converted to the screen); a spoken onset expires
+after eight seconds; a refused permission alerts with Open Settings;
+calibration suspends every live session and resumes them, and a Settings
+calibration is applied to every open sheet; background/foreground suspend
+and resume; the calibration screen rejects off-screen frames, stops the
+camera on failure and locks its orientation; the display link uses a weak
+proxy; the trace records only while diagnostics are up.
 
-Still open, in priority order:
+WP-F part 2 as landed: `ReadAlongCoordinator` and
+`GazeCalibrationViewController` take an optional `GazeTracking` and the
+display geometry as parameters — no `ARFaceGazeTracker()`, `UIScreen.main`
+or `UIDevice.current` remains in `LunaWriterReadAlong`; `WriterWiring`
+installs `ARFaceGazeTrackerMaker` under `#if canImport(ARKit)` and the
+chrome reads the window scene. `xcodebuild build -scheme LunaWriter
+-destination 'platform=macOS,variant=Designed for iPad'` compiles the whole
+app (with `CODE_SIGNING_ALLOWED=NO`; with signing on, the only failure is
+that this Mac is not in the team's wildcard provisioning profile, an account
+step). A launch on the Mac was therefore not exercised.
 
-1. **WP-E2 — read-along integration** (the whole package; its agent was cut
-   off by the API spend limit before committing). Headline defects 3, 4 and 5
-   live here: marks through the session, the per-sheet session leak, and
-   geometry that never refreshes. Wave-1 seams it needs are all on `main`
-   (`EditorLayoutObserving`, `DocumentSession.add/removeAnnotation`,
-   `GazeFrame`, oriented gate size, `voiceIsUnasked`).
-2. **WP-F part 2** — replace the `ARFaceGazeTracker()` / `UIScreen.main` /
-   `UIDevice.current` defaults in `ReadAlongCoordinator` and
-   `GazeCalibrationViewController` with the `GazeTrackerMaking` witness and
-   scene-provided sizes; then the "Designed for iPad" Mac build check.
-3. **WP-G part 2** — bring `claudedocs/writer.md` fully up to date once E2
-   lands (the shape table and the read-along section are still accurate; the
-   "Where a sheet lives" section now has the `.Trash/` folder noted).
-4. Deferred by their packages: storage "one transaction per scan" and atomic
-   `reanchorMarks` (need a transaction primitive on the repository
-   protocols); `GazeAffineCalibration` reference rect (P3); a regression
-   test for the scene-background flush (the app target is not linkable from
-   `LunaTests`); the `OpenSessionRegistry` dirty-snapshot poll timer could be
-   replaced by a session dirty-state callback.
+Verification: after wave 1, `scripts/run_tests.sh --fresh` ran 3376 tests
+with 25 failures, none in a Writer suite — 13 `XteinkPluginTests`
+(`generationClosed`) introduced by another session's plugin commits merged
+to `main` during this work (`133387aef` and siblings), plus the five known
+pre-existing failures. After E2 the read-along, container, session,
+composer and paste suites ran 105/0. The final full-suite line is recorded
+below once it completes. The repo's default test derived data
+(`.build-dd-tests`) was stale for this tree; pass `LUNA_TEST_DD` to a fresh
+path.
+
+Deferred by their packages, still open: storage "one transaction per scan"
+and atomic `reanchorMarks` (need a transaction primitive on the repository
+protocols); `GazeAffineCalibration` reference rect (P3); a regression test
+for the scene-background flush (the app target is not linkable from
+`LunaTests`); the `OpenSessionRegistry` dirty-snapshot poll timer could be
+replaced by a session dirty-state callback; read-along theme unification
+with `EditorTheme` (#28) and the diagnostics redraw throttle (#30); a
+`WriterReadAlongChrome` test (the chrome lives in the app target — move its
+session bookkeeping into `LunaWriterReadAlong` to test it).

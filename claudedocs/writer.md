@@ -99,8 +99,13 @@ action sheet became a `UIMenu` so iPad never presents an unanchored popover;
 `saveNow()` for flushes; `SentenceLayout`/`WordLayout` and
 `AuthorshipSpanList` live in `LunaWriterModels`, and `LunaGaze`'s ARKit half
 is behind `#if canImport(ARKit)` so the editor tier no longer depends on
-ARKit. The read-along integration fixes (WP-E2) are still open — see the
-plan's §8.
+ARKit. Read-along marks go through `ReadAlongTextHosting` into the open
+`DocumentSession` (never into the marks row directly), every session is torn
+down when its sheet closes, and the coordinator is told about relayout,
+text changes and user scrolls through the editor's `EditorLayoutObserving`.
+The tracker and display geometry are handed in by `WriterWiring`, so the
+read-along module names neither ARKit nor `UIScreen.main`, and the app
+compiles for the Mac's "Designed for iPad" variant.
 
 ## Testing
 

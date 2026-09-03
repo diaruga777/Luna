@@ -5,7 +5,8 @@ extension SQLiteWriterLibrary {
 
     static let documentColumns =
         "id, group_id, title, snippet, sort_index, favorite, goal_unit, goal_target, goal_mode,"
-        + " file_path, word_count, char_count, revision, created_at, updated_at, trashed_at"
+        + " file_path, word_count, char_count, sentence_count, revision, created_at, updated_at,"
+        + " trashed_at"
 
     // MARK: - Reading
 
@@ -25,6 +26,38 @@ extension SQLiteWriterLibrary {
         }.first
     }
 
+    /// Looked up by the reconciler: a file that disappeared and came back
+    /// restores its row instead of minting a new one.
+    public func document(atPath path: String) throws -> WriterDocument? {
+        try loadDocuments(
+            "SELECT \(Self.documentColumns) FROM documents WHERE file_path = ?"
+        ) { statement in
+            try statement.bind(1, path)
+        }.first
+    }
+
+    /// Title search for the App Intents entity query, pushed to SQL so a
+    /// keystroke in the shortcut UI does not scan the whole library.
+    public func documents(matchingTitle title: String, limit: Int) throws -> [WriterDocument] {
+        let pattern = "%" + Self.escapedForLike(title) + "%"
+        return try loadDocuments(
+            "SELECT \(Self.documentColumns) FROM documents"
+            + " WHERE trashed_at IS NULL AND title LIKE ? ESCAPE '\\' COLLATE NOCASE"
+            + " ORDER BY title COLLATE NOCASE ASC LIMIT ?"
+        ) { statement in
+            try statement.bind(1, pattern)
+            try statement.bind(2, max(0, limit))
+        }
+    }
+
+    /// Escapes `%`, `_` and the escape character itself, so a title
+    /// containing them is matched literally rather than as a LIKE wildcard.
+    private static func escapedForLike(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+    }
+
     public func favorites() throws -> [WriterDocument] {
         try loadDocuments(
             "SELECT \(Self.documentColumns) FROM documents"
@@ -42,17 +75,18 @@ extension SQLiteWriterLibrary {
     }
 
     public func documents(matching predicate: FilterPredicate, scope: GroupID?) throws -> [WriterDocument] {
-        var sql = "SELECT \(Self.documentColumns) FROM documents d WHERE trashed_at IS NULL"
+        var sql = "SELECT \(Self.documentColumns) FROM documents d WHERE d.trashed_at IS NULL"
         var binds: [(WriterStatement, Int32) throws -> Void] = []
 
         if let scope {
-            let subtree = try groupSubtree(of: scope).map { "'\($0.rawValue.uuidString)'" }
-            sql += " AND group_id IN (\(subtree.joined(separator: ",")))"
+            sql += " AND d.group_id IN (SELECT value FROM json_each(?))"
+            let subtree = try groupSubtree(of: scope).map(\.rawValue.uuidString)
+            binds.append { statement, index in try statement.bind(index, jsonArray: subtree) }
         }
-        if predicate.favoritesOnly { sql += " AND favorite = 1" }
+        if predicate.favoritesOnly { sql += " AND d.favorite = 1" }
         if let within = predicate.modifiedWithin {
             let cutoff = Date().addingTimeInterval(-within)
-            sql += " AND updated_at >= ?"
+            sql += " AND d.updated_at >= ?"
             binds.append { statement, index in try statement.bind(index, date: cutoff) }
         }
         let keywords = Self.normalizedKeywords(predicate.keywordsAll)
@@ -61,17 +95,22 @@ extension SQLiteWriterLibrary {
                 + " WHERE k.document_id = d.id AND k.keyword = ?)"
             binds.append { statement, index in try statement.bind(index, keyword) }
         }
-        sql += " ORDER BY updated_at DESC"
+        // Folded into the same query rather than a separate `searchDocuments`
+        // call intersected in Swift: that path fetched a hard-capped 500 FTS
+        // hits and could silently drop a match past the cap.
+        if let text = predicate.searchText, !text.trimmingCharacters(in: .whitespaces).isEmpty {
+            if let match = FTSQuery.make(text, prefixMatchesLastToken: true) {
+                sql += " AND d.rowid IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)"
+                binds.append { statement, index in try statement.bind(index, match) }
+            } else {
+                sql += " AND 0"
+            }
+        }
+        sql += " ORDER BY d.updated_at DESC"
 
-        var matches = try loadDocuments(sql) { statement in
+        return try loadDocuments(sql) { statement in
             for (offset, bind) in binds.enumerated() { try bind(statement, Int32(offset + 1)) }
         }
-        if let text = predicate.searchText, !text.trimmingCharacters(in: .whitespaces).isEmpty {
-            let hits = try searchDocuments(text, limit: 500)
-            let allowed = Set(hits.map(\.documentID))
-            matches = matches.filter { allowed.contains($0.id) }
-        }
-        return matches
     }
 
     private static func orderClause(_ sort: DocumentSort) -> String {
@@ -92,14 +131,13 @@ extension SQLiteWriterLibrary {
                 if let document = Self.document(from: row) { documents.append(document) }
             }
             guard !documents.isEmpty else { return [] }
-            var keywords: [DocumentID: [String]] = [:]
-            let ids = documents.map { "'\($0.id.rawValue.uuidString)'" }.joined(separator: ",")
-            try db.query(
-                "SELECT document_id, keyword FROM document_keywords WHERE document_id IN (\(ids))"
-                + " ORDER BY keyword ASC"
-            ) { row in
-                guard let uuid = row.uuid(0), let keyword = row.string(1) else { return }
-                keywords[DocumentID(uuid), default: []].append(keyword)
+            let keywords: [DocumentID: [String]] = try Self.fanIn(
+                "SELECT document_id, keyword FROM document_keywords"
+                + " WHERE document_id IN (SELECT value FROM json_each(?)) ORDER BY keyword ASC",
+                ids: documents.map { $0.id.rawValue.uuidString }, in: db
+            ) { row -> (DocumentID, String)? in
+                guard let uuid = row.uuid(0), let keyword = row.string(1) else { return nil }
+                return (DocumentID(uuid), keyword)
             }
             return documents.map { document in
                 var copy = document
@@ -130,8 +168,8 @@ extension SQLiteWriterLibrary {
                 """
                 INSERT INTO documents (id, group_id, title, snippet, sort_index, favorite,
                     goal_unit, goal_target, goal_mode, file_path, word_count, char_count,
-                    revision, created_at, updated_at, trashed_at)
-                VALUES (?, ?, ?, '', ?, 0, NULL, NULL, NULL, '', 0, 0, 0, ?, ?, NULL)
+                    sentence_count, revision, created_at, updated_at, trashed_at)
+                VALUES (?, ?, ?, '', ?, 0, NULL, NULL, NULL, '', 0, 0, 0, 0, ?, ?, NULL)
                 """
             ) { statement in
                 try statement.bind(1, document.id.rawValue.uuidString)
@@ -149,14 +187,23 @@ extension SQLiteWriterLibrary {
     /// Writes every metadata column from `document` and stamps `updated_at`
     /// with now, so a later folder scan reads the row as newer than the file
     /// this save produced.
+    ///
+    /// Guarded by `revision`: the write is refused with
+    /// `WriterLibraryConflictError` when the stored row has moved past what
+    /// `document.revision` says the caller last read, so a stale copy (a
+    /// sheets-list row that missed a save the editor made) cannot clobber
+    /// `file_path` or the counts with older values. A caller that only means
+    /// to flip one field should use `setFavorite`/`setGoal`/`setKeywords`
+    /// instead, which touch nothing else and so never conflict with a save.
     public func update(_ document: WriterDocument) throws {
         try database.transaction { db in
             try db.run(
                 """
                 UPDATE documents SET group_id = ?, title = ?, snippet = ?, sort_index = ?,
                     favorite = ?, goal_unit = ?, goal_target = ?, goal_mode = ?, file_path = ?,
-                    word_count = ?, char_count = ?, revision = ?, updated_at = ?, trashed_at = ?
-                WHERE id = ?
+                    word_count = ?, char_count = ?, sentence_count = ?, revision = ?,
+                    updated_at = ?, trashed_at = ?
+                WHERE id = ? AND revision <= ?
                 """
             ) { statement in
                 try statement.bind(1, document.groupID.rawValue.uuidString)
@@ -170,11 +217,14 @@ extension SQLiteWriterLibrary {
                 try statement.bind(9, document.fileRelativePath)
                 try statement.bind(10, document.wordCount)
                 try statement.bind(11, document.characterCount)
-                try statement.bind(12, document.revision)
-                try statement.bind(13, date: Date())
-                try statement.bind(14, date: document.trashedAt)
-                try statement.bind(15, document.id.rawValue.uuidString)
+                try statement.bind(12, document.sentenceCount)
+                try statement.bind(13, document.revision)
+                try statement.bind(14, date: Date())
+                try statement.bind(15, date: document.trashedAt)
+                try statement.bind(16, document.id.rawValue.uuidString)
+                try statement.bind(17, document.revision)
             }
+            guard db.changesCount > 0 else { throw WriterLibraryConflictError(id: document.id) }
             try db.run("DELETE FROM document_keywords WHERE document_id = ?") { statement in
                 try statement.bind(1, document.id.rawValue.uuidString)
             }
@@ -187,7 +237,76 @@ extension SQLiteWriterLibrary {
                 }
             }
         }
+        try reindexAfterMetadataChange(document)
         changes.post(.document(document.id))
+    }
+
+    /// Re-derives the document index's row for `document` after a
+    /// metadata-only write. `documents_fts` is contentless, so its row can
+    /// only be rewritten whole — the body is read back through `textStore`,
+    /// which the store wires in once both it and this library exist.
+    private func reindexAfterMetadataChange(_ document: WriterDocument) throws {
+        guard let documentIndex else { return }
+        let body = (try? textStore?.loadText(document)) ?? nil ?? ""
+        try documentIndex.index(document, body: body)
+    }
+
+    /// Toggles favourite without touching any other column, so it cannot
+    /// race a concurrent save the way a full `update(_:)` can.
+    public func setFavorite(_ isFavorite: Bool, for id: DocumentID) throws {
+        try database.transaction { db in
+            try db.run("UPDATE documents SET favorite = ?, updated_at = ? WHERE id = ?") { statement in
+                try statement.bind(1, isFavorite)
+                try statement.bind(2, date: Date())
+                try statement.bind(3, id.rawValue.uuidString)
+            }
+        }
+        changes.post(.document(id))
+    }
+
+    /// Sets or clears the writing goal without touching any other column.
+    public func setGoal(_ goal: WritingGoal?, for id: DocumentID) throws {
+        try database.transaction { db in
+            try db.run(
+                "UPDATE documents SET goal_unit = ?, goal_target = ?, goal_mode = ?, updated_at = ?"
+                + " WHERE id = ?"
+            ) { statement in
+                try statement.bind(1, goal?.unit.rawValue)
+                try statement.bind(2, int: goal?.target)
+                try statement.bind(3, goal?.mode.rawValue)
+                try statement.bind(4, date: Date())
+                try statement.bind(5, id.rawValue.uuidString)
+            }
+        }
+        changes.post(.document(id))
+    }
+
+    /// Replaces the keyword set without touching any other column, and
+    /// re-indexes for search, since both the embedding and the FTS title
+    /// column weigh keywords.
+    public func setKeywords(_ keywords: [String], for id: DocumentID) throws {
+        let normalized = Self.normalizedKeywords(keywords)
+        try database.transaction { db in
+            try db.run("DELETE FROM document_keywords WHERE document_id = ?") { statement in
+                try statement.bind(1, id.rawValue.uuidString)
+            }
+            for keyword in normalized {
+                try db.run(
+                    "INSERT OR IGNORE INTO document_keywords (document_id, keyword) VALUES (?, ?)"
+                ) { statement in
+                    try statement.bind(1, id.rawValue.uuidString)
+                    try statement.bind(2, keyword)
+                }
+            }
+            try db.run("UPDATE documents SET updated_at = ? WHERE id = ?") { statement in
+                try statement.bind(1, date: Date())
+                try statement.bind(2, id.rawValue.uuidString)
+            }
+        }
+        if let document = try document(id) {
+            try reindexAfterMetadataChange(document)
+        }
+        changes.post(.document(id))
     }
 
     public func moveDocument(_ id: DocumentID, to group: GroupID, at index: Int) throws {
@@ -366,8 +485,8 @@ extension SQLiteWriterLibrary {
             title: row.string(2) ?? "", snippet: row.string(3) ?? "",
             sortIndex: row.int(4), isFavorite: row.bool(5), keywords: [], goal: goal,
             fileRelativePath: row.string(9) ?? "", wordCount: row.int(10),
-            characterCount: row.int(11), revision: row.int64(12),
-            createdAt: row.date(13) ?? Date(), updatedAt: row.date(14) ?? Date(),
-            trashedAt: row.date(15))
+            characterCount: row.int(11), sentenceCount: row.int(12), revision: row.int64(13),
+            createdAt: row.date(14) ?? Date(), updatedAt: row.date(15) ?? Date(),
+            trashedAt: row.date(16))
     }
 }

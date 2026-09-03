@@ -14,7 +14,7 @@ final class FocusModeControllerTests: XCTestCase {
 
     private func makeController(_ mode: FocusMode, idleTimeout: TimeInterval = 60) -> FocusModeController {
         let controller = FocusModeController(mode: mode, idleTimeout: idleTimeout)
-        controller.isKeyboardVisible = true
+        controller.isComposing = true
         return controller
     }
 
@@ -60,7 +60,7 @@ final class FocusModeControllerTests: XCTestCase {
 
     func testTheIdleTimeoutClearsTheDimWhenTheKeyboardIsDown() throws {
         let controller = FocusModeController(mode: .sentence, idleTimeout: 0.05)
-        controller.isKeyboardVisible = false
+        controller.isComposing = false
         controller.selectionChanged(to: NSRange(location: 25, length: 0), in: text)
         XCTAssertNotNil(controller.focusRange)
 
@@ -73,7 +73,7 @@ final class FocusModeControllerTests: XCTestCase {
 
     func testTheDimStandsWhileTheKeyboardIsUp() throws {
         let controller = FocusModeController(mode: .sentence, idleTimeout: 0.05)
-        controller.isKeyboardVisible = true
+        controller.isComposing = true
         controller.selectionChanged(to: NSRange(location: 25, length: 0), in: text)
         let deadline = Date().addingTimeInterval(0.3)
         while Date() < deadline {
@@ -116,5 +116,16 @@ final class FocusModeControllerTests: XCTestCase {
             caret: CGRect(x: 0, y: 10, width: 2, height: 20),
             visibleHeight: 800, topInset: 0, contentHeight: 4000, bottomInset: 400)
         XCTAssertEqual(offset, 0, accuracy: 0.001)
+    }
+
+    /// A caret at the very end of the document, right after a Return, sits
+    /// in a new, empty final paragraph — not the last character of the one
+    /// before it.
+    func testFocusAtTheEndOfTheDocumentLightsTheNewEmptyParagraph() throws {
+        let body = "First paragraph.\n" as NSString
+        let controller = makeController(.paragraph)
+        controller.selectionChanged(to: NSRange(location: body.length, length: 0), in: body)
+        let range = try XCTUnwrap(controller.focusRange)
+        XCTAssertEqual(range.location, body.length, "the caret is in a new empty paragraph, not the previous one")
     }
 }

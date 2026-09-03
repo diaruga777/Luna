@@ -51,6 +51,10 @@ public protocol LayerInvalidating: AnyObject {
 
 /// Where the composer asks which characters are on screen.
 public protocol RenderingViewportProviding: AnyObject {
+    /// True once the layout manager can answer a real viewport. Before the
+    /// first layout pass this is false and `renderingViewportRange` must not
+    /// be trusted as a paintable range.
+    var hasViewport: Bool { get }
     /// The characters on screen plus the slack the composer should also paint.
     var renderingViewportRange: NSRange { get }
 }

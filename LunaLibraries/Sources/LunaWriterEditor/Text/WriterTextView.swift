@@ -12,11 +12,17 @@ import LunaWriterModels
 /// production witness; a test hands over a string of its own.
 public protocol PasteboardReading: AnyObject {
     var pastedString: String? { get }
+    /// Whether the pasteboard holds anything text-shaped, checked without
+    /// reading its content: a `.string` read outside an actual paste raises
+    /// the system's "would like to paste from" prompt.
+    var hasStrings: Bool { get }
 }
 
 /// The system pasteboard, plain text first and an attributed copy flattened.
 public final class SystemPasteboard: PasteboardReading {
     public init() {}
+
+    public var hasStrings: Bool { UIPasteboard.general.hasStrings }
 
     public var pastedString: String? {
         let pasteboard = UIPasteboard.general
@@ -31,6 +37,9 @@ public final class SystemPasteboard: PasteboardReading {
 
 /// What the text view asks about the text under the selection.
 public protocol WriterTextViewDataSource: AnyObject {
+    /// The document's current length, so the text view never has to read
+    /// `textStorage` (which silently drops a TextKit-2 view back to TextKit 1).
+    var documentLength: Int { get }
     /// True when any part of `range` was written by somebody other than the
     /// writer, which is what puts "Mark as mine" in the menu.
     func writerTextView(_ textView: WriterTextView, selectionTouchesForeignAuthorship range: NSRange) -> Bool
@@ -41,6 +50,11 @@ public protocol WriterTextViewActionDelegate: AnyObject {
     func writerTextView(_ textView: WriterTextView, didInsert text: String, as source: AuthorshipSpan.Source, in range: NSRange)
     func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange)
     func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange)
+    /// Whether the on-device assistant is here at all, which is what gates
+    /// "Continue writing" and "Rewrite selection" in the edit menu.
+    var writerTextViewAIAssistantIsAvailable: Bool { get }
+    func writerTextViewContinueWriting(_ textView: WriterTextView)
+    func writerTextViewRewriteSelection(_ textView: WriterTextView)
 }
 
 /// The one text view Luna Writer edits in.
@@ -106,9 +120,11 @@ public final class WriterTextView: UITextView {
         isSelectable = true
         alwaysBounceVertical = true
         keyboardDismissMode = .interactive
-        textDragInteraction?.isEnabled = true
         tintColor = EditorTheme.caret
-        textColor = EditorTheme.ink
+        // `textColor` recolours every character already in the storage; the
+        // document loads with its own per-character colours from the styler,
+        // so newly typed text gets its default through `typingAttributes`.
+        typingAttributes[.foregroundColor] = EditorTheme.ink
         contentInsetAdjustmentBehavior = .always
         applyMetrics()
     }
@@ -138,9 +154,12 @@ public final class WriterTextView: UITextView {
     }
 
     /// Inserts text at the selection and reports it with an authorship source.
+    ///
+    /// `replaceText(in:with:)` already routes through `replace(_:withText:)`,
+    /// which asks the delegate's `shouldChangeTextIn` itself; a second ask
+    /// here would only repeat that answer.
     public func insert(_ string: String, as source: AuthorshipSpan.Source) {
         let target = selectedRange
-        guard delegate?.textView?(self, shouldChangeTextIn: target, replacementText: string) ?? true else { return }
         replaceText(in: target, with: string)
         let inserted = NSRange(location: target.location, length: (string as NSString).length)
         actionDelegate?.writerTextView(self, didInsert: string, as: source, in: inserted)
@@ -149,10 +168,10 @@ public final class WriterTextView: UITextView {
     // MARK: - Paste
 
     public override func paste(_ sender: Any?) {
-        guard let pasted = pasteInterceptor.pasted() else {
-            super.paste(sender)
-            return
-        }
+        // No text on the pasteboard the interceptor understands: nothing to
+        // insert. `super.paste` would otherwise drop an attachment character
+        // (an image, a file) into the `.md` file for a glyph that never draws.
+        guard let pasted = pasteInterceptor.pasted() else { return }
         insert(pasted.text, as: pasted.source)
     }
 
@@ -169,10 +188,19 @@ public final class WriterTextView: UITextView {
         actionDelegate?.writerTextView(self, addNoteAt: selectedRange)
     }
 
+    @objc public func continueWritingWithAI(_ sender: Any?) {
+        actionDelegate?.writerTextViewContinueWriting(self)
+    }
+
+    @objc public func rewriteSelectionWithAI(_ sender: Any?) {
+        actionDelegate?.writerTextViewRewriteSelection(self)
+    }
+
     // MARK: - Menu
 
     /// The editor's own edit-menu items for a selection. "Mark as mine" is
-    /// offered only where the selection touches somebody else's words.
+    /// offered only where the selection touches somebody else's words;
+    /// "Rewrite selection" only where there is one.
     public func writerMenuElements(for range: NSRange) -> [UIMenuElement] {
         var elements: [UIMenuElement] = []
         if pasteInterceptor.hasText {
@@ -184,6 +212,16 @@ public final class WriterTextView: UITextView {
             elements.append(UICommand(
                 title: L10n.string("WriterEditor_menuMarkAsMine"),
                 action: #selector(markSelectionAsOwn(_:))))
+        }
+        if actionDelegate?.writerTextViewAIAssistantIsAvailable == true {
+            elements.append(UICommand(
+                title: L10n.string("WriterEditor_menuContinueWriting"),
+                action: #selector(continueWritingWithAI(_:))))
+            if range.length > 0 {
+                elements.append(UICommand(
+                    title: L10n.string("WriterEditor_menuRewriteSelection"),
+                    action: #selector(rewriteSelectionWithAI(_:))))
+            }
         }
         elements.append(UICommand(
             title: L10n.string("WriterEditor_menuAddNote"),
@@ -208,6 +246,11 @@ public final class WriterTextView: UITextView {
             return authorshipDataSource?.writerTextView(self, selectionTouchesForeignAuthorship: selectedRange) == true
         case #selector(addNoteHere(_:)):
             return isEditable
+        case #selector(continueWritingWithAI(_:)):
+            return isEditable && actionDelegate?.writerTextViewAIAssistantIsAvailable == true
+        case #selector(rewriteSelectionWithAI(_:)):
+            return isEditable && selectedRange.length > 0
+                && actionDelegate?.writerTextViewAIAssistantIsAvailable == true
         default:
             return super.canPerformAction(action, withSender: sender)
         }

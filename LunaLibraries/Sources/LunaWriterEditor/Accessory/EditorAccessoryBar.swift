@@ -49,6 +49,9 @@ public enum EditorAccessoryAction: String, CaseIterable {
 
 public protocol EditorAccessoryBarDelegate: AnyObject {
     func editorAccessoryBar(_ bar: EditorAccessoryBar, didSelect action: EditorAccessoryAction)
+    /// The bar hid or reappeared on its own — a hardware keyboard connected
+    /// or disconnected — so whatever holds it may need to resize.
+    func editorAccessoryBarVisibilityDidChange(_ bar: EditorAccessoryBar)
 }
 
 /// The row of Markdown commands above the keyboard.
@@ -74,6 +77,17 @@ public final class EditorAccessoryBar: UIView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(keyboardChanged),
             name: NSNotification.Name.GCKeyboardDidDisconnect, object: nil)
+        // At init time this view has no window yet, so traitCollection does
+        // not answer for the real idiom — a Magic Keyboard already attached
+        // at launch would never hide the bar. didMoveToWindow below is
+        // where the trait collection first means anything.
+        registerForTraitChanges([UITraitUserInterfaceIdiom.self]) { (bar: EditorAccessoryBar, _) in
+            bar.updateHardwareKeyboardVisibility()
+        }
+    }
+
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
         updateHardwareKeyboardVisibility()
     }
 
@@ -104,7 +118,6 @@ public final class EditorAccessoryBar: UIView {
             button.tintColor = LunaColors.primaryText
             button.accessibilityLabel = action.accessibilityName
             button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
-            button.tag = actions.firstIndex(of: action) ?? 0
             buttons[action] = button
             stack.addArrangedSubview(button)
         }
@@ -143,6 +156,8 @@ public final class EditorAccessoryBar: UIView {
 
     public func updateHardwareKeyboardVisibility() {
         let hide = Self.hasHardwareKeyboard && traitCollection.userInterfaceIdiom == .pad
+        guard hide != isHidden else { return }
         isHidden = hide
+        delegate?.editorAccessoryBarVisibilityDidChange(self)
     }
 }

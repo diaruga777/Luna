@@ -117,4 +117,31 @@ final class SentenceGeometryProviderTests: XCTestCase {
         let after = try XCTUnwrap(provider.layout(for: whole()).dropFirst().first)
         XCTAssertNotEqual(after.textRange, before.textRange)
     }
+
+    /// An edit entirely inside the third paragraph must not disturb the
+    /// first two sentences' ranges: the splice only replaces the touched
+    /// paragraph and shifts what comes after it.
+    func testAnEditFarBelowLeavesTheEarlierSentencesRangesAlone() throws {
+        let before = try XCTUnwrap(provider.layout(for: whole()).first)
+        let thirdParagraph = try XCTUnwrap(provider.layout(for: whole()).last)
+        storage.replaceCharacters(in: NSRange(location: thirdParagraph.textRange.location, length: 0), with: "X")
+        textView.layoutIfNeeded()
+        let after = try XCTUnwrap(provider.layout(for: whole()).first)
+        XCTAssertEqual(after.textRange, before.textRange)
+    }
+
+    /// A width change between two `layout(for:)` calls — what
+    /// `EditorViewController.relayoutIfNeeded()` triggers on rotation or a
+    /// Split View resize — must move the sentence's line rectangles.
+    func testAWidthChangeBetweenTwoLayoutCallsMovesTheRects() throws {
+        let before = try XCTUnwrap(provider.layout(for: whole()).last?.lineRects)
+        XCTAssertGreaterThan(before.count, 1, "the long sentence must already wrap at the original width")
+
+        textView.frame = CGRect(x: 0, y: 0, width: 900, height: 800)
+        textView.layoutIfNeeded()
+        provider.invalidate(nil)
+
+        let after = try XCTUnwrap(provider.layout(for: whole()).last?.lineRects)
+        XCTAssertNotEqual(after, before)
+    }
 }

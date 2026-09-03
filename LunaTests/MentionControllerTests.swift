@@ -266,12 +266,35 @@ final class MentionControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .idle)
     }
 
+    /// `refresh(_:)` ignores every edit while a peek is up, on purpose — the
+    /// query stays put so the peeked note doesn't flicker. If an edit
+    /// elsewhere in the document shifted the "@" in the meantime, closing
+    /// the peek must notice and leave the text alone rather than remove
+    /// characters at the stale, no-longer-correct offset.
+    func testClosingAPeekAfterAnEarlierEditShiftedTheMarkerLeavesTheTextAlone() throws {
+        let (_, hit) = makeHit("octopus tank")
+        index.answers = [hit]
+        type("draft @octo")
+        waitUntil { !self.controller.results.isEmpty }
+        controller.commitHighlighted()
+
+        textView.textStorage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "PREFIX ")
+        textView.selectedRange = NSRange(location: (textView.text as NSString).length, length: 0)
+
+        controller.closePeek()
+
+        XCTAssertEqual(textView.text, "PREFIX draft @octo")
+        XCTAssertEqual(controller.state, .idle)
+    }
+
     // MARK: - Create
 
     func testReturnWithNoResultsMakesANoteFromTheQuery() throws {
         type("draft @a new idea")
         waitUntil { self.recorder.results.count > 0 }
         controller.commitHighlighted()
+        // The store write runs off the keystroke's own thread now.
+        waitUntil { self.recorder.created.count > 0 }
 
         XCTAssertEqual(store.inserted.count, 1)
         let note = try XCTUnwrap(store.inserted.first)
@@ -294,6 +317,7 @@ final class MentionControllerTests: XCTestCase {
         controller.moveHighlight(by: 1)
         XCTAssertEqual(controller.highlightedIndex, 1)
         controller.commitHighlighted()
+        waitUntil { self.recorder.created.count > 0 }
         XCTAssertEqual(store.inserted.count, 1)
         XCTAssertEqual(recorder.peeked.count, 0)
     }

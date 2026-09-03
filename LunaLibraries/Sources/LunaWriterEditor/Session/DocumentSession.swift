@@ -49,6 +49,15 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     private var changedSinceOpen = false
     private var isClosed = false
 
+    /// Where the file and database write actually run — off whatever thread
+    /// marks the session dirty. Serial, so a slow write can never race past
+    /// a faster one queued after it.
+    private let saveQueue = DispatchQueue(label: "com.luna.writer.documentSession.save")
+    /// Bumped by every write this session starts; a write only applies its
+    /// result if its own number is still the newest one to have landed.
+    private var writeRevision = 0
+    private var lastWrittenRevision = 0
+
     public init(
         document: WriterDocument,
         textStore: DocumentTextStoring,
@@ -148,21 +157,31 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
         }
     }
 
-    /// Moves the marks with the text under them.
+    /// Moves the marks with the text under them. One an edit collapses to
+    /// nothing moves to `orphanedAnnotations` — kept, the same as one
+    /// orphaned on load — instead of silently disappearing from what the
+    /// next save writes out.
     private func shiftAnnotations(edit: NSRange, replacementLength: Int) {
         guard !annotations.isEmpty else { return }
         let start = edit.location
         let end = NSMaxRange(edit)
         let delta = replacementLength - edit.length
         var out: [ResolvedAnnotation] = []
+        var newlyOrphaned: [Annotation] = []
         for annotation in annotations {
             let low = shift(annotation.range.location, start: start, end: end, delta: delta)
             let high = shift(NSMaxRange(annotation.range), start: start, end: end, delta: delta)
-            guard high > low else { continue }
-            out.append(ResolvedAnnotation(
-                id: annotation.id, range: NSRange(location: low, length: high - low), kind: annotation.kind))
+            if high > low {
+                out.append(ResolvedAnnotation(
+                    id: annotation.id, range: NSRange(location: low, length: high - low), kind: annotation.kind))
+            } else if let stored = storedAnnotations[annotation.id] {
+                newlyOrphaned.append(stored)
+            }
         }
         annotations = out
+        guard !newlyOrphaned.isEmpty else { return }
+        orphanedAnnotations.append(contentsOf: newlyOrphaned)
+        delegate?.documentSession(self, didReanchorWithOrphans: newlyOrphaned)
     }
 
     private func shift(_ offset: Int, start: Int, end: Int, delta: Int) -> Int {
@@ -174,21 +193,85 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     // MARK: - Saving
 
     public func autosaveDeadlineReached() {
-        try? save()
+        save()
     }
 
-    /// Writes the text and the marks, and takes the new title and counts back
-    /// from the store.
-    public func save() throws {
-        guard hasUnsavedChanges, !isClosed else { return }
-        var updated = document
-        try textStore.saveText(storage.string, for: &updated)
-        document = updated
-        try marksStore.replaceMarks(
-            DocumentMarks(annotations: currentAnnotations(), authorship: authorship.spans),
-            for: document.id)
+    /// Writes what changed since the last save. The snapshot — the text,
+    /// the marks — is taken here, on whatever thread called this; the file
+    /// and database I/O run on `saveQueue`, off it.
+    public func save() {
+        performSave(waitForCompletion: false)
+    }
+
+    /// Writes synchronously: waits for this write, and for anything already
+    /// queued ahead of it, to land before returning. `flushPendingSave()`
+    /// and a background flush both need the write actually DONE before
+    /// they hand control back — an async fire-and-forget would let the
+    /// scene suspend, or the sheet close, out from under it.
+    @discardableResult
+    public func saveNow() -> Bool {
+        performSave(waitForCompletion: true)
+    }
+
+    @discardableResult
+    private func performSave(waitForCompletion: Bool) -> Bool {
+        guard hasUnsavedChanges, !isClosed else {
+            if waitForCompletion { saveQueue.sync {} }
+            return true
+        }
+        writeRevision &+= 1
+        let revision = writeRevision
+        let text = storage.string
+        let marks = DocumentMarks(annotations: currentAnnotations(), authorship: authorship.spans)
         hasUnsavedChanges = false
         scheduler.cancel()
+
+        if waitForCompletion {
+            var updated = document
+            var succeeded = false
+            saveQueue.sync {
+                do {
+                    try self.textStore.saveText(text, for: &updated)
+                    try self.marksStore.replaceMarks(marks, for: updated.id)
+                    succeeded = true
+                } catch {
+                    succeeded = false
+                }
+            }
+            applyWriteResult(revision: revision, updated: updated, succeeded: succeeded)
+            return succeeded
+        } else {
+            let textStore = self.textStore
+            let marksStore = self.marksStore
+            var updated = document
+            saveQueue.async { [weak self] in
+                var succeeded = true
+                do {
+                    try textStore.saveText(text, for: &updated)
+                    try marksStore.replaceMarks(marks, for: updated.id)
+                } catch {
+                    succeeded = false
+                }
+                DispatchQueue.main.async {
+                    self?.applyWriteResult(revision: revision, updated: updated, succeeded: succeeded)
+                }
+            }
+            return true
+        }
+    }
+
+    /// A revision guard: a write that started before a later one already
+    /// landed must never overwrite that newer result. A failed write leaves
+    /// `hasUnsavedChanges` set so the next edit — or the next background
+    /// flush — retries it.
+    private func applyWriteResult(revision: Int, updated: WriterDocument, succeeded: Bool) {
+        guard succeeded else {
+            hasUnsavedChanges = true
+            return
+        }
+        guard revision >= lastWrittenRevision else { return }
+        lastWrittenRevision = revision
+        document = updated
         delegate?.documentSessionDidSave(self)
     }
 
@@ -207,13 +290,13 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     }
 
     public func applicationDidEnterBackground() {
-        try? save()
+        saveNow()
     }
 
     /// Saves, keeps a copy of a sheet that changed, and stops autosaving.
     public func close() {
         guard !isClosed else { return }
-        try? save()
+        saveNow()
         if changedSinceOpen {
             try? snapshots?.recordSnapshot(storage.string, for: document.id)
         }
@@ -224,11 +307,43 @@ public final class DocumentSession: AnnotationRangeProviding, AutosaveScheduled 
     // MARK: - External change
 
     /// The file changed under the sheet. The text is replaced and every mark
-    /// is put back onto it.
+    /// is put back onto it. Authorship spans are plain ranges with no text
+    /// anchor of their own to re-resolve — unlike an annotation, there is no
+    /// reliable way to say which stretch of the NEW text a span was about,
+    /// so they are dropped rather than left pointing at the wrong words.
     public func externalChangeArrived(text: String) {
         storage.setText(text)
+        authorship.reset(to: [])
         reanchor(Array(storedAnnotations.values))
         hasUnsavedChanges = false
         delegate?.documentSessionDidReceiveExternalChange(self)
+    }
+
+    /// Replaces the whole document text as one programmatic edit, resetting
+    /// authorship and undo the same way an external change does. Used by a
+    /// snapshot restore — the writer chose this, unlike a file changing
+    /// under them, so it keeps a snapshot of what was current before the
+    /// swap.
+    public func replaceWholeText(_ text: String) {
+        guard text != storage.string else { return }
+        try? snapshots?.recordSnapshot(storage.string, for: document.id)
+        storage.setText(text)
+        authorship.reset(to: [])
+        reanchor(Array(storedAnnotations.values))
+        markDirty()
+        delegate?.documentSessionDidReceiveExternalChange(self)
+    }
+}
+
+// MARK: - WriterTextViewDataSource
+
+extension DocumentSession: WriterTextViewDataSource {
+
+    public var documentLength: Int { storage.length }
+
+    public func writerTextView(
+        _ textView: WriterTextView, selectionTouchesForeignAuthorship range: NSRange
+    ) -> Bool {
+        authorship.containsForeignAuthorship(in: range, documentLength: storage.length)
     }
 }

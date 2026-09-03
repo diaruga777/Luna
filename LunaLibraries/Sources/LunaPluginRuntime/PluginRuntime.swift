@@ -115,9 +115,15 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Only accessed on `executionQueue`; bridge closures capture this token
     /// before leaving for their own work queue.
     private var activeInvocation: PluginInvocationDiagnostics?
+    private var activeGenerationID: String?
     /// Load order: host-matched before any-host, then priority descending, then
     /// id.
-    private var ordered: [(plugin: LoadedPlugin, context: PluginContext)] = []
+    private var ordered: [(plugin: LoadedPlugin, context: PluginContext, generationID: String)] = []
+    private var activeGenerationByPlugin: [String: String] = [:]
+    /// State is retained after reload until the old context's calls and
+    /// asynchronous operations have drained. This is intentionally separate
+    /// from `ordered`, which contains only contexts eligible for new calls.
+    private var generationStates: [String: RuntimeGenerationState] = [:]
     private var disabledReasons: [String: PluginDisableReason] = [:]
     private var timeoutCounts: [String: Int] = [:]
     /// Plugin id → the calls of that plugin the runtime is still waiting on.
@@ -158,9 +164,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         let installed = store.installedPlugins()
         let candidates = installed + bundled.plugins(shadowedBy: installed)
         lock.lock()
+        for entry in ordered { retire(entry.generationID) }
         ordered.removeAll()
+        activeGenerationByPlugin.removeAll()
         disabledReasons.removeAll()
-        timeoutCounts.removeAll()
         lock.unlock()
         var reports: [PluginLoadReport] = []
         for candidate in candidates {
@@ -217,7 +224,7 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// Rebuilds one plugin's context from what the store holds now.
     @discardableResult
     public func reload(pluginID: String) -> PluginLoadReport {
-        unload(pluginID: pluginID)
+        retireActive(pluginID: pluginID)
         let installed = store.plugin(id: pluginID)
         let candidate = installed ?? bundled.plugins().first { $0.id == pluginID }
         guard let candidate else {
@@ -242,10 +249,37 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
 
     public func unload(pluginID: String) {
         lock.lock()
-        ordered.removeAll { $0.plugin.id == pluginID }
+        retireActiveLocked(pluginID: pluginID)
         disabledReasons[pluginID] = nil
-        timeoutCounts[pluginID] = nil
         lock.unlock()
+    }
+
+    private func retireActive(pluginID: String) {
+        lock.lock()
+        retireActiveLocked(pluginID: pluginID)
+        lock.unlock()
+    }
+
+    /// Caller holds `lock`.
+    private func retireActiveLocked(pluginID: String) {
+        guard let generationID = activeGenerationByPlugin.removeValue(forKey: pluginID) else {
+            ordered.removeAll { $0.plugin.id == pluginID }
+            return
+        }
+        ordered.removeAll { $0.plugin.id == pluginID }
+        retire(generationID)
+    }
+
+    /// Caller holds `lock`; the state itself remains until its final holder
+    /// releases. New work can only find contexts in `ordered`.
+    private func retire(_ generationID: String) {
+        generationStates[generationID]?.retired = true
+    }
+
+    private func hasInFlight(pluginID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return generationStates.values.contains { $0.pluginID == pluginID && !$0.isDrained }
     }
 
     /// Builds one plugin's context.
@@ -265,26 +299,25 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                 pluginID: installed.id, hook: "<load>", reason: .wedged,
                 message: "an earlier abandoned plugin call still holds the execution queue"))
         }
+        let generationID = UUID().uuidString
         // Whatever a killed process left under this plugin's scratch root is
         // reaped before its new context can serve a handle out of it. A
         // generation something still holds — a call in flight, or an export
         // between its hook and its share — is left alone.
-        if scratch?.hasOpenScratchGeneration(pluginID: installed.id) != true {
+        if !hasInFlight(pluginID: installed.id) {
             scratch?.reapAll(pluginID: installed.id)
         }
         let context = executionQueue.sync {
             PluginContext(
                 manifest: installed.manifest, virtualMachine: virtualMachine,
                 registry: capabilities, processKind: processContext.kind,
-                scratchGeneration: { [weak self] in
-                    self?.scratchGeneration(pluginID: installed.id)
-                        ?? PluginScratchStore.idleGeneration
-                },
+                scratchGeneration: { generationID },
                 log: { [weak self, id = installed.id] line in
                     guard let self else { return }
                     self.diagnostics.record(
                         line, pluginID: id, invocation: self.activeInvocation)
-                })
+                },
+                generationID: generationID)
         }
         if let failure = executionQueue.sync({ context.evaluate(source: source) }) {
             return fail(installed, failure)
@@ -320,7 +353,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
                 hooks: context.registeredHooks, isBundled: installed.isBundled),
             isBundled: installed.isBundled)
         lock.lock()
-        ordered.append((plugin, context))
+        generationStates[generationID] = RuntimeGenerationState(
+            id: generationID, pluginID: installed.id)
+        activeGenerationByPlugin[installed.id] = generationID
+        ordered.append((plugin, context, generationID))
         lock.unlock()
         let unavailable = installed.manifest.capabilities
             .filter { capabilities.installer(for: $0) == nil }
@@ -547,12 +583,12 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
 
         let call = PluginPendingCall()
         let item = PluginQueueItem()
-        beginCall(pluginID: pluginID, call: call)
+        beginCall(pluginID: pluginID, generationID: entry.generationID, call: call)
         executionQueue.enqueue(item: item) {
             // The budget's clock starts here, so a call that waited behind
             // another plugin is not charged for the wait.
             call.touch()
-            self.withInvocation(invocation) {
+            self.withInvocation(invocation, generationID: entry.generationID) {
                 entry.context.call(hook, argumentJSON: argumentJSON) { call.settle($0) }
             }
         }
@@ -561,7 +597,10 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         let enqueuedAt = Date()
         var neverStarted = false
         while true {
-            if let outcome = call.outcome { noteSettled(pluginID, call: call); return outcome }
+            if let outcome = call.outcome {
+                noteSettled(pluginID, generationID: entry.generationID, call: call)
+                return outcome
+            }
             if let startedAt = item.startedAt {
                 let expired = isIdleBudget
                     ? call.idleSeconds >= timeout
@@ -573,14 +612,17 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
             }
             try? await Task.sleep(nanoseconds: UInt64(Self.pollInterval * 1_000_000_000))
         }
-        if let outcome = call.outcome { noteSettled(pluginID, call: call); return outcome }
+        if let outcome = call.outcome {
+            noteSettled(pluginID, generationID: entry.generationID, call: call)
+            return outcome
+        }
         // The caller stops waiting. A body still running holds the queue, so the
         // runtime reports itself wedged until it returns; one that never started
         // is cancelled and costs the plugin nothing.
         if !item.hasReturned { executionQueue.abandon(item) }
         call.abandon()
-        if !neverStarted { noteTimeout(pluginID) }
-        endCall(pluginID: pluginID, call: call)
+        if !neverStarted { noteTimeout(pluginID, generationID: entry.generationID) }
+        endCall(pluginID: pluginID, generationID: entry.generationID, call: call)
         return .failure(PluginJSFailure(
             pluginID: pluginID, hook: hook.rawValue, reason: .timeout,
             message: neverStarted
@@ -593,40 +635,58 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
 
     /// Counts one call in and opens the plugin's scratch generation if it is the
     /// first.
-    private func beginCall(pluginID: String, call: PluginPendingCall) {
+    private func beginCall(
+        pluginID: String, generationID: String, call: PluginPendingCall
+    ) {
         lock.lock()
-        inFlight[pluginID, default: []].append(call)
+        inFlight[generationID, default: []].append(call)
+        generationStates[generationID]?.callCount += 1
         lock.unlock()
-        scratch?.openScratchGeneration(pluginID: pluginID)
+        _ = scratch?.openScratchGeneration(pluginID: pluginID, generationID: generationID)
     }
 
     /// Counts one call out. The generation is reaped when the last holder goes.
-    private func endCall(pluginID: String, call: PluginPendingCall) {
+    private func endCall(
+        pluginID: String, generationID: String, call: PluginPendingCall
+    ) {
         lock.lock()
-        var calls = inFlight[pluginID] ?? []
+        var calls = inFlight[generationID] ?? []
         calls.removeAll { $0 === call }
-        inFlight[pluginID] = calls.isEmpty ? nil : calls
-        let dropped = calls.isEmpty ? pendingPromises.removeValue(forKey: pluginID) : nil
+        inFlight[generationID] = calls.isEmpty ? nil : calls
+        generationStates[generationID]?.callCount = max(
+            0, (generationStates[generationID]?.callCount ?? 1) - 1)
+        let dropped = calls.isEmpty ? pendingPromises.removeValue(forKey: generationID) : nil
+        let shouldPrune = calls.isEmpty && (generationStates[generationID]?.operationCount ?? 0) == 0
+            && generationStates[generationID]?.retired == true
+        if shouldPrune { generationStates[generationID] = nil }
         lock.unlock()
         for box in dropped ?? [] { box.value?.discard() }
-        scratch?.closeScratchGeneration(pluginID: pluginID)
+        scratch?.closeScratchGeneration(pluginID: pluginID, generationID: generationID)
     }
 
     /// Clears the strike count after a hook that answered.
-    private func noteSettled(_ pluginID: String, call: PluginPendingCall) {
+    private func noteSettled(
+        _ pluginID: String, generationID: String, call: PluginPendingCall
+    ) {
         lock.lock()
-        timeoutCounts[pluginID] = 0
+        timeoutCounts[generationID] = 0
         lock.unlock()
-        endCall(pluginID: pluginID, call: call)
+        endCall(pluginID: pluginID, generationID: generationID, call: call)
     }
 
-    private func noteTimeout(_ pluginID: String) {
+    private func noteTimeout(_ pluginID: String, generationID: String) {
         lock.lock()
-        let count = (timeoutCounts[pluginID] ?? 0) + 1
-        timeoutCounts[pluginID] = count
+        let count = (timeoutCounts[generationID] ?? 0) + 1
+        timeoutCounts[generationID] = count
         if count >= PluginRuntime.timeoutsBeforeDisable {
-            disabledReasons[pluginID] = .stopped
-            ordered.removeAll { $0.plugin.id == pluginID }
+            // A late timeout from a retired context must not disable the
+            // replacement that now owns this plugin id.
+            if activeGenerationByPlugin[pluginID] == generationID {
+                disabledReasons[pluginID] = .stopped
+                ordered.removeAll { $0.plugin.id == pluginID }
+                activeGenerationByPlugin[pluginID] = nil
+                generationStates[generationID]?.retired = true
+            }
         }
         lock.unlock()
     }
@@ -649,12 +709,45 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
         }
     }
 
+    public func schedulePluginCallback(
+        _ work: @escaping () -> Void, invocation: PluginInvocationDiagnostics?,
+        generationID: String?
+    ) {
+        executionQueue.enqueue { [weak self] in
+            guard let self else { return }
+            self.withInvocation(invocation, generationID: generationID, work)
+        }
+    }
+
     public var currentPluginInvocation: PluginInvocationDiagnostics? { activeInvocation }
+
+    public var currentPluginID: String? {
+        guard let generationID = activeGenerationID else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return generationStates[generationID]?.pluginID
+    }
+
+    public var currentPluginGenerationID: String? { activeGenerationID }
 
     private func withInvocation<T>(_ invocation: PluginInvocationDiagnostics?, _ work: () -> T) -> T {
         let previous = activeInvocation
         activeInvocation = invocation
         defer { activeInvocation = previous }
+        return work()
+    }
+
+    private func withInvocation<T>(
+        _ invocation: PluginInvocationDiagnostics?, generationID: String?, _ work: () -> T
+    ) -> T {
+        let previousInvocation = activeInvocation
+        let previousGeneration = activeGenerationID
+        activeInvocation = invocation
+        activeGenerationID = generationID
+        defer {
+            activeInvocation = previousInvocation
+            activeGenerationID = previousGeneration
+        }
         return work()
     }
 
@@ -664,8 +757,22 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     /// alive while either is active. A caller that cannot name a plugin — a
     /// bridge above this tier — touches them all.
     public func notePluginActivity(pluginID: String?) {
+        notePluginActivity(pluginID: pluginID, generationID: nil)
+    }
+
+    public func notePluginActivity(pluginID: String?, generationID: String?) {
         lock.lock()
-        let calls = pluginID.map { inFlight[$0] ?? [] } ?? inFlight.values.flatMap { $0 }
+        let calls: [PluginPendingCall]
+        if let generationID {
+            calls = inFlight[generationID] ?? []
+        } else if let pluginID {
+            let generations = generationStates.values
+                .filter { $0.pluginID == pluginID }
+                .map(\.id)
+            calls = generations.flatMap { inFlight[$0] ?? [] }
+        } else {
+            calls = inFlight.values.flatMap { $0 }
+        }
         let idle = processContext.idle
         lock.unlock()
         for call in calls { call.touch() }
@@ -673,13 +780,69 @@ public final class PluginRuntime: PluginHookInvoking, PluginCallbackScheduling {
     }
 
     public func trackPendingPromise(_ box: PluginPromiseBox, pluginID: String?) {
+        trackPendingPromise(box, pluginID: pluginID, generationID: nil)
+    }
+
+    public func trackPendingPromise(
+        _ box: PluginPromiseBox, pluginID: String?, generationID: String?
+    ) {
         guard let pluginID else { return }
+        let key = generationID ?? activeGenerationID ?? pluginID
         lock.lock()
-        var boxes = (pendingPromises[pluginID] ?? []).filter { $0.value != nil }
+        var boxes = (pendingPromises[key] ?? []).filter { $0.value != nil }
         boxes.append(WeakPluginPromiseBox(box))
-        pendingPromises[pluginID] = boxes
+        pendingPromises[key] = boxes
         lock.unlock()
     }
+
+    public func beginPluginOperation(
+        pluginID: String, generationID: String
+    ) -> PluginOperationLease? {
+        lock.lock()
+        guard let state = generationStates[generationID], state.pluginID == pluginID,
+              (!state.retired || state.callCount > 0)
+        else {
+            lock.unlock()
+            return nil
+        }
+        state.operationCount += 1
+        lock.unlock()
+        _ = scratch?.openScratchGeneration(pluginID: pluginID, generationID: generationID)
+        return PluginOperationLease { [weak self] in
+            self?.endPluginOperation(pluginID: pluginID, generationID: generationID)
+        }
+    }
+
+    private func endPluginOperation(pluginID: String, generationID: String) {
+        lock.lock()
+        guard let state = generationStates[generationID] else {
+            lock.unlock()
+            return
+        }
+        state.operationCount = max(0, state.operationCount - 1)
+        let shouldPrune = state.retired && state.callCount == 0 && state.operationCount == 0
+        if shouldPrune { generationStates[generationID] = nil }
+        lock.unlock()
+        scratch?.closeScratchGeneration(pluginID: pluginID, generationID: generationID)
+    }
+}
+
+/// Mutable bookkeeping for one loaded context. It outlives the active entry
+/// during a reload so old callbacks can finish against the old generation
+/// without touching the replacement's timeout or scratch state.
+private final class RuntimeGenerationState {
+    let id: String
+    let pluginID: String
+    var retired = false
+    var callCount = 0
+    var operationCount = 0
+
+    init(id: String, pluginID: String) {
+        self.id = id
+        self.pluginID = pluginID
+    }
+
+    var isDrained: Bool { callCount == 0 && operationCount == 0 }
 }
 
 /// The fetch service reports byte progress here, so a long download keeps an

@@ -521,6 +521,12 @@ extension PluginFetchService {
                     mime: headers.first { $0.key.lowercased() == "content-type" }?.value,
                     pluginID: transfer.request.pluginID,
                     generation: transfer.request.invocationID)
+            } catch let error as PluginScratchError {
+                transfer.completion(.failure(PluginFetchError(
+                    "the response could not be written to a file: "
+                        + error.localizedDescription,
+                    code: error.code)))
+                return
             } catch {
                 transfer.completion(.failure(PluginFetchError(
                     "the response could not be written to a file: "

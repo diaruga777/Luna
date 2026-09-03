@@ -716,7 +716,7 @@ final class PluginRuntimeTests: XCTestCase {
         try runner.load(plugin(id: "app.luna.test", body: claimingBody))
         let leftover = try runner.scratch.writeFile(
             Data("stale".utf8), suggestedName: "old.txt", mime: nil,
-            pluginID: "app.luna.test", generation: "from-a-killed-process")
+            pluginID: "app.luna.test", generation: PluginScratchStore.idleGeneration)
         XCTAssertNotNil(runner.scratch.fileURL(for: leftover))
 
         runner.runtime.reloadAll()
@@ -780,6 +780,59 @@ final class PluginRuntimeTests: XCTestCase {
     }
 
     // MARK: - Reloading
+
+    func testTimeoutsFromRetiredGenerationDoNotDisableReplacement() async throws {
+        runner.fetcher.delay = 0.4
+        runner.fetcher.respond(to: "https://example.com/slow", body: "ok")
+        let old = """
+        luna.register({
+          classify() { return { kind: "media", itemId: "old" }; },
+          async ingest() { await luna.fetch("https://example.com/slow"); return null; }
+        });
+        """
+        try runner.load(plugin(capabilities: ["fetch"], body: old))
+
+        let calls = (0..<3).map { _ in
+            Task { await runner.runtime.invoke(
+                .ingest, pluginID: "app.luna.test", argument: PluginEmptyArgument(),
+                timeout: 0.05, decode: PluginJSONValue?.self) }
+        }
+        runner.awaitCondition("all old calls reach fetch") { runner.fetcher.requests.count == 3 }
+
+        let replacement = """
+        luna.register({
+          classify() { return { kind: "media", itemId: "new" }; },
+          async ingest() { return null; }
+        });
+        """
+        try runner.install(plugin(body: replacement))
+        XCTAssertTrue(runner.runtime.reload(pluginID: "app.luna.test").isLoaded)
+        for call in calls { _ = await call.value }
+
+        let claim = await runner.invoke(
+            .classify, pluginID: "app.luna.test",
+            argument: ClassifyInput(url: "https://example.com/x", context: "app"),
+            as: ClassifyClaim?.self)
+        XCTAssertEqual(claim ?? nil, ClassifyClaim(kind: "media", itemId: "new"))
+        XCTAssertNil(runner.runtime.disabled["app.luna.test"])
+    }
+
+    func testClosedRuntimeScratchGenerationCannotBeRecreatedByLateWork() throws {
+        let generation = "retired-generation"
+        _ = runner.scratch.openScratchGeneration(
+            pluginID: "app.luna.test", generationID: generation)
+        runner.scratch.closeScratchGeneration(
+            pluginID: "app.luna.test", generationID: generation)
+
+        XCTAssertThrowsError(try runner.scratch.writeFile(
+            Data("late".utf8), suggestedName: "late.txt", mime: nil,
+            pluginID: "app.luna.test", generation: generation)) {
+                XCTAssertEqual($0 as? PluginScratchError, .generationClosed)
+            }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            runner.scratch.directoryURL(
+                pluginID: "app.luna.test", generation: generation).path))
+    }
 
     func testReloadingPicksUpAReplacedFile() async throws {
         try runner.load(plugin(body: claimingBody))

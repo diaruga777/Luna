@@ -39,12 +39,18 @@ public final class PluginDownloadsBridge: PluginCapabilityInstalling {
         let scheduler = self.scheduler
         let workQueue = self.workQueue
         let pluginID = namespace.pluginID
+        let generationID = namespace.target.generationID
 
         let jobs: @convention(block) () -> JSValue? = {
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             workQueue.async {
+                guard box.isOperationValid else {
+                    box.fail("the plugin generation is no longer active", code: "generation-closed")
+                    return
+                }
                 let jobs = store.mediaDownloadJobs().map { Self.json(for: $0, store: store) }
                 box.fulfill(jobs)
             }
@@ -54,12 +60,17 @@ public final class PluginDownloadsBridge: PluginCapabilityInstalling {
         let job: @convention(block) (String?) -> JSValue? = { saveId in
             let context = JSContext.current() ?? outerContext
             let (promise, box) = PluginPromiseBox.make(
-                in: context, scheduler: scheduler, pluginID: pluginID)
+                in: context, scheduler: scheduler, pluginID: pluginID,
+                generationID: generationID)
             guard let saveId, let id = UUID(uuidString: saveId) else {
                 box.fail("luna.downloads.job needs a save id", code: "bad-argument")
                 return promise
             }
             workQueue.async {
+                guard box.isOperationValid else {
+                    box.fail("the plugin generation is no longer active", code: "generation-closed")
+                    return
+                }
                 guard let item = store.item(withID: id) else {
                     box.fulfill(NSNull())
                     return

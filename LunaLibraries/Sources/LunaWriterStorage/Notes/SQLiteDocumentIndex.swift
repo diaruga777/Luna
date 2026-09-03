@@ -5,10 +5,22 @@ import LunaWriterModels
 /// library's own search reads.
 public protocol DocumentIndexing: AnyObject {
     /// The caller passes the sheet's text: a contentless index stores no
-    /// column values, so it cannot recover a body it is not given.
+    /// column values, so it cannot recover a body it is not given. Throws
+    /// `DocumentIndexMissingRowError` if `document.id` has no row in
+    /// `documents` yet.
     func index(_ document: WriterDocument, body: String) throws
     func remove(_ id: DocumentID) throws
     func search(_ text: String, limit: Int) throws -> [DocumentHit]
+    /// Repairs a drifted index by re-deriving every row from `documents` and
+    /// the body `readingBodies` returns for it. A contentless index has no
+    /// body of its own to rebuild from.
+    func rebuild(readingBodies: (WriterDocument) throws -> String?) throws
+}
+
+/// `index(_:body:)` was asked to index a document whose row `documents` does
+/// not have.
+public struct DocumentIndexMissingRowError: Error, Equatable {
+    public let id: DocumentID
 }
 
 /// `documents_fts` plus `document_embeddings`.
@@ -30,7 +42,9 @@ public final class SQLiteDocumentIndex: DocumentIndexing {
         let summary = Self.summary(of: document)
         let vector = embedding?.vector(for: summary)
         try database.transaction { db in
-            guard let rowID = try Self.rowID(of: document.id, in: db) else { return }
+            guard let rowID = try Self.rowID(of: document.id, in: db) else {
+                throw DocumentIndexMissingRowError(id: document.id)
+            }
             try db.run("DELETE FROM documents_fts WHERE rowid = ?") { statement in
                 try statement.bind(1, rowID)
             }
@@ -39,18 +53,49 @@ public final class SQLiteDocumentIndex: DocumentIndexing {
                 try statement.bind(2, Self.titleTerms(of: document))
                 try statement.bind(3, body)
             }
-            guard let vector, let embedding = self.embedding else { return }
-            try db.run(
-                "INSERT INTO document_embeddings (document_id, model_version, dims, vector)"
-                + " VALUES (?, ?, ?, ?) ON CONFLICT(document_id) DO UPDATE SET"
-                + " model_version = excluded.model_version, dims = excluded.dims,"
-                + " vector = excluded.vector"
-            ) { statement in
-                try statement.bind(1, document.id.rawValue.uuidString)
-                try statement.bind(2, embedding.modelVersion)
-                try statement.bind(3, vector.count)
-                try statement.bind(4, blob: VectorBlob.encode(vector))
+            try Self.applyEmbedding(vector, for: document, embedding: self.embedding, in: db)
+        }
+    }
+
+    /// Repairs a drifted index: FTS and embeddings are cleared, then rebuilt
+    /// from `documents` and the body `readingBodies` supplies for each. Each
+    /// document is its own `index` call — this tier never reads the body
+    /// itself — but the clear happens in one transaction first, so a reader
+    /// never sees a half-cleared index mid-rebuild.
+    public func rebuild(readingBodies: (WriterDocument) throws -> String?) throws {
+        var documents: [WriterDocument] = []
+        try database.perform { db in
+            try db.query(
+                "SELECT \(SQLiteWriterLibrary.documentColumns) FROM documents WHERE trashed_at IS NULL"
+            ) { row in
+                if let document = SQLiteWriterLibrary.document(from: row) { documents.append(document) }
             }
+        }
+        try database.transaction { db in
+            try db.execute("DELETE FROM documents_fts")
+            try db.execute("DELETE FROM document_embeddings")
+        }
+        for document in documents {
+            let body = (try? readingBodies(document)) ?? nil ?? ""
+            try index(document, body: body)
+        }
+    }
+
+    private static func applyEmbedding(
+        _ vector: [Float]?, for document: WriterDocument, embedding: SentenceEmbedding?,
+        in db: WriterDatabase
+    ) throws {
+        guard let vector, let embedding else { return }
+        try db.run(
+            "INSERT INTO document_embeddings (document_id, model_version, dims, vector)"
+            + " VALUES (?, ?, ?, ?) ON CONFLICT(document_id) DO UPDATE SET"
+            + " model_version = excluded.model_version, dims = excluded.dims,"
+            + " vector = excluded.vector"
+        ) { statement in
+            try statement.bind(1, document.id.rawValue.uuidString)
+            try statement.bind(2, embedding.modelVersion)
+            try statement.bind(3, vector.count)
+            try statement.bind(4, blob: VectorBlob.encode(vector))
         }
     }
 
@@ -129,12 +174,12 @@ enum DocumentFTSSearch {
             var result: [Candidate] = []
             try db.query(
                 """
-                SELECT d.id, bm25(documents_fts), e.vector, e.dims
+                SELECT d.id, bm25(documents_fts) AS rank, e.vector, e.dims
                 FROM documents_fts
                 JOIN documents d ON d.rowid = documents_fts.rowid
                 LEFT JOIN document_embeddings e ON e.document_id = d.id
                 WHERE documents_fts MATCH ? AND d.trashed_at IS NULL
-                ORDER BY bm25(documents_fts) ASC LIMIT ?
+                ORDER BY rank ASC LIMIT ?
                 """,
                 { statement in
                     try statement.bind(1, match)

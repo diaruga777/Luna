@@ -197,6 +197,63 @@ final class WriterNoteIndexTests: XCTestCase {
         XCTAssertEqual(try stack.noteIndex.search(NoteQuery(text: "harbour")).map(\.noteID), [id])
     }
 
+    func testIndexingANoteWithNoRowThrowsRatherThanIndexingNothing() throws {
+        let stack = try makeWriterStack()
+        let ghost = WriterNote(text: "never inserted", source: .typed)
+
+        XCTAssertThrowsError(try stack.noteIndex.index(ghost)) { error in
+            XCTAssertEqual(error as? NoteIndexMissingRowError, NoteIndexMissingRowError(id: ghost.id))
+        }
+    }
+
+    func testRebuildWithNoEmbeddingModelKeepsExistingEmbeddings() throws {
+        let embedding = ScriptedEmbedding(fallback: [1, 0])
+        let stack = try makeWriterStack(embedding: embedding)
+        let id = try insert("the harbour lights", in: stack)
+        let embeddedCount: () throws -> Int64 = {
+            try stack.database.perform { db in
+                (try db.scalarInt(
+                    "SELECT COUNT(*) FROM note_embeddings WHERE note_id = ?"
+                ) { try $0.bind(1, id.rawValue.uuidString) }) ?? 0
+            }
+        }
+        XCTAssertEqual(try embeddedCount(), 1)
+
+        // A build with no embedding model must not erase a vector an earlier
+        // (or later) build with the model can still use.
+        let lexicalOnly = SQLiteNoteIndex(database: stack.database, embedding: nil)
+        try lexicalOnly.rebuild()
+
+        XCTAssertEqual(try embeddedCount(), 1)
+    }
+
+    // MARK: - Reindexing on update
+
+    func testUpdatingANoteRefreshesWhatRelatedSees() throws {
+        let embedding = ScriptedEmbedding()
+        let stack = try makeWriterStack(embedding: embedding)
+        let document = try stack.library.createDocument(in: stack.library.inboxGroupID, title: "Draft")
+        let originalText = "a note about the weather"
+        embedding.exact[originalText] = [1, 0]
+        let note = WriterNote(documentIDs: [document.id], text: originalText, source: .typed)
+        try stack.library.insert(note)
+
+        let window = "something about ferries and the tide"
+        embedding.exact[window] = [0, 1]
+        let tail = String(window.suffix(SQLiteNoteIndex.relatedTailLength))
+        embedding.exact[tail] = [0, 1]
+        let before = try stack.noteIndex.related(to: window, in: document.id, limit: 5).first?.score
+        XCTAssertEqual(before ?? 0, 0, accuracy: 0.001, "the stale weather note reads as unrelated")
+
+        var edited = note
+        edited.text = window
+        try stack.library.update(edited)
+
+        let after = try stack.noteIndex.related(to: window, in: document.id, limit: 5)
+        XCTAssertEqual(after.first?.noteID, note.id)
+        XCTAssertEqual(after.first?.score ?? 0, 1.0, accuracy: 0.001)
+    }
+
     // MARK: - Helpers
 
     @discardableResult

@@ -42,9 +42,13 @@ extension SQLiteWriterLibrary {
                 try Self.attach(note.id, to: document, attachment: .manual, in: db)
             }
         }
+        try noteIndex?.index(note)
         changes.post(.notes(note.documentIDs.first))
     }
 
+    /// Also refreshes the search index: a note edited without this passing
+    /// through `noteIndex` (as read-along annotation edits used to) left its
+    /// embedding permanently stale.
     public func update(_ note: WriterNote) throws {
         try database.transaction { db in
             try db.run(
@@ -56,7 +60,7 @@ extension SQLiteWriterLibrary {
             ) { statement in
                 try statement.bind(1, note.text)
                 try statement.bind(2, note.source.rawValue)
-                try statement.bind(3, note.anchor == nil ? nil : note.documentIDs.first?.rawValue.uuidString)
+                try statement.bind(3, note.anchor == nil ? nil : note.anchorDocumentID?.rawValue.uuidString)
                 try statement.bind(4, int: note.anchor?.start)
                 try statement.bind(5, int: note.anchor?.end)
                 try statement.bind(6, note.anchor?.exact)
@@ -66,6 +70,7 @@ extension SQLiteWriterLibrary {
                 try statement.bind(10, note.id.rawValue.uuidString)
             }
         }
+        try noteIndex?.index(note)
         changes.post(.notes(note.documentIDs.first))
     }
 
@@ -112,7 +117,7 @@ extension SQLiteWriterLibrary {
         try statement.bind(1, note.id.rawValue.uuidString)
         try statement.bind(2, note.text)
         try statement.bind(3, note.source.rawValue)
-        try statement.bind(4, note.anchor == nil ? nil : note.documentIDs.first?.rawValue.uuidString)
+        try statement.bind(4, note.anchor == nil ? nil : note.anchorDocumentID?.rawValue.uuidString)
         try statement.bind(5, int: note.anchor?.start)
         try statement.bind(6, int: note.anchor?.end)
         try statement.bind(7, note.anchor?.exact)
@@ -139,17 +144,17 @@ extension SQLiteWriterLibrary {
                     id: NoteID(uuid), documentIDs: [], text: row.string(1) ?? "",
                     // No CHECK on the column: an unknown source reads as typed.
                     source: WriterNote.Source(rawValue: row.string(2) ?? "") ?? .typed,
-                    anchor: anchor,
+                    anchor: anchor, anchorDocumentID: row.uuid(3).map(DocumentID.init),
                     createdAt: row.date(9) ?? Date(), updatedAt: row.date(10) ?? Date()))
             }
             guard !notes.isEmpty else { return [] }
-            var attachments: [NoteID: [DocumentID]] = [:]
-            let ids = notes.map { "'\($0.id.rawValue.uuidString)'" }.joined(separator: ",")
-            try db.query(
-                "SELECT note_id, document_id FROM note_documents WHERE note_id IN (\(ids))"
-            ) { row in
-                guard let note = row.uuid(0), let document = row.uuid(1) else { return }
-                attachments[NoteID(note), default: []].append(DocumentID(document))
+            let attachments: [NoteID: [DocumentID]] = try SQLiteWriterLibrary.fanIn(
+                "SELECT note_id, document_id FROM note_documents"
+                + " WHERE note_id IN (SELECT value FROM json_each(?)) ORDER BY document_id",
+                ids: notes.map { $0.id.rawValue.uuidString }, in: db
+            ) { row -> (NoteID, DocumentID)? in
+                guard let note = row.uuid(0), let document = row.uuid(1) else { return nil }
+                return (NoteID(note), DocumentID(document))
             }
             return notes.map { note in
                 var copy = note

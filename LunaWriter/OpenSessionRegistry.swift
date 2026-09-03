@@ -11,8 +11,7 @@ import LunaWriterStorage
     static var snapshotRefreshInterval: TimeInterval = 0.25
 
     private var sessions: [DocumentID: WeakSession] = [:]
-    private let snapshotLock = NSLock()
-    private var unsavedSnapshot: Set<DocumentID> = []
+    private let unsavedSnapshot = LockedIDSet()
     private var refreshTimer: Timer?
 
     func register(_ session: DocumentSession) {
@@ -32,9 +31,7 @@ import LunaWriterStorage
     /// never by hopping onto main itself, which would deadlock against a
     /// `queue.sync` the watcher can be in when the file event fires.
     nonisolated func hasUnsavedEdits(_ id: DocumentID) -> Bool {
-        snapshotLock.lock()
-        defer { snapshotLock.unlock() }
-        return unsavedSnapshot.contains(id)
+        unsavedSnapshot.contains(id)
     }
 
     func flushAll() {
@@ -45,10 +42,7 @@ import LunaWriterStorage
     /// Recomputes the snapshot `hasUnsavedEdits` reads. Called on main after
     /// anything that can change which sessions are dirty.
     func refreshSnapshot() {
-        let dirty = Set(openSessions.filter(\.hasUnsavedChanges).map(\.document.id))
-        snapshotLock.lock()
-        unsavedSnapshot = dirty
-        snapshotLock.unlock()
+        unsavedSnapshot.replace(with: Set(openSessions.filter(\.hasUnsavedChanges).map(\.document.id)))
     }
 
     private func startTimerIfNeeded() {
@@ -78,5 +72,23 @@ import LunaWriterStorage
     private struct WeakSession {
         weak var session: DocumentSession?
         init(_ session: DocumentSession) { self.session = session }
+    }
+}
+
+/// A set written on main and read from the watcher queue.
+private final class LockedIDSet: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: Set<DocumentID> = []
+
+    func contains(_ id: DocumentID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ids.contains(id)
+    }
+
+    func replace(with new: Set<DocumentID>) {
+        lock.lock()
+        ids = new
+        lock.unlock()
     }
 }

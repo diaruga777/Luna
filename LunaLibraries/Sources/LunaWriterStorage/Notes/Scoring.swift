@@ -82,7 +82,14 @@ enum VectorBlob {
 
     static func decode(_ data: Data?, count: Int) -> [Float]? {
         guard count > 0, let data, data.count == count * MemoryLayout<Float>.size else { return nil }
-        let values = data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        // `bindMemory` requires the buffer to be aligned for `Float`, which a
+        // `Data` sliced from a larger blob is not guaranteed to be.
+        // `loadUnaligned` reads byte-by-byte instead.
+        let values = data.withUnsafeBytes { raw in
+            (0..<count).map { index in
+                raw.loadUnaligned(fromByteOffset: index * MemoryLayout<Float>.stride, as: Float.self)
+            }
+        }
         return values.allSatisfy(\.isFinite) ? values : nil
     }
 

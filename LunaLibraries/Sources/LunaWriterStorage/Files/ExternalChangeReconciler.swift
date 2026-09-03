@@ -151,6 +151,7 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         document.snippet = summary.snippet
         document.wordCount = summary.words
         document.characterCount = summary.characters
+        document.sentenceCount = summary.sentences
         document.revision = 1
         try library.update(document)
         try documentIndex?.index(document, body: text)
@@ -169,6 +170,7 @@ public final class ExternalChangeReconciler: LibraryScanHandling {
         updated.snippet = summary.snippet
         updated.wordCount = summary.words
         updated.characterCount = summary.characters
+        updated.sentenceCount = summary.sentences
         updated.revision += 1
         try library.update(updated)
         try reanchorMarks(of: document.id, in: text)

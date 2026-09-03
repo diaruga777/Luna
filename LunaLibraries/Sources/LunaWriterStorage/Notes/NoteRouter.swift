@@ -49,7 +49,7 @@ public final class NoteRouter: NoteRouting {
         if !candidates.isEmpty {
             return try candidates.compactMap { hit in
                 guard let document = try library.document(hit.documentID) else { return nil }
-                return NotePlacement(documentID: document.id, title: document.title, created: false)
+                return NotePlacement(document: document, created: false)
             }
         }
 
@@ -61,6 +61,6 @@ public final class NoteRouter: NoteRouting {
     private func createSheet(titled title: String) throws -> NotePlacement {
         let document = try library.createDocument(in: library.inboxGroupID, title: title)
         try documentIndex.index(document, body: "")
-        return NotePlacement(documentID: document.id, title: document.title, created: true)
+        return NotePlacement(document: document, created: true)
     }
 }

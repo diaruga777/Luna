@@ -27,7 +27,7 @@ extension SQLiteWriterLibrary {
                 })
             var authorship: [AuthorshipSpan] = []
             try db.query(
-                "SELECT start, end, source, model, created_at FROM authorship_spans"
+                "SELECT start, end_offset, source, model, created_at FROM authorship_spans"
                 + " WHERE document_id = ? ORDER BY start ASC",
                 { statement in try statement.bind(1, document.rawValue.uuidString) },
                 row: { row in
@@ -72,7 +72,8 @@ extension SQLiteWriterLibrary {
             for span in marks.authorship {
                 let (source, model) = Self.authorshipColumns(span.source)
                 try db.run(
-                    "INSERT INTO authorship_spans (document_id, start, end, source, model, created_at)"
+                    "INSERT INTO authorship_spans"
+                    + " (document_id, start, end_offset, source, model, created_at)"
                     + " VALUES (?, ?, ?, ?, ?, ?)"
                 ) { statement in
                     try statement.bind(1, document.rawValue.uuidString)
@@ -111,6 +112,35 @@ extension SQLiteWriterLibrary {
                 try statement.bind(2, document.rawValue.uuidString)
                 try statement.bind(3, DocumentSnapshotLimit.perDocument)
             }
+        }
+    }
+
+    /// Snapshots kept for `document`, without reading any of their text.
+    public func snapshotCount(for document: DocumentID) throws -> Int {
+        try database.perform { db in
+            Int((try db.scalarInt(
+                "SELECT COUNT(*) FROM document_snapshots WHERE document_id = ?"
+            ) { statement in
+                try statement.bind(1, document.rawValue.uuidString)
+            }) ?? 0)
+        }
+    }
+
+    /// Metadata only — when and how long — for a list that shows one
+    /// snapshot's text on demand rather than loading every one up front.
+    public func snapshotSummaries(for document: DocumentID) throws -> [DocumentSnapshotSummary] {
+        try database.perform { db in
+            var result: [DocumentSnapshotSummary] = []
+            try db.query(
+                "SELECT created_at, length(text) FROM document_snapshots WHERE document_id = ?"
+                + " ORDER BY created_at DESC, rowid DESC",
+                { statement in try statement.bind(1, document.rawValue.uuidString) },
+                row: { row in
+                    result.append(DocumentSnapshotSummary(
+                        documentID: document, createdAt: row.date(0) ?? Date(),
+                        characterCount: row.int(1)))
+                })
+            return result
         }
     }
 

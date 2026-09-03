@@ -4,23 +4,29 @@ import LunaWriterModels
 /// The `writer.sqlite` schema, and the runner that brings a file up to
 /// `WriterDatabase.schemaVersion`.
 ///
-/// Every step is written so a re-run changes nothing (`IF NOT EXISTS`
-/// throughout), because a file whose `user_version` was lost still holds its
-/// rows and must keep them.
+/// Every step is written so a re-run changes nothing (`IF NOT EXISTS` SQL, or
+/// a Swift guard where the SQL has no such form), because a file whose
+/// `user_version` was lost still holds its rows and must keep them.
 ///
 /// Enum columns carry NO CHECK constraint. Luna's rule: a raw value Swift does
 /// not recognise maps to a safe default rather than failing a write.
 enum WriterSchema {
 
-    /// Applied in order, each with the `user_version` it leaves behind.
-    static let migrations: [(version: Int32, sql: String)] = [(1, version1)]
+    /// Applied in order, each with the `user_version` it leaves behind. A
+    /// step is a closure rather than one SQL string because `ALTER TABLE` has
+    /// no `IF NOT EXISTS` form: a re-run (the version pragma was lost, or the
+    /// process crashed between steps) must check what is already there.
+    static let migrations: [(version: Int32, apply: (WriterDatabase) throws -> Void)] = [
+        (1, { db in try db.execute(version1) }),
+        (2, applyVersion2),
+    ]
 
     static func migrate(_ database: WriterDatabase) throws {
         let current = try database.readUserVersion()
         for step in migrations where step.version > current {
             try database.execute("BEGIN IMMEDIATE")
             do {
-                try database.execute(step.sql)
+                try step.apply(database)
                 try database.setUserVersion(step.version)
                 try database.execute("COMMIT")
             } catch {
@@ -28,11 +34,35 @@ enum WriterSchema {
                 throw error
             }
         }
-        // A file whose version pragma is missing but whose tables exist is
-        // brought back in line without touching its rows.
-        if current > 0, current < WriterDatabase.schemaVersion {
-            try database.setUserVersion(WriterDatabase.schemaVersion)
+    }
+
+    /// `documents(file_path)` for the reconciler's by-path lookup;
+    /// `sentence_count` for goal tracking; `authorship_spans.end` renamed to
+    /// `end_offset`, a keyword-shaped name a re-run must not try to rename
+    /// twice.
+    private static func applyVersion2(_ database: WriterDatabase) throws {
+        try database.execute("CREATE INDEX IF NOT EXISTS documents_file_path ON documents(file_path)")
+        if try !hasColumn("sentence_count", ofTable: "documents", database) {
+            try database.execute(
+                "ALTER TABLE documents ADD COLUMN sentence_count INTEGER NOT NULL DEFAULT 0")
         }
+        if try hasColumn("end", ofTable: "authorship_spans", database),
+           try !hasColumn("end_offset", ofTable: "authorship_spans", database) {
+            try database.execute("ALTER TABLE authorship_spans RENAME COLUMN end TO end_offset")
+        }
+    }
+
+    private static func hasColumn(
+        _ column: String, ofTable table: String, _ database: WriterDatabase
+    ) throws -> Bool {
+        var found = false
+        try database.query(
+            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            { statement in
+                try statement.bind(1, table)
+                try statement.bind(2, column)
+            }, row: { _ in found = true })
+        return found
     }
 
     /// `documents_fts` is contentless: a sheet's body lives in a `.md` file on

@@ -98,6 +98,7 @@ public final class FileDocumentTextStore: DocumentTextStoring {
         document.snippet = summary.snippet
         document.wordCount = summary.words
         document.characterCount = summary.characters
+        document.sentenceCount = summary.sentences
 
         let previousPath = document.fileRelativePath
         let groups = try library.groups()

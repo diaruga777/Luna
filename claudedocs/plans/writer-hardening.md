@@ -320,7 +320,11 @@ non-finite input, availability re-resolve against a stub, session teardown
 Owns: `claudedocs/writer.md` (update after the waves land — the lead hands the
 final list), `scripts/hide_generated_schemes.rb` check, `LunaWriter.xctestplan`
 includes every `Writer*`/`ReadAlong*`/`Gaze*`/`Voice*` suite added by the
-waves. Runs last; small.
+waves, and one real bug WP-B1 found: `scripts/strings_sync.py --write` scans
+App Intents metadata only under `Luna/Mail/Intents/`, so it deletes the live
+`WriterIntents_*` keys used by `LunaWriter/Intents/*` (28 referenced entries
+dropped on a run). Teach it the Writer intents folder and add the missing
+directory to its test. Runs last; small.
 
 ### Wave 2 (after C, B2 and E1 merge)
 

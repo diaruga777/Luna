@@ -16,12 +16,17 @@ private final class RecordingActionDelegate: WriterTextViewActionDelegate {
     var inserted: [(text: String, source: AuthorshipSpan.Source, range: NSRange)] = []
     var markedOwn: [NSRange] = []
     var notedAt: [NSRange] = []
+    var writerTextViewAIAssistantIsAvailable = false
+    var continuedWriting = 0
+    var rewroteSelection = 0
 
     func writerTextView(_ textView: WriterTextView, didInsert text: String, as source: AuthorshipSpan.Source, in range: NSRange) {
         inserted.append((text, source, range))
     }
     func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange) { markedOwn.append(range) }
     func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange) { notedAt.append(range) }
+    func writerTextViewContinueWriting(_ textView: WriterTextView) { continuedWriting += 1 }
+    func writerTextViewRewriteSelection(_ textView: WriterTextView) { rewroteSelection += 1 }
 }
 
 private final class FakeAuthorshipDataSource: WriterTextViewDataSource {

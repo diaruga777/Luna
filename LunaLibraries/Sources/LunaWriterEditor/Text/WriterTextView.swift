@@ -50,6 +50,11 @@ public protocol WriterTextViewActionDelegate: AnyObject {
     func writerTextView(_ textView: WriterTextView, didInsert text: String, as source: AuthorshipSpan.Source, in range: NSRange)
     func writerTextView(_ textView: WriterTextView, markAsOwn range: NSRange)
     func writerTextView(_ textView: WriterTextView, addNoteAt range: NSRange)
+    /// Whether the on-device assistant is here at all, which is what gates
+    /// "Continue writing" and "Rewrite selection" in the edit menu.
+    var writerTextViewAIAssistantIsAvailable: Bool { get }
+    func writerTextViewContinueWriting(_ textView: WriterTextView)
+    func writerTextViewRewriteSelection(_ textView: WriterTextView)
 }
 
 /// The one text view Luna Writer edits in.
@@ -183,10 +188,19 @@ public final class WriterTextView: UITextView {
         actionDelegate?.writerTextView(self, addNoteAt: selectedRange)
     }
 
+    @objc public func continueWritingWithAI(_ sender: Any?) {
+        actionDelegate?.writerTextViewContinueWriting(self)
+    }
+
+    @objc public func rewriteSelectionWithAI(_ sender: Any?) {
+        actionDelegate?.writerTextViewRewriteSelection(self)
+    }
+
     // MARK: - Menu
 
     /// The editor's own edit-menu items for a selection. "Mark as mine" is
-    /// offered only where the selection touches somebody else's words.
+    /// offered only where the selection touches somebody else's words;
+    /// "Rewrite selection" only where there is one.
     public func writerMenuElements(for range: NSRange) -> [UIMenuElement] {
         var elements: [UIMenuElement] = []
         if pasteInterceptor.hasText {
@@ -198,6 +212,16 @@ public final class WriterTextView: UITextView {
             elements.append(UICommand(
                 title: L10n.string("WriterEditor_menuMarkAsMine"),
                 action: #selector(markSelectionAsOwn(_:))))
+        }
+        if actionDelegate?.writerTextViewAIAssistantIsAvailable == true {
+            elements.append(UICommand(
+                title: L10n.string("WriterEditor_menuContinueWriting"),
+                action: #selector(continueWritingWithAI(_:))))
+            if range.length > 0 {
+                elements.append(UICommand(
+                    title: L10n.string("WriterEditor_menuRewriteSelection"),
+                    action: #selector(rewriteSelectionWithAI(_:))))
+            }
         }
         elements.append(UICommand(
             title: L10n.string("WriterEditor_menuAddNote"),
@@ -222,6 +246,11 @@ public final class WriterTextView: UITextView {
             return authorshipDataSource?.writerTextView(self, selectionTouchesForeignAuthorship: selectedRange) == true
         case #selector(addNoteHere(_:)):
             return isEditable
+        case #selector(continueWritingWithAI(_:)):
+            return isEditable && actionDelegate?.writerTextViewAIAssistantIsAvailable == true
+        case #selector(rewriteSelectionWithAI(_:)):
+            return isEditable && selectedRange.length > 0
+                && actionDelegate?.writerTextViewAIAssistantIsAvailable == true
         default:
             return super.canPerformAction(action, withSender: sender)
         }

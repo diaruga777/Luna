@@ -1387,8 +1387,10 @@
 "WriterEditor_mentionNewNoteNamed_Luna" = "New note “%@”";
 "WriterEditor_mentionNoteFromAnotherSheet_Luna" = "From another sheet";
 "WriterEditor_menuAddNote_Luna" = "Add note here";
+"WriterEditor_menuContinueWriting_Luna" = "Continue writing";
 "WriterEditor_menuMarkAsMine_Luna" = "Mark as mine";
 "WriterEditor_menuPasteAsAI_Luna" = "Paste as AI text";
+"WriterEditor_menuRewriteSelection_Luna" = "Rewrite selection";
 "WriterEditor_peekClose_Luna" = "Close";
 "WriterEditor_peekEdit_Luna" = "Edit";
 "WriterEditor_peekNoSheet_Luna" = "Not in a sheet";

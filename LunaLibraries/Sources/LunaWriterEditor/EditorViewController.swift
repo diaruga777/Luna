@@ -96,6 +96,9 @@ public final class EditorViewController: UIViewController {
     private var pendingEdit: (range: NSRange, replacementLength: Int)?
     private var lastLayoutWidth: CGFloat = -1
     private var lastLayoutInset: UIEdgeInsets = UIEdgeInsets(top: -1, left: -1, bottom: -1, right: -1)
+    /// The one AI request in flight. A second request cancels the first —
+    /// there is only one caret, one selection, one place the answer lands.
+    private var aiTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -157,6 +160,7 @@ public final class EditorViewController: UIViewController {
 
     deinit {
         statisticsTimer?.invalidate()
+        aiTask?.cancel()
         session.close()
     }
 
@@ -386,6 +390,10 @@ public final class EditorViewController: UIViewController {
             UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(mentionDown)),
             UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(mentionCommit)),
             UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(mentionDismiss)),
+            UIKeyCommand(
+                input: "\r", modifierFlags: [.command, .alternate], action: #selector(continueWritingKeyCommand)),
+            UIKeyCommand(
+                input: "r", modifierFlags: [.command, .alternate], action: #selector(rewriteSelectionKeyCommand)),
         ]
     }
 
@@ -394,10 +402,17 @@ public final class EditorViewController: UIViewController {
         case #selector(mentionUp), #selector(mentionDown),
              #selector(mentionCommit), #selector(mentionDismiss):
             return mention.state.isActive
+        case #selector(continueWritingKeyCommand):
+            return writerTextViewAIAssistantIsAvailable
+        case #selector(rewriteSelectionKeyCommand):
+            return writerTextViewAIAssistantIsAvailable && textView.selectedRange.length > 0
         default:
             return super.canPerformAction(action, withSender: sender)
         }
     }
+
+    @objc private func continueWritingKeyCommand() { continueWriting() }
+    @objc private func rewriteSelectionKeyCommand() { rewriteSelection() }
 
     @objc private func mentionUp() { mention.moveHighlight(by: -1); updateOverlay() }
     @objc private func mentionDown() { mention.moveHighlight(by: 1); updateOverlay() }
@@ -748,34 +763,66 @@ extension EditorViewController: StreamingTextInserterDelegate {
     public func streamingTextInserterDidFinish(_ inserter: StreamingTextInserter) {}
 }
 
+// MARK: - WriterTextViewActionDelegate — AI
+
+extension EditorViewController {
+
+    public var writerTextViewAIAssistantIsAvailable: Bool {
+        environment.aiAssistant?.isAvailable == true
+    }
+
+    public func writerTextViewContinueWriting(_ textView: WriterTextView) {
+        continueWriting()
+    }
+
+    public func writerTextViewRewriteSelection(_ textView: WriterTextView) {
+        rewriteSelection()
+    }
+}
+
 // MARK: - AI writing
 
 extension EditorViewController {
 
     /// Asks the on-device model to carry on from the caret and types the
     /// answer in as `.ai` text.
+    ///
+    /// The document's revision is captured before the await and checked
+    /// after: an edit anywhere while the model was generating means the
+    /// context it answered about is gone, so the answer is dropped rather
+    /// than typed in at a caret position that no longer means what it did.
     public func continueWriting() {
         guard let assistant = environment.aiAssistant, assistant.isAvailable else { return }
         let caret = textView.selectedRange.location
         let context = related.window(before: caret, in: session.storage.nsText)
-        Task { @MainActor [weak self] in
+        let revision = session.storage.revision
+        aiTask?.cancel()
+        aiTask = Task { @MainActor [weak self] in
             guard let self else { return }
             guard let answer = try? await assistant.continueWriting(context: context), !answer.isEmpty else { return }
+            guard !Task.isCancelled, self.session.storage.revision == revision else { return }
             self.streamer.insert(answer, as: .ai(model: assistant.modelIdentifier), at: caret)
         }
     }
 
-    /// Rewrites the selection as `.ai` text.
+    /// Rewrites the selection as `.ai` text. The same revision guard as
+    /// `continueWriting`, and for a sharper reason: without it, an edit
+    /// during generation means `replaceText(in: selection, with: "")` below
+    /// deletes whatever now occupies that range — text the writer typed
+    /// after the request went out, not the text the model rewrote.
     public func rewriteSelection(instruction: String? = nil) {
         guard let assistant = environment.aiAssistant, assistant.isAvailable else { return }
         let selection = textView.selectedRange
         guard selection.length > 0 else { return }
         let original = session.storage.nsText.substring(with: selection)
-        Task { @MainActor [weak self] in
+        let revision = session.storage.revision
+        aiTask?.cancel()
+        aiTask = Task { @MainActor [weak self] in
             guard let self else { return }
             guard let answer = try? await assistant.rewrite(original, instruction: instruction),
                   !answer.isEmpty
             else { return }
+            guard !Task.isCancelled, self.session.storage.revision == revision else { return }
             self.textView.replaceText(in: selection, with: "")
             self.streamer.insert(
                 answer, as: .ai(model: assistant.modelIdentifier), at: selection.location)

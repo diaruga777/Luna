@@ -33,7 +33,8 @@ public enum LunaDeepLink {
     public static let downloaderScheme = "lunadownloader"
     public static let priceTrackerScheme = "lunapricetracker"
     public static let vaultScheme = "lunavault"
-    public static let allSchemes = [lunaScheme, readerScheme, downloaderScheme, priceTrackerScheme, vaultScheme]
+    public static let writerScheme = "lunawriter"
+    public static let allSchemes = [lunaScheme, readerScheme, downloaderScheme, priceTrackerScheme, vaultScheme, writerScheme]
 
     /// The scheme THIS bundle registers (its Info.plist `CFBundleURLTypes`),
     /// falling back to Reader's. Lets shared library code build links that
@@ -67,6 +68,7 @@ public enum LunaDeepLink {
         case "downloader": return downloaderScheme
         case "pricetracker": return priceTrackerScheme
         case "vault": return vaultScheme
+        case "writer": return writerScheme
         default: return nil
         }
     }
@@ -256,6 +258,7 @@ public extension LunaApp {
         case .downloader: return LunaDeepLink.downloaderScheme
         case .priceTracker: return LunaDeepLink.priceTrackerScheme
         case .vault: return LunaDeepLink.vaultScheme
+        case .writer: return LunaDeepLink.writerScheme
         }
     }
 }

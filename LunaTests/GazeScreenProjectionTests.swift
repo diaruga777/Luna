@@ -12,6 +12,7 @@ import LunaReaderUI
 import simd
 import UIKit
 import XCTest
+@testable import LunaGaze
 
 final class GazeScreenProjectionTests: XCTestCase {
 

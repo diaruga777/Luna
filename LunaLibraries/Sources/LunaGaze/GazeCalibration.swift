@@ -1,6 +1,6 @@
 //
 //  GazeCalibration.swift
-//  LunaReaderUI
+//  LunaGaze
 //
 
 import CoreGraphics

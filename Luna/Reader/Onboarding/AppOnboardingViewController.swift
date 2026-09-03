@@ -103,6 +103,7 @@ private extension LunaApp {
         case .downloader: return "downloader"
         case .priceTracker: return "price-tracker"
         case .vault: return "vault"
+        case .writer: return "writer"
         }
     }
 }

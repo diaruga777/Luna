@@ -11,6 +11,7 @@ import UIKit
 import XCTest
 @testable import Luna
 @testable import LunaDesignSystem
+@testable import LunaGaze
 @testable import LunaReaderUI
 
 final class ArticleCardsChromeTests: XCTestCase {

@@ -19,7 +19,7 @@ require_relative "xcodeproj_compat"
 
 PROJECT = File.expand_path("../Luna.xcodeproj", __dir__)
 
-APPS = ["Luna", "LunaReader", "LunaDownloader", "LunaPriceTracker", "LunaVault"]
+APPS = ["Luna", "LunaReader", "LunaDownloader", "LunaPriceTracker", "LunaVault", "LunaWriter"]
 
 # The six schemes a human should ever pick.
 VISIBLE = APPS + ["AllLunaApps"]

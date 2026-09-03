@@ -9,6 +9,7 @@
 import CoreGraphics
 import LunaReaderUI
 import XCTest
+@testable import LunaGaze
 
 final class GazeCalibrationTests: XCTestCase {
 

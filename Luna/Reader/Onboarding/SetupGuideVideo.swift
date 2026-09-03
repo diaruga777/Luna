@@ -149,6 +149,7 @@ final class SetupGuideVideo: NSObject {
         case .downloader: return "Downloader"
         case .priceTracker: return "PriceTracker"
         case .vault: return "Vault"
+        case .writer: return "Writer"
         }
     }
 

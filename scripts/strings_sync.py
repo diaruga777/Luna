@@ -42,7 +42,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRINGS_PATH = os.path.join(
     REPO, "LunaLibraries/Sources/LunaModels/Resources/en.lproj/Localizable.strings")
 
-SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault")
+SUFFIXES = ("Luna", "Core", "Reader", "Downloader", "PriceTracker", "Vault", "Writer")
 
 # Directories holding shipping code. Tests are deliberately absent: a test may
 # reference copy, but it never DEFINES any.
@@ -116,7 +116,7 @@ CALL_RE = re.compile(r"\bL10n\.(?:string|resource)\(")
 # only for shapes the AppIntents build plugin actually treats as metadata —
 # a plain `DisplayRepresentation(title: "\(x)")` VALUE at a normal call site
 # is runtime content, not build-time metadata, and must not match here.
-INTENT_SOURCES = ("Luna/Mail/Intents/", "LiveActivityWidget.swift")
+INTENT_SOURCES = ("Luna/Mail/Intents/", "LunaWriter/Intents/", "LiveActivityWidget.swift")
 
 INTENT_RES = [
     # static let title: LocalizedStringResource = "…"

@@ -136,6 +136,11 @@ struct OnboardingSurfaceConfiguration {
             return (
                 [.lunaPage], .extensionExplainer, ShareSetupPractice.lunaURLString,
                 "Luna Vault", "lock.shield.fill")
+        case .writer:
+            // Writer has no link-save lesson either; same exhaustive fallback.
+            return (
+                [.lunaPage], .extensionExplainer, ShareSetupPractice.lunaURLString,
+                "Luna Writer", "pencil.line")
         }
     }
 }

@@ -42,6 +42,19 @@ there: bundle ids (`$(PRODUCT_BUNDLE_PREFIX).<app>`), the **shared** App Group
 the Info.plist key `LunaAppGroupID` read by the `LunaAppConfig` library (`AppConfig`)
 — the in-code identifier. Entitlements reference `$(APP_GROUP_ID)`.
 
+**Luna Writer** (`com.hsanabria.luna.writer`, target `LunaWriter`) is a SIXTH, standalone
+app: a Markdown writing surface (iA Writer's Focus, syntax colouring and Authorship),
+a Ulysses-style organiser, Pen-style notes with an "@" lookup, and a gaze-plus-voice
+read-along built on the Reader's ARKit tracker (now the shared `LunaGaze` module). It
+shares no store with the other apps and talks to no server: sheets are plain `.md`
+files under Documents, everything else in its own `writer.sqlite`. Its tiers are
+`LunaWriter*` in the package plus `LunaGaze`; the organiser never imports the editor,
+it declares seams the composition root (`LunaWriter/WriterWiring.swift`) adapts. The
+central Luna app links `LunaGaze` ONLY so one dynamic framework serves both it and
+`LunaTests` (a product linked by the test bundle alone is folded statically into two
+copies and test seams stop reaching the Reader). See `claudedocs/writer.md` and
+`claudedocs/plans/writer-app.md`.
+
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
 extension, App Intents, Safari extension) is classified by the shared
 `LunaIngest.IngestPipeline` into a `ContentKind` and written to the one shared

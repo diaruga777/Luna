@@ -9,6 +9,7 @@
 import LunaReaderUI
 import UIKit
 import XCTest
+@testable import LunaGaze
 
 final class GazeAttentionTests: XCTestCase {
 

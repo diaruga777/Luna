@@ -47,7 +47,7 @@ public final class PluginCatalog: PluginCatalogProviding {
         guard let plugin = installed().first(where: { $0.id == pluginID }) else {
             throw PluginStoreError.notInstalled(id: pluginID)
         }
-        store.setEnabled(enabled, pluginID: pluginID, isBundled: plugin.isBundled)
+        try store.setEnabledChecked(enabled, pluginID: pluginID, isBundled: plugin.isBundled)
         runtime.reload(pluginID: pluginID)
     }
 
@@ -61,7 +61,7 @@ public final class PluginCatalog: PluginCatalogProviding {
             throw PluginStoreError.bundledCannotBeDeleted(id: pluginID)
         }
         try store.delete(pluginID: pluginID)
-        kv.removeAll(pluginID: pluginID)
+        try kv.removeAllChecked(pluginID: pluginID)
         secrets.removeAll(pluginID: pluginID)
         // `reload` unloads first, and a bundled plugin of the same id becomes
         // live again, so this loads whatever the id now resolves to.

@@ -67,6 +67,24 @@ final class WriterSettingsTests: XCTestCase {
         XCTAssertNil(settings.lastCalibrationGrade)
     }
 
+    func testAChangeFromABackgroundQueueIsAnnouncedOnMain() throws {
+        let center = NotificationCenter()
+        let settings = WriterSettings(defaults: try makeSuite(), center: center)
+        let announced = expectation(description: "announced on main")
+        let token = center.addObserver(
+            forName: WriterSettings.didChange, object: nil, queue: nil
+        ) { _ in
+            XCTAssertTrue(Thread.isMainThread)
+            announced.fulfill()
+        }
+        addTeardownBlock { center.removeObserver(token) }
+
+        DispatchQueue.global().async { settings.lastCalibrationGrade = "Fair" }
+
+        wait(for: [announced], timeout: 2)
+        XCTAssertEqual(settings.lastCalibrationGrade, "Fair")
+    }
+
     private func makeSuite() throws -> UserDefaults {
         let name = "luna.writer.tests.\(UUID().uuidString)"
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }

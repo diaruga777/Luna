@@ -29,7 +29,7 @@ private final class FakeNoteIndex: NoteIndexing {
 private final class FakeNoteStore: NoteStoring {
     var notes: [NoteID: WriterNote] = [:]
     var inserted: [WriterNote] = []
-    var attachments: [(NoteID, DocumentID, LunaWriterStorage.NoteAttachment)] = []
+    var attachments: [(NoteID, DocumentID, NoteAttachment)] = []
 
     func notes(for document: DocumentID) throws -> [WriterNote] { Array(notes.values) }
     func unattachedNotes() throws -> [WriterNote] { [] }
@@ -40,7 +40,7 @@ private final class FakeNoteStore: NoteStoring {
     }
     func update(_ note: WriterNote) throws { notes[note.id] = note }
     func delete(_ id: NoteID) throws { notes[id] = nil }
-    func attach(_ id: NoteID, to document: DocumentID, attachment: LunaWriterStorage.NoteAttachment) throws {
+    func attach(_ id: NoteID, to document: DocumentID, attachment: NoteAttachment) throws {
         attachments.append((id, document, attachment))
     }
     func detach(_ id: NoteID, from document: DocumentID) throws {}
@@ -279,7 +279,7 @@ final class MentionControllerTests: XCTestCase {
         XCTAssertEqual(note.source, .mention)
         XCTAssertEqual(note.documentIDs, [documentID])
         XCTAssertEqual(note.anchor?.start, 6)
-        XCTAssertEqual(store.attachments.map { $0.2 }, [LunaWriterStorage.NoteAttachment.mention])
+        XCTAssertEqual(store.attachments.map { $0.2 }, [NoteAttachment.mention])
         XCTAssertEqual(index.indexed.count, 1)
         XCTAssertEqual(textView.text, "draft ", "the @query is taken out of the sheet")
         XCTAssertEqual(recorder.created.count, 1)

@@ -41,9 +41,24 @@ public final class EditorContainerViewController: UIViewController {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isMovingFromParent || navigationController?.topViewController !== self {
+            navigationController?.setNavigationBarHidden(false, animated: animated)
+        }
+    }
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = LunaColors.background
+        // The header carries its own back control; the collapsed stack's bar
+        // would otherwise show a second one above it.
+        navigationItem.hidesBackButton = true
 
         editor = environment.editorMaker.makeEditor(for: document)
         editor.editingDelegate = self

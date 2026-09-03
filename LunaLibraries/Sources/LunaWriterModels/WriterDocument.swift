@@ -18,6 +18,7 @@ public struct WriterDocument: Codable, Equatable, Identifiable, Sendable {
     public var fileRelativePath: String
     public var wordCount: Int
     public var characterCount: Int
+    public var sentenceCount: Int
     /// Bumps once per saved text change.
     public var revision: Int64
     public var createdAt: Date
@@ -36,6 +37,7 @@ public struct WriterDocument: Codable, Equatable, Identifiable, Sendable {
         fileRelativePath: String = "",
         wordCount: Int = 0,
         characterCount: Int = 0,
+        sentenceCount: Int = 0,
         revision: Int64 = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -52,6 +54,7 @@ public struct WriterDocument: Codable, Equatable, Identifiable, Sendable {
         self.fileRelativePath = fileRelativePath
         self.wordCount = wordCount
         self.characterCount = characterCount
+        self.sentenceCount = sentenceCount
         self.revision = revision
         self.createdAt = createdAt
         self.updatedAt = updatedAt

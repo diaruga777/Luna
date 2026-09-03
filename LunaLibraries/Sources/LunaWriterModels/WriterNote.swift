@@ -14,6 +14,11 @@ public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
     public var source: Source
     /// Where in the document the note was made.
     public var anchor: TextAnchor?
+    /// Which of `documentIDs` the anchor is on. A note is anchored on only
+    /// one sheet at a time, so this defaults from `documentIDs.first` when an
+    /// anchor is given and no explicit value is passed; pass it explicitly
+    /// once a note can be attached to a second sheet after it is anchored.
+    public var anchorDocumentID: DocumentID?
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -23,6 +28,7 @@ public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
         text: String,
         source: Source = .typed,
         anchor: TextAnchor? = nil,
+        anchorDocumentID: DocumentID? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -31,6 +37,7 @@ public struct WriterNote: Codable, Equatable, Identifiable, Sendable {
         self.text = text
         self.source = source
         self.anchor = anchor
+        self.anchorDocumentID = anchorDocumentID ?? (anchor != nil ? documentIDs.first : nil)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -44,14 +51,15 @@ public enum NoteAttachment: String, Codable, Sendable, CaseIterable {
 
 /// Where the router put one captured note.
 public struct NotePlacement: Equatable, Sendable {
-    public let documentID: DocumentID
-    public let title: String
+    public let document: WriterDocument
     /// True when the router made the sheet for this note.
     public let created: Bool
 
-    public init(documentID: DocumentID, title: String, created: Bool) {
-        self.documentID = documentID
-        self.title = title
+    public var documentID: DocumentID { document.id }
+    public var title: String { document.title }
+
+    public init(document: WriterDocument, created: Bool) {
+        self.document = document
         self.created = created
     }
 }

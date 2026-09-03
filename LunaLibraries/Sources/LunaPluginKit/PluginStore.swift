@@ -14,6 +14,7 @@ public enum PluginStoreError: Error, Equatable {
     /// A bundled plugin can be switched off, never deleted.
     case bundledCannotBeDeleted(id: String)
     case fileSystem(detail: String)
+    case storageUnavailable
 
     public var message: String {
         switch self {
@@ -22,6 +23,8 @@ public enum PluginStoreError: Error, Equatable {
         case .bundledCannotBeDeleted(let id):
             return L10n.string("PluginImportError_bundledCannotBeDeleted", id)
         case .fileSystem(let detail): return L10n.string("PluginImportError_writeFailed", detail)
+        case .storageUnavailable:
+            return L10n.string("PluginImportError_writeFailed", "the App Group container is unavailable")
         }
     }
 }
@@ -99,11 +102,25 @@ public final class PluginStore {
 
     /// `<AppGroup>/Plugins/`, created on first use.
     public var rootURL: URL {
-        let root = overrideRootURL
-            ?? (AppConfig.sharedContainerURL(fileManager) ?? fileManager.temporaryDirectory)
-                .appendingPathComponent("Plugins", isDirectory: true)
-        try? fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
+        resolvedRootURL ?? fileManager.temporaryDirectory
+            .appendingPathComponent(".luna-plugin-storage-unavailable", isDirectory: true)
+    }
+
+    /// Production never writes to a temporary directory when App Group
+    /// resolution fails. Explicit roots remain available for tests and staged
+    /// runs, where a temporary root is an intentional dependency injection.
+    public var storageAvailable: Bool {
+        guard let root = resolvedRootURL else { return false }
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            return true
+        } catch { return false }
+    }
+
+    private var resolvedRootURL: URL? {
+        if let overrideRootURL { return overrideRootURL }
+        return AppConfig.sharedContainerURL(fileManager)?.appendingPathComponent(
+            "Plugins", isDirectory: true)
     }
 
     public var userRootURL: URL { rootURL.appendingPathComponent("user", isDirectory: true) }
@@ -121,6 +138,7 @@ public final class PluginStore {
     }
 
     public func installedIDs() -> [String] {
+        guard storageAvailable else { return [] }
         let contents = (try? fileManager.contentsOfDirectory(
             at: userRootURL, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         return contents
@@ -131,6 +149,7 @@ public final class PluginStore {
 
     /// The versions of one imported plugin, oldest first.
     public func versions(of pluginID: String) -> [PluginVersion] {
+        guard storageAvailable else { return [] }
         let folder = userRootURL.appendingPathComponent(pluginID, isDirectory: true)
         let contents = (try? fileManager.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: nil)) ?? []
@@ -170,6 +189,7 @@ public final class PluginStore {
     public func install(
         source: String, manifest: PluginManifest, origin: PluginImportOrigin, now: Date = Date()
     ) throws -> InstalledPlugin {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         let destination = fileURL(id: manifest.id, version: manifest.version)
             .deletingLastPathComponent()
         let idFolder = destination.deletingLastPathComponent()
@@ -241,6 +261,7 @@ public final class PluginStore {
 
     /// Removes an imported plugin and everything it stored on disk.
     public func delete(pluginID: String) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         let folder = userRootURL.appendingPathComponent(pluginID, isDirectory: true)
         guard fileManager.fileExists(atPath: folder.path) else {
             throw PluginStoreError.notInstalled(id: pluginID)
@@ -257,6 +278,7 @@ public final class PluginStore {
     /// A bundled plugin's state lives in its own file, because the plugin has no
     /// folder in the container at all.
     public func state(_ pluginID: String, isBundled: Bool = false) -> PluginState {
+        guard storageAvailable else { return PluginState() }
         let url = stateURL(pluginID, isBundled: isBundled)
         guard let data = try? Data(contentsOf: url),
               let state = try? JSONDecoder().decode(PluginState.self, from: data)
@@ -265,9 +287,16 @@ public final class PluginStore {
     }
 
     public func setEnabled(_ enabled: Bool, pluginID: String, isBundled: Bool) {
+        try? setEnabledChecked(enabled, pluginID: pluginID, isBundled: isBundled)
+    }
+
+    public func setEnabledChecked(
+        _ enabled: Bool, pluginID: String, isBundled: Bool
+    ) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         var state = self.state(pluginID, isBundled: isBundled)
         state.isEnabled = enabled
-        write(state, id: pluginID, isBundled: isBundled)
+        try writeChecked(state, id: pluginID, isBundled: isBundled)
     }
 
     /// Records what the user agreed to, so an update that adds a capability can
@@ -275,9 +304,16 @@ public final class PluginStore {
     public func recordConsent(
         _ capabilities: [PluginCapabilityName], pluginID: String, isBundled: Bool
     ) {
+        try? recordConsentChecked(capabilities, pluginID: pluginID, isBundled: isBundled)
+    }
+
+    public func recordConsentChecked(
+        _ capabilities: [PluginCapabilityName], pluginID: String, isBundled: Bool
+    ) throws {
+        guard storageAvailable else { throw PluginStoreError.storageUnavailable }
         var state = self.state(pluginID, isBundled: isBundled)
         state.consentedCapabilities = capabilities
-        write(state, id: pluginID, isBundled: isBundled)
+        try writeChecked(state, id: pluginID, isBundled: isBundled)
     }
 
     public func write(_ state: PluginState, id: String, isBundled: Bool) {

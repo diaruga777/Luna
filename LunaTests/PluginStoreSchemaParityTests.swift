@@ -114,4 +114,51 @@ final class PluginStoreSchemaParityTests: XCTestCase {
         XCTAssertEqual(
             PluginKVStore(fileURL: fileURL).valueJSON(pluginID: "p", key: "k"), "{\"a\":1}")
     }
+
+    func testKVQuotaIsAtomicAndReplacingAValueChargesOnlyTheDelta() throws {
+        let fileURL = directoryURL.appendingPathComponent("quota.sqlite")
+        let store = PluginKVStore(
+            fileURL: fileURL,
+            quotas: PluginStorageQuotas(
+                maxKVKeys: 2, maxKVBytes: 8,
+                maxCollectionRows: 1, maxCollectionBytes: 8))
+
+        try store.setValueJSONChecked("1234", pluginID: "p", key: "a", now: Date())
+        try store.setValueJSONChecked("12", pluginID: "p", key: "a", now: Date())
+        try store.setValueJSONChecked("123456", pluginID: "p", key: "b", now: Date())
+        XCTAssertThrowsError(
+            try store.setValueJSONChecked("1", pluginID: "p", key: "c", now: Date())
+        ) { XCTAssertEqual($0 as? PluginStorageError, .quotaExceeded) }
+        XCTAssertNil(store.valueJSON(pluginID: "p", key: "c"))
+    }
+
+    func testCollectionQuotaDoesNotPartiallyInsertTheRejectedRow() throws {
+        let store = PluginKVStore(
+            fileURL: directoryURL.appendingPathComponent("collection-quota.sqlite"),
+            quotas: PluginStorageQuotas(
+                maxKVKeys: 1, maxKVBytes: 8,
+                maxCollectionRows: 1, maxCollectionBytes: 8))
+        try store.putDocumentChecked(
+            PluginCollectionDocument(id: "a", json: "1234"),
+            collection: "items", pluginID: "p")
+
+        XCTAssertThrowsError(try store.putDocumentChecked(
+            PluginCollectionDocument(id: "b", json: "1"),
+            collection: "items", pluginID: "p")) {
+                XCTAssertEqual($0 as? PluginStorageError, .quotaExceeded)
+            }
+        XCTAssertEqual(store.count(collection: "items", pluginID: "p"), 1)
+    }
+
+    func testCheckedStorageReportsAnUnavailableRootInsteadOfMissingData() throws {
+        let blocker = directoryURL.appendingPathComponent("not-a-directory")
+        try Data("x".utf8).write(to: blocker)
+        let store = PluginKVStore(fileURL: blocker.appendingPathComponent("saves.sqlite"))
+
+        XCTAssertThrowsError(try store.keysChecked(pluginID: "p")) {
+            guard case .storageUnavailable = $0 as? PluginStorageError else {
+                return XCTFail("unexpected error: \($0)")
+            }
+        }
+    }
 }

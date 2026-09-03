@@ -251,6 +251,13 @@ collection name and never see each other's data. Backed by `saves.sqlite`'s
 `plugin_kv`/`plugin_collections` tables, visible from every process your
 plugin runs in (Safari relays through native messaging).
 
+Aggregate limits are also per plugin: 1,024 keys / 5 MiB of KV JSON and
+10,000 rows / 10 MiB of collection JSON. Each individual value or document
+remains capped at 256 KiB. An atomic write that would cross a limit rejects
+with `quota-exceeded`; unavailable App-Group storage and failed writes reject
+as `storage-unavailable` and `write-failed` instead of looking like a missing
+key or a successful delete.
+
 ## `luna.secrets` (capability `secrets`)
 
 ```ts

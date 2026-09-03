@@ -263,7 +263,10 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let key = message?["key"] as? String, !key.isEmpty
         else { return Self.badArgument("luna.storage.get needs a key") }
-        guard let json = PluginKVStore.shared.valueJSON(pluginID: id, key: key) else { return [:] }
+        let json: String?
+        do { json = try PluginKVStore.shared.valueJSONChecked(pluginID: id, key: key) }
+        catch { return Self.storageFailure(error) }
+        guard let json else { return [:] }
         return ["value": Self.nativeValue(fromJSON: json) as Any]
     }
 
@@ -284,13 +287,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let json = Self.jsonString(fromNativeValue: value) else {
             return Self.badArgument("luna.storage.set needs a JSON value")
         }
-        guard PluginKVStore.shared.setValueJSON(json, pluginID: id, key: key, now: Date()) else {
-            return [
-                "error": "too-large",
-                "message": "the value is larger than the "
-                    + "\(PluginKVStore.maxValueBytes / 1024) KB one key may hold",
-            ]
-        }
+        do { try PluginKVStore.shared.setValueJSONChecked(
+            json, pluginID: id, key: key, now: Date()) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -299,14 +298,17 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let key = message?["key"] as? String, !key.isEmpty
         else { return Self.badArgument("luna.storage.delete needs a key") }
-        _ = PluginKVStore.shared.setValueJSON(nil, pluginID: id, key: key, now: Date())
+        do { try PluginKVStore.shared.removeValueJSONChecked(pluginID: id, key: key) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
     private func pluginStorageKeys(message: [String: Any]?) -> [String: Any] {
         guard let id = message?["id"] as? String, pluginDeclares(id: id, capability: .storage)
         else { return Self.notDeclared }
-        return ["keys": PluginKVStore.shared.keys(pluginID: id, prefix: message?["prefix"] as? String)]
+        do { return ["keys": try PluginKVStore.shared.keysChecked(
+            pluginID: id, prefix: message?["prefix"] as? String)] }
+        catch { return Self.storageFailure(error) }
     }
 
     private func pluginCollectionPut(message: [String: Any]?) -> [String: Any] {
@@ -319,13 +321,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.badArgument("a collection document must be JSON") }
         let document = PluginCollectionDocument(
             id: docID, json: json, k1: message?["k1"] as? String, k2: message?["k2"] as? String)
-        guard PluginKVStore.shared.putDocument(document, collection: collection, pluginID: id)
-        else {
-            return [
-                "error": "too-large",
-                "message": "the document is larger than one row may hold",
-            ]
-        }
+        do { try PluginKVStore.shared.putDocumentChecked(
+            document, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -335,8 +333,11 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let collection = message?["collection"] as? String, !collection.isEmpty,
               let docID = message?["docId"] as? String, !docID.isEmpty
         else { return Self.badArgument("a collection get needs a collection and a document id") }
-        guard let document = PluginKVStore.shared.document(id: docID, collection: collection, pluginID: id)
-        else { return [:] }
+        let document: PluginCollectionDocument?
+        do { document = try PluginKVStore.shared.documentChecked(
+            id: docID, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
+        guard let document else { return [:] }
         return ["doc": Self.nativeValue(fromJSON: document.json) as Any]
     }
 
@@ -349,7 +350,9 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         guard let collection = message?["collection"] as? String, !collection.isEmpty,
               let docID = message?["docId"] as? String, !docID.isEmpty
         else { return Self.badArgument("a collection delete needs a collection and a document id") }
-        _ = PluginKVStore.shared.removeDocument(id: docID, collection: collection, pluginID: id)
+        do { _ = try PluginKVStore.shared.removeDocumentChecked(
+            id: docID, collection: collection, pluginID: id) }
+        catch { return Self.storageFailure(error) }
         return ["ok": true]
     }
 
@@ -358,10 +361,12 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let collection = message?["collection"] as? String, !collection.isEmpty
         else { return Self.badArgument("a collection find needs a collection") }
-        let documents = PluginKVStore.shared.find(
+        let documents: [PluginCollectionDocument]
+        do { documents = try PluginKVStore.shared.findChecked(
             collection: collection, pluginID: id,
             k1: message?["k1"] as? String, k2: message?["k2"] as? String,
-            limit: message?["limit"] as? Int, offset: (message?["offset"] as? Int) ?? 0)
+            limit: message?["limit"] as? Int, offset: (message?["offset"] as? Int) ?? 0) }
+        catch { return Self.storageFailure(error) }
         return ["items": documents.map { ["id": $0.id, "doc": Self.nativeValue(fromJSON: $0.json) as Any] }]
     }
 
@@ -370,11 +375,18 @@ final class LunaSafariPluginMessageHandler: SafariPluginMessaging {
         else { return Self.notDeclared }
         guard let collection = message?["collection"] as? String, !collection.isEmpty
         else { return Self.badArgument("a collection count needs a collection") }
-        return [
-            "count": PluginKVStore.shared.count(
+        do { return [
+            "count": try PluginKVStore.shared.countChecked(
                 collection: collection, pluginID: id,
                 k1: message?["k1"] as? String, k2: message?["k2"] as? String),
-        ]
+        ] } catch { return Self.storageFailure(error) }
+    }
+
+    private static func storageFailure(_ error: Error) -> [String: Any] {
+        if let error = error as? PluginStorageError {
+            return ["error": error.code, "message": error.description]
+        }
+        return ["error": "storage-unavailable", "message": error.localizedDescription]
     }
 
     // MARK: - Log / settings / browser / queueModel

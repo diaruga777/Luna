@@ -45,7 +45,10 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 return promise
             }
             workQueue.async {
-                guard let json = store.valueJSON(pluginID: pluginID, key: key) else {
+                let json: String?
+                do { json = try store.valueJSONChecked(pluginID: pluginID, key: key) }
+                catch { Self.fail(error, box: box); return }
+                guard let json else {
                     // `undefined` is the answer for a key that holds nothing;
                     // `null` is a value a plugin may have stored on purpose.
                     // The Safari relay answers the same way.
@@ -70,12 +73,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 return promise
             }
             workQueue.async {
-                guard store.setValueJSON(json, pluginID: pluginID, key: key, now: Date()) else {
-                    box.fail(
-                        "the value is larger than the \(PluginKVStore.maxValueBytes / 1024) KB "
-                            + "one key may hold", code: "too-large")
-                    return
-                }
+                do { try store.setValueJSONChecked(json, pluginID: pluginID, key: key, now: Date()) }
+                catch { Self.fail(error, box: box); return }
                 box.fulfill(NSNull())
             }
             return promise
@@ -90,7 +89,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 return promise
             }
             workQueue.async {
-                store.setValueJSON(nil, pluginID: pluginID, key: key, now: Date())
+                do { try store.removeValueJSONChecked(pluginID: pluginID, key: key) }
+                catch { Self.fail(error, box: box); return }
                 box.fulfill(NSNull())
             }
             return promise
@@ -102,7 +102,8 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 in: context, scheduler: scheduler, pluginID: pluginID)
             let text = PluginBridgeValue.optionalString(prefix)
             workQueue.async {
-                box.fulfill(store.keys(pluginID: pluginID, prefix: text))
+                do { box.fulfill(try store.keysChecked(pluginID: pluginID, prefix: text)) }
+                catch { Self.fail(error, box: box) }
             }
             return promise
         }
@@ -155,12 +156,9 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 k1: PluginBridgeValue.string(keys, "k1"),
                 k2: PluginBridgeValue.string(keys, "k2"))
             workQueue.async {
-                guard store.putDocument(
-                    entry, collection: name, pluginID: pluginID, now: Date())
-                else {
-                    box.fail("the document is larger than one row may hold", code: "too-large")
-                    return
-                }
+                do { try store.putDocumentChecked(
+                    entry, collection: name, pluginID: pluginID, now: Date()) }
+                catch { Self.fail(error, box: box); return }
                 box.fulfill(NSNull())
             }
             return promise
@@ -175,9 +173,11 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 return promise
             }
             workQueue.async {
-                guard let document = store.document(
-                    id: id, collection: name, pluginID: pluginID)
-                else {
+                let document: PluginCollectionDocument?
+                do { document = try store.documentChecked(
+                    id: id, collection: name, pluginID: pluginID) }
+                catch { Self.fail(error, box: box); return }
+                guard let document else {
                     box.fulfill(NSNull())
                     return
                 }
@@ -195,7 +195,9 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 return promise
             }
             workQueue.async {
-                store.removeDocument(id: id, collection: name, pluginID: pluginID)
+                do { _ = try store.removeDocumentChecked(
+                    id: id, collection: name, pluginID: pluginID) }
+                catch { Self.fail(error, box: box); return }
                 box.fulfill(NSNull())
             }
             return promise
@@ -208,12 +210,14 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
             let keys = PluginBridgeValue.dictionary(where_)
             let opts = PluginBridgeValue.dictionary(options)
             workQueue.async {
-                let rows = store.find(
+                let rows: [PluginCollectionDocument]
+                do { rows = try store.findChecked(
                     collection: name, pluginID: pluginID,
                     k1: PluginBridgeValue.string(keys, "k1"),
                     k2: PluginBridgeValue.string(keys, "k2"),
                     limit: PluginBridgeValue.int(opts, "limit"),
-                    offset: PluginBridgeValue.int(opts, "offset") ?? 0)
+                    offset: PluginBridgeValue.int(opts, "offset") ?? 0) }
+                catch { Self.fail(error, box: box); return }
                 box.fulfill(rows.map { row in
                     ["id": row.id, "doc": PluginBridgeValue.jsonValue(row.json) ?? NSNull()]
                         as [String: Any]
@@ -228,10 +232,11 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
                 in: context, scheduler: scheduler, pluginID: pluginID)
             let keys = PluginBridgeValue.dictionary(where_)
             workQueue.async {
-                box.fulfill(store.count(
+                do { box.fulfill(try store.countChecked(
                     collection: name, pluginID: pluginID,
                     k1: PluginBridgeValue.string(keys, "k1"),
-                    k2: PluginBridgeValue.string(keys, "k2")))
+                    k2: PluginBridgeValue.string(keys, "k2"))) }
+                catch { Self.fail(error, box: box) }
             }
             return promise
         }
@@ -243,5 +248,13 @@ public final class PluginStorageBridge: PluginCapabilityInstalling {
         handle.setObject(count, forKeyedSubscript: "count" as NSString)
         handle.setObject(name, forKeyedSubscript: "name" as NSString)
         return handle
+    }
+
+    private static func fail(_ error: Error, box: PluginPromiseBox) {
+        if let error = error as? PluginStorageError {
+            box.fail(error.description, code: error.code)
+        } else {
+            box.fail(error.localizedDescription, code: "storage-unavailable")
+        }
     }
 }

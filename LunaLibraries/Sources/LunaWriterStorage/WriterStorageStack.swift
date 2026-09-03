@@ -33,6 +33,7 @@ public final class WriterStorageStack {
         self.noteIndex = SQLiteNoteIndex(database: database, embedding: embedding)
         self.textStore = FileDocumentTextStore(
             rootDirectory: libraryRoot, library: library, documentIndex: documentIndex)
+        self.library.fileRelocator = textStore
         self.watcher = LibraryFolderWatcher(rootDirectory: libraryRoot)
         self.reconciler = ExternalChangeReconciler(
             library: library, textStore: textStore, snapshots: library, marks: library,
@@ -46,7 +47,13 @@ public final class WriterStorageStack {
     }
 
     /// The app's own locations: the database in Application Support, where a
-    /// writer never sees it, and the sheets in Documents, where Files does.
+    /// writer never sees it, and the sheets in a folder Files shows.
+    ///
+    /// On macOS, `.documentDirectory` in `.userDomainMask` is the signed-in
+    /// user's real `~/Documents` unless the app is sandboxed — the watcher
+    /// would adopt every `.md` anyone has there. The sheets live inside the
+    /// app's own Application Support folder instead until a Mac target picks
+    /// a folder explicitly.
     public static func makeDefault(
         embedding: SentenceEmbedding? = NLSentenceEmbedding()
     ) throws -> WriterStorageStack {
@@ -54,9 +61,13 @@ public final class WriterStorageStack {
         let support = try manager.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
             create: true).appendingPathComponent("LunaWriter", isDirectory: true)
+        #if os(macOS)
+        let documents = support.appendingPathComponent("Library", isDirectory: true)
+        #else
         let documents = try manager.url(
             for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("Library", isDirectory: true)
+        #endif
         return try WriterStorageStack(
             databaseURL: support.appendingPathComponent("writer.sqlite"),
             libraryRoot: documents, embedding: embedding)

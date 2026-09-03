@@ -25,6 +25,17 @@ extension SQLiteWriterLibrary {
         }.first
     }
 
+    /// The sheet whose file currently lives at `relativePath`, trashed or
+    /// not. For when a path on disk is the only identity in hand.
+    public func document(atPath relativePath: String) throws -> WriterDocument? {
+        guard !relativePath.isEmpty else { return nil }
+        return try loadDocuments(
+            "SELECT \(Self.documentColumns) FROM documents WHERE file_path = ?"
+        ) { statement in
+            try statement.bind(1, relativePath)
+        }.first
+    }
+
     public func favorites() throws -> [WriterDocument] {
         try loadDocuments(
             "SELECT \(Self.documentColumns) FROM documents"
@@ -231,10 +242,39 @@ extension SQLiteWriterLibrary {
         }
     }
 
+    /// Moves the file into `.Trash` before the row changes, so a scan that
+    /// runs mid-call never finds a document already marked trashed whose file
+    /// is still sitting where an active sheet's would be. When there is no
+    /// file to move (an unsaved sheet, or one whose file already vanished —
+    /// the reconciler's own "gone" case), `file_path` is left as it was, so a
+    /// file that reappears there later is recognised as the same sheet.
     public func trash(_ id: DocumentID) throws {
+        guard let document = try document(id), document.trashedAt == nil else { return }
+        let relocatedPath = fileRelocator?.relocateToTrash(document.fileRelativePath)
         try database.transaction { db in
-            try db.run("UPDATE documents SET trashed_at = ?, updated_at = ? WHERE id = ?") { statement in
-                try statement.bind(1, date: Date())
+            try db.run(
+                "UPDATE documents SET file_path = ?, trashed_at = ?, updated_at = ? WHERE id = ?"
+            ) { statement in
+                try statement.bind(1, relocatedPath ?? document.fileRelativePath)
+                try statement.bind(2, date: Date())
+                try statement.bind(3, date: Date())
+                try statement.bind(4, id.rawValue.uuidString)
+            }
+        }
+        changes.post(.document(id))
+    }
+
+    /// Moves the file back out of `.Trash` and under the folder the sheet's
+    /// group and title resolve to now, collision-safe against whatever else
+    /// is already there.
+    public func restore(_ id: DocumentID) throws {
+        guard let document = try document(id), document.trashedAt != nil else { return }
+        let restoredPath = fileRelocator?.restore(document, groups: try groups())
+        try database.transaction { db in
+            try db.run(
+                "UPDATE documents SET file_path = ?, trashed_at = NULL, updated_at = ? WHERE id = ?"
+            ) { statement in
+                try statement.bind(1, restoredPath ?? document.fileRelativePath)
                 try statement.bind(2, date: Date())
                 try statement.bind(3, id.rawValue.uuidString)
             }
@@ -242,20 +282,12 @@ extension SQLiteWriterLibrary {
         changes.post(.document(id))
     }
 
-    public func restore(_ id: DocumentID) throws {
-        try database.transaction { db in
-            try db.run("UPDATE documents SET trashed_at = NULL, updated_at = ? WHERE id = ?") { statement in
-                try statement.bind(1, date: Date())
-                try statement.bind(2, id.rawValue.uuidString)
-            }
-        }
-        changes.post(.document(id))
-    }
-
     public func emptyTrash() throws {
+        let trashed = try documents(in: trashGroupID, sort: .modifiedDescending)
         try database.transaction { db in
             try db.execute("DELETE FROM documents WHERE trashed_at IS NOT NULL")
         }
+        for document in trashed { fileRelocator?.removePermanently(document.fileRelativePath) }
         changes.post(.documents(in: trashGroupID))
     }
 

@@ -4,6 +4,11 @@ import Foundation
 public enum SpeechUnavailability: Equatable, Sendable {
     /// The recognizer has no on-device model for the requested locale.
     case noOnDeviceModel
+    /// Speech-recognition or microphone authorization has never been asked —
+    /// distinct from `.permissionDenied`/`.microphoneDenied`: a caller can
+    /// still turn this on by asking, and availability should be re-resolved
+    /// once the answer comes back.
+    case permissionNotRequested
     /// Speech-recognition authorization was denied.
     case permissionDenied
     /// Microphone authorization was denied.

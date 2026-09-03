@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Foundation
 
@@ -69,7 +70,14 @@ public final class EnergyVAD {
     /// apart, including silent ones — a gap in the input reads as continuous
     /// speech rather than as silence.
     public func ingest(_ samples: [Float], at time: Date) -> [VoiceActivityEvent] {
-        let isAboveThreshold = Self.decibels(ofRMS: samples) >= configuration.thresholdDecibels
+        ingest(decibels: Self.decibels(ofRMS: samples), at: time)
+    }
+
+    /// Feeds one frame already reduced to decibels. The buffer adapter below
+    /// uses this to avoid allocating a fresh `[Float]` per frame; `ingest(_:at:)`
+    /// stays the entry point for callers (and tests) that already hold samples.
+    public func ingest(decibels: Float, at time: Date) -> [VoiceActivityEvent] {
+        let isAboveThreshold = decibels >= configuration.thresholdDecibels
         var events: [VoiceActivityEvent] = []
 
         if isAboveThreshold {
@@ -103,11 +111,14 @@ public final class EnergyVAD {
 /// frames, so production code never hand-rolls the sample math `EnergyVADTests`
 /// exercises directly on plain arrays.
 public enum EnergyVADBufferAdapter {
+    /// Slices `buffer` into `configuration.frameDuration`-sized windows and
+    /// reduces each straight to decibels over the buffer's own pointer —
+    /// `vDSP_measqv`, no per-frame `[Float]` copy.
     public static func frames(
         in buffer: AVAudioPCMBuffer,
         configuration: EnergyVADConfiguration,
         startingAt bufferStart: Date
-    ) -> [(samples: [Float], time: Date)] {
+    ) -> [(decibels: Float, time: Date)] {
         guard let channelData = buffer.floatChannelData else { return [] }
         let frameLength = Int(buffer.frameLength)
         let sampleRate = buffer.format.sampleRate
@@ -115,13 +126,16 @@ public enum EnergyVADBufferAdapter {
         let samplesPerFrame = max(1, Int((configuration.frameDuration * sampleRate).rounded()))
         let channel = channelData[0]
 
-        var result: [(samples: [Float], time: Date)] = []
+        var result: [(decibels: Float, time: Date)] = []
         var offset = 0
         while offset < frameLength {
             let count = min(samplesPerFrame, frameLength - offset)
-            let samples = Array(UnsafeBufferPointer(start: channel + offset, count: count))
+            var meanSquare: Float = 0
+            vDSP_measqv(channel + offset, 1, &meanSquare, vDSP_Length(count))
+            let rms = sqrt(meanSquare)
+            let decibels = rms > 0 ? 20 * log10(rms) : -Float.infinity
             let time = bufferStart.addingTimeInterval(Double(offset) / sampleRate)
-            result.append((samples, time))
+            result.append((decibels, time))
             offset += count
         }
         return result

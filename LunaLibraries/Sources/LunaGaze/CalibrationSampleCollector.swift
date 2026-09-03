@@ -51,7 +51,14 @@ public final class CalibrationSampleCollector {
     public let saccadeVelocity: Double
 
     private let path: PursuitCalibrationPath
-    private let startTime: TimeInterval
+    /// When the sweep this collector is pairing frames against actually
+    /// began, on the frames' own clock. Settable rather than fixed at
+    /// construction: a caller that builds the collector before it knows the
+    /// real start time (`GazeCalibrationFlow.begin(at:)`, which constructs
+    /// the flow — and this collector — before the run is asked to start)
+    /// must update it once that time is known, or `sample(at:)` pairs every
+    /// frame against a sweep that never started when it thinks it did.
+    public var startTime: TimeInterval
     private let lags: [TimeInterval]
     private var buffered: [[CalibrationSample]]
 

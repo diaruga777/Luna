@@ -73,4 +73,26 @@ final class OneEuroFilterTests: XCTestCase {
         let next = filter.filter(CGPoint(x: 700, y: 700), at: 1)
         XCTAssertEqual(next.x, 700, accuracy: 0.001)
     }
+
+    func testANonFiniteSampleIsRefusedRatherThanPoisoningTheStream() {
+        var filter = OneEuroFilter()
+        _ = filter.filter(CGPoint(x: 100, y: 200), at: 0)
+        _ = filter.filter(CGPoint(x: 104, y: 202), at: 1.0 / 60)
+        let lastGood = filter.currentValue
+
+        let refused = filter.filter(CGPoint(x: CGFloat.nan, y: 50), at: 2.0 / 60)
+        XCTAssertEqual(refused, lastGood, "a NaN sample should fall back to the last good value")
+        XCTAssertNil(filter.currentValue, "the stream resets rather than adopting the NaN")
+
+        let next = filter.filter(CGPoint(x: 300, y: 300), at: 3.0 / 60)
+        XCTAssertEqual(next.x, 300, accuracy: 0.001, "the next sample starts a fresh stream")
+        XCTAssertEqual(next.y, 300, accuracy: 0.001)
+    }
+
+    func testANonFiniteFirstSampleFallsBackToItselfWithNoCrash() {
+        var filter = OneEuroFilter()
+        let refused = filter.filter(CGPoint(x: CGFloat.infinity, y: 0), at: 0)
+        XCTAssertTrue(refused.x.isInfinite)
+        XCTAssertNil(filter.currentValue)
+    }
 }

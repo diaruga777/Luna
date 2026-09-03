@@ -64,7 +64,17 @@ public struct OneEuroFilter {
     }
 
     /// Filters one sample. `time` is in seconds and must not go backwards.
+    ///
+    /// A non-finite sample (a projection gone wrong upstream) is refused
+    /// rather than folded in: it would otherwise poison `speed` and every
+    /// later output. The stream resets, so the NEXT valid sample starts a
+    /// fresh fit instead of chasing a NaN average.
     public mutating func filter(_ point: CGPoint, at time: TimeInterval) -> CGPoint {
+        guard point.x.isFinite, point.y.isFinite else {
+            let fallback = currentValue ?? point
+            reset()
+            return fallback
+        }
         var interval = configuration.assumedInterval
         if let lastTime {
             if time - lastTime > configuration.resetGap {

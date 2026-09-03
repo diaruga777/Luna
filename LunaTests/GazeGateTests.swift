@@ -93,6 +93,43 @@ final class GazeGateTests: XCTestCase {
             gate.update(faceTracked: false, blinkLeft: 0, blinkRight: 0, point: nil, at: 0.1), .away)
     }
 
+    // MARK: - Landscape
+
+    /// A centre-screen sample in landscape must open the gate when the gate
+    /// is given the ORIENTED size — the bug this pins is feeding it the
+    /// portrait size while the point is already rotated, which reads a
+    /// legitimate centre-screen gaze as `.offScreen`.
+    func testACentreScreenSampleInLandscapeOpensTheGateWhenGivenTheOrientedSize() {
+        let orientedSize = GazeScreenProjection.orientedSize(
+            portraitSize: screenSize, orientation: .landscapeRight)
+        XCTAssertEqual(orientedSize, CGSize(width: screenSize.height, height: screenSize.width))
+
+        // Near the portrait TOP: landscapeRight swaps this toward the far
+        // side of the now-wide screen, still comfortably inside it.
+        let portraitPoint = CGPoint(x: screenSize.width / 2, y: 50)
+        let onScreenPoint = GazeScreenProjection.orientedScreenPoint(
+            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: .landscapeRight)
+
+        var gate = GazeGate(screenSize: orientedSize, pointsPerDegree: pointsPerDegree)
+        let reason = gate.update(
+            faceTracked: true, blinkLeft: 0, blinkRight: 0, point: onScreenPoint, at: 0)
+        XCTAssertEqual(reason, .ok)
+    }
+
+    /// The same sample, judged against the un-rotated PORTRAIT size, is the
+    /// bug: the point already lives in a rotated space wider than the
+    /// portrait width (plus slop), so it reads as past the display.
+    func testTheSameSampleMisreadsAsOffScreenAgainstThePortraitSize() {
+        let portraitPoint = CGPoint(x: screenSize.width / 2, y: 50)
+        let onScreenPoint = GazeScreenProjection.orientedScreenPoint(
+            fromPortraitPoint: portraitPoint, portraitSize: screenSize, orientation: .landscapeRight)
+
+        var gate = GazeGate(screenSize: screenSize, pointsPerDegree: pointsPerDegree)
+        let reason = gate.update(
+            faceTracked: true, blinkLeft: 0, blinkRight: 0, point: onScreenPoint, at: 0)
+        XCTAssertEqual(reason, .offScreen)
+    }
+
     func testBlinkIsReadFromBothBlendShapesAndAMissingOneCountsAsOpen() {
         let both = GazeGate.blink(from: [
             .eyeBlinkLeft: NSNumber(value: 0.8), .eyeBlinkRight: NSNumber(value: 0.1),

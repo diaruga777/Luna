@@ -409,6 +409,10 @@ extension EditorViewController: UITextViewDelegate {
 
 extension EditorViewController: RenderingViewportProviding {
 
+    public var hasViewport: Bool {
+        textView.textLayoutManager?.textViewportLayoutController.viewportRange != nil
+    }
+
     public var renderingViewportRange: NSRange {
         guard let layoutManager = textView.textLayoutManager,
               let contentManager = layoutManager.textContentManager,
